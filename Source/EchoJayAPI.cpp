@@ -1881,10 +1881,36 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 logNon2xx ("/api/chat-stream", statusCode, bodyText);
                 if (! aliveFlag->load() || handle->isCancelled()) return;
                 auto json = juce::JSON::parse (bodyText);
-                juce::String msg = "Something went wrong. Please try again.";
+                juce::String code, serverErr, turnId, msg = "Something went wrong. Please try again.";
                 if (auto* o = json.getDynamicObject())
-                    if (o->hasProperty ("error"))
-                        msg = o->getProperty ("error").toString();
+                {
+                    if (o->hasProperty ("code"))   code      = o->getProperty ("code").toString();
+                    if (o->hasProperty ("error"))  serverErr = o->getProperty ("error").toString();
+                    if (o->hasProperty ("turnId")) turnId    = o->getProperty ("turnId").toString();
+                }
+                // FINDING 1 (15 Sep 2026). chat_turn_not_streamed is a ROUTING
+                // DIRECTIVE, not a chat reply: the server classified this
+                // stream-routed turn as chat. Its `error` string is internal
+                // plumbing and must NEVER be rendered as a bubble or stored in
+                // history (it was, then fed to the next classify). Log the
+                // observation in FULL - origin endpoint, status, code, turnId; we
+                // do not infer which endpoint a turn reached - and surface a PLAIN
+                // message. The raw `error` becomes `serverErr` for the log only and
+                // never the shown text. NO automatic re-send here: the staged
+                // meter/mapFps body was already consumed by buildChatRequestBody,
+                // so a rebuilt re-send would DIVERGE from what carried this turnId
+                // (two requests, one turnId). The bounded/identical-body re-send is
+                // a separate decision - see the report. Primary trigger (a stale
+                // stream_chains flag) is deleted, so this path is rare.
+                if (code == "chat_turn_not_streamed")
+                {
+                    EchoJay_NSLog (("EJStream: REROUTE-OBSERVED origin=/api/chat-stream status="
+                                    + juce::String (statusCode) + " code=" + code + " turnId=" + turnId
+                                    + " serverError=\"" + serverErr + "\" -> directive SUPPRESSED "
+                                      "(not rendered, not stored); plain message shown").toRawUTF8());
+                    msg = "This turn was sent to the streaming path, but the server handled it as a normal "
+                          "chat. Please send it again.";
+                }
                 dispatch ([ev, msg, statusCode] { if (ev->onError) ev->onError (msg, statusCode); });
                 return;   // a real HTTP answer is not retried
             }
@@ -3234,33 +3260,116 @@ juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slo
     return n;
 }
 
+// Own-channel wrapper: fill the normalized struct from the chain's own tallies
+// and render through the ONE renderer. Output is byte-identical to the previous
+// direct implementation (own path leaves havePercentiles/haveOutput true and
+// sourceLabel empty), which the acceptance byte-diff verifies.
 juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
 {
     const auto in  = chainHost.getChainInLevels();
     const auto out = chainHost.getChainOutLevels();
+    ChainLevelsData d;
+    d.inKnown = in.known;
+    d.inLevelDb = in.levelDb; d.inP10 = in.p10; d.inP90 = in.p90;
+    d.inPeakDb = in.peakDb; d.inCrestDb = in.crestDb;
+    d.inHeardS = in.heardSeconds; d.inWindowS = in.windowSeconds;
+    d.preGainDb = chainHost.getPreGainDb();
+    d.outKnown = out.known; d.outLevelDb = out.levelDb; d.numSlots = chainHost.getNumSlots();
+    // havePercentiles / haveOutput default true; sourceLabel empty -> own path.
+    return buildChainLevelsInjectionCore(d);
+}
+
+// The one [CHAIN LEVELS] renderer, fed by either source. Own channel reproduces
+// the prior text exactly; a Link source names p10/p90 and post-chain output as
+// absent (not faked) and always states its computed pre-gain (amendment 1).
+juce::String EchoJayAPI::buildChainLevelsInjectionCore(const ChainLevelsData& d)
+{
+    const bool link = d.sourceLabel.isNotEmpty();
+
+    // LINK PATH (rewritten, 15 Sep 2026 - items 2 & 3). Lead with OPERATING, the
+    // actionable number a Link ALWAYS has, and name absences AFTER; never open
+    // with a directive pointing at data a Link lacks. The old shared opener
+    // "Set thresholds against INPUT p90" named p90 - which a Link has no p10/p90
+    // for - so its primary instruction was inoperable and the model discounted
+    // the whole block (measured: key block used, levels block ignored). "heard"
+    // is omitted entirely here: the Link frame carries no gated-heard duration,
+    // so the value was a hard 0 (never populated, not measured) that gave the
+    // model a rational reason to distrust the loudness printed beside it. The
+    // own path below is UNCHANGED and byte-identical - it works today.
+    if (link)
+    {
+        juce::String lb;
+        if (! d.inKnown)
+        {
+            lb << "\n\n[CHAIN LEVELS - the Link \"" << d.sourceLabel
+               << "\" has no current reading of its level; do not assume one.]";
+            return lb;
+        }
+        const juce::String age = d.measurementAgeMs < 5000u ? juce::String("moments ago")
+            : "about " + (d.measurementAgeMs < 90000u ? juce::String((d.measurementAgeMs + 500u) / 1000u) + " s"
+                                           : juce::String((d.measurementAgeMs + 30000u) / 60000u) + " min") + " ago";
+        // CATCH D: the printed level numbers come from TWO frames - input and
+        // peak are cumulative (live), crest is short-window (latched) - so the
+        // block STATES which are overall-since-playback and which are from the
+        // while-flowing window, rather than let a reader compute peak-minus-crest
+        // and get a level that does not match the printed input.
+        lb << "\n\n[CHAIN LEVELS - measured on the Link \"" << d.sourceLabel
+           << "\" (its own channel, at the insert point; BS.1770 gated, K-weighted). "
+           << "Set the chain's pre-gain to " << (d.preGainDb >= 0 ? "+" : "") << fmt1(d.preGainDb)
+           << " dB so the programme level does not jump, then set EVERY threshold against the resulting "
+           << "OPERATING level " << fmt1(d.inLevelDb + d.preGainDb)
+           << " LUFS, so the gain reduction you state actually occurs. ";
+        if (d.cumulativeFromLatch)
+            // CATCH E: the live meters had reset, so input/peak came from the
+            // latch too - all three are while-flowing, none is a newer overall.
+            lb << "Input " << fmt1(d.inLevelDb) << " LUFS, peak " << fmt1(d.inPeakDb)
+               << " dBFS and crest " << fmt1(d.inCrestDb)
+               << " dB are all from the while-flowing window (measured " << age
+               << "); the Link's live meters have since reset, so there is no newer overall reading. ";
+        else
+            lb << "Input " << fmt1(d.inLevelDb) << " LUFS and peak " << fmt1(d.inPeakDb)
+               << " dBFS are overall since playback began; crest " << fmt1(d.inCrestDb)
+               << " dB is from the while-flowing window (measured " << age << "). ";
+        lb << "p10/p90 and post-chain output are not available from a Link.]";
+        return lb;
+    }
+
     juce::String b;
     b << "\n\n[CHAIN LEVELS - measured while the user played (BS.1770 gated, K-weighted; heard = gated"
          " audio so far, described = how much the figures reflect). Set thresholds against INPUT p90, never a guess: ";
-    if (!in.known)
+    if (! d.inKnown)
     {
-        b << "no level known (heard " << formatHeard(in.heardSeconds) << "); do not assume one, say so if a setting depends on it.]";
+        b << "no level known (heard " << formatHeard(d.inHeardS) << "); do not assume one, say so if a setting depends on it.]";
         return b;
     }
-    b << "input " << fmt1(in.levelDb) << " LUFS (p10 " << fmt1(in.p10) << ", p90 " << fmt1(in.p90)
-      << "), peak " << fmt1(in.peakDb) << " dBFS, crest " << fmt1(in.crestDb) << " dB, heard "
-      << formatHeard(in.heardSeconds);
-    if (in.windowSeconds < in.heardSeconds - 1.0f)
-        b << " (~" << formatHeard(in.windowSeconds) << " described)";
-    // Pre-chain gain and the resulting operating level: EchoJay trims the
-    // input to a known operating level before the rack, so thresholds must be
-    // set against OPERATING, not the raw input. Only shown when a trim is in
-    // effect (a bare input line stays short when there is nothing to add).
-    const float pg = chainHost.getPreGainDb();
-    if (std::abs(pg) > 0.05f)
-        b << "; pre-gain " << (pg >= 0 ? "+" : "") << fmt1(pg)
-          << " dB, so OPERATING " << fmt1(in.levelDb + pg) << " LUFS (set thresholds against this)";
-    if (out.known && chainHost.getNumSlots() > 0)
-        b << "; output " << fmt1(out.levelDb) << " LUFS (out-in " << fmt1(out.levelDb - in.levelDb) << " dB)";
+    if (link)
+    {
+        juce::String age = d.measurementAgeMs < 5000u ? juce::String("moments ago")
+            : "about " + (d.measurementAgeMs < 90000u ? juce::String((d.measurementAgeMs + 500u) / 1000u) + " s"
+                                           : juce::String((d.measurementAgeMs + 30000u) / 60000u) + " min") + " ago";
+        b << "on the Link \"" << d.sourceLabel << "\" (its own channel, measured " << age << ", at the insert point) ";
+    }
+    b << "input " << fmt1(d.inLevelDb) << " LUFS (";
+    b << (d.havePercentiles ? ("p10 " + fmt1(d.inP10) + ", p90 " + fmt1(d.inP90))
+                            : juce::String("p10/p90 not available from a Link"));
+    b << "), peak " << fmt1(d.inPeakDb) << " dBFS, crest " << fmt1(d.inCrestDb) << " dB, heard "
+      << formatHeard(d.inHeardS);
+    if (d.inWindowS < d.inHeardS - 1.0f)
+        b << " (~" << formatHeard(d.inWindowS) << " described)";
+    // Pre-chain gain and the resulting operating level. Own: shown only when a
+    // trim is in effect. Link: ALWAYS stated (computed from input toward the
+    // operating level), because its absence is what let the level jump.
+    if (link)
+        b << "; pre-gain " << (d.preGainDb >= 0 ? "+" : "") << fmt1(d.preGainDb)
+          << " dB, so OPERATING " << fmt1(d.inLevelDb + d.preGainDb)
+          << " LUFS (set the chain's pre-gain to this so the programme level does not jump; set thresholds against OPERATING)";
+    else if (std::abs(d.preGainDb) > 0.05f)
+        b << "; pre-gain " << (d.preGainDb >= 0 ? "+" : "") << fmt1(d.preGainDb)
+          << " dB, so OPERATING " << fmt1(d.inLevelDb + d.preGainDb) << " LUFS (set thresholds against this)";
+    if (d.haveOutput && d.outKnown && d.numSlots > 0)
+        b << "; output " << fmt1(d.outLevelDb) << " LUFS (out-in " << fmt1(d.outLevelDb - d.inLevelDb) << " dB)";
+    else if (link)
+        b << "; post-chain output not measured on a Link";
     b << "]";
     return b;
 }

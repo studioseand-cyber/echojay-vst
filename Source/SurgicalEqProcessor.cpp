@@ -555,10 +555,24 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
     //
     // eq_settings is NOT deprecated by this: it carries keys (phase_mode) that a
     // numeric schema cannot express, and every already-deployed move uses it.
+    // CATCH 1 FIX (15 Sep 2026): count applied/skipped across ALL groups, not
+    // bands only. The old code threaded the count into applyEqBands (which SET
+    // it) and called applyParams 2-arg, so a payload of params + eq_bands
+    // reported applied = bands and silently dropped the params count - EJDialSummary
+    // read "applied 2 of requested 4" while the two params had actually been
+    // applied (or skipped-and-reported) invisibly. Now every group accumulates
+    // into locals written once at the end. applyParams already reports a type
+    // mismatch (a non-number, or a bad choice label) as skipped + "(not a number)"
+    // rather than coercing a wrong value, so a mis-typed phase_mode surfaces as a
+    // skip here, never a silent wrong write.
+    int applied = 0, skipped = 0;
+
     if (structured.hasProperty ("params"))
     {
-        const auto p = applyParams (structured.getProperty ("params", juce::var()), src);
+        int pa = 0, ps = 0;
+        const auto p = applyParams (structured.getProperty ("params", juce::var()), src, &pa, &ps);
         if (p.isNotEmpty()) parts.add (p);
+        applied += pa; skipped += ps;
     }
 
     if (structured.hasProperty ("eq_bands"))
@@ -566,8 +580,10 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
         const juce::var bands = structured.getProperty ("eq_bands", juce::var());
         if (bands.isArray())
         {
-            const auto b = applyEqBands (bands, appliedOut, skippedOut);
+            int ba = 0, bs = 0;
+            const auto b = applyEqBands (bands, &ba, &bs);
             if (b.isNotEmpty()) parts.add (b);
+            applied += ba; skipped += bs;
         }
     }
 
@@ -579,9 +595,11 @@ juce::String SurgicalEqProcessor::applyStructured (const juce::var& structured,
         const auto a = applyEqAction (structured.getProperty ("eq_action", juce::var()),
                                       &aApplied, &aSkipped);
         if (a.isNotEmpty()) parts.add (a);
-        if (appliedOut != nullptr) *appliedOut += aApplied;
-        if (skippedOut != nullptr) *skippedOut += aSkipped;
+        applied += aApplied; skipped += aSkipped;
     }
+
+    if (appliedOut != nullptr) *appliedOut = applied;
+    if (skippedOut != nullptr) *skippedOut = skipped;
 
     if (parts.isEmpty()) return {};
     return parts.joinIntoString ("; ");

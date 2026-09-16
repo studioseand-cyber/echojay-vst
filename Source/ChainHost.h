@@ -1917,11 +1917,22 @@ private:
     // channel. 0 until the owner sets it (Links never publish, so their
     // builtins simply never match a publisher).
     uint64_t keyFeedOwnerId_ = 0;
+    // BUILD-PATH-IS-THE-SPEC (16 Sep 2026): a parked/staged instance is held
+    // OUTSIDE the graph as a bare processor. Nothing can prepare a node that is
+    // not in the graph, so a parked instance can never be initialised early by
+    // an unrelated graph prepare; at attach it gets completeLoad's exact
+    // sequence — one addNode under GraphMutation, one prepare by the graph.
     struct BorrowPoolEntry {
-        juce::AudioProcessorGraph::Node::Ptr node;
+        std::unique_ptr<juce::AudioProcessor> proc;   // FRESH-staged (plan Create): held OUTSIDE the graph
+        juce::AudioProcessorGraph::Node::Ptr node;    // PARKED (removed slot): stays in graph_, suspended + released
         juce::PluginDescription desc;
+        juce::MemoryBlock defaultState;               // reserved; parked nodes keep their nodeID
     };
-    // Keyed by identity; entries stay members of graph_, suspended.
+    // Exactly one of proc/node is set. A fresh-staged instance never enters the
+    // graph until attach, so nothing can prepare it early. A parked-removed node
+    // cannot be lifted out (JUCE's Node::processor is private): it stays in the
+    // graph suspended + RELEASED, and its preparedNodes entry makes applySettings
+    // skip it — inert until the reattach re-prepares it once, after the seed.
     std::map<juce::String, std::vector<BorrowPoolEntry>> borrowPool_;
     size_t            borrowPoolTotal_ = 0;
     juce::StringArray borrowPoolIneligible_;
@@ -1943,7 +1954,10 @@ private:
     // Plan engine internals: the reattachable-park mechanics, shared with
     // the borrow pool's storage (same never-free rule, same identity keys).
     void parkSlotReattachable(int i);
-    bool tryReattachParked(const juce::PluginDescription& d, int insertAt);
+    bool tryReattachParked(const juce::PluginDescription& d, int insertAt,
+                           const juce::String& seedB64 = {},
+                           const juce::String& seedFormat = {},
+                           juce::String* seedRefusedWhy = nullptr);
     // alreadyClaimed: how many parked instances of this key the CALLER's plan
     // has spoken for so far — the retry-dedupe ("a retried Apply instantiates
     // zero new") must not conflate a re-run with a plan that genuinely needs

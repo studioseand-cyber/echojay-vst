@@ -1306,11 +1306,23 @@ public:
     /// Refresh the list of known Link slots from the registry.
     /// Call from the message thread (editor timer, ~2 Hz).
     void refreshLinkRegistry();
+    void updateLinkAudioRecency();   // 1 Hz stamp of which Links pass audio (public: also driven by the assembly harness)
 
     /// Read a Link's latest published meter frame (message thread). Returns
     /// false on torn read / no registry — keep the previous copy. Staleness
     /// is detected by out.seq not advancing between reads (~10Hz expected).
     bool readLinkMeterFrame(int regIdx, LinkMeterFrame& out);
+
+    /// Last time (getMillisecondCounter) the 1 Hz timer saw this Link's frame
+    /// passing audio (audioStale==0). 0 = never seen flowing. Message thread.
+    /// Recency source for the Link [METER SNAPSHOT] gate; the frame carries no
+    /// timestamp and the Link is unchanged, so recency is tracked here.
+    juce::uint32 linkLastFlowingMs(const juce::String& uid) const;
+    // LAST-GOOD METER LATCH read (15 Sep 2026): the most recent frame in which
+    // this Link's short-window fields were valid, and how long ago (ms) it was
+    // captured. False when nothing has ever been latched for the uid. Assembly
+    // gates ageMsOut against the 5-min recency window; beyond it, Lapse fires.
+    bool linkLastGoodFrame(const juce::String& uid, LinkMeterFrame& frameOut, juce::uint32& ageMsOut) const;
 
     /// Snapshot of currently known slots — message thread only.
     const std::vector<LinkSlotInfo>& getLinkSlotInfos() const { return linkSlotInfos; }
@@ -1360,6 +1372,24 @@ private:
     juce::String linkResolvedDir;
     juce::int64  lastFileReapMs_ = 0;   // dead-uid file sweep throttle (~5 min)
     std::map<juce::String, BudgetRow> ctxCapCache_;   // uid -> what its sidecar said (round 53: with publisher + host)
+    std::map<juce::String, juce::uint32> linkLastFlowingMs_;   // uid -> ms the 1 Hz timer last saw audioStale==0 (Link meter recency)
+    // updateLinkAudioRecency() declared public above (assembly harness needs it)
+
+    // LAST-GOOD METER LATCH (15 Sep 2026). A Link build fires at the quiet
+    // moment after playback stops, when the frame's SHORT-WINDOW fields
+    // (momentary/shortTerm/crest/correlation/width/macroBands) have decayed to
+    // floor while the CUMULATIVE fields (integrated/true peak/LRA/PLR) still
+    // hold. The 1 Hz recency poll retains, per uid, the most recent frame in
+    // which the short-window fields were valid (momentary > -70 AND at least
+    // one bandRel above the floor) plus the wall-clock ms it was captured, so
+    // assembly can serve while-flowing short-window values with the TRUE age of
+    // THAT measurement, not the age of the read. Message thread only, like
+    // linkLastFlowingMs_. Dropped when a uid leaves the display list
+    // (belt-and-braces: instanceUid is per-instance and re-minted on collision,
+    // so a uid cannot address a different channel). Bounded: one small frame
+    // per Link seen (~144 bytes), at most kMaxLinkSlots.
+    struct LinkGoodFrame { LinkMeterFrame frame {}; juce::uint32 stampMs = 0; bool valid = false; };
+    std::map<juce::String, LinkGoodFrame> linkLastGoodFrame_;
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;

@@ -2502,7 +2502,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                       "DAW and press Build again.");
                 return;
             }
-            sendChainToLink(uid, chainBuildJsons[(size_t)i]); };
+            sendChainToLink(uid, chainBuildJsons[(size_t)i]);
+            // V2-only pre-gain (16 Sep 2026): carry the ONE computed Link pre-gain
+            // to the Link's OWN rack via ctrl-cmd (its audio path, the knob Sean
+            // sees), only for THIS uid - the same one the reading came from. Own
+            // channel keeps its computePreGainAtBuild path untouched.
+            if (pendingLinkPreGain_.valid && pendingLinkPreGain_.uid == uid)
+                applyPendingLinkPreGain(); };
         addAndMakeVisible(chainBuildBtns[(size_t)i]);
     }
 
@@ -24917,6 +24923,15 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                 ? "the user's \"" + label + "\" Link channel"
                 : juce::String("one of the user's Link channels");
 
+        // MEASURED CONTEXT for a Link target: [CHAIN LEVELS] (with the computed
+        // pre-gain) + [METER SNAPSHOT], through the ONE renderer the own channel
+        // also calls. BEFORE the linkUidLive split, because it reads the
+        // published frame + recency, never a connection flag (item 3): a Link
+        // whose audio ring is not attached still publishes a readable meter
+        // frame. Measurements / Lapse / NoTarget - always one of the three,
+        // never silence.
+        out += renderMeasuredContext(measuredContextTargetLink(targetLinkUid), meterFieldsOut);
+
         if (linkUidLive(targetLinkUid))
         {
         // ── STATE 2: TARGET LINK LIVE — declare the channel, then its rack ──
@@ -25069,50 +25084,12 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
                    " are loaded.]";
             EchoJay_NSLog("EJChat: CURRENT RACK EMPTY declaration attached (0 slots)");
         }
-        // [CHAIN LEVELS]: the chain input (and output) running level, on the
-        // same arm as the rack block, empty rack included (a build on an
-        // empty rack needs the input level most). Per-slot figures ride
-        // inside the [CURRENT CHAIN] slot lines above.
-        {
-            const juce::String lv = EchoJayAPI::buildChainLevelsInjection(chainHost);
-            out += lv;
-            EchoJay_NSLog(("EJLevels: CHAIN LEVELS marker attached, " + juce::String(lv.length())
-                           + " chars: " + lv.substring(0, 160).replace("\n", " ")).toRawUTF8());
-        }
-        // [METER SNAPSHOT v2]: psr / plr / oversCount / macroBands / bandCrest
-        // on the SAME arm and the same text path. The builder copies whatever
-        // meterDataToJSON currently has and returns "" when it has nothing, so
-        // a stopped transport attaches no marker rather than an empty one --
-        // the zero is logged either way, because a marker that silently stops
-        // riding looks exactly like a marker that was never added.
-        {
-            // v3: the statistic comes from the channel type through the SAME
-            // predicate the capture path reads, so a Drum Bus gets peak-hold
-            // in the chat block exactly as it does in a capture payload.
-            const bool useMean = processorRef.spectrumUsesAverage();
-            // [MOVE LOG v1]: what EchoJay itself changed, same arm and same
-            // text path. Empty until something has been applied.
-            {
-                const juce::String ml = EchoJayAPI::buildMoveLogInjection(chainHost);
-                out += ml;
-                if (ml.isNotEmpty())
-                    EchoJay_NSLog(("EJChat: MOVE LOG marker attached, "
-                                   + juce::String(ml.length()) + " chars, "
-                                   + juce::String((int) chainHost.moveLogEntries().size())
-                                   + " entries").toRawUTF8());
-            }
-            const juce::String ms = EchoJayAPI::buildMeterSnapshotInjection(
-                                        processorRef.getMeterEngine().getMeterDataJSON(),
-                                        processorRef.getMeterEngine().reduceSpectrumWindow(useMean),
-                                        processorRef.getMeterEngine().reduceMacroWindow(useMean),
-                                        useMean, meterFieldsOut);
-            out += ms;
-            EchoJay_NSLog((ms.isEmpty()
-                              ? juce::String("EJLevels: METER SNAPSHOT omitted - nothing measurable yet")
-                              : "EJLevels: METER SNAPSHOT marker attached, "
-                                + juce::String(ms.length()) + " chars: "
-                                + ms.substring(0, 200).replace("\n", " ")).toRawUTF8());
-        }
+        // MEASURED CONTEXT (own channel): [CHAIN LEVELS] + [MOVE LOG] + [METER
+        // SNAPSHOT], through the ONE renderer a target Link also calls. This
+        // path is entered only when targetLinkUid is empty (else-of-target), so
+        // it is always the own channel; the bytes are identical to the prior
+        // inline emission (acceptance byte-diff against OWN_CHANNEL_BASELINE).
+        out += renderMeasuredContext(measuredContextOwnChannel(), meterFieldsOut);
     }
 
     // [SAVED CHAINS]: names and ids only, riding the SAME arms as the chain
@@ -26030,12 +26007,25 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
              "differ if it matters to the answer, and treat a disagreement as "
              "a possible modulation or a bad read.\n";
 
-    c << "RULES: below ~0.5 confidence treat the key as UNKNOWN and do not "
-         "build moves on it - a confident wrong key is worse than no key. "
-         "Use root_hz (or note names against detected_tuning) directly in EQ "
-         "moves instead of doing pitch maths. To re-measure, use RE-ANALYSE "
-         "in Meters -> KEY, or dial a Key Detector's analyse:1 while audio "
-         "plays.]";
+    // RULES (rewritten 16 Sep 2026, same defect class as the levels block): the
+    // block volunteered the key/tuning on every turn because nothing told the
+    // model WHEN it is worth saying. Data unchanged (a pitch-correction slot needs
+    // it); what the block says about ITSELF changes - reference data, used when
+    // relevant, never announced otherwise, with the 0.5 confidence line the spec
+    // already teaches now stated as "do not quote below it".
+    c << "RULES: this is REFERENCE data for your own reasoning, NOT something to "
+         "announce. Use it, and only mention it, when it is RELEVANT: the user asks "
+         "about key, tuning or pitch, OR a pitch-correction / tuning plugin is in "
+         "the chain or you are proposing one. On any other turn do NOT state the "
+         "key, the tuning or the cents-off - not as an aside, not as colour. If the "
+         "user has said they do not want tuning, do not mention it at all. "
+         "CONFIDENCE: below 0.5 the reading is UNRELIABLE - never state it as fact; "
+         "treat the key as unknown and build no moves on it, and if pitch is "
+         "genuinely at issue say the reading is low-confidence rather than quoting "
+         "it. When you DO use it, use root_hz (or note names against "
+         "detected_tuning) directly in EQ moves rather than pitch maths. To "
+         "re-measure, use RE-ANALYSE in Meters -> KEY, or dial a Key Detector's "
+         "analyse:1 while audio plays.]";
     return c;
 }
 
@@ -26525,15 +26515,12 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
         EchoJay_NSLog("EJChat: KEY PRECONDITION note attached (Tier 1 fired)");
     }
 
-    // LINK LEVELS context: grounds relative level statements and enables
-    // measurement-backed gain proposals. Rides on the chat turn (does NOT
-    // change turnType — billing stays a chat turn per the spec).
-    juce::String linkLevels = buildLinkLevelsContext();
-    if (linkLevels.isNotEmpty())
-    {
-        userContent += linkLevels;
-        EchoJay_NSLog("EJChat: LINK LEVELS context attached (gain proposals enabled)");
-    }
+    // [LINK LEVELS] REMOVED (11 Sep 2026, Amendment 2): it restated the Link's
+    // loudness under a second name with its own instruction, the exact
+    // one-fact-two-sources class. The MeasuredContext path now carries a Link's
+    // levels once, in [CHAIN LEVELS] (+ [METER SNAPSHOT]) with sourceLabel
+    // recording provenance. buildLinkLevelsContext() is retained but no longer
+    // injected.
 
     processorRef.chatRoles.add("user");
     processorRef.chatContents.add(userContent);
@@ -29185,6 +29172,415 @@ juce::var EchoJayEditor::buildClassifyLinks() const
     return out.isEmpty() ? juce::var() : juce::var(out);
 }
 
+// [METER SNAPSHOT v2] for a build whose TARGET is a Link (10 Sep 2026). The
+// own-channel snapshot reads THIS instance's MeterEngine, which measured
+// nothing for a Link on another channel — so a Link build fell to the
+// "no live readings exist" note and the model built generic settings. But the
+// Link measured its own channel and publishes a LinkMeterFrame (LinkShm.h),
+// which the mixer already reads to paint MOM/SHORT/INT/PSR/PLR. This assembles
+// that frame into the SAME "[METER SNAPSHOT v2: {json}]" idiom the own channel
+// uses, so parseExtendedMeter (_classifier.js) and the model read it exactly as
+// they read the main's. Loudness and macro-band balance are real from the
+// frame; the FINE per-bin spectrum is NOT published by a Link, so it is stated
+// absent rather than faked. Filling emittedKeysOut flips the DATA AVAILABILITY
+// note out of the false empty branch, the same signal the own snapshot sends.
+// ===== MeasuredContext: ONE assembly, parameterised by source (11 Sep 2026) =====
+EchoJayEditor::MeasuredContext EchoJayEditor::measuredContextOwnChannel()
+{
+    pendingLinkPreGain_ = {};   // an own turn carries no Link pre-gain to apply
+    MeasuredContext c; c.isLink = false; c.outcome = MeasuredContext::Outcome::OwnEmpty;
+    return c;   // render() sources the own channel from chainHost/engine directly
+}
+
+// Ruling 1 apply: the SAME stored value the [CHAIN LEVELS] line printed, applied
+// to the chain - one computation (in measuredContextTargetLink), two consumers.
+void EchoJayEditor::applyPendingLinkPreGain()
+{
+    if (! pendingLinkPreGain_.valid) return;
+    // V2-ONLY PRE-GAIN TO THE LINK (16 Sep 2026). The pre-gain must reach the
+    // object in the AUDIO PATH - the LINK's OWN ChainHost pre-gain, the knob Sean
+    // sees - NOT the main plugin's ChainHost (that is this channel, not the
+    // Link's). The old body wrote processorRef.getChainHost().setPreGainDb, which
+    // never even ran on a Link build (this method sat only on the own-channel
+    // loadChainFromJson path) and would have been the wrong object if it had. The
+    // shipping Link already consumes a ctrl-cmd "preGainDb" into its own
+    // chainHost.setPreGainDb (LinkProcessor.cpp:76-84), so this is V2-only, no
+    // Link rebuild. RULING 1: the value sent is the ONE clamped number computed
+    // at compose (== the printed [CHAIN LEVELS] pre-gain), sent to the SAME uid
+    // the reading came from. Verify by READBACK of the Link rack sidecar preGainDb.
+    const juce::String uid = pendingLinkPreGain_.uid;
+    const float        db  = pendingLinkPreGain_.db;
+    pendingLinkPreGain_.valid = false;   // consumed - fire exactly once
+    if (uid.isEmpty()) { EchoJay_NSLog("EJPreGain: LINK pre-gain NOT sent - empty uid"); return; }
+
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) { EchoJay_NSLog("EJPreGain: LINK pre-gain NOT sent - shared Link folder unavailable"); return; }
+
+    int seq = LinkShm::nextCtrlSeq();
+    for (auto& pnd : linkCtrlPending_)
+        if (pnd.addr == uid && pnd.seq >= seq) seq = pnd.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",              1);
+    cmd->setProperty("seq",            seq);
+    cmd->setProperty("preGainDb",      db);
+    cmd->setProperty("preGainUserSet", false);   // a build pre-gain is AUTO, not hand-set
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();     // stale ack
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    EchoJay_NSLog(("EJPreGain: LINK build sent pre-gain " + juce::String(db, 2)
+                   + " dB via ctrl-cmd to uid " + uid + " (== stated; seq "
+                   + juce::String(seq) + "). Readback = the Link rack sidecar preGainDb.").toRawUTF8());
+}
+
+EchoJayEditor::MeasuredContext EchoJayEditor::measuredContextTargetLink(const juce::String& targetLinkUid)
+{
+    MeasuredContext c; c.isLink = true;
+    pendingLinkPreGain_ = {};                       // reset the pre-gain carry each compose
+    if (targetLinkUid.isEmpty()) { c.outcome = MeasuredContext::Outcome::NoTarget;
+        c.note = "\n\n[LINK TARGET UNRESOLVED - this build names no addressable Link; build a reasonable"
+                 " default and say plainly you could not read the target channel.]"; return c; }
+
+    processorRef.refreshLinkRegistry();
+    LinkMeterFrame f; juce::String name; int regIdx = -1; bool found = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == targetLinkUid) { name = e.displayName; regIdx = e.info.regIdx;
+            found = (regIdx >= 0 && processorRef.readLinkMeterFrame(regIdx, f)); break; }
+    juce::String label = channelDisplayLabel(targetLinkUid);
+    if (label.isEmpty() || label == targetLinkUid) label = name;
+    c.sourceLabel = label;
+
+    if (! found) { c.outcome = MeasuredContext::Outcome::NoTarget;
+        c.note = "\n\n[LINK NOT ADDRESSABLE - this build targets a Link not readable in the registry;"
+                 " build a reasonable default and tell the user to check the Link is running.]"; return c; }
+
+    // "STILL REPRESENTATIVE", not "still alive" (CATCH C, 15 Sep 2026). The old
+    // 5-min flow-recency cutoff answered "is this Link alive" - the wrong
+    // question here, and it fired on Sean's real workflow (play, listen, answer
+    // four brief questions, build) as a false "not heard recently". A latched
+    // reading stops representing the channel when the MATERIAL or the Link's own
+    // chain changes, and BOTH re-latch the instant audio flows again (the poll
+    // always keeps the most recent good frame), so they self-correct. A
+    // reassigned channel is a different instanceUid (re-minted on collision) and
+    // drops the latch. So a wall clock would only guard "heard a while ago,
+    // nothing since" - where the latched reading is STILL literally the last
+    // thing this channel sounded like. Session-scoped therefore (the latch is
+    // in-memory and dies with the instance / drop-on-disappear), with the age
+    // ALWAYS stated so the model weighs a 12-min reading as a 12-min reading.
+    // Lapse is reserved for NEVER heard while flowing this session - never for
+    // deliberating over the brief.
+    LinkMeterFrame g; juce::uint32 goodAgeMs = 0;
+    const bool haveGood  = processorRef.linkLastGoodFrame(targetLinkUid, g, goodAgeMs);
+    const bool liveCumOk = f.integrated > -70.0f;   // is the LIVE cumulative valid?
+    if (! haveGood)
+    {
+        // NO LATCH AT ALL is the only true "never heard" (CATCH E): a latch
+        // existing is PROOF audio flowed, so it can never coincide with this
+        // note. heardEver is gone as a Lapse condition - it now only chooses the
+        // cumulative source below.
+        c.outcome = MeasuredContext::Outcome::Lapse;
+        c.note = "\n\n[LINK NEVER HEARD - this build targets the Link \"" + label
+               + "\", but no audio has flowed through it this session, so there is no reading of its sound."
+                 " Build a reasonable default chain so the user is not blocked, and in ONE short sentence tell"
+                 " them plainly that you have not heard this channel and to play a few seconds through it and ask"
+                 " again for a chain tuned to how it actually sounds. Do NOT invent or describe its loudness,"
+                 " dynamics or tonal balance - you have no reading of it.]";
+        return c;
+    }
+
+    // MEASUREMENTS. The CUMULATIVE source is the live frame when its integrated
+    // is valid, else the LATCHED frame - which carries integrated/true peak/LRA
+    // too (CATCH E: a Link restart floors the live integrated while a valid latch
+    // is still held; taking cumulative from the live frame there would feed a
+    // clamped-nonsense pre-gain AND print a false "never heard"). Short-window
+    // fields always come from the latch g. Pre-gain follows the integrated
+    // ACTUALLY USED - one source per branch, and when that source is the latch it
+    // is coherent with the latched crest. The printed block states which frame.
+    const LinkMeterFrame& cum = liveCumOk ? f : g;
+    c.outcome = MeasuredContext::Outcome::Measurements;
+    c.measurementAgeMs = goodAgeMs;   // age of the WHILE-FLOWING measurement served (CATCH A)
+    // Ruling 1: the ONE clamped pre-gain, from the cumulative source's integrated,
+    // carried to BOTH the printed [CHAIN LEVELS] line and the applied gain
+    // (pendingLinkPreGain_). One computation, one source, one clamp.
+    const float pg = juce::jlimit(ChainHost::kPreGainMinDb, ChainHost::kPreGainMaxDb,
+                                  ChainHost::kPreGainTargetLufs - cum.integrated);
+    c.preGainValid = true; c.preGainDb = pg;
+    pendingLinkPreGain_ = { targetLinkUid, pg, true };
+
+    // [CHAIN LEVELS]: input/peak from the cumulative source; crest from the latch.
+    // When cumulative IS the latch (live invalid), all three are while-flowing and
+    // the renderer says so (cumulativeFromLatch).
+    EchoJayAPI::ChainLevelsData& d = c.levels;
+    d.inKnown = true; d.inLevelDb = cum.integrated; d.inPeakDb = cum.truePeakMax; d.inCrestDb = g.crest;
+    d.havePercentiles = false; d.haveOutput = false;
+    d.cumulativeFromLatch = ! liveCumOk;
+    d.preGainDb = pg; d.sourceLabel = label; d.measurementAgeMs = c.measurementAgeMs;
+
+    // [METER SNAPSHOT]: LRA/PLR from the cumulative source; momentary/shortTerm/
+    // correlation/width/PSR/macro bands from the latch g.
+    if (g.momentary  > -70.0f) { c.haveMom   = true; c.mom       = g.momentary;  }
+    if (g.shortTerm  > -70.0f) { c.haveShort = true; c.shortTerm = g.shortTerm;  }
+    c.haveCorr = true;  c.corr  = g.correlation;
+    c.haveWidth = true; c.width = g.width;
+    if (cum.lra > 0.0f)        { c.haveLra   = true; c.lra       = cum.lra;      }
+    if (g.shortTermTP > -90.0f && g.shortTerm > -70.0f) { c.havePsr = true; c.psr = g.shortTermTP - g.shortTerm; }
+    if (cum.truePeakMax > -90.0f && cum.integrated > -70.0f) { c.havePlr = true; c.plr = cum.truePeakMax - cum.integrated; }
+    bool anyBand = false;
+    for (int i = 0; i < 6; ++i) { c.bandRel[i] = g.bandRel[i]; if (std::abs(g.bandRel[i]) > 0.01f) anyBand = true; }
+    c.haveBands = anyBand;
+    return c;
+}
+
+juce::String EchoJayEditor::renderMeasuredContext(const MeasuredContext& ctx, juce::StringArray* meterFieldsOut)
+{
+    if (! ctx.isLink)
+    {
+        // OWN CHANNEL: the existing emission, verbatim - [CHAIN LEVELS] + [MOVE LOG]
+        // + [METER SNAPSHOT], through the same shared renderers. Byte-identical to
+        // the pre-change output; the acceptance byte-diff is the guard.
+        auto& chainHost = processorRef.getChainHost();
+        const bool useMean = processorRef.spectrumUsesAverage();
+        juce::String out;
+        out += EchoJayAPI::buildChainLevelsInjection(chainHost);
+        out += EchoJayAPI::buildMoveLogInjection(chainHost);
+        out += EchoJayAPI::buildMeterSnapshotInjection(
+                   processorRef.getMeterEngine().getMeterDataJSON(),
+                   processorRef.getMeterEngine().reduceSpectrumWindow(useMean),
+                   processorRef.getMeterEngine().reduceMacroWindow(useMean),
+                   useMean, meterFieldsOut);
+        return out;
+    }
+
+    // LINK target. Lapse / NoTarget carry a visible note and NO values, so the
+    // empty-branch DATA AVAILABILITY note fires (meterFieldsOut stays empty).
+    if (ctx.outcome != MeasuredContext::Outcome::Measurements)
+        return ctx.note;
+
+    // Measurements: the shared [CHAIN LEVELS] renderer (frame-derived, pre-gain
+    // stated) + a [METER SNAPSHOT v2] in the SAME marker + key format the own
+    // channel uses, so the server parses both identically.
+    juce::String out = EchoJayAPI::buildChainLevelsInjectionCore(ctx.levels);
+
+    juce::StringArray json, prose;
+    auto emit = [&](const char* key, const char* label, float v, bool cond, int dp)
+    {
+        if (! cond) return;
+        json.add(juce::String("\"") + key + "\":" + juce::String(v, dp));
+        prose.add(juce::String(label) + " " + juce::String(v, dp));
+        if (meterFieldsOut != nullptr) meterFieldsOut->add(label);
+    };
+    // The full loudness suite the frame carries. integrated/true peak/crest ride
+    // in [CHAIN LEVELS]; these ride here. Only fine spectrum / oversCount /
+    // bandCrest are the agreed gaps and are omitted (absent = unavailable).
+    emit("mom",   "momentary",   ctx.mom,       ctx.haveMom,   1);
+    emit("st",    "short-term",  ctx.shortTerm, ctx.haveShort, 1);
+    emit("corr",  "correlation", ctx.corr,      ctx.haveCorr,  2);
+    emit("width", "width",       ctx.width,     ctx.haveWidth, 2);
+    emit("lra",   "LRA",         ctx.lra,       ctx.haveLra,   1);
+    emit("psr", "PSR", ctx.psr, ctx.havePsr, 1);
+    emit("plr", "PLR", ctx.plr, ctx.havePlr, 1);
+    juce::String mbProse;
+    if (ctx.haveBands)
+    {
+        static const char* mbN[6] = { "sub", "low", "lowMid", "mid", "highMid", "air" };
+        juce::String mbJson;
+        for (int i = 0; i < 6; ++i)
+        {
+            if (i) { mbJson << ","; mbProse << ", "; }
+            mbJson  << "\"" << mbN[i] << "\":{\"db\":" << juce::String(ctx.bandRel[i], 1)
+                    << ",\"rel\":" << juce::String(ctx.bandRel[i], 1) << "}";
+            mbProse << mbN[i] << " " << (ctx.bandRel[i] >= 0 ? "+" : "") << juce::String(ctx.bandRel[i], 1);
+        }
+        json.add("\"macroBands\":{" + mbJson + "}");
+        if (meterFieldsOut != nullptr) meterFieldsOut->add("macro bands");
+    }
+    if (! json.isEmpty())
+    {
+        // ONE AGE, ONE DESCRIPTION (item 4). The short-window figures here come
+        // from the SAME latch, at the SAME age, as the levels block's crest, so
+        // both blocks describe one measurement with one provenance. The age is
+        // ctx.measurementAgeMs, formatted exactly as the levels block. The note
+        // claims ONLY provenance - never a field that was not emitted; the old
+        // line asserting "macro-band balance available from a Link" even when the
+        // bands were omitted (the latch had none) is gone.
+        const juce::uint32 a = ctx.measurementAgeMs;
+        const juce::String age = a < 5000u ? juce::String("moments ago")
+            : "about " + (a < 90000u ? juce::String((a + 500u) / 1000u) + " s"
+                                     : juce::String((a + 30000u) / 60000u) + " min") + " ago";
+        out << "\n\n[METER SNAPSHOT v2: {" << json.joinIntoString(",") << "}"
+            << " - measured on the Link \"" << ctx.sourceLabel << "\": " << prose.joinIntoString(", ");
+        if (mbProse.isNotEmpty())
+            out << ". Macro-band tonal balance, dB relative to the six-band mean: " << mbProse;
+        if (ctx.levels.cumulativeFromLatch)
+            out << ". All figures above are from the while-flowing window (measured " << age
+                << "); the Link's live meters have since reset";
+        else
+            out << ". The figures above are from the while-flowing window (measured " << age
+                << "), except LRA and PLR, which are overall since playback";
+        out << ". The fine per-bin spectrum is not available from a Link, so it is omitted.]";
+    }
+    return out;
+}
+
+juce::String EchoJayEditor::buildTargetLinkMeterSnapshot(const juce::String& targetLinkUid,
+                                                         juce::StringArray* emittedKeysOut)
+{
+    if (targetLinkUid.isEmpty()) return {};
+    processorRef.refreshLinkRegistry();
+
+    // Resolve the target Link and read its frame — the same accessor path
+    // buildLinkLevelsContext and the [DETECTED KEY] source list already use.
+    LinkMeterFrame f;
+    juce::String name;
+    bool found = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+    {
+        const auto& li = e.info;
+        if (li.uid != targetLinkUid) continue;
+        name  = e.displayName;
+        found = (li.regIdx >= 0 && processorRef.readLinkMeterFrame(li.regIdx, f));
+        break;
+    }
+    // RECENCY GATE (11 Sep 2026, superseding the first-cut audioStale==0 test).
+    // readMeterFrame is seqlock-consistent but NOT fresh: a stopped or idle Link
+    // returns its last frozen frame with seq settled, and a just-claimed slot
+    // returns a -100/0 blank. Emitting either would invite the model to cite a
+    // frozen or zeroed reading with live confidence. But gating on audioStale==0
+    // (audio flowing THIS INSTANT) was too strict and asymmetric: the own channel
+    // answers on "something played this session" (specFrameCount>0), so play/stop/
+    // ask gave measurements on the main and none on the Link. So the gate is a
+    // bounded RECENCY WINDOW instead: the block emits when the Link passed audio
+    // within kLinkMeterRecencyMs, and the prose states how long ago rather than
+    // implying live flow. audioStale is ~1s and cannot express "45s ago", and the
+    // frame carries no timestamp (Link unchanged), so recency is tracked client-
+    // side: the processor's 1 Hz timer stamps linkLastFlowingMs(uid) whenever it
+    // samples audioStale==0. Hard reject remains for stopped-for-minutes, idle,
+    // blank and never-published (flowMs==0); a lapse is not silent - it emits a
+    // visible prompt-to-play note (below) rather than a generic chain.
+    // N = 5 minutes. 60s did not survive real use (play a section, stop, talk to
+    // camera, reframe, then build routinely exceeds a minute). A mix's loudness
+    // and macro-band profile are stable across a few minutes; what the window
+    // genuinely guards against is citing a DIFFERENT song/session, which 5 min
+    // bounds fine. The block states the age honestly regardless.
+    static constexpr juce::uint32 kLinkMeterRecencyMs = 300000;
+    const juce::uint32 nowMs  = juce::Time::getMillisecondCounter();
+    const juce::uint32 flowMs = processorRef.linkLastFlowingMs(targetLinkUid);
+    const bool recent = (flowMs != 0) && (nowMs - flowMs) <= kLinkMeterRecencyMs;
+    const bool fresh  = recent && f.integrated > -70.0f;
+
+    if (! found) return {};   // target Link not addressable; the own-channel note stands
+
+    juce::String label = channelDisplayLabel(targetLinkUid);
+    if (label.isEmpty() || label == targetLinkUid) label = name;
+
+    // Human age, seconds under 90s then minutes, so a 5-minute window never
+    // prints a four-digit second count.
+    auto ageText = [] (juce::uint32 ms) -> juce::String
+    {
+        return ms < 90000u ? juce::String((ms + 500u)  / 1000u)  + " s"
+                           : juce::String((ms + 30000u) / 60000u) + " min";
+    };
+
+    // LAPSE / never-heard: the failure must be VISIBLE to the user, not silent.
+    // No values to cite (meterFieldsOut stays empty, so the empty-branch DATA
+    // AVAILABILITY note fires), and this tells the model to build a default AND
+    // to say plainly that the channel hasn't been heard and to play + ask again.
+    // A silent generic chain is exactly the degradation that cost a day.
+    if (! fresh)
+    {
+        const juce::String when = (flowMs == 0)
+            ? juce::String("no audio has passed through it this session")
+            : "the last audio through it was about " + ageText (nowMs - flowMs) + " ago";
+        return "\n\n[LINK NOT HEARD RECENTLY - this build targets the Link \"" + label
+             + "\", but " + when + ", so there is no current reading of its sound. Build a"
+               " reasonable default chain so the user is not blocked, and in ONE short sentence"
+               " tell them plainly that you have not heard this channel recently and to play a few"
+               " seconds through it and ask again for a chain tuned to how it actually sounds. Do"
+               " NOT invent or describe its loudness, dynamics or tonal balance - you have no"
+               " reading of it.]";
+    }
+    const juce::uint32 ageMs = nowMs - flowMs;
+
+    // Fresh above, so every field is a real reading; the per-field sentinel
+    // guards still exclude an individual value that never resolved.
+    const bool flowing = true;
+    auto f1 = [](float v) { return juce::String(v, 1); };
+
+    juce::StringArray json;    // machine keys, exactly as parseExtendedMeter reads them
+    juce::StringArray prose;   // the same values in words, for the model to cite
+    auto emit = [&](const char* key, const char* label, float v, bool cond, int dp)
+    {
+        if (! cond) return;
+        json.add(juce::String("\"") + key + "\":" + juce::String(v, dp));
+        prose.add(juce::String(label) + " " + juce::String(v, dp));
+        if (emittedKeysOut != nullptr) emittedKeysOut->add(label);
+    };
+
+    emit("integ",    "integrated",  f.integrated,   f.integrated  > -70.0f, 1);
+    emit("st",       "short-term",  f.shortTerm,    flowing && f.shortTerm > -70.0f, 1);
+    emit("mom",      "momentary",   f.momentary,    flowing && f.momentary > -70.0f, 1);
+    emit("truePeak", "true peak",   f.truePeakMax,  f.truePeakMax > -90.0f, 1);
+    emit("crest",    "crest",       f.crest,        flowing && f.crest > 0.0f, 1);
+    emit("corr",     "correlation", f.correlation,  flowing, 2);
+    emit("width",    "width",       f.width,        flowing, 2);
+    emit("lra",      "LRA",         f.lra,          f.lra > 0.0f, 1);
+    if (flowing && f.shortTermTP > -90.0f && f.shortTerm > -70.0f)
+        emit("psr", "PSR", f.shortTermTP - f.shortTerm, true, 1);
+    if (f.truePeakMax > -90.0f && f.integrated > -70.0f)
+        emit("plr", "PLR", f.truePeakMax - f.integrated, true, 1);
+
+    // Macro-band tonal balance: the frame publishes bandRel[6] = dB relative to
+    // the six-band mean (LinkShm.h). Emitted in the server's macroBands shape
+    // so the six bands land like the own channel's. A Link does NOT publish
+    // absolute per-band level, so "db" mirrors "rel" and both are stated as
+    // rel-to-mean in the prose — the value the balance decisions actually use.
+    juce::String mbProse;
+    if (flowing)
+    {
+        bool any = false;
+        for (int i = 0; i < 6; ++i) if (std::abs(f.bandRel[i]) > 0.01f) any = true;
+        if (any)
+        {
+            static const char* mbN[6] = { "sub", "low", "lowMid", "mid", "highMid", "air" };
+            juce::String mbJson;
+            for (int i = 0; i < 6; ++i)
+            {
+                if (i) { mbJson << ","; mbProse << ", "; }
+                mbJson  << "\"" << mbN[i] << "\":{\"db\":" << f1(f.bandRel[i])
+                        << ",\"rel\":" << f1(f.bandRel[i]) << "}";
+                mbProse << mbN[i] << " " << (f.bandRel[i] >= 0 ? "+" : "") << f1(f.bandRel[i]);
+            }
+            json.add("\"macroBands\":{" + mbJson + "}");
+            if (emittedKeysOut != nullptr) emittedKeysOut->add("macro bands");
+        }
+    }
+
+    if (json.isEmpty()) return {};   // nothing cleared its guard after all
+
+    // (label resolved above, before the lapse branch)
+    // Prefix kept BYTE-IDENTICAL to the own-channel marker ("[METER SNAPSHOT
+    // v2: ") — it is what parseExtendedMeter scans past and what
+    // containsCaptureMarkers was proven safe against; the attribution is added
+    // after the JSON, not in the prefix.
+    // Honest recency, never "live": the window admits readings up to 5 minutes
+    // old, so the block SAYS how old rather than implying flow this instant.
+    const juce::String agePhrase = ageMs < 5000
+        ? juce::String("measured moments ago")
+        : "measured about " + ageText (ageMs) + " ago";
+
+    juce::String out;
+    out << "\n\n[METER SNAPSHOT v2: {" << json.joinIntoString(",") << "}"
+        << " - measured on the Link \"" << label << "\" (its OWN channel, another"
+           " track in the session), " << agePhrase << ": " << prose.joinIntoString(", ");
+    if (mbProse.isNotEmpty())
+        out << ". Macro-band tonal balance, dB relative to the six-band mean: " << mbProse;
+    out << ". These are the Link's real measurements of that channel - build the chain"
+           " from them, do not defer. Loudness and macro-band balance ARE available from a"
+           " Link; the fine per-bin spectrum is not, so none is included and you must not"
+           " assume one.]";
+    return out;
+}
+
 juce::String EchoJayEditor::buildLinkLevelsContext()
 {
     processorRef.refreshLinkRegistry();
@@ -30733,6 +31129,13 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                 // operating level, unless the user set it by hand. known ==
                 // false leaves it unset (visible). Fired once here, at build
                 // complete; the CHAIN LEVELS line then carries what it did.
+                // OWN CHANNEL ONLY (16 Sep 2026): loadChainFromJson is the LOCAL
+                // rack build, so compute the pre-gain from THIS plugin's own input
+                // tally, as before. A Link build never reaches here - it routes to
+                // sendChainToLink - and its pre-gain goes to the Link's OWN rack
+                // via ctrl-cmd at the build site, NEVER written to THIS ChainHost.
+                // (The old applyPendingLinkPreGain fallback here wrote the wrong
+                // object and is removed; pendingLinkPreGain_ is false on own builds.)
                 ch3.computePreGainAtBuild();
                 // 1d: stage row down, result bubble up. Model "result" text
                 // only on a clean full build; otherwise compose factually.

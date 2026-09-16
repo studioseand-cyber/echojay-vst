@@ -794,7 +794,25 @@ public:
     //     cache breakpoint by construction (it varies per turn).
     static juce::String formatHeard(float seconds);
     static juce::String formatSlotLevelNote(const ChainHost& chainHost, int slot);
-    static juce::String buildChainLevelsInjection(const ChainHost& chainHost);
+    // Normalized levels for the ONE [CHAIN LEVELS] renderer, filled from either
+    // source (own channel or a target Link). A Link supplies input LUFS / peak /
+    // crest and a computed pre-gain, but NOT p10/p90 or a post-chain output, so
+    // those are flagged absent and named as absent rather than faked.
+    struct ChainLevelsData
+    {
+        bool  inKnown = false;
+        float inLevelDb = 0.0f, inP10 = 0.0f, inP90 = 0.0f, inPeakDb = 0.0f, inCrestDb = 0.0f;
+        float inHeardS = 0.0f, inWindowS = 0.0f;
+        float preGainDb = 0.0f;
+        bool  outKnown = false; float outLevelDb = 0.0f; int numSlots = 0;
+        bool  havePercentiles = true;   // false for a Link (p10/p90 not published)
+        bool  haveOutput      = true;   // false for a Link (post-chain not measured)
+        bool  cumulativeFromLatch = false;  // Link, CATCH E: live cumulative was invalid (e.g. Link restart), so input/peak also come from the latched while-flowing frame - the block then says all three numbers are while-flowing, not overall
+        juce::String sourceLabel;       // "" own channel; the Link name for a target
+        juce::uint32 measurementAgeMs = 0;  // age of the MEASUREMENT that produced the printed numbers (the last-good latched frame), NOT the age of the read; 0 = own/session-scoped
+    };
+    static juce::String buildChainLevelsInjection(const ChainHost& chainHost);      // own-channel wrapper
+    static juce::String buildChainLevelsInjectionCore(const ChainLevelsData& d);    // the one renderer
     //   buildMeterSnapshotInjection: the "[METER SNAPSHOT v2: ...]" marker
     //     carrying psr / plr / oversCount / macroBands / bandCrest on a CHAIN
     //     turn. Takes meterDataToJSON's output and copies the present keys

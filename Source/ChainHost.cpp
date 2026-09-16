@@ -190,6 +190,15 @@ static juce::String sessionLoadKey(const juce::String& name, const juce::String&
 // matching, the feed reverts to full by deleting one file.
 static juce::File feedSplitFlagFile() { return appSupportDir().getChildFile("feed_split_on.txt"); }
 
+// EXPERIMENT (16 Sep 2026): the NO-REUSE kill switch for the rack-switch AU crash.
+// ABSENT (default) => normal instance reuse via the borrow/park pools. PRESENT
+// (touch ~/Library/EchoJay/no_reuse) => every plan/borrow attach instantiates a
+// FRESH instance and DESTROYS parked ones, exactly as Pro Tools does on a normal
+// insert (which never crashes these AUs). Read fresh at each rack switch (message
+// thread, cheap) so it can be A/B'd on ONE binary without a restart. If no-reuse
+// stops the crash, reuse is the cause; if it still crashes, reuse is eliminated.
+static bool noReuseActive() { return appSupportDir().getChildFile("no_reuse").existsAsFile(); }
+
 static juce::File popoutOnlyFile() { return appSupportDir().getChildFile("popout_only.txt"); }
 static juce::StringArray& popoutOnlyCache() { static juce::StringArray c; return c; }
 static juce::Time& popoutOnlyLoadTime()     { static juce::Time t;        return t; }
@@ -3689,7 +3698,17 @@ void ChainHost::logDialSummary(const juce::String& reason) const
                        + "  readbackMiss=" + juce::String(s.dialReadbackMiss.size())
                        + "  status=" + statusName(s.dialStatus)
                        + "  fp=" + (s.fp.isEmpty() ? juce::String("(none)") : s.fp.substring(0, 12))
-                       + "  map=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")).toRawUTF8());
+                       // HONEST LABEL (16 Sep 2026): the old "map=" read the LOCAL
+                       // param_maps cache, but its y/n was read as "is this plugin
+                       // dialable" - it is not (Black Box read map=n locally while
+                       // the server returned mapped_versions). Say what each is:
+                       // localMap = is the fetched map cached HERE; serverDialable =
+                       // does the server's dialable set (this scan's lookup) list it.
+                       + "  localMap=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")
+                       + "  serverDialable=" + (existenceDialable_.empty()
+                             ? juce::String("?(no lookup this scan)")
+                             : (existenceDialable_.count(echojay::identityKeyForDescription(s.desc)) > 0
+                                    ? juce::String("y") : juce::String("n")))).toRawUTF8());
     }
     // The headline, so the common question is answered without reading rows.
     EchoJay_NSLog(("EJDialSummary: " + juce::String(dialled) + "/"
@@ -4514,9 +4533,30 @@ void ChainHost::releaseBorrowToPool()
         // Park IN the graph, disconnected (rebuildGraph below only wires
         // slots_) and SUSPENDED — the graph skips suspended nodes, so a
         // parked rack costs one flag check per node per block, not audio.
-        if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
-        borrowPool_[borrowPoolKey(s.desc)].push_back({ s.node, s.desc });
-        ++borrowPoolTotal_;
+        // CRASH FIX (16 Sep 2026): RELEASE ON PARK. suspendProcessing alone
+        // leaves the AU initialised; JUCE's applySettings then skips
+        // re-preparing it on reuse (a parked node keeps its nodeID in the
+        // graph's preparedNodes), so a later reseed reconfigures an AU whose
+        // render resources were never rebuilt for the new state -> the
+        // deterministic render crash. releaseResources() uninitialises it; the
+        // reattach reseeds while detached and re-prepares.
+        // Park IN the graph, suspended + RELEASED (uninitialised). Its nodeID
+        // stays in the graph's preparedNodes, so applySettings skips it while
+        // parked (inert, never prepared early); the reattach re-prepares it
+        // once, after the seed. (JUCE's Node::processor is private, so a parked
+        // node cannot be lifted out of the graph — only a FRESH-staged instance,
+        // which never enters the graph until attach, gets the pure spec path.)
+        if (auto* p = s.node->getProcessor()) { p->suspendProcessing(true); p->releaseResources(); }
+        if (noReuseActive())
+        {
+            graph_->removeNode(s.node->nodeID);   // NO-REUSE experiment: destroy
+            EchoJay_NSLog(("EJNoReuse: destroyed \"" + s.desc.name + "\" on release (flag on)").toRawUTF8());
+        }
+        else
+        {
+            borrowPool_[borrowPoolKey(s.desc)].push_back({ nullptr, s.node, s.desc, {} });
+            ++borrowPoolTotal_;
+        }
         // The wet-blend node is OURS — destroy for real, as removeSlot does.
         if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
     }
@@ -4611,11 +4651,21 @@ void ChainHost::parkSlotReattachable(int i)
     detachHostedListener(i);
     if (s.node != nullptr)
     {
-        if (auto* p = s.node->getProcessor()) p->suspendProcessing(true);
-        planPark_[planKeyOf({ s.desc.name,
-                              descUid(s.desc) != 0 ? juce::String(descUid(s.desc))
-                                                   : juce::String(), s.fp })]
-            .push_back({ s.node, s.desc });
+        // CRASH FIX (16 Sep 2026): RELEASE ON PARK (see releaseBorrowToPool) —
+        // a reused node is otherwise never re-prepared for its reseeded state.
+        // Park IN the graph, suspended + RELEASED (see releaseBorrowToPool):
+        // inert while parked, re-prepared once at reattach after the seed.
+        if (auto* p = s.node->getProcessor()) { p->suspendProcessing(true); p->releaseResources(); }
+        if (noReuseActive())
+        {
+            graph_->removeNode(s.node->nodeID);   // NO-REUSE experiment: destroy
+            EchoJay_NSLog(("EJNoReuse: destroyed \"" + s.desc.name + "\" on park (flag on)").toRawUTF8());
+        }
+        else
+            planPark_[planKeyOf({ s.desc.name,
+                                  descUid(s.desc) != 0 ? juce::String(descUid(s.desc))
+                                                       : juce::String(), s.fp })]
+                .push_back({ nullptr, s.node, s.desc, {} });
     }
     if (s.blendNode) graph_->removeNode(s.blendNode->nodeID);
     slots_.erase(slots_.begin() + i);
@@ -4628,7 +4678,10 @@ void ChainHost::parkSlotReattachable(int i)
     }
 }
 
-bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt)
+bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt,
+                                  const juce::String& seedB64,
+                                  const juce::String& seedFormat,
+                                  juce::String* seedRefusedWhy)
 {
     GraphMutation graphMutation(*this);   // v9 change B
     const auto key = planKeyOf({ d.name,
@@ -4638,14 +4691,55 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
     if (it == planPark_.end() || it->second.empty()) return false;
     BorrowPoolEntry entry = std::move(it->second.back());
     it->second.pop_back();
-    if (auto* p = entry.node->getProcessor())
-    {
-        p->suspendProcessing(false);
-        p->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
-    }
+    if (entry.proc == nullptr && entry.node == nullptr) return false;
+    // BUILD-PATH-IS-THE-SPEC (16 Sep 2026).
+    // FRESH-staged (entry.proc — the plan Create, the crash path): completeLoad's
+    // exact sequence — one seed on the DETACHED processor, one addNode under
+    // this GraphMutation, the slot in the lease's target state, ONE prepare by
+    // the graph (addNode into a prepared graph prepares the new node exactly
+    // once; the rebuild below finds it already prepared). No suspend, no
+    // setPlayConfigDetails, no direct prepareToPlay. Nothing can initialise the
+    // AU before it carries its state.
+    // PARKED (entry.node — a removed slot re-created; reuse, eliminated as the
+    // crash cause): it stayed in the graph suspended + released and the graph
+    // will skip it; seed it detached, then ONE direct prepare, then wire.
     ChainSlot slot;
-    slot.node = std::move(entry.node);
     slot.desc = entry.desc;
+    juce::AudioProcessor* target = entry.proc != nullptr ? entry.proc.get() : entry.node->getProcessor();
+    if (entry.node != nullptr && target != nullptr) target->suspendProcessing(false);
+    if (seedB64.isNotEmpty())
+    {
+        const auto stagedFmt = slot.desc.pluginFormatName;
+        if (seedFormat.isNotEmpty() && seedFormat != stagedFmt)
+        {
+            // §5c ACROSS FORMATS: a substitute build's blob must never seed
+            // a different format's build — defaults, said out loud.
+            addStateNote(slot.desc.name + " was added WITHOUT its settings "
+                "(running at defaults): they came from a " + seedFormat
+                + " build and this rack loads the " + stagedFmt + " build - "
+                "settings do not travel across formats");
+            EchoJay_NSLog(("EJPlan: Create \"" + slot.desc.name
+                + "\" seeded at DEFAULTS - state format " + seedFormat
+                + " != staged " + stagedFmt).toRawUTF8());
+        }
+        else
+        {
+            juce::MemoryBlock mb;
+            if (LinkShm::stateFromB64(seedB64, mb) && mb.getSize() > 0)
+            {
+                try { if (target != nullptr) target->setStateInformation(mb.getData(), (int) mb.getSize()); }
+                catch (...) { if (seedRefusedWhy) *seedRefusedWhy = slot.desc.name + " refused its seed"; }
+            }
+        }
+    }
+    if (entry.proc != nullptr)
+        slot.node = graph_->addNode(std::move(entry.proc));   // FRESH: the ONE addNode; the graph prepares it ONCE
+    else
+    {
+        slot.node = std::move(entry.node);                    // PARKED: already in the graph (released, skipped by applySettings)
+        if (prepared_ && target != nullptr) target->prepareToPlay(sampleRate_, blockSize_);   // ONE prepare, after the seed
+    }
+    if (slot.node == nullptr) return false;
     // The stored desc is the REQUEST; the INSTANCE knows its true identity.
     // Backfill what the request lacked — restore paths request by name+uid
     // with a blank manufacturer, fresh adds carry the full catalogue desc —
@@ -4653,12 +4747,15 @@ bool ChainHost::tryReattachParked(const juce::PluginDescription& d, int insertAt
     // sees the same truth regardless of arrival path (2 Sep 2026: a
     // restored Waves slot reached the placement with mfr="" and embedded
     // blank while an added one floated).
-    if (slot.desc.manufacturerName.isEmpty() && slot.node != nullptr)
+    if (slot.desc.manufacturerName.isEmpty())
         if (auto* pi = dynamic_cast<juce::AudioPluginInstance*>(slot.node->getProcessor()))
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
                    + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
-    slot.bypassed = false;
+    // v9 contract, exactly as completeLoad: arrive in the lease's TARGET state
+    // under this same lock — never live-then-rebypassed, no lock-free window.
+    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);
+    slot.intendedBypassed = false;
     insertAt = juce::jlimit(0, (int) slots_.size(), insertAt);
     slots_.insert(slots_.begin() + insertAt, std::move(slot));
     bumpChainRevision();
@@ -4685,9 +4782,11 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
         : planKeyOf({ d.name,
                       descUid(d) != 0 ? juce::String(descUid(d))
                                       : juce::String(), {} });
-    if (auto it = planPark_.find(key); it != planPark_.end()
-        && (int) it->second.size() > alreadyClaimed)
-        return true;
+    // NO-REUSE experiment: ignore any parked instance and stage a FRESH one.
+    if (! noReuseActive())
+        if (auto it = planPark_.find(key); it != planPark_.end()
+            && (int) it->second.size() > alreadyClaimed)
+            return true;
     if (d.fileOrIdentifier.isNotEmpty() && isBlacklisted(d.fileOrIdentifier))
     { whyNot = d.name + " is on this machine's crash skip list"; return false; }
 
@@ -4814,11 +4913,14 @@ bool ChainHost::planStageOne(const juce::PluginDescription& d, juce::String& why
         staged = resolved;
         proc = std::move(inst);
     }
-    proc->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
-    proc->suspendProcessing(true);                    // detached: parked, silent
-    auto node = graph_ ? graph_->addNode(std::move(proc)) : nullptr;
-    if (node == nullptr) { whyNot = d.name + " could not join the graph"; return false; }
-    planPark_[key].push_back({ node, staged });
+    // BUILD-PATH-IS-THE-SPEC (16 Sep 2026): STAGE OUTSIDE THE GRAPH. The
+    // instance is held here as a bare processor and NOT addNode'd, so no graph
+    // prepare — a Remove op's, or addNode's own topology rebuild — can
+    // initialise it early, suspended and unseeded. No setPlayConfigDetails and
+    // no suspend: completeLoad does neither. It joins the graph once, at
+    // attach, already carrying its seed.
+    if (! graph_) { whyNot = d.name + " could not join the graph"; return false; }
+    planPark_[key].push_back({ std::move(proc), nullptr, staged, {} });
     ++planFresh_;
     return true;
 }
@@ -4834,7 +4936,11 @@ void ChainHost::planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages
         juce::PluginDescription d;
         d.name = pre.shape[(size_t) i].name;
         d.uniqueId = pre.shape[(size_t) i].uid.getIntValue();
-        if (! tryReattachParked(d, i))
+        // CRASH FIX (16 Sep 2026): the pre-image reseed rides the reattach so
+        // it lands WHILE DETACHED and before the node's prepare — no separate
+        // post-prepare setStateInformation on a live node.
+        const auto& b64 = pre.states[i];
+        if (! tryReattachParked(d, i, b64))
         {
             // Not parked — the LAUNCH restore path: after a crash nothing
             // is parked, so the restore instantiates from identity and
@@ -4843,7 +4949,7 @@ void ChainHost::planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages
             juce::String why;
             juce::PluginDescription rd = resolveByName(d.name, {});
             if (rd.name.isEmpty()) rd = d;
-            if (! planStageOne(rd, why) || ! tryReattachParked(rd, i))
+            if (! planStageOne(rd, why) || ! tryReattachParked(rd, i, b64))
             {
                 addStateNote(d.name + ": could not be restored after the "
                              "interrupted restructure ("
@@ -4854,15 +4960,6 @@ void ChainHost::planRestoreFromPreImages(const LinkShm::StructureEdit::PreImages
                 continue;
             }
         }
-        const auto& b64 = pre.states[i];
-        if (b64.isNotEmpty() && i < (int) slots_.size())
-            if (auto* p = getSlotProcessor(i))
-            {
-                juce::MemoryBlock mb;
-                if (LinkShm::stateFromB64(b64, mb) && mb.getSize() > 0)
-                { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
-                  catch (...) {} }
-            }
     }
 }
 
@@ -4953,8 +5050,14 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 juce::PluginDescription d;
                 d.name = op.identity.name;
                 d.uniqueId = op.identity.uid.getIntValue();
-                if (! tryReattachParked(d, op.to))
+                // CRASH FIX (16 Sep 2026): the seed now happens INSIDE
+                // tryReattachParked, WHILE THE NODE IS DETACHED and before its
+                // prepare — the §5c across-formats honesty and the seed-refusal
+                // report travel with it (seedRefusedWhy). No post-prepare seed.
+                juce::String seedWhy;
+                if (! tryReattachParked(d, op.to, op.stateB64, op.stateFormat, &seedWhy))
                 { ok = false; why = "staged instance vanished"; break; }
+                if (seedWhy.isNotEmpty()) { ok = false; why = seedWhy; break; }
                 originSim.insert(originSim.begin()
                                      + juce::jmin(op.to, (int) originSim.size()),
                                  -1);
@@ -4963,37 +5066,6 @@ ChainHost::PlanResult ChainHost::applyStructurePlan(
                 // reads it into the remapped priors, then re-bypasses.
                 setSlotBypassed(juce::jmin(op.to, (int) slots_.size() - 1),
                                 op.bypassed);
-                if (op.stateB64.isNotEmpty())
-                {
-                    const int at = juce::jmin(op.to, (int) slots_.size() - 1);
-                    // §5c ACROSS FORMATS (24 Aug 2026): plugin state is
-                    // format-specific, and the main may have hosted a
-                    // SUBSTITUTE build — its blob must never seed a
-                    // different format's build here. Mismatch = the slot
-                    // arrives at DEFAULTS and SAYS so, in the withheld
-                    // voice; only a matching (or unstated) format seeds.
-                    const auto stagedFmt = getSlotInfo(at).format;
-                    if (op.stateFormat.isNotEmpty()
-                        && op.stateFormat != stagedFmt)
-                    {
-                        addStateNote(op.name + " was added WITHOUT its "
-                            "settings (running at defaults): they came from "
-                            "a " + op.stateFormat + " build and this rack "
-                            "loads the " + stagedFmt + " build - settings "
-                            "do not travel across formats");
-                        EchoJay_NSLog(("EJPlan: Create \"" + op.name
-                            + "\" seeded at DEFAULTS - state format "
-                            + op.stateFormat + " != staged " + stagedFmt)
-                            .toRawUTF8());
-                    }
-                    else if (auto* p = getSlotProcessor(at))
-                    {
-                        juce::MemoryBlock mb;
-                        if (LinkShm::stateFromB64(op.stateB64, mb) && mb.getSize() > 0)
-                        { try { p->setStateInformation(mb.getData(), (int) mb.getSize()); }
-                          catch (...) { ok = false; why = op.name + " refused its seed"; } }
-                    }
-                }
                 break;
             }
             case OpType::Commit:
@@ -5070,6 +5142,7 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
 {
     GraphMutation graphMutation(*this);   // v9 change B
     if (mode_ != Mode::Borrowed) return false;
+    if (noReuseActive()) { EchoJay_NSLog("EJNoReuse: borrow reuse SKIPPED (flag on) - instantiating fresh"); return false; }
     const auto key = borrowPoolKey(canonicalDesc);
     if (borrowPoolIneligible_.contains(key)) return false;   // fresh, by verdict
     auto it = borrowPool_.find(key);
@@ -5078,13 +5151,15 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
     BorrowPoolEntry entry = std::move(it->second.back());
     it->second.pop_back();
     --borrowPoolTotal_;
+    if (entry.node == nullptr) return false;   // the borrow pool only ever holds PARKED (in-graph) nodes
     // RESET BEFORE SEEDING (22 Aug 2026): the parked instance still holds
     // the PREVIOUS borrow's settings, and a failed seed on top of those
     // would leave another channel's sound wearing this rack's name — worse
     // than defaults, because it sounds like a working chain. Reseed the
     // pristine default captured at fresh instantiation; an instance with no
     // default, or one that refuses it, is RETIRED (kept alive, never
-    // reused) and the caller instantiates fresh.
+    // reused) and the caller instantiates fresh. The reset lands while the
+    // node is still parked: suspended, released, not in slots_ — detached.
     {
         auto* p = entry.node->getProcessor();
         auto dIt = p != nullptr
@@ -5103,7 +5178,7 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
             EchoJay_NSLog(("EJBorrowPool: \"" + canonicalDesc.name + "\" could "
                            "not be reset to defaults - retired from the pool, "
                            "instantiating fresh").toRawUTF8());
-            borrowPoolRetired_.push_back(std::move(entry));
+            borrowPoolRetired_.push_back(std::move(entry));   // alive, never reused
             // Ineligible too: a reset-refuser would otherwise pay the
             // retire dance every cycle; this way later borrows go fresh
             // directly — today's per-cycle cost for ITSELF only.
@@ -5111,10 +5186,14 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
             return false;
         }
     }
+    // BUILD-PATH-IS-THE-SPEC (16 Sep 2026), parked form: the node stayed in the
+    // graph suspended + released and applySettings will skip it, so after the
+    // reset above it gets ONE direct prepare, then joins slots_ in the lease's
+    // target state. No setPlayConfigDetails (completeLoad never calls it).
     if (auto* p = entry.node->getProcessor())
     {
         p->suspendProcessing(false);
-        p->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        if (prepared_) p->prepareToPlay(sampleRate_, blockSize_);   // ONE prepare, after the seed
     }
     ChainSlot slot;
     slot.node = std::move(entry.node);
@@ -5131,7 +5210,8 @@ bool ChainHost::borrowTryReuseInto(const juce::PluginDescription& canonicalDesc)
             slot.desc.manufacturerName = pi->getPluginDescription().manufacturerName;
     EchoJay_NSLog(("EJPlace: stored \"" + slot.desc.name + "\" mfr=\""
                    + slot.desc.manufacturerName + "\" (plan attach)").toRawUTF8());
-    slot.bypassed = false;
+    slot.bypassed = attachBypassed_.load(std::memory_order_acquire);   // v9 contract, as completeLoad
+    slot.intendedBypassed = false;
     slots_.push_back(std::move(slot));
     borrowReusedNodeIds_.insert(slots_.back().node->nodeID.uid);
 
@@ -7569,6 +7649,12 @@ void ChainHost::applyRestoredState(int slotIdx, const juce::String& b64,
     }
 
     if (!applied) return;
+
+    // (16 Sep 2026, BUILD-PATH-IS-THE-SPEC) The reused-node re-prepare that
+    // stood here is gone: a reused instance is now re-added to the graph with a
+    // fresh nodeID at reattach, so the graph prepares it once, exactly like a
+    // built instance, and this restore seed lands after that single prepare —
+    // the standard restore order the build path already proves works.
 
     // The seed FACT, recorded at the only place it happens (step 3): this
     // slot now carries the restored state. Apply's withheld verdict reads

@@ -40,6 +40,26 @@ public:
 
     void paint(juce::Graphics&) override;
     void resized() override;
+
+    // Test seam (11 Sep 2026): drive the REAL standardChainInjections from the
+    // real-assembly harness with a Link target, so the harness exercises the
+    // plugin's own assembly path rather than a hand-built request. Forwards
+    // verbatim; no behaviour of its own.
+    juce::String testAssembleChainInjections(const juce::String& typedMsg,
+                                             const juce::String& targetLinkUid,
+                                             juce::StringArray* meterFieldsOut)
+    {
+        bool hadFeed = false;
+        return standardChainInjections(typedMsg, /*alwaysAttach*/ true, &hadFeed,
+                                       targetLinkUid, false, false, false, meterFieldsOut);
+    }
+    // Ruling 1 apply: if the last compose computed a Link pre-gain, apply THAT
+    // stored value to the chain (never a recomputation) so applied == stated.
+    // Called at build for a Link target; the own channel uses computePreGainAtBuild.
+    void  applyPendingLinkPreGain();
+    // Test accessor: the ONE stored Link pre-gain (NaN if none), for the harness.
+    float testPendingLinkPreGainDb() const
+    { return pendingLinkPreGain_.valid ? pendingLinkPreGain_.db : std::numeric_limits<float>::quiet_NaN(); }
     void visibilityChanged() override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
@@ -3363,6 +3383,45 @@ private:
     // Build the LINK LEVELS context + proposal format/grounding instructions
     // for a chat turn; empty when there are no live Links to reason about.
     juce::String buildLinkLevelsContext();
+    // [METER SNAPSHOT v2] for a build whose TARGET is a Link: assembles that
+    // Link's published LinkMeterFrame into the SAME snapshot idiom the own
+    // channel uses, so a Link build is meter-aware. Fills emittedKeysOut with
+    // the fields it carried (drives the DATA AVAILABILITY note away from the
+    // false "no live readings" branch). Empty when the target has no reading.
+    juce::String buildTargetLinkMeterSnapshot(const juce::String& targetLinkUid,
+                                              juce::StringArray* emittedKeysOut);
+
+    // ---- MeasuredContext: ONE assembly, parameterised by source (11 Sep 2026) ----
+    // Both the own channel (25016) and a target Link (24901) fill this and hand
+    // it to the single renderMeasuredContext, which emits [CHAIN LEVELS] + [METER
+    // SNAPSHOT] through the shared renderers - no second assembly to drift.
+    struct MeasuredContext
+    {
+        enum class Outcome { Measurements, Lapse, NoTarget, OwnEmpty };
+        Outcome outcome = Outcome::OwnEmpty;
+        bool          isLink = false;
+        juce::String  sourceLabel;
+        juce::uint32  measurementAgeMs = 0;      // age of the MEASUREMENT that produced the printed short-window numbers (the last-good latched frame), NOT the age of the read; NEVER used on the own path
+        EchoJayAPI::ChainLevelsData levels;      // Link: input LUFS/peak/crest + computed pre-gain
+        // The full published loudness suite the frame carries (only fine spectrum,
+        // oversCount and bandCrest are the agreed gaps). integrated/truePeak/crest
+        // ride in [CHAIN LEVELS]; these ride in [METER SNAPSHOT].
+        bool  haveMom = false, haveShort = false, haveCorr = false, haveWidth = false, haveLra = false;
+        float mom = 0.0f, shortTerm = 0.0f, corr = 0.0f, width = 0.0f, lra = 0.0f;
+        bool  havePsr = false, havePlr = false; float psr = 0.0f, plr = 0.0f;
+        bool  haveBands = false; float bandRel[6] {};
+        bool  preGainValid = false; float preGainDb = 0.0f;   // the ONE clamped value (Ruling 1)
+        juce::String  note;                      // pre-rendered Lapse / NoTarget note
+    };
+    MeasuredContext measuredContextOwnChannel();
+    MeasuredContext measuredContextTargetLink(const juce::String& targetLinkUid);
+    juce::String    renderMeasuredContext(const MeasuredContext& ctx, juce::StringArray* meterFieldsOut);
+
+    // Ruling 1: the ONE Link pre-gain, computed once at compose and carried to
+    // the apply (computePreGainAtBuild-for-Link) so applied == stated, same value.
+    struct PendingLinkPreGain { juce::String uid; float db = 0.0f; bool valid = false; };
+    PendingLinkPreGain pendingLinkPreGain_;
+
     // The SAME Links, structured, for /api/classify — see the .cpp.
     juce::var buildClassifyLinks() const;
 

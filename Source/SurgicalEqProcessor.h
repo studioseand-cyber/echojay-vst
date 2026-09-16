@@ -161,7 +161,8 @@ public:
     // Returns a human-readable summary, or an EMPTY string when the var carried
     // nothing this device understands — that is how a caller tells "applied
     // zero bands on purpose" (an eq_settings-only move) from "this wasn't for
-    // me". appliedOut/skippedOut count bands only.
+    // me". appliedOut/skippedOut count params + eq_bands + eq_action (CATCH 1
+    // fix, 15 Sep 2026 - they used to count bands only, dropping the params).
     //   * an OBJECT carrying "params" → the universal flat path, handled by
     //                 EedDeviceProcessor for the device-global knobs.
     juce::String applyStructured (const juce::var& structured,

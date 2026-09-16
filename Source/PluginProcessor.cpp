@@ -1596,6 +1596,7 @@ void EchoJayProcessor::timerCallback()
     // processor-owned 1 Hz timer, window open or closed. The editor still
     // calls it on its own user actions (a tab switch, an apply) for the list.
     refreshLinkRegistry();
+    updateLinkAudioRecency();   // 1 Hz: stamp which Links are passing audio, for the meter-snapshot recency gate
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
     // session key through KeyFeed; when the ONLY publisher was the editor's
@@ -5211,6 +5212,63 @@ bool EchoJayProcessor::readLinkMeterFrame(int regIdx, LinkMeterFrame& out)
     // refreshLinkRegistry, which owns linkRegMap
     if (linkRegMap == nullptr) return false;
     return LinkShm::readMeterFrame(linkRegMap, regIdx, out);
+}
+
+// Link METER SNAPSHOT recency (11 Sep 2026). The frame carries no wall-clock
+// and the Link is unchanged, so "how long since this Link passed audio" is
+// tracked HERE: the 1 Hz timer samples every live Link and stamps the moment
+// it last saw audioStale==0. audioStale is publisher-owned and flips ~1s after
+// audio stops, so a stamp that stops advancing means audio stopped ~then, at
+// 1 s granularity — enough for a minute-scale recency window. Message thread
+// only (linkLastFlowingMs_ is touched here and by the editor's build compose,
+// both on the message thread), so no lock. Dead Links leave a stale stamp that
+// simply ages past the window; the map is small (one entry per Link seen).
+void EchoJayProcessor::updateLinkAudioRecency()
+{
+    const juce::uint32 now = juce::Time::getMillisecondCounter();
+    std::set<juce::String> seen;
+    for (const auto& e : getLinkDisplayList())
+    {
+        const auto& li = e.info;
+        if (li.uid.isEmpty() || li.regIdx < 0) continue;
+        seen.insert(li.uid);
+        LinkMeterFrame f;
+        if (readLinkMeterFrame(li.regIdx, f) && f.audioStale == 0)
+        {
+            linkLastFlowingMs_[li.uid] = now;
+            // LAST-GOOD LATCH: keep the frame ONLY while its short-window fields
+            // are valid - momentary above the floor AND at least one macro band
+            // above the emit floor. This is the exact pair that collapses when a
+            // Link goes quiet (measured 10:46 vs 10:10), so a decayed
+            // post-playback frame is not latched and the previous good one
+            // stays, to be served at assembly with its true age.
+            bool anyBand = false;
+            for (int i = 0; i < 6; ++i) if (std::abs(f.bandRel[i]) > 0.01f) { anyBand = true; break; }
+            if (f.momentary > -70.0f && anyBand)
+                linkLastGoodFrame_[li.uid] = LinkGoodFrame { f, now, true };
+        }
+    }
+    // DROP-ON-DISAPPEAR (belt-and-braces): a uid no longer listed has gone; drop
+    // its latch so a future entry cannot inherit a predecessor's frame.
+    for (auto it = linkLastGoodFrame_.begin(); it != linkLastGoodFrame_.end();)
+        if (seen.find(it->first) == seen.end()) it = linkLastGoodFrame_.erase(it);
+        else ++it;
+}
+
+juce::uint32 EchoJayProcessor::linkLastFlowingMs(const juce::String& uid) const
+{
+    const auto it = linkLastFlowingMs_.find(uid);
+    return it != linkLastFlowingMs_.end() ? it->second : 0u;
+}
+
+bool EchoJayProcessor::linkLastGoodFrame(const juce::String& uid,
+                                         LinkMeterFrame& frameOut, juce::uint32& ageMsOut) const
+{
+    const auto it = linkLastGoodFrame_.find(uid);
+    if (it == linkLastGoodFrame_.end() || ! it->second.valid) return false;
+    frameOut = it->second.frame;
+    ageMsOut = juce::Time::getMillisecondCounter() - it->second.stampMs;
+    return true;
 }
 
 
