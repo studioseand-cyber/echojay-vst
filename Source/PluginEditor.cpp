@@ -5588,6 +5588,105 @@ void EchoJayEditor::openCompareSlotMenu(bool isTop)
 //
 // Four sources, three answers. Only a bounded-window average is a fair subject
 // for a band delta; the rest are named and caveated.
+// THE ONE WRITER OF A SLOT'S MACRO EVIDENCE. Extracted so the auditioning
+// early return and the switch below cannot disagree about what a slot's bands
+// are: they were two code paths answering one question, and one of them
+// answered it by saying nothing.
+//
+// EVERY KIND ANSWERS, INCLUDING THE ONES WITH NOTHING. A kind that has no
+// whole-run measurement sets hasMacro false AND a reason, so the card can state
+// which side is missing and why rather than drawing a lone curve that reads as
+// a comparison.
+void EchoJayEditor::fillSlotMacroEvidence (const CompareSlotState& slot,
+                                           echojay::SpectralEvidence& ev) const
+{
+    using R = echojay::SpectralReduction;
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Reference:
+        {
+            auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index >= 0 && slot.index < (int) refs.size()
+                && refs[(size_t) slot.index].hasMacroBandAccum)
+            {
+                ev.macro              = refs[(size_t) slot.index].macroBandAccum;
+                ev.hasMacro           = true;
+                ev.macroReduction     = refs[(size_t) slot.index].macroAccumReduction;
+                ev.macroWindowSeconds = refs[(size_t) slot.index].macroAccumSeconds;
+            }
+            else
+                ev.macroMissingWhy = "not analysed by this build";
+            break;
+        }
+
+        case CompareSlotState::Kind::Snapshot:
+        {
+            auto snaps = processorRef.getSnapshots();
+            if (slot.index >= 0 && slot.index < (int) snaps.size()
+                && snaps[(size_t) slot.index].hasMacroBandAccum)
+            {
+                ev.macro              = snaps[(size_t) slot.index].macroBandAccum;
+                ev.hasMacro           = true;
+                ev.macroReduction     = snaps[(size_t) slot.index].macroAccumReduction;
+                ev.macroWindowSeconds = snaps[(size_t) slot.index].macroAccumSeconds;
+            }
+            else
+                // The accumulation is not persisted, so a capture restored from
+                // the session blob has none. Say that rather than falling back
+                // to averagedData's tail, which would look like a measurement.
+                ev.macroMissingWhy = "restored capture, bands not saved";
+            break;
+        }
+
+        case CompareSlotState::Kind::Live:
+        {
+            // Ballistic, and labelled as such. A Live slot has no whole-run
+            // accumulation of any kind: see the note at the Live branch.
+            ev.macro              = processorRef.getMeterEngine().getMeterData().macroBandDb;
+            ev.hasMacro           = true;
+            ev.macroReduction     = R::BallisticTail;
+            ev.macroWindowSeconds = 0.0f;
+            break;
+        }
+
+        case CompareSlotState::Kind::WsCapture:
+        {
+            // WsReview::macroBandDb is the capture engine's SMOOTHED reading
+            // (PluginEditor.cpp, where the review is built), not an
+            // accumulation. It is the same quality of number a Live slot has,
+            // so it is carried and stamped the same way rather than withheld:
+            // a labelled tail is more use than a blank, and the label is what
+            // stops it being read as a window.
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId)
+                {
+                    if (r.hasMacroBands)
+                    {
+                        ev.macro              = r.macroBandDb;
+                        ev.hasMacro           = true;
+                        ev.macroReduction     = R::BallisticTail;
+                        ev.macroWindowSeconds = 0.0f;
+                    }
+                    else
+                        ev.macroMissingWhy = "review from an earlier session";
+                    return;
+                }
+            ev.macroMissingWhy = "review not found";
+            break;
+        }
+
+        case CompareSlotState::Kind::CodecFile:
+            // A parked codec render is never analysed: no accumulation, no
+            // stored spectrum, and its meter only reads while the stream rolls.
+            ev.macroMissingWhy = "codec render is not analysed";
+            break;
+
+        default:
+            ev.macroMissingWhy = "no source in this slot";
+            break;
+    }
+}
+
 echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSlotState& slot) const
 {
     using R = echojay::SpectralReduction;
@@ -5636,10 +5735,7 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
         // same span. Routing Live through it would put a third statistic in a
         // field the other two sides fill with one, so Live keeps the ballistic
         // reading and is labelled BallisticTail until that is decided.
-        ev.macro          = processorRef.getMeterEngine().getMeterData().macroBandDb;
-        ev.hasMacro       = true;
-        ev.macroReduction = R::BallisticTail;
-        ev.macroWindowSeconds = 0.0f;     // a tail has no window, and says 0
+        fillSlotMacroEvidence (slot, ev);
         // Either way the LUFS figures beside it are continuously integrated.
         ev.loudnessIsContinuous = true;
         return ev;
@@ -5651,6 +5747,14 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
         ev.reduction = R::LiveInstant;
         ev.valid     = true;
         ev.loudnessIsContinuous = true;   // same mixture, same note
+        // THE BINS FOLLOW THE AUDITION, THE BANDS DO NOT. The spectrum here is
+        // a display choice: the user is hearing this stream and LiveInstant
+        // says what that reading is. The macro bands are not the same kind of
+        // thing. They are a stamped whole-run measurement OF THE UNDERLYING
+        // SOURCE, and a reference's whole file does not change because someone
+        // pressed play. This return used to discard them and substitute
+        // nothing, so auditioning a reference silently emptied half the chart.
+        fillSlotMacroEvidence (slot, ev);
         return ev;
     }
 
@@ -5678,13 +5782,6 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
                 // on 14 of a 45 file library is entirely the floor. hasMacro
                 // stays false when the accumulation never ran, so the consumer
                 // refuses rather than rendering a floor as a level.
-                if (refs[(size_t) slot.index].hasMacroBandAccum)
-                {
-                    ev.macro              = refs[(size_t) slot.index].macroBandAccum;
-                    ev.hasMacro           = true;
-                    ev.macroReduction     = refs[(size_t) slot.index].macroAccumReduction;
-                    ev.macroWindowSeconds = refs[(size_t) slot.index].macroAccumSeconds;
-                }
             }
             break;
         }
@@ -5702,13 +5799,6 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
                 // does not, because the accumulation is not persisted, and it
                 // reports unavailable rather than falling back to the tail that
                 // averagedData still holds.
-                if (sn.hasMacroBandAccum)
-                {
-                    ev.macro              = sn.macroBandAccum;
-                    ev.hasMacro           = true;
-                    ev.macroReduction     = sn.macroAccumReduction;
-                    ev.macroWindowSeconds = sn.macroAccumSeconds;
-                }
                 if (sn.hasDualSpectrum)
                 {
                     // A capture made THIS SESSION holds both whole-window
@@ -5763,6 +5853,9 @@ echojay::SpectralEvidence EchoJayEditor::getSlotSpectralEvidence(const CompareSl
 
         default: break;
     }
+    // EVERY KIND, ONE WRITER. The bins are chosen per kind above; the bands
+    // come from here for all of them, including the kinds that have none.
+    fillSlotMacroEvidence (slot, ev);
     return ev;
 }
 
@@ -24838,7 +24931,31 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
     }
 
     // ---- (b) BAND RELATIVES: two overlaid 6-point profiles ----
-    secLabel(L.tonalTop, "TONAL - band relatives (dB vs each source's own average)");
+    {
+        // ITEM 4 FINISHED. bandsReduction and bandsWindowSeconds were written
+        // into the JSON by the previous commit and read by nothing, so the chart
+        // still claimed only "band relatives" whatever it was drawing. A whole
+        // file average and a 150 ms ballistic tail are different claims and the
+        // label now carries which one each side is.
+        juce::String tl = "TONAL - band relatives (dB vs each source's own average)";
+        auto prov = [&](juce::DynamicObject* o)
+        {
+            if (o == nullptr || ! o->hasProperty("bandsReduction")) return juce::String();
+            juce::String p = o->getProperty("bandsReduction").toString();
+            if (o->hasProperty("bandsWindowSeconds"))
+                p += ", " + juce::String ((double) o->getProperty("bandsWindowSeconds"), 1) + "s";
+            return p;
+        };
+        const juce::String pa = prov(A), pb = prov(B);
+        if (pa.isNotEmpty() || pb.isNotEmpty())
+        {
+            if (pa == pb)            tl += "  [" + pa + "]";
+            else if (pa.isEmpty())   tl += "  [B: " + pb + "]";
+            else if (pb.isEmpty())   tl += "  [A: " + pa + "]";
+            else                     tl += "  [A: " + pa + " | B: " + pb + "]";
+        }
+        secLabel(L.tonalTop, tl);
+    }
     {
         const int chTop = rowY(L.tonalTop) + 16;
         const int chH   = FigLayout::kTonalH - 4;
@@ -24878,12 +24995,25 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
         const bool bHasBands = B->hasProperty("bands");
         if (aHasBands) plot(A->getProperty("bands"), cA);
         if (bHasBands) plot(B->getProperty("bands"), cB);
-        if (!aHasBands && !bHasBands)
+
+        // A ONE-SIDED CHART STATES ITS MISSING SIDE. Before this it drew the one
+        // curve it had and said nothing, which on a two-source chart reads as a
+        // claim about the other source rather than as an absence.
+        auto vs = [] (const juce::var& v) { return v.isVoid() ? juce::String() : v.toString(); };
+        const juce::String notice = echojay::bandChartNotice (
+            aHasBands, bHasBands,
+            vs (A->getProperty("label")), vs (B->getProperty("label")),
+            vs (A->getProperty("bandsMissingWhy")), vs (B->getProperty("bandsMissingWhy")));
+        if (notice.isNotEmpty())
         {
             g.setColour(C::text3);
-            g.setFont(juce::Font(juce::FontOptions(10.0f)));
-            g.drawText("Band relatives N/A for both sources",
-                       plotL, chTop, plotR - plotL, chH, juce::Justification::centred);
+            g.setFont(juce::Font(juce::FontOptions(9.5f)));
+            // Bottom of the plot when one curve is present, so it does not sit
+            // across the curve that IS there; centred when neither is.
+            const bool none = (! aHasBands && ! bHasBands);
+            g.drawText(notice, plotL, none ? chTop : chBot - 12,
+                       plotR - plotL, none ? chH : 12,
+                       none ? juce::Justification::centred : juce::Justification::centredLeft);
         }
     }
 
@@ -24902,12 +25032,20 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
             auto one = [&](FigVal fig, juce::Colour c2) {
                 if (!fig.present) return juce::String("N/A");
                 juce::ignoreUnused(c2);
-                return decimals >= 0 ? juce::String(fig.v, decimals) : juce::String((int)fig.v);
+                // JUCE TREATS 0 AS UNSPECIFIED, NOT AS ZERO PLACES. String(double,
+                // int) only sets fixed precision when the count is > 0, so a 0
+                // here fell through to the stream default of six significant
+                // digits and printed 30.7137 for a percentage. Both 0 and -1 now
+                // mean integer, and it rounds rather than truncating.
+                return decimals > 0 ? juce::String(fig.v, decimals)
+                                    : juce::String(juce::roundToInt(fig.v));
             };
             auto fv = figRead(A, key); auto gv = figRead(B, key);
             g.setColour(cA); g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
             const int vx = rx + 62;
-            g.drawText(one(fv, cA), vx, ry, 40, FigLayout::kStereoRowH, juce::Justification::centredLeft);
+            // THE UNIT ON BOTH SIDES. It was concatenated onto B only, so a row
+            // read "30.7137 / 32.2999%" with the symbol on one number.
+            g.drawText(one(fv, cA) + unit, vx, ry, 40, FigLayout::kStereoRowH, juce::Justification::centredLeft);
             g.setColour(C::text3);
             g.drawText("/", vx + 40, ry, 8, FigLayout::kStereoRowH, juce::Justification::centred);
             g.setColour(cB);

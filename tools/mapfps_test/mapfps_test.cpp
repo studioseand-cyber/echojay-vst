@@ -8537,6 +8537,79 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "can be accumulated one block at a time");
         }
 
+        // bd PIN5 -- A ONE-SIDED BAND CHART MUST NAME ITS MISSING SIDE.
+        // The card drew a curve per side that had bands and printed a notice
+        // only when NEITHER did. One curve on a chart labelled with two sources
+        // does not read as "no data for the other one": it reads as a claim
+        // about the other one. The silent case is the one-sided case, so that is
+        // what this pins.
+        {
+            using echojay::bandChartNotice;
+            using echojay::bandChartState;
+            using echojay::BandChartState;
+
+            const juce::String A = "your mix", B = "the reference";
+            const juce::String wa = "restored capture, bands not saved";
+            const juce::String wb = "codec render is not analysed";
+
+            check (bandChartState (true,  true)  == BandChartState::Both,
+                   "bd PIN5: both sides present is Both");
+            check (bandChartState (true,  false) == BandChartState::AOnly,
+                   "bd PIN5: A only is AOnly");
+            check (bandChartState (false, true)  == BandChartState::BOnly,
+                   "bd PIN5: B only is BOnly");
+            check (bandChartState (false, false) == BandChartState::Neither,
+                   "bd PIN5: neither is Neither");
+
+            // BOTH PRESENT: nothing to say, and saying nothing is correct here
+            // because both curves are drawn.
+            check (bandChartNotice (true, true, A, B, wa, wb).isEmpty(),
+                   "bd PIN5: with both sides present the chart says nothing");
+
+            // A ONLY: the notice names B, the side that is MISSING, not the one
+            // that is present. Naming the wrong side would be worse than silence.
+            {
+                const auto n = bandChartNotice (true, false, A, B, wa, wb);
+                check (n.isNotEmpty(),
+                       "bd PIN5: with only A present the chart is NOT silent");
+                check (n.contains (B),
+                       "bd PIN5: and it names B, the missing side");
+                check (! n.contains (A),
+                       "bd PIN5: and not A, which is the side that IS drawn");
+                check (n.contains (wb),
+                       "bd PIN5: and gives B's reason, not A's");
+                check (! n.contains (wa),
+                       "bd PIN5: A's reason does not leak into B's notice");
+            }
+
+            // B ONLY: the mirror. Both one-sided cases must behave the same way
+            // about the other side, or the chart is honest in one direction.
+            {
+                const auto n = bandChartNotice (false, true, A, B, wa, wb);
+                check (n.isNotEmpty() && n.contains (A) && ! n.contains (B),
+                       "bd PIN5: with only B present it names A instead");
+                check (n.contains (wa),
+                       "bd PIN5: and gives A's reason");
+            }
+
+            // NEITHER: one sentence about both, not two.
+            {
+                const auto n = bandChartNotice (false, false, A, B, wa, wb);
+                check (n.isNotEmpty(),
+                       "bd PIN5: with neither present the chart still speaks");
+                check (n.contains ("either"),
+                       "bd PIN5: and says so once rather than naming both sides");
+            }
+
+            // A MISSING REASON IS ALLOWED, and the notice still names the side.
+            // The reason is a courtesy; the side is the load-bearing part.
+            {
+                const auto n = bandChartNotice (true, false, A, B, {}, {});
+                check (n.isNotEmpty() && n.contains (B),
+                       "bd PIN5: with no reason available it still names the side");
+            }
+        }
+
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
         // window is the cursor in", which is a proxy for "is there room" and
         // wrong in both directions: a cursor one pixel past the centre flipped

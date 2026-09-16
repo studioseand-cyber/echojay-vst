@@ -149,7 +149,59 @@ struct SpectralEvidence
     bool                 hasMacro = false;
     SpectralReduction    macroReduction = SpectralReduction::Unknown;
     float                macroWindowSeconds = 0.0f;
+    /** Why there is no whole-run band measurement for this side, in the user's
+        register, empty when hasMacro is true. The card states it rather than
+        drawing a lone curve that reads as a comparison. */
+    juce::String         macroMissingWhy;
 };
+
+// ===========================================================================
+// WHAT A TWO-SOURCE BAND CHART SAYS WHEN A SIDE HAS NO MEASUREMENT
+// ===========================================================================
+//
+// THE DEFECT THIS CLOSES. The figure card drew a curve per side when that side
+// had bands, and printed a notice only when NEITHER did. One curve on a chart
+// labelled with two sources does not read as "no data for the other one". It
+// reads as a claim about the other one: a flat line at zero, or worse, as
+// though the single curve were the comparison. A missing measurement is a fact
+// to state, not a gap to leave.
+//
+// PURE, so the decision can be pinned without a window. The caller supplies
+// which sides have bands and a short reason for each missing side; this returns
+// the sentence, or empty when there is nothing to say.
+enum class BandChartState { Both, AOnly, BOnly, Neither };
+
+inline BandChartState bandChartState (bool aHasBands, bool bHasBands) noexcept
+{
+    if (aHasBands && bHasBands) return BandChartState::Both;
+    if (aHasBands)              return BandChartState::AOnly;
+    if (bHasBands)              return BandChartState::BOnly;
+    return BandChartState::Neither;
+}
+
+/** The notice the chart prints. Empty ONLY when both sides have bands.
+
+    THE ONE-SIDED CASES MUST NOT BE SILENT, which is the whole point: naming the
+    side and the reason is what stops a lone curve reading as a comparison. */
+inline juce::String bandChartNotice (bool aHasBands, bool bHasBands,
+                                     const juce::String& labelA, const juce::String& labelB,
+                                     const juce::String& whyA, const juce::String& whyB)
+{
+    auto one = [] (const juce::String& label, const juce::String& why)
+    {
+        juce::String s = "No band measurement for " + label;
+        if (why.isNotEmpty()) s += " (" + why + ")";
+        return s;
+    };
+    switch (bandChartState (aHasBands, bHasBands))
+    {
+        case BandChartState::Both:    return {};
+        case BandChartState::AOnly:   return one (labelB, whyB);
+        case BandChartState::BOnly:   return one (labelA, whyA);
+        case BandChartState::Neither: return "No band measurement for either source";
+    }
+    return {};
+}
 
 /** Only an average over a bounded window is a fair subject for a tonal delta.
     Everything else is comparable ONLY to itself, and the prose has to say so. */

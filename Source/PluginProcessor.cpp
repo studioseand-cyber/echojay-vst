@@ -3737,6 +3737,13 @@ juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, cons
             if (ev.macroWindowSeconds > 0.0f)
                 o->setProperty("bandsWindowSeconds", ev.macroWindowSeconds);
         }
+        else if (ev.macroMissingWhy.isNotEmpty())
+        {
+            // WHY THERE IS NO CURVE, carried to the card so it can say it. A
+            // chart that draws one curve and no explanation invites the reader
+            // to treat the lone curve as the comparison.
+            o->setProperty("bandsMissingWhy", ev.macroMissingWhy);
+        }
         return juce::var(o);
     };
     auto* root = new juce::DynamicObject();

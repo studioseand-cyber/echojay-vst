@@ -923,6 +923,10 @@ private:
         Separate from getSlotMeterData because MeterData::spectrum is the
         display selection, which for a reference is the ballistic tail. */
     echojay::SpectralEvidence getSlotSpectralEvidence(const CompareSlotState& slot) const;
+    /** THE ONE WRITER of a slot's macro band evidence, for every slot kind
+        including the ones that have none. */
+    void fillSlotMacroEvidence (const CompareSlotState& slot,
+                                echojay::SpectralEvidence& ev) const;
     // Item 6: a slot's DATA scope. channelDataScoped only for a WsCapture
     // review carrying the marker; everything else (snapshot, reference, live,
     // pre-fix review) is full-scope. The cross-scope guard keys off THIS,
