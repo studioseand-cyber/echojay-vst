@@ -7009,8 +7009,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             none.availability = RefAvailability::Missing;
             check (refIsUnmeasured (none) && ! refIsStale (none),
                    "ri PIN1: UNMEASURED is distinct from stale");
-            check (kRefMeasurementEpoch == 1,
-                   "ri PIN1: the current epoch is 1 (Phase 1b bumps it)");
+            // EPOCH 2 SINCE PHASE 1b COMMIT 3: the six macro bands became an
+            // accumulated whole-file mean of POWER instead of the meter's
+            // ballistic reading after the final block. Same field, different
+            // meaning, which is what an epoch is for. This pin fired the moment
+            // the constant moved, which is the whole reason it is a number here
+            // rather than a comment.
+            check (kRefMeasurementEpoch == 2,
+                   "ri PIN1: the current measurement epoch is 2");
         }
 
         // ri PIN2 -- id IS NOT DERIVED FROM path. Under index-in-place a path is
@@ -8446,6 +8452,89 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (std::abs ((double) sixteenSmall - (double) oneBig) < 1e-6,
                    "bd PIN3: sixteen 128-sample blocks decay by the same factor as one "
                    "2048-sample block, so the time constant is the contract");
+        }
+
+        // bd PIN4 -- THE WHOLE-RUN BAND MEAN IS A MEAN OF POWER.
+        // A mean of logarithms is a GEOMETRIC mean. It answers "what level is
+        // typical" and it is dominated by the quiet blocks, because -120 dB
+        // drags an average far harder than it contributes energy. A band
+        // average is an ARITHMETIC mean of POWER: "how much of this band is in
+        // this record". The two disagree by more the wider the dynamic range,
+        // which is to say they disagree most on the material a reference
+        // library is made of. This pin exists to make that swap visible.
+        {
+            using echojay::bandMeanFromSum;
+
+            // EMPTY: no blocks means there is no mean. NOT zero, NOT -120: an
+            // absent measurement and a measurement of silence are different
+            // claims, and only one of them is true here.
+            const auto none = bandMeanFromSum (0.0, 0);
+            check (! none.valid, "bd PIN4: no blocks yields NO mean, not a zero");
+            check (none.blocks == 0,
+                   "bd PIN4: and reports zero blocks, so a caller can say why");
+
+            // ONE BLOCK: the mean of one value is that value. 1e-3 power is
+            // 10*log10(1e-3) = -30 dB exactly.
+            const auto one = bandMeanFromSum (1e-3, 1);
+            check (one.valid, "bd PIN4: one block is a valid mean");
+            check (std::abs (one.db - (-30.0f)) < 1e-4f,
+                   "bd PIN4: and a single 1e-3 power block reads -30.0 dB");
+
+            // MANY BLOCKS, ALL EQUAL: the mean is still that value, whatever
+            // the count. 100 blocks of 1e-3 sum to 1e-1.
+            const auto many = bandMeanFromSum (1e-1, 100);
+            check (std::abs (many.db - (-30.0f)) < 1e-4f,
+                   "bd PIN4: a hundred equal blocks read the same -30.0 dB");
+            check (many.blocks == 100, "bd PIN4: and carry their block count");
+
+            // THE CASE THE WHOLE COMMIT IS ABOUT: one silent block among loud
+            // ones. Ninety-nine blocks at 1e-3 power plus one at exactly zero.
+            // POWER mean  = 99e-3 / 100 = 9.9e-4 -> -30.04 dB. The silence costs
+            //               0.04 dB, which is its share of the energy.
+            // dB mean     = (99 * -30 + 1 * -120) / 100 = -30.9 dB. The silence
+            //               costs 0.9 dB, twenty times more, because a floor in
+            //               the log domain is a huge number pretending to be a
+            //               small one.
+            {
+                const auto withSilence = bandMeanFromSum (99.0 * 1e-3, 100);
+                check (std::abs (withSilence.db - (-30.0436f)) < 1e-3f,
+                       "bd PIN4: one silent block among 99 loud ones costs 0.04 dB "
+                       "in power, which is its share of the energy");
+                // Stated as its own assertion because it is the number the
+                // mutation moves: the dB-domain answer for the same input is
+                // -30.9, and the gap is what the pin is for.
+                check (withSilence.db > -30.5f,
+                       "bd PIN4: and NOT the -30.9 dB a mean of logarithms would "
+                       "give, which is the defect this function exists to avoid");
+            }
+
+            // TEN SILENT BLOCKS AMONG NINETY: the gap widens with the silent
+            // fraction, so one fixture could not have shown this on its own.
+            // power: 90e-3/100 = 9e-4 -> -30.458 dB
+            // dB   : (90*-30 + 10*-120)/100 = -39.0 dB
+            {
+                const auto tenth = bandMeanFromSum (90.0 * 1e-3, 100);
+                check (std::abs (tenth.db - (-30.4576f)) < 1e-3f,
+                       "bd PIN4: a tenth silent costs 0.46 dB in power");
+                check (tenth.db > -31.0f,
+                       "bd PIN4: and not the -39 dB a log-domain mean would give, "
+                       "so the gap grows with the silent fraction");
+            }
+
+            // THE FLOOR IS REACHED ONLY BY ACTUAL SILENCE. A sum that rounds to
+            // nothing reports -120, the same sentinel every other band figure
+            // uses, rather than negative infinity or a NaN.
+            const auto silent = bandMeanFromSum (0.0, 100);
+            check (silent.valid && silent.db == -120.0f,
+                   "bd PIN4: a genuinely silent run is valid and reads the -120 floor");
+
+            // THE MEAN IS LINEAR IN THE SUM, which is what makes the engine able
+            // to add one block at a time and divide once at the end.
+            const auto half = bandMeanFromSum (0.5e-1, 100);
+            const auto full = bandMeanFromSum (1.0e-1, 100);
+            check (std::abs ((full.db - half.db) - 3.0103f) < 1e-3f,
+                   "bd PIN4: doubling the summed power adds 3.01 dB, so the sum "
+                   "can be accumulated one block at a time");
         }
 
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the

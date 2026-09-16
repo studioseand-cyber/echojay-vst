@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "MeterEngine.h"
+#include "EJSpectralEvidence.h"
 #include <vector>
 #include <mutex>
 #include <memory>
@@ -15,6 +16,27 @@ struct ReferenceResult {
     juce::int64 timestamp = 0;
     std::vector<float> waveformThumbnail; // peak values for waveform display (one per ~1024 samples)
     std::array<float, 64> eqCurve = {};   // averaged spectrum for EQ curve display
+
+    // ===== THE ACCUMULATED MACRO BANDS (Phase 1b commit 3) =====
+    // The whole-file mean of the six pink-referenced bands, accumulated in
+    // POWER across every analysis block, from MeterEngine's own accumulator so
+    // there is one definition of the quantity and not one per caller.
+    //
+    // DISTINCT FROM data.macroBandDb, WHICH IS UNCHANGED. That field is the
+    // meter's ballistic reading after the final block: a ~450 ms tail, and on
+    // 14 of Kathy's 45 references it is entirely on the floor. Nothing reads
+    // this new field yet; repointing the consumers is a later commit.
+    //
+    // IT CARRIES ITS OWN WINDOW, because a figure that travels without one
+    // cannot be checked (decision 4 of COMPARE_REFERENCE_PLAN). The reduction
+    // is named from the vocabulary EJSpectralEvidence already established
+    // rather than a second one: this is a WholeFileAverage, the same statistic
+    // eqCurve is, over the same blocks.
+    std::array<float, 6>  macroBandAccum { -120, -120, -120, -120, -120, -120 };
+    bool                  hasMacroBandAccum = false;   // false = not measured, NOT a floor
+    float                 macroAccumSeconds = 0.0f;    // the window it covers
+    int                   macroAccumBlocks  = 0;       // and how many blocks made it
+    echojay::SpectralReduction macroAccumReduction = echojay::SpectralReduction::Unknown;
 };
 
 class ReferenceAnalyser

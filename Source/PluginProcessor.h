@@ -93,6 +93,22 @@ struct CaptureSnapshot {
     ChannelType channelType;
     juce::String customChannelName;
     MeterData averagedData;
+    // ===== THE ACCUMULATED MACRO BANDS (Phase 1b commit 3) =====
+    // The whole-capture mean of the six pink-referenced bands, in POWER, read
+    // off captureEngine at stopCapture. It sits BESIDE averagedData rather than
+    // inside it, because averagedData.macroBandDb is the ballistic tail at the
+    // moment of stopping and this commit changes no consumer of that field.
+    //
+    // WHY captureEngine AND NOT meterEngine: captureEngine is reset at capture
+    // start, so its accumulator covers the capture and nothing before it. The
+    // spectrum rebuild beside this one sums meterEngine's ballistic spectrum,
+    // which carries up to ~450 ms of pre-capture history into its first frames.
+    // Same blocks, cleaner span.
+    std::array<float, 6> macroBandAccum { -120, -120, -120, -120, -120, -120 };
+    bool                 hasMacroBandAccum = false;   // false = not measured
+    float                macroAccumSeconds = 0.0f;
+    int                  macroAccumBlocks  = 0;
+    echojay::SpectralReduction macroAccumReduction = echojay::SpectralReduction::Unknown;
     juce::int64 timestamp;
     float durationSeconds;
     std::vector<float> waveformThumbnail;

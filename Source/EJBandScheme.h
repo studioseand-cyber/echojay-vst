@@ -130,4 +130,49 @@ inline float ballisticCoeff (double bufDurSec, double tauSec)
     return 1.0f - (float) std::exp (-bufDurSec / tauSec);
 }
 
+// ===========================================================================
+// THE WHOLE-RUN BAND MEAN (Phase 1b commit 3)
+// ===========================================================================
+//
+// POWER, NOT dB, AND THIS IS THE WHOLE POINT. A mean of logarithms is a
+// GEOMETRIC mean: it answers "what level is typical" and it is dominated by the
+// quiet frames, because -120 dB drags an average far harder than it contributes
+// energy. A band average is an ARITHMETIC mean of POWER, which is what "how much
+// of this band is in this record" means. The two disagree by more the wider the
+// dynamic range, which is to say they disagree most on exactly the material a
+// reference library is made of.
+//
+// eqCurve averages dB, because it averages the already-logarithmic display
+// spectrum. That is a different quantity from this one and it is not being
+// changed here.
+//
+// THE FLOOR IS NOT A MEASUREMENT. A block whose band power is zero contributes
+// zero power, which is correct and harmless: it lowers the mean by its share and
+// nothing else. It does NOT contribute -120 dB, which is what a dB-domain mean
+// would do and which is why that mean is the defect this function exists to
+// avoid.
+struct BandMean
+{
+    bool  valid = false;      // false = no blocks, so there is no mean to report
+    int   blocks = 0;
+    double meanPower = 0.0;   // per-octave-normalised power, linear
+    float  db = -120.0f;      // the same quantity in dB, for the consumers
+};
+
+/** The mean of a sequence of per-block band powers, and its dB.
+
+    sumPower is the running total the engine keeps; blocks is how many were
+    added. Separated from the engine so a pin can exercise it with no audio,
+    no window and no thread. */
+inline BandMean bandMeanFromSum (double sumPower, int blocks)
+{
+    BandMean m;
+    if (blocks <= 0) return m;            // no blocks: no mean, NOT zero
+    m.valid     = true;
+    m.blocks    = blocks;
+    m.meanPower = sumPower / (double) blocks;
+    m.db = m.meanPower > 1e-12 ? (float) (10.0 * std::log10 (m.meanPower)) : -120.0f;
+    return m;
+}
+
 } // namespace echojay

@@ -2876,6 +2876,29 @@ void EchoJayProcessor::stopCapture()
     // values (peak, RMS, crest, width, correlation) with our time-windowed
     // measurements computed across the whole capture.
     snap.averagedData = captureEngine.getMeterData();
+
+    // THE ACCUMULATED MACRO BANDS, over the same span the spectrum rebuild
+    // below uses: both cover exactly the blocks taken while Capturing.
+    // captureEngine was reset at capture start, so its accumulator starts where
+    // the capture does. Read here, immediately after the state moved to
+    // Complete, so the audio thread has stopped feeding it.
+    //
+    // averagedData.macroBandDb IS LEFT ALONE. It is the ballistic tail at the
+    // moment of stopping and every consumer still reads it; repointing them is
+    // a later commit. This field exists so there is something to repoint TO.
+    {
+        const auto acc = captureEngine.getAccumulatedBands();
+        if (acc.valid)
+        {
+            snap.macroBandAccum     = acc.db;
+            snap.hasMacroBandAccum  = true;
+            snap.macroAccumSeconds  = acc.seconds;
+            snap.macroAccumBlocks   = acc.blocks;
+            // A capture, not a file, so it is the capture's name for the same
+            // statistic. Both are arithmetic means of every block in their span.
+            snap.macroAccumReduction = echojay::SpectralReduction::WholeWindowAverage;
+        }
+    }
     
     {
         // ============ Finalize time-windowed measurements ============

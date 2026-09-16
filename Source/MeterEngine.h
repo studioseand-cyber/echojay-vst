@@ -217,6 +217,42 @@ public:
     };
     MacroWindow reduceMacroWindow(bool useMean) const;
 
+    // ===== THE WHOLE-RUN BAND ACCUMULATOR (Phase 1b commit 3) =====
+    // The ballistic macroBandDb answers "what is this band doing now". This
+    // answers "what is this band over the whole run", and it is taken from the
+    // SAME bandPower values the ballistic path uses, one line before the
+    // smoothing, so the two cannot describe different audio.
+    //
+    // ONE DEFINITION, BOTH SIDES. ReferenceAnalyser reads it after its file
+    // loop; stopCapture reads it off captureEngine. Having each of them sum
+    // their own would be two definitions of one quantity, which is the shape
+    // that let the spectrum and the macro bands drift apart in the first place.
+    //
+    // POWER, not dB: see echojay::bandMeanFromSum for why that is the whole
+    // point rather than an implementation detail.
+    //
+    // NO SILENCE GATE, deliberately, matching eqCurve rather than macroRing.
+    // The two existing accumulations disagree about this and the choice is
+    // recorded in RESULTS_PHASE1B.md; blocks is stored so it can be revisited
+    // without re-measuring.
+    struct BandAccum
+    {
+        std::array<double, 6> sumPower {};   // per-octave-normalised, linear
+        int    blocks  = 0;
+        double seconds = 0.0;                // audio actually summed
+    };
+    /** The accumulated whole-run bands, in dB, plus the window they cover.
+        valid is false when no block has been summed: a caller must render that
+        as unavailable, never as a level. */
+    struct BandAccumResult
+    {
+        bool  valid = false;
+        int   blocks = 0;
+        float seconds = 0.0f;
+        std::array<float, 6> db { -120, -120, -120, -120, -120, -120 };
+    };
+    BandAccumResult getAccumulatedBands() const;
+
     // Copies up to maxFrames frames newer than sinceCounter into dest
     // (oldest→newest), returns the count and the new counter value. The
     // counter is monotonic so callers can fetch incrementally.
@@ -331,6 +367,9 @@ private:
     // between frames the same way, so both reductions describe one window.
     std::array<std::array<float, 6>, kSpecHistFrames> macroRing {};
     std::array<float, 6> macroAccum { -120.0f, -120.0f, -120.0f, -120.0f, -120.0f, -120.0f };
+    // Cleared in prepare() AND resetState(), so a re-prepare cannot carry a
+    // previous run's sum into a new one.
+    BandAccum bandAccum;
     int specWritePos = 0;
     int specFrameCount = 0;
     int specFrameCounter = 0;   // monotonic; survives resets

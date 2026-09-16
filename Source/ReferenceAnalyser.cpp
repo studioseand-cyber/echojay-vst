@@ -254,6 +254,31 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         if (specFrames > 0)
             for (int i = 0; i < 64; ++i)
                 ref.eqCurve[(size_t)i] = specSum[(size_t)i] / (float)specFrames;
+
+        // THE ACCUMULATED MACRO BANDS, read off the engine that just walked the
+        // file. Not summed here: the engine has been adding the per-block band
+        // POWER since prepare(), from the same values its ballistic path uses,
+        // so there is one definition of the quantity rather than one per caller.
+        //
+        // The loop above is finished and the engine is a local on this thread,
+        // so there is no reader racing a writer at this point.
+        //
+        // STAMPED AT THE PRODUCER. hasMacroBandAccum stays false when no block
+        // was summed, so an unmeasured file reports UNAVAILABLE rather than a
+        // -120 that reads like a level.
+        {
+            const auto acc = engine.getAccumulatedBands();
+            if (acc.valid)
+            {
+                ref.macroBandAccum     = acc.db;
+                ref.hasMacroBandAccum  = true;
+                ref.macroAccumSeconds  = acc.seconds;
+                ref.macroAccumBlocks   = acc.blocks;
+                // The same statistic eqCurve is, over the same blocks, so it
+                // takes the same name from the shared vocabulary.
+                ref.macroAccumReduction = echojay::SpectralReduction::WholeFileAverage;
+            }
+        }
         
         {
             std::lock_guard<std::mutex> lock((*refMutexPtr));

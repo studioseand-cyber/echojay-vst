@@ -82,6 +82,10 @@ void MeterEngine::prepare(double sampleRate, int /*samplesPerBlock*/)
     silentSampleCount.store(silenceTimeoutSamples + 1); // start as silent
 
     currentSampleRate = sampleRate;
+    // A re-prepare is a new run, so the whole-run sum starts again. prepare()
+    // does not otherwise clear state, which is why this is stated here as well
+    // as in resetState().
+    bandAccum = BandAccum();
     samplesPerBlock100ms = static_cast<int>(sampleRate * 0.1);
     samplesPerSpecFrame  = std::max(1, (int)(sampleRate / 25.0)); // ~25 fps frames
     computeKWeightingCoeffs(sampleRate);
@@ -191,6 +195,7 @@ void MeterEngine::resetState()
     specFrameCount = 0;
     specAccumSamples = 0;
     specAccum.fill(-120.0f);
+    bandAccum = BandAccum();          // the whole-run band sum starts again
     // specFrameCounter stays monotonic across resets so UI fetches stay valid
     wfMinAccum = wfMaxAccum = 0.0f;
     wfAccumCount = 0;
@@ -345,10 +350,18 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         {
             double octaves = std::log2(std::max(1.01, edges[(size_t)bi].hi / edges[(size_t)bi].lo));
             double perOct  = bandPower[bi] / octaves;
+            // THE WHOLE-RUN ACCUMULATOR, fed from the SAME perOct the ballistic
+            // line below consumes. Power, summed; the mean and its dB are taken
+            // at read-out by echojay::bandMeanFromSum. Nothing below this line
+            // changes: the ballistic field is untouched by this commit.
+            bandAccum.sumPower[(size_t)bi] += perOct;
             float dbv = perOct > 1e-12 ? (float)(10.0 * std::log10(perOct)) : -120.0f;
             float coeff = (dbv > smoothedMacroBands[(size_t)bi]) ? attackCoeff : releaseCoeff;
             smoothedMacroBands[(size_t)bi] += coeff * (dbv - smoothedMacroBands[(size_t)bi]);
         }
+        ++bandAccum.blocks;
+        bandAccum.seconds += (currentSampleRate > 0.0)
+                                 ? (double) numSamples / currentSampleRate : 0.0;
     }
 
     // ===== Spectrogram history =====
@@ -1042,6 +1055,25 @@ MeterEngine::SpectrumWindow MeterEngine::reduceSpectrumWindow(bool useMean) cons
 
     w.valid = true;
     return w;
+}
+
+MeterEngine::BandAccumResult MeterEngine::getAccumulatedBands() const
+{
+    // NOT under dataMutex: bandAccum is audio-thread-owned like
+    // smoothedMacroBands, and this is called from the message thread only at
+    // points where the audio thread is known to be done with the run
+    // (ReferenceAnalyser after its loop, stopCapture after the state has moved
+    // to Complete). A torn double here would be a wrong number rather than a
+    // crash, and the call sites are the guarantee.
+    BandAccumResult r;
+    if (bandAccum.blocks <= 0) return r;          // no blocks: unavailable, not zero
+    r.valid   = true;
+    r.blocks  = bandAccum.blocks;
+    r.seconds = (float) bandAccum.seconds;
+    for (int i = 0; i < 6; ++i)
+        r.db[(size_t) i] = echojay::bandMeanFromSum (bandAccum.sumPower[(size_t) i],
+                                                     bandAccum.blocks).db;
+    return r;
 }
 
 MeterEngine::MacroWindow MeterEngine::reduceMacroWindow(bool useMean) const

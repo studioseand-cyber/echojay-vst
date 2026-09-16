@@ -54,9 +54,18 @@ inline constexpr int kRefIndexSchema = 1;
     whole-file average. Same field, different meaning. There was no index then,
     which is the only reason epoch 1 is the first rather than the second.
 
-    Phase 1b WILL bump this to 2, when macroBandDb becomes an accumulated
-    whole-window measurement rather than absent. */
-inline constexpr int kRefMeasurementEpoch = 1;
+    EPOCH 2 (Phase 1b commit 3): the six macro bands are ACCUMULATED across
+    every analysis block of the whole file, in POWER, and carry their own window
+    and reduction. Before this they were the meter's ballistic reading after the
+    final block, a ~450 ms tail that on 14 of a 45 file library was entirely on
+    the floor. Same field, different meaning, which is exactly what an epoch is
+    for.
+
+    AN EPOCH 1 ENTRY HAS NO ACCUMULATED BANDS AND SAYS SO. It never wrote the
+    key, the reader treats null, absent or a wrong length as not measured
+    (hasMacroBands stays false), and a false there must render as unavailable
+    rather than as a level. A -120 would read like a measurement of silence. */
+inline constexpr int kRefMeasurementEpoch = 2;
 
 /** The library cap. An add beyond it REFUSES and names what to remove; nothing
     is ever evicted, because an eviction is a thing the user put there
