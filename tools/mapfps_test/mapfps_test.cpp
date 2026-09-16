@@ -49,6 +49,7 @@
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
 #include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
+#include "EJTooltipPlace.h"     // the tooltip placement rule: the shipped origin
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -8292,6 +8293,144 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (refIndexAfterRemoval (3, 3) != 2,
                    "rf PIN12: the removed index does not slide down to its "
                    "predecessor, it clears");
+        }
+
+        // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
+        // window is the cursor in", which is a proxy for "is there room" and
+        // wrong in both directions: a cursor one pixel past the centre flipped
+        // the tip above with hundreds of pixels free below it, and a tall tip
+        // just before the centre went below with nowhere to go. The rule is now
+        // FIT: prefer below and right, flip only when the tip would not fit.
+        //
+        // The clamp in getTooltipBounds is deliberately NOT exercised here.
+        // These pin the DECISION, and the whole point is that a clamp cannot
+        // make it: constrainedWithin slides a rectangle until it is inside, so a
+        // tip that should have gone above arrives below, over the thing it
+        // describes, and the clamp reports success.
+        {
+            using echojay::tooltipOrigin;
+            const juce::Rectangle<int> parent { 0, 0, 1000, 600 };
+
+            // ROOM BOTH WAYS: below and right, the preferred pair. 20 below the
+            // cursor and 16 to its right, which are the offsets the old code
+            // used, so a tip already placed well does not move a pixel.
+            {
+                const auto o = tooltipOrigin ({ 100, 100 }, 200, 60, parent);
+                check (o.y == 120, "tt PIN1: room below, so the tip goes below "
+                                   "the cursor at +20");
+                check (o.x == 116, "tt PIN1: room right, so it goes right at +16");
+            }
+
+            // THE CASE THE CENTRE LINE GOT WRONG. The cursor is past the
+            // horizontal AND vertical centre of a 1000x600 parent, so the old
+            // rule flipped both ways; there is room for this small tip both
+            // below and right, so the new rule flips neither.
+            {
+                const auto o = tooltipOrigin ({ 600, 400 }, 200, 60, parent);
+                check (o.y == 420, "tt PIN1: past the centre is not the same as "
+                                   "out of room, vertically");
+                check (o.x == 616, "tt PIN1: nor horizontally");
+            }
+
+            // NO ROOM BELOW: 560 + 20 + 60 = 640 > 600, so it flips above, to
+            // mouse.y - (h + 4). Horizontal is untouched by a vertical flip.
+            {
+                const auto o = tooltipOrigin ({ 100, 560 }, 200, 60, parent);
+                check (o.y == 560 - (60 + 4),
+                       "tt PIN1: no room below, so the tip flips above at "
+                       "-(h + 4)");
+                check (o.x == 116, "tt PIN1: and the horizontal side is "
+                                   "unaffected by a vertical flip");
+            }
+
+            // NO ROOM RIGHT: 900 + 16 + 200 = 1116 > 1000, so it flips left, to
+            // mouse.x - (w + 10). Vertical is untouched.
+            {
+                const auto o = tooltipOrigin ({ 900, 100 }, 200, 60, parent);
+                check (o.x == 900 - (200 + 10),
+                       "tt PIN1: no room right, so the tip flips left at "
+                       "-(w + 10)");
+                check (o.y == 120, "tt PIN1: and the vertical side is unaffected "
+                                   "by a horizontal flip");
+            }
+
+            // NEITHER FITS: both flip, independently.
+            {
+                const auto o = tooltipOrigin ({ 900, 560 }, 200, 60, parent);
+                check (o.x == 900 - (200 + 10) && o.y == 560 - (60 + 4),
+                       "tt PIN1: with room neither way, both sides flip");
+            }
+
+            // THE BOUNDARY IS EXACT, and it is <=, so a tip that fits to the
+            // last pixel is not flipped. 520 + 20 + 60 = 600 == the parent's
+            // bottom, which FITS.
+            {
+                const auto o = tooltipOrigin ({ 100, 520 }, 200, 60, parent);
+                check (o.y == 540, "tt PIN1: a tip that ends exactly on the "
+                                   "parent's edge still fits, so it stays below");
+            }
+            {
+                const auto o = tooltipOrigin ({ 100, 521 }, 200, 60, parent);
+                check (o.y == 521 - (60 + 4),
+                       "tt PIN1: and one pixel more flips it, so the boundary is "
+                       "where it is claimed to be");
+            }
+
+            // A TIP LARGER THAN THE PARENT. Neither side can fit, so both flip
+            // and the origin goes negative. That is the honest answer from this
+            // layer: the caller's constrainedWithin pulls it back to the
+            // parent's corner, which is the same pixel an unflipped tip would
+            // have been clamped to, so the degenerate case needs no branch.
+            {
+                const juce::Rectangle<int> small { 0, 0, 100, 80 };
+                const auto o = tooltipOrigin ({ 40, 40 }, 300, 200, small);
+                check (o.y == 40 - (200 + 4),
+                       "tt PIN1: a tip taller than the parent flips above and "
+                       "goes negative, for the clamp to resolve");
+                check (o.x == 40 - (300 + 10),
+                       "tt PIN1: and wider than the parent flips left the same "
+                       "way");
+            }
+
+            // EACH CORNER OF THE PARENT AREA. Top-left has room both ways;
+            // bottom-right has room neither way; the other two have room one
+            // way each. A rule keyed on the cursor's half would agree at the
+            // corners, which is exactly why the corners alone cannot pin it --
+            // the two cases above, at 600,400 and 520,560, are the ones that
+            // separate the rules.
+            {
+                const auto tl = tooltipOrigin ({ 0, 0 }, 200, 60, parent);
+                check (tl.x == 16 && tl.y == 20,
+                       "tt PIN1: at the top-left corner, below and right");
+
+                const auto tr = tooltipOrigin ({ 1000, 0 }, 200, 60, parent);
+                check (tr.x == 1000 - (200 + 10) && tr.y == 20,
+                       "tt PIN1: at the top-right, left and below");
+
+                const auto bl = tooltipOrigin ({ 0, 600 }, 200, 60, parent);
+                check (bl.x == 16 && bl.y == 600 - (60 + 4),
+                       "tt PIN1: at the bottom-left, right and above");
+
+                const auto br = tooltipOrigin ({ 1000, 600 }, 200, 60, parent);
+                check (br.x == 1000 - (200 + 10) && br.y == 600 - (60 + 4),
+                       "tt PIN1: at the bottom-right, left and above");
+            }
+
+            // A PARENT THAT IS NOT AT THE ORIGIN. parentArea is
+            // parent->getLocalBounds() today, so it IS origin-zero, and this
+            // pin exists so that the day it is not -- a tip parented to
+            // something offset, or JUCE changing what it passes -- the rule is
+            // known to read the parent's EDGES rather than assuming its size.
+            {
+                const juce::Rectangle<int> offset { 500, 300, 400, 200 };
+                const auto o = tooltipOrigin ({ 600, 400 }, 100, 40, offset);
+                check (o.y == 420, "tt PIN1: an offset parent still has room "
+                                   "below, measured against its bottom edge");
+                const auto o2 = tooltipOrigin ({ 600, 470 }, 100, 40, offset);
+                check (o2.y == 470 - (40 + 4),
+                       "tt PIN1: and runs out of it at its bottom edge, not at "
+                       "its height");
+            }
         }
 
         // rf PIN6 -- WHICH SLOT THE BAR DRIVES. compareTop_ defaults to Live

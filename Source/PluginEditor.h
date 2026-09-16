@@ -2243,7 +2243,17 @@ private:
         juce::TextButton reportBtn;
         static constexpr int kReportBtnW = 92;
         std::function<void(int)> onReport;   // slot index; the editor owns the popup
-        juce::TooltipWindow tooltipWindow { this, 600 };
+        // NO TooltipWindow HERE. It was a second one in the same component tree
+        // and the same peer, and TooltipWindow::timerCallback gates on the PEER
+        // (newComp->getPeer() == getPeer()) with no containment test in
+        // getTipFor, so this window served every tip in the whole editor, not
+        // just the panel's. Two tips appeared for every hover: this one at
+        // 600ms, positioned against the PANEL's origin and clamped to the
+        // PANEL's bounds, then the editor's at 700ms in editor coordinates.
+        // JUCE's own jassert never caught it because it only fires when the two
+        // windows share a parent component (juce_TooltipWindow.cpp:145).
+        // The editor's tooltipWindow_ serves this panel; the only change a user
+        // can see is that tips now wait 700ms rather than 600ms.
 
         juce::String statusText;
 
