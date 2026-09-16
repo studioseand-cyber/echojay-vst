@@ -1934,7 +1934,10 @@ private:
         struct EditGateOverlay : juce::Component
         {
             juce::String text;
-            EditGateOverlay() { setInterceptsMouseClicks(true, true); setWantsKeyboardFocus(true); }
+            // COMMIT 2b (ruling, 17 Sep 2026): NO keyboard focus. Every edit callback is
+            // already gated by chainEditGateRefuses(); the overlay swallows the mouse and
+            // keys that reach it, and must never move focus out of the chat text box.
+            EditGateOverlay() { setInterceptsMouseClicks(true, true); setWantsKeyboardFocus(false); }
             void paint(juce::Graphics& g) override
             {
                 g.fillAll(juce::Colour(0xcc1a1a1a));                          // grey-out, content visible beneath
@@ -2830,7 +2833,7 @@ private:
             // state falls back. It grabs focus so keys land nowhere beneath.
             editGate.text = editGateText;
             editGate.setVisible(editBlocked);
-            if (editBlocked) { editGate.toFront(false); editGate.grabKeyboardFocus(); }
+            if (editBlocked) editGate.toFront(false);   // COMMIT 2b: no grabKeyboardFocus
             editGate.repaint();
             // THE INLINE EDITOR IS THE ONE GENUINELY IMPOSSIBLE ITEM, not a
             // deferred one: the plugin instance lives in the Link's process
