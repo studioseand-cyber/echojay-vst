@@ -8,6 +8,16 @@
 # a mutation that does not apply says so instead of producing a silent no-op
 # green. Each is run against a PRISTINE copy: they do not stack.
 #
+# EACH PASS PRINTS ONE OF THREE VERDICTS, and INCONCLUSIVE is the default:
+#
+#   REDDENED      the suite ran and reported FAIL (   the pins saw it
+#   SURVIVED      the suite ran and reported PASS (   the pins are blind
+#   INCONCLUSIVE  no verdict line was parsed          nothing was measured
+#
+# The only way out of INCONCLUSIVE is an affirmative PASS ( or FAIL ( line from
+# the suite itself. A build failure, a missing binary, an empty log or a log
+# with no verdict line all stay INCONCLUSIVE and say which.
+#
 # ---------------------------------------------------------------------------
 # WHY THIS FILE EXISTS, WHICH IS THE WHOLE POINT
 # ---------------------------------------------------------------------------
@@ -78,29 +88,75 @@ for MUT in "$@"; do
   cp "$PRISTINE" "$TARGET"
 
   if ! python3 "$MUT"; then
-    # A mutation that does not apply is NOT a pass. Saying so is the difference
-    # between a no-op and a green, and one of these was read as a green once.
-    echo "!! DID NOT APPLY, so this pass measured NOTHING"
+    echo "VERDICT: INCONCLUSIVE (the mutation did not apply)"
     cp "$PRISTINE" "$TARGET"
     continue
   fi
 
   if cmp -s "$PRISTINE" "$TARGET"; then
-    echo "!! APPLIED BUT CHANGED NOTHING, so this pass measured NOTHING"
+    echo "VERDICT: INCONCLUSIVE (applied, but the file is unchanged)"
     cp "$PRISTINE" "$TARGET"
     continue
   fi
 
   OUT="$(mktemp -t ej_mutate_run)"
   "$RUNNER" > "$OUT" 2>&1
+  RUNNER_RC=$?
+
   grep -E '^  FAIL' "$OUT" | sort -u
   grep -E '^(PASS|FAIL)  \(' "$OUT"
-  if ! grep -qE '^FAIL  \(' "$OUT"; then
-    # A mutation that reddens nothing means the pins cannot see the defect it
-    # introduces. That is a finding, not a success, and it is stated here so it
-    # cannot be skimmed past in a wall of green.
-    echo "!! REDDENED NOTHING: the pins are blind to this mutation"
+
+  # ------------------------------------------------------------------------
+  # THREE OUTCOMES, AND INCONCLUSIVE IS THE DEFAULT.
+  #
+  # The run leaves INCONCLUSIVE only by PARSING AN AFFIRMATIVE VERDICT LINE
+  # out of the suite's own output. Nothing else promotes it: not the runner's
+  # exit code, not the absence of failures, not the log existing.
+  #
+  # WHY THE DEFAULT MATTERS, and it is not the full disk that made this
+  # visible. THE DANGEROUS CASE IS A MUTATION THAT DOES NOT COMPILE. The suite
+  # fails to build, no pin runs, and the old code announced "REDDENED NOTHING:
+  # the pins are blind to this mutation" because it tested for the ABSENCE of
+  # a FAIL line. That is an invitation to delete a pin that works, on evidence
+  # that was never gathered. Absence of a failure is not evidence of survival.
+  # ------------------------------------------------------------------------
+  VERDICT="INCONCLUSIVE"
+  WHY=""
+  if [ ! -s "$OUT" ]; then
+    VERDICT="INCONCLUSIVE"
+    WHY="the suite produced no output at all"
+  elif grep -qE '^FAIL  \(' "$OUT"; then
+    VERDICT="REDDENED"
+    WHY="$(grep -m1 -E '^FAIL  \(' "$OUT")"
+  elif grep -qE '^PASS  \(' "$OUT"; then
+    VERDICT="SURVIVED"
+    WHY="$(grep -m1 -E '^PASS  \(' "$OUT")"
+  elif [ "$RUNNER_RC" -ne 0 ]; then
+    WHY="the suite exited $RUNNER_RC with no verdict line, so it did not run to completion"
+  else
+    WHY="the suite exited 0 but printed no PASS ( or FAIL ( line"
   fi
+
+  case "$VERDICT" in
+    REDDENED)
+      echo "VERDICT: REDDENED  ($WHY)"
+      echo "         the pins saw this mutation" ;;
+    SURVIVED)
+      echo "VERDICT: SURVIVED  ($WHY)"
+      echo "         THE PINS ARE BLIND TO THIS MUTATION. That is a finding," 
+      echo "         not a success: the suite ran to completion and nothing" 
+      echo "         objected to a deliberate defect." ;;
+    *)
+      echo "VERDICT: INCONCLUSIVE ($WHY)"
+      echo "         NOTHING WAS MEASURED. Do not read this as a surviving"
+      echo "         mutation and do not delete a pin on it. The most likely"
+      echo "         cause is a mutation that does not compile; check the"
+      echo "         suite's own output before concluding anything."
+      if [ "$RUNNER_RC" -ne 0 ]; then
+        echo "         --- last 6 lines of the suite's output ---"
+        tail -6 "$OUT" | sed 's/^/         /'
+      fi ;;
+  esac
   rm -f "$OUT"
 
   cp "$PRISTINE" "$TARGET"
