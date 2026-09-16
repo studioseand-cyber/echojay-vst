@@ -4,6 +4,7 @@
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
+#include "ChainEditGate.h"       // COMMIT 2: ITEM 1 — the one pure chain-edit gate
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -1931,6 +1932,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     chainListPanel.onSelectSlot = [this](int i) { chainSelectedSlot_ = i; };
     chainListPanel.onRemoveSlot = [this](int i) {
+        if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         // Same fork, same reason. The local body keeps its 80ms deferred
         // destroy (the AMEK EQ 250 segfault); a remote remove needs none of
         // that, because nothing in this process is being destroyed.
@@ -2015,6 +2017,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         });
     };
     chainListPanel.onBypassSlot = [this](int i) {
+        if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         // THE FORK, and it is the only one: a REMOTE rack sends the op and
         // waits for the ack and the republished sidecar; the LOCAL rack runs
         // the original synchronous body below, untouched. The two never share
@@ -2039,6 +2042,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         repaint();
     };
     chainListPanel.onMoveSlot = [this](int i, int dir) {
+        if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         // Phase 3: a borrowed rack reorders locally when the Link announced
         // structure capability; a remote view still never reorders the
         // LOCAL rack, and an old Link's borrow keeps its shape — SAID, not
@@ -2083,11 +2087,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         refreshChainPanelForView(false);   // moveSlot bumps the revision
         repaint();
     };
-    chainListPanel.onAddClick = [this] { showChainPluginPicker(); };
+    chainListPanel.onAddClick = [this] { if (chainEditGateRefuses()) return; showChainPluginPicker(); };   // COMMIT 2
     // Wet/dry: pure value writes into ChainHost (atomic, smoothed on the
     // audio thread) — no rebuild, safe at knob-drag rate. Persisted via the
     // chain slots XML on the next host state save.
     chainListPanel.onSlotWet = [this](int i, float v) {
+        if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         // Stage 2. There is no wet op, so a remote rack must not silently
         // write the LOCAL one; the knob is hidden in remote mode and this
         // guard is the second lock on the same door. A BORROWED rack is
@@ -2100,6 +2105,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         processorRef.getChainHost().setSlotWet(i, v, ChainHost::WetSource::User);
     };
     chainListPanel.onMasterWet = [this](float v) {
+        if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         const juce::String uid = chainViewUid();
         if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
         { bh->setMasterWet(v); return; }
@@ -2196,6 +2202,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
+        if (chainEditGateRefuses()) return;   // COMMIT 2: no plugin window until held
         const juce::String uid = chainViewUid();
         if (uid.isEmpty()) return;      // local racks open inline, unchanged
         // Stage 1: a remote slot click opens a SOLO edit session here (the
@@ -2500,6 +2507,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 appendLocalResultBubble("\"" + channelDisplayLabel(uid)
                     + "\" is offline - nothing was built. Reopen it in the "
                       "DAW and press Build again.");
+                return;
+            }
+            if (chainEditGateRefusesFor(uid))
+            {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet — refuse
+                // with the overlay's own line, so Build and the panel say one thing.
+                appendLocalResultBubble(chainLockStateText(processorRef.rackLockState()));
                 return;
             }
             sendChainToLink(uid, chainBuildJsons[(size_t)i]);
@@ -7606,6 +7619,12 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
                 writeLocked = true;   // acquiring; one tick at most
                 break;
         }
+    // COMMIT 2 (17 Sep 2026): ITEM 1 — ONE pure decision (ChainEditGate.h):
+    // a Link rack is editable only when Held; the own chain always. Text is
+    // the overlay's single line, and what Build/Apply refuse with.
+    const bool         chainEditable = chainEditableFor(v.remote, processorRef.rackLockState());
+    const juce::String chainGateText = v.remote ? chainLockStateText(processorRef.rackLockState())
+                                                : juce::String();
 
     // NO DATA is a state of the view, decided once and used by the signature,
     // the status line and the (single) rebuild below.
@@ -7629,7 +7648,8 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
         << (int) v.offline << (int) writeLocked << (int) v.borrowed
         << (int) processorRef.borrowActive()   // the release affordance's input
         << "|" << (int) v.slots.size() << "|"
-        << chainSelectedSlot_ << "|" << pendingNote << "|" << lockLine;
+        << chainSelectedSlot_ << "|" << pendingNote << "|" << lockLine
+        << "|" << (int) chainEditable << "|" << chainGateText;   // COMMIT 2: the gate is a render input
     if (!force && sig == chainViewSig_) return;
     chainViewSig_ = sig;
 
@@ -7645,6 +7665,8 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     chainListPanel.remoteOffline = v.offline;
     chainListPanel.remoteWriteLocked  = writeLocked;
     chainListPanel.remoteWriteLockWhy = lockLine;
+    chainListPanel.editBlocked  = ! chainEditable;   // COMMIT 2: overlay up / edits refused
+    chainListPanel.editGateText = chainGateText;
     // Borrow affordance (step 2), one author: offered ONLY against a Link
     // that announces borrowCapable — an old binary is never offered, so it
     // can never half-engage (the wire-level refusal is the belt; this is
@@ -23754,6 +23776,13 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.uid == uid) { label = e.displayName; connected = e.info.connected; break; }
 
+    if (chainEditGateRefusesFor(uid))
+    {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet — same line as the overlay
+        retireLinkEditCard(key, chatIdAtApply,
+            "Not applied: " + chainLockStateText(processorRef.rackLockState()), {}, {}, {});
+        return;
+    }
+
     if (!connected)
     {
         retireLinkEditCard(key, chatIdAtApply,
@@ -28338,6 +28367,22 @@ void EchoJayEditor::showChainPluginPicker()
 // =============================================================================
 // Link chain send side — Build target menu, command write, ack polling
 // =============================================================================
+// COMMIT 2 (17 Sep 2026): ITEM 1 — ONE question, asked by every path that
+// edits the chain panel or builds/applies into it. The decision is the pure
+// chainEditableFor() in ChainEditGate.h; this supplies the view's inputs and
+// logs a refusal. For Build/Apply the gate applies only when the target uid
+// IS the selected rack: rackLockState() describes the selected rack, not
+// some other Link the chat may be addressing.
+bool EchoJayEditor::chainEditGateRefusesFor(const juce::String& uid)
+{
+    const bool remote = uid.isNotEmpty();
+    if (remote && uid != chainViewUid()) return false;
+    if (chainEditableFor(remote, processorRef.rackLockState())) return false;
+    EchoJay_NSLog(("EJEditGate: refused - " + chainLockStateText(processorRef.rackLockState())).toRawUTF8());
+    return true;
+}
+bool EchoJayEditor::chainEditGateRefuses() { return chainEditGateRefusesFor(chainViewUid()); }
+
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {

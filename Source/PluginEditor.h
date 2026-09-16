@@ -64,6 +64,11 @@ public:
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDoubleClick(const juce::MouseEvent&) override;
     bool keyPressed(const juce::KeyPress& key) override;
+    // COMMIT 2 (17 Sep 2026): ITEM 1 — the edit gate, ONE question asked by
+    // every chain-edit path (panel callbacks, chat Build, chat Apply). The
+    // decision itself is the pure chainEditableFor() in ChainEditGate.h.
+    bool chainEditGateRefuses();
+    bool chainEditGateRefusesFor(const juce::String& uid);
     
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
@@ -1921,6 +1926,30 @@ private:
         };
 
         juce::Viewport   stripView;
+        // COMMIT 2 (17 Sep 2026): ITEM 1 loading overlay. Covers the strip
+        // band right of the rack selector while chainEditableFor() says no:
+        // greys the content, shows ONE line of state text, and swallows every
+        // mouse + keyboard path beneath it. Shown/hidden by the rebuild only
+        // (the one author), so it clears on Held and returns if state falls back.
+        struct EditGateOverlay : juce::Component
+        {
+            juce::String text;
+            EditGateOverlay() { setInterceptsMouseClicks(true, true); setWantsKeyboardFocus(true); }
+            void paint(juce::Graphics& g) override
+            {
+                g.fillAll(juce::Colour(0xcc1a1a1a));                          // grey-out, content visible beneath
+                g.setColour(juce::Colours::white.withAlpha(0.85f));
+                g.setFont(14.0f);
+                g.drawText(text, getLocalBounds().reduced(12), juce::Justification::centred, true);
+            }
+            bool keyPressed(const juce::KeyPress&) override { return true; }   // swallow
+            void mouseDown(const juce::MouseEvent&) override {}
+            void mouseDrag(const juce::MouseEvent&) override {}
+            void mouseUp(const juce::MouseEvent&) override {}
+            void mouseDoubleClick(const juce::MouseEvent&) override {}
+            void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override {}
+        };
+        EditGateOverlay  editGate;
         StripContent     stripContent;
         juce::TextButton addBlock { "+" };
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
@@ -2117,6 +2146,10 @@ private:
         // by refreshChainPanelForView (the one author), like the flags above.
         bool         remoteWriteLocked = false;
         juce::String remoteWriteLockWhy;
+        // COMMIT 2 (17 Sep 2026): ITEM 1 loading state. Set by the ONE author
+        // (refreshChainPanelForView) from chainEditableFor()/chainLockStateText().
+        bool         editBlocked = false;     // overlay up; every edit path refuses
+        juce::String editGateText;            // "Connecting to rack…" etc.; empty when editable
         std::function<void(int)>        onSelectSlot;
         std::function<void(int)>        onRemoveSlot;
         std::function<void(int)>        onBypassSlot;
@@ -2188,6 +2221,8 @@ private:
             stripView.setViewedComponent(&stripContent, false);
             stripView.setScrollBarsShown(false, true, false, true);
             stripView.setScrollBarThickness(8);
+            addAndMakeVisible(editGate);       // COMMIT 2: on top of the strip band
+            editGate.setVisible(false);
 
             addBlock.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
             addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
@@ -2785,6 +2820,14 @@ private:
             layoutStrip();
             // MASTER WET is whole-rack and has no remote op either.
             masterKnob.setVisible(!remote);
+            // COMMIT 2 (17 Sep 2026): the loading overlay — up whenever the
+            // one gate says the panel is not editable (a Link rack not yet
+            // Held: Idle / WaitRecency / HeldByOther), down on Held, back if
+            // state falls back. It grabs focus so keys land nowhere beneath.
+            editGate.text = editGateText;
+            editGate.setVisible(editBlocked);
+            if (editBlocked) { editGate.toFront(false); editGate.grabKeyboardFocus(); }
+            editGate.repaint();
             // THE INLINE EDITOR IS THE ONE GENUINELY IMPOSSIBLE ITEM, not a
             // deferred one: the plugin instance lives in the Link's process
             // slot, so no protocol addition can render it here. Every editor
@@ -2992,6 +3035,11 @@ private:
                                 kStripH);
             masterKnob.setBounds(getWidth() - kMasterW + 9,
                                  getHeight() - kStripH + 6, 44, 54);
+            // COMMIT 2: the loading overlay covers the whole strip band RIGHT
+            // of the rack selector (pre-gain, slots, add, master mix) so the
+            // user can still change or deselect the rack while it loads.
+            editGate.setBounds(kRackSelW, getHeight() - kStripH,
+                               juce::jmax(0, getWidth() - kRackSelW), kStripH);
             updateCard();
             layoutStrip();
             layoutInline();
