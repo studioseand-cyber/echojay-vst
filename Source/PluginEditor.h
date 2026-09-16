@@ -504,7 +504,7 @@ private:
     KeySources keySources_;
     int keySourcesDiv_ = 0;
     std::array<float, 12> keyChromaShown_ {};
-    juce::Rectangle<int> keyPanelBounds_, keyReanalyseRect_;
+    juce::Rectangle<int> keyPanelBounds_, keyReanalyseRect_, keyRelativeRect_;   // COMMIT 4: REL chip
     // RE-ANALYSE feedback: the remote pass has no visible activity, so the
     // chip says "listening" until the reading's age drops (or 15 s pass).
     juce::uint32 keyReanalyseSentMs_ = 0;

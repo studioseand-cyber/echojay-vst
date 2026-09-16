@@ -3,6 +3,7 @@
 */
 
 #include "EedKeyDetectorEditor.h"
+#include "EedKeyFeed.h"   // COMMIT 4: KeyDisplayPrefs (keyShowRelative)
 #include "EqNote.h"     // describeFreqAsNote — the root readout ("F#2")
 
 using namespace echojay::device;
@@ -78,6 +79,22 @@ EedKeyDetectorEditor::EedKeyDetectorEditor (EedKeyDetectorProcessor& p)
     setupToggle (autoTuneBtn_, EedKeyDetectorProcessor::kAutoTuning);
     setupToggle (hpssBtn_,     EedKeyDetectorProcessor::kHpss);
 
+    // keyShowRelative (COMMIT 4, 17 Sep 2026): the relative-key toggle on the
+    // key display. The ONE process-wide preference (KeyDisplayPrefs), not a
+    // schema param - a display choice is not something the AI dials. The
+    // host plugin persists it (EchoJayProcessor / LinkProcessor state); the
+    // non-parameter change tells it to re-snapshot.
+    styleButton (relBtn_, true);
+    relBtn_.setTooltip ("Show the relative key (A minor <-> C major) on every key display and in the prompt");
+    relBtn_.setToggleState (echojay::KeyDisplayPrefs::showRelative().load(), juce::dontSendNotification);
+    relBtn_.onClick = [this]
+    {
+        echojay::KeyDisplayPrefs::showRelative().store (relBtn_.getToggleState());
+        proc_.updateHostDisplay (juce::AudioProcessor::ChangeDetails{}.withNonParameterStateChanged (true));
+        repaint();
+    };
+    addAndMakeVisible (relBtn_);
+
     // ANALYSE and RESET are momentary actions, not switches.
     styleButton (analyseBtn_, false);
     analyseBtn_.onClick = [this]
@@ -124,6 +141,8 @@ void EedKeyDetectorEditor::layoutHeaderLeading (juce::Rectangle<int>& bar)
 {
     const int w = juce::jmin (86, bar.getWidth());
     modeLockBox_.setBounds (bar.removeFromRight (w).reduced (0, 3));
+    bar.removeFromRight (6);
+    relBtn_.setBounds (bar.removeFromRight (juce::jmin (44, bar.getWidth())).reduced (0, 3));   // COMMIT 4
     bar.removeFromRight (6);
 }
 
@@ -286,17 +305,15 @@ void EedKeyDetectorEditor::paintWheel (juce::Graphics& g, juce::Rectangle<float>
         }
         else if (reading.valid)
         {
+            // COMMIT 4: "A minor" style, relative under the toggle, NO
+            // confidence readout - the reading is the key, not a doubt.
             char name[24];
-            echojay::KeyEngine::keyName (reading.root, reading.minor, name, sizeof (name));
+            echojay::KeyEngine::keyNameShown (reading.root, reading.minor,
+                                              echojay::KeyDisplayPrefs::showRelative().load(),
+                                              name, sizeof (name));
             g.setColour (juce::Colours::white.withAlpha (proc_.isBypassed() ? 0.4f : 1.0f));
             g.setFont (uiFont (juce::jmin (17.0f, rIn * 0.42f), true));
-            g.drawText (name, box.removeFromTop (box.getHeight() * 0.58f),
-                        juce::Justification::centredBottom);
-            g.setColour (DwellGlow::heatColour (reading.confidence));
-            g.setFont (uiFont (10.0f, true));
-            g.drawText (juce::String (reading.confidence, 2)
-                          + (reading.confidence < 0.5f ? " LOW" : ""),
-                        box, juce::Justification::centredTop);
+            g.drawText (name, box, juce::Justification::centred);
         }
         else if (activity.lastPassEmpty)
         {
@@ -322,24 +339,8 @@ void EedKeyDetectorEditor::paintReadout (juce::Graphics& g, juce::Rectangle<int>
     const auto reading = proc_.engine().getReading();
     auto r = area;
 
-    // Confidence meter: a thin bar coloured by the glow ramp.
-    {
-        auto row = r.removeFromTop (16);
-        g.setColour (C::text3);
-        g.setFont (uiFont (9.0f, true));
-        g.drawText ("CONFIDENCE", row.removeFromLeft (70), juce::Justification::centredLeft);
-        auto bar = row.reduced (0, 4);
-        g.setColour (C::bg3);
-        g.fillRoundedRectangle (bar.toFloat(), 2.0f);
-        if (reading.valid)
-        {
-            auto fill = bar.toFloat();
-            fill.setWidth (fill.getWidth() * juce::jlimit (0.0f, 1.0f, reading.confidence));
-            g.setColour (DwellGlow::heatColour (reading.confidence));
-            g.fillRoundedRectangle (fill, 2.0f);
-        }
-    }
-    r.removeFromTop (4);
+    // COMMIT 4 (17 Sep 2026): the confidence meter is gone - no confidence
+    // readout on the key display. The reading is the key.
 
     g.setFont (uiFont (10.0f));
     auto line = [&] (const juce::String& label, const juce::String& value)
@@ -373,16 +374,6 @@ void EedKeyDetectorEditor::paintReadout (juce::Graphics& g, juce::Rectangle<int>
         }
         line ("ANALYSED", analysed);
 
-        if (reading.confidence < 0.5f && r.getHeight() >= 13)
-        {
-            auto row = r.removeFromTop (14);
-            g.setColour (C::amber);
-            g.setFont (uiFont (9.0f, true));
-            g.drawText ("LOW CONFIDENCE - treat the key as unknown", row,
-                        juce::Justification::centredLeft);
-            g.setFont (uiFont (10.0f));
-        }
-
         if (reading.numAlternates > 0 && r.getHeight() >= 26)
         {
             r.removeFromTop (2);
@@ -394,7 +385,9 @@ void EedKeyDetectorEditor::paintReadout (juce::Graphics& g, juce::Rectangle<int>
             {
                 const auto& a = reading.alternates[(std::size_t) i];
                 char name[24];
-                echojay::KeyEngine::keyName (a.root, a.minor, name, sizeof (name));
+                echojay::KeyEngine::keyNameShown (a.root, a.minor,
+                                                  echojay::KeyDisplayPrefs::showRelative().load(),
+                                                  name, sizeof (name));   // COMMIT 4
                 g.setColour (C::text2);
                 g.drawText (juce::String (name) + "  (" + juce::String (a.score, 2) + ")",
                             r.removeFromTop (12), juce::Justification::centredLeft);
@@ -441,6 +434,10 @@ void EedKeyDetectorEditor::syncFromProcessor()
     syncToggle (contBtn_,     EedKeyDetectorProcessor::kContinuous);
     syncToggle (autoTuneBtn_, EedKeyDetectorProcessor::kAutoTuning);
     syncToggle (hpssBtn_,     EedKeyDetectorProcessor::kHpss);
+    {   // COMMIT 4: the process-wide pref may have been toggled on another key display
+        const bool on = echojay::KeyDisplayPrefs::showRelative().load();
+        if (relBtn_.getToggleState() != on) relBtn_.setToggleState (on, juce::dontSendNotification);
+    }
 
     const int lockIdx = (int) proc_.getParamValue (EedKeyDetectorProcessor::kModeLock);
     if (modeLockBox_.getSelectedId() != lockIdx + 1)
@@ -495,7 +492,8 @@ void EedKeyDetectorEditor::timerCallback()
         | ((juce::int64) (activity.lastPassEmpty ? 1 : 0)    << 22)
         | ((juce::int64) (reading.valid ? 1 : 0)             << 23)
         | ((juce::int64) juce::roundToInt (activity.progress * 100.0f) << 24)
-        | ((juce::int64) juce::roundToInt (reading.confidence * 100.0f) << 32);
+        | ((juce::int64) juce::roundToInt (reading.confidence * 100.0f) << 32)
+        | ((juce::int64) (echojay::KeyDisplayPrefs::showRelative().load() ? 1 : 0) << 40);   // COMMIT 4: repaint on toggle
     if (const auto stamp = proc_.readingChangeMs(); stamp != 0 && reading.valid)
         statusKey |= (juce::int64) ((juce::Time::getMillisecondCounter() - stamp)
                                     / 5000u) << 40;   // age line ticks every 5 s

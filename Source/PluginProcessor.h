@@ -227,6 +227,10 @@ public:
     juce::String getKeySourcePin()      const { return keySourcePin_; }
     juce::String getKeySourcePinLabel() const { return keySourcePinLabel_; }
     void setKeySourcePin(const juce::String& pinId, const juce::String& label);
+    // COMMIT 4 (17 Sep 2026): keyShowRelative - the process-wide display
+    // pref (echojay::KeyDisplayPrefs), persisted in this instance's state
+    // beside keySourcePin (the nearest key setting's pattern).
+    void setKeyShowRelative(bool on);
 
     // ---- key source collection (KEY_DETECTOR_SPEC §9, PITCH spec §6) -----
     // THE ONE precedence walk that ranks every key source — capture, bus

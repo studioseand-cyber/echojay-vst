@@ -1665,6 +1665,12 @@ void EchoJayProcessor::armSelfKeyAnalysis()
     EchoJay_NSLog("EJKey: self RE-ANALYSE armed");
 }
 
+void EchoJayProcessor::setKeyShowRelative(bool on)
+{
+    echojay::KeyDisplayPrefs::showRelative().store(on);
+    markStateDirty();   // the host re-snapshots; the value rides getStateInformation
+}
+
 void EchoJayProcessor::setKeySourcePin(const juce::String& pinId,
                                        const juce::String& label)
 {
@@ -4321,6 +4327,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     // §7: key source pin — per instance, survives a session reload
     state->setProperty("keySourcePin", keySourcePin_);
     state->setProperty("keySourcePinLabel", keySourcePinLabel_);
+    state->setProperty("keyShowRelative", echojay::KeyDisplayPrefs::showRelative().load());   // COMMIT 4
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
     state->setProperty("passCounter", passCounter);
     state->setProperty("projectName", projectName);
@@ -4535,6 +4542,8 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 keySourcePinLabel_ = obj->getProperty("keySourcePinLabel").toString();
                 selfKeyForced_.store(keySourcePin_ == "self", std::memory_order_relaxed);
             }
+            if (obj->hasProperty("keyShowRelative"))   // COMMIT 4 (absent on older saves = off)
+                echojay::KeyDisplayPrefs::showRelative().store((bool) obj->getProperty("keyShowRelative"));
             if (obj->hasProperty("customChannelName"))
                 customChannelName = obj->getProperty("customChannelName").toString();
             // Restore dismissed — if field exists use it, otherwise derive from channel type

@@ -638,6 +638,7 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
         keyLine << "key auto: " << kNames[st.root % 12] << (st.minor ? " minor" : " major")
                 << "  " << juce::String (st.tuningHz, 1) << " Hz"
                 << "  conf " << juce::String (st.conf, 2);
+        if (st.held) keyLine << "  (held - no source right now)";   // COMMIT 4
         if (st.sourceName.isNotEmpty()) keyLine << "   from \"" << st.sourceName << "\"";
     }
     else
@@ -645,9 +646,10 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
         // The fallback is SHOWN, never silent: a user who cannot see that the
         // key was rejected reads chromatic correction as the device misbehaving.
         col = C::amber;
+        // COMMIT 4: there is no confidence fallback any more - only "nothing
+        // detected yet" (and the self-derived guard) reach chromatic.
         keyLine = st.keySelfIgnored ? juce::String ("key auto: only this track measurable - not followed - using CHROMATIC")
-                : st.conf > 0.0f    ? "key auto: confidence " + juce::String (st.conf, 2) + " too low - using CHROMATIC"
-                                    : juce::String ("key auto: no bus key yet - using CHROMATIC");
+                                    : juce::String ("key auto: no key detected yet - using CHROMATIC");
     }
     if (voiceLine.contains ("suggests")) col = C::amber;
     g.setColour (col);

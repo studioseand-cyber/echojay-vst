@@ -224,6 +224,11 @@ public:
     static const char* pitchClassName (int pc);
     // "F# minor" — formatted into a caller buffer (>= 16 chars).
     static void keyName (int root, bool minor, char* buf, int bufLen);
+    // COMMIT 4 (17 Sep 2026): the relative major/minor partner (A minor <->
+    // C major), and THE display helper every key display and the prompt use
+    // - with keyShowRelative applied - so the toggle can never show two names.
+    static void relativeKey (int root, bool minor, int& rootOut, bool& minorOut);
+    static void keyNameShown (int root, bool minor, bool showRelative, char* buf, int bufLen);
 
     // The analysis sample rate after internal decimation — exposed for tests.
     double analysisRate() const           { return fsA_; }

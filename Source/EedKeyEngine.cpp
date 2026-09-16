@@ -1190,4 +1190,17 @@ void KeyEngine::keyName (int root, bool minor, char* buf, int bufLen)
                    pitchClassName (root), minor ? "minor" : "major");
 }
 
+void KeyEngine::relativeKey (int root, bool minor, int& rootOut, bool& minorOut)
+{
+    const int k = relativeKeyOf ((((root % 12) + 12) % 12) + (minor ? 12 : 0));
+    rootOut  = k % 12;
+    minorOut = k >= 12;
+}
+
+void KeyEngine::keyNameShown (int root, bool minor, bool showRelative, char* buf, int bufLen)
+{
+    if (showRelative) relativeKey (root, minor, root, minor);
+    keyName (root, minor, buf, bufLen);
+}
+
 } // namespace echojay

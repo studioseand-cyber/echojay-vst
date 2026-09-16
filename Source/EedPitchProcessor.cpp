@@ -690,11 +690,10 @@ void EedPitchProcessor::refreshAutoKey()
 
     const echojay::DetectedKeyFact f = echojay::KeyFeed::instance().get();
 
-    // THE CONFIDENCE GATE. Below it, fall back to CHROMATIC - never to the
-    // last known key. A stale key is applied with total confidence and can
-    // force a note that is wrong for the song; chromatic still tunes every
-    // note and cannot. Measured: correcting to a wrong key pushed a take from
-    // 13 cents off the nearest note to 29, i.e. worse than not correcting.
+    // THE CONFIDENCE GATE IS GONE (COMMIT 4, 17 Sep 2026 ruling): usable ==
+    // valid. The corrector locks to the nearest key from the FIRST valid
+    // detection and HOLDS it - chromatic only before that first detection,
+    // never again on confidence, never when the source goes quiet.
     const bool usable = f.usable();
 
     // A fact whose primary came from THIS instance's own channel: the
@@ -708,29 +707,31 @@ void EedPitchProcessor::refreshAutoKey()
     const bool keyCircular = keySelfGuard_.load() && selfFact;
     const bool keyUsable   = usable && ! keyCircular;
 
+    // HOLD (COMMIT 4): with no usable fact, a key already taken STAYS. Only
+    // before the first valid detection is there nothing to hold - chromatic.
+    const bool holding = keyAuto && ! keyUsable && lastAutoRoot_ >= 0;
     if (keyAuto)
     {
-        const int  root  = keyUsable ? f.root  : 0;
-        const bool minor = keyUsable ? f.minor : false;
-
-        if (! keyUsable)
+        if (keyUsable)
         {
-            if (! lastAutoFellBack_)
+            const int  root  = f.root;
+            const bool minor = f.minor;
+            if (root != lastAutoRoot_ || minor != lastAutoMinor_ || lastAutoFellBack_)
             {
+                // A live key change - a modulation, or a new song under a
+                // running instance - cross-fades rather than switching on a
+                // sample. Any confidence: the nearest key, locked.
                 correct_.beginScaleCrossfade();
-                applyScale (kScaleChromatic);
-                lastAutoFellBack_ = true;
-                lastAutoRoot_ = -1;
+                correct_.setKeyRoot (root);
+                applyScale (minor ? kScaleMinor : kScaleMajor);
+                lastAutoRoot_ = root; lastAutoMinor_ = minor; lastAutoFellBack_ = false;
             }
         }
-        else if (root != lastAutoRoot_ || minor != lastAutoMinor_ || lastAutoFellBack_)
+        else if (! holding && ! lastAutoFellBack_)
         {
-            // A live key change - a modulation, or a new song under a running
-            // instance - cross-fades rather than switching on a sample.
             correct_.beginScaleCrossfade();
-            correct_.setKeyRoot (root);
-            applyScale (minor ? kScaleMinor : kScaleMajor);
-            lastAutoRoot_ = root; lastAutoMinor_ = minor; lastAutoFellBack_ = false;
+            applyScale (kScaleChromatic);
+            lastAutoFellBack_ = true;
         }
     }
 
@@ -759,10 +760,11 @@ void EedPitchProcessor::refreshAutoKey()
 
     const juce::ScopedLock sl (autoLock_);
     autoState_.active     = keyAuto;
-    autoState_.applied    = keyAuto && keyUsable;
-    autoState_.fellBack   = keyAuto && ! keyUsable;
-    autoState_.root       = keyUsable ? f.root : 0;
-    autoState_.minor      = keyUsable && f.minor;
+    autoState_.applied    = keyAuto && (keyUsable || holding);
+    autoState_.fellBack   = keyAuto && ! keyUsable && ! holding;
+    autoState_.held       = holding;
+    autoState_.root       = keyUsable ? f.root  : (holding ? lastAutoRoot_  : 0);
+    autoState_.minor      = keyUsable ? f.minor : (holding && lastAutoMinor_);
     autoState_.keySelfIgnored = keyAuto && usable && keyCircular;
     autoState_.conf       = f.confidence;
     autoState_.tuningHz   = f.tuningHz;

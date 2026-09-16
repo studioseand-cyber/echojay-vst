@@ -107,6 +107,10 @@ public:
         // a usable fact was ignored for KEY ROOT/MODE because it was derived
         // from this instance's own channel - chromatic applied, shown as such.
         bool  keySelfIgnored = false;
+        // COMMIT 4 (17 Sep 2026): no usable fact right now, but a key was
+        // taken earlier and is HELD (applied stays true, root/minor = the
+        // held key). Chromatic only before the first valid detection.
+        bool  held = false;
     };
     AutoKeyState autoKeyState() const;
 

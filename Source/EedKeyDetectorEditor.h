@@ -45,6 +45,7 @@ private:
     juce::TextButton contBtn_    { "CONT" };
     juce::TextButton autoTuneBtn_{ "AUTO TUNE" };
     juce::TextButton hpssBtn_    { "HPSS" };
+    juce::TextButton relBtn_     { "REL" };     // COMMIT 4: keyShowRelative toggle
     juce::ComboBox   modeLockBox_;
 
     juce::Rectangle<int> wheelBounds_, readoutBounds_;

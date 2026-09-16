@@ -18,6 +18,7 @@
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h"
+#include "EedKeyFeed.h"   // COMMIT 4: KeyDisplayPrefs (keyShowRelative)
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
 #include "EqNote.h"                  // describeFreqAsNote — root_hz note names in the feed
                                     // include, so only THIS TU pays its 8.4MB
@@ -14815,7 +14816,8 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
     auto keyText = [] (int root, bool minor)
     {
         char b[24];
-        echojay::KeyEngine::keyName(root, minor, b, (int) sizeof(b));
+        echojay::KeyEngine::keyNameShown(root, minor, echojay::KeyDisplayPrefs::showRelative().load(),
+                                         b, (int) sizeof(b));   // COMMIT 4
         return juce::String(b);
     };
     auto ageStr = [] (juce::uint32 ms)
@@ -14862,6 +14864,19 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour(srcs.pinMissing ? C::amber : (hov ? C::text : C::text2));
         g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
         g.drawText(chipLabel, keySourceMenuRect_, juce::Justification::centredRight);
+    }
+    // keyShowRelative chip (COMMIT 4): the relative-key toggle, same chip
+    // idiom, left of SOURCE. Lit when on. Persisted by the processor.
+    {
+        const bool rel = echojay::KeyDisplayPrefs::showRelative().load();
+        const int chipW = 30;
+        const int chipY = compact ? area.getCentreY() - 8 : area.getY() + 7;
+        const int chipX = keySourceMenuRect_.getX() - 8 - chipW;
+        keyRelativeRect_ = { chipX, chipY, chipW, 16 };
+        const bool hov = keyRelativeRect_.contains(getMouseXYRelative());
+        g.setColour(rel ? C::purple : (hov ? C::text : C::text2));
+        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.drawText("REL", keyRelativeRect_, juce::Justification::centredRight);
     }
 
     // The source line, computed once for both forms (§1.2: unmissable).
@@ -14910,6 +14925,8 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
             rightLimit = juce::jmin(rightLimit, keyReanalyseRect_.getX() - 10);
         if (! keySourceMenuRect_.isEmpty())
             rightLimit = juce::jmin(rightLimit, keySourceMenuRect_.getX() - 10);
+        if (! keyRelativeRect_.isEmpty())
+            rightLimit = juce::jmin(rightLimit, keyRelativeRect_.getX() - 10);   // COMMIT 4
         auto seg = [&] (const juce::String& text, float size, bool bold,
                         juce::Colour col, int gapAfter)
         {
@@ -14965,16 +14982,13 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
             return;
         }
 
-        const bool lowC = p->conf < 0.5f;
-        const float dimC = lowC ? 0.55f : 1.0f;
+        const float dimC = 1.0f;   // COMMIT 4: a reading present is never greyed (grey only when there is none)
         char nm[24];
-        echojay::KeyEngine::keyName(p->root, p->minor, nm, (int) sizeof(nm));
+        echojay::KeyEngine::keyNameShown(p->root, p->minor, echojay::KeyDisplayPrefs::showRelative().load(),
+                                         nm, (int) sizeof(nm));
         seg(juce::String(nm), 13.0f, true, juce::Colours::white.withAlpha(dimC), 12);
         seg("conf " + juce::String(p->conf, 2), 10.0f, true,
             DwellGlow::heatColour(p->conf).withAlpha(dimC), 14);
-        if (lowC)
-            seg(juce::String::fromUTF8("low confidence \xe2\x80\x94 treat as "
-                "unknown"), 9.0f, true, C::amber, 14);
         seg(srcText, 10.0f, true, srcCol.withAlpha(dimC), 14);
         if (srcs.pinMissing)
             seg(juce::String::fromUTF8("pinned \xe2\x80\x9c") + srcs.pinMissingLabel
@@ -15056,8 +15070,7 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
         return;
     }
 
-    const bool low = p->conf < 0.5f;
-    const float dim = low ? 0.55f : 1.0f;   // greyed, still visible
+    const float dim = 1.0f;   // COMMIT 4: never greyed while a reading exists (grey only when !valid = no reading)
 
     // ---- the key + confidence ---------------------------------------------
     {
@@ -15090,17 +15103,6 @@ void EchoJayEditor::paintKeyPanel(juce::Graphics& g, juce::Rectangle<int> area)
                              + juce::String::fromUTF8("\xe2\x80\x9d is gone "
                                "\xe2\x80\x94 showing Auto"),
                          x, y, w, 12, juce::Justification::centredLeft, 1);
-        y += 15;
-    }
-
-    // ---- low-confidence rule: visible, labelled, discounted ---------------
-    if (low)
-    {
-        g.setColour(C::amber);
-        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-        g.drawFittedText(juce::String::fromUTF8(
-            "low confidence \xe2\x80\x94 treat as unknown"), x, y, w, 12,
-            juce::Justification::centredLeft, 1);
         y += 15;
     }
 
@@ -17064,6 +17066,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         // KEY panel hit rects: cleared here so a layout that skips the panel
         // (extreme heights) cannot leave stale clickable zones behind.
         keyReanalyseRect_ = {};
+        keyRelativeRect_ = {};   // COMMIT 4
         keySourceMenuRect_ = {};
         int loudH = 98;
         loudnessPanelBounds = { pad, y, contentW, loudH };
@@ -25748,8 +25751,8 @@ void EchoJayEditor::recallLoadChain(const juce::String& id, const juce::String& 
 //   2. A Key Detector device in the local chain — whatever flows through THIS
 //      chain, named as such so the model never mistakes a vocal's reading for
 //      the track's.
-// Every reading carries confidence, and the block teaches the rule that keeps
-// it honest: below ~0.5, treat the key as unknown.
+// Every reading carries confidence AS DATA; there is no gate (COMMIT 4,
+// 17 Sep 2026): the key is stated exactly as EchoJay displays it.
 // collectKeySources() moved to EchoJayProcessor (PluginProcessor.cpp): the
 // walk reads only processor state, and the KeyFeed it feeds must be published
 // with the window closed. The editor's inline delegate (PluginEditor.h) keeps
@@ -25870,7 +25873,8 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     auto keyText = [] (int root, bool minor)
     {
         char b[24];
-        echojay::KeyEngine::keyName (root, minor, b, (int) sizeof (b));
+        echojay::KeyEngine::keyNameShown (root, minor, echojay::KeyDisplayPrefs::showRelative().load(),
+                                          b, (int) sizeof (b));   // COMMIT 4: the prompt states the key exactly as displayed
         return juce::String (b);
     };
     auto rootHzText = [] (float rootHz)
@@ -25985,9 +25989,9 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     // stays exactly as strict — chosen is not the same as trustworthy.
     if (sources.userSelected && p->poisoned)
         c << "WARNING: the user pinned this source deliberately, but its "
-             "declared role is not the music (" << p->detail << "). Vocal-"
-             "derived key readings are unreliable; the role may simply be "
-             "mis-declared. Keep the confidence rule strict.\n";
+             "declared role is not the music (" << p->detail << "). A vocal "
+             "is the worst possible key source; the role may simply be "
+             "mis-declared.\n";
     if (sources.pinMissing)
         c << "NOTE: the user's pinned key source \""
           << sources.pinMissingLabel
@@ -26026,18 +26030,18 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     // block volunteered the key/tuning on every turn because nothing told the
     // model WHEN it is worth saying. Data unchanged (a pitch-correction slot needs
     // it); what the block says about ITSELF changes - reference data, used when
-    // relevant, never announced otherwise, with the 0.5 confidence line the spec
-    // already teaches now stated as "do not quote below it".
+    // relevant, never announced otherwise. COMMIT 4 (17 Sep 2026): every
+    // confidence / 0.5 / "unreliable" clause is gone - the key is stated
+    // exactly as displayed (relative under the toggle).
     c << "RULES: this is REFERENCE data for your own reasoning, NOT something to "
          "announce. Use it, and only mention it, when it is RELEVANT: the user asks "
          "about key, tuning or pitch, OR a pitch-correction / tuning plugin is in "
          "the chain or you are proposing one. On any other turn do NOT state the "
          "key, the tuning or the cents-off - not as an aside, not as colour. If the "
          "user has said they do not want tuning, do not mention it at all. "
-         "CONFIDENCE: below 0.5 the reading is UNRELIABLE - never state it as fact; "
-         "treat the key as unknown and build no moves on it, and if pitch is "
-         "genuinely at issue say the reading is low-confidence rather than quoting "
-         "it. When you DO use it, use root_hz (or note names against "
+         "The key above is exactly what EchoJay displays to the user (the "
+         "relative-key toggle applies to both): state it that way. "
+         "When you DO use it, use root_hz (or note names against "
          "detected_tuning) directly in EQ moves rather than pitch maths. To "
          "re-measure, use RE-ANALYSE in Meters -> KEY, or dial a Key Detector's "
          "analyse:1 while audio plays.]";
@@ -33275,6 +33279,9 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         // KEY panel SOURCE selector (§7) — one menu, both panel forms
         if (!keySourceMenuRect_.isEmpty() && keySourceMenuRect_.contains(pos))
         { showKeySourceMenu(); return; }
+        // KEY panel REL (COMMIT 4): the relative-key toggle, persisted by the processor
+        if (!keyRelativeRect_.isEmpty() && keyRelativeRect_.contains(pos))
+        { processorRef.setKeyShowRelative(! echojay::KeyDisplayPrefs::showRelative().load()); repaint(); return; }
     }
 
     // Tab bar click. CONSUMES tabRects_ via tabIndexAt, MEASURES NOTHING.

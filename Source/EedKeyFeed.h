@@ -66,15 +66,26 @@ struct DetectedKeyFact
     uint64_t publisherId = 0;      // the publishing instance (0 = unknown)
     bool     selfDerived = false;  // primary came from the publisher's own channel
 
-    // The confidence gate of spec §6. Below it the key is NOT applied and the
-    // device falls back to chromatic - never to the last known key, because a
-    // stale key is applied with total confidence and can force a note that is
-    // wrong for the song. Chromatic still tunes and cannot do that. Measured:
-    // correcting to a wrong key pushed a take from 13 cents off the nearest
-    // note to 29, i.e. worse than not correcting.
-    static constexpr float kConfidenceGate = 0.50f;
+    // THE CONFIDENCE GATE IS GONE (COMMIT 4, 17 Sep 2026 ruling): a valid
+    // detection is usable at ANY confidence. The corrector locks to the
+    // nearest key from the first valid detection and HOLDS it (see
+    // EedPitchProcessor::refreshAutoKey); the 0.50 gate that sent a
+    // low-confidence reading to chromatic is removed. Confidence stays as
+    // data (the feed, the prompt) - it gates nothing.
+    bool usable() const noexcept { return valid; }
+};
 
-    bool usable() const noexcept { return valid && confidence >= kConfidenceGate; }
+// keyShowRelative (COMMIT 4, 17 Sep 2026): ONE process-wide display
+// preference - show every key as its relative (A minor <-> C major) on every
+// key display AND in the prompt, always through KeyEngine::keyNameShown so
+// the two can never disagree. Process-wide like KeyFeed (same scope
+// honesty); PERSISTED by each plugin's own state - EchoJayProcessor beside
+// keySourcePin, LinkProcessor beside muteUser - so a saved session restores
+// it in both plugins. Pinned by tools/key_gate_harness.
+struct KeyDisplayPrefs
+{
+    static std::atomic<bool>& showRelative() noexcept
+    { static std::atomic<bool> v { false }; return v; }
 };
 
 // Implemented by chain-hosted devices that consume the feed and need to know

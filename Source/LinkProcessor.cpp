@@ -8,6 +8,7 @@
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog — chain-build diagnostics
 #include "EedKeyDetectorProcessor.h"   // hosted-detector frame preference (Tier 1)
+#include "EedKeyFeed.h"   // COMMIT 4: KeyDisplayPrefs (keyShowRelative)
 
 // Item-1 (Active persistence) diagnosis logging — on by default until the
 // flip point is confirmed in the field; EJLinkState: lines in the monitor.
@@ -2730,6 +2731,9 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     // ABSENT and must stay absent: a saved solo is how a project opens
     // silent and nobody knows why (MUTE_SOLO_SPEC §4; the gate pins this).
     obj->setProperty("muteUser", muteUserOn_.load(std::memory_order_relaxed));
+    // COMMIT 4 (17 Sep 2026): keyShowRelative - the process-wide key display
+    // pref, persisted here beside muteUser (the nearest boolean's pattern).
+    obj->setProperty("keyShowRelative", echojay::KeyDisplayPrefs::showRelative().load());
     obj->setProperty("hostTrackName", getHostTrackName());
     // Full hosted chain: identities, order, bypass flags, wet mixes,
     // per-plugin state
@@ -2797,6 +2801,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         if (obj->hasProperty("muteUser"))
             muteUserOn_.store((bool) obj->getProperty("muteUser"),
                               std::memory_order_relaxed);
+        if (obj->hasProperty("keyShowRelative"))   // COMMIT 4 (absent on older saves = off)
+            echojay::KeyDisplayPrefs::showRelative().store((bool) obj->getProperty("keyShowRelative"));
         if (obj->hasProperty("hostTrackName"))
         {
             // Seed the stash + dirty flag so the restored name shows and
