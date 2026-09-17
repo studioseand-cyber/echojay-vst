@@ -644,6 +644,7 @@ public:
         bool              notDialable = false;
         juce::String      notDialableReason;   // "no map for fp, no near map" / "..., near map rejected: ..."
         juce::String      substitutedFrom;     // amendment 3: the third-party name this built-in replaced ("" = none)
+        juce::String      substitutedWhy;      // "" (no map) | "hangs on load" (pre-flight timeout)
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // Hurdle 1 item 3: the summary row for one slot, as logDialSummary prints
@@ -696,6 +697,40 @@ public:
     struct Substitution { int slot = -1; juce::String from, to, reason; int requested = 0, applied = 0; };
     std::vector<Substitution> substituteNoMapSlots (const std::map<juce::String, juce::String>& roleByName);
     std::function<void(int slot, const juce::String& from, const juce::String& to)> onSlotSubstituted;
+
+    // ---- OUT-OF-PROCESS PRE-FLIGHT (17 Sep 2026 ruling, the AVOX SYBIL hang) --------
+    // A product is KNOWN-GOOD once it has instantiated successfully in-host
+    // (persisted in ~/Library/EchoJay/known_good.json, written after the first
+    // successful in-host create). Before a build or add instantiates a
+    // third-party plugin that is NOT known-good, the EchoJayProbe helper (the
+    // au_instantiate_probe, shipped in the bundle's Contents/MacOS) is run in a
+    // CHILD PROCESS with a 10 s bound, in parallel for every such slot, polled
+    // off a timer (the message thread only spawns and polls). A TIMEOUT marks
+    // the product "hangs-on-load" in the disabled-set note (EJDisableReasons)
+    // and the slot is substituted through the item-3 path; a probe ERROR
+    // (non-zero exit, no hang) is NOT evidence - licence-bound plugins fail out
+    // of process - and the in-host create proceeds as today.
+    enum class PreflightState { unknown, ok, hang, error };
+    struct PreflightVerdict { PreflightState state = PreflightState::unknown; juce::String note; int exitCode = 0; double ms = 0; };
+    static constexpr int kPreflightTimeoutMs = 10000;
+    static juce::File   knownGoodFile();
+    static bool         isKnownGood (const juce::PluginDescription& desc);
+    static void         markKnownGood (const juce::PluginDescription& desc);
+    static juce::File   probeHelperFile();                                   // Contents/MacOS/EchoJayProbe beside this binary
+    static juce::StringArray defaultPreflightCommand (const juce::PluginDescription& desc);
+    // Test seam: the command line to run for a plugin (default: the helper + name/id/uid).
+    std::function<juce::StringArray(const juce::PluginDescription&)> preflightCommand;
+    // Runs the probes for every third-party, not-known-good, not-yet-judged description, in
+    // parallel; `done` fires on the message thread when all have a verdict (or at once when
+    // there is nothing to probe). Verdicts are process-wide (main and borrowed hosts, V2 and Link).
+    void preflightPlugins (const std::vector<juce::PluginDescription>& descs, std::function<void()> done);
+    static PreflightVerdict preflightVerdictFor (const juce::PluginDescription& desc);
+    static void resetPreflightVerdictsForTest();
+    int  preflightSpawnCount() const noexcept { return preflightSpawns_; }
+    // The roles the substitution keys on for a hung plugin (the chain block's role per name).
+    void setBuildRoles (const std::map<juce::String, juce::String>& roleByName) { buildRoles_ = roleByName; }
+    // Resolve the descriptions a build will instantiate (the same resolution loadByRecommendedName uses).
+    std::vector<juce::PluginDescription> descriptionsForNames (const juce::StringArray& names) const;
 
     // ---- PER-SLOT DIAL SNAPSHOT (17 Sep 2026, the "No suggested settings" bug) --
     // Everything the Suggested Settings card and the summary row read for one
@@ -1830,6 +1865,7 @@ private:
         juce::StringArray                    dialOutOfRange;   // asked outside the live map's range, refused per value
         juce::String                         nearMapNote;      // hurdle 1 item 2: the near-map verdict for this slot ("" = none offered yet)
         juce::String                         substitutedFrom;  // item 3: the third-party name this built-in replaced ("" = not a substitution)
+        juce::String                         substitutedWhy;   // "" = no map; "hangs on load" = the pre-flight timed out
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.
@@ -1857,6 +1893,12 @@ private:
     juce::StringArray                    pendingFallbackFps_;
     bool                                 dialOnlyMode_ = false;
     void armMapFetchBound (const juce::String& fp);   // the 4 s bound, per fetch
+    std::map<juce::String, juce::String> buildRoles_;        // pre-flight substitution roles
+    int                                  preflightSpawns_ = 0;
+    struct PreflightRun { juce::PluginDescription desc; std::unique_ptr<juce::ChildProcess> proc; double t0 = 0; };
+    std::vector<std::unique_ptr<PreflightRun>> preflightRuns_;
+    std::function<void()>                preflightDone_;
+    void preflightPoll();
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map
     // older than the staleness bound is refetched before it can dial, so a

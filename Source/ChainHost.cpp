@@ -12,6 +12,7 @@
 #include "EchoJayParamMaps.h"
 #include "NotDialableText.h"   // item 3: the built-in by role (one table, shared with the card)
 #include "NearAcceptance.h"     // amendment 1: the partial acceptance rule (essentials + Tier-1)
+#include "EJDisableReasons.h"    // pre-flight: "hangs-on-load" in the disabled-set note
 #include <regex>
 #include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
@@ -2673,6 +2674,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
     GraphMutation graphMutation(*this);   // v9 change B
     // Any successful load clears a stale session load-failure mark
     sessionLoadFailed_.removeString(sessionLoadKey(desc.name, desc.pluginFormatName));
+    if (inst != nullptr && ! isBuiltinDescription(desc)) markKnownGood(desc);   // pre-flight (17 Sep 2026): an in-host create succeeded -> known-good
 
     if (mode_ == Mode::Borrowed) ++borrowFresh_;   // the gate's counter
 
@@ -3789,7 +3791,7 @@ juce::String ChainHost::dialSummaryRow(int i) const
                : (existenceDialable_.count(echojay::identityKeyForDescription(s.desc)) > 0
                       ? juce::String("y") : juce::String("n")))
          + (s.nearMapNote.isNotEmpty() ? "  nearMap=" + s.nearMapNote : juce::String())
-         + (s.substitutedFrom.isNotEmpty() ? "  SUBSTITUTED for \"" + s.substitutedFrom + "\"" : juce::String())
+         + (s.substitutedFrom.isNotEmpty() ? "  SUBSTITUTED for \"" + s.substitutedFrom + "\"" + (s.substitutedWhy.isNotEmpty() ? " (" + s.substitutedWhy + ")" : juce::String()) : juce::String())
          // Hurdle 1 item 3: said in these words, never left to prose.
          + (notDialable ? "  NOT DIALABLE (" + notDialableReason + ")" : juce::String());
 }
@@ -5473,6 +5475,36 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
         if (! slots_.empty())
             recordLoadIfLicensed(origin, (int) slots_.size() - 1, desc.name);
         if (callback) callback({});
+        return;
+    }
+
+    // PRE-FLIGHT (17 Sep 2026 ruling): a product the out-of-process probe could not
+    // instantiate inside 10 s is never created in-host - the SYBIL hang sat in the
+    // plugin's own static initialisers under dlopen on the message thread. The slot
+    // becomes the built-in of its role instead, and the row/card say why.
+    if (preflightVerdictFor(desc).state == PreflightState::hang)
+    {
+        juce::String role;
+        if (auto it = buildRoles_.find(desc.name.trim().toLowerCase()); it != buildRoles_.end()) role = it->second;
+        auto builtinName = builtinAlternativeForRole(role);
+        if (builtinName.isEmpty()) builtinName = builtinAlternativeForRole(desc.name);
+        const auto bd = builtinName.isNotEmpty() ? builtinDescriptionFor(builtinName) : juce::PluginDescription();
+        if (bd.name.isEmpty())
+        {
+            EchoJay_NSLog(("EJPreflight: \"" + desc.name + "\" hangs on load and no built-in stands in for role \"" + role + "\" - slot skipped").toRawUTF8());
+            if (callback) callback("\"" + desc.name + "\" hangs on load (pre-flight timed out) - skipped");
+            return;
+        }
+        const auto err = loadBuiltinNow(bd);
+        if (err.isEmpty() && ! slots_.empty())
+        {
+            auto& ns = slots_.back();
+            ns.substitutedFrom = desc.name; ns.substitutedWhy = "hangs on load";
+            ns.settings = desc.name + " hangs on load (the out-of-process check timed out) - built " + builtinName + " instead; withheld from the auto-dial set";
+            recordLoadIfLicensed(origin, (int) slots_.size() - 1, bd.name);
+            EchoJay_NSLog(("EJPreflight: SUBSTITUTED \"" + desc.name + "\" -> \"" + builtinName + "\" (hangs on load)").toRawUTF8());
+        }
+        if (callback) callback(err);
         return;
     }
 
@@ -7397,6 +7429,139 @@ juce::String ChainHost::buildProductIdsJson(int maxEntries) const
     return juce::JSON::toString(juce::var(o.get()), true);
 }
 
+// ---- OUT-OF-PROCESS PRE-FLIGHT (17 Sep 2026 ruling) --------------------------------
+static std::map<juce::String, ChainHost::PreflightVerdict>& preflightVerdicts()
+{
+    static std::map<juce::String, ChainHost::PreflightVerdict> v;   // process-wide: main + borrowed hosts, V2 + Link
+    return v;
+}
+
+juce::File ChainHost::knownGoodFile() { return appSupportDir().getChildFile("known_good.json"); }
+
+bool ChainHost::isKnownGood(const juce::PluginDescription& desc)
+{
+    if (desc.uniqueId == 0) return false;
+    auto v = juce::JSON::parse(knownGoodFile().loadFileAsString());
+    return v.getDynamicObject() != nullptr && v.getDynamicObject()->hasProperty(juce::Identifier(echojay::productKeyForDescription(desc)));
+}
+
+void ChainHost::markKnownGood(const juce::PluginDescription& desc)
+{
+    if (desc.uniqueId == 0) return;
+    const auto key = echojay::productKeyForDescription(desc);
+    auto v = juce::JSON::parse(knownGoodFile().loadFileAsString());
+    if (v.getDynamicObject() == nullptr) v = juce::var(new juce::DynamicObject());
+    if (v.getDynamicObject()->hasProperty(juce::Identifier(key))) return;
+    auto* e = new juce::DynamicObject();
+    e->setProperty("name", desc.name); e->setProperty("at", juce::Time::getCurrentTime().formatted("%Y-%m-%d"));
+    v.getDynamicObject()->setProperty(juce::Identifier(key), juce::var(e));
+    knownGoodFile().getParentDirectory().createDirectory();
+    knownGoodFile().replaceWithText(juce::JSON::toString(v, true));
+}
+
+juce::File ChainHost::probeHelperFile()
+{
+    // The helper ships beside the plugin binary: <bundle>/Contents/MacOS/EchoJayProbe.
+    return juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getChildFile("EchoJayProbe");
+}
+
+juce::StringArray ChainHost::defaultPreflightCommand(const juce::PluginDescription& desc)
+{
+    return { probeHelperFile().getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString(desc.uniqueId) };
+}
+
+ChainHost::PreflightVerdict ChainHost::preflightVerdictFor(const juce::PluginDescription& desc)
+{
+    auto& all = preflightVerdicts();
+    auto it = all.find(echojay::productKeyForDescription(desc));
+    return it == all.end() ? PreflightVerdict() : it->second;
+}
+
+void ChainHost::resetPreflightVerdictsForTest() { preflightVerdicts().clear(); }
+
+void ChainHost::preflightPlugins(const std::vector<juce::PluginDescription>& descs, std::function<void()> done)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    for (const auto& d : descs)
+    {
+        if (d.uniqueId == 0 || isBuiltinDescription(d) || isKnownGood(d)) continue;
+        const auto key = echojay::productKeyForDescription(d);
+        if (preflightVerdicts().count(key) > 0) continue;
+        bool running = false;
+        for (const auto& r : preflightRuns_) if (echojay::productKeyForDescription(r->desc) == key) { running = true; break; }
+        if (running) continue;
+        const auto cmd = preflightCommand ? preflightCommand(d) : defaultPreflightCommand(d);
+        auto run = std::make_unique<PreflightRun>();
+        run->desc = d; run->proc = std::make_unique<juce::ChildProcess>(); run->t0 = juce::Time::getMillisecondCounterHiRes();
+        ++preflightSpawns_;
+        if (! run->proc->start(cmd, 0))   // spawn only: nothing else on the message thread
+        {
+            preflightVerdicts()[key] = { PreflightState::error, "probe could not start (" + cmd[0] + ")", -1, 0 };
+            EchoJay_NSLog(("EJPreflight: could not start the probe for \"" + d.name + "\" (" + cmd[0] + ") - in-host create proceeds").toRawUTF8());
+            continue;
+        }
+        EchoJay_NSLog(("EJPreflight: probing \"" + d.name + "\" out of process (" + juce::String(kPreflightTimeoutMs) + " ms bound)").toRawUTF8());
+        preflightRuns_.push_back(std::move(run));
+    }
+    if (preflightRuns_.empty()) { if (done) done(); return; }
+    preflightDone_ = std::move(done);
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay(100, [this, alive] { if (! alive.expired()) preflightPoll(); });
+}
+
+void ChainHost::preflightPoll()
+{
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    for (auto it = preflightRuns_.begin(); it != preflightRuns_.end();)
+    {
+        auto& r = **it;
+        const auto key = echojay::productKeyForDescription(r.desc);
+        const double ms = now - r.t0;
+        if (! r.proc->isRunning())
+        {
+            const auto code = r.proc->getExitCode();
+            PreflightVerdict v; v.ms = ms; v.exitCode = (int) code;
+            if (code == 0) { v.state = PreflightState::ok; v.note = "probe ok"; }
+            else { v.state = PreflightState::error; v.note = "probe exit " + juce::String((int) code) + " (not evidence: licence-bound plugins fail out of process) - in-host create proceeds"; }
+            preflightVerdicts()[key] = v;
+            EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" " + v.note + " in " + juce::String((int) ms) + " ms").toRawUTF8());
+            it = preflightRuns_.erase(it); continue;
+        }
+        if (ms >= kPreflightTimeoutMs)
+        {
+            r.proc->kill();
+            PreflightVerdict v; v.state = PreflightState::hang; v.ms = ms; v.note = "hangs on load: the out-of-process probe did not return in " + juce::String(kPreflightTimeoutMs) + " ms";
+            preflightVerdicts()[key] = v;
+            echojay::recordDisableReasons({ juce::String::toHexString(r.desc.uniqueId) }, "hangs-on-load");
+            EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" HANGS ON LOAD (probe killed after " + juce::String((int) ms) + " ms) - marked in the disabled-set note; the build substitutes").toRawUTF8());
+            it = preflightRuns_.erase(it); continue;
+        }
+        ++it;
+    }
+    if (preflightRuns_.empty()) { if (auto d = std::move(preflightDone_)) d(); return; }
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay(100, [this, alive] { if (! alive.expired()) preflightPoll(); });
+}
+
+std::vector<juce::PluginDescription> ChainHost::descriptionsForNames(const juce::StringArray& names) const
+{
+    std::vector<juce::PluginDescription> out;
+    for (const auto& name : names)
+    {
+        const auto lower = name.toLowerCase().trim();
+        bool found = false;
+        for (const auto& e : recommendable_)
+            if (e.displayName.toLowerCase().trim() == lower) { out.push_back(e.desc); found = true; break; }
+        if (! found)
+        {
+            juce::String matchLog; WithholdReason why = WithholdReason::None;
+            auto d = resolveByName(name, recommendableFormat_, &matchLog, &why);
+            if (d.name.isNotEmpty()) out.push_back(d);
+        }
+    }
+    return out;
+}
+
 juce::String ChainHost::buildSlotParamReadsJson() const
 {
     juce::Array<juce::var> arr;
@@ -7550,6 +7715,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.outOfRange   = s.dialOutOfRange;
         di.notDialable  = ejSlotNotDialable(*this, di.builtin, s.fp, s.dialStatus, di.notDialableReason, s.nearMapNote);   // hurdle 1 item 3
         di.substitutedFrom = s.substitutedFrom;   // amendment 3: the composer reads the swap from the host state
+        di.substitutedWhy  = s.substitutedWhy;
         // dial-3 key halves + denominator (A2/A3/A7.2). uid rendered
         // exactly as getSlotIdentity renders it, so the two surfaces
         // cannot disagree about the same slot.

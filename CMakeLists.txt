@@ -726,6 +726,45 @@ if(APPLE)
     )
 endif()
 
+
+# ============================================================================
+# EchoJayProbe (17 Sep 2026): the out-of-process pre-flight helper - the
+# au_instantiate_probe built as a universal console binary and copied into
+# EVERY plugin bundle's Contents/MacOS beside the plugin binary. ChainHost runs
+# it in a child process (10 s bound) before a build instantiates a third-party
+# plugin that is not known-good (the AVOX SYBIL hang). Never loaded in a DAW.
+# ============================================================================
+juce_add_console_app(EchoJayProbe PRODUCT_NAME "EchoJayProbe")
+target_sources(EchoJayProbe PRIVATE tools/au_instantiate_probe/au_instantiate_probe.cpp)
+juce_generate_juce_header(EchoJayProbe)
+target_compile_definitions(EchoJayProbe PRIVATE
+    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_LADSPA=0
+    JUCE_USE_CURL=0
+    JUCE_WEB_BROWSER=0
+    JUCE_STANDALONE_APPLICATION=1)
+target_link_libraries(EchoJayProbe PRIVATE
+    juce::juce_audio_processors
+    juce::juce_gui_basics
+    juce::juce_recommended_config_flags)
+set_target_properties(EchoJayProbe PROPERTIES OSX_ARCHITECTURES "arm64;x86_64")
+if(APPLE)
+    target_link_libraries(EchoJayProbe PRIVATE "-framework CoreAudioKit")
+    foreach(target_name EchoJay_VST3 EchoJay_AU EchoJay_AAX EchoJayLink_VST3 EchoJayLink_AU EchoJayLink_AAX)
+        if(TARGET ${target_name})
+            add_dependencies(${target_name} EchoJayProbe)
+            add_custom_command(TARGET ${target_name} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy
+                    "$<TARGET_FILE:EchoJayProbe>"
+                    "$<TARGET_BUNDLE_CONTENT_DIR:${target_name}>/MacOS/EchoJayProbe"
+                COMMENT "Copying the EchoJayProbe pre-flight helper into ${target_name} Contents/MacOS"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+endif()
+
 # ============================================================================
 # ejextract: the auto-parameter-mapping harness (worker + --bootstrap driver).
 # Universal2 so the driver can relaunch itself under Rosetta for Intel-only

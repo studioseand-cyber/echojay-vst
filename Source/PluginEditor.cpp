@@ -22401,11 +22401,11 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
 {
     BuildBubble out;
     // The swaps come from the HOST STATE (SlotDialInfo.substitutedFrom), so both paths render them alike.
-    struct Sub { juce::String from, to; int applied = 0, requested = 0; };
+    struct Sub { juce::String from, to; int applied = 0, requested = 0; juce::String why; };
     std::vector<Sub> substituted;
     for (const auto& di : ch.getDialInfos())
         if (di.substitutedFrom.isNotEmpty())
-            substituted.push_back({ di.substitutedFrom, di.name, di.appliedCount, di.requestedCount });
+            substituted.push_back({ di.substitutedFrom, di.name, di.appliedCount, di.requestedCount, di.substitutedWhy });
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
@@ -22561,7 +22561,10 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
         }
     }
     for (const auto& sb : substituted)
-        bubble += " " + substitutedNote(sb.from, sb.to) + " (" + juce::String(sb.applied) + "/" + juce::String(sb.requested) + " applied).";
+        bubble += " " + (sb.why == "hangs on load"
+                           ? sb.from + " hangs on load (the out-of-process check timed out) - built " + sb.to + " instead"
+                           : substitutedNote(sb.from, sb.to))
+                + " (" + juce::String(sb.applied) + "/" + juce::String(sb.requested) + " applied).";
     for (const auto& nd : notDialableParts)
         bubble += " " + notDialableSentence(nd.name, nd.reason, builtinAlternativeForRole(nd.role));
     composeStaleAltFollowUp(staleParts, out.altPrompt, out.altLabel);
@@ -28617,8 +28620,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             + " plugin(s) into your edit session...";
         chainListPanel.repaint();
         const juce::String chainJsonForBubble = chainJson;   // amendment 3: the SESSION path composes the same bubble as the own-rack path
-        bhB->applyChainEdits(std::move(ops), -1, baseNow,
-            [safeThis, linkUid, chainJsonForBubble](const juce::StringArray& results,
+        auto finishCb = [safeThis, linkUid, chainJsonForBubble](const juce::StringArray& results,
                                 int applied, bool aborted)
         {
             if (safeThis == nullptr) return;
@@ -28677,8 +28679,30 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                 + juce::String(applied) + "/" + juce::String(results.size())
                 + " ops.)";
             safeThis->refreshChainPanelForView(true);
-        });
-        return;
+        };
+        // PRE-FLIGHT (17 Sep 2026 ruling): probe every not-known-good third-party plugin out of
+        // process before the borrowed host instantiates anything; the overlay says so.
+        {
+            juce::StringArray names;
+            if (auto* carr = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
+                for (auto& ev : *carr) names.add(ev.getProperty("name", juce::var()).toString());
+            bhB->setBuildRoles(roleByNameFor(chainJson));
+            chainListPanel.statusText = juce::String::fromUTF8("Checking plugins\xe2\x80\xa6");
+            chainListPanel.repaint();
+            auto descs = processorRef.getChainHost().descriptionsForNames(names);
+            auto opsPtr = std::make_shared<decltype(ops)>(std::move(ops));
+            auto go = [safeThis, linkUid, chainJsonForBubble, opsPtr, baseNow, finishCb]
+            {
+                if (safeThis == nullptr) return;
+                auto* bhG = safeThis->processorRef.borrowHostIfActiveFor(linkUid);
+                if (bhG == nullptr) return;
+                safeThis->chainListPanel.statusText = "Building " + juce::String((int) opsPtr->size()) + " plugin(s) into your edit session...";
+                safeThis->chainListPanel.repaint();
+                bhG->applyChainEdits(std::move(*opsPtr), -1, baseNow, finishCb);
+            };
+            bhB->preflightPlugins(descs, go);
+            return;
+        }
     }
 
     int err = 0;
@@ -31574,7 +31598,17 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                     });
             });
         };
-        (*loadNextPtr)();
+        // PRE-FLIGHT (17 Sep 2026 ruling): every third-party plugin that is not known-good is
+        // probed out of process, in parallel, before anything instantiates in-host.
+        {
+            juce::StringArray names; for (const auto& sspec : slots) names.add(sspec.name);
+            auto& chP = safeThis->processorRef.getChainHost();
+            chP.setBuildRoles(roleByNameFor(chainJson));
+            safeThis->chainListPanel.statusText = juce::String::fromUTF8("Checking plugins\xe2\x80\xa6");
+            safeThis->setStageStatus(safeThis->chainListPanel.statusText);
+            safeThis->chainListPanel.repaint();
+            chP.preflightPlugins(chP.descriptionsForNames(names), [safeThis, loadNextPtr] { if (safeThis != nullptr) (*loadNextPtr)(); });
+        }
         });   // end deferred rack-clear
     };
 
