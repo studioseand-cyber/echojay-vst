@@ -8919,6 +8919,67 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "or the wrapper would still reach the wrong diagnosis");
         }
 
+        // ap PIN1 -- THE APPLY BUTTON IS WIRED AND VISIBLE.
+        // STRUCTURAL, in the style of se PIN7, because the guarantee lives in
+        // the LINES and not in any value a unit test can read. A pool of
+        // buttons that is constructed, wired to an onClick, and never given
+        // bounds or made visible compiles perfectly and does nothing, and that
+        // is exactly what shipped for a week.
+        //
+        // THE HISTORY THIS PINS. 873d758 on 10 Sep moved the report button to
+        // the panel and took the Apply button's branch with it, because the
+        // Apply branch was the `else if` of the misdial button's chain and the
+        // deletion ran past its intended end. activeEditApplyBtns and
+        // editApplyMsgIdx survived as dead members, editCardHeight kept
+        // reserving 26 + 8 pixels for a control that was not drawn, and
+        // applyChainEditFromMsg became unreachable from the UI entirely: a
+        // proposed chain move could not be applied by ANY route.
+        //
+        // THIS IS THE SECOND SWEPT DELETION OF UI WIRING IN THIS REPOSITORY.
+        // The first, 6a5efb6, took six editor handlers and at least failed to
+        // LINK. This one compiled, which is worse: nothing objected at all.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed2; sed2 << fed.rdbuf();
+            const auto ec = codeOnly (juce::String (sed2.str()));
+
+            // The five lines that make it exist, press and appear. Each is
+            // asserted separately so a partial removal names which half went.
+            check (ec.contains ("editApplyMsgIdx[(size_t)bi] = msgLoopIndex;"),
+                   "ap PIN1: the button is bound to a MESSAGE, so onClick applies "
+                   "that card's ops and not message zero");
+            check (ec.contains ("int bi = activeEditApplyBtns++;"),
+                   "ap PIN1: and takes a slot from the pool, so two cards get two buttons");
+            check (ec.contains ("editApplyBtns[(size_t)bi].setBounds(ar);"),
+                   "ap PIN1: it is given bounds");
+            check (ec.contains ("editApplyBtns[(size_t)bi].setVisible(true);"),
+                   "ap PIN1: it is made VISIBLE, which is the line that was missing");
+            check (ec.contains ("editApplyBtns[(size_t)bi].toFront(false);"),
+                   "ap PIN1: and raised, so the bubble does not swallow the click");
+            check (ec.contains ("editApplyBtns[(size_t)bi].setButtonText(\"Apply changes\")"),
+                   "ap PIN1: and it says what it does");
+
+            // THE STRUCTURAL HALF, which is the reason this pin exists rather
+            // than a note. The visibility must NOT depend on another button's
+            // branch: that dependency is what let an edit to the report button
+            // delete this one.
+            const int applyAt = ec.indexOf ("int bi = activeEditApplyBtns++;");
+            check (applyAt >= 0, "ap PIN1: the apply block is present at all");
+            const int stmtAt = ec.indexOf ("if (! msg.editApplied && activeEditApplyBtns");
+            check (stmtAt >= 0 && stmtAt < applyAt && (applyAt - stmtAt) < 200,
+                   "ap PIN1: and it is a STANDALONE if on its own condition, "
+                   "immediately above the block, not the else of a neighbouring "
+                   "affordance");
+            check (! ec.contains ("else if (activeEditApplyBtns"),
+                   "ap PIN1: and it is NOT an else if, which is the form that let "
+                   "an edit to the report button delete it");
+
+            // And the click still reaches the applier. A button wired to nothing
+            // is the same defect wearing a different hat.
+            check (ec.contains ("applyChainEditFromMsg(editApplyMsgIdx[(size_t)i])"),
+                   "ap PIN1: the onClick calls applyChainEditFromMsg");
+        }
+
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
         // window is the cursor in", which is a proxy for "is there room" and
         // wrong in both directions: a cursor one pixel past the centre flipped

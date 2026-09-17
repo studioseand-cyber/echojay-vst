@@ -19845,6 +19845,49 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                    juce::Justification::centredLeft, true);
                         ey += 16;
                     }
+                    // ---- THE APPLY BUTTON ----------------------------------
+                    // ITS OWN STATEMENT, NOT ANOTHER BUTTON'S else. It used to
+                    // live as the `else if` of the misdial button's chain, and
+                    // on 10 Sep 873d758 moved the report button to the panel and
+                    // took this branch out with it: a contiguous deletion whose
+                    // end anchor ran past the misdial block into this one. It
+                    // compiled, because a branch that only writes to members
+                    // leaves nothing undefined, and the Apply affordance was
+                    // gone for a week with the card still reserving its height.
+                    //
+                    // Restoring it as an `else if` would restore the risk with
+                    // it. This is a standalone `if` on its own condition, so a
+                    // future edit to any neighbouring affordance has to delete
+                    // THIS statement deliberately to remove it.
+                    //
+                    // ap PIN1 asserts these five lines by text, because a swept
+                    // deletion of UI wiring compiles cleanly and no unit test
+                    // can see it. This is the second one.
+                    if (! msg.editApplied && activeEditApplyBtns < kMaxChainBuildBtns)
+                    {
+                        int bi = activeEditApplyBtns++;
+                        editApplyMsgIdx[(size_t)bi] = msgLoopIndex;
+                        editApplyBtns[(size_t)bi].setButtonText("Apply changes");
+                        juce::Rectangle<int> ar(ex, ey + 2,
+                                                juce::jmin(160, bubbleW - 20), kChainBtnH);
+                        auto sb3 = chatScroll.getBounds();
+                        const bool inV = ar.getY() >= sb3.getY()
+                                      && ar.getBottom() <= sb3.getBottom();
+                        if (inV)
+                        {
+                            editApplyBtns[(size_t)bi].setBounds(ar);
+                            editApplyBtns[(size_t)bi].setVisible(true);
+                            editApplyBtns[(size_t)bi].toFront(false);
+                        }
+                        else
+                        {
+                            // Scrolled out of the viewport: parked off-screen
+                            // rather than left where it was, so a stale button
+                            // cannot be pressed over unrelated content.
+                            editApplyBtns[(size_t)bi].setBounds(-100, -100, 1, 1);
+                            editApplyBtns[(size_t)bi].setVisible(false);
+                        }
+                    }
                     if (msg.editApplied)
                     {
                         // Green only for a FULL apply; see
