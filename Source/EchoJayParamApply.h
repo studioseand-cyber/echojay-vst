@@ -1532,7 +1532,9 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         if (echojay::isWrapperKey (semantic) && kv.value.getDynamicObject() != nullptr)
         {
             ApplyResult r; r.semantic = semantic;
-            r.note = "no mapping for this control on this plugin";   // MUTATED
+            r.note = "routing fault: a \"" + semantic + "\" wrapper is a built-in "
+                     "device payload and reached the third-party map path; nothing "
+                     "was dialled and the map is not at fault";
             results.add (r);
             continue;
         }
