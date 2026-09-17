@@ -15,6 +15,7 @@
 #include "EedKeyWorker.h"
 #include "EJCaptureGuard.h"  // output substitution: the shipped predicate + record field
 #include "EJSpectralEvidence.h" // spectral provenance: reduction, window, the band reduction
+#include "EJPlaybackSim.h"    // the inline monitoring stage, below the meter tap
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -1209,6 +1210,12 @@ private:
     // the snapshot at stopCapture, because a substitution can stop mid-capture
     // and what matters is what the capture BEGAN under.
     juce::String captureSubstitution_;
+
+    // PLAYBACK SIMULATION, the selection only. None today: the stage exists and
+    // simulates nothing. Atomic because the audio thread reads it every block
+    // and the editor writes it; relaxed is enough, since a block either side of
+    // the change is equally correct.
+    std::atomic<PlaybackSim> playbackSim_ { PlaybackSim::None };
 
     // Auto-feedback
     mutable std::atomic<bool> autoFeedbackReady { false };
