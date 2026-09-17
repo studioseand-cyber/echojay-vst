@@ -7,6 +7,8 @@
 #include "ChainEditGate.h"       // COMMIT 2: ITEM 1 — the one pure chain-edit gate
 #include "BorrowStatusText.h"   // Round C: one writer for the borrowed-rack status line
 #include "AskShelfLayout.h"     // Round C: the ask shelf never passes the chat column
+#include "ChatBubbleStyle.h"    // hurdle 1 item 3: the one text-colour rule (coral for a NOT DIALABLE report)
+#include "NotDialableText.h"    // hurdle 1 item 3: the words + the built-in alternative by role
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -17630,7 +17632,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
 
         juce::AttributedString as;
         as.append(displayedText(msg), juce::Font(juce::FontOptions(chatMsgFontSize)),
-                  isUser ? C::text : C::text2);
+                  chatBubbleTextColour(isUser, msg.dialWarning, C::text, C::text2));   // hurdle 1 item 3
         // ~1.4x effective line height so paragraphs breathe. MUST match the
         // height-measure pass in resized() or the scroll range drifts.
         as.setLineSpacing(chatMsgFontSize * 0.35f);
@@ -22301,12 +22303,14 @@ void EchoJayEditor::announceRefusedOps(const juce::String& chainJson,
 void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
                                             const juce::String& altPrompt,
                                             const juce::String& altLabel,
-                                            const juce::StringArray& excludeNames)
+                                            const juce::StringArray& excludeNames,
+                                            bool dialWarning)
 {
     if (text.isEmpty()) return;
     ChatMsg cm;
     cm.role    = "assistant";
     cm.content = text;
+    cm.dialWarning = dialWarning;   // hurdle 1 item 3: session flag; a restored bubble paints grey again (flagged)
     cm.editAltPrompt = altPrompt;   // pill on the bubble (build failures)
     cm.editAltLabel  = altLabel;
     cm.excludeNames  = excludeNames;   // "stop suggesting" chip (in-memory)
@@ -22386,6 +22390,17 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     juce::StringArray appliedNames, zeroParts, staleParts, pendingParts;
     struct PartialPart { juce::String name; juce::StringArray manual, oor; };
     std::vector<PartialPart> partialParts, zeroOorParts;
+    // Hurdle 1 item 3 (17 Sep 2026): NOT DIALABLE slots under dial-only get
+    // their own sentence (in these words, with the built-in alternative named
+    // by the slot's role) and the bubble paints coral. The role comes from the
+    // chain block the build was made from.
+    struct NotDialablePart { juce::String name, reason, role; };
+    std::vector<NotDialablePart> notDialableParts;
+    std::map<juce::String, juce::String> roleByName;
+    if (auto* co = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
+        for (auto& sv : *co)
+            roleByName[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()]
+                = sv.getProperty("role", juce::var()).toString();
     for (const auto& di : ch.getDialInfos())
     {
         // dial-4 A8: population, counted where the rows are logged so the
@@ -22408,6 +22423,16 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                 partialParts.push_back({ di.name, di.manual, di.outOfRange });
                 break;
             case ChainHost::DialStatus::noMap:
+                // Hurdle 1 item 3: under dial-only, an answered fetch with no
+                // map for the fp and no accepted near map is NOT DIALABLE -
+                // its own sentence, in red, never the hand-dialing prose.
+                if (di.notDialable)
+                {
+                    auto rit = roleByName.find(di.name.trim().toLowerCase());
+                    notDialableParts.push_back({ di.name, di.notDialableReason,
+                                                 rit != roleByName.end() ? rit->second : juce::String() });
+                    break;
+                }
                 // Stale-map ladder, unmapped rung: the plugin loaded at a
                 // version the corpus has no mapping for. Only this shape
                 // earns the suggest-an-alternative pill below.
@@ -22449,7 +22474,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     const int n = ch.getNumSlots();
     juce::String bubble;
     if (partialParts.empty() && zeroParts.isEmpty() && staleParts.isEmpty()
-        && zeroOorParts.empty() && pendingParts.isEmpty())
+        && zeroOorParts.empty() && pendingParts.isEmpty() && notDialableParts.empty())
     {
         // Clean full build+dial: the FACTUAL line, never the model's result
         // (9 Aug 2026, same rule as the edit composer - a filter the model
@@ -22513,10 +22538,12 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                            : " loaded at versions newer than any mapping we hold, so their controls need dialling by hand - values on their cards.");
         }
     }
+    for (const auto& nd : notDialableParts)
+        bubble += " " + notDialableSentence(nd.name, nd.reason, builtinAlternativeForRole(nd.role));
     juce::String altPrompt, altLabel;
     composeStaleAltFollowUp(staleParts, altPrompt, altLabel);
     clearStageStatus();   // the bubble replaces the load/dial-window label
-    appendLocalResultBubble(bubble, altPrompt, altLabel);
+    appendLocalResultBubble(bubble, altPrompt, altLabel, {}, ! notDialableParts.empty());   // hurdle 1 item 3: coral when a slot is NOT DIALABLE
 }
 
 // Stale-map ladder, unmapped rung: the ONE user-pressed follow-up. Same
@@ -28476,6 +28503,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             return;
         }
         auto& p3 = processorRef;
+        bhB->setDialOnlyMode(api.getAutoDialMode());   // hurdle 1 item 3
         juce::StringArray baseNow;
         const int nOld = bhB->getNumSlots();
         for (int i = 0; i < nOld; ++i)
@@ -31083,6 +31111,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
     // visibility follows the tab). The end-of-load switch below stays as the
     // second belt.
     switchToTab(Tab::Chain);
+    processorRef.getChainHost().setDialOnlyMode(api.getAutoDialMode());   // hurdle 1 item 3: the summary/card know the mode
     // A failed build must land the user on the Chain page with an error, not
     // return silently (the click otherwise appears to do nothing).
     auto showBuildFail = [this](const juce::String& why)

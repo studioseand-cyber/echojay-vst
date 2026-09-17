@@ -3695,81 +3695,107 @@ static int countRequestedSettings (const juce::var& structured,
     return requested;
 }
 
+static const char* ejDialStatusName(ChainHost::DialStatus st)
+{
+    switch (st)
+    {
+        case ChainHost::DialStatus::none:        return "none";
+        case ChainHost::DialStatus::pending:     return "pending";
+        case ChainHost::DialStatus::applied:     return "applied";
+        case ChainHost::DialStatus::partial:     return "partial";
+        case ChainHost::DialStatus::noMap:       return "noMap";
+        case ChainHost::DialStatus::mapNoCoverage:           return "mapNoCoverage";
+        case ChainHost::DialStatus::writesRejected:          return "writesRejected";
+        case ChainHost::DialStatus::writesBlocked:           return "writesBlocked";
+        case ChainHost::DialStatus::mapIdentityMismatch:     return "mapIdentityMismatch";
+        case ChainHost::DialStatus::builtinPayloadUnmatched: return "builtinPayloadUnmatched";
+    }
+    return "?";
+}
+
+// Hurdle 1 item 3 (17 Sep 2026): the NOT DIALABLE predicate, ONE place. A
+// third-party slot, under dial-only, whose fetches have ANSWERED (nothing in
+// flight) and which still has no map for its fp: no exact map, no product
+// fallback, no accepted near map. Never said while a fetch is out.
+static bool ejSlotNotDialable(const ChainHost& h, bool builtin, const juce::String& fp,
+                              ChainHost::DialStatus st, juce::String& reasonOut, const juce::String& nearNote)
+{
+    reasonOut = {};
+    if (! h.dialOnlyMode() || builtin || fp.isEmpty()) return false;
+    if (st != ChainHost::DialStatus::noMap) return false;
+    if (h.mapFetchInFlight(fp)) return false;
+    reasonOut = "no map for fp, " + (nearNote.isEmpty() || nearNote.startsWith("no near map") ? juce::String("no near map") : nearNote);
+    return true;
+}
+
+juce::String ChainHost::dialSummaryRow(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return {};
+    const auto& s = slots_[(size_t) i];
+    const bool hasSettings = ! s.structuredSettings.isVoid();
+    const bool builtin = isBuiltinSlot(i);
+    // requested = what the model asked for on this slot. Compared against
+    // applied, it is the difference between "asked for nothing" and
+    // "asked and got nothing", which is the whole question.
+    // The KEYS VERBATIM, not just a count. `settings` (the display string
+    // on the card) and `settings_structured` (the dial payload) are
+    // different fields, and a card full of settings says nothing about
+    // whether the dialable ones arrived -- that confusion cost a whole
+    // diagnosis pass. Printing the keys also makes a wrong-shape payload
+    // self-evident, since flat keys and a "params" wrapper are otherwise
+    // the same words.
+    juce::StringArray keys;
+    juce::String shape;
+    const int requested = countRequestedSettings(s.structuredSettings, keys, shape);
+    juce::String notDialableReason;
+    const bool notDialable = ejSlotNotDialable(*this, builtin, s.fp, s.dialStatus, notDialableReason, s.nearMapNote);
+    return "EJDialSummary:   slot " + juce::String(i)
+         + " (\"" + s.desc.name + "\")"
+         + (builtin ? " builtin" : "")
+         + "  settings_structured=" + (hasSettings ? "y" : "n")
+         + "  shape=" + shape
+         + "  keys=[" + keys.joinIntoString(", ") + "]"
+         + "  requested=" + juce::String(requested)
+         + "  applied=" + juce::String(s.dialAppliedCount)
+         // manual and readbackMiss TOGETHER, because manual alone
+         // conflates two opposite failures: a semantic the map
+         // never carried (readbackMiss 0 -> the map is the gap)
+         // and one that was written and disagreed on read-back so
+         // the value was reverted (readbackMiss > 0 -> the map is
+         // wrong, or the plugin cannot be read in-stack). The
+         // fixes point in different directions and the counts are
+         // the only thing that separates them.
+         + "  manual=" + juce::String(s.dialManual.size())
+         + "  readbackMiss=" + juce::String(s.dialReadbackMiss.size())
+         + "  status=" + ejDialStatusName(s.dialStatus)
+         + "  fp=" + (s.fp.isEmpty() ? juce::String("(none)") : s.fp.substring(0, 12))
+         // HONEST LABEL (16 Sep 2026): the old "map=" read the LOCAL
+         // param_maps cache, but its y/n was read as "is this plugin
+         // dialable" - it is not (Black Box read map=n locally while
+         // the server returned mapped_versions). Say what each is:
+         // localMap = is the fetched map cached HERE; serverDialable =
+         // does the server's dialable set (this scan's lookup) list it.
+         + "  localMap=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")
+         + "  serverDialable=" + (existenceDialable_.empty()
+               ? juce::String("?(no lookup this scan)")
+               : (existenceDialable_.count(echojay::identityKeyForDescription(s.desc)) > 0
+                      ? juce::String("y") : juce::String("n")))
+         + (s.nearMapNote.isNotEmpty() ? "  nearMap=" + s.nearMapNote : juce::String())
+         // Hurdle 1 item 3: said in these words, never left to prose.
+         + (notDialable ? "  NOT DIALABLE (" + notDialableReason + ")" : juce::String());
+}
+
 void ChainHost::logDialSummary(const juce::String& reason) const
 {
-    const auto statusName = [] (DialStatus st) -> const char*
-    {
-        switch (st)
-        {
-            case DialStatus::none:        return "none";
-            case DialStatus::pending:     return "pending";
-            case DialStatus::applied:     return "applied";
-            case DialStatus::partial:     return "partial";
-            case DialStatus::noMap:       return "noMap";
-            case DialStatus::mapNoCoverage:           return "mapNoCoverage";
-            case DialStatus::writesRejected:          return "writesRejected";
-            case DialStatus::mapIdentityMismatch:     return "mapIdentityMismatch";
-            case DialStatus::builtinPayloadUnmatched: return "builtinPayloadUnmatched";
-        }
-        return "?";
-    };
-
     int dialled = 0, noSettings = 0;
     EchoJay_NSLog(("EJDialSummary: " + reason + ", " + juce::String((int) slots_.size())
-                   + " slot(s)").toRawUTF8());
+                   + " slot(s)" + (dialOnlyMode_ ? " [dial-only]" : "")).toRawUTF8());
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
         const auto& s = slots_[(size_t) i];
-        const bool hasSettings = ! s.structuredSettings.isVoid();
-        const bool builtin = isBuiltinSlot(i);
-        if (! hasSettings) ++noSettings;
+        if (s.structuredSettings.isVoid()) ++noSettings;
         if (s.dialAppliedCount > 0) ++dialled;
-
-        // requested = what the model asked for on this slot. Compared against
-        // applied, it is the difference between "asked for nothing" and
-        // "asked and got nothing", which is the whole question.
-        // The KEYS VERBATIM, not just a count. `settings` (the display string
-        // on the card) and `settings_structured` (the dial payload) are
-        // different fields, and a card full of settings says nothing about
-        // whether the dialable ones arrived -- that confusion cost a whole
-        // diagnosis pass. Printing the keys also makes a wrong-shape payload
-        // self-evident, since flat keys and a "params" wrapper are otherwise
-        // the same words.
-        juce::StringArray keys;
-        juce::String shape;
-        const int requested = countRequestedSettings(s.structuredSettings, keys, shape);
-
-        EchoJay_NSLog(("EJDialSummary:   slot " + juce::String(i)
-                       + " (\"" + s.desc.name + "\")"
-                       + (builtin ? " builtin" : "")
-                       + "  settings_structured=" + (hasSettings ? "y" : "n")
-                       + "  shape=" + shape
-                       + "  keys=[" + keys.joinIntoString(", ") + "]"
-                       + "  requested=" + juce::String(requested)
-                       + "  applied=" + juce::String(s.dialAppliedCount)
-                       // manual and readbackMiss TOGETHER, because manual alone
-                       // conflates two opposite failures: a semantic the map
-                       // never carried (readbackMiss 0 -> the map is the gap)
-                       // and one that was written and disagreed on read-back so
-                       // the value was reverted (readbackMiss > 0 -> the map is
-                       // wrong, or the plugin cannot be read in-stack). The
-                       // fixes point in different directions and the counts are
-                       // the only thing that separates them.
-                       + "  manual=" + juce::String(s.dialManual.size())
-                       + "  readbackMiss=" + juce::String(s.dialReadbackMiss.size())
-                       + "  status=" + statusName(s.dialStatus)
-                       + "  fp=" + (s.fp.isEmpty() ? juce::String("(none)") : s.fp.substring(0, 12))
-                       // HONEST LABEL (16 Sep 2026): the old "map=" read the LOCAL
-                       // param_maps cache, but its y/n was read as "is this plugin
-                       // dialable" - it is not (Black Box read map=n locally while
-                       // the server returned mapped_versions). Say what each is:
-                       // localMap = is the fetched map cached HERE; serverDialable =
-                       // does the server's dialable set (this scan's lookup) list it.
-                       + "  localMap=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")
-                       + "  serverDialable=" + (existenceDialable_.empty()
-                             ? juce::String("?(no lookup this scan)")
-                             : (existenceDialable_.count(echojay::identityKeyForDescription(s.desc)) > 0
-                                    ? juce::String("y") : juce::String("n")))).toRawUTF8());
+        EchoJay_NSLog(dialSummaryRow(i).toRawUTF8());
     }
     // The headline, so the common question is answered without reading rows.
     EchoJay_NSLog(("EJDialSummary: " + juce::String(dialled) + "/"
@@ -7307,6 +7333,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.appliedCount = s.dialAppliedCount;
         di.staleIndexedFp = s.staleIndexedFp;
         di.outOfRange   = s.dialOutOfRange;
+        di.notDialable  = ejSlotNotDialable(*this, di.builtin, s.fp, s.dialStatus, di.notDialableReason, s.nearMapNote);   // hurdle 1 item 3
         // dial-3 key halves + denominator (A2/A3/A7.2). uid rendered
         // exactly as getSlotIdentity renders it, so the two surfaces
         // cannot disagree about the same slot.

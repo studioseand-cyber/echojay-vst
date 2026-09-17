@@ -637,8 +637,21 @@ public:
         // slot. APPENDED last (stale-lib ABI: test TUs pair this header with
         // the previous build's lib until the next full build).
         bool              builtin = false;
+        // Hurdle 1 item 3 (17 Sep 2026): under dial-only, a third-party slot
+        // whose fetch ANSWERED with no map for its fp and no accepted near map
+        // is NOT DIALABLE - said in those words on the summary row and in red
+        // on the reply card, never as silent prose. APPENDED last (ABI rule).
+        bool              notDialable = false;
+        juce::String      notDialableReason;   // "no map for fp, no near map" / "..., near map rejected: ..."
     };
     std::vector<SlotDialInfo> getDialInfos() const;
+    // Hurdle 1 item 3: the summary row for one slot, as logDialSummary prints
+    // it (one composer, so a guard asserts the same string the log carries).
+    juce::String dialSummaryRow (int slot) const;
+    // Dial-only mode ("only suggest plugins EchoJay can auto-dial"): the
+    // editor tells the host at build time; the summary and the card use it.
+    void setDialOnlyMode (bool on) noexcept { dialOnlyMode_ = on; }
+    bool dialOnlyMode() const noexcept { return dialOnlyMode_; }
     // Hurdle 1 item 1: the bounded settle. Polls every 50 ms until no slot is
     // pending or maxWaitMs has elapsed, then calls fn(settled). Per-fp fetches
     // carry their own bound (kMapFetchBoundMs, armed when the fetch leaves),
@@ -1796,6 +1809,7 @@ private:
     // came back FIRST cleared "pending" for both and a miss from the lookup
     // settled the slot noMap while the exact fetch was still in the air.
     juce::StringArray                    pendingFallbackFps_;
+    bool                                 dialOnlyMode_ = false;
     void armMapFetchBound (const juce::String& fp);   // the 4 s bound, per fetch
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map

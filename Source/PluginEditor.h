@@ -1160,6 +1160,7 @@ private:
         // now showNextFailPrompt, which says what it does.
         juce::StringArray excludeNames;
         bool excludeApplied = false;
+        bool dialWarning = false;   // hurdle 1 item 3: a NOT DIALABLE report under dial-only paints coral (ChatBubbleStyle.h)
         juce::String displayText;   // tap-generated user turns: what the
                                     // bubble SHOWS; content is what was SENT
                                     // (empty = show content, i.e. typed text)
@@ -1302,7 +1303,8 @@ private:
     void appendLocalResultBubble(const juce::String& text,
                                  const juce::String& altPrompt = juce::String(),
                                  const juce::String& altLabel  = juce::String(),
-                                 const juce::StringArray& excludeNames = {});
+                                 const juce::StringArray& excludeNames = {},
+                                 bool dialWarning = false);
     // ---- Apply-time honesty (26 Jul 2026) ----
     // Clean-load chain builds defer the result bubble until per-slot dial
     // state settles (async map fetches; 250ms polls, ~2s cap). Only a clean

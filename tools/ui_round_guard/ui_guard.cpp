@@ -15,6 +15,8 @@
 #ifndef UI_GUARD_NO_HELPERS
 #include "BorrowStatusText.h"
 #include "AskShelfLayout.h"
+#include "ChatBubbleStyle.h"    // hurdle 1 item 3
+#include "NotDialableText.h"    // hurdle 1 item 3
 #endif
 #include <cstdio>
 struct EchoJayTabStripTestAccess
@@ -73,6 +75,21 @@ int main()
 #else
     std::printf ("== (3)(4) helper legs: ABSENT in this build (UI_GUARD_NO_HELPERS: BorrowStatusText.h / AskShelfLayout.h do not exist yet) ==\n");
     check (false, "helpers compiled in");
+#endif
+    std::printf ("== hurdle 1 item 3: the NOT DIALABLE report paints coral, names the built-in by role ==\n");
+#ifndef UI_GUARD_NO_HELPERS
+    {
+        const juce::Colour userC (0xffffffff), asstC (0xffa0a0b8);
+        check (chatBubbleTextColour (false, true, userC, asstC) == chatBubbleWarningColour(), "a dial-warning assistant bubble paints CORAL (0xfff87171)", chatBubbleTextColour (false, true, userC, asstC).toString());
+        check (chatBubbleTextColour (false, false, userC, asstC) == asstC, "an ordinary assistant bubble keeps the assistant grey");
+        check (chatBubbleTextColour (true, true, userC, asstC) == userC, "a user bubble is never coral");
+        check (builtinAlternativeForRole ("pitch") == "EchoJay Pitch", "role pitch -> EchoJay Pitch");
+        check (builtinAlternativeForRole ("reverb") == "EchoJay Reverb" && builtinAlternativeForRole ("compressor") == "EchoJay Compressor" && builtinAlternativeForRole ("eq") == "EchoJay EQ" && builtinAlternativeForRole ("de-esser") == "EchoJay De-Esser", "reverb/compressor/eq/de-esser -> the matching built-ins");
+        const auto sentence = notDialableSentence ("Auto-Tune Pro", "no map for fp, no near map", "EchoJay Pitch");
+        check (sentence.contains ("Auto-Tune Pro is NOT DIALABLE (no map for fp, no near map)") && sentence.contains ("EchoJay Pitch"), "the sentence says NOT DIALABLE in those words and names the built-in", sentence);
+    }
+#else
+    std::printf ("  (helpers absent in this build - RED by construction)\n"); ++failures;
 #endif
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
