@@ -621,7 +621,20 @@ public:
     std::atomic<bool> borrowBudgetActive_ { false };   // COMMITTED - the one value
     std::atomic<bool> borrowBudgetWanted_ { false };   // PENDING - inert
     void setBorrowBudgetWanted(bool wanted) noexcept
-    { borrowBudgetWanted_.store(wanted, std::memory_order_relaxed); }
+    { borrowBudgetWanted_.store(wanted, std::memory_order_relaxed); if (wanted) capableLinkSeen_.store(true, std::memory_order_relaxed); }
+    // HURDLE 1 ITEM 4 (17 Sep 2026): "a capable Link has been seen". Set the
+    // first time the capable listing arrives (refreshLinkRegistry), SAVED WITH
+    // THE STATE, and restored BEFORE prepareToPlay on a reopened session so the
+    // budget is reserved at prepare - no stop needed - instead of waiting for
+    // the listing to flip WANTED mid-play. The very first session keeps the
+    // mid-play -> stopped-block path (round 53). Budget facts: 16384 samples
+    // (341.3 ms at 48 k), reported to the host as extra latency (one PDC
+    // re-run on the transition); the ring alignment target (1024 = the edit
+    // cushion) is independent of it.
+    std::atomic<bool> capableLinkSeen_ { false };
+    void markCapableLinkSeen() noexcept
+    { capableLinkSeen_.store(true, std::memory_order_relaxed); borrowBudgetWanted_.store(true, std::memory_order_relaxed); }
+    bool capableLinkSeen() const noexcept { return capableLinkSeen_.load(std::memory_order_relaxed); }
     void commitBorrowBudget(const char* where);        // the only writer of borrowBudgetActive_
     int  reportedBudgetFrames() const noexcept
     { return borrowBudgetActive_.load(std::memory_order_relaxed)

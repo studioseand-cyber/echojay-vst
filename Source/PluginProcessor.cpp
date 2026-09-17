@@ -598,7 +598,8 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
         // latency log is compiled out of the release build). Every store, with
         // the value, so a silent OFF can never again be inferred instead of read.
         EchoJay_NSLog(("EJCtx: prepareToPlay stored borrow budget " + juce::String(wantedNow ? "ON" : "OFF")
-                       + " (was " + (wasActive ? "ON" : "OFF") + ")").toRawUTF8());
+                       + " (was " + (wasActive ? "ON" : "OFF") + ")"
+                       + " [capable Link seen: " + (capableLinkSeen_.load(std::memory_order_relaxed) ? "y" : "n") + "]").toRawUTF8());   // hurdle 1 item 4
     }
     if (! borrowBudgetActive_.load(std::memory_order_relaxed)) borrowInContextOk_.store(false, std::memory_order_relaxed);
     if (const int lat = chainHost.hostReportableLatencySamples(); lat >= 0)
@@ -4328,6 +4329,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("keySourcePin", keySourcePin_);
     state->setProperty("keySourcePinLabel", keySourcePinLabel_);
     state->setProperty("keyShowRelative", echojay::KeyDisplayPrefs::showRelative().load());   // COMMIT 4
+    state->setProperty("capableLinkSeen", capableLinkSeen_.load(std::memory_order_relaxed));   // hurdle 1 item 4
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
     state->setProperty("passCounter", passCounter);
     state->setProperty("projectName", projectName);
@@ -4544,6 +4546,11 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             }
             if (obj->hasProperty("keyShowRelative"))   // COMMIT 4 (absent on older saves = off)
                 echojay::KeyDisplayPrefs::showRelative().store((bool) obj->getProperty("keyShowRelative"));
+            if ((bool) obj->getProperty("capableLinkSeen"))   // hurdle 1 item 4 (absent on older saves = not seen)
+            {
+                markCapableLinkSeen();   // WANTED before prepareToPlay: the budget is reserved at prepare, no stop needed
+                EchoJay_NSLog("EJCtx: state says a capable Link was seen in a previous session - borrow budget WANTED ON before prepareToPlay");
+            }
             if (obj->hasProperty("customChannelName"))
                 customChannelName = obj->getProperty("customChannelName").toString();
             // Restore dismissed — if field exists use it, otherwise derive from channel type
@@ -5122,6 +5129,7 @@ void EchoJayProcessor::refreshLinkRegistry()
                 else ++wantedForeignHost;
             }
         }
+        if (anyCapable) capableLinkSeen_.store(true, std::memory_order_relaxed);   // hurdle 1 item 4: persisted with the state
         if (borrowBudgetWanted_.exchange(anyCapable, std::memory_order_relaxed) != anyCapable)
         {
             EJ_LAT_LOG ("top: borrow budget WANTED %s (pending: inert until prepareToPlay or a STOPPED block)", anyCapable ? "ON" : "OFF");
