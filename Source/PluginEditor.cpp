@@ -5,6 +5,7 @@
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "ChainEditGate.h"       // COMMIT 2: ITEM 1 — the one pure chain-edit gate
+#include "BorrowStatusText.h"   // Round C: one writer for the borrowed-rack status line
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -8463,33 +8464,17 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             for (int i = 0; i < (int) p2.borrowSlotRecords_.size(); ++i)
                 if (p2.borrowSlotRecords_[(size_t) i].hadState
                     && ! bh2->borrowSlotSeededWithState(i)) ++withheldN;
-            safeThis->chainListPanel.statusText =
-                (withheldN > 0
-                     ? juce::String(withheldN) + " of " + juce::String(want)
-                       + " plugins arrived WITHOUT "
-                       + p2.resolveLinkDisplayName(st->uid)
-                       + "'s real settings (running at defaults; never "
-                         "written back). "
-                     : juce::String())
-                + "Editing " + p2.resolveLinkDisplayName(st->uid)
-                + " here - "
-                + (p2.borrowInContextOk_.load(std::memory_order_relaxed)
-                       ? juce::String("you're hearing the whole mix with "
-                             "your edits in place. ")
-                       : st->ctxCapable
-                       ? juce::String("changes write to it when you leave "
-                             "this rack. ")
-                       : p2.resolveLinkDisplayName(st->uid)
-                             + "'s build can't hand the mix over - "
-                             "soloing your edit instead. Update it. ")
-                + (restoredKept
-                       ? juce::String("Your unwritten edits from the "
-                             "interrupted session were RESTORED. ")
-                       : juce::String())
-                + "Changes write to "
-                + p2.resolveLinkDisplayName(st->uid)
-                + " when you leave this rack. Solo this rack to hear it "
-                  "alone.";
+            // Round C (17 Sep 2026): ONE writer for the status line (BorrowStatusText.h);
+            // the "when you leave this rack" fact appears exactly once.
+            safeThis->chainListPanel.statusText = borrowStatusSentence(
+                p2.resolveLinkDisplayName(st->uid),
+                p2.borrowInContextOk_.load(std::memory_order_relaxed),
+                st->ctxCapable, restoredKept,
+                withheldN > 0
+                    ? juce::String(withheldN) + " of " + juce::String(want)
+                      + " plugins arrived WITHOUT " + p2.resolveLinkDisplayName(st->uid)
+                      + "'s real settings (running at defaults; never written back). "
+                    : juce::String());
             safeThis->refreshChainPanelForView(true);
         });
         // Empty rack: no slots to settle; the session is engaged, silent.
