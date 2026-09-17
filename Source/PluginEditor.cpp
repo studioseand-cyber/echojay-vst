@@ -28533,7 +28533,19 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             // skip. Now the borrowed host CAN dial; say what it did, including
             // "nothing", and arm the watchdog so a totally silent build is still
             // reported. bh2->logDialSummary names requested/applied/omitted per slot.
-            bh2->logDialSummary("SESSION build (borrowed host) complete");
+            // HURDLE 1 ITEM 1 (17 Sep 2026): the verdict WAITS for the maps.
+            // This summary used to print synchronously at build completion -
+            // Sean's Pure Plate read "requested=4 applied=0 status=pending"
+            // at 15:06:12.425 while its exact map landed at .866 and dialled
+            // 3/4. Now the host settles (every fetch bounded at 4 s) before
+            // the summary is written.
+            bh2->whenDialSettled(ChainHost::kMapFetchBoundMs, [safeThis, linkUid] (bool settled)
+            {
+                if (safeThis == nullptr) return;
+                if (auto* bhS = safeThis->processorRef.borrowHostIfActiveFor(linkUid))
+                    bhS->logDialSummary(juce::String("SESSION build (borrowed host) complete, dial ")
+                                        + (settled ? "settled" : "NOT settled after the 4 s bound"));
+            });
             juce::Timer::callAfterDelay(6000, [safeThis, linkUid]
             {
                 if (safeThis == nullptr) return;

@@ -639,6 +639,15 @@ public:
         bool              builtin = false;
     };
     std::vector<SlotDialInfo> getDialInfos() const;
+    // Hurdle 1 item 1: the bounded settle. Polls every 50 ms until no slot is
+    // pending or maxWaitMs has elapsed, then calls fn(settled). Per-fp fetches
+    // carry their own bound (kMapFetchBoundMs, armed when the fetch leaves),
+    // so a fetch that never answers settles its slot noMap inside the wait.
+    void whenDialSettled (int maxWaitMs, std::function<void(bool settled)> fn);
+    static constexpr int kMapFetchBoundMs = 4000;
+    // True while an exact-map fetch OR a fallback lookup for fp is unanswered.
+    bool mapFetchInFlight (const juce::String& fp) const
+    { return pendingMapFps_.contains (fp) || pendingFallbackFps_.contains (fp); }
     // One line per slot, at the END of a build, saying what actually dialled.
     // The per-call lines cannot answer "nothing dials" because each is a
     // snapshot mid-sequence and the benign ones outnumber the real ones; this
@@ -1775,6 +1784,12 @@ private:
     // yet). Distinct from mapsRequested_, which is never cleared (it is the
     // don't-re-request guard). Drives DialStatus::pending vs noMap.
     juce::StringArray                    pendingMapFps_;
+    // Hurdle 1 item 1 (17 Sep 2026): the FALLBACK lookup's own in-flight
+    // ledger. It used to ride pendingMapFps_, so whichever of the two answers
+    // came back FIRST cleared "pending" for both and a miss from the lookup
+    // settled the slot noMap while the exact fetch was still in the air.
+    juce::StringArray                    pendingFallbackFps_;
+    void armMapFetchBound (const juce::String& fp);   // the 4 s bound, per fetch
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map
     // older than the staleness bound is refetched before it can dial, so a

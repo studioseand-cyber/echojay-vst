@@ -6,7 +6,7 @@ import json, os, shlex, subprocess, sys
 
 ROOT = "/Users/SeanD/echojay-vst"
 CC   = os.path.join(ROOT, "build-release/compile_commands.json")
-LIB  = os.path.join(ROOT, "build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a")
+LIB  = os.environ.get("EJ_LIB") or os.path.join(ROOT, "build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a")   # EJ_LIB: a before/after lib for RED/GREEN runs
 SRC  = os.path.abspath(sys.argv[1])
 OUT  = "/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad/" + \
        os.path.splitext(os.path.basename(SRC))[0] + "_bin"
@@ -27,7 +27,8 @@ for i, a in enumerate(args):
 FRAMEWORKS = ["CoreAudioKit","DiscRecording","CoreAudio","CoreMIDI","AudioToolbox","Accelerate",
               "WebKit","Metal","MetalKit","QuartzCore","Cocoa","Foundation","IOKit","Security","OpenGL",
               "UniformTypeIdentifiers","AVFoundation","CoreMedia","AVKit"]
-cmd = ["clang++"] + out + ["-I", os.path.join(ROOT, "Source"), SRC, LIB]
+SRC_ROOT = os.environ.get("EJ_SRC_ROOT") or ROOT   # EJ_SRC_ROOT: a checkout whose headers match EJ_LIB (a RED run pairs the pre-round headers with the pre-round lib)
+cmd = ["clang++"] + out + os.environ.get("EJ_CXXFLAGS", "").split() + ["-I", os.path.join(SRC_ROOT, "Source"), SRC, LIB]   # EJ_CXXFLAGS: e.g. -DEJ_GUARD_TODAY
 for f in FRAMEWORKS: cmd += ["-framework", f]
 cmd += ["-lcurl", "-o", OUT]
 

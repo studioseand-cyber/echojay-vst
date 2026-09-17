@@ -2875,17 +2875,27 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
     // New request, new denominator: a lingering count from the previous
     // apply must not travel with this request's declines (dial-3 A3).
     slots_[(size_t)i].dialRequestedCount = -1;
-    applyStructuredIfReady(i, DialTrigger::settingsAttached);
 
-    // Map not cached yet (first-ever encounter of this plugin): fetch just
-    // this fingerprint; storeParamMaps applies the pending slot on arrival.
-    auto& fp = slots_[(size_t)i].fp;
-    if (!slots_[(size_t)i].structuredApplied && fp.isNotEmpty()
-        && paramMaps_.find(fp) == paramMaps_.end()
-        && !mapsRequested_.contains(fp) && onNeedParamMaps)
+    // HURDLE 1 ITEM 1 (17 Sep 2026): FETCH FIRST, APPLY SECOND, BOUNDED.
+    // The apply used to run BEFORE any fetch was kicked, so a first-encounter
+    // slot was marked noMap, then corrected to pending, and the exact fetch
+    // and the fallback lookup shared one in-flight ledger (whichever answered
+    // first cleared "pending" for both). Now: every slot whose map is not
+    // cached asks FIRST - the exact fetch and the fallback lookup leave in
+    // parallel, each armed with a kMapFetchBoundMs bound - and the apply
+    // below reads "pending" until an answer (or the bound) settles it. A slot
+    // becomes noMap only AFTER its fetches answer. Sean's Pure Plate turn:
+    // settings attached 15:06:12.347, verdict taken at .425 (pending,
+    // applied=0), exact map stored at .866 and applied 3/4 - the verdict
+    // ran before the answer. The bound is the ruling's 4 s per slot.
+    const auto& fp = slots_[(size_t)i].fp;
+    const bool mapAbsent = fp.isNotEmpty() && ! isBuiltinSlot(i)
+                        && paramMaps_.find(fp) == paramMaps_.end();
+    if (mapAbsent && !mapsRequested_.contains(fp) && onNeedParamMaps)
     {
         mapsRequested_.add(fp);
         pendingMapFps_.addIfNotAlreadyThere(fp);
+        armMapFetchBound(fp);
         onNeedParamMaps(juce::StringArray(fp));
     }
     // PRODUCT FALLBACK, TRIGGERED HERE (27 Aug 2026) and not on the exact
@@ -2899,38 +2909,68 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
     // exists, which then suppressed the only fetch the fallback could have
     // hung off. Separate question, separate ledger, and it still stops the same
     // fp being re-asked in a loop.
-    //
-    // structuredSettings and structuredApplied=false were set above and are not
-    // touched here, so the request survives the round trip and storeFallbackMaps
-    // has something to apply when the map lands.
-    if (!slots_[(size_t)i].structuredApplied && fp.isNotEmpty()
-        && paramMaps_.find(fp) == paramMaps_.end()
-        && !fallbackRequested_.contains(fp) && onNeedFallbackMaps)
+    if (mapAbsent && !fallbackRequested_.contains(fp) && onNeedFallbackMaps)
     {
         const auto body = buildFallbackLookupJsonForSlot(i);
         if (body.isNotEmpty())
         {
             fallbackRequested_.add(fp);
-            // Rides pendingMapFps_ so the line below marks the slot pending
-            // rather than noMap while the answer is in flight, and so the
-            // bubble does not claim "no map" about a slot still being asked
-            // about. storeFallbackMaps clears it on arrival.
-            pendingMapFps_.addIfNotAlreadyThere(fp);
+            // Its OWN in-flight ledger (hurdle 1 item 1): a miss from the
+            // lookup no longer settles a slot whose exact fetch is still out.
+            pendingFallbackFps_.addIfNotAlreadyThere(fp);
+            armMapFetchBound(fp);
             EchoJay_NSLog(("EJFallback: asking for slot " + juce::String(i + 1)
                            + " (\"" + slots_[(size_t)i].desc.name + "\") fp "
                            + fp.substring(0, 12) + " -- no exact map").toRawUTF8());
             onNeedFallbackMaps(body);
         }
     }
-    // The applyStructuredIfReady above ran BEFORE the fetch kicked, so a
-    // first-encounter slot got noMap; correct it to pending while the
-    // answer is in flight.
-    if (!slots_[(size_t)i].structuredApplied && pendingMapFps_.contains(fp))
-        slots_[(size_t)i].dialStatus = DialStatus::pending;
+    applyStructuredIfReady(i, DialTrigger::settingsAttached);
     // Stale-map ladder: on the map-held branch the dial verdict lands right
     // here at settings attach, not on any fetch answer, so this is where
     // that rung settles.
     if (settleStaleRung(i) && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+void ChainHost::armMapFetchBound(const juce::String& fp)
+{
+    // Hurdle 1 item 1: the bounded wait, per fetch. If neither the exact
+    // fetch nor the fallback lookup has answered for this fp when the bound
+    // expires, the slot settles noMap (terminal) instead of waiting forever,
+    // and it says so. An answer that lands later is still stored (the
+    // storeParamMaps/storeFallbackMaps sweeps re-apply any slot not yet
+    // applied), so the bound costs nothing but honesty.
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay(kMapFetchBoundMs, [this, alive, fp]()
+    {
+        if (alive.expired()) return;
+        if (! mapFetchInFlight(fp)) return;                 // answered in time
+        pendingMapFps_.removeString(fp);
+        pendingFallbackFps_.removeString(fp);
+        EchoJay_NSLog(("EJDial: map fetch for fp=" + fp.substring(0, 12) + " UNANSWERED after "
+                       + juce::String(kMapFetchBoundMs) + " ms -> the slot settles noMap (bounded wait)").toRawUTF8());
+        bool changed = false;
+        for (int i = 0; i < (int) slots_.size(); ++i)
+        {
+            auto& s = slots_[(size_t) i];
+            if (s.fp != fp || s.structuredApplied || s.structuredSettings.getDynamicObject() == nullptr) continue;
+            applyStructuredIfReady(i, DialTrigger::mapArrived);   // re-evaluates: noMap while the map is absent
+            changed = true;
+        }
+        if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+    });
+}
+
+void ChainHost::whenDialSettled(int maxWaitMs, std::function<void(bool)> fn)
+{
+    if (! fn) return;
+    if (dialStateSettled() || maxWaitMs <= 0) { fn(dialStateSettled()); return; }
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay(50, [this, alive, maxWaitMs, fn]()
+    {
+        if (alive.expired()) return;
+        whenDialSettled(maxWaitMs - 50, fn);
+    });
 }
 
 void ChainHost::storeParamMaps(const juce::var& mapsObj)
@@ -3036,7 +3076,7 @@ bool ChainHost::settleStaleRung(int i)
     // still settle early; the cost is conservative wording that the
     // mapArrived apply then corrects, never a lost dial.
     const bool asked    = mapsRequested_.contains(s.fp);
-    const bool answered = asked && ! pendingMapFps_.contains(s.fp);
+    const bool answered = asked && ! mapFetchInFlight(s.fp);
     // The dial verdict comes from the SLOT, never from map presence (12 Aug
     // 2026, rung A rehearsal: a held map logged a dial over applied=0
     // unusableMap). wrote means something actually landed: applied, or
@@ -3362,11 +3402,25 @@ void ChainHost::failMapFetch(const juce::StringArray& fps)
 
 void ChainHost::failFallbackLookup()
 {
+    // Hurdle 1 item 1: clears the FALLBACK ledger only. A slot whose exact
+    // fetch is still in flight stays pending; one with no other fetch out
+    // re-evaluates to its terminal state.
     juce::StringArray fps;
     for (const auto& s : slots_)
-        if (s.fp.isNotEmpty() && fallbackRequested_.contains(s.fp) && pendingMapFps_.contains(s.fp))
+        if (s.fp.isNotEmpty() && pendingFallbackFps_.contains(s.fp))
             fps.addIfNotAlreadyThere(s.fp);
-    failMapFetch(fps);
+    for (const auto& fp : fps) pendingFallbackFps_.removeString(fp);
+    bool changed = false;
+    for (int i = 0; i < (int)slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t)i];
+        if (! fps.contains(s.fp) || s.structuredApplied
+            || s.structuredSettings.getDynamicObject() == nullptr) continue;
+        const bool wasPending = s.dialStatus == DialStatus::pending;
+        applyStructuredIfReady(i, DialTrigger::mapArrived);
+        if (wasPending && s.dialStatus != DialStatus::pending) changed = true;
+    }
+    if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
 }
 
 void ChainHost::requestMapPrefetch()
@@ -3899,8 +3953,8 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         // wiring one. onNeedParamMaps is installed by the EDITOR and nulled
         // when it closes, so a dial attempted with the window shut reads
         // fetch_wired=n rather than as a missing map.
-        const bool inFlight  = pendingMapFps_.contains(s.fp);
-        const bool everAsked = mapsRequested_.contains(s.fp);
+        const bool inFlight  = mapFetchInFlight(s.fp);            // exact fetch OR fallback lookup still out
+        const bool everAsked = mapsRequested_.contains(s.fp) || fallbackRequested_.contains(s.fp);
         s.dialStatus = inFlight ? DialStatus::pending : DialStatus::noMap;
         EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
                        + "\") NO MAP for fp=" + s.fp.substring(0, 12)
@@ -6955,7 +7009,7 @@ void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
         if (auto* r = rv.getDynamicObject())
             for (const auto& sl : slots_)
                 if (echojay::identityKeyForDescription(sl.desc) == r->getProperty("ik").toString())
-                    pendingMapFps_.removeString(sl.fp);
+                    pendingFallbackFps_.removeString(sl.fp);   // hurdle 1 item 1: the lookup's OWN ledger
     bool changed = false;
     for (int i = 0; i < (int)slots_.size(); ++i)
     {
