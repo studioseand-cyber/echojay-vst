@@ -6,6 +6,7 @@
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
 #include "ChainEditGate.h"       // COMMIT 2: ITEM 1 — the one pure chain-edit gate
 #include "BorrowStatusText.h"   // Round C: one writer for the borrowed-rack status line
+#include "AskShelfLayout.h"     // Round C: the ask shelf never passes the chat column
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -19129,7 +19130,7 @@ void EchoJayEditor::resized()
                 if (!briefCard_.qs.empty())
                 {
                     const int cardH = briefCard_.preferredHeight();
-                    askShelfRect_    = { chatBoxRect_.getX(), chatBoxRect_.getY() - cardH, bw, cardH };
+                    askShelfRect_    = askShelfBounds(chatBoxRect_, chatScroll.getBounds(), cardH);   // Round C: never past the chat column
                     askShelfVisible_ = true;
                     askShelfIsCard_  = true;
                     askChipMsgIdx_   = askIdxL;
@@ -19149,8 +19150,7 @@ void EchoJayEditor::resized()
                                                    &askChipQuestion_, &intents, &choiceVars);
                 if (shelfH > 0)
                 {
-                    askShelfRect_    = { chatBoxRect_.getX(),
-                                         chatBoxRect_.getY() - shelfH, bw, shelfH };
+                    askShelfRect_    = askShelfBounds(chatBoxRect_, chatScroll.getBounds(), shelfH);   // Round C: never past the chat column
                     askShelfVisible_ = true;
                     askChipMsgIdx_   = askIdxL;
                     activeAskChips   = labels.size();
