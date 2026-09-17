@@ -25942,7 +25942,7 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         if (pr == nullptr) return {};       // only existence entries: nothing measured
         c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 UNUSABLE]:\n")
           << "A Key Detector in this chain reads " << keyText (pr->root, pr->minor)
-          << " (" << juce::String (pr->conf, 2) << ") - but this channel is a "
+          << " - but this channel is a "
              "VOCAL. A vocal is monophonic, sliding and often pitch-corrected: "
              "the worst possible key source. TREAT THE TRACK'S KEY AS UNKNOWN; "
              "do not build moves on this reading. To know the real key, a Link "
@@ -25978,8 +25978,9 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
             break;
     }
 
+    // COMMIT 4b (17 Sep 2026): the model never sees the confidence number -
+    // no confidence field, no scores; the key is stated exactly as displayed.
     c << "key: " << keyText (p->root, p->minor)
-      << "   confidence: " << juce::String (p->conf, 2)
       << "   detected_tuning: " << tuningText (p->tuningHz) << "\n"
       << "root_hz: " << rootHzText (p->rootHz) << "\n"
       << "source: " << srcLabel (*p)
@@ -25997,8 +25998,7 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
           << sources.pinMissingLabel
           << "\" is gone; Auto precedence chose the source above.\n";
     if (p->altRoot >= 0)
-        c << "alternate: " << keyText (p->altRoot, p->altMinor)
-          << " (" << juce::String (p->altScore, 2) << ")\n";
+        c << "alternate: " << keyText (p->altRoot, p->altMinor) << "\n";   // COMMIT 4b: name only
     if (p->kind == KeySourceReading::Kind::LocalChain)
         c << "analysed: " << juce::String (p->analysedSeconds, 1)
           << " s of playback, " << (p->committed ? "committed" : "continuous") << "\n";
@@ -26011,13 +26011,12 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         if (s.poisoned)
         {
             c << "IGNORED: " << srcLabel (s) << " reads " << keyText (s.root, s.minor)
-              << " (" << juce::String (s.conf, 2) << ") - measured from the "
+              << " - measured from the "
                  "VOCAL this chain sits on; never use a vocal-derived key.\n";
             continue;
         }
         c << "also measured: " << srcLabel (s) << ": " << keyText (s.root, s.minor)
-          << " (" << juce::String (s.conf, 2)
-          << ", age " << ageStr (s.ageMs) << ")\n";
+          << " (age " << ageStr (s.ageMs) << ")\n";   // COMMIT 4b: no score
     }
 
     if (sources.disagree)

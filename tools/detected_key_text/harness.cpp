@@ -1,4 +1,4 @@
-// detected_key_text — COMMIT 4 proof (17 Sep 2026): the ASSEMBLED [DETECTED KEY]
+// detected_key_text — COMMIT 4 proof + COMMIT 4b guard (17 Sep 2026): the ASSEMBLED [DETECTED KEY]
 // block, through the plugin's own assembly path (EchoJayEditor::
 // testAssembleChainInjections -> buildDetectedKeyContext), for the SAME
 // detected key with keyShowRelative OFF and then ON. Prints both blocks
@@ -76,6 +76,12 @@ int main()
     check (offBlock.contains ("key: A minor"), "OFF: the prompt states \"key: A minor\"");
     check (onBlock.contains ("key: C major"),  "ON:  the prompt states \"key: C major\" (exactly as displayed)");
     check (onBlock.contains ("alternate: A minor"), "ON:  the alternate follows the same helper (C major -> A minor)");
+    // COMMIT 4b (17 Sep 2026): the model must never see the confidence number.
+    check (! offBlock.contains ("confidence:"), "4b: no \"confidence:\" field on the key line");
+    check (offBlock.contains ("alternate: C major\n"), "4b: the alternate line is the NAME only (no score)");
+    check (! offBlock.contains ("0.31") && ! offBlock.contains ("0.29"), "4b: no confidence number anywhere in the block");
+    check (offBlock.contains ("detected_tuning:") && offBlock.contains ("root_hz:") && offBlock.contains ("source:") && offBlock.contains ("age:"),
+           "4b: key, detected_tuning, root_hz, source, age kept");
     check (! offBlock.containsIgnoreCase ("unreliable") && ! offBlock.contains ("0.5") && ! offBlock.contains ("treat the key as unknown"),
            "no confidence / 0.5 / unreliable clause remains");
     check (offBlock.contains ("exactly what EchoJay displays"), "the rule line is present");
