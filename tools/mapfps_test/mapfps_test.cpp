@@ -8800,6 +8800,125 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "bd PIN6: and divides the window sum by the window fill");
         }
 
+        // ws PIN1 -- WHAT A SETTINGS PAYLOAD IS ASKING FOR.
+        // Three functions held three opinions about one object. The card's
+        // summariser treated "params" as a LEAF, so a built-in's payload printed
+        // "params Object 0x66cf3ee0" at the user: juce::var::toString() on an
+        // object is its pointer. A WRAPPER IS A CONTAINER, NOT A REQUEST.
+        {
+            using echojay::readSettingsShape;
+            auto mk = [] (std::initializer_list<std::pair<const char*, juce::var>> kv)
+            {
+                auto* o = new juce::DynamicObject();
+                for (auto& p : kv) o->setProperty (p.first, p.second);
+                return juce::var (o);
+            };
+
+            // A PARAMS WRAPPER: the built-in shape. Three leaves, named and
+            // valued, and "params" is NOT one of them.
+            {
+                const auto sh = readSettingsShape (mk ({ { "params", mk ({
+                    { "threshold_db", -8.0 }, { "ceiling_db", -1.0 }, { "release_ms", 120.0 } }) } }));
+                check (sh.shape == "wrapped", "ws PIN1: a params wrapper reads as wrapped");
+                check (sh.requested() == 3,   "ws PIN1: and asks for its THREE leaves, not one wrapper");
+                check (sh.leaves.size() == 3 && sh.leaves[0].name == "threshold_db"
+                       && sh.leaves[1].name == "ceiling_db" && sh.leaves[2].name == "release_ms",
+                       "ws PIN1: the leaf NAMES come from inside the wrapper");
+                check (std::abs ((double) sh.leaves[0].value - (-8.0)) < 1e-9,
+                       "ws PIN1: and their values with them");
+                bool named = false;
+                for (auto& l : sh.leaves) if (l.name == "params") named = true;
+                check (! named, "ws PIN1: \"params\" is never itself a leaf, which is the "
+                                "defect that printed a pointer on the card");
+            }
+
+            // A CONTROLS WRAPPER: the third-party shape, same treatment.
+            {
+                const auto sh = readSettingsShape (mk ({ { "controls", mk ({
+                    { "Threshold", -12.0 }, { "Ratio", 4.0 } }) } }));
+                check (sh.shape == "wrapped" && sh.requested() == 2,
+                       "ws PIN1: a controls wrapper reads the same way");
+                check (sh.leaves[0].name == "Threshold" && sh.leaves[1].name == "Ratio",
+                       "ws PIN1: by exact control name");
+            }
+
+            // AN eq_bands PAYLOAD: an array has a COUNT and no leaf names of its
+            // own, so it contributes elements and a display key.
+            {
+                juce::Array<juce::var> bands;
+                bands.add (mk ({ { "freq_hz", 80.0 } }));
+                bands.add (mk ({ { "freq_hz", 3000.0 } }));
+                const auto sh = readSettingsShape (mk ({ { "eq_bands", juce::var (bands) } }));
+                check (sh.shape == "wrapped", "ws PIN1: an eq_bands array is a wrapper too");
+                check (sh.requested() == 2,   "ws PIN1: and asks for its two elements");
+                check (sh.displayKeys.joinIntoString (",").contains ("eq_bands[2]"),
+                       "ws PIN1: named with its count, since an array has no leaf names");
+            }
+
+            // A BARE OBJECT: flat semantics, the third-party anchor shape. Every
+            // key is its own request and none of them is a wrapper.
+            {
+                const auto sh = readSettingsShape (mk ({
+                    { "low_cut_freq_hz", 80.0 }, { "gain_db", -2.0 } }));
+                check (sh.shape == "flat", "ws PIN1: a bare object with no wrapper is flat");
+                check (sh.requested() == 2 && sh.flat == 2 && sh.wrappers == 0,
+                       "ws PIN1: and every top-level key is its own request");
+            }
+
+            // EMPTY, and the two other non-objects, because "nothing asked for"
+            // and "malformed" are different answers.
+            {
+                check (readSettingsShape (mk ({})).shape == "empty",
+                       "ws PIN1: an object with no keys is empty");
+                check (readSettingsShape (juce::var()).shape == "none",
+                       "ws PIN1: a void payload is none, not empty");
+                check (readSettingsShape (juce::var (7)).shape == "scalar",
+                       "ws PIN1: a scalar is neither");
+                check (readSettingsShape (mk ({})).requested() == 0,
+                       "ws PIN1: and an empty payload asks for nothing");
+            }
+
+            // MIXED is named because it is almost always malformed: a wrapper
+            // AND top-level flat keys in one payload.
+            {
+                const auto sh = readSettingsShape (mk ({
+                    { "params", mk ({ { "a", 1.0 } }) }, { "gain_db", -2.0 } }));
+                check (sh.shape == "mixed",
+                       "ws PIN1: wrappers beside flat keys are named mixed, not wrapped");
+            }
+        }
+
+        // ws PIN2 -- A WRAPPER KEY IS NEVER AN UNMAPPED CONTROL.
+        // THIS IS THE PIN THAT WOULD HAVE STOPPED THE INVESTIGATION. A params
+        // wrapper reaching applySettings fell through to the generic
+        // "no mapping for this control on this plugin", which names a control
+        // the model never asked for and sends the reader to the MAP. The map is
+        // blameless: the payload was meant for a built-in device and arrived on
+        // the third-party path, which is a ROUTING fault. A confident wrong
+        // diagnosis is worse than a missing feature, and it cost a full
+        // investigation on 17 Sep before the routing was found.
+        {
+            std::ifstream fpa ("Source/EchoJayParamApply.h");
+            std::stringstream spa; spa << fpa.rdbuf();
+            const auto code = codeOnly (juce::String (spa.str()));
+            check (code.contains ("isWrapperKey (semantic)"),
+                   "ws PIN2: applySettings DETECTS a wrapper key rather than "
+                   "treating it as a semantic");
+            check (code.contains ("routing fault"),
+                   "ws PIN2: and its note names a ROUTING fault");
+            check (! code.contains ("r.note = \"no mapping for this control on this plugin\";\n")
+                   || code.contains ("routing fault"),
+                   "ws PIN2: the generic no-mapping note still exists for real "
+                   "unmapped semantics, but not as the wrapper's answer");
+            // THE ORDER IS LOAD-BEARING: the detector must precede the generic
+            // no-mapping branch, or the wrapper reaches the wrong one first.
+            const int det = code.indexOf ("isWrapperKey (semantic)");
+            const int gen = code.indexOf ("no mapping for this control on this plugin");
+            check (det >= 0 && gen >= 0 && det < gen,
+                   "ws PIN2: and the detector comes BEFORE the generic branch, "
+                   "or the wrapper would still reach the wrong diagnosis");
+        }
+
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
         // window is the cursor in", which is a proxy for "is there room" and
         // wrong in both directions: a cursor one pixel past the centre flipped

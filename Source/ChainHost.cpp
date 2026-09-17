@@ -1553,15 +1553,18 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
                 ? juce::String ((double) v, 4).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
                 : v.toString();
         };
+        // ONE READING OF THE PAYLOAD, shared with countRequestedSettings.
+        // This used to unwrap "controls" and treat "params" as a leaf, so a
+        // built-in's {"params":{...}} printed "params Object 0x66cf3ee0" on the
+        // proposal card: juce::var::toString() on an object is its POINTER.
+        // A wrapper is a container, not a request.
         juce::StringArray parts;
-        if (auto* co = o->getProperty("controls").getDynamicObject())
-            for (const auto& kv : co->getProperties())
-                parts.add(kv.name.toString() + " " + fmtVal(kv.value));
-        for (const auto& kv : o->getProperties())
+        const auto sh = echojay::readSettingsShape (ss);
+        for (const auto& leaf : sh.leaves)
         {
-            const auto k = kv.name.toString();
-            if (k == "controls" || k == "bands" || k == "dropped_controls") continue;
-            parts.add(k + " " + fmtVal(kv.value));
+            if (leaf.name == "dropped_controls") continue;
+            if (leaf.name.startsWith ("bands[")) continue;   // counted below
+            parts.add (leaf.name + " " + fmtVal (leaf.value));
         }
         if (auto* ba = o->getProperty("bands").getArray())
             parts.add(juce::String(ba->size()) + (ba->size() == 1 ? " band move" : " band moves"));
@@ -3455,60 +3458,13 @@ static int countRequestedSettings (const juce::var& structured,
                                    juce::StringArray& keys,
                                    juce::String& shape)
 {
-    shape = "none";
-    if (structured.isVoid()) return 0;
-
-    if (structured.isArray())
-    {
-        // A bare array is the EQ's band form arriving without its wrapper.
-        shape = "array";
-        const int n = structured.size();
-        keys.add("(bare array of " + juce::String(n) + ")");
-        return n;
-    }
-
-    auto* obj = structured.getDynamicObject();
-    if (obj == nullptr) { shape = "scalar"; return 0; }
-
-    const auto& props = obj->getProperties();
-    if (props.size() == 0) { shape = "empty"; return 0; }
-
-    int requested = 0, wrappers = 0, flat = 0;
-    for (const auto& kv : props)
-    {
-        const juce::String key = kv.name.toString();
-        const juce::var& val  = kv.value;
-
-        if ((key == "params" || key == "controls") && val.getDynamicObject() != nullptr)
-        {
-            ++wrappers;
-            juce::StringArray inner;
-            for (const auto& leaf : val.getDynamicObject()->getProperties())
-                inner.add(leaf.name.toString());
-            requested += inner.size();
-            keys.add(key + "{" + inner.joinIntoString(", ") + "}");
-        }
-        else if (val.isArray())
-        {
-            ++wrappers;
-            requested += val.size();
-            keys.add(key + "[" + juce::String(val.size()) + "]");
-        }
-        else
-        {
-            // A flat semantic key at the top level. Legitimate on the
-            // third-party path and the ONLY shape an old prompt produced, so
-            // it stays countable rather than being treated as malformed.
-            ++flat;
-            ++requested;
-            keys.add(key);
-        }
-    }
-
-    shape = (wrappers > 0 && flat > 0) ? "mixed"
-          : (wrappers > 0)             ? "wrapped"
-                                       : "flat";
-    return requested;
+    // A THIN CALLER NOW. The reading moved to echojay::readSettingsShape so the
+    // proposal card and this counter cannot disagree about what a payload asks
+    // for; they disagreed for five weeks and the card printed a pointer.
+    const auto sh = echojay::readSettingsShape (structured);
+    shape = sh.shape;
+    keys.addArray (sh.displayKeys);
+    return sh.requested();
 }
 
 void ChainHost::logDialSummary(const juce::String& reason) const

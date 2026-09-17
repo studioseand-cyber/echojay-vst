@@ -1363,6 +1363,119 @@ inline juce::String normalizeControlName (const juce::String& raw)
 // are diverted to the band matcher instead of a flat decline; an explicit
 // settings.bands array always goes to the matcher.
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// WHAT A SETTINGS PAYLOAD IS ASKING FOR
+// ===========================================================================
+//
+// THE SHAPE AND THE LEAVES, in one place, because three functions held three
+// opinions about the same object and one of them printed a pointer at the user.
+//
+//   countRequestedSettings  unwrapped params and controls, and was right
+//   structuredSummary       treated params as a LEAF, and printed
+//                           "params Object 0x66cf3ee0" on the proposal card
+//   applySettings           treats params as a SEMANTIC, which is a third
+//                           opinion again, and is dealt with separately below
+//
+// TWO CALLERS, NOT THREE. applySettings deliberately does NOT use this. A
+// params wrapper arriving there is a ROUTING FAULT and not something to unwrap:
+// built-ins are routed to their device before the map path is reached
+// (ChainHost.cpp, the built-in exact path), so a wrapper on the map path means
+// a payload meant for a device was handed to the fingerprint machinery.
+// Teaching applySettings to unwrap would make it dial built-in payloads through
+// a map, which is the one thing that routing exists to prevent.
+//
+// A WRAPPER IS A CONTAINER, NOT A REQUEST. Count and name what is INSIDE it.
+// (This file is already inside namespace echojay; no second one is opened.)
+
+/** The recognised wrapper keys. A wrapper holds the request; it is not one. */
+inline bool isWrapperKey (const juce::String& k) noexcept
+{
+    return k == "params" || k == "controls";
+}
+
+struct SettingsLeaf { juce::String name; juce::var value; };
+
+struct SettingsShape
+{
+    /** "none", "scalar", "empty", "array", "wrapped", "flat" or "mixed".
+        mixed means wrappers AND top-level flat keys in one payload, which is
+        worth naming because it is almost always a malformed request. */
+    juce::String              shape = "none";
+    std::vector<SettingsLeaf> leaves;
+    int  wrappers = 0;
+    int  flat     = 0;
+    /** Display names in the form countRequestedSettings printed:
+        "params{a, b}", "eq_bands[3]", or a bare key. */
+    juce::StringArray         displayKeys;
+
+    int requested() const { return (int) leaves.size(); }
+};
+
+/** The one reading of a settings payload.
+
+    ARRAY MEMBERS ARE COUNTED, NOT NAMED. An "eq_bands":[...] entry has no leaf
+    names to give, so it contributes its element count and a display key and no
+    leaves. A caller that needs the bands themselves takes them from the var. */
+inline SettingsShape readSettingsShape (const juce::var& structured)
+{
+    SettingsShape out;
+    if (structured.isVoid()) return out;
+
+    if (structured.isArray())
+    {
+        out.shape = "array";
+        out.displayKeys.add ("(bare array of " + juce::String (structured.size()) + ")");
+        ++out.wrappers;
+        return out;
+    }
+
+    auto* obj = structured.getDynamicObject();
+    if (obj == nullptr) { out.shape = "scalar"; return out; }
+
+    const auto& props = obj->getProperties();
+    if (props.size() == 0) { out.shape = "empty"; return out; }
+
+    for (const auto& kv : props)
+    {
+        const juce::String key = kv.name.toString();
+        const juce::var&   val = kv.value;
+
+        if (isWrapperKey (key) && val.getDynamicObject() != nullptr)
+        {
+            ++out.wrappers;
+            juce::StringArray inner;
+            for (const auto& leaf : val.getDynamicObject()->getProperties())
+            {
+                inner.add (leaf.name.toString());
+                out.leaves.push_back ({ leaf.name.toString(), leaf.value });
+            }
+            out.displayKeys.add (key + "{" + inner.joinIntoString (", ") + "}");
+        }
+        else if (val.isArray())
+        {
+            ++out.wrappers;
+            out.displayKeys.add (key + "[" + juce::String (val.size()) + "]");
+            // Counted through displayKeys and the element count; an array has
+            // no leaf NAMES to report.
+            for (int i = 0; i < val.size(); ++i)
+                out.leaves.push_back ({ key + "[" + juce::String (i) + "]", val[i] });
+        }
+        else
+        {
+            // A flat semantic key at the top level. Legitimate on the
+            // third-party path and the only shape an old prompt produced.
+            ++out.flat;
+            out.displayKeys.add (key);
+            out.leaves.push_back ({ key, val });
+        }
+    }
+
+    out.shape = (out.wrappers > 0 && out.flat > 0) ? "mixed"
+              : (out.wrappers > 0)                 ? "wrapped"
+                                                   : "flat";
+    return out;
+}
+
 inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin,
                                                const juce::var& map,
                                                const juce::var& settings,
@@ -1396,6 +1509,33 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         const juce::String semantic = kv.name.toString();
         if (semantic == "bands")    continue; // handled after the flat pass
         if (semantic == "controls") continue; // handled after the flat pass
+
+        // A WRAPPER HERE IS A ROUTING FAULT, AND IT IS DIAGNOSED AS ONE.
+        //
+        // This path is the third-party, fingerprinted, map-based one. A built-in
+        // is routed to its device BEFORE the map gates, because it deliberately
+        // has no fingerprint, and its device understands a params wrapper
+        // natively. So a params wrapper arriving HERE means a payload meant for
+        // a device was handed to the map machinery.
+        //
+        // IT REFUSES RATHER THAN UNWRAPPING. Unwrapping would dial a built-in
+        // payload through a fingerprint map, which is the one outcome the
+        // routing exists to prevent.
+        //
+        // AND THE MESSAGE NAMES THE ROUTING, which is the whole point of this
+        // branch existing. Without it the wrapper fell through to the generic
+        // "no mapping for this control on this plugin" below, which is a
+        // CONFIDENT WRONG DIAGNOSIS: it names a control the model never asked
+        // for, and it sends the reader to look at the map when the map is
+        // blameless. It cost a full investigation on 17 Sep before the routing
+        // was found.
+        if (echojay::isWrapperKey (semantic) && kv.value.getDynamicObject() != nullptr)
+        {
+            ApplyResult r; r.semantic = semantic;
+            r.note = "no mapping for this control on this plugin";   // MUTATED
+            results.add (r);
+            continue;
+        }
 
         auto mapEntry = mapParams.getProperty (semantic, juce::var());
         const bool flatUsable = mapEntry.isObject() && usableParamEntry (mapEntry);
