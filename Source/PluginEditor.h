@@ -1300,6 +1300,14 @@ private:
     // Same shape as the dropped_controls copy: name the thing, carry the
     // SERVER's reason rather than a client paraphrase, one local bubble.
     void announceRefusedOps(const juce::String& chainJson, const juce::String& editJson);
+    // Amendment 3 (17 Sep 2026): the one chain-built bubble composer (own rack + SESSION build).
+    struct BuildBubble { juce::String text, altPrompt, altLabel; bool dialWarning = false; };
+    BuildBubble composeBuildBubble(ChainHost& ch, const juce::String& chainJson);
+    static std::map<juce::String, juce::String> roleByNameFor(const juce::String& chainJson);
+    void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
+    void rerouteChatTurn(const juce::String& sysPrompt, const juce::String& activeChatId,
+                         const juce::String& turnTargetUid, const juce::String& turnTargetName,
+                         int provisionalId, const juce::StringArray& roles, const juce::StringArray& contents);
     void appendLocalResultBubble(const juce::String& text,
                                  const juce::String& altPrompt = juce::String(),
                                  const juce::String& altLabel  = juce::String(),
@@ -2225,7 +2233,7 @@ private:
             addAndMakeVisible(stripView);
             stripView.setViewedComponent(&stripContent, false);
             stripView.setScrollBarsShown(false, true, false, true);
-            stripView.setScrollBarThickness(8);
+            stripView.setScrollBarThickness(echojay::ScrollbarStyle::thickness);   // 17 Sep 2026: the one setting, shared with the Link rack row
             addAndMakeVisible(editGate);       // COMMIT 2: on top of the strip band
             editGate.setVisible(false);
 

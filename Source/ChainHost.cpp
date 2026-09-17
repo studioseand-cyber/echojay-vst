@@ -11,6 +11,8 @@
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
 #include "NotDialableText.h"   // item 3: the built-in by role (one table, shared with the card)
+#include "NearAcceptance.h"     // amendment 1: the partial acceptance rule (essentials + Tier-1)
+#include <regex>
 #include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
 #include "EedKeyFeed.h"            // KeyFeedConsumer: builtins learn their owner
@@ -2891,7 +2893,8 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
     // ran before the answer. The bound is the ruling's 4 s per slot.
     const auto& fp = slots_[(size_t)i].fp;
     const bool mapAbsent = fp.isNotEmpty() && ! isBuiltinSlot(i)
-                        && paramMaps_.find(fp) == paramMaps_.end();
+                        && paramMaps_.find(fp) == paramMaps_.end()
+                        && ! hasMapForProduct(slots_[(size_t)i].desc);   // product identity: a map for another version counts
     if (mapAbsent && !mapsRequested_.contains(fp) && onNeedParamMaps)
     {
         mapsRequested_.add(fp);
@@ -3779,7 +3782,8 @@ juce::String ChainHost::dialSummaryRow(int i) const
          // the server returned mapped_versions). Say what each is:
          // localMap = is the fetched map cached HERE; serverDialable =
          // does the server's dialable set (this scan's lookup) list it.
-         + "  localMap=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? "y" : "n")
+         + "  localMap=" + (s.fp.isNotEmpty() && paramMaps_.find(s.fp) != paramMaps_.end() ? juce::String("y")
+                              : hasMapForProduct(s.desc) ? juce::String("product") : juce::String("n"))
          + "  serverDialable=" + (existenceDialable_.empty()
                ? juce::String("?(no lookup this scan)")
                : (existenceDialable_.count(echojay::identityKeyForDescription(s.desc)) > 0
@@ -3891,6 +3895,10 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                                                           &applied, &skipped, &deviceMissing);
         s.structuredApplied = true;
         s.dialAppliedCount  = applied;
+        // Amendment 3 (17 Sep 2026): the built-in's denominator is what the device was
+        // handed (applied + skipped), not the wrapper key count ("params" = 1), so the
+        // card's "n/m applied" agrees with the summary row and the substitution note.
+        s.dialRequestedCount = applied + skipped;
 
         // The cast failure gets its OWN line and its own status. Previously it
         // returned the same empty summary as an unrecognised payload and was
@@ -3974,6 +3982,39 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         return;
     }
     auto it = paramMaps_.find(s.fp);
+    if (it == paramMaps_.end())
+    {
+        // PRODUCT IDENTITY (17 Sep 2026 ruling): a map cached for this PRODUCT under
+        // another version's fp applies to THIS version - by NAME. Names absent on this
+        // build are skipped and logged; the slot is noMap only if a mapped Tier-1
+        // param or a category essential fails to resolve.
+        if (const auto pfp = productMapFpFor(s.desc); pfp.isNotEmpty())
+        {
+            if (auto* proc = getSlotProcessor(slotIndex))
+            {
+                std::map<juce::String, int> live;
+                auto& params = proc->getParameters();
+                for (int p = 0; p < params.size(); ++p)
+                    if (params[p] != nullptr)
+                    {
+                        const auto n = params[p]->getName(echojay::kParamNameQueryLen).trim().toLowerCase();
+                        if (n.isNotEmpty() && live.find(n) == live.end()) live[n] = p;
+                    }
+                const auto pm = paramMaps_.find(pfp)->second;
+                auto* co = new juce::DynamicObject(); co->setProperty("fp", pfp); co->setProperty("map", pm);
+                co->setProperty("category", pm.getProperty("category", juce::var()));
+                juce::Array<juce::var> one; one.add(juce::var(co));
+                juce::String note;
+                auto re = acceptNearMapForNames(s.desc.name, s.fp, live, juce::var(one), note);
+                s.nearMapNote = "product map " + pfp.substring(0, 12) + ": " + note;
+                if (re.getDynamicObject() != nullptr)
+                {
+                    paramMaps_[s.fp] = re; fpFetchedAt_[s.fp] = fpFetchedAt_.count(pfp) ? fpFetchedAt_[pfp] : juce::Time::currentTimeMillis();
+                    it = paramMaps_.find(s.fp);
+                }
+            }
+        }
+    }
     if (it == paramMaps_.end())
     {
         // Apply-time honesty: never a silent skip any more. Outcome is
@@ -4387,17 +4428,6 @@ void ChainHost::loadParamMapsFromDisk()
     if (auto* fa = root.getProperty("fpFetchedAt", juce::var()).getDynamicObject())
         for (auto& p : fa->getProperties())
             fpFetchedAt_[p.name.toString()] = (juce::int64)(double) p.value;
-    if (auto* nv = root.getProperty("nearVerdicts", juce::var()).getDynamicObject())   // 17 Sep 2026: pre-chat near verdicts, per identity
-        for (auto& p : nv->getProperties())
-        {
-            NearVerdict v; v.ik = p.name.toString();
-            v.name = p.value.getProperty("name", juce::var()).toString();
-            v.liveFp = p.value.getProperty("liveFp", juce::var()).toString();
-            v.candidateFp = p.value.getProperty("candidateFp", juce::var()).toString();
-            v.note = p.value.getProperty("note", juce::var()).toString();
-            v.verified = (bool) p.value.getProperty("verified", false);
-            nearVerdicts_[v.ik] = v;
-        }
     EchoJay_NSLog(("EJParamMaps: cache loaded, " + juce::String((int)identityToFp_.size())
                    + " identities, " + juce::String((int)paramMaps_.size()) + " map(s), "
                    + juce::String(fpAttempted_.size()) + " fp skip marker(s)").toRawUTF8());
@@ -4421,16 +4451,6 @@ void ChainHost::saveParamMapsToDisk()
     root->setProperty("maps", juce::var(maps.get()));
     root->setProperty("fpAttempted", att);
     root->setProperty("fpFetchedAt", juce::var(fetchedAt.get()));
-    juce::DynamicObject::Ptr nv = new juce::DynamicObject();
-    for (auto& kv : nearVerdicts_)
-    {
-        auto* o = new juce::DynamicObject();
-        o->setProperty("name", kv.second.name); o->setProperty("liveFp", kv.second.liveFp);
-        o->setProperty("candidateFp", kv.second.candidateFp); o->setProperty("note", kv.second.note);
-        o->setProperty("verified", kv.second.verified);
-        nv->setProperty(juce::Identifier(kv.first), juce::var(o));
-    }
-    root->setProperty("nearVerdicts", juce::var(nv.get()));
     getParamMapsCacheFile().replaceWithText(juce::JSON::toString(juce::var(root.get())));
 }
 
@@ -6930,6 +6950,7 @@ juce::var ChainHost::fallbackEntryForSlot(int slot, juce::String& whyOut) const
     const auto& s = slots_[(size_t) slot];
     if (s.fp.isEmpty())                              { whyOut = "slot has no fingerprint"; return {}; }
     if (paramMaps_.find(s.fp) != paramMaps_.end())   { whyOut = "already mapped exactly"; return {}; }
+    if (hasMapForProduct(s.desc))                    { whyOut = "already mapped for the product (another version)"; return {}; }
     auto* proc = getSlotProcessor(slot);
     if (proc == nullptr)                             { whyOut = "no live instance"; return {}; }
 
@@ -7124,14 +7145,22 @@ juce::var ChainHost::acceptNearMapForSlot(int slot, const juce::var& nearArr, ju
 
 juce::var ChainHost::acceptNearMapForNames(const juce::String& pluginName, const juce::String& liveFp,
                                            const std::map<juce::String, int>& live, const juce::var& nearArr,
-                                           juce::String& noteOut, juce::String* chosenFpOut)
+                                           juce::String& noteOut, juce::String* chosenFpOut,
+                                           juce::StringArray* droppedOut)
 {
     noteOut = {};
     if (chosenFpOut) chosenFpOut->clear();
+    if (droppedOut) droppedOut->clear();
     auto* arr = nearArr.getArray();
     if (arr == nullptr || arr->isEmpty()) { noteOut = "no near map"; return {}; }
 
-    struct Cand { int idx = -1; juce::String fp; int named = 0, resolved = 0, essentialPlumbing = 0; juce::StringArray unresolved; };
+    // AMENDMENT 1 (17 Sep 2026): PARTIAL acceptance. Per candidate: every mapped Tier-1
+    // semantic (params[].name) and every category essential control MUST resolve
+    // (missingRequired); unresolved NON-essential controls are dropped from the working
+    // copy and listed. Auto-Tune Pro 17:53: 51/114 resolved, the 63 unresolved were all
+    // Harmony Player controls (non-essential) -> accepted under this rule.
+    struct Cand { int idx = -1; juce::String fp, category; int named = 0, resolved = 0, essentialPlumbing = 0;
+                  juce::StringArray unresolved, missingRequired, resolvedControls, droppedControls; };
     std::vector<Cand> cands;
     for (int ci = 0; ci < arr->size(); ++ci)
     {
@@ -7140,27 +7169,38 @@ juce::var ChainHost::acceptNearMapForNames(const juce::String& pluginName, const
         const auto map = co->getProperty("map");
         if (map.getDynamicObject() == nullptr) continue;
         Cand k; k.idx = ci; k.fp = co->getProperty("fp").toString();
+        k.category = co->getProperty("category").toString();
+        if (k.category.isEmpty()) k.category = map.getProperty("category", juce::var()).toString();
         if (auto* ep = co->getProperty("essential_plumbing").getArray()) k.essentialPlumbing = ep->size();
-        auto consider = [&k, &live] (const juce::String& name)
+        auto consider = [&k, &live] (const juce::String& name, bool required, bool isControl)
         {
             if (name.trim().isEmpty()) return;
             ++k.named;
-            if (live.find(name.trim().toLowerCase()) != live.end()) ++k.resolved; else k.unresolved.add(name);
+            const bool ok = live.find(name.trim().toLowerCase()) != live.end();
+            if (ok) { ++k.resolved; if (isControl) k.resolvedControls.add(name); }
+            else { k.unresolved.add(name); if (required) k.missingRequired.add(name); else if (isControl) k.droppedControls.add(name); }
         };
         if (auto* ctl = map.getProperty("controls", juce::var()).getDynamicObject())
             for (auto& kv : ctl->getProperties())
             {
                 auto n = kv.value.getProperty("name", juce::var()).toString();
-                consider(n.isNotEmpty() ? n : kv.name.toString());
+                if (n.isEmpty()) n = kv.name.toString();
+                consider(n, echojay::nearIsEssential(k.category, n), true);
             }
         if (auto* ps = map.getProperty("params", juce::var()).getDynamicObject())
             for (auto& kv : ps->getProperties())
-                consider(kv.value.getProperty("name", juce::var()).toString());
+                consider(kv.value.getProperty("name", juce::var()).toString(), true, false);   // Tier-1: always required
+        // Every category essential must EXIST in the candidate and resolve (a candidate naming
+        // "Tonic" instead of "Key" is missing Key, not merely failing to resolve it).
+        for (const auto& m : echojay::nearMissingEssentials(k.category, k.resolvedControls))
+            k.missingRequired.addIfNotAlreadyThere(m);
         cands.push_back(k);
     }
     if (cands.empty()) { noteOut = "near maps offered carried no map body"; return {}; }
     std::stable_sort(cands.begin(), cands.end(), [] (const Cand& a, const Cand& b)
     {
+        const bool ea = a.missingRequired.isEmpty(), eb = b.missingRequired.isEmpty();
+        if (ea != eb) return ea;                                   // acceptable candidates first
         if (a.resolved != b.resolved) return a.resolved > b.resolved;
         return a.essentialPlumbing < b.essentialPlumbing;
     });
@@ -7170,26 +7210,33 @@ juce::var ChainHost::acceptNearMapForNames(const juce::String& pluginName, const
     if (cands.size() > 1 && cands[1].resolved == best.resolved)
         why += "; tie broken on essential controls classed plumbing/hidden (" + juce::String(best.essentialPlumbing)
              + " vs " + juce::String(cands[1].essentialPlumbing) + ")";
-    if (best.named == 0 || best.resolved < best.named)
+    if (best.named == 0 || ! best.missingRequired.isEmpty())
     {
         EchoJay_NSLog(("EJDial: NEAR MAP REJECTED fp=" + liveFp.substring(0, 12) + " from=" + best.fp.substring(0, 12)
                        + " (\"" + pluginName + "\") params=" + juce::String(best.resolved) + "/" + juce::String(best.named)
+                       + " missing essential/tier-1=[" + best.missingRequired.joinIntoString(", ") + "]"
                        + " unresolved=[" + best.unresolved.joinIntoString(", ") + "]  chosen by: " + why).toRawUTF8());
-        noteOut = "near map rejected: unresolved [" + best.unresolved.joinIntoString(", ") + "]";
+        noteOut = "near map rejected: missing essential/tier-1 [" + best.missingRequired.joinIntoString(", ") + "]";
         return {};
     }
-    // Re-index the accepted copy by NAME onto the live instance.
+    // Re-index the accepted copy by NAME onto the live instance; drop the unresolved non-essential controls.
     juce::var out = (*arr)[best.idx].getDynamicObject()->getProperty("map").clone();
     int dropped = 0;
     if (auto* ctl = out.getProperty("controls", juce::var()).getDynamicObject())
+    {
+        juce::StringArray remove;
         for (auto& kv : ctl->getProperties())
             if (auto* eo = kv.value.getDynamicObject())
             {
                 auto n = eo->getProperty("name").toString();
                 if (n.isEmpty()) n = kv.name.toString();
-                eo->setProperty("index", live.at(n.trim().toLowerCase()));
+                auto it = live.find(n.trim().toLowerCase());
+                if (it == live.end()) { remove.add(kv.name.toString()); continue; }
+                eo->setProperty("index", it->second);
                 eo->setProperty("name", n);
             }
+        for (const auto& r : remove) { ctl->removeProperty(r); ++dropped; }
+    }
     if (auto* ps = out.getProperty("params", juce::var()).getDynamicObject())
     {
         juce::StringArray nameless;
@@ -7208,138 +7255,17 @@ juce::var ChainHost::acceptNearMapForNames(const juce::String& pluginName, const
         mo->setProperty("served_from", "near:" + best.fp);
         mo->setProperty("near_map", true);
     }
-    EchoJay_NSLog(("EJDial: NEAR MAP accepted fp=" + liveFp.substring(0, 12) + " from=" + best.fp.substring(0, 12)
+    EchoJay_NSLog(("EJDial: map applied by NAME fp=" + liveFp.substring(0, 12) + " from=" + best.fp.substring(0, 12)
                    + " (\"" + pluginName + "\") params=" + juce::String(best.resolved) + "/" + juce::String(best.named)
-                   + (dropped > 0 ? "  dropped_nameless=" + juce::String(dropped) : juce::String())
                    + "  chosen by: " + why).toRawUTF8());
-    noteOut = "near map accepted from " + best.fp.substring(0, 12) + " (" + juce::String(best.resolved) + "/" + juce::String(best.named) + ")";
+    if (dropped > 0)
+        EchoJay_NSLog(("EJParamApply: absent on this build: [" + best.droppedControls.joinIntoString(", ") + "] (\"" + pluginName
+                       + "\", " + juce::String(dropped) + " of the map's names do not exist on this version - skipped, never a rejection)").toRawUTF8());
+    noteOut = "map applied by name from " + best.fp.substring(0, 12) + " (" + juce::String(best.resolved) + "/" + juce::String(best.named)
+            + (best.droppedControls.isEmpty() ? juce::String(")") : "; absent on this build: " + best.droppedControls.joinIntoString(", ") + ")");
     if (chosenFpOut) *chosenFpOut = best.fp;
+    if (droppedOut) *droppedOut = best.droppedControls;
     return out;
-}
-
-// ---- PRE-CHAT NEAR VERIFICATION (17 Sep 2026 ruling) ---------------------------
-void ChainHost::verifyNearCandidates()
-{
-    std::vector<juce::PluginDescription> v;
-    for (const auto& e : recommendable_)
-    {
-        if (e.desc.uniqueId == 0 || isBuiltinDescription(e.desc)) continue;
-        const auto ik = echojay::identityKeyForDescription(e.desc);
-        if (existenceDialable_.count(ik) == 0) continue;                 // the server holds no map at any version
-        if (const auto fp = echojay::fpForIdentity(identityToFp_, e.desc); fp.isNotEmpty() && paramMaps_.count(fp) > 0) continue;   // exact map cached
-        if (nearVerdicts_.count(ik) > 0) continue;                        // verdict cached: never repeated
-        v.push_back(e.desc);
-    }
-    if (! v.empty())
-        EchoJay_NSLog(("EJNear: " + juce::String((int) v.size()) + " recommendable plugin(s) need a near-map verdict (mapped at some version, no exact map, no cached verdict)").toRawUTF8());
-    verifyNearCandidatesFor(v);
-}
-
-void ChainHost::verifyNearCandidatesFor(const std::vector<juce::PluginDescription>& descs)
-{
-    for (const auto& d : descs)
-    {
-        const auto ik = echojay::identityKeyForDescription(d);
-        bool queued = false;
-        for (const auto& q : nearQueue_) if (echojay::identityKeyForDescription(q) == ik) { queued = true; break; }
-        if (! queued && nearVerdicts_.count(ik) == 0) nearQueue_.push_back(d);
-    }
-    nearProcessNext();
-}
-
-const ChainHost::NearVerdict* ChainHost::nearVerdictFor(const juce::String& ik) const
-{
-    auto it = nearVerdicts_.find(ik);
-    return it == nearVerdicts_.end() ? nullptr : &it->second;
-}
-
-juce::String ChainHost::buildVerifiedNearJson() const
-{
-    juce::DynamicObject::Ptr o = new juce::DynamicObject();
-    for (const auto& kv : nearVerdicts_)
-        if (kv.second.verified && kv.second.candidateFp.isNotEmpty() && kv.second.name.isNotEmpty())
-            o->setProperty(juce::Identifier(kv.second.name), kv.second.candidateFp);
-    return juce::JSON::toString(juce::var(o.get()), true);
-}
-
-void ChainHost::nearProcessNext()
-{
-    if (nearBusy_ || nearQueue_.empty()) return;
-    const auto desc = nearQueue_.front(); nearQueue_.pop_front();
-    const auto ik = echojay::identityKeyForDescription(desc);
-    if (nearVerdicts_.count(ik) > 0) { nearProcessNext(); return; }
-    nearBusy_ = true;
-    ++nearInstantiations_;
-    std::weak_ptr<int> alive = life_;
-    auto onInstance = [this, alive, desc, ik] (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
-    {
-        if (alive.expired()) return;
-        auto finish = [this, ik] (NearVerdict v)
-        {
-            EchoJay_NSLog(("EJNear: verdict ik=" + ik + " \"" + v.name + "\" fp=" + v.liveFp.substring(0, 12)
-                           + (v.verified ? " VERIFIED candidate=" + v.candidateFp.substring(0, 12) : juce::String(" none"))
-                           + " (" + v.note + ")").toRawUTF8());
-            nearVerdicts_[ik] = std::move(v);
-            saveParamMapsToDisk();
-            nearBusy_ = false;
-            // One at a time, deferred: the next plugin instantiates on a later message-thread turn.
-            std::weak_ptr<int> alive2 = life_;
-            juce::Timer::callAfterDelay(250, [this, alive2] { if (! alive2.expired()) nearProcessNext(); });
-        };
-        NearVerdict v; v.ik = ik; v.name = desc.name;
-        if (inst == nullptr) { v.note = "instantiate failed: " + err; finish(std::move(v)); return; }
-        auto& params = inst->getParameters();
-        v.liveFp = echojay::fingerprintForDescription(desc, params.size());
-        identityToFp_[ik] = v.liveFp;                                  // the load IS the measurement: index it
-        std::map<juce::String, int> live;
-        juce::Array<juce::var> names;
-        for (int p = 0; p < params.size(); ++p)
-        {
-            const auto n = params[p] != nullptr ? params[p]->getName(echojay::kParamNameQueryLen) : juce::String();
-            if (p < echojay::kMaxParamReadsPerSlot) names.add(n);
-            const auto low = n.trim().toLowerCase();
-            if (low.isNotEmpty() && live.find(low) == live.end()) live[low] = p;
-        }
-        const int paramCount = params.size();
-        inst.reset();                                                  // names read; the instance is not kept
-        if (paramMaps_.count(v.liveFp) > 0) { v.note = "exact map cached for the live fp"; finish(std::move(v)); return; }
-        if (! onNeedNearLookup) { nearBusy_ = false; EchoJay_NSLog("EJNear: no lookup transport wired - verdict deferred (not cached)"); return; }
-        juce::DynamicObject::Ptr e = new juce::DynamicObject();
-        e->setProperty("ik", ik); e->setProperty("fp", v.liveFp); e->setProperty("name", desc.name);
-        if (desc.manufacturerName.isNotEmpty()) e->setProperty("manufacturer", desc.manufacturerName);
-        e->setProperty("param_count", paramCount); e->setProperty("param_names", names);
-        juce::Array<juce::var> one; one.add(juce::var(e.get()));
-        juce::DynamicObject::Ptr root = new juce::DynamicObject();
-        root->setProperty("mode", "lookup"); root->setProperty("plugins", juce::var(one));
-        const auto body = juce::JSON::toString(juce::var(root.get()), true);
-        const auto pluginName = desc.name;
-        onNeedNearLookup(body, [this, alive, v, live, pluginName, finish] (const juce::var& results) mutable
-        {
-            if (alive.expired()) return;
-            auto* arr = results.getArray();
-            auto* r = (arr != nullptr && ! arr->isEmpty()) ? (*arr)[0].getDynamicObject() : nullptr;
-            if (r == nullptr) { v.note = "lookup answered nothing"; finish(std::move(v)); return; }
-            const auto served = r->getProperty("map");
-            if (served.getDynamicObject() != nullptr)
-            {
-                // A product-tier serve (same format|uid, names agree): usable as-is under the live fp.
-                paramMaps_[v.liveFp] = served; fpFetchedAt_[v.liveFp] = juce::Time::currentTimeMillis();
-                v.verified = true; v.candidateFp = r->getProperty("fp").toString(); v.note = "product fallback served (tier " + r->getProperty("tier").toString() + ")";
-                finish(std::move(v)); return;
-            }
-            juce::String note, chosen;
-            auto accepted = acceptNearMapForNames(pluginName, v.liveFp, live, r->getProperty("near"), note, &chosen);
-            v.note = note;
-            if (accepted.getDynamicObject() != nullptr)
-            {
-                paramMaps_[v.liveFp] = accepted; fpFetchedAt_[v.liveFp] = juce::Time::currentTimeMillis();
-                v.verified = true; v.candidateFp = chosen;
-            }
-            finish(std::move(v));
-        });
-    };
-    if (nearInstantiate) nearInstantiate(desc, onInstance);
-    else formatManager_.createPluginInstanceAsync(desc, sampleRate_ > 0 ? sampleRate_ : 48000.0, blockSize_ > 0 ? blockSize_ : 512, onInstance);
 }
 
 // ---- BUILD-TIME SUBSTITUTION (17 Sep 2026 ruling, item 3) ------------------------
@@ -7435,6 +7361,40 @@ bool ChainHost::restoreSlotDial(int i, const SlotDialSnapshot& snap)
     s.dialApproximate = snap.approximate; s.dialOutOfRange = snap.outOfRange;
     s.dialServedFrom = snap.servedFrom; s.nearMapNote = snap.nearMapNote; s.substitutedFrom = snap.substitutedFrom;
     return true;
+}
+
+// ---- PRODUCT IDENTITY (17 Sep 2026 ruling) ----------------------------------------
+juce::String ChainHost::productMapFpFor(const juce::PluginDescription& desc) const
+{
+    if (desc.uniqueId == 0 || desc.pluginFormatName.isEmpty()) return {};
+    const auto product = echojay::productKeyForDescription(desc) + "|";
+    juce::String best; bool bestVendorMatch = false;
+    for (const auto& kv : identityToFp_)
+    {
+        if (! kv.first.startsWith(product)) continue;
+        auto m = paramMaps_.find(kv.second);
+        if (m == paramMaps_.end() || m->second.getDynamicObject() == nullptr) continue;
+        const auto vendor = m->second.getProperty("identity", juce::var()).getProperty("vendor", juce::var()).toString();
+        const bool vendorMatch = vendor.isNotEmpty() && desc.manufacturerName.isNotEmpty()
+                              && vendor.trim().equalsIgnoreCase(desc.manufacturerName.trim());
+        if (best.isEmpty() || (vendorMatch && ! bestVendorMatch)) { best = kv.second; bestVendorMatch = vendorMatch; }   // manufacturer: the tie-break
+    }
+    return best;
+}
+
+juce::String ChainHost::buildProductIdsJson(int maxEntries) const
+{
+    juce::DynamicObject::Ptr o = new juce::DynamicObject();
+    int n = 0;
+    auto put = [&] (const juce::String& name, const juce::PluginDescription& d)
+    {
+        if (n >= maxEntries || name.isEmpty() || d.uniqueId == 0 || d.pluginFormatName.isEmpty()) return;
+        if (o->hasProperty(name)) return;
+        o->setProperty(name, echojay::productKeyForDescription(d)); ++n;
+    };
+    for (const auto& s : slots_) put(s.desc.name, s.desc);
+    for (const auto& e : recommendable_) put(e.displayName, e.desc);
+    return juce::JSON::toString(juce::var(o.get()), true);
 }
 
 juce::String ChainHost::buildSlotParamReadsJson() const
@@ -7589,6 +7549,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.staleIndexedFp = s.staleIndexedFp;
         di.outOfRange   = s.dialOutOfRange;
         di.notDialable  = ejSlotNotDialable(*this, di.builtin, s.fp, s.dialStatus, di.notDialableReason, s.nearMapNote);   // hurdle 1 item 3
+        di.substitutedFrom = s.substitutedFrom;   // amendment 3: the composer reads the swap from the host state
         // dial-3 key halves + denominator (A2/A3/A7.2). uid rendered
         // exactly as getSlotIdentity renders it, so the two surfaces
         // cannot disagree about the same slot.
@@ -7680,6 +7641,11 @@ juce::StringArray ChainHost::getDialableRecommendableNames() const
         if (const auto fp = echojay::fpForIdentity(identityToFp_, e.desc); fp.isNotEmpty())
             if (auto m = paramMaps_.find(fp); m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
                 dialable = true;
+        // PRODUCT IDENTITY (17 Sep 2026): a map cached for any version of the product counts.
+        if (! dialable)
+            if (const auto pfp = productMapFpFor(e.desc); pfp.isNotEmpty())
+                if (auto m = paramMaps_.find(pfp); m != paramMaps_.end() && echojay::mapIsDialableForSignals(m->second))
+                    dialable = true;
         // EXISTENCE INDEX: a map exists on the server for this plugin at SOME
         // version, reachable through the server's version-insensitive lookup
         // even with no local fp. This is what carries a fresh or a V15 machine,

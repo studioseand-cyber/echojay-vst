@@ -2276,6 +2276,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     linkMixerView_.owner = this;
     linkMixerViewport_.setViewedComponent(&linkMixerView_, false);
     linkMixerViewport_.setScrollBarsShown(false, true);
+    linkMixerViewport_.setScrollBarThickness(echojay::ScrollbarStyle::thickness);   // 17 Sep 2026: the one setting, shared with the chain strip
     addChildComponent(linkMixerViewport_);
 
     // Settings ambient visual — glyph extracted once from the embedded logo
@@ -8203,11 +8204,6 @@ void EchoJayEditor::wireChainHostFetch(ChainHost& host, bool isBorrow)
                 proc.getChainHost().storeParamMaps(maps);                       // persist (main is the one disk writer)
                 if (isBorrow && proc.borrowActive()) proc.borrowHost()->storeParamMaps(maps);   // dial the live session
             });
-    };
-    host.onNeedNearLookup = [safeThis](const juce::String& body, std::function<void(const juce::var&)> done)
-    {   // 17 Sep 2026: the pre-chat near verifier's lookup (same endpoint as the fallback)
-        if (safeThis == nullptr || body.isEmpty()) return;
-        safeThis->api.lookupFallbackMaps(body, [done](const juce::var& results) { if (done) done(results); });
     };
     host.onNeedFallbackMaps = [safeThis, isBorrow](const juce::String& body)
     {
@@ -22367,29 +22363,49 @@ void EchoJayEditor::reportPendingDialOutcomes()
                                                        : " did not get their maps - use the values on their cards."));
 }
 
-void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJson,
-                                                     int attemptsLeft)
+// Amendment 3 (17 Sep 2026): the SESSION (borrowed host) build's finish - substitution,
+// the session's name-only identities kept in step, the SAME bubble as the own-rack path,
+// the summary. Public to the friend harness (bubble_parity_guard) so it runs on the real objects.
+void EchoJayEditor::finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled)
 {
-    auto& ch = processorRef.getChainHost();
-    EchoJay_NSLog(("EJDialSummary: settle[finish] entered, attemptsLeft="
-                   + juce::String(attemptsLeft) + " settled="
-                   + (ch.dialStateSettled() ? "y" : "n")).toRawUTF8());
-    if (!ch.dialStateSettled() && attemptsLeft > 0)
+    auto* bhS = processorRef.borrowHostIfActiveFor(linkUid);
+    if (bhS == nullptr) return;
+    auto& pS = processorRef;
+    const auto subs = bhS->substituteNoMapSlots(roleByNameFor(chainJson));
+    for (const auto& sb : subs)
     {
-        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-        juce::Timer::callAfterDelay(250, [safeThis, chainJson, attemptsLeft]() {
-            if (safeThis != nullptr)
-                safeThis->finishChainBubbleWhenDialSettled(chainJson, attemptsLeft - 1);
-        });
-        return;
+        if (sb.slot >= 0 && sb.slot < (int) pS.borrowCreatedIdentity_.size()) pS.borrowCreatedIdentity_[(size_t) sb.slot].name = sb.to;
+        if (sb.slot >= 0 && sb.slot < (int) pS.borrowSlotRecords_.size())    pS.borrowSlotRecords_[(size_t) sb.slot].name = sb.to;
     }
+    const auto b = composeBuildBubble(*bhS, chainJson);
+    appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
+    bhS->logDialSummary(juce::String("SESSION build (borrowed host) complete, dial ")
+                        + (settled ? "settled" : "NOT settled after the 4 s bound"));
+    if (! subs.empty()) refreshChainPanelForView(true);
+}
 
-    // The other terminal path (see logDialMissesWhenSettled): these two are
-    // alternatives at the call site, so the summary has to sit in BOTH or a
-    // whole class of build reports nothing at all.
-    ch.logDialSummary(ch.dialStateSettled() ? "dial settled"
-                                            : "dial NOT settled, retry budget exhausted");
+std::map<juce::String, juce::String> EchoJayEditor::roleByNameFor(const juce::String& chainJson)
+{
+    std::map<juce::String, juce::String> roles;
+    if (auto* co = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
+        for (auto& sv : *co)
+            roles[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()] = sv.getProperty("role", juce::var()).toString();
+    return roles;
+}
 
+// Amendment 3 (17 Sep 2026): ONE composer for the chain-built result bubble, used by
+// the own-rack path (finishChainBubbleWhenDialSettled) AND the borrowed-host SESSION
+// build path, so a Link-rack build renders the same text (applied names, partial
+// lists, SUBSTITUTED notes with applied counts, pending, stale) as an own-rack build.
+EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, const juce::String& chainJson)
+{
+    BuildBubble out;
+    // The swaps come from the HOST STATE (SlotDialInfo.substitutedFrom), so both paths render them alike.
+    struct Sub { juce::String from, to; int applied = 0, requested = 0; };
+    std::vector<Sub> substituted;
+    for (const auto& di : ch.getDialInfos())
+        if (di.substitutedFrom.isNotEmpty())
+            substituted.push_back({ di.substitutedFrom, di.name, di.appliedCount, di.requestedCount });
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
@@ -22407,9 +22423,6 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         for (auto& sv : *co)
             roleByName[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()]
                 = sv.getProperty("role", juce::var()).toString();
-    // Item 3 (17 Sep 2026 ruling): under dial-only, a slot still noMap after its fetches is
-    // replaced by the built-in of its role and dialled; the swap is said in normal text.
-    const auto substituted = ch.substituteNoMapSlots(roleByName);
     for (const auto& di : ch.getDialInfos())
     {
         // dial-4 A8: population, counted where the rows are logged so the
@@ -22551,10 +22564,38 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         bubble += " " + substitutedNote(sb.from, sb.to) + " (" + juce::String(sb.applied) + "/" + juce::String(sb.requested) + " applied).";
     for (const auto& nd : notDialableParts)
         bubble += " " + notDialableSentence(nd.name, nd.reason, builtinAlternativeForRole(nd.role));
-    juce::String altPrompt, altLabel;
-    composeStaleAltFollowUp(staleParts, altPrompt, altLabel);
+    composeStaleAltFollowUp(staleParts, out.altPrompt, out.altLabel);
+    out.text = bubble; out.dialWarning = ! notDialableParts.empty();
+    return out;
+}
+
+void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJson,
+                                                     int attemptsLeft)
+{
+    auto& ch = processorRef.getChainHost();
+    EchoJay_NSLog(("EJDialSummary: settle[finish] entered, attemptsLeft="
+                   + juce::String(attemptsLeft) + " settled="
+                   + (ch.dialStateSettled() ? "y" : "n")).toRawUTF8());
+    if (!ch.dialStateSettled() && attemptsLeft > 0)
+    {
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        juce::Timer::callAfterDelay(250, [safeThis, chainJson, attemptsLeft]() {
+            if (safeThis != nullptr)
+                safeThis->finishChainBubbleWhenDialSettled(chainJson, attemptsLeft - 1);
+        });
+        return;
+    }
+
+    // The other terminal path (see logDialMissesWhenSettled): these two are
+    // alternatives at the call site, so the summary has to sit in BOTH or a
+    // whole class of build reports nothing at all.
+    ch.logDialSummary(ch.dialStateSettled() ? "dial settled"
+                                            : "dial NOT settled, retry budget exhausted");
+
+    ch.substituteNoMapSlots(roleByNameFor(chainJson));
+    const auto b = composeBuildBubble(ch, chainJson);
     clearStageStatus();   // the bubble replaces the load/dial-window label
-    appendLocalResultBubble(bubble, altPrompt, altLabel, {}, ! notDialableParts.empty());   // hurdle 1 item 3: coral when a slot is NOT DIALABLE
+    appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
 }
 
 // Stale-map ladder, unmapped rung: the ONE user-pressed follow-up. Same
@@ -24878,7 +24919,7 @@ void EchoJayEditor::maybeRefreshExistenceDialable(ChainHost& ch)
     api.fetchDialableIdentities (refs,
         [safe, sig, &ch] (bool ok, std::set<juce::String> dialable)
         {
-            if (ok) { ch.setExistenceDialable (std::move (dialable)); ch.verifyNearCandidates(); }   // 17 Sep 2026: verify ahead of the chat turn
+            if (ok) ch.setExistenceDialable (std::move (dialable));
             if (auto* self = safe.getComponent())
             {
                 self->existenceQueryInFlight_ = false;
@@ -26692,7 +26733,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                     fpsObj->setProperty(s.name, s.fp);
                 }
         api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
-        api.setNextChatVerifiedNear(processorRef.getChainHost().buildVerifiedNearJson());   // 17 Sep 2026: D7 strict reads it
+        api.setNextChatProductIds(processorRef.getChainHost().buildProductIdsJson());   // 17 Sep 2026: the server keys dial-only by PRODUCT
     }
     // 6c section 8a: staged beside mapFps and from the same rack, but OUTSIDE
     // the mapFps guard above -- reads are worth sending whenever a slot exists,
@@ -27439,6 +27480,23 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
 //   - nothing waits on thinking: the transport forwards no thinking frames
 //     (Feature A) and rendering keys on text deltas and done alone, so a
 //     Feature-B turn with zero thinking blocks behaves identically.
+// 17 Sep 2026: the reroute re-send. Same roles/contents/system prompt down /api/chat; the
+// reply is rendered through the ordinary chat path with the quiet line appended.
+void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::String& activeChatId,
+                                    const juce::String& turnTargetUid, const juce::String& turnTargetName,
+                                    int provisionalId, const juce::StringArray& roles, const juce::StringArray& contents)
+{
+    EchoJay_NSLog("EJStream: reroute -> re-sending the turn to /api/chat (rendered as a chat reply, quiet line appended)");
+    setStageStatus(juce::String::fromUTF8("Answering as a chat\xe2\x80\xa6"));
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.sendChat(roles, contents, sysPrompt,
+        [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
+            if (safeThis == nullptr) return;
+            safeThis->handleChatReply(success ? EchoJayAPI::renderRerouteReply(reply) : reply, success, activeChatId,
+                                      turnTargetUid, turnTargetName, provisionalId);
+        });
+}
+
 void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
                                        const juce::String& activeChatId,
                                        const juce::String& turnTargetUid,
@@ -27789,6 +27847,17 @@ void EchoJayEditor::fireChatStreamCall(const juce::String& sysPrompt,
         // is the only line that persists anything.
         ed->handleChatReply (reply, true, activeChatId,
                              turnTargetUid, turnTargetName, st->provisionalId);
+    };
+    // 17 Sep 2026 (three live reroutes): a 403 chat_turn_not_streamed re-sends the SAME turn
+    // to /api/chat and renders that reply as a chat reply with one quiet line appended. The
+    // user is never asked to send it again.
+    ev.onRerouteToChat = [safeThis, st, activeChatId, turnTargetUid, turnTargetName, sysPrompt, roles, contents] (const juce::String&, const juce::String&)
+    {
+        if (safeThis == nullptr) return;
+        safeThis->activeChatStream_ = nullptr;
+        safeThis->restreamRepaint_  = nullptr;
+        safeThis->bumpStreamSuppressed_ = nullptr;
+        safeThis->rerouteChatTurn (sysPrompt, activeChatId, turnTargetUid, turnTargetName, st->provisionalId, roles, contents);
     };
     ev.onError = [safeThis, st, activeChatId, turnTargetUid, turnTargetName] (const juce::String& err, int)
     {
@@ -28547,12 +28616,9 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
         chainListPanel.statusText = "Building " + juce::String(expectAdds)
             + " plugin(s) into your edit session...";
         chainListPanel.repaint();
-        std::map<juce::String, juce::String> rolesByName;   // item 3: the roles the substitution keys on
-        if (auto* co = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
-            for (auto& sv : *co)
-                rolesByName[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()] = sv.getProperty("role", juce::var()).toString();
+        const juce::String chainJsonForBubble = chainJson;   // amendment 3: the SESSION path composes the same bubble as the own-rack path
         bhB->applyChainEdits(std::move(ops), -1, baseNow,
-            [safeThis, linkUid, rolesByName](const juce::StringArray& results,
+            [safeThis, linkUid, chainJsonForBubble](const juce::StringArray& results,
                                 int applied, bool aborted)
         {
             if (safeThis == nullptr) return;
@@ -28584,26 +28650,14 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             // at 15:06:12.425 while its exact map landed at .866 and dialled
             // 3/4. Now the host settles (every fetch bounded at 4 s) before
             // the summary is written.
-            bh2->whenDialSettled(ChainHost::kMapFetchBoundMs, [safeThis, linkUid, rolesByName] (bool settled)
+            bh2->whenDialSettled(ChainHost::kMapFetchBoundMs, [safeThis, linkUid, chainJsonForBubble] (bool settled)
             {
                 if (safeThis == nullptr) return;
                 auto* bhS = safeThis->processorRef.borrowHostIfActiveFor(linkUid);
                 if (bhS == nullptr) return;
                 // Item 3 (17 Sep 2026 ruling): substitute the noMap slots with built-ins, keep the
                 // session's name-only identities in step, and say so in normal text.
-                auto& pS = safeThis->processorRef;
-                const auto subs = bhS->substituteNoMapSlots(rolesByName);
-                juce::String note;
-                for (const auto& sb : subs)
-                {
-                    if (sb.slot >= 0 && sb.slot < (int) pS.borrowCreatedIdentity_.size()) pS.borrowCreatedIdentity_[(size_t) sb.slot].name = sb.to;
-                    if (sb.slot >= 0 && sb.slot < (int) pS.borrowSlotRecords_.size())    pS.borrowSlotRecords_[(size_t) sb.slot].name = sb.to;
-                    note += (note.isEmpty() ? "" : " ") + substitutedNote(sb.from, sb.to) + " (" + juce::String(sb.applied) + "/" + juce::String(sb.requested) + " applied).";
-                }
-                if (note.isNotEmpty()) safeThis->appendLocalResultBubble(note);   // normal text, never coral (the amendment)
-                bhS->logDialSummary(juce::String("SESSION build (borrowed host) complete, dial ")
-                                    + (settled ? "settled" : "NOT settled after the 4 s bound"));
-                if (! subs.empty()) safeThis->refreshChainPanelForView(true);
+                safeThis->finishSessionBuild(linkUid, chainJsonForBubble, settled);
             });
             juce::Timer::callAfterDelay(6000, [safeThis, linkUid]
             {

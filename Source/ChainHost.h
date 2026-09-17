@@ -1,6 +1,5 @@
 #pragma once
 #include <JuceHeader.h>
-#include <deque>
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginScanner.h"
 #include "EedDeviceRegistry.h"
@@ -644,6 +643,7 @@ public:
         // on the reply card, never as silent prose. APPENDED last (ABI rule).
         bool              notDialable = false;
         juce::String      notDialableReason;   // "no map for fp, no near map" / "..., near map rejected: ..."
+        juce::String      substitutedFrom;     // amendment 3: the third-party name this built-in replaced ("" = none)
     };
     std::vector<SlotDialInfo> getDialInfos() const;
     // Hurdle 1 item 3: the summary row for one slot, as logDialSummary prints
@@ -673,31 +673,20 @@ public:
     // above and by the pre-chat verifier below. chosenFpOut = the winner.
     juce::var acceptNearMapForNames (const juce::String& pluginName, const juce::String& liveFp,
                                      const std::map<juce::String, int>& live, const juce::var& nearArr,
-                                     juce::String& noteOut, juce::String* chosenFpOut = nullptr);
+                                     juce::String& noteOut, juce::String* chosenFpOut = nullptr,
+                                     juce::StringArray* droppedOut = nullptr);
 
-    // ---- PRE-CHAT NEAR VERIFICATION (17 Sep 2026 ruling) --------------------
-    // For every recommendable plugin whose fp has no exact map but the server
-    // reports a map at some version (existenceDialable_), the same-name
-    // candidates are verified against the LIVE parameter names AHEAD of the
-    // chat turn. The fp is sha256(format|uidHex|version|paramCount) and the
-    // scan index (KnownPluginList XML) caches NO parameter names, so the
-    // plugin is instantiated ONCE (message thread, one at a time, deferred)
-    // and the verdict is cached per identity in param_maps.json, never
-    // repeated. An accepted candidate is stored under the live fp (so the
-    // apply path dials it as an exact local map) and reported to the server
-    // as verifiedNear {name: candidateFp}, which is what admits the plugin to
-    // the dial-only set (D7 strict).
-    struct NearVerdict { juce::String ik, name, liveFp, candidateFp, note; bool verified = false; };
-    void verifyNearCandidates();                                            // recommendable_ -> the queue
-    void verifyNearCandidatesFor (const std::vector<juce::PluginDescription>& descs);
-    const NearVerdict* nearVerdictFor (const juce::String& ik) const;
-    juce::String buildVerifiedNearJson() const;                             // {"Name": candidateFp, ...}
-    int  nearVerifyInstantiations() const noexcept { return nearInstantiations_; }
-    bool nearVerifyIdle() const noexcept { return ! nearBusy_ && nearQueue_.empty(); }
-    // Test seam + transport: instantiation (default: formatManager_) and the
-    // lookup POST (the editor wires api.lookupFallbackMaps).
-    std::function<void(const juce::PluginDescription&, std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)>)> nearInstantiate;
-    std::function<void(const juce::String& body, std::function<void(const juce::var& results)>)> onNeedNearLookup;
+    // ---- PRODUCT IDENTITY (17 Sep 2026 ruling: map identity is the PRODUCT, not the build) ----
+    // A map belongs to format + plugin uid (manufacturer as a tie-break). The fp
+    // is a cache key and a log field only. productMapFpFor returns the fp of a
+    // cached map for the slot's PRODUCT (any version), "" when none is cached.
+    juce::String productMapFpFor (const juce::PluginDescription& desc) const;
+    bool hasMapForProduct (const juce::PluginDescription& desc) const { return productMapFpFor (desc).isNotEmpty(); }
+    // The chat body's product identities: {"Name": "format|uidHex", ...} for the racked and recommendable plugins.
+    juce::String buildProductIdsJson (int maxEntries = 2000) const;
+    // Index seam: identity (format|uid|version) -> fp, as a load records it; a harness uses it to
+    // cache a map under ANOTHER version of the same product.
+    void indexIdentityFp (const juce::String& ik, const juce::String& fp) { identityToFp_[ik] = fp; }
 
     // ---- BUILD-TIME SUBSTITUTION (17 Sep 2026 ruling, item 3) ------------------
     // Under dial-only, a third-party slot that ends noMap after its fetches is
@@ -1868,11 +1857,6 @@ private:
     juce::StringArray                    pendingFallbackFps_;
     bool                                 dialOnlyMode_ = false;
     void armMapFetchBound (const juce::String& fp);   // the 4 s bound, per fetch
-    std::map<juce::String, NearVerdict>  nearVerdicts_;      // by ik, persisted in param_maps.json
-    std::deque<juce::PluginDescription>  nearQueue_;
-    bool                                 nearBusy_ = false;
-    int                                  nearInstantiations_ = 0;
-    void nearProcessNext();
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map
     // older than the staleness bound is refetched before it can dial, so a

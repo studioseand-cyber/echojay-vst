@@ -7,7 +7,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "ChainHost.h"
-#include "../near_verify_guard/probe.h"
+#include "../guard_common/probe.h"
 #include "EedCompressorProcessor.h"   // referenced so the static lib links the TU whose registrar adds "EchoJay Compressor"
 #include <cstdio>
 namespace { int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }

@@ -41,6 +41,19 @@ inline juce::String fingerprintForDescription (const juce::PluginDescription& de
 // Identity WITHOUT param_count: what a PluginDescription alone can provide.
 // Used as the persistent index key identity -> fp once a load has revealed
 // the parameter count.
+// PRODUCT identity (17 Sep 2026 ruling): format + plugin uid - never the
+// version, never the parameter count. A map belongs to the PRODUCT; the fp
+// (format|uid|version|paramCount) stays a cache key and a log field only.
+inline juce::String productKeyForDescription (const juce::PluginDescription& desc)
+{
+    return desc.pluginFormatName + "|" + juce::String::toHexString (desc.uniqueId);
+}
+inline juce::String productKeyOfIdentity (const juce::String& ik)   // "format|uidHex|version" -> "format|uidHex"
+{
+    const int a = ik.indexOfChar ('|'); if (a < 0) return ik;
+    const int b = ik.indexOfChar (a + 1, '|'); return b < 0 ? ik : ik.substring (0, b);
+}
+
 inline juce::String identityKeyForDescription (const juce::PluginDescription& desc)
 {
     return desc.pluginFormatName + "|" + juce::String::toHexString (desc.uniqueId) + "|" + desc.version;
