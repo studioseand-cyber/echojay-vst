@@ -1420,6 +1420,60 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             editSoloMix_.skip(buffer.getNumSamples());
     }
 
+    // =====================================================================
+    // PLAYBACK SIMULATION: THE LAST THING THAT TOUCHES THE BUFFER, AND THE
+    // ONLY STAGE BELOW THE MEASUREMENT TAP.
+    // =====================================================================
+    //
+    // A NO-OP TODAY. Nothing simulates anything yet; the stage is here, empty,
+    // so that its PLACEMENT is decided once by someone holding the whole
+    // argument rather than by whoever adds the first curve.
+    //
+    // WHY IT IS BELOW THE TAP, AND WHY THE BUS TRIM IS NOT.
+    //
+    // applyBusGainSmoothed sits ABOVE the tap, deliberately, and the comment
+    // there says why: everything below the tap reads the trimmed signal ON
+    // PURPOSE, because the meters, the capture and the AI's level context are
+    // all meant to describe WHAT ACTUALLY LEAVES ECHOJAY. The trim is part of
+    // the product's output. A listener downstream hears it. It belongs in every
+    // measurement because it is in the audio the user ships.
+    //
+    // A SIMULATION IS NOT THAT. It is a MONITORING AID: a way to hear the mix
+    // as a phone or a car would render it, so the user can judge their own
+    // decisions. It is not part of what leaves EchoJay, nobody downstream hears
+    // it, and it must never appear in a figure. Placing it where the trim sits
+    // would put a modelled car speaker into the integrated LUFS, the spectrum,
+    // the macro bands, every capture and every number the model is told is
+    // fact. That is section 4.2's trap and section 1's defect in a new place: a
+    // figure that is real arithmetic over the wrong thing.
+    //
+    // BELOW THE TAP, THE PROBLEM DOES NOT EXIST RATHER THAN BEING GUARDED
+    // AGAINST. meterEngine, captureEngine, waveformRecorder, the spectrum
+    // accumulators and the whole-capture aggregation all read the `left` and
+    // `right` pointers taken at the tap above, and nothing re-samples the buffer
+    // for measurement afterwards. So every one of them describes the real mix
+    // while a simulation is audible, BY CONSTRUCTION. Decision 10 of
+    // COMPARE_REFERENCE_PLAN is satisfied here with no new OutputSubstitution
+    // value and no capture refusal, because there is nothing to refuse: the
+    // capture cannot see this stage.
+    //
+    // TO WHOEVER WANTS TO MOVE IT UP. You are proposing that a modelled device
+    // curve should appear in the user's measured loudness, their tonal balance,
+    // and the figures sent to the model as fact. Say that sentence out loud
+    // first. If a simulation must be measurable, the answer is a SECOND tap
+    // below this stage feeding its own clearly labelled figures, not this stage
+    // moving above the one that exists.
+    //
+    // REAL-TIME SAFE: early-out when nothing is selected, no allocation, no
+    // locks, no logging. See EJPlaybackSim.h.
+    {
+        float* chans[2] = { buffer.getWritePointer(0),
+                            buffer.getNumChannels() >= 2 ? buffer.getWritePointer(1)
+                                                         : buffer.getWritePointer(0) };
+        applyPlaybackSim (playbackSim_.load(std::memory_order_relaxed),
+                          chans, juce::jmin(2, buffer.getNumChannels()),
+                          buffer.getNumSamples());
+    }
 }
 
 // ============ Channel Type Detection ============

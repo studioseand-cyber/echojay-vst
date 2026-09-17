@@ -50,6 +50,7 @@
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
 #include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
 #include "EJTooltipPlace.h"     // the tooltip placement rule: the shipped origin
+#include "EJPlaybackSim.h"      // the inline monitoring stage: the shipped no-op
 #include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
@@ -8978,6 +8979,59 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // is the same defect wearing a different hat.
             check (ec.contains ("applyChainEditFromMsg(editApplyMsgIdx[(size_t)i])"),
                    "ap PIN1: the onClick calls applyChainEditFromMsg");
+        }
+
+        // pb PIN1 -- THE SIMULATION STAGE IS A NO-OP WHEN NOTHING IS SELECTED.
+        // PREFIX pb, NOT ps: ps was already taken by the PSR floor family
+        // (2d351ce), and two unrelated pins under one name means a FAIL line
+        // cannot say which subject failed. Checked against every prefix in the
+        // suite rather than assumed free.
+        // The stage runs on the audio thread on every block for every user, and
+        // the overwhelming majority will never select a simulation. A stage that
+        // touches the buffer with nothing selected can put a defect into audio
+        // nobody asked it to touch, and it would do so SILENTLY, because the
+        // output is supposed to be unchanged and nothing downstream would flag
+        // a difference it was told not to expect.
+        {
+            using echojay_ps = PlaybackSim;   // the enum is at file scope
+
+            check (! playbackSimActive (echojay_ps::None),
+                   "pb PIN1: None is not an active simulation");
+
+            // THE BUFFER IS NOT TOUCHED. Not "is restored", not "is touched
+            // harmlessly": the samples are compared after the call and must be
+            // bit-identical, and the call must report that it did nothing.
+            float l[8] = { 0.0f, 0.25f, -0.5f, 0.75f, -1.0f, 0.125f, -0.0625f, 1.0f };
+            float r[8] = { 1.0f, -0.25f, 0.5f, -0.75f, 1.0f, -0.125f, 0.0625f, -1.0f };
+            float lBefore[8], rBefore[8];
+            std::memcpy (lBefore, l, sizeof (l));
+            std::memcpy (rBefore, r, sizeof (r));
+
+            float* chans[2] = { l, r };
+            const bool touched = applyPlaybackSim (echojay_ps::None, chans, 2, 8);
+
+            check (! touched,
+                   "pb PIN1: with nothing selected the stage reports it did nothing");
+            check (std::memcmp (l, lBefore, sizeof (l)) == 0,
+                   "pb PIN1: and the left channel is bit-identical afterwards");
+            check (std::memcmp (r, rBefore, sizeof (r)) == 0,
+                   "pb PIN1: and the right channel is bit-identical afterwards");
+
+            // A MONO CALL takes the same path: the caller passes the same
+            // pointer twice for a mono buffer, and one channel must not be
+            // processed twice even when a simulation exists later.
+            float m[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
+            float mBefore[4]; std::memcpy (mBefore, m, sizeof (m));
+            float* mono[2] = { m, m };
+            check (! applyPlaybackSim (echojay_ps::None, mono, 1, 4)
+                   && std::memcmp (m, mBefore, sizeof (m)) == 0,
+                   "pb PIN1: a mono buffer is untouched too");
+
+            // ZERO SAMPLES AND ZERO CHANNELS are reached on a stopped transport
+            // in some hosts, and must not be a special case that only works
+            // because nothing is selected.
+            check (! applyPlaybackSim (echojay_ps::None, chans, 0, 0),
+                   "pb PIN1: an empty block is a no-op rather than a branch nobody took");
         }
 
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
