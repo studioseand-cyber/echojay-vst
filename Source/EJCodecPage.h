@@ -28,7 +28,19 @@ inline constexpr int kCodecCardMaxW   = 500;
 inline constexpr int kCodecCardSideIn = 60;   // breathing room either side
 inline constexpr int kCodecRowH       = 58;
 inline constexpr int kCodecRowGap     = 8;
-inline constexpr int kCodecChromeH    = 96 + 108;   // header block + footer notice
+/** THE MONO CARD'S ROW, and it is TEMPORARY. The card is parked in the chrome
+    band under the preset grid because that is the one place a card fits without
+    touching the grid arithmetic: cp PIN4 and cp PIN5 are written against these
+    named constants and against two-per-row, never against a number, so raising
+    the chrome allowance leaves every one of their assertions unchanged and
+    still true. The environment grid replaces this card. Nobody should read the
+    position as a decision. */
+inline constexpr int kCodecMonoH      = 44;
+inline constexpr int kCodecMonoGap    = 10;
+
+inline constexpr int kCodecChromeH    = 96 + 108 + kCodecMonoH + kCodecMonoGap;
+                                      // header block + footer notice + the
+                                      // temporary Mono row
 inline constexpr int kCodecCardMinW   = 260;
 
 /** How many rows a preset count occupies, TWO PER ROW. Exported rather than

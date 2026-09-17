@@ -46,6 +46,47 @@ inline bool playbackSimActive (PlaybackSim s) noexcept
     return s != PlaybackSim::None;
 }
 
+/** THE STORED SELECTION, WITH ITS REFUSAL RULE, and both live here rather than
+    in the processor so the suite can exercise the shipped code instead of a
+    copy of it. mapfps_test cannot link a processor, and a pin written against a
+    reimplementation of this rule would pass while the real one rotted.
+
+    WHY A REFUSAL AT ALL. Count is not a selection, it is the sweep's bound.
+    Storing it produces a state where playbackSimActive returns true, because
+    Count is not None, and applyPlaybackSim then falls past the switch and runs
+    nothing. That is a card the user can select and hear nothing from, with no
+    error and nothing on screen. pb PIN7 catches that shape in the suite; this
+    catches the same shape at runtime, where no test can reach.
+
+    A REFUSED VALUE LEAVES THE STORED SELECTION UNCHANGED. The selection the
+    user last made keeps playing rather than silently reverting to None: a
+    refusal is a rejected instruction, not a request to stop.
+
+    RELAXED ON BOTH SIDES, stated once, here. The audio thread reads this every
+    block and the editor writes it; a block either side of the change is equally
+    correct and nothing else is ordered against this write.
+
+    Pinned by pb PIN8. */
+class PlaybackSimSelection
+{
+public:
+    void set (PlaybackSim s) noexcept
+    {
+        const int v = (int) s;
+        if (v <  (int) PlaybackSim::None)  return;   // a cast from below zero
+        if (v >= (int) PlaybackSim::Count) return;   // Count, and past it
+        value_.store (s, std::memory_order_relaxed);
+    }
+
+    PlaybackSim get() const noexcept
+    {
+        return value_.load (std::memory_order_relaxed);
+    }
+
+private:
+    std::atomic<PlaybackSim> value_ { PlaybackSim::None };
+};
+
 /** The stage itself: samples in place, or nothing at all.
 
     REAL-TIME SAFE, and it has to stay that way. No allocation, no locks, no

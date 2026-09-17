@@ -9179,6 +9179,83 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                            + " has a body in the switch and reports that it ran");
                 }
             }
+
+            // pb PIN8 -- THE SETTER REFUSES WHAT THE SWITCH CANNOT HANDLE.
+            // A pure test on the shipped type, no UI and no processor. The rule
+            // lives in EJPlaybackSim.h rather than in PluginProcessor.h for
+            // exactly this reason: a pin written against a reimplementation of
+            // the rule would pass while the real one rotted.
+            //
+            // WHAT IT PROTECTS. Count is not a selection, it is the sweep's
+            // bound. Stored, it makes playbackSimActive true and applyPlaybackSim
+            // fall past the switch, so the user selects something and hears
+            // nothing, with no error anywhere. pb PIN7 catches that shape in the
+            // suite; nothing but this catches it at runtime.
+            //
+            // AND A REFUSAL LEAVES THE PREVIOUS SELECTION STANDING. Every
+            // refusal case below is asserted against MonoFold rather than
+            // against None, so a setter that reset to None on a bad value would
+            // redden here instead of passing as "well, it refused".
+            {
+                PlaybackSimSelection sel;
+                check (sel.get() == PS::None,
+                       "pb PIN8: a fresh selection is None");
+
+                sel.set (PS::MonoFold);
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: storing MonoFold takes");
+
+                sel.set (PS::None);
+                check (sel.get() == PS::None,
+                       "pb PIN8: storing None takes, so a selection can be turned off");
+
+                sel.set (PS::MonoFold);
+                sel.set (PS::Count);
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: storing Count is REFUSED, and the previous selection stands");
+
+                sel.set ((PS) ((int) PS::Count + 3));
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: a cast integer past Count is refused the same way");
+
+                sel.set ((PS) -1);
+                check (sel.get() == PS::MonoFold,
+                       "pb PIN8: and a cast integer below None, which is where a bad index lands");
+            }
+
+            // pb PIN9 -- THE MONO CARD IS WIRED TO SOMETHING.
+            // STRUCTURAL, in the style of se PIN7 and ap PIN1, because the
+            // guarantee lives in the LINES. A card that is drawn, hit-tested and
+            // repainted but stores nothing COMPILES PERFECTLY: it looks alive,
+            // it takes the press, and nothing happens and nothing complains.
+            //
+            // THAT IS THE FOURTH SHAPE OF ONE FAILURE THIS WEEK. 873d758 swept
+            // the Apply button's visibility, 6a5efb6 took six editor handlers,
+            // a value below Count would give a selection with no body, and this
+            // is the same thing again at the wire. It gets its own line rather
+            // than a hope that somebody presses the card.
+            //
+            // READ FROM codeOnly, so the COMMENT above the handler naming this
+            // pin cannot satisfy it. The comment says the line should be there;
+            // only the code proves it is.
+            {
+                std::ifstream fed ("Source/PluginEditor.cpp");
+                std::stringstream sed3; sed3 << fed.rdbuf();
+                const auto ec = codeOnly (juce::String (sed3.str()));
+
+                check (ec.contains ("if (monoRect.contains(pos))"),
+                       "pb PIN9: the card has a hit test in mouseUp");
+                check (ec.contains ("owner->processorRef.setPlaybackSim (monoOn "
+                                    "? PlaybackSim::None : PlaybackSim::MonoFold);"),
+                       "pb PIN9: and the press STORES a selection, which is the line "
+                       "whose deletion would leave a card that does nothing");
+                check (ec.contains ("owner->processorRef.playbackSim() == PlaybackSim::MonoFold"),
+                       "pb PIN9: and the state is READ BACK from the processor rather "
+                       "than kept in a bool here, so the card cannot disagree with the audio");
+                check (ec.contains ("monoRect = monoRow.withWidth"),
+                       "pb PIN9: the hit rectangle is computed in paint, like every "
+                       "other rect on this page, so it cannot drift from what is drawn");
+            }
         }
 
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the

@@ -1021,6 +1021,9 @@ private:
         bool keyPressed(const juce::KeyPress& k) override;
         std::vector<juce::Rectangle<int>> cardRects;
         juce::Rectangle<int> normRect;
+        // The Mono card's hit rectangle, computed in paint like every other
+        // rect on this page. TEMPORARY, and the environment grid replaces it.
+        juce::Rectangle<int> monoRect;
         int hoverIdx = -1;
     };
     CodecPanel codecPanel_;

@@ -7021,6 +7021,60 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
     // place that expresses it rather than recomputed here.
     r.removeFromTop(echojay::codecCardRows ((int) ps.size()) * (cardH + cardGap) + 6);
 
+    // ======================================================================
+    //  THE MONO CARD. TEMPORARY, AND THE GRID REPLACES IT.
+    //
+    //  It is parked here because the chrome band is the one place a card fits
+    //  without touching the preset grid's arithmetic. Its position carries no
+    //  meaning and nobody should read it as a decision: a mono fold is not a
+    //  codec and does not belong under a list of them. It is here so the fold
+    //  can be HEARD, which nothing in the product could do until now.
+    //
+    //  ITS DRAWN STATE IS READ BACK FROM THE PROCESSOR, never from a bool kept
+    //  here. One source of truth: with a local copy the card could show Mono
+    //  engaged while the audio ran flat, or the reverse, and neither the user
+    //  nor a log would be able to tell which was lying.
+    // ======================================================================
+    {
+        auto monoRow = r.removeFromTop(echojay::kCodecMonoH);
+
+        // THE HIT RECTANGLE IS THE WHOLE CARD, assigned ONCE and never consumed
+        // by the layout below, so the label is exactly as pressable as the
+        // symbol and the rect cannot drift from what was drawn.
+        monoRect = monoRow.withWidth(juce::jmin(monoRow.getWidth(), 116));
+
+        const bool monoOn =
+            (owner->processorRef.playbackSim() == PlaybackSim::MonoFold);
+
+        const auto accent = juce::Colour(0xff22d3ee);
+        g.setColour(C::bg3);
+        g.fillRoundedRectangle(monoRect.toFloat(), 7.0f);
+        g.setColour(monoOn ? accent : C::border.withAlpha(0.8f));
+        g.drawRoundedRectangle(monoRect.toFloat(), 7.0f, monoOn ? 1.4f : 1.0f);
+
+        // A SEPARATE CURSOR FOR THE CONTENTS, so nothing below writes back into
+        // the hit rectangle.
+        auto inner = monoRect;
+
+        // THE SYMBOL, DRAWN RATHER THAN IMAGED: two overlapping circles and the
+        // line they collapse onto, which is what a fold does to a stereo image.
+        // Vector, so it stays sharp at any window size and takes the theme's
+        // colours instead of baking them into a file.
+        const auto glyph = inner.removeFromLeft(46).reduced(7, 11).toFloat();
+        const float d  = glyph.getHeight();
+        const float ov = d * 0.42f;   // how far the two circles overlap
+        g.setColour(monoOn ? accent : C::text3);
+        g.drawEllipse(glyph.getX(), glyph.getY(), d, d, 1.2f);
+        g.drawEllipse(glyph.getX() + d - ov, glyph.getY(), d, d, 1.2f);
+        const float mid = glyph.getX() + d - ov * 0.5f;
+        g.drawLine(mid, glyph.getY() - 2.0f, mid, glyph.getBottom() + 2.0f, 1.2f);
+
+        g.setColour(monoOn ? C::text : C::text3);
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+        g.drawText("Mono", inner, juce::Justification::centredLeft, true);
+    }
+    r.removeFromTop(echojay::kCodecMonoGap);
+
     // Normalise toggle
     auto tRow = r.removeFromTop(20);
     normRect = tRow.withWidth(juce::jmin(tRow.getWidth(), 320));
@@ -7069,6 +7123,30 @@ void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
 
     // No close X: leaving is selecting another sub-tab, and Escape below is a
     // shortcut to that rather than a second way out.
+
+    // THE MONO CARD'S STORE, AND IT SITS ABOVE THE RENDER GUARD DELIBERATELY.
+    // pb PIN9 asserts this exact line is present in this file, because UI
+    // wiring compiles perfectly when it is deleted: the card would still draw,
+    // still hit-test and still repaint, and pressing it would do nothing with
+    // no error anywhere. That is the fourth time this week a control has been
+    // drawn with nothing behind it, and it gets a line of its own rather than a
+    // hope that somebody presses it.
+    //
+    // THE RENDER GUARD BELOW MUST NOT COVER THIS. A mono fold is not a render:
+    // it allocates nothing, queues nothing and cannot collide with an encode in
+    // flight. Leaving it under the guard would make the card inert for the
+    // seconds a codec takes, with no error and no visible reason, which is the
+    // same defect this pin exists to catch arriving through the back door.
+    //
+    // THE CURRENT VALUE IS READ BACK, not tracked here, so the toggle cannot
+    // disagree with the audio.
+    if (monoRect.contains(pos))
+    {
+        const bool monoOn = (owner->processorRef.playbackSim() == PlaybackSim::MonoFold);
+        owner->processorRef.setPlaybackSim (monoOn ? PlaybackSim::None : PlaybackSim::MonoFold);
+        repaint();
+        return;
+    }
 
     if (owner->codecRendering_ >= 0) return;   // one render at a time
 

@@ -1470,7 +1470,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         float* chans[2] = { buffer.getWritePointer(0),
                             buffer.getNumChannels() >= 2 ? buffer.getWritePointer(1)
                                                          : buffer.getWritePointer(0) };
-        applyPlaybackSim (playbackSim_.load(std::memory_order_relaxed),
+        applyPlaybackSim (playbackSim_.get(),
                           chans, juce::jmin(2, buffer.getNumChannels()),
                           buffer.getNumSamples());
     }

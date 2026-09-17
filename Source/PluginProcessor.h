@@ -1211,11 +1211,28 @@ private:
     // and what matters is what the capture BEGAN under.
     juce::String captureSubstitution_;
 
-    // PLAYBACK SIMULATION, the selection only. None today: the stage exists and
-    // simulates nothing. Atomic because the audio thread reads it every block
-    // and the editor writes it; relaxed is enough, since a block either side of
-    // the change is equally correct.
-    std::atomic<PlaybackSim> playbackSim_ { PlaybackSim::None };
+    // PLAYBACK SIMULATION, the selection only. The type carries both the atomic
+    // and the refusal rule, and EJPlaybackSim.h is where the memory order is
+    // stated and argued once. It lives there rather than here so mapfps_test
+    // can exercise the shipped rule instead of a copy of it.
+    PlaybackSimSelection playbackSim_;
+
+public:
+    /** Select a playback simulation, OR REFUSE THE VALUE.
+
+        A PAIR RATHER THAN A PUBLIC MEMBER, against this file's own convention
+        of public atomics reached directly, for one reason: a setter can refuse
+        a value the enum permits but the switch cannot handle. WHICH VALUES ARE
+        REFUSED, AND WHY, IS ARGUED ONCE at PlaybackSimSelection in
+        EJPlaybackSim.h, not restated here. Pinned by pb PIN8. */
+    void setPlaybackSim (PlaybackSim s) noexcept  { playbackSim_.set (s); }
+
+    /** The current selection. The editor draws its card state from THIS rather
+        than from a bool of its own, so the button cannot show one thing while
+        the audio does another. */
+    PlaybackSim playbackSim() const noexcept      { return playbackSim_.get(); }
+
+private:
 
     // Auto-feedback
     mutable std::atomic<bool> autoFeedbackReady { false };
