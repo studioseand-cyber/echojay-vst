@@ -3416,6 +3416,7 @@ void ChainHost::failFallbackLookup()
         auto& s = slots_[(size_t)i];
         if (! fps.contains(s.fp) || s.structuredApplied
             || s.structuredSettings.getDynamicObject() == nullptr) continue;
+        if (s.nearMapNote.isEmpty()) s.nearMapNote = "no near map (lookup failed)";
         const bool wasPending = s.dialStatus == DialStatus::pending;
         applyStructuredIfReady(i, DialTrigger::mapArrived);
         if (wasPending && s.dialStatus != DialStatus::pending) changed = true;
@@ -6883,6 +6884,7 @@ juce::var ChainHost::fallbackEntryForSlot(int slot, juce::String& whyOut) const
     juce::DynamicObject::Ptr o = new juce::DynamicObject();
     o->setProperty("ik", echojay::identityKeyForDescription(s.desc));
     o->setProperty("fp", s.fp);
+    o->setProperty("name", s.desc.name);   // hurdle 1 item 2: the server's same-name ("near") search key
     if (s.desc.manufacturerName.isNotEmpty())
         o->setProperty("manufacturer", s.desc.manufacturerName);
     auto& params = proc->getParameters();
@@ -6975,6 +6977,27 @@ void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
             EchoJay_NSLog(("EJFallback: no map for " + ik + " -- tier "
                            + r->getProperty("tier").toString() + ", reason "
                            + r->getProperty("reason").toString()).toRawUTF8());
+            // HURDLE 1 ITEM 2 (17 Sep 2026): NEAR-MAP ACCEPTANCE. The product
+            // tiers refused (Auto-Tune Pro 10.5: "fewer_params" against the
+            // newest mapped version), but the server also lists SAME-NAME maps
+            // for other fingerprints ("near"). One is accepted only when every
+            // parameter name it carries resolves on the LIVE instance (exact,
+            // case-insensitive), re-indexed by name; the choice and the reason
+            // are logged either way.
+            for (int si = 0; si < (int) slots_.size(); ++si)
+            {
+                auto& sl = slots_[(size_t) si];
+                if (echojay::identityKeyForDescription(sl.desc) != ik || sl.fp.isEmpty()) continue;
+                juce::String note;
+                auto accepted = acceptNearMapForSlot(si, r->getProperty("near"), note);
+                sl.nearMapNote = note;
+                if (accepted.getDynamicObject() != nullptr)
+                {
+                    paramMaps_[sl.fp] = accepted;
+                    fpFetchedAt_[sl.fp] = juce::Time::currentTimeMillis();
+                    ++stored;
+                }
+            }
             continue;
         }
         // Store under the fp that ASKED. Every slot sharing that identity
@@ -7019,6 +7042,118 @@ void ChainHost::storeFallbackMaps(const juce::var& resultsArray)
         if (settleStaleRung(i)) changed = true;
     }
     if (changed && onSlotSettingsChanged) onSlotSettingsChanged();
+}
+
+// ---- Hurdle 1 item 2 (17 Sep 2026): near-map acceptance ---------------------
+// A same-name map for ANOTHER fingerprint is usable exactly when every name it
+// addresses exists on the live instance - then the write goes by name, never by
+// the other build's index. The addendum's choice rule: the candidate with the
+// MOST names resolving; on a tie, the one with NO essential control (Key, Scale,
+// Retune Speed, Detune) classed plumbing/hidden (the server lists those per
+// candidate as "essential_plumbing"); then offered order. Nameless params
+// entries cannot resolve and are dropped from the accepted copy (counted).
+juce::var ChainHost::acceptNearMapForSlot(int slot, const juce::var& nearArr, juce::String& noteOut)
+{
+    noteOut = {};
+    auto* arr = nearArr.getArray();
+    if (arr == nullptr || arr->isEmpty()) { noteOut = "no near map"; return {}; }
+    if (slot < 0 || slot >= (int) slots_.size()) { noteOut = "no such slot"; return {}; }
+    auto* proc = getSlotProcessor(slot);
+    if (proc == nullptr) { noteOut = "no live instance"; return {}; }
+    const auto& sl = slots_[(size_t) slot];
+
+    std::map<juce::String, int> live;                     // lowercased live name -> first index
+    auto& params = proc->getParameters();
+    for (int p = 0; p < params.size(); ++p)
+        if (params[p] != nullptr)
+        {
+            const auto n = params[p]->getName(echojay::kParamNameQueryLen).trim().toLowerCase();
+            if (n.isNotEmpty() && live.find(n) == live.end()) live[n] = p;
+        }
+
+    struct Cand { int idx = -1; juce::String fp; int named = 0, resolved = 0, essentialPlumbing = 0; juce::StringArray unresolved; };
+    std::vector<Cand> cands;
+    for (int ci = 0; ci < arr->size(); ++ci)
+    {
+        auto* co = (*arr)[ci].getDynamicObject();
+        if (co == nullptr) continue;
+        const auto map = co->getProperty("map");
+        if (map.getDynamicObject() == nullptr) continue;
+        Cand k; k.idx = ci; k.fp = co->getProperty("fp").toString();
+        if (auto* ep = co->getProperty("essential_plumbing").getArray()) k.essentialPlumbing = ep->size();
+        auto consider = [&k, &live] (const juce::String& name)
+        {
+            if (name.trim().isEmpty()) return;
+            ++k.named;
+            if (live.find(name.trim().toLowerCase()) != live.end()) ++k.resolved; else k.unresolved.add(name);
+        };
+        if (auto* ctl = map.getProperty("controls", juce::var()).getDynamicObject())
+            for (auto& kv : ctl->getProperties())
+            {
+                auto n = kv.value.getProperty("name", juce::var()).toString();
+                consider(n.isNotEmpty() ? n : kv.name.toString());
+            }
+        if (auto* ps = map.getProperty("params", juce::var()).getDynamicObject())
+            for (auto& kv : ps->getProperties())
+                consider(kv.value.getProperty("name", juce::var()).toString());
+        cands.push_back(k);
+    }
+    if (cands.empty()) { noteOut = "near maps offered carried no map body"; return {}; }
+    std::stable_sort(cands.begin(), cands.end(), [] (const Cand& a, const Cand& b)
+    {
+        if (a.resolved != b.resolved) return a.resolved > b.resolved;
+        return a.essentialPlumbing < b.essentialPlumbing;
+    });
+    const Cand& best = cands.front();
+    juce::String why = "most names resolving " + juce::String(best.resolved) + "/" + juce::String(best.named)
+                     + " of " + juce::String((int) cands.size()) + " offered";
+    if (cands.size() > 1 && cands[1].resolved == best.resolved)
+        why += "; tie broken on essential controls classed plumbing/hidden (" + juce::String(best.essentialPlumbing)
+             + " vs " + juce::String(cands[1].essentialPlumbing) + ")";
+    if (best.named == 0 || best.resolved < best.named)
+    {
+        EchoJay_NSLog(("EJDial: NEAR MAP REJECTED fp=" + sl.fp.substring(0, 12) + " from=" + best.fp.substring(0, 12)
+                       + " (\"" + sl.desc.name + "\") params=" + juce::String(best.resolved) + "/" + juce::String(best.named)
+                       + " unresolved=[" + best.unresolved.joinIntoString(", ") + "]  chosen by: " + why).toRawUTF8());
+        noteOut = "near map rejected: unresolved [" + best.unresolved.joinIntoString(", ") + "]";
+        return {};
+    }
+    // Re-index the accepted copy by NAME onto the live instance.
+    juce::var out = (*arr)[best.idx].getDynamicObject()->getProperty("map").clone();
+    int dropped = 0;
+    if (auto* ctl = out.getProperty("controls", juce::var()).getDynamicObject())
+        for (auto& kv : ctl->getProperties())
+            if (auto* eo = kv.value.getDynamicObject())
+            {
+                auto n = eo->getProperty("name").toString();
+                if (n.isEmpty()) n = kv.name.toString();
+                eo->setProperty("index", live[n.trim().toLowerCase()]);
+                eo->setProperty("name", n);
+            }
+    if (auto* ps = out.getProperty("params", juce::var()).getDynamicObject())
+    {
+        juce::StringArray nameless;
+        for (auto& kv : ps->getProperties())
+            if (auto* eo = kv.value.getDynamicObject())
+            {
+                const auto n = eo->getProperty("name").toString();
+                if (n.isEmpty()) { nameless.add(kv.name.toString()); continue; }
+                eo->setProperty("index", live[n.trim().toLowerCase()]);
+            }
+        for (const auto& d : nameless) { ps->removeProperty(d); ++dropped; }
+    }
+    if (auto* mo = out.getDynamicObject())
+    {
+        mo->setProperty("anchors_unverified", true);      // the apply path re-checks the live name at every index
+        mo->setProperty("served_from", "near:" + best.fp);
+        mo->setProperty("near_map", true);
+    }
+    EchoJay_NSLog(("EJDial: NEAR MAP accepted fp=" + sl.fp.substring(0, 12) + " from=" + best.fp.substring(0, 12)
+                   + " (\"" + sl.desc.name + "\") params=" + juce::String(best.resolved) + "/" + juce::String(best.named)
+                   + (dropped > 0 ? "  dropped_nameless=" + juce::String(dropped) : juce::String())
+                   + "  chosen by: " + why).toRawUTF8());
+    noteOut = "near map accepted from " + best.fp.substring(0, 12) + " (" + juce::String(best.resolved) + "/" + juce::String(best.named) + ")";
+    return out;
 }
 
 juce::String ChainHost::buildSlotParamReadsJson() const

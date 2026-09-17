@@ -648,6 +648,12 @@ public:
     // True while an exact-map fetch OR a fallback lookup for fp is unanswered.
     bool mapFetchInFlight (const juce::String& fp) const
     { return pendingMapFps_.contains (fp) || pendingFallbackFps_.contains (fp); }
+    // Hurdle 1 item 2: NEAR-MAP acceptance. `nearArr` is the lookup row's
+    // "near" list (same-name maps for other fingerprints). Returns the
+    // accepted map re-indexed by NAME onto the live instance (void var when
+    // none is acceptable); noteOut says which fp was chosen and why, or why
+    // every candidate was rejected. Pure over the live instance's names.
+    juce::var acceptNearMapForSlot (int slot, const juce::var& nearArr, juce::String& noteOut);
     // One line per slot, at the END of a build, saying what actually dialled.
     // The per-call lines cannot answer "nothing dials" because each is a
     // snapshot mid-sequence and the benign ones outnumber the real ones; this
@@ -1764,6 +1770,7 @@ private:
         juce::String                         staleIndexedFp;
         bool                                 staleSettled = false;
         juce::StringArray                    dialOutOfRange;   // asked outside the live map's range, refused per value
+        juce::String                         nearMapNote;      // hurdle 1 item 2: the near-map verdict for this slot ("" = none offered yet)
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.
