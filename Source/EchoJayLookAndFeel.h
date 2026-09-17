@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EchoJayScrollbarStyle.h"
 #include "EchoJayLogo.h"
 #include "EchoJayFieldStyle.h"   // EchoJayChrome::kFieldCorner (shared field radius)
 
@@ -98,8 +99,8 @@ public:
         setColour(juce::PopupMenu::textColourId, Colours::text);
         setColour(juce::PopupMenu::highlightedBackgroundColourId, Colours::bg4);
         setColour(juce::PopupMenu::highlightedTextColourId, Colours::text);
-        setColour(juce::ScrollBar::thumbColourId, Colours::bg4);
-        setColour(juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
+        setColour(juce::ScrollBar::thumbColourId, echojay::ScrollbarStyle::thumb);   // read by drawScrollbar's callers only; the draw uses the style directly
+        setColour(juce::ScrollBar::trackColourId, echojay::ScrollbarStyle::track);
     }
 
     // ============ Tooltips ============
@@ -405,15 +406,22 @@ public:
                         bool isScrollbarVertical, int thumbStartPosition, int thumbSize,
                         bool isMouseOver, bool isMouseDown) override
     {
+        // 17 Sep 2026: ONE setting (EchoJayScrollbarStyle.h) for every scrollbar this
+        // LookAndFeel draws - a track a step lighter than the panel, a visible mid-grey
+        // thumb (lighter on hover), never thinner than minThumbPx.
+        using S = echojay::ScrollbarStyle;
+        g.setColour(S::track);
+        g.fillRoundedRectangle(juce::Rectangle<float>((float)x, (float)y, (float)width, (float)height), 3.0f);
+        const float thick = juce::jmax(S::minThumbPx, (float)(isScrollbarVertical ? width : height) - 2.0f);
+        const float inset = ((isScrollbarVertical ? (float)width : (float)height) - thick) * 0.5f;
         auto thumbBounds = isScrollbarVertical
-            ? juce::Rectangle<float>((float)x + 2.0f, (float)thumbStartPosition, (float)width - 4.0f, (float)thumbSize)
-            : juce::Rectangle<float>((float)thumbStartPosition, (float)y + 2.0f, (float)thumbSize, (float)height - 4.0f);
-        
-        g.setColour(Colours::bg4.withAlpha(isMouseOver ? 0.8f : 0.4f));
+            ? juce::Rectangle<float>((float)x + inset, (float)thumbStartPosition, thick, (float)thumbSize)
+            : juce::Rectangle<float>((float)thumbStartPosition, (float)y + inset, (float)thumbSize, thick);
+        g.setColour((isMouseOver || isMouseDown) ? S::thumbHover : S::thumb);
         g.fillRoundedRectangle(thumbBounds, 3.0f);
     }
     
-    int getDefaultScrollbarWidth() override { return 8; }
+    int getDefaultScrollbarWidth() override { return echojay::ScrollbarStyle::thickness; }
     
     // ============ Label ============
     void drawLabel(juce::Graphics& g, juce::Label& label) override
