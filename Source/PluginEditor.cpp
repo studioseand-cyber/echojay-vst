@@ -2523,7 +2523,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (chainEditGateRefusesFor(uid))
             {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet — refuse
                 // with the overlay's own line, so Build and the panel say one thing.
-                appendLocalResultBubble(chainLockStateText(processorRef.rackLockState()));
+                appendLocalResultBubble(chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr));
                 return;
             }
             sendChainToLink(uid, chainBuildJsons[(size_t)i]);
@@ -7633,9 +7633,12 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // COMMIT 2 (17 Sep 2026): ITEM 1 — ONE pure decision (ChainEditGate.h):
     // a Link rack is editable only when Held; the own chain always. Text is
     // the overlay's single line, and what Build/Apply refuse with.
-    const bool         chainEditable = chainEditableFor(v.remote, processorRef.rackLockState());
-    const juce::String chainGateText = v.remote ? chainLockStateText(processorRef.rackLockState())
-                                                : juce::String();
+    // COMMIT 2c (17 Sep 2026): the gate opens on the SAME fact that paints the
+    // pill orange below (v.borrowed) - one fact, one source.
+    const bool         isLinkRack    = chainViewUid().isNotEmpty();
+    const bool         chainEditable = chainEditableFor(isLinkRack, processorRef.rackLockState(), v.borrowed);
+    const juce::String chainGateText = isLinkRack ? chainLockStateText(processorRef.rackLockState(), v.borrowed)
+                                                  : juce::String();
 
     // NO DATA is a state of the view, decided once and used by the signature,
     // the status line and the (single) rebuild below.
@@ -8008,6 +8011,25 @@ void EchoJayEditor::borrowSelectionTick()
     {
         if (p.borrowUid() == p.pendingAutoEngage_) p.pendingAutoEngage_.clear();
         return;
+    }
+    // COMMIT 2c LIVENESS (17 Sep 2026): while a Link rack is SELECTED and its
+    // borrow is not engaged, the selection's want must persist. A release
+    // (a lease loss, a one-shot op's done, the Link refusing) clears the want
+    // when nothing is pending (PluginProcessor.cpp borrowRelease) - correct
+    // for a deselect, but with the rack still selected it left the lock Idle,
+    // the overlay saying "Connecting to rack…" and nothing ever re-acquiring
+    // (tools/overlay_liveness_guard, leg b2). The selection IS the request:
+    // re-arm the pending engage and the want here, on the tick.
+    {
+        const juce::String view = chainViewUid();
+        if (view.isNotEmpty() && ! p.borrowApplyInFlight_ && borrowReadInFlightUid_.isEmpty()
+            && p.rackLockState() == EchoJayProcessor::RackLockState::Idle && p.rackLockWantUid().isEmpty())
+        {
+            EchoJay_NSLog(("EJRackLock: re-armed for the selected rack " + view
+                           + " (lock was Idle with no want; the selection still holds it)").toRawUTF8());
+            p.pendingAutoEngage_ = view;
+            p.setRackLockWant(view);
+        }
     }
     if (p.borrowApplyInFlight_) return;
     if (borrowReadInFlightUid_.isNotEmpty()) return;   // Defect R: one read at a time
@@ -23827,7 +23849,7 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     if (chainEditGateRefusesFor(uid))
     {   // COMMIT 2 (17 Sep 2026): the selected rack is not held yet — same line as the overlay
         retireLinkEditCard(key, chatIdAtApply,
-            "Not applied: " + chainLockStateText(processorRef.rackLockState()), {}, {}, {});
+            "Not applied: " + chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr), {}, {}, {});
         return;
     }
 
@@ -28425,8 +28447,10 @@ bool EchoJayEditor::chainEditGateRefusesFor(const juce::String& uid)
 {
     const bool remote = uid.isNotEmpty();
     if (remote && uid != chainViewUid()) return false;
-    if (chainEditableFor(remote, processorRef.rackLockState())) return false;
-    EchoJay_NSLog(("EJEditGate: refused - " + chainLockStateText(processorRef.rackLockState())).toRawUTF8());
+    // COMMIT 2c: `borrowed` is the pill's fact - the borrow session engaged for THIS uid.
+    const bool borrowed = remote && processorRef.borrowHostIfActiveFor(uid) != nullptr;
+    if (chainEditableFor(remote, processorRef.rackLockState(), borrowed)) return false;
+    EchoJay_NSLog(("EJEditGate: refused - " + chainLockStateText(processorRef.rackLockState(), borrowed)).toRawUTF8());
     return true;
 }
 bool EchoJayEditor::chainEditGateRefuses() { return chainEditGateRefusesFor(chainViewUid()); }

@@ -1,15 +1,12 @@
-// overlay_gate_harness — COMMIT 2 guard (17 Sep 2026): ITEM 1, the rack
-// loading state. ONE pure function decides whether the chain panel is
-// editable: chainEditableFor(isLinkRack, rackLockState). The own chain is
-// NEVER gated; a Link rack is editable ONLY while the lock is Held. The
-// companion chainLockStateText(state) is the single source of the one-line
-// state text the overlay shows and the chat Build/Apply route refuses with.
-//
-// Table: 4 lock states x {own, link}. RED on today's code because the
-// function does not exist (and today's behaviour permits edits in Idle:
-// remoteWriteLocked only disables bypass/remove, PluginEditor.h:2775).
-// The SESSION-OPEN case (a Link rack selected on load, not yet orange) is
-// the {link, Idle} row of this same table — no separate path.
+// overlay_gate_harness — COMMIT 2 guard, extended by COMMIT 2c (17 Sep 2026):
+// ONE pure function decides whether the chain panel is editable:
+// chainEditableFor(isLinkRack, rackLockState, borrowed). The own chain is
+// NEVER gated; a Link rack is editable ONLY when its borrow session is
+// ENGAGED (borrowed == true) — the SAME fact that paints the rack pill
+// orange (PluginEditor.cpp: v.borrowed), so gate and colour cannot disagree.
+// Held-but-not-engaged is NOT editable (RED on the 2-argument COMMIT 2 gate,
+// which opened on Held). chainLockStateText(state, borrowed) is the single
+// source of the one-line overlay text and the Build/Apply refusal.
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "ChainEditGate.h"
@@ -36,28 +33,27 @@ const char* nm (S s)
 int main()
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0);
-    std::printf ("overlay_gate_harness: chainEditableFor(isLinkRack, state) x 4 states x {own, link}\n");
+    std::printf ("overlay_gate_harness: chainEditableFor(isLinkRack, state, borrowed) x 4 states x {own, link} x {borrowed, not}\n");
     const S states[] = { S::Idle, S::Held, S::WaitRecency, S::HeldByOther };
 
-    std::printf ("== OWN chain: editable in EVERY state (never gated) ==\n");
+    std::printf ("== OWN chain: editable in EVERY state, borrowed or not (never gated) ==\n");
     for (S s : states)
-        check (chainEditableFor (false, s) == true, juce::String ("own + ") + nm (s) + " -> editable");
+        for (bool b : { false, true })
+            check (chainEditableFor (false, s, b) == true, juce::String ("own + ") + nm (s) + (b ? " + borrowed" : "") + " -> editable");
 
-    std::printf ("== LINK rack: editable ONLY when Held ==\n");
+    std::printf ("== LINK rack: editable ONLY when the borrow session is ENGAGED ==\n");
     for (S s : states)
-    {
-        const bool want = (s == S::Held);
-        check (chainEditableFor (true, s) == want,
-               juce::String ("link + ") + nm (s) + (want ? " -> editable" : " -> BLOCKED"));
-    }
-    check (chainEditableFor (true, S::Idle) == false,
-           "SESSION-OPEN case: Link rack selected on load, lock Idle (not yet orange) -> BLOCKED (same row, same path)");
+        check (chainEditableFor (true, s, false) == false, juce::String ("link + ") + nm (s) + " + NOT engaged -> BLOCKED");
+    check (chainEditableFor (true, S::Held, false) == false, "Held-but-not-engaged (the blue window) -> BLOCKED (RED on the COMMIT 2 gate)");
+    check (chainEditableFor (true, S::Held, true)  == true,  "Held + engaged (the pill is orange) -> editable");
+    check (chainEditableFor (true, S::Idle, false) == false, "SESSION-OPEN case: Link rack selected on load, not engaged -> BLOCKED");
 
     std::printf ("== the one line of state text (overlay AND Build/Apply refusal share it) ==\n");
-    check (chainLockStateText (S::Idle)        == juce::String::fromUTF8 ("Connecting to rack\xE2\x80\xA6"), "Idle        -> \"Connecting to rack…\"");
-    check (chainLockStateText (S::HeldByOther) == "Rack held by another EchoJay",                             "HeldByOther -> \"Rack held by another EchoJay\"");
-    check (chainLockStateText (S::WaitRecency) == juce::String::fromUTF8 ("Waiting for audio\xE2\x80\xA6"),  "WaitRecency -> \"Waiting for audio…\"");
-    check (chainLockStateText (S::Held).isEmpty(),                                                             "Held        -> (no text: overlay cleared)");
+    check (chainLockStateText (S::Idle, false)        == juce::String::fromUTF8 ("Connecting to rack\xE2\x80\xA6"), "Idle        -> \"Connecting to rack…\"");
+    check (chainLockStateText (S::Held, false)        == juce::String::fromUTF8 ("Connecting to rack\xE2\x80\xA6"), "Held, not engaged -> \"Connecting to rack…\"");
+    check (chainLockStateText (S::HeldByOther, false) == "Rack held by another EchoJay",                             "HeldByOther -> \"Rack held by another EchoJay\"");
+    check (chainLockStateText (S::WaitRecency, false) == juce::String::fromUTF8 ("Waiting for audio\xE2\x80\xA6"),  "WaitRecency -> \"Waiting for audio…\"");
+    check (chainLockStateText (S::Held, true).isEmpty(),                                                             "Held + engaged -> (no text: overlay cleared)");
 
     std::printf ("\n==== overlay_gate_harness: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

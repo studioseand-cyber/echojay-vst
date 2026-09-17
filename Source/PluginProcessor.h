@@ -799,6 +799,7 @@ public:
     juce::String  rackLockOtherOwner() const { return rackLockOtherOwner_; }
     bool rackLockHeldFor(const juce::String& uid) const
     { return rackLockState_ == RackLockState::Held && rackLockHeldUid_ == uid; }
+    juce::String rackLockWantUid() const { return rackLockWantUid_; }   // COMMIT 2c: the selection tick re-arms when this is empty
     void rackLockTick();            // the 1s state machine (public for the timer)
 private:
     struct RackLockTimer;
