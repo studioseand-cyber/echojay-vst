@@ -667,6 +667,21 @@ public:
     // none is acceptable); noteOut says which fp was chosen and why, or why
     // every candidate was rejected. Pure over the live instance's names.
     juce::var acceptNearMapForSlot (int slot, const juce::var& nearArr, juce::String& noteOut);
+    // ---- PER-SLOT DIAL SNAPSHOT (17 Sep 2026, the "No suggested settings" bug) --
+    // Everything the Suggested Settings card and the summary row read for one
+    // slot, exportable per rack uid at release and restorable onto a re-created
+    // slot by identity (pluginId + index). Restoring marks the slot applied so
+    // nothing re-dials.
+    struct SlotDialSnapshot {
+        juce::String pluginId; int index = -1;
+        juce::String settings; juce::var structured;
+        int status = 0, applied = 0, requested = -1;
+        juce::StringArray manual, readbackMiss, unconfirmed, approximate, outOfRange;
+        juce::String servedFrom, nearMapNote;
+    };
+    juce::String     slotPluginId (int i) const;                            // hex uniqueId, the sidecar's pluginId
+    SlotDialSnapshot getSlotDialSnapshot (int i) const;
+    bool             restoreSlotDial (int i, const SlotDialSnapshot& snap);  // false = identity mismatch
     // One line per slot, at the END of a build, saying what actually dialled.
     // The per-call lines cannot answer "nothing dials" because each is a
     // snapshot mid-sequence and the benign ones outnumber the real ones; this

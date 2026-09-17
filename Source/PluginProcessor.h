@@ -727,6 +727,23 @@ public:
     // Link disappears from the registry. What is kept is unchanged.
     static constexpr int kBorrowKeptMax = 16;
     std::map<juce::String, BorrowKept> borrowKeptByUid_;
+    // 17 Sep 2026 ("No suggested settings" after a rack switch): the PER-SLOT
+    // DIAL INFO (suggested text, applied summary, status, manual/readback
+    // lists) kept per rack uid BESIDE the kept block - captured at EVERY
+    // release (the kept block is captured only on keepEdits and is CONSUMED
+    // by the restore, and the applied path clears it, so a rebuilt-and-applied
+    // rack came back from the sidecar with no text at all), restored onto the
+    // re-created slots by identity (pluginId + index), cleared only when that
+    // rack's chain is rebuilt (sendChainToLink) or the Link disappears
+    // (refreshLinkRegistry). Same map, same bounds as the kept block.
+    struct BorrowDialKeep { juce::String uid; std::vector<ChainHost::SlotDialSnapshot> slots; };
+    std::map<juce::String, BorrowDialKeep> borrowDialByUid_;
+    std::vector<juce::String> borrowDialOrder_;
+    void captureBorrowDial();
+    int  restoreBorrowDial(const juce::String& uid, ChainHost& bh);
+    void clearBorrowDial(const juce::String& uid);
+    const BorrowDialKeep* borrowDialFor(const juce::String& uid) const;
+    int  borrowDialCount() const noexcept { return (int) borrowDialByUid_.size(); }
     std::vector<juce::String>          borrowKeptOrder_;   // oldest first
     void captureBorrowKept();
     void clearBorrowKept(const juce::String& uid);

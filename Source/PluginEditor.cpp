@@ -8426,6 +8426,7 @@ void EchoJayEditor::startBorrow(const juce::String& uid)
             // COMMIT 1 (17 Sep 2026): per-uid lookup; the loop itself moved
             // verbatim into the processor so the harness drives the same code.
             p2.applyBorrowKeptSettings(st->uid, *bh2, want);
+            p2.restoreBorrowDial(st->uid, *bh2);   // 17 Sep 2026: the per-slot dial info (text, applied summary, status) by identity
             // STEP 3 BOOKKEEPING: the saved identity triplet (Apply re-runs
             // the same stateFitsPlugin verdict that withheld the pull) and
             // the post-seed BASELINE — captured NOW, before any kept-edit
@@ -28475,6 +28476,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
     // suggestions for it - cleared for BOTH arms below (session build and
     // Link build), since either replaces the rack the kept block described.
     processorRef.clearBorrowKept(linkUid);
+    processorRef.clearBorrowDial(linkUid);   // 17 Sep 2026: a rebuild of this rack clears its kept dial info too
     // §5a-R + §3f (26 Aug): while THIS uid's rack IS the live session, a
     // chain build lands in the SESSION (the borrowed host), never on the
     // Link — the Link refuses chain-cmds while leased, and the ping-pong

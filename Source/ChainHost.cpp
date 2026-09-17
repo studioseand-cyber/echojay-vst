@@ -7182,6 +7182,42 @@ juce::var ChainHost::acceptNearMapForSlot(int slot, const juce::var& nearArr, ju
     return out;
 }
 
+// ---- PER-SLOT DIAL SNAPSHOT (17 Sep 2026, the "No suggested settings" bug) ---------
+juce::String ChainHost::slotPluginId(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return {};
+    return juce::String::toHexString(slots_[(size_t) i].desc.uniqueId);
+}
+
+ChainHost::SlotDialSnapshot ChainHost::getSlotDialSnapshot(int i) const
+{
+    SlotDialSnapshot o;
+    if (i < 0 || i >= (int) slots_.size()) return o;
+    const auto& s = slots_[(size_t) i];
+    o.pluginId = slotPluginId(i); o.index = i;
+    o.settings = s.settings; o.structured = s.structuredSettings;
+    o.status = (int) s.dialStatus; o.applied = s.dialAppliedCount; o.requested = s.dialRequestedCount;
+    o.manual = s.dialManual; o.readbackMiss = s.dialReadbackMiss; o.unconfirmed = s.dialUnconfirmed;
+    o.approximate = s.dialApproximate; o.outOfRange = s.dialOutOfRange;
+    o.servedFrom = s.dialServedFrom; o.nearMapNote = s.nearMapNote;
+    return o;
+}
+
+bool ChainHost::restoreSlotDial(int i, const SlotDialSnapshot& snap)
+{
+    if (i < 0 || i >= (int) slots_.size()) return false;
+    if (snap.index != i || snap.pluginId.isEmpty() || slotPluginId(i) != snap.pluginId) return false;
+    auto& s = slots_[(size_t) i];
+    if (snap.settings.isNotEmpty()) s.settings = snap.settings;
+    if (! snap.structured.isVoid()) s.structuredSettings = snap.structured;
+    s.structuredApplied = true;                       // already applied on the Link: never re-dial from a restore
+    s.dialStatus = (DialStatus) snap.status; s.dialAppliedCount = snap.applied; s.dialRequestedCount = snap.requested;
+    s.dialManual = snap.manual; s.dialReadbackMiss = snap.readbackMiss; s.dialUnconfirmed = snap.unconfirmed;
+    s.dialApproximate = snap.approximate; s.dialOutOfRange = snap.outOfRange;
+    s.dialServedFrom = snap.servedFrom; s.nearMapNote = snap.nearMapNote;
+    return true;
+}
+
 juce::String ChainHost::buildSlotParamReadsJson() const
 {
     juce::Array<juce::var> arr;

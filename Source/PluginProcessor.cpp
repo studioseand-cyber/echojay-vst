@@ -2381,10 +2381,55 @@ bool EchoJayProcessor::applyBorrowKeptStates(const juce::String& uid, ChainHost&
     return restoredKept;
 }
 
+void EchoJayProcessor::captureBorrowDial()
+{
+    if (!borrowActive() || borrowHost_ == nullptr) return;
+    BorrowDialKeep k; k.uid = borrowSession_.uid;
+    for (int i = 0; i < borrowHost_->getNumSlots(); ++i) k.slots.push_back(borrowHost_->getSlotDialSnapshot(i));
+    borrowDialOrder_.erase(std::remove(borrowDialOrder_.begin(), borrowDialOrder_.end(), k.uid), borrowDialOrder_.end());
+    borrowDialOrder_.push_back(k.uid);
+    borrowDialByUid_[k.uid] = std::move(k);
+    while ((int) borrowDialOrder_.size() > kBorrowKeptMax)
+    {
+        const auto oldest = borrowDialOrder_.front();
+        borrowDialOrder_.erase(borrowDialOrder_.begin());
+        borrowDialByUid_.erase(oldest);
+    }
+    EchoJay_NSLog(("EJBorrow: dial info kept for " + juce::String(borrowHost_->getNumSlots()) + " slot(s), uid=" + borrowSession_.uid
+                   + " (" + juce::String((int) borrowDialByUid_.size()) + " rack(s))").toRawUTF8());
+}
+
+int EchoJayProcessor::restoreBorrowDial(const juce::String& uid, ChainHost& bh)
+{
+    auto it = borrowDialByUid_.find(uid);
+    if (it == borrowDialByUid_.end()) return 0;
+    int restored = 0;
+    for (const auto& snap : it->second.slots)
+        if (snap.index >= 0 && snap.index < bh.getNumSlots() && bh.restoreSlotDial(snap.index, snap)) ++restored;
+    EchoJay_NSLog(("EJBorrow: dial info restored on " + juce::String(restored) + "/" + juce::String((int) it->second.slots.size())
+                   + " slot(s) by identity (pluginId + index), uid=" + uid).toRawUTF8());
+    return restored;   // the block stays: the next release re-captures it
+}
+
+void EchoJayProcessor::clearBorrowDial(const juce::String& uid)
+{
+    if (uid.isEmpty()) return;
+    if (borrowDialByUid_.erase(uid) > 0)
+        EchoJay_NSLog(("EJBorrow: dial info cleared for uid=" + uid + " (rack rebuilt or Link gone)").toRawUTF8());
+    borrowDialOrder_.erase(std::remove(borrowDialOrder_.begin(), borrowDialOrder_.end(), uid), borrowDialOrder_.end());
+}
+
+const EchoJayProcessor::BorrowDialKeep* EchoJayProcessor::borrowDialFor(const juce::String& uid) const
+{
+    auto it = borrowDialByUid_.find(uid);
+    return it == borrowDialByUid_.end() ? nullptr : &it->second;
+}
+
 void EchoJayProcessor::borrowRelease(bool keepEdits)
 {
     if (!borrowActive()) return;
     borrowEditPendingHeld_ = false;  // every ending clears the hold
+    captureBorrowDial();             // 17 Sep 2026: the per-slot dial info survives EVERY release (applied or kept)
     if (keepEdits) captureBorrowKept();
     borrowSlotRecords_.clear();
     borrowSlotOrigin_.clear();
@@ -5349,6 +5394,11 @@ void EchoJayProcessor::updateLinkAudioRecency()
     // takes its kept suggestions with it - same drop-on-disappear test as the
     // meter latch above, so a future rack under a reused uid cannot inherit a
     // predecessor's suggestions.
+    for (auto it = borrowDialByUid_.begin(); it != borrowDialByUid_.end();)   // 17 Sep 2026: the dial info goes with it
+    {
+        if (seen.find(it->first) == seen.end()) { const auto gone = it->first; ++it; clearBorrowDial(gone); }
+        else ++it;
+    }
     for (auto it = borrowKeptByUid_.begin(); it != borrowKeptByUid_.end();)
     {
         if (seen.find(it->first) == seen.end())
