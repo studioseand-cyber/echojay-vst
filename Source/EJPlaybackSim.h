@@ -28,8 +28,10 @@ enum class PlaybackSim
     asked it to touch, and it would do so silently because the output is
     supposed to be unchanged.
 
-    Pinned by ps PIN1, and the mutation that removes the early-out is the exact
-    defect it exists to prevent. */
+    Pinned by pb PIN1, and the mutation that removes the early-out is the exact
+    defect it exists to prevent. (pb, not ps: ps is the PSR floor family's
+    prefix, and two subjects under one pin name means a FAIL line cannot say
+    which of them broke.) */
 inline bool playbackSimActive (PlaybackSim s) noexcept
 {
     return s != PlaybackSim::None;
@@ -41,8 +43,24 @@ inline bool playbackSimActive (PlaybackSim s) noexcept
     file access, no logging. When a curve arrives it brings filter state with
     it, and that state is prepared in prepareToPlay and only ever read here.
 
-    Returns true when it touched the buffer, so a caller can assert the no-op
-    rather than trust it. */
+    THE RETURN VALUE MEANS THE SIMULATION BODY RAN. True: the selection's body
+    executed. False: it did not.
+
+    IT IS NOT A CLAIM THAT ANY SAMPLE CHANGED, and reading it as one will
+    mislead you. A mono fold applied to channels that already hold identical
+    audio runs in full and leaves every sample bit-identical. It returns true,
+    because it ran; the buffer is untouched, because there was nothing to
+    change. Tying the return to sample values would make it a function of
+    CONTENT rather than of selection, and then no fixed test signal could
+    establish whether the stage executed.
+
+    IT IS FALSE WHEN THE STAGE CANNOT RUN AT ALL: nothing is selected, or the
+    buffer has too few channels for the selected simulation to be defined.
+
+    THE NO-OP IS NOT PINNED BY THIS VALUE. pb PIN1 copies the buffer and
+    compares it with memcmp afterwards, because the memcmp READS THE BUFFER
+    while this return only comments on it. A return value that lied would pass
+    a test built on the return value. */
 inline bool applyPlaybackSim (PlaybackSim s, float* const* channels,
                               int numChannels, int numSamples) noexcept
 {
@@ -51,5 +69,22 @@ inline bool applyPlaybackSim (PlaybackSim s, float* const* channels,
 
     // No simulation exists yet. When one does it goes here, and it must leave
     // the early-out above intact.
+    //
+    // THIS false IS A PLACEHOLDER AND IS NOT THE HOUSE STYLE. Reaching this
+    // line means the selection was ACTIVE, so under the contract above the
+    // honest answer is already true: an active path that got here has run. It
+    // stays false only because there is no body yet to have run, and inventing
+    // a branch to dress that up would be worse than one wrong word.
+    //
+    // THE FIRST REAL SIMULATION MUST RETURN true HERE, on every path where its
+    // body executed, INCLUDING the paths where the audio came out identical.
+    // A fold of two identical channels ran. If it returns false because nothing
+    // audibly changed, the return silently becomes a claim about content, the
+    // contract above is void, and no test can tell "the stage did not run" from
+    // "the stage ran on symmetrical audio".
+    //
+    // It returns false ONLY when it genuinely could not run: too few channels
+    // for the selected simulation, or state that prepareToPlay has not made
+    // ready yet.
     return false;
 }
