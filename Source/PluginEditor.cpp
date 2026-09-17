@@ -7646,16 +7646,51 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     if (! noData)
         chainSelectedSlot_ = juce::jlimit(-1, (int) v.slots.size() - 1, chainSelectedSlot_);
 
-    // The signature covers every render input: view identity, structure
-    // (revision — local bumps ride ChainHost::bumpChainRevision, remote ones
-    // the sidecar's published revision), honesty states, slot count,
-    // selection, and the derived status note. DELIBERATELY NOT the hosted
-    // change epoch: it moves every block under automation and would turn the
-    // 20Hz tick into a rebuild storm. Settings-only changes (map arrivals,
-    // capture settles, the `set` edit op) move no counter at all, which is
-    // why their authors call with force = true.
+    // COMMIT 5 (17 Sep 2026): WET IS A VALUE, NOT STRUCTURE. The knob values
+    // are pushed into the EXISTING blocks every tick, before the signature
+    // early-return, exactly like the pre-gain knob above - skipped only for a
+    // knob the user is dragging right now, so a change from elsewhere (chat
+    // Apply, restore, sidecar) still reaches the drawn knob without a rebuild.
+    {
+        for (size_t i = 0; i < chainListPanel.blocks.size() && i < v.slots.size(); ++i)
+        {
+            auto& k = chainListPanel.blocks[i]->wetKnob;
+            if (! k.isMouseButtonDown()) k.setValue(v.slots[i].wet, false);
+            if (i < chainListPanel.slotInfos.size()) chainListPanel.slotInfos[i].wet = v.slots[i].wet;
+        }
+        if (! chainListPanel.masterKnob.isMouseButtonDown())
+        {
+            const juce::String mu = chainViewUid();
+            float mw = 1.0f;
+            if (mu.isEmpty()) mw = processorRef.getChainHost().getMasterWet();
+            else if (auto* bhm = processorRef.borrowHostIfActiveFor(mu)) mw = bhm->getMasterWet();
+            else if (auto itm = processorRef.linkRackCache.find(mu); itm != processorRef.linkRackCache.end() && itm->second.rack.valid)
+                mw = itm->second.rack.masterWet;
+            chainListPanel.masterKnob.setValue(mw, false);
+        }
+    }
+
+    // The signature covers every render input: view identity, STRUCTURE,
+    // honesty states, slot count, selection, and the derived status note.
+    // COMMIT 5 (17 Sep 2026): structure is a KEY built from what the panel
+    // structurally renders - slot count, identities in order (name, format,
+    // manufacturer: the pop-out decision), bypass flags - NOT the raw chain
+    // revision. The revision also moves on every slot/master WET write
+    // (ChainHost::setSlotWet / setMasterWet bump it for the sidecar and the
+    // edit-staleness guard), and the 20Hz tick then rebuilt the panel under a
+    // dragging knob, destroying the ChainWetKnob mid-gesture (the own-rack and
+    // Link-rack "knob cannot be moved" defect; tools/wet_rebuild_guard). A wet
+    // write now changes no signature. DELIBERATELY NOT the hosted change
+    // epoch: it moves every block under automation and would turn the 20Hz
+    // tick into a rebuild storm. Settings-only changes (map arrivals, capture
+    // settles, the `set` edit op) move no counter at all, which is why their
+    // authors call with force = true.
+    juce::String structKey;
+    structKey << (int) v.slots.size();
+    for (const auto& si : v.slots)
+        structKey << ";" << si.name << "|" << si.format << "|" << si.manufacturer << "|" << (int) si.bypassed;
     juce::String sig;
-    sig << chainViewUid() << "|" << v.revision << "|" << (int) v.valid
+    sig << chainViewUid() << "|" << structKey << "|" << (int) v.valid
         << (int) v.offline << (int) writeLocked << (int) v.borrowed
         << (int) processorRef.borrowActive()   // the release affordance's input
         << "|" << (int) v.slots.size() << "|"
