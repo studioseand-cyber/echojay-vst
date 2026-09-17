@@ -9034,6 +9034,153 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "pb PIN1: an empty block is a no-op rather than a branch nobody took");
         }
 
+        // pb PIN2 to pb PIN6 -- THE MONO FOLD.
+        {
+            using PS = PlaybackSim;
+
+            // pb PIN2: CORRELATED CONTENT IS BIT-IDENTICAL. A centred source
+            // must come out at exactly the level it went in. memcmp, not a
+            // tolerance: the claim is EXACTNESS, and a tolerance would also
+            // pass an implementation that is merely close. The values include a
+            // negative, full scale both ways, a very small one, and both zeros,
+            // because -0.0f is a distinct bit pattern the fold must preserve.
+            {
+                float l[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
+                float r[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
+                float lBefore[8], rBefore[8];
+                std::memcpy (lBefore, l, sizeof (l));
+                std::memcpy (rBefore, r, sizeof (r));
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (PS::MonoFold, ch, 2, 8),
+                       "pb PIN2: the fold reports that it ran on a correlated signal");
+                check (std::memcmp (l, lBefore, sizeof (l)) == 0,
+                       "pb PIN2: and left is BIT-IDENTICAL, not merely close");
+                check (std::memcmp (r, rBefore, sizeof (r)) == 0,
+                       "pb PIN2: and right is BIT-IDENTICAL, so a centred source "
+                       "comes out at exactly the level it went in");
+            }
+
+            // pb PIN3: ANTI-CORRELATED CONTENT IS EXACTLY +0.0. memcmp against
+            // an array of +0.0f rather than == 0.0f, because == 0.0f is also
+            // true of -0.0f and the claim includes the SIGN: L + (-L) is
+            // exactly +0.0 under round-to-nearest, so the collapse is complete
+            // rather than nearly complete.
+            {
+                float l[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
+                float r[8];
+                for (int i = 0; i < 8; ++i) r[i] = -l[i];
+                float zeros[8] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (PS::MonoFold, ch, 2, 8),
+                       "pb PIN3: the fold reports that it ran on an anti-correlated signal");
+                check (std::memcmp (l, zeros, sizeof (zeros)) == 0,
+                       "pb PIN3: left is exactly +0.0, sign included");
+                check (std::memcmp (r, zeros, sizeof (zeros)) == 0,
+                       "pb PIN3: and so is right, so anti-correlated content "
+                       "vanishes completely rather than nearly");
+            }
+
+            // pb PIN4: THE TWO CHANNELS ARE IDENTICAL TO EACH OTHER AFTERWARDS.
+            // A signal that starts different and is neither correlated nor
+            // anti-correlated, so neither of the two pins above could stand in
+            // for this one.
+            {
+                float l[4] = {  0.5f,  0.25f, -0.125f,  0.75f };
+                float r[4] = {  0.1f, -0.2f,   0.3f,   -0.4f  };
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (PS::MonoFold, ch, 2, 4),
+                       "pb PIN4: the fold ran");
+                check (std::memcmp (l, r, sizeof (l)) == 0,
+                       "pb PIN4: and the two channels are identical afterwards, "
+                       "which one local written twice guarantees by construction");
+            }
+
+            // pb PIN5: A BUFFER THE FOLD CANNOT RUN ON IS LEFT ALONE. Both
+            // cases pass two DISTINCT valid pointers, so a mutant that removes
+            // a guard writes into real memory and fails this pin cleanly,
+            // rather than dereferencing something invalid and taking the suite
+            // down instead of reddening it.
+            {
+                float l[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
+                float r[4] = { 0.1f, -0.1f, 0.2f,  -0.2f  };
+                float lB[4], rB[4];
+                std::memcpy (lB, l, sizeof (l));
+                std::memcpy (rB, r, sizeof (r));
+                float* ch[2] = { l, r };
+
+                check (! applyPlaybackSim (PS::MonoFold, ch, 1, 4),
+                       "pb PIN5: one channel is too few for a fold, so it does not run");
+                check (std::memcmp (l, lB, sizeof (l)) == 0
+                       && std::memcmp (r, rB, sizeof (r)) == 0,
+                       "pb PIN5: and it wrote nothing");
+
+                // The aliased pair: two channels claimed, one buffer behind
+                // them, which is exactly what a mono host delivers.
+                float a[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
+                float aB[4]; std::memcpy (aB, a, sizeof (a));
+                float* same[2] = { a, a };
+                check (! applyPlaybackSim (PS::MonoFold, same, 2, 4),
+                       "pb PIN5: two channels pointing at one buffer is not a fold");
+                check (std::memcmp (a, aB, sizeof (a)) == 0,
+                       "pb PIN5: and that buffer is untouched, so the fold never "
+                       "reads back what it just wrote");
+            }
+
+            // pb PIN6: ZERO SAMPLES IS A LOOP WITH NO ITERATIONS, not a stage
+            // that failed to run. Decided, not emergent.
+            {
+                float l[2] = { 0.5f, -0.5f };
+                float r[2] = { 0.25f, -0.25f };
+                float lB[2], rB[2];
+                std::memcpy (lB, l, sizeof (l));
+                std::memcpy (rB, r, sizeof (r));
+                float* ch[2] = { l, r };
+
+                check (applyPlaybackSim (PS::MonoFold, ch, 2, 0),
+                       "pb PIN6: zero samples still reports that the stage ran");
+                check (std::memcmp (l, lB, sizeof (l)) == 0
+                       && std::memcmp (r, rB, sizeof (r)) == 0,
+                       "pb PIN6: and it wrote nothing");
+            }
+
+            // pb PIN7 -- EVERY ACTIVE SELECTION HAS A BODY.
+            // The sweep walks every value from the one after None up to the
+            // Count sentinel and requires each to report that it ran. A value
+            // added to the enum without a case in the switch falls through to
+            // the trailing false, and this is the thing that says so, BY THE
+            // VALUE'S NUMBER, so a FAIL line names which one is empty rather
+            // than only that one of them is.
+            //
+            // Today it exercises exactly one value and passes trivially. Its
+            // whole purpose is the value after that one, and it needs no
+            // maintenance when that value arrives: that is the difference
+            // between a sweep and a count.
+            //
+            // THE STRONGER PIN I CONSIDERED AND REJECTED: assert that every
+            // active selection also CHANGES an uncorrelated stereo signal. That
+            // would catch a body which exists but does nothing, which this pin
+            // cannot. It is rejected because a future environment could
+            // legitimately be close to transparent, the pin would then need a
+            // list of exemptions, and a pin with an exemption list is a pin that
+            // gets exempted. A weaker check that nobody is tempted to weaken
+            // further is worth more than a stronger one with a door in it.
+            {
+                for (int i = 0; i < (int) PS::Count; ++i)
+                {
+                    if (i == (int) PS::None) continue;
+                    float l[4] = { 0.5f, -0.25f, 0.125f, -0.75f };
+                    float r[4] = { 0.1f,  0.2f, -0.3f,    0.4f  };
+                    float* ch[2] = { l, r };
+                    check (applyPlaybackSim ((PS) i, ch, 2, 4),
+                           "pb PIN7: selection " + juce::String (i)
+                           + " has a body in the switch and reports that it ran");
+                }
+            }
+        }
+
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
         // window is the cursor in", which is a proxy for "is there room" and
         // wrong in both directions: a cursor one pixel past the centre flipped
