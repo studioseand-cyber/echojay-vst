@@ -1,16 +1,13 @@
 #!/bin/bash
-# Install the SIGNED 17 Sep 2026 "d" build of EchoJay V2 (HURDLE 1: apply waits for maps; near-map acceptance; NOT DIALABLE in red; budget reserved at prepareToPlay from saved state).
-# the confidence number). V2 ONLY ships in this package: the Link binary is UNCHANGED from the
-# installed 2026-09-17 build (dwarfdump on both binaries: x86_64 EAAFD572..., arm64 AFE78481...),
-# so the ALREADY-SIGNED Link is re-used. The staging dir must hold BOTH bundles:
-#   the newly signed "EchoJay V2.aaxplugin" (this package's zip, signed), and
-#   "EchoJay Link.aaxplugin" copied from ~/Desktop/ejsign_2026-09-17c (or 2026-09-17 / 17b) (already signed, unchanged).
-# Both are verified by UUID before anything is touched; both are installed with ditto; after
-# install, xattr -cr clears every extended attribute (quarantine) on both installed bundles and
-# the remaining attribute count is printed (must be 0).
+# Install the SIGNED 17 Sep 2026 "d" build of EchoJay V2 AND EchoJay Link (HURDLE 1: apply waits for maps;
+# near-map acceptance; NOT DIALABLE in red; borrow budget reserved at prepareToPlay from saved state). BOTH bundles
+# ship in this package (ChainHost is compiled into both binaries, so the Link changed too). The staging dir must hold
+# BOTH newly signed bundles: "EchoJay V2.aaxplugin" and "EchoJay Link.aaxplugin" (this package's two zips, signed).
+# Both are verified by UUID before anything is touched; both are installed with ditto; after install, xattr -cr
+# clears every extended attribute (quarantine) on both installed bundles and the remaining count is printed (must be 0).
 #   Normal:      double-click, or: bash "INSTALL_AAX_2026-09-17d.command" [staging-dir]
 #   Verify only: bash "INSTALL_AAX_2026-09-17d.command" --verify-only [staging-dir]  (no install)
-# Put the signed "EchoJay V2.aaxplugin" (new) AND "EchoJay Link.aaxplugin" (from ejsign_2026-09-17) in any of:
+# Put the signed "EchoJay V2.aaxplugin" AND "EchoJay Link.aaxplugin" (both from this package, signed) in any of:
 # a dir you pass, ~/Desktop/ejsign_2026-09-17d, this folder, ~/Desktop.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -19,8 +16,8 @@ DEST="/Library/Application Support/Avid/Audio/Plug-Ins"
 # THE FOUR SLICE UUIDs of this build (preserved through wraptool signing).
 WANT_V2="9FDF228C-2CFE-3197-BA3B-C61FD9BDDF61"        # V2  x86_64 (Pro Tools under Rosetta loads THIS line)
 WANT_V2_ARM="A0FFB869-5ACD-36AE-9383-AE996ABE7FC6"    # V2  arm64
-WANT_LK="EAAFD572-DE95-3609-A21C-80965EEAEA48"        # Link x86_64
-WANT_LK_ARM="AFE78481-6898-3A57-AAE2-299C97914A18"    # Link arm64
+WANT_LK="BDA3E35F-1C76-3FE7-95AB-91E83D51C9CA"        # Link x86_64
+WANT_LK_ARM="8E7DA8F6-2303-3605-80DB-7325AB91171B"    # Link arm64
 
 BK="$HOME/Desktop/DO_NOT_SIGN_pre17d_backup_2026-09-17"
 
