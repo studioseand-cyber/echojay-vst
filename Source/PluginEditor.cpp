@@ -28458,6 +28458,7 @@ bool EchoJayEditor::chainEditGateRefuses() { return chainEditGateRefusesFor(chai
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                                     const juce::String& chainJson)
 {
+    switchToTab(Tab::Chain);   // Round C (17 Sep 2026): select the Chain tab before the build starts (Link arm)
     // COMMIT 1 (17 Sep 2026): a (re)build for this uid supersedes any kept
     // suggestions for it - cleared for BOTH arms below (session build and
     // Link build), since either replaces the rack the kept block described.
@@ -31079,6 +31080,12 @@ void EchoJayEditor::openSavedChain(const juce::String& id, const juce::String& n
 
 void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replaceConfirmed)
 {
+    // Round C (17 Sep 2026): the Chain tab is selected BEFORE the build starts,
+    // at every entry point - the user watches the rack load, and nothing of
+    // the chain panel is ever shown while another tab is current (the panel's
+    // visibility follows the tab). The end-of-load switch below stays as the
+    // second belt.
+    switchToTab(Tab::Chain);
     // A failed build must land the user on the Chain page with an error, not
     // return silently (the click otherwise appears to do nothing).
     auto showBuildFail = [this](const juce::String& why)
