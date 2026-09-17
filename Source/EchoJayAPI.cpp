@@ -1297,10 +1297,10 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         body += ",\"mapFps\":" + nextChatMapFps_;
         nextChatMapFps_.clear();
     }
-    if (nextChatVerifiedNear_.isNotEmpty())   // 17 Sep 2026: the client-verified near maps (D7 strict admits by these)
+    if (nextChatProductIds_.isNotEmpty())   // 17 Sep 2026: product identities (the server keys dial-only by PRODUCT)
     {
-        body += ",\"verifiedNear\":" + nextChatVerifiedNear_;
-        nextChatVerifiedNear_.clear();
+        body += ",\"productIds\":" + nextChatProductIds_;
+        nextChatProductIds_.clear();
     }
     // 6c section 8a: the racked slots' current parameter READS. Rides beside
     // mapFps and is consumed the same way, so the transport's limit-refresh
@@ -1753,6 +1753,32 @@ std::shared_ptr<ChatStreamHandle> EchoJayAPI::streamChat(const juce::StringArray
 // refresh-then-retry self-heal, with one structural difference: the retry
 // re-enters HERE with the caller's original handle, so a cancel() issued
 // while the refresh round-trip was in flight still kills the send.
+EchoJayAPI::StreamRejection EchoJayAPI::streamRejectionFor (int statusCode, const juce::String& bodyText)
+{
+    StreamRejection r;
+    r.message = "Something went wrong. Please try again.";
+    auto json = juce::JSON::parse (bodyText);
+    if (auto* o = json.getDynamicObject())
+    {
+        if (o->hasProperty ("code"))   r.code        = o->getProperty ("code").toString();
+        if (o->hasProperty ("error"))  r.serverError = o->getProperty ("error").toString();
+        if (o->hasProperty ("turnId")) r.turnId      = o->getProperty ("turnId").toString();
+    }
+    // 17 Sep 2026: a 403 chat_turn_not_streamed is a ROUTING answer, not a failure - the
+    // turn is re-sent as a chat and rendered; the user is never asked to resend.
+    r.rerouteToChat = (statusCode == 403 && r.code == "chat_turn_not_streamed");
+    if (r.rerouteToChat) r.message = {};
+    return r;
+}
+
+bool EchoJayAPI::shouldRenderStreamedReply (const juce::var& doneFrame, const juce::String& proseSoFar)
+{
+    // A stream that resolved as a normal chat (general / chat) still carries the model's
+    // reply: it is rendered as a chat reply. Only an empty reply has nothing to render.
+    juce::ignoreUnused (doneFrame);
+    return proseSoFar.trim().isNotEmpty();
+}
+
 void EchoJayAPI::streamChatInternal(std::shared_ptr<ChatStreamHandle> handle,
                                     const juce::StringArray& roles,
                                     const juce::StringArray& contents,
@@ -1885,37 +1911,24 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
                 // even when the plugin is mid-teardown.
                 logNon2xx ("/api/chat-stream", statusCode, bodyText);
                 if (! aliveFlag->load() || handle->isCancelled()) return;
-                auto json = juce::JSON::parse (bodyText);
-                juce::String code, serverErr, turnId, msg = "Something went wrong. Please try again.";
-                if (auto* o = json.getDynamicObject())
-                {
-                    if (o->hasProperty ("code"))   code      = o->getProperty ("code").toString();
-                    if (o->hasProperty ("error"))  serverErr = o->getProperty ("error").toString();
-                    if (o->hasProperty ("turnId")) turnId    = o->getProperty ("turnId").toString();
-                }
-                // FINDING 1 (15 Sep 2026). chat_turn_not_streamed is a ROUTING
-                // DIRECTIVE, not a chat reply: the server classified this
-                // stream-routed turn as chat. Its `error` string is internal
-                // plumbing and must NEVER be rendered as a bubble or stored in
-                // history (it was, then fed to the next classify). Log the
-                // observation in FULL - origin endpoint, status, code, turnId; we
-                // do not infer which endpoint a turn reached - and surface a PLAIN
-                // message. The raw `error` becomes `serverErr` for the log only and
-                // never the shown text. NO automatic re-send here: the staged
-                // meter/mapFps body was already consumed by buildChatRequestBody,
-                // so a rebuilt re-send would DIVERGE from what carried this turnId
-                // (two requests, one turnId). The bounded/identical-body re-send is
-                // a separate decision - see the report. Primary trigger (a stale
-                // stream_chains flag) is deleted, so this path is rare.
-                if (code == "chat_turn_not_streamed")
+                // FINDING 1 (15 Sep 2026) + the 17 Sep ruling: chat_turn_not_streamed is a ROUTING
+                // answer given BEFORE any reply. It is never rendered or stored; the turn is
+                // RE-SENT to /api/chat by the editor (rerouteChatTurn) and that reply renders as
+                // a chat reply with one quiet line. The re-send's body is rebuilt WITHOUT the
+                // staged meter/mapFps blobs (consumed by the first send) - a chat reply needs
+                // neither; flagged in the report. Never "please send it again".
+                const auto rj = streamRejectionFor (statusCode, bodyText);
+                if (rj.rerouteToChat)
                 {
                     EchoJay_NSLog (("EJStream: REROUTE-OBSERVED origin=/api/chat-stream status="
-                                    + juce::String (statusCode) + " code=" + code + " turnId=" + turnId
-                                    + " serverError=\"" + serverErr + "\" -> directive SUPPRESSED "
-                                      "(not rendered, not stored); plain message shown").toRawUTF8());
-                    msg = "This turn was sent to the streaming path, but the server handled it as a normal "
-                          "chat. Please send it again.";
+                                    + juce::String (statusCode) + " code=" + rj.code + " turnId=" + rj.turnId
+                                    + " serverError=\"" + rj.serverError + "\" -> RE-SENT to /api/chat as a chat turn; "
+                                      "the reply renders with a quiet line").toRawUTF8());
+                    const auto se = rj.serverError, tid = rj.turnId;
+                    dispatch ([ev, se, tid, statusCode] { if (ev->onRerouteToChat) ev->onRerouteToChat (se, tid); else if (ev->onError) ev->onError (se, statusCode); });
+                    return;
                 }
+                const auto msg = rj.message;
                 dispatch ([ev, msg, statusCode] { if (ev->onError) ev->onError (msg, statusCode); });
                 return;   // a real HTTP answer is not retried
             }

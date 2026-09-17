@@ -275,7 +275,19 @@ public:
         std::function<void(const juce::String& thinkingDelta)> onThinkingDelta;
         std::function<void(const juce::var& doneFrame)> onDone;
         std::function<void(const juce::String& error, int statusCode)> onError;
+        // 17 Sep 2026 (three live reroutes): the server answered 403 chat_turn_not_streamed
+        // BEFORE any reply. The turn is re-sent to /api/chat by the editor and its reply
+        // rendered as a chat reply with one quiet line - never "please send it again".
+        std::function<void(const juce::String& serverError, const juce::String& turnId)> onRerouteToChat;
     };
+    // The pure decision for a non-2xx answer on the stream path (tools/stream_reroute_guard drives it).
+    struct StreamRejection { bool rerouteToChat = false; juce::String code, serverError, turnId, message; };
+    static StreamRejection streamRejectionFor (int statusCode, const juce::String& bodyText);
+    // A streamed reply that resolved as a normal chat is RENDERED (its text stands), never discarded.
+    static bool shouldRenderStreamedReply (const juce::var& doneFrame, const juce::String& proseSoFar);
+    // The quiet line appended to a re-sent chat reply.
+    static juce::String rerouteQuietLine() { return juce::String::fromUTF8 ("(sent as a chat, not a build \xe2\x80\x94 say 'build' to build)"); }
+    static juce::String renderRerouteReply (const juce::String& reply) { return reply.trim() + "\n\n" + rerouteQuietLine(); }
     std::shared_ptr<ChatStreamHandle> streamChat(const juce::StringArray& roles,
                                                  const juce::StringArray& contents,
                                                  const juce::String& systemPrompt,
@@ -303,9 +315,10 @@ public:
     // without the field ignores it.
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
-    // 17 Sep 2026 (D7 strict): name -> VERIFIED near-candidate fp, consumed per send like mapFps.
-    void setNextChatVerifiedNear(const juce::String& jsonObject)
-    { nextChatVerifiedNear_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
+    // 17 Sep 2026 (product identity): name -> "format|uidHex" for the racked + recommendable plugins,
+    // consumed per send like mapFps. The server keys the dial-only set by PRODUCT with it.
+    void setNextChatProductIds(const juce::String& jsonObject)
+    { nextChatProductIds_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
     // 6c section 8a: the racked slots' CURRENT parameter reads, staged from
     // ChainHost::buildSlotParamReadsJson and consumed at body build exactly
@@ -380,7 +393,7 @@ public:
     {
         nextChatMeters_.clear();
         nextChatMapFps_.clear();
-        nextChatVerifiedNear_.clear();
+        nextChatProductIds_.clear();
         nextChatParamReads_.clear();
         nextChatDialDeclines_.clear();
         nextChatTurnType_.clear();
@@ -1194,7 +1207,7 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
-    juce::String nextChatVerifiedNear_;   // staged by setNextChatVerifiedNear(); "" = none
+    juce::String nextChatProductIds_;   // staged by setNextChatProductIds(); "" = none
     juce::String nextChatParamReads_;   // 6c §8a: staged by setNextChatParamReads(); "" = none
     juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
