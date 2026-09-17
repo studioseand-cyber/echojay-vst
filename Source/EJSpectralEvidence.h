@@ -98,6 +98,21 @@ enum class SpectralReduction
     BallisticTail,      ///< the meter's own reading: ~10 ms attack, ~150 ms release
     LiveInstant,        ///< the same ballistic reading, taken live, of no fixed window
 
+    /** A POWER mean of the per-block band powers over a bounded rolling window
+        (MeterEngine::getBoundedBands). It has its own name because it is not any
+        of the above and must not be confused with two of them in particular.
+
+        It is NOT RollingMeanOfMaxima: that is a mean of per-frame maxima of the
+        SMOOTHED display bins, which sits above a true average on transient
+        material. This is a mean of RAW per-block power, so it is a true average
+        of the window and is directly comparable with a whole-file or
+        whole-capture power mean, differing only in span.
+
+        It is NOT WholeWindowAverage either: that names a capture's whole span,
+        and this window rolls and forgets. A comparison between the two is fair
+        in kind and unfair in length, which is a thing the prose can say. */
+    RollingWindowPowerMean,
+
     /** The rolling 25 fps frame ring reduced by its MEAN (MeterEngine's
         reduceSpectrumWindow with useMean). It has its own name because it is
         NOT the same statistic as a capture's whole-window average, and calling
@@ -149,6 +164,12 @@ struct SpectralEvidence
     bool                 hasMacro = false;
     SpectralReduction    macroReduction = SpectralReduction::Unknown;
     float                macroWindowSeconds = 0.0f;
+    /** Seconds since this side's band window last took audio. Zero for a stored
+        measurement, which cannot go stale, and for a live one while audio is
+        arriving. Growing once a live input has gone quiet: a frozen window is
+        honest about WHAT it heard and silent about WHEN, and six numbers in a
+        comparison look equally current whatever their age. */
+    float                macroAgeSeconds = 0.0f;
     /** Why there is no whole-run band measurement for this side, in the user's
         register, empty when hasMacro is true. The card states it rather than
         drawing a lone curve that reads as a comparison. */
@@ -169,6 +190,49 @@ struct SpectralEvidence
 // PURE, so the decision can be pinned without a window. The caller supplies
 // which sides have bands and a short reason for each missing side; this returns
 // the sentence, or empty when there is nothing to say.
+// ===========================================================================
+// HOW A BAND FIGURE STATES ITS WINDOW AND ITS AGE
+// ===========================================================================
+//
+// ONE RULE, TWO CALL SITES. The chart label and the compare prose both describe
+// the same figure, and when they each composed the sentence themselves they were
+// two opinions waiting to disagree. This is the one composer.
+//
+// THE AGE LEADS ONCE IT EXCEEDS THE WINDOW. A label reading
+// "12.0s window, ended 40s ago" describes audio that finished before the window
+// it claims to cover even began: every sample in that window is older than the
+// window is long, so the age is the load-bearing fact and the span is the
+// footnote. Below the threshold the span is what the reader wants first and the
+// age is the qualifier, so the order stays as it was. The ordering IS the
+// difference between a statement and a footnote, which is why it is a rule and
+// not a formatting preference.
+inline juce::String bandProvenanceText (const juce::String& reductionName,
+                                        float windowSeconds,
+                                        float ageSeconds)
+{
+    const bool hasWindow = windowSeconds > 0.0f;
+    const bool hasAge    = ageSeconds  >= 1.0f;   // under a second is not stale
+
+    juce::String span;
+    if (hasWindow) span = juce::String (windowSeconds, 1) + "s window";
+
+    juce::String age;
+    if (hasAge) age = "ended " + juce::String (ageSeconds, 0) + "s ago";
+
+    juce::String out = reductionName;
+    if (! hasWindow && ! hasAge) return out;
+
+    // THE THRESHOLD: the age exceeding the window is the moment nothing in the
+    // window is recent, so the age moves in front of both the span and the
+    // reduction name.
+    if (hasAge && hasWindow && ageSeconds > windowSeconds)
+        return age.toUpperCase() + ", " + out + ", " + span;
+
+    if (hasWindow) out += ", " + span;
+    if (hasAge)    out += ", " + age;
+    return out;
+}
+
 enum class BandChartState { Both, AOnly, BOnly, Neither };
 
 inline BandChartState bandChartState (bool aHasBands, bool bHasBands) noexcept
@@ -216,6 +280,8 @@ inline const char* reductionName (SpectralReduction r) noexcept
 {
     switch (r)
     {
+        case SpectralReduction::RollingWindowPowerMean:
+            return "power mean over a rolling window";
         case SpectralReduction::WholeFileAverage:    return "average across the whole file";
         case SpectralReduction::WholeWindowAverage:  return "average across the whole capture";
         case SpectralReduction::WholeWindowPeakHold: return "peak hold across the whole capture";

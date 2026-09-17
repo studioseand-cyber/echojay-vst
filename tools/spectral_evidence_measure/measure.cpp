@@ -145,6 +145,11 @@ struct MacroRow
     std::array<float, 6> accumDb {};
     bool  accumValid = false;
     int   accumBlocks = 0;
+    // Phase 1c: the BOUNDED window, which is what a Live compare slot now reads.
+    std::array<float, 6> boundedDb {};
+    bool  boundedValid = false;
+    int   boundedBlocks = 0;
+    float boundedSeconds = 0.0f;
     int   silentBlocks = 0;            // blocks whose six bands are all on the floor
 };
 
@@ -250,6 +255,9 @@ static bool macroPassBuffer (const juce::AudioBuffer<float>& buf, double sr,
     if (! acc.finish (out, sr, blockSize)) return false;
     const auto a = engine.getAccumulatedBands();
     out.accumValid = a.valid; out.accumBlocks = a.blocks; out.accumDb = a.db;
+    const auto bw = engine.getBoundedBands();
+    out.boundedValid = bw.valid; out.boundedBlocks = bw.blocks;
+    out.boundedDb = bw.db; out.boundedSeconds = bw.seconds;
     return true;
 }
 
@@ -988,8 +996,9 @@ static int runControlB (int seeds)
                  "  SMALLEST at 0.19 dB. If the seeds put sub at the top, that run was\n"
                  "  lucky. If they do not, the hypothesis is WRONG and says so.\n\n";
 
-    std::vector<std::array<double, 6>> absD, relD, tailV, wholeV, accumV;
-    int framesSeen = 0;
+    std::vector<std::array<double, 6>> absD, relD, tailV, wholeV, accumV, boundedV;
+    int framesSeen = 0, boundedBlocksSeen = 0;
+    float boundedSecondsSeen = 0.0f;
     for (int s = 0; s < seeds; ++s)
     {
         const auto buf = makePinkBuffer (0x1000001u + (juce::uint32) s * 2654435761u, sr, blocks);
@@ -1014,6 +1023,11 @@ static int runControlB (int seeds)
             std::array<double, 6> ac {};
             for (int i = 0; i < 6; ++i) ac[(size_t) i] = m.accumDb[(size_t) i];
             accumV.push_back (ac);
+            std::array<double, 6> bd {};
+            for (int i = 0; i < 6; ++i) bd[(size_t) i] = m.boundedDb[(size_t) i];
+            boundedV.push_back (bd);
+            boundedSecondsSeen = m.boundedSeconds;
+            boundedBlocksSeen  = m.boundedBlocks;
             framesSeen = m.frames;
         }
         std::cout << "  seed " << std::setw (2) << s << "  abs";
@@ -1124,6 +1138,29 @@ static int runControlB (int seeds)
                                           : (fall > 36.0 ? "ABOVE (better than asked)"
                                                          : "BELOW (short of the test)")) << "\n";
         }
+        // ===== PHASE 1c: THE BOUNDED WINDOW, against its own pre-registered range
+        std::cout << "\n  ===== PHASE 1c: THE LIVE SIDE'S BOUNDED WINDOW =====\n"
+                  << "  Pre-registered before measuring: a fall of 8x to 17x per band,\n"
+                  << "  from sqrt(300) = 17.3 discounted by the same 1.0x to 2.1x frame\n"
+                  << "  correlation factor that made the whole-file expectation a range.\n"
+                  << "  Window measured: " << boundedBlocksSeen << " blocks, "
+                  << juce::String (boundedSecondsSeen, 2) << " s\n\n";
+        std::cout << "  " << std::left << std::setw (10) << "band" << std::right
+                  << std::setw (14) << "BALLISTIC sd" << std::setw (14) << "BOUNDED sd"
+                  << std::setw (10) << "fall" << std::setw (22) << "against 8x to 17x" << "\n";
+        for (int i = 0; i < 6; ++i)
+        {
+            const double b = sdOf (tailV, i), w = sdOf (boundedV, i);
+            const double fall = (w > 0.0) ? b / w : 0.0;
+            const bool inRange = (fall >= 8.0 && fall <= 17.0);
+            std::cout << "  " << std::left << std::setw (10) << echojay::macroBandName (i)
+                      << std::right << std::setw (14) << std::fixed << std::setprecision (3) << b
+                      << std::setw (14) << w
+                      << std::setw (9) << std::setprecision (1) << fall << "x"
+                      << std::setw (22) << (inRange ? "IN RANGE"
+                                          : (fall > 17.0 ? "ABOVE" : "BELOW")) << "\n";
+        }
+
         std::cout << "\n  The third column is this harness computing the accumulation NOW.\n"
                      "  It is not the test: the test is whether the SHIPPED accumulation\n"
                      "  lands on the same figures. It is printed so the prediction and the\n"

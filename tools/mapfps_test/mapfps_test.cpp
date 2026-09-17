@@ -8610,6 +8610,196 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             }
         }
 
+        // bd PIN6 -- THE BOUNDED WINDOW FORGETS, WHICH IS THE WHOLE POINT.
+        // A Live compare slot needs the SAME statistic a reference has, a power
+        // mean, over a bounded span. The one line that makes it bounded rather
+        // than unbounded is the subtraction of the entry falling out of the ring,
+        // and an unbounded mean still dividing by the fill reads exactly like a
+        // window while being a lifetime average. These pins drive the SHIPPED
+        // ring, not a model of it: MeterEngine holds six of these and does
+        // nothing to them but push.
+        {
+            using echojay::BandPowerRing;
+            using echojay::boundedBandMean;
+
+            // EMPTY: no mean. Not zero, not -120: an absent measurement.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                check (! r.mean().valid, "bd PIN6: an empty window has NO mean");
+                check (r.count() == 0,   "bd PIN6: and reports zero blocks");
+                check (! r.isFull(),     "bd PIN6: and is not full");
+            }
+
+            // ONE BLOCK: the mean of one value is that value. 1e-3 -> -30 dB.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                r.push (1e-3);
+                const auto m = r.mean();
+                check (m.valid && m.blocks == 1, "bd PIN6: one block is a valid mean of one");
+                check (std::abs (m.db - (-30.0f)) < 1e-4f,
+                       "bd PIN6: and a 1e-3 power block reads -30.0 dB");
+            }
+
+            // FEWER BLOCKS THAN CAPACITY: it divides by the FILL, not the
+            // capacity, so a partly filled window reports what it has rather
+            // than a figure diluted by blocks that were never pushed.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                for (int i = 0; i < 3; ++i) r.push (1e-3);
+                const auto m = r.mean();
+                check (m.blocks == 3, "bd PIN6: three of ten reports three blocks");
+                check (std::abs (m.db - (-30.0f)) < 1e-4f,
+                       "bd PIN6: and the mean is the block value, not diluted by "
+                       "the seven empty slots");
+                check (! r.isFull(), "bd PIN6: and it is not yet full");
+            }
+
+            // EXACTLY CAPACITY: full, same answer, nothing dropped yet.
+            {
+                BandPowerRing<10> r; r.setCapacity (10);
+                for (int i = 0; i < 10; ++i) r.push (1e-3);
+                const auto m = r.mean();
+                check (m.blocks == 10 && r.isFull(),
+                       "bd PIN6: exactly capacity fills the window");
+                check (std::abs (m.db - (-30.0f)) < 1e-4f,
+                       "bd PIN6: and the mean is unchanged");
+            }
+
+            // MORE THAN CAPACITY: THE OLDEST FALLS OUT. A loud first block is
+            // pushed then displaced by four quiet ones; the mean must be the
+            // quiet value, with no trace of the loud one left in the sum.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                r.push (1e-2);                              // the loud one
+                for (int i = 0; i < 4; ++i) r.push (1e-3);   // displaces it
+                const auto m = r.mean();
+                check (m.blocks == 4,
+                       "bd PIN6: the window holds its capacity and no more");
+                check (std::abs (m.db - (-30.0f)) < 1e-3f,
+                       "bd PIN6: and the displaced block is GONE from the mean, "
+                       "not merely outweighed");
+                // Stated separately because it is the number the mutation moves:
+                // keeping the loud block would give -24.56 dB, 5.44 dB high.
+                check (m.db < -28.0f,
+                       "bd PIN6: NOT the -24.56 dB an unbounded sum would give, "
+                       "which is what forgetting to subtract produces");
+            }
+
+            // A SILENT BLOCK INSIDE A FULL WINDOW costs its share of the energy
+            // and no more: three of 1e-3 and one of zero is 7.5e-4, -31.25 dB.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                r.push (1e-3); r.push (1e-3); r.push (1e-3); r.push (0.0);
+                const auto m = r.mean();
+                check (m.blocks == 4, "bd PIN6: a silent block still occupies a slot");
+                check (std::abs (m.db - (-31.2494f)) < 1e-3f,
+                       "bd PIN6: and costs 1.25 dB, its share of the energy, not "
+                       "the 22 dB a floor in the log domain would cost");
+            }
+
+            // A WHOLLY SILENT WINDOW floors. NOT REACHABLE THROUGH THE ENGINE
+            // ANY MORE: the ring is gated, so a silent block never enters and the
+            // window cannot drain. Kept as a pin on the RING's arithmetic, which
+            // is still worth holding because the ring is a general container, and
+            // corrected here rather than left claiming to describe a live state.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                for (int i = 0; i < 4; ++i) r.push (0.0);
+                const auto m = r.mean();
+                check (m.valid && m.db == -120.0f,
+                       "bd PIN6: a wholly silent window is valid and reads the floor, "
+                       "so the consumer can refuse on it");
+            }
+
+            // SETTING THE CAPACITY CLEARS. A window whose length just changed has
+            // no contents belonging to the new length.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                r.push (1e-3); r.push (1e-3);
+                r.setCapacity (6);
+                check (r.count() == 0 && ! r.mean().valid,
+                       "bd PIN6: changing the window length empties it");
+                check (r.capacity() == 6, "bd PIN6: and takes the new length");
+            }
+
+            // THE CEILING IS THE STORAGE. A capacity above the template size is
+            // clamped rather than overrunning the buffer.
+            {
+                BandPowerRing<4> r; r.setCapacity (99);
+                check (r.capacity() == 4,
+                       "bd PIN6: a capacity beyond the storage is clamped to it");
+            }
+
+            // WHAT THIS PIN DOES NOT EXERCISE, measured 17 Sep 2026. It drives
+            // the RING directly, so it never sees the engine's silence
+            // THRESHOLD: isSilentNow() needs 0.5 s below -80 dBFS before it
+            // returns true, and until it does, silent blocks are not silent by
+            // the gate's definition and DO enter the window. At 512 samples and
+            // 44.1 kHz that is about forty three of them, 4.2 percent of a 1034
+            // block window, and the measured values drift by about 0.19 dB
+            // before freezing.
+            //
+            // So the claim below is true of the CONTAINER and true of the ENGINE
+            // only after the threshold has passed. The pin is therefore
+            // INCOMPLETE rather than wrong: it still catches an ungated ring,
+            // which is what it was written for, and it would still catch an age
+            // that never grows. It cannot catch anything about the 0.5 s tail,
+            // and the engine-level measurement in RESULTS_PHASE1B.md is what
+            // covers that.
+            //
+            // bd PIN7 -- A FROZEN WINDOW HOLDS ITS NUMBERS AND ADMITS ITS AGE.
+            // The ring is gated, so when the input goes quiet it stops taking
+            // blocks rather than taking silent ones. That is what keeps it honest
+            // about WHAT it heard, and it is exactly what makes it silent about
+            // WHEN: six numbers in a comparison look equally current whether they
+            // are from now or from ten minutes ago, and nothing else on the card
+            // distinguishes them.
+            //
+            // AN AGE THAT ALWAYS SAYS NOW IS WORSE THAN NO AGE AT ALL, which is
+            // why the mutation for this pin sets it to zero rather than deleting
+            // it: a missing age is an absence a reader can notice, and a zero is
+            // a claim they cannot check.
+            {
+                BandPowerRing<8> r; r.setCapacity (4);
+                for (int i = 0; i < 4; ++i) r.push (1e-3);
+                const auto before = r.mean();
+                check (before.valid && before.blocks == 4,
+                       "bd PIN7: a full window is a valid mean of its capacity");
+                check (r.age() == 0.0,
+                       "bd PIN7: and while blocks are arriving its age is zero");
+
+                // The gate closes: the caller keeps advancing the age and pushes
+                // nothing, which is exactly what processBlock does on a silent
+                // block.
+                for (int i = 0; i < 100; ++i) r.advanceAge (0.01);
+                const auto after = r.mean();
+
+                check (after.valid, "bd PIN7: a frozen window is still valid");
+                check (after.blocks == before.blocks,
+                       "bd PIN7: and holds the same number of blocks");
+                check (std::abs (after.db - before.db) < 1e-6f,
+                       "bd PIN7: and the SAME numbers, with no drift toward silence");
+                check (std::abs (after.db - (-30.0f)) < 1e-4f,
+                       "bd PIN7: still -30.0 dB, not the floor an ungated ring "
+                       "would have drained to");
+                check (r.age() > 0.9 && r.age() < 1.1,
+                       "bd PIN7: and the age has grown to about a second");
+
+                // AND A NEW BLOCK ZEROES IT, so the age means what it says rather
+                // than counting since the plugin opened.
+                r.push (1e-3);
+                check (r.age() == 0.0,
+                       "bd PIN7: one audible block resets the age to now");
+            }
+
+            // AND THE PURE FORM AGREES WITH THE RING, so the ring is not a second
+            // definition of the arithmetic.
+            check (! boundedBandMean (0.0, 0).valid,
+                   "bd PIN6: the pure form refuses an empty window too");
+            check (std::abs (boundedBandMean (4e-3, 4).db - (-30.0f)) < 1e-4f,
+                   "bd PIN6: and divides the window sum by the window fill");
+        }
+
         // tt PIN1 -- WHERE A TOOLTIP GOES. The rule was "which half of the
         // window is the cursor in", which is a proxy for "is there room" and
         // wrong in both directions: a cursor one pixel past the centre flipped

@@ -5640,12 +5640,28 @@ void EchoJayEditor::fillSlotMacroEvidence (const CompareSlotState& slot,
 
         case CompareSlotState::Kind::Live:
         {
-            // Ballistic, and labelled as such. A Live slot has no whole-run
-            // accumulation of any kind: see the note at the Live branch.
-            ev.macro              = processorRef.getMeterEngine().getMeterData().macroBandDb;
-            ev.hasMacro           = true;
-            ev.macroReduction     = R::BallisticTail;
-            ev.macroWindowSeconds = 0.0f;
+            // PHASE 1c: A BOUNDED POWER MEAN, NOT THE BALLISTIC READING. The
+            // card's chart compares A's bands to B's bands, and B is a power
+            // mean over a whole file. A 150 ms tail beside that is not a
+            // comparison whatever it is labelled, so the live side now carries
+            // the same statistic over a bounded span.
+            //
+            // IT REFUSES WHEN THE WINDOW IS EMPTY OR SILENT, rather than
+            // reporting a floor. Nothing audible yet means no measurement, and a
+            // window that has drained to silence means the same thing.
+            const auto b = processorRef.getMeterEngine().getBoundedBands();
+            if (b.valid)
+            {
+                ev.macro              = b.db;
+                ev.hasMacro           = true;
+                ev.macroReduction     = R::RollingWindowPowerMean;
+                ev.macroWindowSeconds = b.seconds;
+                ev.macroAgeSeconds    = b.ageSeconds;
+            }
+            else
+                // The ring is GATED, so it cannot drain to silence: the only way
+                // to get here is a window that has never taken a block.
+                ev.macroMissingWhy = "nothing audible heard yet on the live input";
             break;
         }
 
@@ -24941,10 +24957,13 @@ void EchoJayEditor::drawCompareFigureCard(juce::Graphics& g, juce::Rectangle<int
         auto prov = [&](juce::DynamicObject* o)
         {
             if (o == nullptr || ! o->hasProperty("bandsReduction")) return juce::String();
-            juce::String p = o->getProperty("bandsReduction").toString();
-            if (o->hasProperty("bandsWindowSeconds"))
-                p += ", " + juce::String ((double) o->getProperty("bandsWindowSeconds"), 1) + "s";
-            return p;
+            // ONE COMPOSER, shared with the compare prose: the ordering rule
+            // (the age leads once it exceeds the window) lives in
+            // echojay::bandProvenanceText and not in two call sites.
+            return echojay::bandProvenanceText (
+                o->getProperty("bandsReduction").toString(),
+                (float) (double) o->getProperty("bandsWindowSeconds"),
+                (float) (double) o->getProperty("bandsAgeSeconds"));
         };
         const juce::String pa = prov(A), pb = prov(B);
         if (pa.isNotEmpty() || pb.isNotEmpty())

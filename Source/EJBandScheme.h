@@ -175,4 +175,130 @@ inline BandMean bandMeanFromSum (double sumPower, int blocks)
     return m;
 }
 
+// ===========================================================================
+// THE BOUNDED BAND MEAN (Phase 1c)
+// ===========================================================================
+//
+// WHY A SECOND ACCUMULATOR. The card's band chart compares A's bands to B's
+// bands. B is a power mean over a whole file. A, on a Live slot, was a 150 ms
+// ballistic reading. For that comparison to mean anything the two must be the
+// SAME STATISTIC differing only in window, so the live side needs a bounded
+// POWER mean and not a copy of whatever reduction the live spectrum uses.
+//
+// A RING, NOT A RESET. The whole-run accumulator sums from prepare() and never
+// forgets; this one holds the last N blocks. Same arithmetic at the end, a
+// different span, and the two are separate fields because they answer different
+// questions about the same audio.
+//
+// THE OLDEST ENTRY IS SUBTRACTED AS IT FALLS OUT. That single subtraction is
+// the whole difference between a bounded mean and an unbounded one, and it is
+// what bd PIN6's mutation removes.
+struct BoundedBandMean
+{
+    bool  valid = false;      // false = no blocks yet, so there is no mean
+    int   blocks = 0;         // blocks IN the window, never more than capacity
+    double meanPower = 0.0;
+    float  db = -120.0f;
+};
+
+/** The mean of the last `blocks` entries of a ring, given the running sum the
+    ring maintains. Separated from the ring so a pin can exercise the arithmetic
+    with no engine, no audio and no thread.
+
+    blocks is the FILL, not the capacity: a partially filled ring reports what it
+    has rather than what it will have, which is what lets the window be stated as
+    seconds accumulated rather than seconds nominal. */
+inline BoundedBandMean boundedBandMean (double windowSumPower, int blocksInWindow)
+{
+    BoundedBandMean m;
+    if (blocksInWindow <= 0) return m;      // nothing in the window: no mean
+    m.valid     = true;
+    m.blocks    = blocksInWindow;
+    m.meanPower = windowSumPower / (double) blocksInWindow;
+    m.db = m.meanPower > 1e-12 ? (float) (10.0 * std::log10 (m.meanPower)) : -120.0f;
+    return m;
+}
+
+/** THE RING ITSELF, as a pure fixed-capacity accumulator over one band.
+
+    Kept here rather than inside MeterEngine so the pin drives the SHIPPED ring
+    and not a model of it: the engine holds six of these and does nothing to them
+    but push. No allocation after construction, no branch on capacity in push,
+    and the running sum is maintained incrementally so a read is O(1) on the
+    audio thread's terms even though reads happen off it. */
+template <int Capacity>
+struct BandPowerRing
+{
+    static_assert (Capacity > 0, "a ring needs room for at least one block");
+
+    /** THE WINDOW IS A RUNTIME LENGTH, the storage a compile-time ceiling.
+        Twelve seconds is a different number of blocks on every host, so the
+        capacity is set at prepare() and clamped to what the storage can hold.
+        Setting it clears the ring: a window whose length just changed has no
+        contents that belong to the new length. */
+    void setCapacity (int blocks) noexcept
+    {
+        cap = (blocks < 1) ? 1 : (blocks > Capacity ? Capacity : blocks);
+        clear();
+    }
+
+    void clear() noexcept
+    {
+        buf.fill (0.0f);
+        writePos = 0; fill = 0; sum = 0.0; ageSeconds = 0.0;
+    }
+
+    void push (double power) noexcept
+    {
+        const float f = (float) power;
+        // THE SUBTRACTION. Once the ring is full the entry about to be
+        // overwritten leaves the window, so it leaves the sum. Without this the
+        // sum keeps every block ever pushed and the mean is unbounded while
+        // still dividing by the fill, which reads as a window and is not one.
+        if (fill == cap) sum -= (double) buf[(std::size_t) writePos];
+        else             ++fill;
+
+        buf[(std::size_t) writePos] = f;
+        sum += (double) f;
+        writePos = (writePos + 1) % cap;
+        ageSeconds = 0.0;      // a push IS the window ending now
+
+        // The sum is maintained incrementally across millions of pushes, so it
+        // is clamped at zero rather than allowed to drift negative on the
+        // cancellation a long run of near-silence can produce.
+        if (sum < 0.0) sum = 0.0;
+    }
+
+    BoundedBandMean mean() const noexcept { return boundedBandMean (sum, fill); }
+
+    /** AGE, IN WHATEVER UNIT THE CALLER PUSHES. Advanced by the caller on every
+        block INCLUDING the ones the gate rejects, and zeroed by push, so a
+        window that has stopped receiving audio reports how long ago it stopped.
+
+        A FROZEN MEASUREMENT MUST SAY WHEN IT ENDED. A gated window does not
+        drain toward silence, which is what makes it honest about what it heard
+        and silent about when: six numbers in a comparison look equally current
+        whether they are from now or from ten minutes ago, and the reader cannot
+        see which. The age is the only thing that distinguishes them. */
+    void advanceAge (double seconds) noexcept { ageSeconds += seconds; }
+    double age() const noexcept { return ageSeconds; }
+
+    int  count()    const noexcept { return fill; }
+    int  capacity() const noexcept { return cap; }
+    bool isFull()   const noexcept { return fill == cap; }
+
+    // FLOAT STORAGE, DOUBLE SUM. Six of these live in every MeterEngine and
+    // there are several engines (live, capture, A/B, two compare streams), so
+    // the storage is float: 49 KB per engine rather than 98. A band power in
+    // float32 carries seven significant digits, far more than a dB figure
+    // printed to one decimal needs, while the running sum stays double because
+    // it is maintained incrementally across millions of pushes.
+    std::array<float, (std::size_t) Capacity> buf {};
+    int    writePos = 0;
+    int    fill     = 0;
+    int    cap      = Capacity;   // the live window, never more than Capacity
+    double sum      = 0.0;
+    double ageSeconds = 0.0;      // since the last push, advanced by the caller
+};
+
 } // namespace echojay

@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJBandScheme.h"   // BandPowerRing, the band edges and the ballistics
 #include <array>
 #include <atomic>
 #include <vector>
@@ -253,6 +254,56 @@ public:
     };
     BandAccumResult getAccumulatedBands() const;
 
+    // ===== THE BOUNDED BAND WINDOW (Phase 1c) =====
+    // The same statistic as getAccumulatedBands over a BOUNDED span, so a Live
+    // compare slot can put a power mean beside a reference's power mean and have
+    // the chart compare like with like.
+    //
+    // SIZED TO THE SPECTRUM'S WINDOW. kSpecHistFrames frames at 25 fps is 12.000
+    // seconds at any sample rate, and the live spectrum already reports that
+    // span, so the live side of the card has ONE window story. The capacity is
+    // in BLOCKS rather than 25 fps frames, so it is derived at prepare() from
+    // the host's buffer size.
+    //
+    // NO SILENCE GATE, DELIBERATELY, AND UNLIKE THE SPECTROGRAM RING. Silent
+    // blocks enter as zero power, the mean falls as they displace audio, and once
+    // the window is wholly silent every band floors and the consumer's
+    // six-or-nothing rule refuses. A stopped transport therefore stops producing
+    // a band figure instead of holding a stale one. The cost is that the window
+    // is WRONG rather than absent while it drains, for as long as the window is
+    // deep, and the spectrum beside it stays frozen because IT is gated. Both
+    // are labelled; the divergence is real and is recorded in
+    // tools/spectral_evidence_measure/RESULTS_PHASE1B.md.
+    struct BoundedBands
+    {
+        bool  valid = false;      // false = nothing in the window
+        int   blocks = 0;         // blocks ACCUMULATED, not capacity
+        float seconds = 0.0f;     // what it actually has, not what it will have
+        /** Seconds since the window last took a block. Zero while audio is
+            arriving; growing once the gate has closed.
+
+            WHY THE BANDS CARRY THIS AND THE BINS DO NOT, and the bins are
+            deliberately unchanged in this commit. The spectrum is consumed as a
+            CURVE: a frozen one still draws a truthful picture of the last
+            audible span, and a reader looking at a spectrum is reading shape,
+            which survives being stale. These six are consumed as NUMBERS in a
+            comparison against another source's six numbers, where nothing on
+            screen distinguishes a figure from now from one that stopped
+            measuring ten minutes ago. A number needs to say when it stopped. */
+        float ageSeconds = 0.0f;
+        std::array<float, 6> db { -120, -120, -120, -120, -120, -120 };
+    };
+    BoundedBands getBoundedBands() const;
+
+    /** THE ONE DEFINITION OF SILENT. The threshold was written out at two call
+        sites (the spectrogram ring's freeze and MeterData::isSilent) and the
+        bounded band ring would have made three. Three copies of a condition is
+        how two of them end up disagreeing, and the band ring must freeze on
+        exactly the sample the spectrum ring freezes on or the two windows
+        describe different audio. */
+    bool isSilentNow() const noexcept
+    { return silentSampleCount.load() > silenceTimeoutSamples; }
+
     // Copies up to maxFrames frames newer than sinceCounter into dest
     // (oldest→newest), returns the count and the new counter value. The
     // counter is monotonic so callers can fetch incrementally.
@@ -370,6 +421,23 @@ private:
     // Cleared in prepare() AND resetState(), so a re-prepare cannot carry a
     // previous run's sum into a new one.
     BandAccum bandAccum;
+
+    // The bounded window: six rings of raw per-block band power. Capacity is a
+    // compile-time maximum sized for the smallest plausible block at the highest
+    // plausible rate; boundedCapacity_ is the live figure derived in prepare()
+    // and is what the mean divides by. Fixed storage, no allocation ever.
+    // A COMPILE-TIME CEILING AND A RUNTIME WINDOW. 12 seconds of audio is a
+    // different number of blocks on every host, from about 130 at 4096 samples
+    // to over 8000 at 64, so the capacity cannot be exactly 12 s for everyone
+    // without allocating. It is a fixed ceiling, and prepare() sets the live
+    // capacity to whichever is smaller: 12 s, or the ceiling. A host with tiny
+    // buffers therefore gets a SHORTER window, which is why the window is
+    // reported as seconds ACCUMULATED and never as a nominal 12.
+    static constexpr int kBoundedMaxBlocks = 2048;
+    std::array<echojay::BandPowerRing<kBoundedMaxBlocks>, 6> boundedRings {};
+    int    boundedCapacity_ = kBoundedMaxBlocks;
+    double boundedBlockSeconds_ = 0.0;
+    int    samplesPerBlockHint_ = 0;   // prepare()'s hint, for the capacity only
     int specWritePos = 0;
     int specFrameCount = 0;
     int specFrameCounter = 0;   // monotonic; survives resets

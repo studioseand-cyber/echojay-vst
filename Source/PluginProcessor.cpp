@@ -3599,10 +3599,11 @@ juce::String EchoJayProcessor::buildCompareContext(const MeterData& da, const Me
             // THE FIGURE SAYS WHAT IT DESCRIBES. A band relative from a whole
             // file average and one from a 150 ms tail are different claims, and
             // before this they arrived in the same sentence looking alike.
-            s += juce::String (" [") + echojay::reductionName (ev.macroReduction);
-            if (ev.macroWindowSeconds > 0.0f)
-                s += ", " + juce::String (ev.macroWindowSeconds, 1) + " s";
-            s += "]\n";
+            // Same composer the card label uses, so the model and the user read
+            // the same sentence with the same ordering rule applied to it.
+            s += " [" + echojay::bandProvenanceText (
+                            echojay::reductionName (ev.macroReduction),
+                            ev.macroWindowSeconds, ev.macroAgeSeconds) + "]\n";
         }
         else
             s += "  Band relatives vs avg: N/A (no six-band measurement for this side)\n";
@@ -3736,6 +3737,10 @@ juce::String EchoJayProcessor::buildCompareFiguresJson(const MeterData& da, cons
             o->setProperty("bandsReduction", juce::String (echojay::reductionName (ev.macroReduction)));
             if (ev.macroWindowSeconds > 0.0f)
                 o->setProperty("bandsWindowSeconds", ev.macroWindowSeconds);
+            // Only when it is actually stale. A zero age on every stored
+            // measurement would be noise in the JSON and on the card.
+            if (ev.macroAgeSeconds >= 1.0f)
+                o->setProperty("bandsAgeSeconds", ev.macroAgeSeconds);
         }
         else if (ev.macroMissingWhy.isNotEmpty())
         {
