@@ -8204,6 +8204,11 @@ void EchoJayEditor::wireChainHostFetch(ChainHost& host, bool isBorrow)
                 if (isBorrow && proc.borrowActive()) proc.borrowHost()->storeParamMaps(maps);   // dial the live session
             });
     };
+    host.onNeedNearLookup = [safeThis](const juce::String& body, std::function<void(const juce::var&)> done)
+    {   // 17 Sep 2026: the pre-chat near verifier's lookup (same endpoint as the fallback)
+        if (safeThis == nullptr || body.isEmpty()) return;
+        safeThis->api.lookupFallbackMaps(body, [done](const juce::var& results) { if (done) done(results); });
+    };
     host.onNeedFallbackMaps = [safeThis, isBorrow](const juce::String& body)
     {
         if (safeThis == nullptr || body.isEmpty()) return;
@@ -24868,7 +24873,7 @@ void EchoJayEditor::maybeRefreshExistenceDialable(ChainHost& ch)
     api.fetchDialableIdentities (refs,
         [safe, sig, &ch] (bool ok, std::set<juce::String> dialable)
         {
-            if (ok) ch.setExistenceDialable (std::move (dialable));
+            if (ok) { ch.setExistenceDialable (std::move (dialable)); ch.verifyNearCandidates(); }   // 17 Sep 2026: verify ahead of the chat turn
             if (auto* self = safe.getComponent())
             {
                 self->existenceQueryInFlight_ = false;
@@ -26682,6 +26687,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                     fpsObj->setProperty(s.name, s.fp);
                 }
         api.setNextChatMapFps(juce::JSON::toString(fpsVar, true));
+        api.setNextChatVerifiedNear(processorRef.getChainHost().buildVerifiedNearJson());   // 17 Sep 2026: D7 strict reads it
     }
     // 6c section 8a: staged beside mapFps and from the same rack, but OUTSIDE
     // the mapFps guard above -- reads are worth sending whenever a slot exists,

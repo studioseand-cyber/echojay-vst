@@ -1297,6 +1297,11 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         body += ",\"mapFps\":" + nextChatMapFps_;
         nextChatMapFps_.clear();
     }
+    if (nextChatVerifiedNear_.isNotEmpty())   // 17 Sep 2026: the client-verified near maps (D7 strict admits by these)
+    {
+        body += ",\"verifiedNear\":" + nextChatVerifiedNear_;
+        nextChatVerifiedNear_.clear();
+    }
     // 6c section 8a: the racked slots' current parameter READS. Rides beside
     // mapFps and is consumed the same way, so the transport's limit-refresh
     // retry resends WITHOUT the field rather than twice with it. Deliberately

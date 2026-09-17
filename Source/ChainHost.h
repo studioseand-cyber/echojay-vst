@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <deque>
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginScanner.h"
 #include "EedDeviceRegistry.h"
@@ -667,6 +668,37 @@ public:
     // none is acceptable); noteOut says which fp was chosen and why, or why
     // every candidate was rejected. Pure over the live instance's names.
     juce::var acceptNearMapForSlot (int slot, const juce::var& nearArr, juce::String& noteOut);
+    // The pure half (17 Sep 2026 ruling, pre-chat verification): the same
+    // acceptance over a live NAME->INDEX map, used by the apply-time path
+    // above and by the pre-chat verifier below. chosenFpOut = the winner.
+    juce::var acceptNearMapForNames (const juce::String& pluginName, const juce::String& liveFp,
+                                     const std::map<juce::String, int>& live, const juce::var& nearArr,
+                                     juce::String& noteOut, juce::String* chosenFpOut = nullptr);
+
+    // ---- PRE-CHAT NEAR VERIFICATION (17 Sep 2026 ruling) --------------------
+    // For every recommendable plugin whose fp has no exact map but the server
+    // reports a map at some version (existenceDialable_), the same-name
+    // candidates are verified against the LIVE parameter names AHEAD of the
+    // chat turn. The fp is sha256(format|uidHex|version|paramCount) and the
+    // scan index (KnownPluginList XML) caches NO parameter names, so the
+    // plugin is instantiated ONCE (message thread, one at a time, deferred)
+    // and the verdict is cached per identity in param_maps.json, never
+    // repeated. An accepted candidate is stored under the live fp (so the
+    // apply path dials it as an exact local map) and reported to the server
+    // as verifiedNear {name: candidateFp}, which is what admits the plugin to
+    // the dial-only set (D7 strict).
+    struct NearVerdict { juce::String ik, name, liveFp, candidateFp, note; bool verified = false; };
+    void verifyNearCandidates();                                            // recommendable_ -> the queue
+    void verifyNearCandidatesFor (const std::vector<juce::PluginDescription>& descs);
+    const NearVerdict* nearVerdictFor (const juce::String& ik) const;
+    juce::String buildVerifiedNearJson() const;                             // {"Name": candidateFp, ...}
+    int  nearVerifyInstantiations() const noexcept { return nearInstantiations_; }
+    bool nearVerifyIdle() const noexcept { return ! nearBusy_ && nearQueue_.empty(); }
+    // Test seam + transport: instantiation (default: formatManager_) and the
+    // lookup POST (the editor wires api.lookupFallbackMaps).
+    std::function<void(const juce::PluginDescription&, std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)>)> nearInstantiate;
+    std::function<void(const juce::String& body, std::function<void(const juce::var& results)>)> onNeedNearLookup;
+
     // ---- PER-SLOT DIAL SNAPSHOT (17 Sep 2026, the "No suggested settings" bug) --
     // Everything the Suggested Settings card and the summary row read for one
     // slot, exportable per rack uid at release and restorable onto a re-created
@@ -1826,6 +1858,11 @@ private:
     juce::StringArray                    pendingFallbackFps_;
     bool                                 dialOnlyMode_ = false;
     void armMapFetchBound (const juce::String& fp);   // the 4 s bound, per fetch
+    std::map<juce::String, NearVerdict>  nearVerdicts_;      // by ik, persisted in param_maps.json
+    std::deque<juce::PluginDescription>  nearQueue_;
+    bool                                 nearBusy_ = false;
+    int                                  nearInstantiations_ = 0;
+    void nearProcessNext();
     bool                                 mapsRevalidated_ = false; // once-per-session cache revalidation
     // TTL-on-use: epoch-ms of the last server confirm per fp. A cached map
     // older than the staleness bound is refetched before it can dial, so a

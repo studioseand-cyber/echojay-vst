@@ -303,6 +303,9 @@ public:
     // without the field ignores it.
     void setNextChatMapFps(const juce::String& jsonObject)
     { nextChatMapFps_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
+    // 17 Sep 2026 (D7 strict): name -> VERIFIED near-candidate fp, consumed per send like mapFps.
+    void setNextChatVerifiedNear(const juce::String& jsonObject)
+    { nextChatVerifiedNear_ = (jsonObject == "{}" ? juce::String() : jsonObject); }
 
     // 6c section 8a: the racked slots' CURRENT parameter reads, staged from
     // ChainHost::buildSlotParamReadsJson and consumed at body build exactly
@@ -377,6 +380,7 @@ public:
     {
         nextChatMeters_.clear();
         nextChatMapFps_.clear();
+        nextChatVerifiedNear_.clear();
         nextChatParamReads_.clear();
         nextChatDialDeclines_.clear();
         nextChatTurnType_.clear();
@@ -1190,6 +1194,7 @@ private:
     juce::String deviceId;
     juce::String nextChatMeters_;   // staged by setNextChatMeters()
     juce::String nextChatMapFps_;   // staged by setNextChatMapFps(); "" = none
+    juce::String nextChatVerifiedNear_;   // staged by setNextChatVerifiedNear(); "" = none
     juce::String nextChatParamReads_;   // 6c §8a: staged by setNextChatParamReads(); "" = none
     juce::String nextChatDialDeclines_;  // dial-3 batch envelope; "" = none
     juce::String nextChatTurnType_; // staged by setNextChatTurnType(); "" = "chat"
