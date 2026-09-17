@@ -115,18 +115,19 @@ int main()
         auto di = s.di();
         check (di.status == ChainHost::DialStatus::applied && std::abs (retuneNorm (s.h, 0) - 0.20f) < 0.01f, "(d) tie broken toward the candidate with NO essential control classed plumbing/hidden: norm 0.20", juce::String (stName (di.status)) + " norm=" + juce::String (retuneNorm (s.h, 0), 3));
     }
-    std::printf ("== (e) item 3: dial-only, fetches answered, no map, no near map ==\n");
+    std::printf ("== (e) item 3 + AMENDMENT (17 Sep 2026): fetches answered, no map, no near map ==\n");
     {
 #ifndef EJ_GUARD_TODAY
-        Scenario s (5, {}); s.h.setDialOnlyMode (true);
+        // AMENDMENT: under dial-only the slot is SUBSTITUTED (substitute_guard); the red NOT DIALABLE row
+        // exists ONLY when dial-only is OFF.
+        Scenario s (5, {}); s.h.setDialOnlyMode (false);
         auto di = s.di(); const auto row = s.h.dialSummaryRow (0);
-        check (di.status == ChainHost::DialStatus::noMap && di.notDialable, "(e) getDialInfos: notDialable with the reason", juce::String (stName (di.status)) + " reason=\"" + di.notDialableReason + "\"");
-        check (row.contains ("NOT DIALABLE (no map for fp, no near map)"), "(e) the summary row says NOT DIALABLE (no map for fp, no near map)", row.fromFirstOccurrenceOf ("status=", false, false));
-        s.h.setDialOnlyMode (false);
-        check (! s.h.dialSummaryRow (0).contains ("NOT DIALABLE"), "(e) control: dial-only OFF -> no such words");
-        Scenario p (6, {}); p.h.setDialOnlyMode (true);
+        check (di.status == ChainHost::DialStatus::noMap && di.notDialable, "(e) dial-only OFF: getDialInfos notDialable with the reason", juce::String (stName (di.status)) + " reason=\"" + di.notDialableReason + "\"");
+        check (row.contains ("NOT DIALABLE (no map for fp, no near map)"), "(e) dial-only OFF: the summary row says NOT DIALABLE (no map for fp, no near map)", row.fromFirstOccurrenceOf ("status=", false, false));
+        s.h.setDialOnlyMode (true);
+        check (! s.h.dialSummaryRow (0).contains ("NOT DIALABLE") && ! s.h.getDialInfos()[0].notDialable, "(e) AMENDMENT: dial-only ON -> never the red row (the slot is substituted instead)");
         // a slot whose fetch is still OUT must not be called NOT DIALABLE: attach with fetches that never answer, read at once
-        ChainHost hh (ChainHost::Mode::Primary); hh.prepare (48000.0, 512); hh.setDialOnlyMode (true);
+        ChainHost hh (ChainHost::Mode::Primary); hh.prepare (48000.0, 512); hh.setDialOnlyMode (false);
         hh.onNeedParamMaps = [] (const juce::StringArray&) {}; hh.onNeedFallbackMaps = [] (const juce::String&) {};
         hh.completeLoad (std::make_unique<Probe> (7), probeDesc (7), ChainHost::LoadOrigin::Restore); hh.setSlotStructuredSettings (0, settings());
         check (! hh.getDialInfos()[0].notDialable && ! hh.dialSummaryRow (0).contains ("NOT DIALABLE"), "(e) control: while a fetch is still out the slot is PENDING, never NOT DIALABLE", stName (hh.getDialInfos()[0].status));

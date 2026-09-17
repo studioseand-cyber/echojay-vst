@@ -22,6 +22,12 @@ inline juce::String builtinAlternativeForRole (const juce::String& roleOrCategor
     return {};
 }
 
+// Item 3 (17 Sep 2026): the swap, said in NORMAL text (never coral under dial-only).
+inline juce::String substitutedNote (const juce::String& fromName, const juce::String& builtinName)
+{
+    return fromName + " had no working map - built " + builtinName + " instead";
+}
+
 inline juce::String notDialableSentence (const juce::String& pluginName, const juce::String& reason,
                                          const juce::String& builtinAlternative)
 {

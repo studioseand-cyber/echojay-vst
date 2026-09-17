@@ -10,6 +10,7 @@
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
+#include "NotDialableText.h"   // item 3: the built-in by role (one table, shared with the card)
 #include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
 #include "EedKeyFeed.h"            // KeyFeedConsumer: builtins learn their owner
@@ -3721,7 +3722,10 @@ static bool ejSlotNotDialable(const ChainHost& h, bool builtin, const juce::Stri
                               ChainHost::DialStatus st, juce::String& reasonOut, const juce::String& nearNote)
 {
     reasonOut = {};
-    if (! h.dialOnlyMode() || builtin || fp.isEmpty()) return false;
+    // AMENDMENT (17 Sep 2026): under dial-only such a slot is SUBSTITUTED and
+    // dialled (substituteNoMapSlots) and the swap is noted in normal text; the
+    // red NOT DIALABLE row exists only when dial-only is OFF.
+    if (h.dialOnlyMode() || builtin || fp.isEmpty()) return false;
     if (st != ChainHost::DialStatus::noMap) return false;
     if (h.mapFetchInFlight(fp)) return false;
     reasonOut = "no map for fp, " + (nearNote.isEmpty() || nearNote.startsWith("no near map") ? juce::String("no near map") : nearNote);
@@ -3781,6 +3785,7 @@ juce::String ChainHost::dialSummaryRow(int i) const
                : (existenceDialable_.count(echojay::identityKeyForDescription(s.desc)) > 0
                       ? juce::String("y") : juce::String("n")))
          + (s.nearMapNote.isNotEmpty() ? "  nearMap=" + s.nearMapNote : juce::String())
+         + (s.substitutedFrom.isNotEmpty() ? "  SUBSTITUTED for \"" + s.substitutedFrom + "\"" : juce::String())
          // Hurdle 1 item 3: said in these words, never left to prose.
          + (notDialable ? "  NOT DIALABLE (" + notDialableReason + ")" : juce::String());
 }
@@ -7337,6 +7342,65 @@ void ChainHost::nearProcessNext()
     else formatManager_.createPluginInstanceAsync(desc, sampleRate_ > 0 ? sampleRate_ : 48000.0, blockSize_ > 0 ? blockSize_ : 512, onInstance);
 }
 
+// ---- BUILD-TIME SUBSTITUTION (17 Sep 2026 ruling, item 3) ------------------------
+std::vector<ChainHost::Substitution> ChainHost::substituteNoMapSlots(const std::map<juce::String, juce::String>& roleByName)
+{
+    std::vector<Substitution> out;
+    if (! dialOnlyMode_) return out;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        if (isBuiltinSlot(i) || s.fp.isEmpty() || s.dialStatus != DialStatus::noMap || mapFetchInFlight(s.fp)) continue;
+        if (s.structuredSettings.isVoid()) continue;
+        juce::String role;
+        if (auto it = roleByName.find(s.desc.name.trim().toLowerCase()); it != roleByName.end()) role = it->second;
+        auto builtinName = builtinAlternativeForRole(role);
+        if (builtinName.isEmpty()) builtinName = builtinAlternativeForRole(s.desc.name);   // the name often carries the category
+        Substitution sub; sub.slot = i; sub.from = s.desc.name; sub.to = builtinName;
+        sub.reason = "no map for fp, " + (s.nearMapNote.isEmpty() || s.nearMapNote.startsWith("no near map") ? juce::String("no near map") : s.nearMapNote);
+        if (builtinName.isEmpty())
+        {
+            EchoJay_NSLog(("EJDial: SUBSTITUTION skipped for slot " + juce::String(i) + " (\"" + s.desc.name + "\"): no built-in for role \"" + role + "\"").toRawUTF8());
+            continue;
+        }
+        const auto desc = builtinDescriptionFor(builtinName);
+        if (desc.name.isEmpty())
+        {
+            EchoJay_NSLog(("EJDial: SUBSTITUTION skipped for slot " + juce::String(i) + ": built-in \"" + builtinName + "\" is not registered in this binary").toRawUTF8());
+            continue;
+        }
+        const auto structured = s.structuredSettings;
+        const auto fromName = s.desc.name;
+        const int before = (int) slots_.size();
+        if (const auto err = loadBuiltinNow(desc); err.isNotEmpty() || (int) slots_.size() != before + 1)
+        {
+            EchoJay_NSLog(("EJDial: SUBSTITUTION failed for slot " + juce::String(i) + ": " + err).toRawUTF8());
+            continue;
+        }
+        removeSlot(i);                                   // the built-in is now at the end (index size-1)
+        for (int j = (int) slots_.size() - 1; j > i; --j) moveSlot(j, -1);
+        auto& ns = slots_[(size_t) i];
+        ns.substitutedFrom = fromName;
+        // The model's params carry the built-in's own ids (correction_mode, key_root, scale ...): dial them.
+        juce::var payload;
+        if (auto* po = structured.getProperty("params", juce::var()).getDynamicObject())
+        { auto* w = new juce::DynamicObject(); w->setProperty("params", juce::var(po)); payload = juce::var(w); }
+        else if (structured.getDynamicObject() != nullptr && ! structured.hasProperty("controls"))
+        { auto* w = new juce::DynamicObject(); w->setProperty("params", structured); payload = juce::var(w); }
+        if (payload.getDynamicObject() != nullptr) setSlotStructuredSettings(i, payload);
+        auto& fs = slots_[(size_t) i];
+        fs.settings = substitutedNote(fromName, builtinName) + (fs.settings.isEmpty() ? juce::String() : "\n" + fs.settings);
+        sub.applied = fs.dialAppliedCount;
+        { juce::StringArray keys; juce::String shape; sub.requested = countRequestedSettings(fs.structuredSettings, keys, shape); }
+        EchoJay_NSLog(("EJDial: SUBSTITUTED slot " + juce::String(i) + " \"" + fromName + "\" -> \"" + builtinName + "\" (" + sub.reason
+                       + ") applied " + juce::String(sub.applied) + "/" + juce::String(sub.requested)).toRawUTF8());
+        if (onSlotSubstituted) onSlotSubstituted(i, fromName, builtinName);
+        out.push_back(sub);
+    }
+    if (! out.empty() && onSlotSettingsChanged) onSlotSettingsChanged();
+    return out;
+}
+
 // ---- PER-SLOT DIAL SNAPSHOT (17 Sep 2026, the "No suggested settings" bug) ---------
 juce::String ChainHost::slotPluginId(int i) const
 {
@@ -7354,7 +7418,7 @@ ChainHost::SlotDialSnapshot ChainHost::getSlotDialSnapshot(int i) const
     o.status = (int) s.dialStatus; o.applied = s.dialAppliedCount; o.requested = s.dialRequestedCount;
     o.manual = s.dialManual; o.readbackMiss = s.dialReadbackMiss; o.unconfirmed = s.dialUnconfirmed;
     o.approximate = s.dialApproximate; o.outOfRange = s.dialOutOfRange;
-    o.servedFrom = s.dialServedFrom; o.nearMapNote = s.nearMapNote;
+    o.servedFrom = s.dialServedFrom; o.nearMapNote = s.nearMapNote; o.substitutedFrom = s.substitutedFrom;
     return o;
 }
 
@@ -7369,7 +7433,7 @@ bool ChainHost::restoreSlotDial(int i, const SlotDialSnapshot& snap)
     s.dialStatus = (DialStatus) snap.status; s.dialAppliedCount = snap.applied; s.dialRequestedCount = snap.requested;
     s.dialManual = snap.manual; s.dialReadbackMiss = snap.readbackMiss; s.dialUnconfirmed = snap.unconfirmed;
     s.dialApproximate = snap.approximate; s.dialOutOfRange = snap.outOfRange;
-    s.dialServedFrom = snap.servedFrom; s.nearMapNote = snap.nearMapNote;
+    s.dialServedFrom = snap.servedFrom; s.nearMapNote = snap.nearMapNote; s.substitutedFrom = snap.substitutedFrom;
     return true;
 }
 

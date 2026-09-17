@@ -699,6 +699,15 @@ public:
     std::function<void(const juce::PluginDescription&, std::function<void(std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)>)> nearInstantiate;
     std::function<void(const juce::String& body, std::function<void(const juce::var& results)>)> onNeedNearLookup;
 
+    // ---- BUILD-TIME SUBSTITUTION (17 Sep 2026 ruling, item 3) ------------------
+    // Under dial-only, a third-party slot that ends noMap after its fetches is
+    // replaced by the built-in of its role/category, and the model's params are
+    // dialled onto it. Returns what was swapped; the row and the card say so in
+    // normal text (never coral under dial-only - the amendment).
+    struct Substitution { int slot = -1; juce::String from, to, reason; int requested = 0, applied = 0; };
+    std::vector<Substitution> substituteNoMapSlots (const std::map<juce::String, juce::String>& roleByName);
+    std::function<void(int slot, const juce::String& from, const juce::String& to)> onSlotSubstituted;
+
     // ---- PER-SLOT DIAL SNAPSHOT (17 Sep 2026, the "No suggested settings" bug) --
     // Everything the Suggested Settings card and the summary row read for one
     // slot, exportable per rack uid at release and restorable onto a re-created
@@ -709,7 +718,7 @@ public:
         juce::String settings; juce::var structured;
         int status = 0, applied = 0, requested = -1;
         juce::StringArray manual, readbackMiss, unconfirmed, approximate, outOfRange;
-        juce::String servedFrom, nearMapNote;
+        juce::String servedFrom, nearMapNote, substitutedFrom;
     };
     juce::String     slotPluginId (int i) const;                            // hex uniqueId, the sidecar's pluginId
     SlotDialSnapshot getSlotDialSnapshot (int i) const;
@@ -1831,6 +1840,7 @@ private:
         bool                                 staleSettled = false;
         juce::StringArray                    dialOutOfRange;   // asked outside the live map's range, refused per value
         juce::String                         nearMapNote;      // hurdle 1 item 2: the near-map verdict for this slot ("" = none offered yet)
+        juce::String                         substitutedFrom;  // item 3: the third-party name this built-in replaced ("" = not a substitution)
         // Hosted settings cache (see setStateCacheEnabled). The blob and its
         // bookkeeping are read under stateCacheMutex_; everything else on
         // this struct follows the existing message-thread-only rule.

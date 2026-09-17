@@ -22407,6 +22407,9 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
         for (auto& sv : *co)
             roleByName[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()]
                 = sv.getProperty("role", juce::var()).toString();
+    // Item 3 (17 Sep 2026 ruling): under dial-only, a slot still noMap after its fetches is
+    // replaced by the built-in of its role and dialled; the swap is said in normal text.
+    const auto substituted = ch.substituteNoMapSlots(roleByName);
     for (const auto& di : ch.getDialInfos())
     {
         // dial-4 A8: population, counted where the rows are logged so the
@@ -22544,6 +22547,8 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
                            : " loaded at versions newer than any mapping we hold, so their controls need dialling by hand - values on their cards.");
         }
     }
+    for (const auto& sb : substituted)
+        bubble += " " + substitutedNote(sb.from, sb.to) + " (" + juce::String(sb.applied) + "/" + juce::String(sb.requested) + " applied).";
     for (const auto& nd : notDialableParts)
         bubble += " " + notDialableSentence(nd.name, nd.reason, builtinAlternativeForRole(nd.role));
     juce::String altPrompt, altLabel;
@@ -28542,8 +28547,12 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
         chainListPanel.statusText = "Building " + juce::String(expectAdds)
             + " plugin(s) into your edit session...";
         chainListPanel.repaint();
+        std::map<juce::String, juce::String> rolesByName;   // item 3: the roles the substitution keys on
+        if (auto* co = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
+            for (auto& sv : *co)
+                rolesByName[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()] = sv.getProperty("role", juce::var()).toString();
         bhB->applyChainEdits(std::move(ops), -1, baseNow,
-            [safeThis, linkUid](const juce::StringArray& results,
+            [safeThis, linkUid, rolesByName](const juce::StringArray& results,
                                 int applied, bool aborted)
         {
             if (safeThis == nullptr) return;
@@ -28575,12 +28584,26 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             // at 15:06:12.425 while its exact map landed at .866 and dialled
             // 3/4. Now the host settles (every fetch bounded at 4 s) before
             // the summary is written.
-            bh2->whenDialSettled(ChainHost::kMapFetchBoundMs, [safeThis, linkUid] (bool settled)
+            bh2->whenDialSettled(ChainHost::kMapFetchBoundMs, [safeThis, linkUid, rolesByName] (bool settled)
             {
                 if (safeThis == nullptr) return;
-                if (auto* bhS = safeThis->processorRef.borrowHostIfActiveFor(linkUid))
-                    bhS->logDialSummary(juce::String("SESSION build (borrowed host) complete, dial ")
-                                        + (settled ? "settled" : "NOT settled after the 4 s bound"));
+                auto* bhS = safeThis->processorRef.borrowHostIfActiveFor(linkUid);
+                if (bhS == nullptr) return;
+                // Item 3 (17 Sep 2026 ruling): substitute the noMap slots with built-ins, keep the
+                // session's name-only identities in step, and say so in normal text.
+                auto& pS = safeThis->processorRef;
+                const auto subs = bhS->substituteNoMapSlots(rolesByName);
+                juce::String note;
+                for (const auto& sb : subs)
+                {
+                    if (sb.slot >= 0 && sb.slot < (int) pS.borrowCreatedIdentity_.size()) pS.borrowCreatedIdentity_[(size_t) sb.slot].name = sb.to;
+                    if (sb.slot >= 0 && sb.slot < (int) pS.borrowSlotRecords_.size())    pS.borrowSlotRecords_[(size_t) sb.slot].name = sb.to;
+                    note += (note.isEmpty() ? "" : " ") + substitutedNote(sb.from, sb.to) + " (" + juce::String(sb.applied) + "/" + juce::String(sb.requested) + " applied).";
+                }
+                if (note.isNotEmpty()) safeThis->appendLocalResultBubble(note);   // normal text, never coral (the amendment)
+                bhS->logDialSummary(juce::String("SESSION build (borrowed host) complete, dial ")
+                                    + (settled ? "settled" : "NOT settled after the 4 s bound"));
+                if (! subs.empty()) safeThis->refreshChainPanelForView(true);
             });
             juce::Timer::callAfterDelay(6000, [safeThis, linkUid]
             {
