@@ -22407,7 +22407,7 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
     // Partial slots state the POSITIVE first: with richer maps partial is
     // the common case, and "X (ratio by hand) needs hand-dialing" read as a
     // failure when threshold, attack, release, freq and gain all landed.
-    juce::StringArray appliedNames, zeroParts, staleParts, pendingParts;
+    juce::StringArray appliedNames, zeroParts, staleParts, pendingParts, builtinDefaultsParts;   // 18 Sep 2026 (item 4): a built-in never "needs hand-dialing"
     struct PartialPart { juce::String name; juce::StringArray manual, oor; };
     std::vector<PartialPart> partialParts, zeroOorParts;
     // Hurdle 1 item 3 (17 Sep 2026): NOT DIALABLE slots under dial-only get
@@ -22457,7 +22457,7 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
                     staleParts.add(di.name);
                     break;
                 }
-                zeroParts.add(di.name);
+                if (di.builtin) builtinDefaultsParts.add(di.name); else zeroParts.add(di.name);   // item 4: a built-in is set, never hand-dialled
                 break;
             // A9 step 3: unusableMap split four ways. BUBBLE COMPOSITION IS
             // UNCHANGED — all four compose exactly as the one value did, so
@@ -22473,7 +22473,7 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
                     break;
                 }
-                zeroParts.add(di.name);
+                if (di.builtin) builtinDefaultsParts.add(di.name); else zeroParts.add(di.name);   // item 4: a built-in is set, never hand-dialled
                 break;
             case ChainHost::DialStatus::pending:
                 // C2 (7 Sep 2026 ruling): a slot still WAITING for its map when the cap
@@ -22533,6 +22533,13 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
             bubble += " " + zeroParts.joinIntoString(" and ")
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
+        }
+        if (!builtinDefaultsParts.isEmpty())
+        {   // 18 Sep 2026 (item 4): "needs hand-dialing" is impossible for a built-in - what did not translate is on the card
+            const bool oneB = builtinDefaultsParts.size() == 1;
+            bubble += " " + builtinDefaultsParts.joinIntoString(" and ")
+                    + (oneB ? " is set to its defaults - the settings written for the plugin it replaced did not translate; the card lists them."
+                            : " are set to their defaults - the settings written for the plugins they replaced did not translate; the cards list them.");
         }
         if (!pendingParts.isEmpty())
         {
@@ -22750,7 +22757,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             }
         }
 
-    juce::StringArray appliedNames, zeroParts, staleParts, pendingParts;
+    juce::StringArray appliedNames, zeroParts, staleParts, pendingParts, builtinDefaultsParts;   // 18 Sep 2026 (item 4): a built-in never "needs hand-dialing"
     struct PartialPart { juce::String name; juce::StringArray manual, oor; };
     std::vector<PartialPart> partialParts, zeroOorParts;
     for (const auto& di : ch.getDialInfos())
@@ -22778,7 +22785,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                     staleParts.add(di.name);
                     break;
                 }
-                zeroParts.add(di.name);
+                if (di.builtin) builtinDefaultsParts.add(di.name); else zeroParts.add(di.name);   // item 4: a built-in is set, never hand-dialled
                 break;
             // A9 step 3: unusableMap split four ways. BUBBLE COMPOSITION IS
             // UNCHANGED — all four compose exactly as the one value did, so
@@ -22794,7 +22801,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                     zeroOorParts.push_back({ di.name, di.manual, di.outOfRange });
                     break;
                 }
-                zeroParts.add(di.name);
+                if (di.builtin) builtinDefaultsParts.add(di.name); else zeroParts.add(di.name);   // item 4: a built-in is set, never hand-dialled
                 break;
             case ChainHost::DialStatus::writesBlocked:
                 // DO NOT DIAL. NOT zeroParts: that bucket's sentence is
@@ -22814,7 +22821,7 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
                 // Touched and carried settings, yet nothing structured
                 // reached the slot: not clean, not explained - never let it
                 // ride the model's success line.
-                zeroParts.add(di.name);
+                if (di.builtin) builtinDefaultsParts.add(di.name); else zeroParts.add(di.name);   // item 4: a built-in is set, never hand-dialled
                 break;
         }
     }
@@ -22879,6 +22886,13 @@ void EchoJayEditor::finishEditBubbleWhenDialSettled(const juce::String& editJson
             bubble += zeroParts.joinIntoString(" and ")
                     + (one ? " needs hand-dialing - use the values on its card."
                            : " need hand-dialing - use the values on their cards.");
+        }
+        if (!builtinDefaultsParts.isEmpty())
+        {   // 18 Sep 2026 (item 4): a built-in never "needs hand-dialing"
+            const bool oneB = builtinDefaultsParts.size() == 1;
+            bubble += " " + builtinDefaultsParts.joinIntoString(" and ")
+                    + (oneB ? " is set to its defaults - the settings written for the plugin it replaced did not translate; the card lists them."
+                            : " are set to their defaults - the settings written for the plugins they replaced did not translate; the cards list them.");
         }
         if (!pendingParts.isEmpty())
         {

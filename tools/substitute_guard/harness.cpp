@@ -8,8 +8,11 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "../guard_common/probe.h"
-#include "EedCompressorProcessor.h"   // referenced so the static lib links the TU whose registrar adds "EchoJay Compressor"
+#include "EedCompressorProcessor.h"
+#include "EedLimiterProcessor.h"
+#include "BuiltinIntentTranslate.h"   // referenced so the static lib links the TU whose registrar adds "EchoJay Compressor"
 #include <cstdio>
+struct EchoJayBorrowHostTestAccess { static juce::AudioProcessor* proc (ChainHost& h, int i) { return h.getSlotProcessor (i); } };
 namespace { int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 juce::var settings() { auto* p = new juce::DynamicObject(); p->setProperty ("threshold_db", -18.0); p->setProperty ("ratio", 4.0); auto* o = new juce::DynamicObject(); o->setProperty ("params", juce::var (p)); return juce::var (o); }
 juce::var emptyMiss (const juce::String& body) { return guardprobe::missRow (body, {}); }
@@ -61,6 +64,50 @@ int main()
         check (h.getSlotInfo (0).name == "Guard Comp", "dial-only OFF: nothing substituted");
 #endif
     }
+    std::printf ("== 18 Sep 2026 (item 4): a SUBSTITUTED built-in is always dialled - the model's THIRD-PARTY controls translate by semantic ==\n");
+#ifndef EJ_GUARD_TODAY
+    {
+        // The live case: AMEK Mastering Compressor's controls as the model wrote them, the built-in standing in.
+        auto amek = [] { auto* c = new juce::DynamicObject(); c->setProperty ("Ratio", "2:1"); c->setProperty ("Threshold", "-18 dB"); c->setProperty ("Attack", "30 ms"); c->setProperty ("Release", "auto"); c->setProperty ("Gain Reduction", "3-4 dB");
+                         auto* o = new juce::DynamicObject(); o->setProperty ("controls", juce::var (c)); return juce::var (o); };
+        ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512); wire (h); h.setDialOnlyMode (true);
+        h.completeLoad (std::make_unique<Probe> (probeDesc (19, "AMEK Mastering Compressor")), probeDesc (19, "AMEK Mastering Compressor"), ChainHost::LoadOrigin::Restore);
+        h.setSlotStructuredSettings (0, amek()); settle (h);
+        const auto subs = h.substituteNoMapSlots ({ { "amek mastering compressor", "compressor" } });
+        const auto di = h.getDialInfos()[0];
+        check (subs.size() == 1 && subs[0].to == "EchoJay Compressor" && di.builtin, "AMEK -> EchoJay Compressor substituted", subs.empty() ? juce::String ("none") : subs[0].to);
+        check (di.status == ChainHost::DialStatus::applied && di.appliedCount >= 4 && di.appliedCount == di.requestedCount,
+               "APPLIED n/n: Ratio 2:1 / Threshold -18 dB / Attack 30 ms / Release auto translated and dialled (was 0/3)",
+               juce::String ("status=") + stName (di.status) + " applied=" + juce::String (di.appliedCount) + "/" + juce::String (di.requestedCount));
+        auto* dev = dynamic_cast<EedDeviceProcessor*> (EchoJayBorrowHostTestAccess::proc (h, 0));
+        check (dev != nullptr && std::abs (dev->getParamValue ("ratio") - 2.0) < 1e-3 && std::abs (dev->getParamValue ("threshold_db") + 18.0) < 1e-3
+               && std::abs (dev->getParamValue ("attack_ms") - 30.0) < 1e-3 && dev->getParamValue ("auto_release") > 0.5,
+               "the values landed on the device: ratio 2, threshold -18, attack 30 ms, auto release on",
+               dev ? "ratio=" + juce::String (dev->getParamValue ("ratio")) + " thr=" + juce::String (dev->getParamValue ("threshold_db")) + " atk=" + juce::String (dev->getParamValue ("attack_ms")) + " autoRel=" + juce::String (dev->getParamValue ("auto_release")) : "no device");
+        check (! h.getSlotInfo (0).settings.contains ("hand-dial"), "the card never says hand-dialing for a built-in", h.getSlotInfo (0).settings.upToFirstOccurrenceOf ("\n", false, false));
+    }
+    {   // the pure translator: a GR target with NO threshold derives the threshold from the measured input p90
+        auto* c = new juce::DynamicObject(); c->setProperty ("Ratio", "2:1"); c->setProperty ("Gain Reduction", "3-4 dB"); c->setProperty ("Timing", "1");
+        const juce::var cv (c);   // ONE owner (wrapping the raw pointer twice freed it under the first var - the harness's own bug, caught by the scribble leg)
+        const auto tr = echojay::translateControlsForBuiltin ("EchoJay Compressor", EedCompressorProcessor::schema(), cv, -20.0f);
+        const double thr = tr.payload.getProperty ("params", juce::var()).getProperty ("threshold_db", juce::var());
+        check (tr.derivedThreshold && std::abs (thr - (-20.0 - 3.5 * 2.0)) < 1e-3, "GR 3-4 dB at 2:1 with input p90 -20 -> threshold_db -27 (p90 - GR * r/(r-1))", "thr=" + juce::String (thr) + " " + tr.translated.joinIntoString ("; "));
+        check (tr.dropped.size() == 1 && tr.dropped[0].startsWith ("Timing 1"), "a control with no built-in counterpart is listed as dropped, not guessed", tr.dropped.joinIntoString ("; "));
+        const auto trNoLevel = echojay::translateControlsForBuiltin ("EchoJay Compressor", EedCompressorProcessor::schema(), cv, std::numeric_limits<float>::quiet_NaN());
+        check (! trNoLevel.derivedThreshold && trNoLevel.dropped.size() == 2, "with no measured level the GR target is NOT turned into a number (declined, listed)", trNoLevel.dropped.joinIntoString ("; "));
+    }
+    {   // item 5 needs a limiter INPUT GAIN on the built-in: input_db, -12..+12 dB
+        EedLimiterProcessor lim; lim.prepareToPlay (48000.0, 512);
+        auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 7.5); pp->setProperty ("ceiling_db", -0.1);
+        auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+        int ap = 0, sk = 0; lim.applyStructured (juce::var (w), EedDeviceProcessor::ParamSource::Assistant, &ap, &sk);
+        check (ap == 2 && sk == 0 && std::abs (lim.getParamValue ("input_db") - 7.5) < 1e-6 && std::abs (lim.getParamValue ("ceiling_db") + 0.1) < 1e-6, "EchoJay Limiter dials input_db +7.5 and ceiling_db -0.1 (2/2 applied)", "applied=" + juce::String (ap) + " skipped=" + juce::String (sk));
+        juce::AudioBuffer<float> b (2, 512); b.clear(); b.setSample (0, 100, 0.1f); b.setSample (1, 100, 0.1f); juce::MidiBuffer m; lim.processBlock (b, m);
+        check (b.getMagnitude (0, 0, 512) > 0.2f, "+7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2)", juce::String (b.getMagnitude (0, 0, 512), 3));
+    }
+#else
+    check (false, "APPLIED n/n: Ratio 2:1 / Threshold -18 dB / Attack 30 ms / Release auto translated and dialled (was 0/3)", "TODAY: the controls payload is dropped");
+#endif
     std::printf ("\n==== substitute_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
