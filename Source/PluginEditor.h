@@ -1150,6 +1150,9 @@ private:
     echojay::RefSubTab refSubTab_ { echojay::RefSubTab::Compare };
     echojay::RefSubTabRects refSubTabRects_;
     void setRefSubTab (echojay::RefSubTab t);
+    // The ONE author of the Compare sub-tab's ten controls' visibility; see the
+    // definition for the three authors it replaced.
+    void showCompareFurniture (bool visible);
 
     // ---- Folders (browser commit two) ----
     /** Inline folder naming. A TextEditor over the left pane rather than a
@@ -1193,6 +1196,10 @@ private:
     bool codecNormalise_ = true;                 // panel toggle, default ON
     int  codecRendering_ = -1;                   // preset index while rendering
     juce::String codecStatus_;                   // error line on the card
+    // TRUE ONLY for the "finished while you were away" notice, so it survives
+    // the ONE page opening it was written for: opening the page clears the
+    // status, which would otherwise erase that notice before it was read.
+    bool codecStatusSurvivesOpen_ = false;
     juce::String codecSrcPath_, codecSrcLabel_;  // resolved on panel open
     bool codecSrcIsTopSlot_ = false;
     bool codecModeActive_ = false;

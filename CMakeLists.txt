@@ -394,6 +394,7 @@ juce_add_binary_data(EchoJayPlaybackArt
         Assets/playback/headphones.jpg
         Assets/playback/kitchen.jpg
         Assets/playback/laptop.jpg
+        Assets/playback/mono_fold.jpg
         Assets/playback/phone_speaker.jpg
         Assets/playback/small_bar.jpg
         Assets/playback/studio_monitors.jpg

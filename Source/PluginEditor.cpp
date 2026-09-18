@@ -5046,7 +5046,6 @@ void EchoJayEditor::showCompareView()
     compareVisible = true;
     compareBtn.setButtonText("Back");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    aiCompareBtn.setVisible(true);
     // A STANDING MESSAGE SURVIVES RE-ENTRY. This used to hide the label
     // unconditionally, which is why a failed drop or a failed analysis wrote
     // "Error: ..." and showed nothing: the drop callback sets the text and
@@ -5061,22 +5060,16 @@ void EchoJayEditor::showCompareView()
     // The reference-preset controls that used to be rebuilt here are gone with
     // the feature.
 
-    // Show meter-type selector buttons, slot buttons, and play buttons
-    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(true);
-    compareTopSlotBtn_.setVisible(true);
-    compareBotSlotBtn_.setVisible(true);
+    // The sub-tab's ten controls, through their ONE author. Visible because
+    // hideCompareView always leaves the sub-tab on Compare, so re-entering the
+    // Reference tab always lands there.
+    showCompareFurniture (true);
     updateCompareSlotBtn(true);
     updateCompareSlotBtn(false);
-    comparePlayTopBtn_.setVisible(true);
-    comparePlayBotBtn_.setVisible(true);
 
     // Pre-load WAV data (no auto-play) so static waveform is visible
     startCompareStream(0);
     startCompareStream(1);
-    compareSyncBtn_.setVisible(true);
-    cmpABtn_.setVisible(true);
-    cmpBBtn_.setVisible(true);
-    cmpPlayBtn_.setVisible(true);
     updateComparePlayBtns();
 
     resized(); repaint();
@@ -5087,7 +5080,6 @@ void EchoJayEditor::hideCompareView()
     compareVisible = false;
     compareBtn.setButtonText("Compare");
     compareBtn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    aiCompareBtn.setVisible(false);
     closeCodecPanel();   // also disengages codec preview if it was active
     // Don't stop AB playback — let ref keep playing through plugin when switching views
     // The browser is a Compare surface and closes with the view. Closing
@@ -5106,16 +5098,9 @@ void EchoJayEditor::hideCompareView()
     for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
         b->setVisible(false);
     compareClickCatcher.setVisible(false);
-    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(false);
-    compareTopSlotBtn_.setVisible(false);
-    compareBotSlotBtn_.setVisible(false);
+    // The sub-tab's ten controls, through their ONE author.
+    showCompareFurniture (false);
     processorRef.stopAllCompare();
-    comparePlayTopBtn_.setVisible(false);
-    comparePlayBotBtn_.setVisible(false);
-    compareSyncBtn_.setVisible(false);
-    cmpABtn_.setVisible(false);
-    cmpBBtn_.setVisible(false);
-    cmpPlayBtn_.setVisible(false);
     resized(); repaint();
 }
 
@@ -6757,12 +6742,22 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
     const bool playback = (t == echojay::RefSubTab::Playback);
     if (playback)
     {
+        // LEAVING THE CODEC A/B FOR THE GRID EXITS CODEC MODE. Codec mode lives
+        // on the Compare sub-tab, where its chip is drawn; the grid draws no
+        // chip, so staying engaged here would keep the lossy render playing
+        // with nothing on screen saying so, which the 25 Jul rule at
+        // closeCodecPanel forbids by any route.
+        if (codecModeActive_) exitCodecMode();
+
         // ONE resolve, and the label and the path come out of it TOGETHER:
         // resolveCodecSource sets codecSrcPath_ and codecSrcLabel_ in the same
         // branch on every return path, so the page cannot name one capture
         // while rendering another.
         resolveCodecSource();
-        codecStatus_ = {};              // from the deleted openCodecPanel
+        // The status is cleared on opening, EXCEPT the one notice written for
+        // this opening: a render that finished after the user left Reference.
+        if (! codecStatusSurvivesOpen_) codecStatus_ = {};
+        codecStatusSurvivesOpen_ = false;
         codecPanel_.hoverIdx = -1;
         codecPanel_.renderView = false; // the page opens on the grid, every time
         codecPanel_.setVisible(true);
@@ -6775,28 +6770,45 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
     }
     else
     {
-        // THROUGH THE ONE ENFORCEMENT POINT, not around it. This used to call
-        // setVisible(false) directly, which skipped the codec-preview disengage
-        // entirely: selecting COMPARE left the user's audio on the lossy render
-        // with nothing on screen saying so. The 25 Jul comment says "by ANY
-        // route" and routing around it added a route.
-        closeCodecPanel();
+        // CHOOSING COMPARE HIDES THE PANEL AND TEARS NOTHING DOWN. Codec mode
+        // lives here now, with its chip, so arriving here is arriving at it,
+        // not leaving it. This used to go through closeCodecPanel, whose
+        // teardown ended the comparison on the way IN, and because the
+        // sub-tab row calls this for the tab already selected, clicking
+        // "Compare" while on the codec A/B ended the comparison too. The
+        // teardown now sits on the ways OUT: the Playback branch above, the
+        // chip's X, and hideCompareView leaving the Reference tab.
+        codecPanel_.setVisible(false);
     }
-    // The Compare furniture belongs to the Compare sub-tab only. The reference
-    // bar is NOT in this list: it sits above the row and is shared by every
-    // sub-tab, which is the whole reason they are one section.
-    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(!playback);
-    compareTopSlotBtn_.setVisible(!playback);
-    compareBotSlotBtn_.setVisible(!playback);
-    comparePlayTopBtn_.setVisible(!playback);
-    comparePlayBotBtn_.setVisible(!playback);
-    cmpABtn_.setVisible(!playback);
-    cmpBBtn_.setVisible(!playback);
-    cmpPlayBtn_.setVisible(!playback);
-    compareSyncBtn_.setVisible(!playback);
-    aiCompareBtn.setVisible(!playback);
+    showCompareFurniture (! playback);
     resized();
     repaint();
+}
+
+// THE ONE AUTHOR of the Compare sub-tab's ten controls' visibility: the meter
+// row, the two slot buttons, the two play buttons, A, B, the shared play, sync
+// and AI Compare. setRefSubTab, showCompareView, hideCompareView and
+// enterCodecMode all call this and none of them sets those controls itself.
+//
+// THERE WERE THREE AUTHORS BEFORE THIS (18 Sep 2026): showCompareView,
+// hideCompareView and setRefSubTab each set all ten. They agreed only by
+// convention: hideCompareView reset the sub-tab to Compare on the way out, so
+// showCompareView's unconditional "visible" happened to be right. enterCodecMode
+// needed the same state, and a fourth copy is how the first three would have
+// started to drift. (Construction and the login screen still set their own
+// initial hidden state; neither is part of this navigation.)
+void EchoJayEditor::showCompareFurniture (bool visible)
+{
+    for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(visible);
+    compareTopSlotBtn_.setVisible(visible);
+    compareBotSlotBtn_.setVisible(visible);
+    comparePlayTopBtn_.setVisible(visible);
+    comparePlayBotBtn_.setVisible(visible);
+    cmpABtn_.setVisible(visible);
+    cmpBBtn_.setVisible(visible);
+    cmpPlayBtn_.setVisible(visible);
+    compareSyncBtn_.setVisible(visible);
+    aiCompareBtn.setVisible(visible);
 }
 
 void EchoJayEditor::closeCodecPanel()
@@ -6816,6 +6828,7 @@ void EchoJayEditor::startCodecRender(int presetIdx)
 
     codecRendering_ = presetIdx;
     codecStatus_ = {};
+    codecStatusSurvivesOpen_ = false;
     codecPanel_.repaint();
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
@@ -6833,6 +6846,22 @@ void EchoJayEditor::startCodecRender(int presetIdx)
                 safeThis->codecStatus_ = res.error;
                 safeThis->codecPanel_.repaint();
                 EchoJay_NSLog(("EJCodec: render FAILED " + res.error).toRawUTF8());
+                return;
+            }
+            // A RENDER THAT FINISHES AFTER THE USER LEFT REFERENCE IS NOT OPENED
+            // (decided 18 Sep 2026). Anywhere on the Reference tab, the Playback
+            // grid included, it engages and lands on Compare; outside it, it
+            // would engage codec mode behind whatever they went to, so it does
+            // not, and the Playback page says so when they come back. The notice
+            // is measured to fit the render view's 464 px status line with the
+            // longest preset name (357.4 px).
+            if (! safeThis->compareVisible)
+            {
+                safeThis->codecStatus_ = juce::String (CodecRender::presets()[(size_t) presetIdx].name)
+                                       + " finished after you left Reference, so it was not opened.";
+                safeThis->codecStatusSurvivesOpen_ = true;
+                safeThis->codecPanel_.repaint();
+                EchoJay_NSLog("EJCodec: render finished after navigation away; not opened");
                 return;
             }
             safeThis->enterCodecMode(presetIdx, norm, res);
@@ -6899,7 +6928,18 @@ void EchoJayEditor::enterCodecMode(int presetIdx, bool normalised,
     }
     processorRef.cmpAudible.store(0);
 
-    codecPanel_.setVisible(false);   // hide only: codec mode is ENGAGING here
+    // LAND ON COMPARE, WHERE CODEC MODE LIVES, and tear nothing down: this is
+    // arriving at codec mode, not leaving it.
+    //
+    // WHY THIS WAS A BLANK SCREEN. On 25 Jul this line only hid the panel,
+    // correctly: the panel was a modal over a visible Compare view, and hiding
+    // it revealed the loaded A/B. Since 26986ea (13 Sep) the Compare view is
+    // drawn only on the Compare sub-tab, so hiding the panel left the sub-tab
+    // on Playback with nothing drawn, and the codec A/B was unreachable from
+    // 13 Sep until this change. Choosing Compare no longer tears codec mode
+    // down, so setRefSubTab is now exactly the landing wanted here, and going
+    // through it keeps one author of the sub-tab's state.
+    setRefSubTab (echojay::RefSubTab::Compare);
     updateComparePlayBtns();
     repaint();
     EchoJay_NSLog(("EJCodec: codec mode ON " + rendLabel
@@ -7153,27 +7193,10 @@ void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
         g.setColour (C::bg3);
         g.fillRoundedRectangle (tile.toFloat(), 6.0f);
 
-        if (t.sim == PlaybackSim::MonoFold)
+        // EVERY TILE HAS A PICTURE, Mono included (mono_fold.jpg), all through
+        // the ONE loader, which decodes via ImageCache and never through a
+        // static Image (EJPlaybackArtMap.h says why).
         {
-            // MONO IS DRAWN, NOT IMAGED: two overlapping circles and the line
-            // they collapse onto, which is what a fold does to a stereo image.
-            // Vector, so it stays sharp at any tile size and takes the theme's
-            // colours rather than baking them into a file.
-            const auto  a  = art.toFloat();
-            const float d  = juce::jmin (a.getHeight() * 0.46f, a.getWidth() * 0.30f);
-            const float ov = d * 0.42f;
-            const float x0 = a.getCentreX() - (2.0f * d - ov) * 0.5f;
-            const float y0 = a.getCentreY() - d * 0.5f;
-            g.setColour (selected ? accent : C::text3);
-            g.drawEllipse (x0, y0, d, d, 1.4f);
-            g.drawEllipse (x0 + d - ov, y0, d, d, 1.4f);
-            const float mid = x0 + d - ov * 0.5f;
-            g.drawLine (mid, y0 - 3.0f, mid, y0 + d + 3.0f, 1.4f);
-        }
-        else
-        {
-            // THROUGH THE ONE LOADER, which decodes via ImageCache and never
-            // through a static Image (EJPlaybackArtMap.h says why).
             const auto img = echojay::loadPlaybackArt (echojay::playbackArtForTile (t));
             if (img.isValid())
             {
@@ -35047,10 +35070,16 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
         
-        // Codec-mode chip X: exit codec mode and restore the prior slots
+        // Codec-mode chip X: exit codec mode and restore the prior slots, then go
+        // BACK TO THE RENDER VIEW (decided 18 Sep 2026): the user came from the
+        // presets, and the next thing they are likely to want is another one.
+        // setRefSubTab opens the page on the grid, so the view is set after it.
         if (codecModeActive_ && !codecChipX_.isEmpty() && codecChipX_.contains(pos))
         {
             exitCodecMode();
+            setRefSubTab (echojay::RefSubTab::Playback);
+            codecPanel_.renderView = true;
+            codecPanel_.repaint();
             return;
         }
 
