@@ -16,6 +16,8 @@
 #include "EchoJayChannelChats.h" // latestChatForLink — the many-chats-per-channel
                                  // selection, header-inline for the unit test
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
+#include "EJPlaybackArtMap.h"       // the Playback grid's pictures; .cpp-only, because
+                                    // its generated header reaches EchoJay's TUs only
 #include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h"
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
@@ -6762,6 +6764,7 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         resolveCodecSource();
         codecStatus_ = {};              // from the deleted openCodecPanel
         codecPanel_.hoverIdx = -1;
+        codecPanel_.renderView = false; // the page opens on the grid, every time
         codecPanel_.setVisible(true);
         EchoJay_NSLog(("EJCodec: playback page src=" + (codecSrcPath_.isEmpty()
                         ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
@@ -6941,7 +6944,17 @@ void EchoJayEditor::exitCodecMode()
 void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 {
     if (owner == nullptr) return;
+    if (renderView) paintRenderView (g);
+    else            paintGrid (g);
+}
 
+// THE RENDER VIEW: the codec card, reached from the grid's codec tile. Its
+// presets, the normalise toggle, the notice and the status line are exactly
+// as they were when the card was the whole page; what is new is the way back
+// to the grid in its title row. Its rectangle is still codecPageLayout's card,
+// which cp PIN2 to cp PIN5 test.
+void EchoJayEditor::CodecPanel::paintRenderView(juce::Graphics& g)
+{
     // NO SCRIM. This is the page, not something laid over it, and a scrim over
     // the page you are on dims nothing.
     const auto& ps = CodecRender::presets();
@@ -6959,8 +6972,15 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
 
     auto r = card.reduced(18, 14);
 
-    // Header + close X
+    // Header, and the way back to the grid at the right of the same row. The
+    // row's height is unchanged, so the card's geometry is too. Escape does
+    // the same thing (keyPressed).
     auto head = r.removeFromTop(22);
+    backRect = head.removeFromRight(64);
+    g.setColour(C::text2);
+    g.setFont(juce::Font(juce::FontOptions(11.5f)));
+    g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x80\xb9 Back")),
+               backRect, juce::Justification::centredRight);
     g.setColour(C::text);
     g.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
     g.drawText("CODEC PLAYER", head, juce::Justification::centredLeft);
@@ -7021,59 +7041,10 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
     // place that expresses it rather than recomputed here.
     r.removeFromTop(echojay::codecCardRows ((int) ps.size()) * (cardH + cardGap) + 6);
 
-    // ======================================================================
-    //  THE MONO CARD. TEMPORARY, AND THE GRID REPLACES IT.
-    //
-    //  It is parked here because the chrome band is the one place a card fits
-    //  without touching the preset grid's arithmetic. Its position carries no
-    //  meaning and nobody should read it as a decision: a mono fold is not a
-    //  codec and does not belong under a list of them. It is here so the fold
-    //  can be HEARD, which nothing in the product could do until now.
-    //
-    //  ITS DRAWN STATE IS READ BACK FROM THE PROCESSOR, never from a bool kept
-    //  here. One source of truth: with a local copy the card could show Mono
-    //  engaged while the audio ran flat, or the reverse, and neither the user
-    //  nor a log would be able to tell which was lying.
-    // ======================================================================
-    {
-        auto monoRow = r.removeFromTop(echojay::kCodecMonoH);
+    // The Mono card that was parked here until the grid existed is the grid's
+    // first tile now (paintGrid). This card is the render view and plays
+    // nothing, so it no longer carries a live control.
 
-        // THE HIT RECTANGLE IS THE WHOLE CARD, assigned ONCE and never consumed
-        // by the layout below, so the label is exactly as pressable as the
-        // symbol and the rect cannot drift from what was drawn.
-        monoRect = monoRow.withWidth(juce::jmin(monoRow.getWidth(), 116));
-
-        const bool monoOn =
-            (owner->processorRef.playbackSim() == PlaybackSim::MonoFold);
-
-        const auto accent = juce::Colour(0xff22d3ee);
-        g.setColour(C::bg3);
-        g.fillRoundedRectangle(monoRect.toFloat(), 7.0f);
-        g.setColour(monoOn ? accent : C::border.withAlpha(0.8f));
-        g.drawRoundedRectangle(monoRect.toFloat(), 7.0f, monoOn ? 1.4f : 1.0f);
-
-        // A SEPARATE CURSOR FOR THE CONTENTS, so nothing below writes back into
-        // the hit rectangle.
-        auto inner = monoRect;
-
-        // THE SYMBOL, DRAWN RATHER THAN IMAGED: two overlapping circles and the
-        // line they collapse onto, which is what a fold does to a stereo image.
-        // Vector, so it stays sharp at any window size and takes the theme's
-        // colours instead of baking them into a file.
-        const auto glyph = inner.removeFromLeft(46).reduced(7, 11).toFloat();
-        const float d  = glyph.getHeight();
-        const float ov = d * 0.42f;   // how far the two circles overlap
-        g.setColour(monoOn ? accent : C::text3);
-        g.drawEllipse(glyph.getX(), glyph.getY(), d, d, 1.2f);
-        g.drawEllipse(glyph.getX() + d - ov, glyph.getY(), d, d, 1.2f);
-        const float mid = glyph.getX() + d - ov * 0.5f;
-        g.drawLine(mid, glyph.getY() - 2.0f, mid, glyph.getBottom() + 2.0f, 1.2f);
-
-        g.setColour(monoOn ? C::text : C::text3);
-        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-        g.drawText("Mono", inner, juce::Justification::centredLeft, true);
-    }
-    r.removeFromTop(echojay::kCodecMonoGap);
 
     // Normalise toggle
     auto tRow = r.removeFromTop(20);
@@ -7116,6 +7087,125 @@ void EchoJayEditor::CodecPanel::paint(juce::Graphics& g)
     }
 }
 
+// THE TILE STROKE, and the reason is MEASURED, not aesthetic. A tile's body is
+// C::bg3 (0E1020) on the page's C::bg2 (0A0C18), and the pictures average about
+// 31 against a panel of about 15: without a stroke a dark picture runs straight
+// into the background and the tile has no edge at all. C::border, white at 5%
+// alpha, is too faint to supply one, so the stroke is a solid colour a clear
+// step above the tile body.
+static const juce::Colour kPlaybackTileStroke { 0xff2c3150 };
+
+// THE GRID: the Playback page. Six live tiles change what is playing now; the
+// seventh opens the codec card as the render view. Every rect comes from
+// echojay::playbackPageLayout and echojay::playbackTileRect, and the paint
+// computes none of its own, so the allowance pg PIN5 adds to the grid is the
+// one this paint spends.
+void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
+{
+    const auto& tiles  = echojay::kPlaybackTiles;
+    const auto  pl     = echojay::playbackPageLayout (getLocalBounds(), (int) tiles.size());
+    const auto  accent = juce::Colour (0xff22d3ee);
+
+    // Header, in the render view's styles.
+    g.setColour (C::text);
+    g.setFont (juce::Font (juce::FontOptions (14.0f, juce::Font::bold)));
+    g.drawText ("PLAYBACK", pl.title, juce::Justification::centredLeft);
+    g.setColour (C::text3);
+    g.setFont (juce::Font (juce::FontOptions (11.5f)));
+    g.drawText ("Hear this mix on other speakers, or render it through a codec.",
+                pl.subtitle, juce::Justification::centredLeft, true);
+
+    // THE SOURCE LINE, KEPT. startCodecRender returns silently when there is no
+    // capture, so without this line the codec tile leads to presets that do
+    // nothing and say nothing. The live tiles need no capture and ignore it.
+    g.setFont (juce::Font (juce::FontOptions (11.0f)));
+    if (owner->codecSrcPath_.isNotEmpty())
+    {
+        g.setColour (C::text2);
+        g.drawText ("Using capture: " + owner->codecSrcLabel_,
+                    pl.source, juce::Justification::centredLeft, true);
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xfff59e0b));
+        g.drawText ("No capture available. Capture your mix first to render a codec.",
+                    pl.source, juce::Justification::centredLeft, true);
+    }
+
+    // THE SELECTION IS READ BACK from the processor, once per paint, and never
+    // kept in the editor: the tile cannot show one thing while the audio does
+    // another. pb PIN9 asserts this line.
+    const PlaybackSim current = owner->processorRef.playbackSim();
+
+    tileRects.assign (tiles.size(), {});
+    for (int i = 0; i < (int) tiles.size(); ++i)
+    {
+        const auto& t    = tiles[(size_t) i];
+        const auto  tile = echojay::playbackTileRect (pl.grid, i);
+        tileRects[(size_t) i] = tile;
+
+        const bool live     = (t.kind == echojay::PlaybackTileKind::Live);
+        const bool selected = live && current == t.sim;
+
+        auto art = tile;
+        const auto band = art.removeFromBottom (echojay::kPlaybackTileLabelH);
+
+        g.setColour (C::bg3);
+        g.fillRoundedRectangle (tile.toFloat(), 6.0f);
+
+        if (t.sim == PlaybackSim::MonoFold)
+        {
+            // MONO IS DRAWN, NOT IMAGED: two overlapping circles and the line
+            // they collapse onto, which is what a fold does to a stereo image.
+            // Vector, so it stays sharp at any tile size and takes the theme's
+            // colours rather than baking them into a file.
+            const auto  a  = art.toFloat();
+            const float d  = juce::jmin (a.getHeight() * 0.46f, a.getWidth() * 0.30f);
+            const float ov = d * 0.42f;
+            const float x0 = a.getCentreX() - (2.0f * d - ov) * 0.5f;
+            const float y0 = a.getCentreY() - d * 0.5f;
+            g.setColour (selected ? accent : C::text3);
+            g.drawEllipse (x0, y0, d, d, 1.4f);
+            g.drawEllipse (x0 + d - ov, y0, d, d, 1.4f);
+            const float mid = x0 + d - ov * 0.5f;
+            g.drawLine (mid, y0 - 3.0f, mid, y0 + d + 3.0f, 1.4f);
+        }
+        else
+        {
+            // THROUGH THE ONE LOADER, which decodes via ImageCache and never
+            // through a static Image (EJPlaybackArtMap.h says why).
+            const auto img = echojay::loadPlaybackArt (echojay::playbackArtForTile (t));
+            if (img.isValid())
+            {
+                juce::Graphics::ScopedSaveState keep (g);
+                juce::Path clip;
+                clip.addRoundedRectangle ((float) art.getX(), (float) art.getY(),
+                                          (float) art.getWidth(), (float) art.getHeight(),
+                                          6.0f, 6.0f, true, true, false, false);
+                g.reduceClipRegion (clip);
+                g.drawImage (img, art.toFloat(), juce::RectanglePlacement::fillDestination);
+            }
+        }
+
+        g.setColour (selected ? accent : C::text2);
+        g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+        g.drawText (t.label, band.reduced (8, 0), juce::Justification::centredLeft, true);
+
+        g.setColour (selected ? accent : kPlaybackTileStroke);
+        g.drawRoundedRectangle (tile.toFloat().reduced (0.5f), 6.0f, selected ? 1.4f : 1.0f);
+    }
+
+    // THE STATUS LINE, only when it has text. Its height is in the allowance
+    // whether or not it shows, because a codec error can be standing when the
+    // user comes back to the grid.
+    if (owner->codecStatus_.isNotEmpty())
+    {
+        g.setColour (juce::Colour (0xfff87171));   // coral
+        g.setFont (juce::Font (juce::FontOptions (10.5f)));
+        g.drawText (owner->codecStatus_, pl.status, juce::Justification::centredLeft, true);
+    }
+}
+
 void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
 {
     if (owner == nullptr) return;
@@ -7124,51 +7214,79 @@ void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)
     // No close X: leaving is selecting another sub-tab, and Escape below is a
     // shortcut to that rather than a second way out.
 
-    // THE MONO CARD'S STORE, AND IT SITS ABOVE THE RENDER GUARD DELIBERATELY.
-    // pb PIN9 asserts this exact line is present in this file, because UI
-    // wiring compiles perfectly when it is deleted: the card would still draw,
-    // still hit-test and still repaint, and pressing it would do nothing with
-    // no error anywhere. That is the fourth time this week a control has been
-    // drawn with nothing behind it, and it gets a line of its own rather than a
-    // hope that somebody presses it.
-    //
-    // THE RENDER GUARD BELOW MUST NOT COVER THIS. A mono fold is not a render:
-    // it allocates nothing, queues nothing and cannot collide with an encode in
-    // flight. Leaving it under the guard would make the card inert for the
-    // seconds a codec takes, with no error and no visible reason, which is the
-    // same defect this pin exists to catch arriving through the back door.
-    //
-    // THE CURRENT VALUE IS READ BACK, not tracked here, so the toggle cannot
-    // disagree with the audio.
-    if (monoRect.contains(pos))
+    if (renderView)
     {
-        const bool monoOn = (owner->processorRef.playbackSim() == PlaybackSim::MonoFold);
-        owner->processorRef.setPlaybackSim (monoOn ? PlaybackSim::None : PlaybackSim::MonoFold);
-        repaint();
-        return;
-    }
-
-    if (owner->codecRendering_ >= 0) return;   // one render at a time
-
-    if (normRect.contains(pos))
-    {
-        owner->codecNormalise_ = !owner->codecNormalise_;
-        repaint();
-        return;
-    }
-    for (int i = 0; i < (int) cardRects.size(); ++i)
-        if (cardRects[(size_t) i].contains(pos))
+        // BACK TO THE GRID, ABOVE THE RENDER GUARD. Navigating is not a render,
+        // and a way back that went dead while an encode ran would trap this
+        // view for the seconds a codec takes, with no reason on screen.
+        if (backRect.contains(pos))
         {
-            owner->startCodecRender(i);
+            renderView = false;
+            hoverIdx = -1;
+            repaint();
             return;
         }
+
+        if (owner->codecRendering_ >= 0) return;   // one render at a time
+
+        if (normRect.contains(pos))
+        {
+            owner->codecNormalise_ = !owner->codecNormalise_;
+            repaint();
+            return;
+        }
+        for (int i = 0; i < (int) cardRects.size(); ++i)
+            if (cardRects[(size_t) i].contains(pos))
+            {
+                owner->startCodecRender(i);
+                return;
+            }
+        return;
+    }
+
+    // THE GRID. ONE HANDLER FOR EVERY TILE, walking the table the paint drew
+    // (echojay::kPlaybackTiles), so the six live tiles share the ONE store line
+    // below. pb PIN9 asserts this hit test, that store line, the read-back in
+    // paint and the table's order, because UI wiring compiles perfectly when it
+    // is deleted: a tile would still draw and still take the press, and nothing
+    // would happen and nothing would complain.
+    //
+    // NO RENDER GUARD HERE. A fold or a voicing is not a render: it allocates
+    // nothing, queues nothing and cannot collide with an encode in flight, so
+    // the live tiles stay live while a codec renders.
+    for (int i = 0; i < (int) tileRects.size(); ++i)
+    {
+        if (! tileRects[(size_t) i].contains (pos)) continue;
+        const auto& t = echojay::kPlaybackTiles[(size_t) i];
+
+        // The codec tile renders nothing and chooses no preset: it opens the
+        // card, whose preset cards start a render exactly as they always did.
+        if (t.kind == echojay::PlaybackTileKind::CodecRender)
+        {
+            renderView = true;
+            hoverIdx = -1;
+            repaint();
+            return;
+        }
+
+        // THE STORE, for all six live tiles. THE CURRENT VALUE IS READ BACK,
+        // not tracked here, and pressing the selected tile again stores None,
+        // so there is always a way back to unprocessed audio.
+        const bool on = (owner->processorRef.playbackSim() == t.sim);
+        owner->processorRef.setPlaybackSim (on ? PlaybackSim::None : t.sim);
+        repaint();
+        return;
+    }
 }
 
 void EchoJayEditor::CodecPanel::mouseMove(const juce::MouseEvent& e)
 {
+    // Hover belongs to the render view's preset cards. On the grid, cardRects
+    // are the rects of a view that is not on screen.
     int idx = -1;
-    for (int i = 0; i < (int) cardRects.size(); ++i)
-        if (cardRects[(size_t) i].contains(e.getPosition())) { idx = i; break; }
+    if (renderView)
+        for (int i = 0; i < (int) cardRects.size(); ++i)
+            if (cardRects[(size_t) i].contains(e.getPosition())) { idx = i; break; }
     if (idx != hoverIdx) { hoverIdx = idx; repaint(); }
 }
 
@@ -7176,6 +7294,16 @@ bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::escapeKey && owner != nullptr)
     {
+        // IN THE RENDER VIEW, ESCAPE GOES BACK TO THE GRID, the same as the
+        // title row's Back. Only from the grid does it leave the page.
+        if (renderView)
+        {
+            renderView = false;
+            hoverIdx = -1;
+            repaint();
+            return true;
+        }
+
         // BACK TO COMPARE, not a bare hide. closeCodecPanel alone would leave
         // refSubTab_ saying PLAYBACK with the page gone and the Compare
         // furniture still hidden: an empty screen under a lying tab row.

@@ -52,6 +52,7 @@
 #include "EJTooltipPlace.h"     // the tooltip placement rule: the shipped origin
 #include "EJPlaybackSim.h"      // the inline monitoring stage: the shipped no-op
 #include "EJPlaybackVoicing.h"  // the voicing table and its chain: the shipped coefficients
+#include "EJPlaybackTiles.h"    // the Playback grid's tile table: what pb PIN9 walks
 #include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
@@ -9252,38 +9253,71 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "pb PIN8: and a cast integer below None, which is where a bad index lands");
             }
 
-            // pb PIN9 -- THE MONO CARD IS WIRED TO SOMETHING.
+            // pb PIN9 -- EVERY LIVE TILE IS WIRED TO SOMETHING.
             // STRUCTURAL, in the style of se PIN7 and ap PIN1, because the
-            // guarantee lives in the LINES. A card that is drawn, hit-tested and
+            // guarantee lives in the LINES. A tile that is drawn, hit-tested and
             // repainted but stores nothing COMPILES PERFECTLY: it looks alive,
             // it takes the press, and nothing happens and nothing complains.
             //
             // THAT IS THE FOURTH SHAPE OF ONE FAILURE THIS WEEK. 873d758 swept
             // the Apply button's visibility, 6a5efb6 took six editor handlers,
             // a value below Count would give a selection with no body, and this
-            // is the same thing again at the wire. It gets its own line rather
-            // than a hope that somebody presses the card.
+            // is the same thing again at the wire.
             //
-            // READ FROM codeOnly, so the COMMENT above the handler naming this
-            // pin cannot satisfy it. The comment says the line should be there;
-            // only the code proves it is.
+            // IT NAMED THE MONO CARD'S LINES until the Mono card became the
+            // grid's first tile (18 Sep 2026). The six live tiles now share ONE
+            // hit test and ONE store line, walking echojay::kPlaybackTiles, so
+            // these lines wire all six at once, and the table check below is
+            // what says each of the six is in it. A per-tile handler would have
+            // needed a line per tile here to say as much.
+            //
+            // READ FROM codeOnly, so a COMMENT naming these lines cannot satisfy
+            // the pin. The comment says the line should be there; only the code
+            // proves it is.
             {
                 std::ifstream fed ("Source/PluginEditor.cpp");
                 std::stringstream sed3; sed3 << fed.rdbuf();
                 const auto ec = codeOnly (juce::String (sed3.str()));
 
-                check (ec.contains ("if (monoRect.contains(pos))"),
-                       "pb PIN9: the card has a hit test in mouseUp");
-                check (ec.contains ("owner->processorRef.setPlaybackSim (monoOn "
-                                    "? PlaybackSim::None : PlaybackSim::MonoFold);"),
-                       "pb PIN9: and the press STORES a selection, which is the line "
-                       "whose deletion would leave a card that does nothing");
-                check (ec.contains ("owner->processorRef.playbackSim() == PlaybackSim::MonoFold"),
-                       "pb PIN9: and the state is READ BACK from the processor rather "
-                       "than kept in a bool here, so the card cannot disagree with the audio");
-                check (ec.contains ("monoRect = monoRow.withWidth"),
-                       "pb PIN9: the hit rectangle is computed in paint, like every "
-                       "other rect on this page, so it cannot drift from what is drawn");
+                check (ec.contains ("if (! tileRects[(size_t) i].contains (pos)) continue;"),
+                       "pb PIN9: the grid has a hit test in mouseUp, over the tiles paint drew");
+                check (ec.contains ("owner->processorRef.setPlaybackSim (on ? PlaybackSim::None : t.sim);"),
+                       "pb PIN9: and a press STORES the tile's selection, or None if it was "
+                       "already selected; the line whose deletion would leave six tiles doing nothing");
+                check (ec.contains ("const bool on = (owner->processorRef.playbackSim() == t.sim);"),
+                       "pb PIN9: the press reads the current selection BACK from the processor, "
+                       "so the toggle cannot disagree with the audio");
+                check (ec.contains ("const PlaybackSim current = owner->processorRef.playbackSim();"),
+                       "pb PIN9: and paint draws the selected tile from that same read-back, not "
+                       "from a flag kept in the editor");
+                check (ec.contains ("tileRects[(size_t) i] = tile;"),
+                       "pb PIN9: the hit rectangles are the ones paint drew, so they cannot "
+                       "drift from what is on screen");
+
+                // THE TABLE THE HANDLER WALKS: six live tiles in the order the
+                // page shows them, each storing its own selection, then the codec
+                // tile, which stores nothing. Dropping or reordering a row here is
+                // the per-tile deletion the lines above cannot see.
+                using echojay::kPlaybackTiles;
+                using echojay::PlaybackTileKind;
+                const PlaybackSim pbLive[6] = { PlaybackSim::MonoFold, PlaybackSim::PhoneSpeaker,
+                                                PlaybackSim::Laptop, PlaybackSim::CarDashboard,
+                                                PlaybackSim::KitchenRadio, PlaybackSim::Earbuds };
+                juce::String pbBad;
+                if (kPlaybackTiles.size() != 7)
+                    pbBad << "size " << (int) kPlaybackTiles.size() << "; ";
+                for (int i = 0; i < 6 && i < (int) kPlaybackTiles.size(); ++i)
+                    if (kPlaybackTiles[(size_t) i].kind != PlaybackTileKind::Live
+                        || kPlaybackTiles[(size_t) i].sim != pbLive[i])
+                        pbBad << "row " << i << " is not the live " << playbackSimName (pbLive[i]) << " tile; ";
+                if (kPlaybackTiles.size() == 7
+                    && (kPlaybackTiles[6].kind != PlaybackTileKind::CodecRender
+                        || kPlaybackTiles[6].sim != PlaybackSim::None))
+                    pbBad << "row 6 is not the codec tile storing nothing; ";
+                check (pbBad.isEmpty(),
+                       "pb PIN9: the table the handler walks has the six live tiles in order, "
+                       "each storing its own selection, then the codec tile, which stores nothing",
+                       pbBad);
             }
 
             // pb PIN10 and pb PIN11 -- THE RESET RULE, BOTH HALVES.
@@ -9876,6 +9910,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        + codecPageLayout (a.r, n).page.toString());
 
         // cp PIN2 -- THE CARD IS INSIDE THE PAGE, at every size and count. The
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
         // card used to centre on getWidth()/getHeight(), correct only while
         // those were the whole window.
         for (auto& a : areas)
@@ -9889,6 +9925,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             }
 
         // cp PIN3 -- THE CARD'S TOP IS NEVER ABOVE THE PAGE'S TOP. This is the
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
         // one that matters on a short window: centring a too-tall card would
         // put its header, and the close-behaviour notice, off the top where
         // they cannot be read or reached.
@@ -9904,6 +9942,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             }
 
         // cp PIN4 -- THE CARD IS HORIZONTALLY CENTRED AND WIDTH-BOUNDED.
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
         for (auto& a : areas)
         {
             const auto r = codecPageLayout (a.r, 9);
@@ -9920,6 +9960,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         }
 
         // cp PIN5 -- HEIGHT GROWS WITH THE PRESET COUNT, two per row, and an
+        // WHERE THE CARD LIVES NOW: it is the codec RENDER VIEW, opened from the
+        // Playback grid's codec tile. The grid is the page; this card is not.
         // empty preset list still yields the chrome rather than a negative.
         check (codecCardHeight (0) == kCodecChromeH,
                "cp PIN5: no presets is chrome only",
@@ -10032,30 +10074,56 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                          "and no height, not wrapped");
         }
 
-        // pg PIN5 -- NINE TILES FIT, at the extremes of the pages this plugin
-        // can produce, not only on the laptop it was written on. Page sizes as
-        // resized() derives them (content area = main column less 10 px each
-        // side, height less the header, tab strip, reference bar, sub-tab row,
-        // 10 px margin and the 32 px A/B bar), stated here because the editor
-        // cannot be linked into this suite:
+        // pg PIN5 -- THE GRID AND EVERYTHING THAT SHARES THE PAGE WITH IT FIT,
+        // at the extremes of the pages this plugin can produce, not only on the
+        // laptop it was written on. The tile count is the table's, so a tile
+        // added to EJPlaybackTiles.h is counted here without an edit.
+        //
+        // WITH ITS ALLOWANCE (kPlaybackPageChromeH, 98 px): padding, the title,
+        // the subtitle, the capture source line, its gap and the status line.
+        // Without it this pin compared the grid alone against the whole page,
+        // which is necessary and not sufficient.
+        //
+        // AND THE ALLOWANCE IS THE ONE THE PAINT SPENDS. playbackPageLayout is
+        // the paint's only source of rects; the second check measures what it
+        // spends outside the grid (page top to the status line's bottom, less
+        // the grid, plus the bottom padding) and requires it to equal the
+        // constant, so a row added to the layout without the constant, or the
+        // constant changed without the layout, reddens here.
+        //
+        // Page sizes as resized() derives them (content area = main column less
+        // 10 px each side, height less the header, tab strip, reference bar,
+        // sub-tab row, 10 px margin and the 32 px A/B bar), stated here because
+        // the editor cannot be linked into this suite:
         //   smallest window 900 x 580, A/B bar showing   -> 565  x 405
         //   largest 1800 x 1200, sidebar open, A/B bar    -> 1360 x 1025
         //   largest 1800 x 1200, sidebar collapsed        -> 1780 x 1025
-        // THE GRID ALONE against the whole page: necessary, not sufficient.
-        // Whatever chrome shares the page with the grid is not in this sum.
         {
+            const int pgTiles = (int) kPlaybackTiles.size();
             struct Page { const char* name; int w, h; };
             for (const Page& p : { Page { "smallest window, A/B bar",           565,  405 },
                                    Page { "largest window, sidebar open",       1360, 1025 },
                                    Page { "largest window, sidebar collapsed",  1780, 1025 } })
             {
-                const int gh = playbackGridHeight (9, p.w);
-                check (gh <= p.h,
-                       "pg PIN5: nine tiles fit the " + juce::String (p.name) + " page ("
-                       + juce::String (p.w) + " x " + juce::String (p.h) + ")",
-                       "grid " + juce::String (gh) + " px at "
-                       + juce::String (playbackGridColumns (p.w)) + " columns of "
+                const int gh    = playbackGridHeight (pgTiles, p.w);
+                const int total = gh + kPlaybackPageChromeH;
+                check (total <= p.h,
+                       "pg PIN5: all " + juce::String (pgTiles) + " tiles and the page's chrome fit the "
+                       + juce::String (p.name) + " page (" + juce::String (p.w) + " x "
+                       + juce::String (p.h) + ")",
+                       "grid " + juce::String (gh) + " + allowance " + juce::String (kPlaybackPageChromeH)
+                       + " = " + juce::String (total) + ", margin " + juce::String (p.h - total)
+                       + ", at " + juce::String (playbackGridColumns (p.w)) + " columns of "
                        + juce::String (playbackTileWidth (p.w)) + " px");
+
+                const auto L = playbackPageLayout ({ 0, 0, p.w, p.h }, pgTiles);
+                const int spent = L.status.getBottom() - L.grid.getHeight() + kPlaybackPagePadBottom;
+                check (spent == kPlaybackPageChromeH && L.grid.getHeight() == gh,
+                       "pg PIN5: and the layout the paint draws from spends exactly that allowance "
+                       "outside the grid on the " + juce::String (p.name) + " page",
+                       "spent " + juce::String (spent) + " vs allowance "
+                       + juce::String (kPlaybackPageChromeH) + ", grid "
+                       + juce::String (L.grid.getHeight()) + " vs " + juce::String (gh));
             }
         }
     }

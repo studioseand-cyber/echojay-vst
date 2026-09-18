@@ -1015,15 +1015,32 @@ private:
         //
         // NO closeRect. A page is left by choosing another sub-tab. Escape is a
         // shortcut to the same thing, not a second mechanism.
+        //
+        // TWO VIEWS, ONE PAGE (18 Sep 2026). The GRID is the page: six live
+        // tiles and the codec tile (EJPlaybackTiles.h). The codec tile opens
+        // the RENDER VIEW, which is the codec card exactly as it was: its
+        // presets, the normalise toggle, the notice and the status line. The
+        // card's geometry is still codecPageLayout(...).card, which cp PIN2 to
+        // cp PIN5 test.
         void paint(juce::Graphics& g) override;
         void mouseUp(const juce::MouseEvent& e) override;
         void mouseMove(const juce::MouseEvent& e) override;
         bool keyPressed(const juce::KeyPress& k) override;
+        void paintGrid(juce::Graphics& g);
+        void paintRenderView(juce::Graphics& g);
+
+        // WHICH VIEW IS SHOWING. Navigation only: it never says what is
+        // PLAYING. The selected tile is read back from the processor, the rule
+        // the Mono card followed, so no editor flag can disagree with the audio.
+        bool renderView = false;
+
+        // Render view: preset cards and the toggle, computed in paint.
         std::vector<juce::Rectangle<int>> cardRects;
         juce::Rectangle<int> normRect;
-        // The Mono card's hit rectangle, computed in paint like every other
-        // rect on this page. TEMPORARY, and the environment grid replaces it.
-        juce::Rectangle<int> monoRect;
+        // Render view: the way back to the grid, in the card's title row.
+        juce::Rectangle<int> backRect;
+        // Grid: one rect per row of echojay::kPlaybackTiles, computed in paint.
+        std::vector<juce::Rectangle<int>> tileRects;
         int hoverIdx = -1;
     };
     CodecPanel codecPanel_;

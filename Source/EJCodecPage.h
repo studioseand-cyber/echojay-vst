@@ -28,19 +28,15 @@ inline constexpr int kCodecCardMaxW   = 500;
 inline constexpr int kCodecCardSideIn = 60;   // breathing room either side
 inline constexpr int kCodecRowH       = 58;
 inline constexpr int kCodecRowGap     = 8;
-/** THE MONO CARD'S ROW, and it is TEMPORARY. The card is parked in the chrome
-    band under the preset grid because that is the one place a card fits without
-    touching the grid arithmetic: cp PIN4 and cp PIN5 are written against these
-    named constants and against two-per-row, never against a number, so raising
-    the chrome allowance leaves every one of their assertions unchanged and
-    still true. The environment grid replaces this card. Nobody should read the
-    position as a decision. */
-inline constexpr int kCodecMonoH      = 44;
-inline constexpr int kCodecMonoGap    = 10;
-
-inline constexpr int kCodecChromeH    = 96 + 108 + kCodecMonoH + kCodecMonoGap;
-                                      // header block + footer notice + the
-                                      // temporary Mono row
+// THE MONO CARD'S ROW IS GONE FROM THIS CARD. It was parked in the chrome band
+// as a TEMPORARY home until the environment grid existed, and said so. The grid
+// now exists and Mono is its first tile, so the card, which is now the codec
+// RENDER VIEW reached from the grid's codec tile, no longer carries it; two
+// Mono controls on two views would be two stores of one selection. cp PIN4 and
+// cp PIN5 are written against these named constants, never against a number,
+// so removing the row's 54 px leaves every assertion unchanged and true.
+inline constexpr int kCodecChromeH    = 96 + 108;
+                                      // header block + footer notice
 inline constexpr int kCodecCardMinW   = 260;
 
 /** How many rows a preset count occupies, TWO PER ROW. Exported rather than
@@ -153,6 +149,74 @@ inline int playbackGridHeight (int tileCount, int availableWidth)
 {
     return playbackGridRows (tileCount, playbackGridColumns (availableWidth))
          * (playbackTileHeight (availableWidth) + kPlaybackTileGap);
+}
+
+/** Tile `index`'s rectangle inside a grid area: the ONE place a tile's
+    position is computed, read by paint and, through paint's stored rects, by
+    the hit test. */
+inline juce::Rectangle<int> playbackTileRect (juce::Rectangle<int> grid, int index)
+{
+    const int cols = playbackGridColumns (grid.getWidth());
+    const int w    = playbackTileWidth   (grid.getWidth());
+    const int h    = playbackTileHeight  (grid.getWidth());
+    const int i    = juce::jmax (0, index);
+    return { grid.getX() + (i % cols) * (w + kPlaybackTileGap),
+             grid.getY() + (i / cols) * (h + kPlaybackTileGap), w, h };
+}
+
+// =============================================================================
+//  THE PLAYBACK PAGE: the grid, and everything that shares the page with it.
+// =============================================================================
+//
+// THE ALLOWANCE IS ONE NAMED SUM OF NAMED PARTS, and the layout below spends
+// exactly those parts, so the figure pg PIN5 adds to the grid is the figure
+// the paint actually uses rather than a second copy of it. pg PIN5 checks both
+// that the sum fits and that the layout spends no more and no less than it.
+//
+// NO SIDE PADDING, on purpose and not to make anything fit: the page rect is
+// already inset 10 px from the column by resized(), on the same edges as the
+// reference bar and the sub-tab row above it, so the grid lines up with them.
+// Note what an inset would cost: at the smallest page (565 px) any side inset
+// over 7 px drops the grid to three columns, and pg PIN5 would say so.
+inline constexpr int kPlaybackPagePadTop    = 7;
+inline constexpr int kPlaybackPageTitleH    = 22;   // "PLAYBACK", as the card's title row
+inline constexpr int kPlaybackPageSubtitleH = 18;
+inline constexpr int kPlaybackPageSourceH   = 20;   // the capture line: KEPT, see below
+inline constexpr int kPlaybackPageSourceGap = 8;
+inline constexpr int kPlaybackPageStatusH   = 16;   // the codec status, when it has text
+inline constexpr int kPlaybackPagePadBottom = 7;
+
+/** Everything that shares the page with the grid: 98 px.
+
+    THE SOURCE LINE STAYS because startCodecRender returns silently when there
+    is no capture (PluginEditor.cpp, the codecSrcPath_ check at its top): without
+    this line the codec path does nothing and says nothing, which this project
+    has now found six times. The status line is counted whether or not it has
+    text, because it can appear while the grid is showing. */
+inline constexpr int kPlaybackPageChromeH = kPlaybackPagePadTop + kPlaybackPageTitleH
+                                          + kPlaybackPageSubtitleH + kPlaybackPageSourceH
+                                          + kPlaybackPageSourceGap + kPlaybackPageStatusH
+                                          + kPlaybackPagePadBottom;
+
+struct PlaybackPageRects
+{
+    juce::Rectangle<int> title, subtitle, source, grid, status;
+};
+
+/** The page's layout, the ONE author of its rects; paint consumes these and
+    computes nothing. A page too short for all of it crops the grid and the
+    status line from the bottom, never the header. */
+inline PlaybackPageRects playbackPageLayout (juce::Rectangle<int> page, int tileCount)
+{
+    PlaybackPageRects r;
+    auto a = page.withTrimmedTop (kPlaybackPagePadTop).withTrimmedBottom (kPlaybackPagePadBottom);
+    r.title    = a.removeFromTop (kPlaybackPageTitleH);
+    r.subtitle = a.removeFromTop (kPlaybackPageSubtitleH);
+    r.source   = a.removeFromTop (kPlaybackPageSourceH);
+    a.removeFromTop (kPlaybackPageSourceGap);
+    r.grid     = a.removeFromTop (playbackGridHeight (tileCount, a.getWidth()));
+    r.status   = a.removeFromTop (kPlaybackPageStatusH);
+    return r;
 }
 
 } // namespace echojay

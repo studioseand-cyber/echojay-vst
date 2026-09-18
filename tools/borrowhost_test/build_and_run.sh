@@ -36,6 +36,9 @@ for a in args[1:]:
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/borrowhost_test/borrowhost_test.cpp',
         'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
+        # The Playback grid's pictures (juce_add_binary_data, EchoJayPlaybackArt).
+        # This harness drives the real editor, whose grid references them.
+        'build/libEchoJayPlaybackArt.a',
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
         '-framework','IOKit','-framework','Security','-framework','WebKit',
