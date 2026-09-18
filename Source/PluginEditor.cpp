@@ -8078,7 +8078,7 @@ void EchoJayEditor::measureLinkStrips()
     const int bandL = kLinkPad;
     const int bandR = shape.mW - kLinkPad;
     const int bandW = juce::jmax(0, bandR - bandL);
-    const int abOff = abBarShowing ? kAbBarH : 0;
+    const int abOff = bottomBarsH();
 
     int y = topH + kLinkTopPad;
     linkTitleRect_ = { bandL, y, bandW, 18 };
@@ -18690,7 +18690,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         juce::Font chipFont(juce::FontOptions(11.0f));
         int natural = juce::GlyphArrangement::getStringWidthInt(chipFont, codecChipLabel_) + 36;
         const juce::Rectangle<int> cb (mW - 88 - 10,
-                                       getHeight() - 36 - (abBarShowing ? kAbBarH : 0),
+                                       getHeight() - 36 - bottomBarsH(),
                                        88, 26);
         int minX = aiCompareBtn.isVisible() ? aiCompareBtn.getRight() + 8 : 8;
         int w = juce::jmin(natural, cb.getX() - 8 - minX);
@@ -18801,7 +18801,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Percentage only, no counts, no "credits". Derives from the server pool.
     if (currentTab == Tab::Chat && chatSidebar.isVisible() && api.isLoggedIn())
     {
-        int abOffFtr = abBarShowing ? kAbBarH : 0;
+        int abOffFtr = bottomBarsH();
         int fy = getHeight() - 20 - abOffFtr;
         const auto& up = api.getUserInfo().usagePool;
         juce::String label;
@@ -18821,7 +18821,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
     int pad = 10;
     int contentY = topH + 6;
     int contentW = mW - pad * 2;
-    int abBarOffset = abBarShowing ? kAbBarH : 0; // shrink content when AB bar showing
+    int abBarOffset = bottomBarsH(); // shrink content when AB bar showing
 
     if (currentView == View::Compare && currentTab == Tab::Compare) {
         auto cArea = juce::Rectangle<int>(pad, topH + 4, contentW, bounds.getHeight() - topH - 16 - abBarOffset);
@@ -20344,6 +20344,82 @@ int EchoJayEditor::tabIndexAt (juce::Point<int> p) const
     return tabIndexIn (tabRects_, p);
 }
 
+// THE PLAYBACK ENVIRONMENT BAR (18 Sep 2026).
+//
+// WHAT IT PREVENTS: a playback environment stays engaged when the user leaves
+// the Playback page, and nothing else on screen said so. Somebody would leave
+// Phone speaker on and mix through it for an hour, judging every decision
+// against a filter they had forgotten. This bar is on whenever an environment
+// is, on every view, and says in words that the audio is being altered.
+//
+// PAINTED OVER THE CHILDREN, so no page, panel or full-window overlay can hide
+// it. The layouts all keep clear of it through bottomBarsH(); the two
+// full-window overlays (the reference browser and the review overlay) do not,
+// and while one of them is open the bar still shows but its X is under the
+// overlay, which takes the click.
+void EchoJayEditor::paintOverChildren (juce::Graphics& g)
+{
+    paintEnvBar (g);
+}
+
+void EchoJayEditor::paintEnvBar (juce::Graphics& g)
+{
+    envBarX_ = {};
+    if (! envBarShowing)
+        return;
+
+    // STACKED ABOVE THE A/B BAR, which keeps the very bottom it has always
+    // had (its paint and its clicks both use the window's last 32 px), so
+    // both can show at once and the A/B bar's code is untouched.
+    const int barY = getHeight() - (abBarShowing ? kAbBarH : 0) - kEnvBarH;
+    const juce::Rectangle<int> bar (0, barY, getWidth(), kEnvBarH);
+
+    // AMBER, from the interface's own palette: the house colour for "look at
+    // this" (it is the no-capture warning's), and distinct from the codec
+    // chip's teal, because an environment and a codec preview are different
+    // states and must not be read as each other.
+    g.setColour (C::bg);
+    g.fillRect (bar);
+    g.setColour (C::amber.withAlpha (0.14f));
+    g.fillRect (bar);
+    g.setColour (C::amber.withAlpha (0.55f));
+    g.drawHorizontalLine (barY, 0.0f, (float) getWidth());
+
+    // The X at the right, in the same 24 px zone the A/B bar's X uses.
+    envBarX_ = bar.withLeft (bar.getRight() - 28);
+    g.setColour (C::text2);
+    g.setFont (juce::Font (juce::FontOptions (12.0f)));
+    g.drawText ("x", envBarX_, juce::Justification::centred);
+
+    // The selection flips before the timer's next tick removes the bar; in
+    // that tick there is nothing to name, so no sentence rather than "None".
+    const PlaybackSim sim = processorRef.playbackSim();
+    if (sim == PlaybackSim::None)
+        return;
+
+    // NAMED FROM THE GRID'S OWN TABLE, so the bar and the tile that set it
+    // cannot call the environment two different things.
+    juce::String name;
+    for (const auto& t : echojay::kPlaybackTiles)
+        if (t.kind == echojay::PlaybackTileKind::Live && t.sim == sim) { name = t.label; break; }
+    if (name.isEmpty())
+        name = playbackSimName (sim);
+
+    auto text = bar.withTrimmedLeft (12).withTrimmedRight (32);
+    const auto dot = text.removeFromLeft (10).withSizeKeepingCentre (6, 6);
+    g.setColour (C::amber);
+    g.fillEllipse (dot.toFloat());
+
+    // SAYS THE AUDIO IS BEING ALTERED, not just what is on, so a glance
+    // explains why the mix sounds wrong. Measured with CoreText at 11.5 pt:
+    // 332.5 px for the longest name ("Phone speaker"), inside the ~366 px the
+    // narrowest window (compact mode, 420 px) leaves after the dot and the X.
+    g.setColour (C::text);
+    g.setFont (juce::Font (juce::FontOptions (11.5f)));
+    g.drawText (name + " is altering what you hear. This is not your mix.",
+                text, juce::Justification::centredLeft, true);
+}
+
 void EchoJayEditor::resized()
 {
     // No transform — layout scales to actual window size
@@ -20445,7 +20521,7 @@ void EchoJayEditor::resized()
         // the Dashboard surface, destroy on leaving) BEFORE laying it out.
         reconcileDashboardWeb();
 
-        const int abOffD = abBarShowing ? kAbBarH : 0;
+        const int abOffD = bottomBarsH();
         const auto dashRect = juce::Rectangle<int> (0, topH, mW,
                                   juce::jmax (50, b.getHeight() - topH - abOffD));
 
@@ -20572,7 +20648,7 @@ void EchoJayEditor::resized()
     // CHAIN tab layout — plugin view + strip fill the left area, chat on right
     if (comingSoonTab)
     {
-        int abOff3  = abBarShowing ? kAbBarH : 0;
+        int abOff3  = bottomBarsH();
         int contentH = b.getHeight() - topH - abOff3;
         // Panel fills from below the header strip to the bottom
         chainListPanel.setBounds(0, topH + 32, mW, contentH - 32);
@@ -20663,7 +20739,7 @@ void EchoJayEditor::resized()
     // one width and became WRONG the moment it could collapse to zero (the
     // visual would sit 280 to 420px short of the right edge with nothing
     // beside it).
-    int abOff = abBarShowing ? kAbBarH : 0;
+    int abOff = bottomBarsH();
     int paintMW = computeColumns(b.getWidth()).mW;
     // particleVisualHolder may only be shown on Visualisation or Meters tabs.
     const bool isVisualTab = (currentTab == Tab::Visualisation || currentTab == Tab::Meters);
@@ -20788,7 +20864,7 @@ void EchoJayEditor::resized()
         sidebarNewAlbumBtn.setVisible(true);
         // ListBox fills the rest, minus a compact usage-% footer at the very
         // bottom (shorten further when the AB bar is visible to avoid overlap)
-        int sbAbOff = abBarShowing ? kAbBarH : 0;
+        int sbAbOff = bottomBarsH();
         const int footerH = api.isLoggedIn() ? 20 : 0;
         chatSidebar.setBounds(sbX, topH + kSidebarToolbarH,
                               kSidebarW,
@@ -20809,7 +20885,7 @@ void EchoJayEditor::resized()
     // invisible on the old tabs' dead space, obvious against CHAIN's card.)
     int chatPadL = 8;
     int chatStartX = (compactMode ? 0 : mW) + sidebarOffsetX;
-    int abOff4 = abBarShowing ? kAbBarH : 0;
+    int abOff4 = bottomBarsH();
     int inputPad = compactMode ? 16 : 10;
     // Disclaimer footer strip under the input; the input row moves up to make
     // room. Bounds/text/visibility are set after the hide blocks below.
@@ -21308,7 +21384,7 @@ void EchoJayEditor::resized()
         {
             codecPanel_.setBounds (echojay::codecPageLayout (
                 { cPad, cy2, mW - cPad * 2,
-                  getHeight() - cy2 - 10 - (abBarShowing ? kAbBarH : 0) },
+                  getHeight() - cy2 - 10 - bottomBarsH() },
                 (int) CodecRender::presets().size()).page);
         }
 
@@ -21333,7 +21409,7 @@ void EchoJayEditor::resized()
         {
             const int kHdrH = 20, kGap = 6, kBtnAreaH = 36;
             int aY2 = topH + 4;
-            int aH2 = getHeight() - topH - 16 - (abBarShowing ? kAbBarH : 0);
+            int aH2 = getHeight() - topH - 16 - bottomBarsH();
             // Accumulate to panels start: reference bar + SUB-TAB ROW +
             // selector. All THREE bands, in the order paintCompareView walks
             // them. DERIVED, not restated: this line once read "aY2 + 140" with
@@ -21385,7 +21461,7 @@ void EchoJayEditor::resized()
 
         // Transport bar at bottom: [A] [B] [▶] [SYNC] ... [AI Compare]
         {
-            int abOff2 = abBarShowing ? kAbBarH : 0;
+            int abOff2 = bottomBarsH();
             int btnY = getHeight() - 36 - abOff2;
             const int kTGap = 4;
             const int kAbW = 28;   // A/B buttons
@@ -21485,7 +21561,7 @@ void EchoJayEditor::resized()
     // controls. At normal heights the content matches the viewport and the
     // Save row sits at the window bottom exactly as before.
     if (currentView == View::Settings) {
-        const int abOff3 = abBarShowing ? kAbBarH : 0;
+        const int abOff3 = bottomBarsH();
         settingsViewport_.setBounds(0, topH, b.getWidth(),
                                     juce::jmax(50, b.getHeight() - topH - abOff3));
         settingsViewport_.setVisible(true);
@@ -22184,6 +22260,20 @@ void EchoJayEditor::timerCallback()
     } else if (!shouldShowAbBar && abBarShowing) {
         abBarShowing = false;
         setSize(getWidth(), getHeight() - kAbBarH);
+    }
+    // THE PLAYBACK ENVIRONMENT BAR: on whenever a simulation is engaged, in
+    // every view and mode. It reads the SELECTION ONLY, never the view, unlike
+    // the A/B bar above (which hides on Compare and so resizes the window as
+    // the user navigates): this one changes the window height when the
+    // environment changes and at no other time. The flag is set before setSize
+    // so the resized() that follows lays everything out above it.
+    {
+        const bool shouldShowEnvBar = (processorRef.playbackSim() != PlaybackSim::None);
+        if (shouldShowEnvBar != envBarShowing)
+        {
+            envBarShowing = shouldShowEnvBar;
+            setSize(getWidth(), getHeight() + (envBarShowing ? kEnvBarH : -kEnvBarH));
+        }
     }
     
     // ALWAYS bring header buttons to front so overlays can't block them
@@ -34577,6 +34667,18 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
 
+    // THE PLAYBACK ENVIRONMENT BAR'S X, before anything else, in every view,
+    // mode and screen, because the bar is painted over all of them. It switches
+    // the environment off and LEAVES THE USER WHERE THEY ARE: no navigation.
+    // Ahead of the project-prompt check because the bar is painted above that
+    // scrim too, and turning an environment off interrupts nothing.
+    if (envBarShowing && envBarX_.contains (pos))
+    {
+        processorRef.setPlaybackSim (PlaybackSim::None);
+        repaint();
+        return;
+    }
+
     // Project prompt scrim blocks everything painted beneath it. This
     // handler only fires for clicks NOT on child components, so the
     // prompt's own input/buttons still work.
@@ -34905,7 +35007,7 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         int mW2 = computeColumns(getWidth()).mW;
         int numStripH = 28;
         int stripH = 30;
-        int abOff5 = abBarShowing ? kAbBarH : 0;
+        int abOff5 = bottomBarsH();
         int stripY = getHeight() - numStripH - stripH - abOff5;
 
         if (pos.x < mW2 && pos.y >= stripY && pos.y < stripY + stripH)

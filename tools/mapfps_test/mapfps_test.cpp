@@ -10093,15 +10093,20 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         //
         // Page sizes as resized() derives them (content area = main column less
         // 10 px each side, height less the header, tab strip, reference bar,
-        // sub-tab row, 10 px margin and the 32 px A/B bar), stated here because
-        // the editor cannot be linked into this suite:
+        // sub-tab row, 10 px margin and the bottom bars, bottomBarsH()), stated
+        // here because the editor cannot be linked into this suite:
         //   smallest window 900 x 580, A/B bar showing   -> 565  x 405
+        //   smallest window, A/B bar AND the playback
+        //     environment bar, 32 px each (18 Sep 2026)  -> 565  x 373
         //   largest 1800 x 1200, sidebar open, A/B bar    -> 1360 x 1025
         //   largest 1800 x 1200, sidebar collapsed        -> 1780 x 1025
+        // The environment bar shows on EVERY view, the Playback page included,
+        // so the smallest page is the one with both bars.
         {
             const int pgTiles = (int) kPlaybackTiles.size();
             struct Page { const char* name; int w, h; };
             for (const Page& p : { Page { "smallest window, A/B bar",           565,  405 },
+                                   Page { "smallest window, both bottom bars",  565,  373 },
                                    Page { "largest window, sidebar open",       1360, 1025 },
                                    Page { "largest window, sidebar collapsed",  1780, 1025 } })
             {

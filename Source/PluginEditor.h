@@ -43,6 +43,9 @@ public:
     ~EchoJayEditor() override;
 
     void paint(juce::Graphics&) override;
+    // The playback environment bar, painted ABOVE every child so no overlay,
+    // page or panel can hide it (see paintEnvBar).
+    void paintOverChildren(juce::Graphics&) override;
     void resized() override;
     void visibilityChanged() override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -414,6 +417,26 @@ private:
     void applyVisualOnlyVisibility();
     bool abBarShowing = false;       // tracks whether AB transport bar is visible (window resized)
     static constexpr int kAbBarH = 32;
+
+    // THE PLAYBACK ENVIRONMENT BAR (18 Sep 2026): shown whenever a playback
+    // simulation is engaged, on every view, stacked ABOVE the A/B bar so both
+    // can show at once. It depends on the selection ONLY, never on the view,
+    // so the window resizes when the environment changes and never when the
+    // user navigates.
+    bool envBarShowing = false;
+    static constexpr int kEnvBarH = 32;
+    juce::Rectangle<int> envBarX_;   // its X, stored by paint, read by mouseDown
+
+    // THE TOTAL HEIGHT OF EVERY BOTTOM BAR, and the ONE place it is computed.
+    // Every layout and paint position that keeps clear of the bottom bars asks
+    // this; there were fourteen sites each reading "abBarShowing ? kAbBarH : 0",
+    // and a second bar added by hand to each would have been fourteen chances
+    // to miss one.
+    int bottomBarsH() const noexcept
+    {
+        return (abBarShowing ? kAbBarH : 0) + (envBarShowing ? kEnvBarH : 0);
+    }
+    void paintEnvBar (juce::Graphics& g);
     
     // Spectrum A/B overlay — holds the "other" spectrum when switching between ref and DAW
     std::array<float, 64> heldSpectrum{};
