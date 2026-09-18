@@ -9,10 +9,10 @@
 #
 # Its SECOND job is to run the repo's self-tests. This is a C++ repo, so the
 # suite is the workspace round-trip test (real objects, EJ_SELFTEST body).
-# It links the release SharedCode lib, so it can only run once the tree has
-# been built; on an unbuilt tree the gate SKIPS the test with a clear notice
-# rather than blocking (a gate that fails when you simply haven't built yet
-# gets bypassed habitually, which defeats the point).
+# It links the release SharedCode lib. If that lib is missing the gate BUILDS
+# it at -j 4 when build/ is configured, and FAILS when it is not; it no longer
+# skips, because the skip printed green having tested nothing. Either way it
+# prints the path it took (see "A MISSING ARCHIVE IS NEVER SILENT" below).
 #
 # Enable once per clone:   git config core.hooksPath .githooks
 # Bypass (emergencies only): git commit --no-verify
@@ -87,10 +87,36 @@ for T in reinstall_v2_test; do
   echo "  ok  $T: $(echo "$out" | tail -1)"
 done
 
-if [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
-  echo "  SKIP  workspace round-trip test (tree not built; run reinstall-v2.sh first)"
-  echo "pre-commit gate: shell suites green, build-dependent tests skipped (unbuilt tree)"
-  exit 0
+# A MISSING ARCHIVE IS NEVER SILENT (18 Sep 2026). This block used to print a
+# SKIP and exit 0 when the archive was absent, so the gate reported success
+# having tested nothing. On 17 Sep a clean removed the archive, and every
+# commit after it would have passed green on the shell suite alone. There are
+# now three paths, and the gate prints which one it took, so a green gate that
+# skipped cannot be read again:
+#   archive-present  the archive is there; the suites run against it
+#   built            it is missing but build/ is configured: build it, at -j 4,
+#                    announced before it starts, and fail if that fails
+#   refused          it is missing and build/ is not configured: nothing can be
+#                    built, so the commit FAILS rather than passing untested
+# -j 4 for the reason given at tools/mapfps_test/build_and_run.sh step 1: at
+# -j 4 this archive peaked at 5.70 GiB on a 16 GiB machine.
+if [ -f "$LIB" ] && [ -f "$REPO/build/compile_commands.json" ]; then
+  echo "  gate path: archive-present (suites run against the existing SharedCode archive)"
+elif [ -f "$REPO/build/CMakeCache.txt" ]; then
+  echo "  gate path: built (SharedCode archive missing; building target EchoJay at -j 4 now, before the suites)"
+  out=$(cmake --build "$REPO/build" --target EchoJay -j 4 2>&1)
+  if [ $? -ne 0 ] || [ ! -f "$LIB" ] || [ ! -f "$REPO/build/compile_commands.json" ]; then
+    echo "GATE FAIL: the SharedCode archive could not be built"
+    echo "$out" | grep -iE 'error' | head -12
+    exit 1
+  fi
+  echo "  ok  SharedCode archive built"
+else
+  echo "  gate path: refused (SharedCode archive missing and build/ is not configured, so nothing can be built or tested)"
+  echo "GATE FAIL: no SharedCode archive, and no configured build/ to make one"
+  echo "  configure it (cmake -S . -B build -DCMAKE_BUILD_TYPE=Release) and commit again;"
+  echo "  the gate then builds the archive itself, at -j 4"
+  exit 1
 fi
 
 # BUILD-DEPENDENT SUITES (12 Aug 2026: mapfps_test joins the roundtrip

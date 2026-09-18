@@ -47,7 +47,20 @@ cd "$(dirname "$0")/../.."
 # NOT build the AU or VST3 bundles, so an installed plugin is never disturbed
 # by running the gate.
 echo "== gate step 1/2: the Link's SharedCode archive must compile =="
-if ! ( cd build && make -j"$(sysctl -n hw.ncpu)" EchoJayLink ); then
+# -j 4, NOT THE CORE COUNT (18 Sep 2026). This read -j"$(sysctl -n hw.ncpu)",
+# which is 10 on the 16 GiB machine this repo is built on, and it runs inside
+# the pre-commit gate. Measured one compile at a time with /usr/bin/time -l:
+# PluginEditor.cpp peaks at 2,535,456,768 bytes (2.36 GiB) against 0.35 GiB for
+# a unit without the generated headers, and FIVE units share its 44 MB
+# filmstrip header (the other four were not measured one by one). Ten jobs can
+# hold several of those at once beside everything else the machine runs, which
+# wants more memory than it has. At -j 4 the main archive peaked at 5.70 GiB
+# and this Link archive, built from nothing, at 4.90 GiB in 244 s, with no swap;
+# ten jobs is an extrapolation from those, not a measurement.
+# The machine has already been taken down once by an unpinned job count: on
+# 17 Sep a clean rebuild ran with a bare -j, which GNU make treats as unlimited.
+# A bare -j and the core count are both "however many", and neither belongs here.
+if ! ( cd build && make -j 4 EchoJayLink ); then
     echo "" >&2
     echo "GATE FAILED: EchoJayLink did not compile." >&2
     echo "The Link's translation units (LinkProcessor.cpp, LinkEditor.cpp) are" >&2
