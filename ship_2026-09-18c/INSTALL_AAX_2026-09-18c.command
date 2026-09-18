@@ -15,10 +15,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DEST="/Library/Application Support/Avid/Audio/Plug-Ins"
 
 # THE FOUR SLICE UUIDs of this build (preserved through wraptool signing).
-WANT_V2="76B6EB50-D37D-32E0-BF65-2308DFB07423"        # V2  x86_64 (Pro Tools under Rosetta loads THIS line)
-WANT_V2_ARM="2D830C5A-A9DC-300D-B97F-5C0E077620C3"    # V2  arm64
-WANT_LK="7331C5C7-1646-3514-86A1-F0A1BFCEAD72"        # Link x86_64
-WANT_LK_ARM="1E9559E8-A585-3DF6-BE0C-E02AF36A48B3"    # Link arm64
+WANT_V2="2A8390F1-0C4F-3DDC-B5F4-708E2FEA5AE1"        # V2  x86_64 (Pro Tools under Rosetta loads THIS line)
+WANT_V2_ARM="66418C5C-EA0C-312B-9B74-6C7934795012"    # V2  arm64
+WANT_LK="E42E913D-D60C-30E8-B155-9D76C4DDB39D"        # Link x86_64
+WANT_LK_ARM="98985F83-B434-3D4F-9288-E52B9004C3F7"    # Link arm64
 
 BK="$HOME/Desktop/DO_NOT_SIGN_pre18c_backup_2026-09-18"
 
@@ -54,8 +54,8 @@ LKSRC="$(locate 'EchoJay Link.aaxplugin')" || { echo "  NOT FOUND  EchoJay Link 
 echo "Found V2:   $V2SRC"
 echo "Found Link: $LKSRC"
 echo "Verifying BOTH source bundles before install..."
-verify "$V2SRC" "$WANT_V2" "EchoJay V2 (2026-09-18c: loudness loop, translated built-ins, pre-flight retry, limiter input_db)"   "$WANT_V2_ARM"; rc=$?; [ $rc -eq 0 ] || { echo "STOP: V2 source verify failed (rc=$rc). Nothing installed."; exit $rc; }
-verify "$LKSRC" "$WANT_LK" "EchoJay Link (2026-09-18c: loudness loop, translated built-ins, pre-flight retry, limiter input_db)" "$WANT_LK_ARM"; rc=$?; [ $rc -eq 0 ] || { echo "STOP: Link source verify failed (rc=$rc). Nothing installed."; exit $rc; }
+verify "$V2SRC" "$WANT_V2" "EchoJay V2 (2026-09-18c: loudness loop + limiter wall, translated built-ins, pre-flight retry, limiter input_db)"   "$WANT_V2_ARM"; rc=$?; [ $rc -eq 0 ] || { echo "STOP: V2 source verify failed (rc=$rc). Nothing installed."; exit $rc; }
+verify "$LKSRC" "$WANT_LK" "EchoJay Link (2026-09-18c: loudness loop + limiter wall, translated built-ins, pre-flight retry, limiter input_db)" "$WANT_LK_ARM"; rc=$?; [ $rc -eq 0 ] || { echo "STOP: Link source verify failed (rc=$rc). Nothing installed."; exit $rc; }
 
 if [ "$VERIFY_ONLY" -eq 1 ]; then echo "VERIFY-ONLY: both source bundles are the intended build. (No install.)"; exit 0; fi
 
