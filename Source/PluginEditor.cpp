@@ -8,7 +8,8 @@
 #include "BorrowStatusText.h"   // Round C: one writer for the borrowed-rack status line
 #include "AskShelfLayout.h"     // Round C: the ask shelf never passes the chat column
 #include "ChatBubbleStyle.h"    // hurdle 1 item 3: the one text-colour rule (coral for a NOT DIALABLE report)
-#include "NotDialableText.h"    // hurdle 1 item 3: the words + the built-in alternative by role
+#include "NotDialableText.h"
+#include "ChainJsonView.h"    // hurdle 1 item 3: the words + the built-in alternative by role
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics (EJChat:)
@@ -22386,11 +22387,8 @@ void EchoJayEditor::finishSessionBuild(const juce::String& linkUid, const juce::
 
 std::map<juce::String, juce::String> EchoJayEditor::roleByNameFor(const juce::String& chainJson)
 {
-    std::map<juce::String, juce::String> roles;
-    if (auto* co = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
-        for (auto& sv : *co)
-            roles[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()] = sv.getProperty("role", juce::var()).toString();
-    return roles;
+    // 18 Sep 2026 crash fix: the view OWNS the parsed root for the whole expression (ChainJsonView.h).
+    return ChainJsonView (chainJson).rolesByName();
 }
 
 // Amendment 3 (17 Sep 2026): ONE composer for the chain-built result bubble, used by
@@ -22418,11 +22416,7 @@ EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, cons
     // chain block the build was made from.
     struct NotDialablePart { juce::String name, reason, role; };
     std::vector<NotDialablePart> notDialableParts;
-    std::map<juce::String, juce::String> roleByName;
-    if (auto* co = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
-        for (auto& sv : *co)
-            roleByName[sv.getProperty("name", juce::var()).toString().trim().toLowerCase()]
-                = sv.getProperty("role", juce::var()).toString();
+    const auto roleByName = ChainJsonView (chainJson).rolesByName();   // 18 Sep 2026 crash fix: no pointer into a temporary
     for (const auto& di : ch.getDialInfos())
     {
         // dial-4 A8: population, counted where the rows are logged so the
@@ -28683,10 +28677,13 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
         // PRE-FLIGHT (17 Sep 2026 ruling): probe every not-known-good third-party plugin out of
         // process before the borrowed host instantiates anything; the overlay says so.
         {
-            juce::StringArray names;
-            if (auto* carr = juce::JSON::parse(chainJson).getProperty("chain", juce::var()).getArray())
-                for (auto& ev : *carr) names.add(ev.getProperty("name", juce::var()).toString());
-            bhB->setBuildRoles(roleByNameFor(chainJson));
+            // 18 Sep 2026 crash fix: ONE owned parse for the names and the roles (ChainJsonView.h). The old
+            // expression read the names out of a freed array - the live build on 18 Sep probed NOTHING for
+            // three plugins it had never seen (no EJPreflight line; known_good.json first written after the
+            // in-host creates at 13:39:31-35).
+            const ChainJsonView view (chainJson);
+            const juce::StringArray names = view.names();
+            bhB->setBuildRoles(view.rolesByName());
             chainListPanel.statusText = juce::String::fromUTF8("Checking plugins\xe2\x80\xa6");
             chainListPanel.repaint();
             auto descs = processorRef.getChainHost().descriptionsForNames(names);
