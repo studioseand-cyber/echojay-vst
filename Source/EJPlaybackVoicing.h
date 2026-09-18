@@ -14,9 +14,10 @@
 // the built-in devices, so this file adds a table and the wiring between them,
 // and nothing that computes a coefficient.
 //
-// NOTHING SELECTS A VOICING YET, SO NOTHING IS AUDIBLE. No processor, stage or
-// card refers to this file. It exists so that the numbers and the pins that
-// guard them land on their own, ahead of the commit that makes them heard.
+// WIRED INTO THE PLAYBACK STAGE, NOT YET TO A CARD. PlaybackSimStage
+// (EJPlaybackSim.h) owns one VoicingChain per channel and runs it for the
+// PlaybackSim values that map to a voicing. No card selects one yet, so outside
+// a test driving the stage directly, nothing here is audible.
 
 #include "EedDynamicsCore.h"   // echojay::Biquad: the high pass and the low pass
 #include "EedHarmonicCore.h"   // echojay::harmonic::PeakBiquad: the resonance
@@ -141,6 +142,17 @@ public:
     }
 
     PlaybackVoicing voicing() const noexcept { return voicing_; }
+
+    /** Zeroes the sections' memory. The voicing, the rate and the coefficients
+        are left exactly as they are. The stage calls this on ACTIVATION, when a
+        voicing starts after a block with none; see PlaybackSimStage in
+        EJPlaybackSim.h for why then and never between two live voicings. */
+    void reset() noexcept
+    {
+        hp_.reset();
+        lp_.reset();
+        peak_.reset();
+    }
 
     /** Filters samples in place, or does nothing at all.
 

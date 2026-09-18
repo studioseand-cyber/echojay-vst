@@ -563,6 +563,10 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
+    // The playback stage's voicing filters: zeroed on EVERY prepare, the rule
+    // EqEngine::prepare and MeterEngine::prepare follow, not the tally rule
+    // that compares rates. PlaybackSimStage::prepare says why.
+    playbackStage_.prepare (sampleRate);
     chainHost.prepare(sampleRate, samplesPerBlock);
     // Solo crossfades, BOTH a real 30ms ramp (the busGainSmoothed_ idiom
     // above). editSoloMix_ had never been given one — Stage 1's "~30ms"
@@ -1470,7 +1474,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
         float* chans[2] = { buffer.getWritePointer(0),
                             buffer.getNumChannels() >= 2 ? buffer.getWritePointer(1)
                                                          : buffer.getWritePointer(0) };
-        applyPlaybackSim (playbackSim_.get(),
+        applyPlaybackSim (playbackStage_,
                           chans, juce::jmin(2, buffer.getNumChannels()),
                           buffer.getNumSamples());
     }

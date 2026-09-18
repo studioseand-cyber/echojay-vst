@@ -1211,11 +1211,13 @@ private:
     // and what matters is what the capture BEGAN under.
     juce::String captureSubstitution_;
 
-    // PLAYBACK SIMULATION, the selection only. The type carries both the atomic
-    // and the refusal rule, and EJPlaybackSim.h is where the memory order is
-    // stated and argued once. It lives there rather than here so mapfps_test
-    // can exercise the shipped rule instead of a copy of it.
-    PlaybackSimSelection playbackSim_;
+    // PLAYBACK SIMULATION, the whole stage: the selection (the same atomic and
+    // refusal rule as before), one voicing chain per channel, and the voicing
+    // the previous block ran. EJPlaybackSim.h is where the memory order and the
+    // reset rule are stated and argued once. It lives there rather than here so
+    // mapfps_test can exercise the shipped stage instead of a copy of it.
+    // Prepared in prepareToPlay; run at the end of processBlock.
+    PlaybackSimStage playbackStage_;
 
 public:
     /** Select a playback simulation, OR REFUSE THE VALUE.
@@ -1225,12 +1227,12 @@ public:
         a value the enum permits but the switch cannot handle. WHICH VALUES ARE
         REFUSED, AND WHY, IS ARGUED ONCE at PlaybackSimSelection in
         EJPlaybackSim.h, not restated here. Pinned by pb PIN8. */
-    void setPlaybackSim (PlaybackSim s) noexcept  { playbackSim_.set (s); }
+    void setPlaybackSim (PlaybackSim s) noexcept  { playbackStage_.select (s); }
 
     /** The current selection. The editor draws its card state from THIS rather
         than from a bool of its own, so the button cannot show one thing while
         the audio does another. */
-    PlaybackSim playbackSim() const noexcept      { return playbackSim_.get(); }
+    PlaybackSim playbackSim() const noexcept      { return playbackStage_.selected(); }
 
 private:
 

@@ -1,23 +1,34 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "EJPlaybackVoicing.h"   // echojay::VoicingChain: the five device voicings
 
 // =============================================================================
 //  PLAYBACK SIMULATION: the inline stage, and where it is allowed to live.
 // =============================================================================
 //
-// Nothing simulates anything yet. This is the stage, empty, placed and argued,
-// so that the placement is decided once by someone holding the whole argument
-// rather than by whoever adds the first curve.
+// This is the stage, placed and argued, so that the placement was decided once
+// by someone holding the whole argument rather than by whoever added the first
+// curve.
 //
-// THE SELECTION. None is the only value today. A later value is a device class
-// (a phone speaker, a laptop, a car), never a brand: decision 11 of
-// COMPARE_REFERENCE_PLAN, because a generic response curve cannot deliver the
-// fidelity a manufacturer's name implies.
+// THE SELECTION. None, the mono fold, and five device voicings. Each voicing is
+// a device class (a phone speaker, a laptop, a car), never a brand: decision 11
+// of COMPARE_REFERENCE_PLAN, because a generic response curve cannot deliver the
+// fidelity a manufacturer's name implies. The voicings' numbers live in
+// EJPlaybackVoicing.h; here they are only mapped and run.
+//
+// NO CARD SELECTS A VOICING YET. The five values exist, have bodies and are
+// pinned, but nothing in the interface stores them, so outside a test driving
+// the stage they are not audible.
 enum class PlaybackSim
 {
     None = 0,     ///< no simulation; the stage is a no-op and must stay one
     MonoFold,     ///< sum to mono at unity for a centred source
+    PhoneSpeaker, ///< echojay::PlaybackVoicing::PhoneSpeaker, through the chain
+    Laptop,       ///< echojay::PlaybackVoicing::Laptop
+    CarDashboard, ///< echojay::PlaybackVoicing::CarDashboard
+    KitchenRadio, ///< echojay::PlaybackVoicing::KitchenRadio
+    Earbuds,      ///< echojay::PlaybackVoicing::Earbuds
 
     /** SENTINEL, ALWAYS LAST. NEW VALUES GO ABOVE THIS LINE, NEVER BELOW IT.
 
@@ -44,6 +55,24 @@ enum class PlaybackSim
 inline bool playbackSimActive (PlaybackSim s) noexcept
 {
     return s != PlaybackSim::None;
+}
+
+/** The selection's name, for FAIL lines and diagnostics. No default label, so
+    -Wswitch-enum names any value added to the enum without a name here. */
+inline const char* playbackSimName (PlaybackSim s) noexcept
+{
+    switch (s)
+    {
+        case PlaybackSim::None:         return "None";
+        case PlaybackSim::MonoFold:     return "MonoFold";
+        case PlaybackSim::PhoneSpeaker: return "PhoneSpeaker";
+        case PlaybackSim::Laptop:       return "Laptop";
+        case PlaybackSim::CarDashboard: return "CarDashboard";
+        case PlaybackSim::KitchenRadio: return "KitchenRadio";
+        case PlaybackSim::Earbuds:      return "Earbuds";
+        case PlaybackSim::Count:        return "Count";
+    }
+    return "(out of range)";
 }
 
 /** THE STORED SELECTION, WITH ITS REFUSAL RULE, and both live here rather than
@@ -87,11 +116,129 @@ private:
     std::atomic<PlaybackSim> value_ { PlaybackSim::None };
 };
 
+class PlaybackSimStage;
+inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
+                              int numChannels, int numSamples) noexcept;
+
+/** THE STAGE: the selection, the filters a voicing needs, and one block of
+    memory about which voicing ran last.
+
+    applyPlaybackSim used to be a free function of the selection alone, with no
+    state and no sample rate. A voicing needs both, so the stage owns them and
+    applyPlaybackSim takes the stage. There is ONE apply path; the old
+    signature is gone rather than kept beside this one.
+
+    THE SELECTION is a PlaybackSimSelection, unchanged: the same atomic, the
+    same relaxed ordering and the same refusal rule, pinned by pb PIN8.
+
+    THE CHAINS: one echojay::VoicingChain per channel, for up to two channels,
+    audio thread only apart from prepare(). A mono buffer uses the first.
+
+    THE PREVIOUS VOICING is what the last block ran through the chains.
+    None, and the mono fold, both count as "no voicing": neither touches them. */
+class PlaybackSimStage
+{
+public:
+    /** Called from prepareToPlay, which has the rate (PluginProcessor.cpp:564).
+
+        THE STATE IS ZEROED HERE, UNCONDITIONALLY, on every prepare. That is the
+        rule EqEngine::prepare and MeterEngine::prepare follow for filter
+        memory. The other rule in this codebase, clearing only when the rate
+        actually changes (ChainHost.cpp:849), protects the level tallies'
+        accumulated measurements, which a host's routine re-prepare would
+        otherwise wipe. A few samples of filter memory are not a measurement,
+        and after a rate change they are not even valid.
+
+        The previous voicing becomes None, so the next voiced block is an
+        activation and sets its coefficients at the new rate. */
+    void prepare (double sampleRate) noexcept
+    {
+        for (auto& c : chains_)
+            c.prepare (sampleRate);
+        previousVoicing_ = echojay::PlaybackVoicing::None;
+    }
+
+    /** Stores a selection, or refuses it: PlaybackSimSelection::set's rule. */
+    void select (PlaybackSim s) noexcept { selection_.set (s); }
+
+    PlaybackSim selected() const noexcept { return selection_.get(); }
+
+private:
+    friend bool applyPlaybackSim (PlaybackSimStage&, float* const*, int, int) noexcept;
+
+    /** Runs voicing v through the chains, in place. Returns true when it ran,
+        under applyPlaybackSim's contract. */
+    bool runVoicing (echojay::PlaybackVoicing v, float* const* channels,
+                     int numChannels, int numSamples) noexcept
+    {
+        // THE GUARDS. Each returns false having written nothing, because under
+        // the contract false means the body did not run. The previous voicing
+        // is left alone too: nothing ran, so nothing about the chains changed.
+        if (numChannels < 1)     return false;
+        if (channels == nullptr) return false;
+        float* const left = channels[0];
+        if (left == nullptr)     return false;
+
+        // A MONO BUFFER, OR THE ALIASED PAIR THE CALL SITE BUILDS FOR ONE, IS
+        // FILTERED ONCE. Two chains over one buffer would filter it twice,
+        // which is a different response and not the voicing.
+        float* const right = numChannels >= 2 ? channels[1] : nullptr;
+        const bool stereo = (right != nullptr && right != left);
+
+        // THE RESET RULE, AND IT IS THE ONE DECISION IN THIS STAGE.
+        //
+        // FROM NONE TO A VOICING, THE CHAINS ARE ZEROED. Their memory is
+        // whatever they last saw before the voicing was turned off, which may
+        // be seconds or minutes ago and may be full scale. Keeping it would
+        // inject two samples per section from an arbitrary earlier moment into
+        // the first samples of audio that has nothing to do with them: a
+        // transient nobody played.
+        //
+        // FROM ONE LIVE VOICING TO ANOTHER, THE CHAINS ARE NOT ZEROED. That
+        // would empty a filter in the middle of a signal, which is the click
+        // EedDynamicsCore.h:225 exists to avoid ("a state reset is audible").
+        // So setVoicing is called, which calls setCoeffs and keeps the state
+        // deliberately, and the new voicing continues from where the old one
+        // left the signal.
+        //
+        // The same voicing as last block needs neither. Pinned by pb PIN10
+        // (activation zeroes) and pb PIN11 (a switch does not).
+        if (previousVoicing_ == echojay::PlaybackVoicing::None)
+        {
+            for (auto& c : chains_)
+            {
+                c.setVoicing (v);
+                c.reset();                              // THE ACTIVATION RESET
+            }
+        }
+        else if (previousVoicing_ != v)
+        {
+            for (auto& c : chains_)
+                c.setVoicing (v);                       // state kept, on purpose
+        }
+        previousVoicing_ = v;
+
+        chains_[0].process (left, numSamples);
+        if (stereo)
+            chains_[1].process (right, numSamples);
+
+        // Zero samples still returns true, for the reason the mono fold gives:
+        // the body ran, over nothing.
+        return true;
+    }
+
+    PlaybackSimSelection     selection_;
+    echojay::VoicingChain    chains_[2];
+    echojay::PlaybackVoicing previousVoicing_ = echojay::PlaybackVoicing::None;
+};
+
 /** The stage itself: samples in place, or nothing at all.
 
     REAL-TIME SAFE, and it has to stay that way. No allocation, no locks, no
-    file access, no logging. When a curve arrives it brings filter state with
-    it, and that state is prepared in prepareToPlay and only ever read here.
+    file access, no logging. The voicings' filter state lives in the stage: it
+    is zeroed in prepareToPlay (PlaybackSimStage::prepare) and otherwise touched
+    only here, on the audio thread. The selection is read ONCE per call, so a
+    block runs one selection from its first sample to its last.
 
     THE RETURN VALUE MEANS THE SIMULATION BODY RAN. True: the selection's body
     executed. False: it did not.
@@ -111,15 +258,29 @@ private:
     compares it with memcmp afterwards, because the memcmp READS THE BUFFER
     while this return only comments on it. A return value that lied would pass
     a test built on the return value. */
-inline bool applyPlaybackSim (PlaybackSim s, float* const* channels,
+inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
                               int numChannels, int numSamples) noexcept
 {
-    if (! playbackSimActive (s)) return false;          // THE EARLY-OUT
+    const PlaybackSim s = stage.selection_.get();
+
+    // THE EARLY-OUT. It writes one thing, and never to the buffer: the record
+    // that this block ran no voicing, so the next voiced block is an
+    // activation and starts from zeroed filters (pb PIN10).
+    if (! playbackSimActive (s))
+    {
+        stage.previousVoicing_ = echojay::PlaybackVoicing::None;
+        return false;
+    }
 
     switch (s)
     {
         case PlaybackSim::MonoFold:
         {
+            // The fold runs no voicing, so for the reset rule this block is
+            // "none", exactly as if nothing were selected. Everything below
+            // this line is the fold as it was: unfiltered, and bit-identical.
+            stage.previousVoicing_ = echojay::PlaybackVoicing::None;
+
             // THE GUARDS. Each returns false having written nothing, because
             // under the contract above false means the body did not run.
             if (numChannels < 2)     return false;
@@ -176,6 +337,25 @@ inline bool applyPlaybackSim (PlaybackSim s, float* const* channels,
             // apart afterwards.
             return true;
         }
+
+        // THE FIVE VOICINGS. One case each, mapping the selection to its row
+        // and running the chain, so deleting any one of them sends that value
+        // to the trailing false below, where pb PIN7 names it.
+        case PlaybackSim::PhoneSpeaker:
+            return stage.runVoicing (echojay::PlaybackVoicing::PhoneSpeaker,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::Laptop:
+            return stage.runVoicing (echojay::PlaybackVoicing::Laptop,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::CarDashboard:
+            return stage.runVoicing (echojay::PlaybackVoicing::CarDashboard,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::KitchenRadio:
+            return stage.runVoicing (echojay::PlaybackVoicing::KitchenRadio,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::Earbuds:
+            return stage.runVoicing (echojay::PlaybackVoicing::Earbuds,
+                                     channels, numChannels, numSamples);
 
         case PlaybackSim::None:
         case PlaybackSim::Count:

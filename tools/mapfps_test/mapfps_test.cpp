@@ -8996,8 +8996,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             using echojay_ps = PlaybackSim;   // the enum is at file scope
 
+            // THE STAGE, not a bare selection: applyPlaybackSim takes the object
+            // that owns the selection, the voicing chains and the previous
+            // voicing. A fresh one has nothing selected.
+            PlaybackSimStage st;
+            st.prepare (48000.0);
+
             check (! playbackSimActive (echojay_ps::None),
                    "pb PIN1: None is not an active simulation");
+            check (st.selected() == echojay_ps::None,
+                   "pb PIN1: a fresh stage has None selected");
 
             // THE BUFFER IS NOT TOUCHED. Not "is restored", not "is touched
             // harmlessly": the samples are compared after the call and must be
@@ -9009,7 +9017,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::memcpy (rBefore, r, sizeof (r));
 
             float* chans[2] = { l, r };
-            const bool touched = applyPlaybackSim (echojay_ps::None, chans, 2, 8);
+            const bool touched = applyPlaybackSim (st, chans, 2, 8);
 
             check (! touched,
                    "pb PIN1: with nothing selected the stage reports it did nothing");
@@ -9024,14 +9032,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             float m[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
             float mBefore[4]; std::memcpy (mBefore, m, sizeof (m));
             float* mono[2] = { m, m };
-            check (! applyPlaybackSim (echojay_ps::None, mono, 1, 4)
+            check (! applyPlaybackSim (st, mono, 1, 4)
                    && std::memcmp (m, mBefore, sizeof (m)) == 0,
                    "pb PIN1: a mono buffer is untouched too");
 
             // ZERO SAMPLES AND ZERO CHANNELS are reached on a stopped transport
             // in some hosts, and must not be a special case that only works
             // because nothing is selected.
-            check (! applyPlaybackSim (echojay_ps::None, chans, 0, 0),
+            check (! applyPlaybackSim (st, chans, 0, 0),
                    "pb PIN1: an empty block is a no-op rather than a branch nobody took");
         }
 
@@ -9046,6 +9054,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // negative, full scale both ways, a very small one, and both zeros,
             // because -0.0f is a distinct bit pattern the fold must preserve.
             {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
                 float l[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
                 float r[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
                 float lBefore[8], rBefore[8];
@@ -9053,7 +9064,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::memcpy (rBefore, r, sizeof (r));
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (PS::MonoFold, ch, 2, 8),
+                check (applyPlaybackSim (fold, ch, 2, 8),
                        "pb PIN2: the fold reports that it ran on a correlated signal");
                 check (std::memcmp (l, lBefore, sizeof (l)) == 0,
                        "pb PIN2: and left is BIT-IDENTICAL, not merely close");
@@ -9068,13 +9079,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // exactly +0.0 under round-to-nearest, so the collapse is complete
             // rather than nearly complete.
             {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
                 float l[8] = { 0.3f, -0.7f, 1.0f, -1.0f, 1e-7f, 0.1f, 0.0f, -0.0f };
                 float r[8];
                 for (int i = 0; i < 8; ++i) r[i] = -l[i];
                 float zeros[8] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (PS::MonoFold, ch, 2, 8),
+                check (applyPlaybackSim (fold, ch, 2, 8),
                        "pb PIN3: the fold reports that it ran on an anti-correlated signal");
                 check (std::memcmp (l, zeros, sizeof (zeros)) == 0,
                        "pb PIN3: left is exactly +0.0, sign included");
@@ -9088,11 +9102,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // anti-correlated, so neither of the two pins above could stand in
             // for this one.
             {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
                 float l[4] = {  0.5f,  0.25f, -0.125f,  0.75f };
                 float r[4] = {  0.1f, -0.2f,   0.3f,   -0.4f  };
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (PS::MonoFold, ch, 2, 4),
+                check (applyPlaybackSim (fold, ch, 2, 4),
                        "pb PIN4: the fold ran");
                 check (std::memcmp (l, r, sizeof (l)) == 0,
                        "pb PIN4: and the two channels are identical afterwards, "
@@ -9105,6 +9122,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // rather than dereferencing something invalid and taking the suite
             // down instead of reddening it.
             {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
                 float l[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
                 float r[4] = { 0.1f, -0.1f, 0.2f,  -0.2f  };
                 float lB[4], rB[4];
@@ -9112,7 +9132,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::memcpy (rB, r, sizeof (r));
                 float* ch[2] = { l, r };
 
-                check (! applyPlaybackSim (PS::MonoFold, ch, 1, 4),
+                check (! applyPlaybackSim (fold, ch, 1, 4),
                        "pb PIN5: one channel is too few for a fold, so it does not run");
                 check (std::memcmp (l, lB, sizeof (l)) == 0
                        && std::memcmp (r, rB, sizeof (r)) == 0,
@@ -9123,7 +9143,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 float a[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
                 float aB[4]; std::memcpy (aB, a, sizeof (a));
                 float* same[2] = { a, a };
-                check (! applyPlaybackSim (PS::MonoFold, same, 2, 4),
+                check (! applyPlaybackSim (fold, same, 2, 4),
                        "pb PIN5: two channels pointing at one buffer is not a fold");
                 check (std::memcmp (a, aB, sizeof (a)) == 0,
                        "pb PIN5: and that buffer is untouched, so the fold never "
@@ -9133,6 +9153,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // pb PIN6: ZERO SAMPLES IS A LOOP WITH NO ITERATIONS, not a stage
             // that failed to run. Decided, not emergent.
             {
+                PlaybackSimStage fold;
+                fold.prepare (48000.0);
+                fold.select (PS::MonoFold);
                 float l[2] = { 0.5f, -0.5f };
                 float r[2] = { 0.25f, -0.25f };
                 float lB[2], rB[2];
@@ -9140,7 +9163,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::memcpy (rB, r, sizeof (r));
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (PS::MonoFold, ch, 2, 0),
+                check (applyPlaybackSim (fold, ch, 2, 0),
                        "pb PIN6: zero samples still reports that the stage ran");
                 check (std::memcmp (l, lB, sizeof (l)) == 0
                        && std::memcmp (r, rB, sizeof (r)) == 0,
@@ -9152,13 +9175,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // Count sentinel and requires each to report that it ran. A value
             // added to the enum without a case in the switch falls through to
             // the trailing false, and this is the thing that says so, BY THE
-            // VALUE'S NUMBER, so a FAIL line names which one is empty rather
-            // than only that one of them is.
+            // VALUE'S NUMBER AND NAME, so a FAIL line names which one is empty
+            // rather than only that one of them is.
             //
-            // Today it exercises exactly one value and passes trivially. Its
-            // whole purpose is the value after that one, and it needs no
-            // maintenance when that value arrives: that is the difference
-            // between a sweep and a count.
+            // It exercised one value, the mono fold, until the five voicings
+            // were wired; it now sweeps six, and it needed no edit to its loop
+            // to do so: that is the difference between a sweep and a count.
+            // Each value gets a FRESH, prepared stage, so no value's result can
+            // lean on state another left behind.
             //
             // THE STRONGER PIN I CONSIDERED AND REJECTED: assert that every
             // active selection also CHANGES an uncorrelated stereo signal. That
@@ -9175,8 +9199,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     float l[4] = { 0.5f, -0.25f, 0.125f, -0.75f };
                     float r[4] = { 0.1f,  0.2f, -0.3f,    0.4f  };
                     float* ch[2] = { l, r };
-                    check (applyPlaybackSim ((PS) i, ch, 2, 4),
+                    PlaybackSimStage swept;
+                    swept.prepare (48000.0);
+                    swept.select ((PS) i);
+                    check (applyPlaybackSim (swept, ch, 2, 4),
                            "pb PIN7: selection " + juce::String (i)
+                           + " (" + playbackSimName ((PS) i) + ")"
                            + " has a body in the switch and reports that it ran");
                 }
             }
@@ -9256,6 +9284,163 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (ec.contains ("monoRect = monoRow.withWidth"),
                        "pb PIN9: the hit rectangle is computed in paint, like every "
                        "other rect on this page, so it cannot drift from what is drawn");
+            }
+
+            // pb PIN10 and pb PIN11 -- THE RESET RULE, BOTH HALVES.
+            // PlaybackSimStage::runVoicing zeroes the chains when a voicing
+            // starts after a block of none (ACTIVATION), and keeps their state
+            // when one live voicing replaces another (a SWITCH). That is the one
+            // decision in the stage; these pin each half against the other.
+            //
+            // EACH RUNS ONE SAMPLE after the selection changes and compares it,
+            // bit for bit, with BOTH candidate answers, computed here from the
+            // shipped VoicingChain: what a zeroed chain puts out, and what a
+            // chain still carrying the drive's state puts out. The check's own
+            // text names which one arrived, so a FAIL line says "got the CARRIED
+            // value" rather than only that it was wrong.
+            //
+            // The drive ends at full scale on purpose, so the carried memory is
+            // large, and a precondition asserts the two candidates differ: a pin
+            // whose two answers are equal proves nothing in either direction.
+            {
+                using PV = echojay::PlaybackVoicing;
+                const double pbRate  = 48000.0;
+                const int    pbDrive = 64;
+                const float  pbFirstL = 0.5f, pbFirstR = -0.25f;
+
+                auto pbFillDrive = [&] (float* dl, float* dr)
+                {
+                    for (int i = 0; i < pbDrive; ++i)
+                    {
+                        const float mag = 0.25f + 0.75f * (float) i / (float) (pbDrive - 1);
+                        dl[i] = (i % 2 == 0) ? mag : -mag;
+                        dr[i] = -dl[i];
+                    }
+                };
+                auto pbSame = [] (float a, float b)
+                {
+                    return std::memcmp (&a, &b, sizeof (float)) == 0;
+                };
+                auto pbWhich = [&] (float got, float zeroed, float carried) -> juce::String
+                {
+                    if (pbSame (got, zeroed))  return "got the ZEROED value";
+                    if (pbSame (got, carried)) return "got the CARRIED value";
+                    return "got NEITHER value";
+                };
+                auto pbDetail = [] (float got, float zeroed, float carried) -> juce::String
+                {
+                    return "out " + juce::String (got, 9) + ", zeroed " + juce::String (zeroed, 9)
+                         + ", carried " + juce::String (carried, 9);
+                };
+                // Candidate 1: a chain with no memory, running `then` from zero.
+                auto pbZeroed = [&] (PV then, float x)
+                {
+                    echojay::VoicingChain chain;
+                    chain.prepare (pbRate);
+                    chain.setVoicing (then);
+                    chain.process (&x, 1);
+                    return x;
+                };
+                // Candidate 2: a chain that saw the drive under `drive`, then had
+                // its voicing set to `then` with the state KEPT (setVoicing).
+                auto pbCarried = [&] (PV drive, PV then, bool leftSide, float x)
+                {
+                    echojay::VoicingChain chain;
+                    chain.prepare (pbRate);
+                    chain.setVoicing (drive);
+                    float dl[64], dr[64];
+                    pbFillDrive (dl, dr);
+                    chain.process (leftSide ? dl : dr, pbDrive);
+                    chain.setVoicing (then);
+                    chain.process (&x, 1);
+                    return x;
+                };
+
+                // pb PIN10 -- ACTIVATION FROM NONE STARTS FROM ZEROED FILTERS.
+                // Drive PhoneSpeaker, stop, run one block of None, select
+                // PhoneSpeaker again. The chains still hold the drive's last
+                // samples; keeping them would replay a full-scale moment from
+                // before the off period into new audio.
+                {
+                    PlaybackSimStage st;
+                    st.prepare (pbRate);
+                    st.select (PS::PhoneSpeaker);
+                    float dl[64], dr[64];
+                    pbFillDrive (dl, dr);
+                    float* drv[2] = { dl, dr };
+                    check (applyPlaybackSim (st, drv, 2, pbDrive),
+                           "pb PIN10: PhoneSpeaker runs a block, so its filters now hold state");
+
+                    st.select (PS::None);
+                    float offL[4] = { 0.9f, -0.9f, 0.9f, -0.9f };
+                    float offR[4] = { -0.9f, 0.9f, -0.9f, 0.9f };
+                    float* off[2] = { offL, offR };
+                    check (! applyPlaybackSim (st, off, 2, 4),
+                           "pb PIN10: one block of None runs nothing");
+
+                    st.select (PS::PhoneSpeaker);
+                    float gotL = pbFirstL, gotR = pbFirstR;
+                    float* one[2] = { &gotL, &gotR };
+                    check (applyPlaybackSim (st, one, 2, 1),
+                           "pb PIN10: PhoneSpeaker selected again runs");
+
+                    const float zL = pbZeroed (PV::PhoneSpeaker, pbFirstL);
+                    const float zR = pbZeroed (PV::PhoneSpeaker, pbFirstR);
+                    const float cL = pbCarried (PV::PhoneSpeaker, PV::PhoneSpeaker, true,  pbFirstL);
+                    const float cR = pbCarried (PV::PhoneSpeaker, PV::PhoneSpeaker, false, pbFirstR);
+
+                    check (! pbSame (zL, cL) && ! pbSame (zR, cR),
+                           "pb PIN10: precondition, the drive leaves enough state that the "
+                           "zeroed and carried answers differ on both channels",
+                           "left " + pbDetail (gotL, zL, cL) + "; right " + pbDetail (gotR, zR, cR));
+                    check (pbSame (gotL, zL),
+                           "pb PIN10: after a block of None, the first sample out on the left "
+                           "is a ZEROED filter's (" + pbWhich (gotL, zL, cL) + ")",
+                           pbDetail (gotL, zL, cL));
+                    check (pbSame (gotR, zR),
+                           "pb PIN10: and on the right (" + pbWhich (gotR, zR, cR) + ")",
+                           pbDetail (gotR, zR, cR));
+                }
+
+                // pb PIN11 -- A SWITCH BETWEEN TWO LIVE VOICINGS DOES NOT RESET.
+                // The same shape, the opposite expectation: drive PhoneSpeaker,
+                // then select Laptop with no None between them. Zeroing here
+                // would empty a filter in the middle of a signal, the click
+                // EedDynamicsCore.h:225 exists to avoid, so the first sample must
+                // be the one a chain CARRYING the drive's state produces.
+                {
+                    PlaybackSimStage st;
+                    st.prepare (pbRate);
+                    st.select (PS::PhoneSpeaker);
+                    float dl[64], dr[64];
+                    pbFillDrive (dl, dr);
+                    float* drv[2] = { dl, dr };
+                    check (applyPlaybackSim (st, drv, 2, pbDrive),
+                           "pb PIN11: PhoneSpeaker runs a block, so its filters now hold state");
+
+                    st.select (PS::Laptop);
+                    float gotL = pbFirstL, gotR = pbFirstR;
+                    float* one[2] = { &gotL, &gotR };
+                    check (applyPlaybackSim (st, one, 2, 1),
+                           "pb PIN11: Laptop, selected straight after, runs");
+
+                    const float zL = pbZeroed (PV::Laptop, pbFirstL);
+                    const float zR = pbZeroed (PV::Laptop, pbFirstR);
+                    const float cL = pbCarried (PV::PhoneSpeaker, PV::Laptop, true,  pbFirstL);
+                    const float cR = pbCarried (PV::PhoneSpeaker, PV::Laptop, false, pbFirstR);
+
+                    check (! pbSame (zL, cL) && ! pbSame (zR, cR),
+                           "pb PIN11: precondition, the drive leaves enough state that the "
+                           "zeroed and carried answers differ on both channels",
+                           "left " + pbDetail (gotL, zL, cL) + "; right " + pbDetail (gotR, zR, cR));
+                    check (pbSame (gotL, cL),
+                           "pb PIN11: switching voicings, the first sample out on the left "
+                           "CARRIES the state (" + pbWhich (gotL, zL, cL) + ")",
+                           pbDetail (gotL, zL, cL));
+                    check (pbSame (gotR, cR),
+                           "pb PIN11: and on the right (" + pbWhich (gotR, zR, cR) + ")",
+                           pbDetail (gotR, zR, cR));
+                }
             }
         }
 
