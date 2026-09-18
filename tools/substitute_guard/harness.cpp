@@ -102,8 +102,10 @@ int main()
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
         int ap = 0, sk = 0; lim.applyStructured (juce::var (w), EedDeviceProcessor::ParamSource::Assistant, &ap, &sk);
         check (ap == 2 && sk == 0 && std::abs (lim.getParamValue ("input_db") - 7.5) < 1e-6 && std::abs (lim.getParamValue ("ceiling_db") + 0.1) < 1e-6, "EchoJay Limiter dials input_db +7.5 and ceiling_db -0.1 (2/2 applied)", "applied=" + juce::String (ap) + " skipped=" + juce::String (sk));
-        juce::AudioBuffer<float> b (2, 512); b.clear(); b.setSample (0, 100, 0.1f); b.setSample (1, 100, 0.1f); juce::MidiBuffer m; lim.processBlock (b, m);
-        check (b.getMagnitude (0, 0, 512) > 0.2f, "+7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2)", juce::String (b.getMagnitude (0, 0, 512), 3));
+        juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
+        for (int k = 0; k < 6; ++k) { b.clear(); lim.processBlock (b, m); }   // the push EASES over 50 ms (ruling G): let it land first
+        b.clear(); b.setSample (0, 100, 0.1f); b.setSample (1, 100, 0.1f); lim.processBlock (b, m);
+        check (b.getMagnitude (0, 0, 512) > 0.2f, "+7.5 dB of input gain is heard before the ceiling (a 0.1 impulse leaves above 0.2, after the 50 ms ease)", juce::String (b.getMagnitude (0, 0, 512), 3));
     }
 #else
     check (false, "APPLIED n/n: Ratio 2:1 / Threshold -18 dB / Attack 30 ms / Release auto translated and dialled (was 0/3)", "TODAY: the controls payload is dropped");

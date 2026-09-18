@@ -1213,6 +1213,8 @@ private:
         // send landing first shifts the vector under the first send's
         // callback. Identity survives that; an index does not.
         int provisionalId = 0;
+        float loopProgress = -1.0f;   // ruling G: the loudness loop's progress arc on its bubble (-1 = none)
+        int   loopBubbleId = 0;       // identity of the loop's live bubble (updated in place, never by index)
         // Which client-rendered ASK this message IS, when the client built it
         // rather than the model ("channel_mismatch"). Empty for every other
         // message, including model-authored ASK blocks.
@@ -1305,6 +1307,10 @@ private:
     BuildBubble composeBuildBubble(ChainHost& ch, const juce::String& chainJson);
     static std::map<juce::String, juce::String> roleByNameFor(const juce::String& chainJson);
     void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
+    void armLoudnessLoopIfTargeted();      // ruling G: arm after an own-rack build whose limiter names a LUFS target
+    void appendLocalUserBubble(const juce::String& text);
+    bool handleLoudnessVerb(const juce::String& msg);   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"
+    int  loopBubbleSeq_ = 0;
     void rerouteChatTurn(const juce::String& sysPrompt, const juce::String& activeChatId,
                          const juce::String& turnTargetUid, const juce::String& turnTargetName,
                          int provisionalId, const juce::StringArray& roles, const juce::StringArray& contents);

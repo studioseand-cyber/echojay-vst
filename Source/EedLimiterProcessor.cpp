@@ -71,7 +71,7 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
 bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
 {
     if (id == kCeilingDb) { core_.setThresholdDb ((float) value); return true; }
-    if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); return true; }
+    if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); inputGainSmooth_.setTargetValue (inputGain_); return true; }
     if (id == kScHpfHz)   { core_.setSidechainHpfHz (value);      return true; }
     if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5);     return true; }
 
@@ -153,6 +153,8 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
 
     core_.prepare (sampleRate_);
     core_.reset();
+    inputGainSmooth_.reset (sampleRate_, 0.05);   // 50 ms ease on the loudness push
+    inputGainSmooth_.setCurrentAndTargetValue (inputGain_);
 
     // Sized ONCE, for the schema's maximum. Every later lookahead change is a
     // read-pointer move inside this buffer, never a reallocation.
@@ -183,9 +185,10 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // keeps the delay.
     const bool byp = isBypassed();
 
-    const float ig = byp ? 1.0f : inputGain_;   // the loudness push, before the detector and the delay
+    float pk = 0.0f;
     for (int i = 0; i < n; ++i)
     {
+        const float ig = byp ? 1.0f : inputGainSmooth_.getNextValue();   // the loudness push, eased over 50 ms, before the detector and the delay
         l[i] *= ig; if (r != nullptr) r[i] *= ig;
         // The detector reads the input BEFORE the delay — that is the whole
         // trick: it sees the peak while the audio carrying it is still in flight.
@@ -213,7 +216,9 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // zero, so it cannot break the wall it sits behind.
         l[i] = core_.shapeCharacter (frame[0] * g);
         if (r != nullptr) r[i] = core_.shapeCharacter (frame[1] * g);
+        pk = juce::jmax (pk, std::abs (l[i]), r != nullptr ? std::abs (r[i]) : 0.0f);
     }
+    if (pk > outPeakMax_.load (std::memory_order_relaxed)) outPeakMax_.store (pk, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* EedLimiterProcessor::createEditor()

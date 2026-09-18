@@ -422,6 +422,7 @@ EchoJayProcessor::EchoJayProcessor()
     selfKeyEngine_.setWindowSeconds(kSelfKeyWindowS);
     selfKeyEngine_.setLiveChromaEnabled(false);
     selfKeyWorker_.startThread();
+    loudnessLoop_.isPlaying = [this] { return isTransportPlaying(); };   // ruling G
     startTimer(1000);
 }
 

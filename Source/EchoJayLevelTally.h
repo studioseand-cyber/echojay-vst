@@ -94,6 +94,7 @@ public:
         bool  known = false;          // heardSeconds >= kHeardFloorSeconds
         bool  kWeighted = false;      // levelDb and the percentiles are LUFS (true) or dBFS RMS (false)
         float heardSeconds  = 0.0f;   // gated audio heard since reset, undecayed
+        float heardAboveSeconds = 0.0f;   // 18 Sep 2026 (loudness loop): hops above the counting floor (setCountFloor), undecayed
         float windowSeconds = 0.0f;   // how much of it the estimate describes
         // Everything below is NaN while !known. Read known first.
         float levelDb = std::numeric_limits<float>::quiet_NaN();   // gated: LUFS (K) or dBFS RMS (Plain)
@@ -121,6 +122,8 @@ public:
     }
     // Any thread: lands at the next push (the audio thread owns the state).
     void reset() noexcept { resetRequested_.store (true, std::memory_order_relaxed); }
+    // Any thread. Hops whose momentary LUFS is above this floor count toward heardAboveSeconds (NaN = off).
+    void setCountFloor (float lufs) noexcept { countFloorLufs_.store (lufs, std::memory_order_relaxed); }
 
     // Audio thread. right may be null (mono). n >= 0.
     void push (const float* left, const float* right, int n) noexcept
@@ -251,6 +254,8 @@ private:
     std::array<double, kBins> bins_ {};   // decayed weights of momentary loudness (absolute-gated hops)
     std::array<double, kBins> binPow_ {}; // decayed K-power sums per bin: the gated mean is exact, not bin-centred
     double heardHops_ = 0.0;              // undecayed count of absolute-gated hops
+    double heardAboveHops_ = 0.0;         // hops above countFloorLufs_ (loudness loop)
+    std::atomic<float> countFloorLufs_ { std::numeric_limits<float>::quiet_NaN() };
     double plainPow_ = 0.0, plainW_ = 0.0;   // decayed plain-power sum and its weight (gated hops)
     float  peak_ = 0.0f;                  // recent peak, decayed hold
 
@@ -265,7 +270,7 @@ private:
         zl1_ = zr1_ = zl2_ = zr2_ = Z {};
         hopFill_ = 0; hopKPow_ = hopPlainPow_ = 0.0; hopPeak_ = 0.0f;
         ring_.fill (0.0); ringPos_ = 0; ringFill_ = 0;
-        bins_.fill (0.0); binPow_.fill (0.0); heardHops_ = 0.0; plainPow_ = plainW_ = 0.0; peak_ = 0.0f;
+        bins_.fill (0.0); binPow_.fill (0.0); heardHops_ = 0.0; heardAboveHops_ = 0.0; plainPow_ = plainW_ = 0.0; peak_ = 0.0f;
     }
 
     void closeHop() noexcept
@@ -285,6 +290,10 @@ private:
         // per-channel power (dBFS RMS convention). Both go through the same
         // 400 ms block, gate, histogram and decay; only the unit differs.
         const double hopK = (weighting_ == Weighting::K ? hopKPow_ : hopPlainPow_) / (double) hopSamples_;
+        {   // counting floor (loudness loop): decided on THIS 100 ms hop's own power, so a stop or a gap is never counted
+            const float cf = countFloorLufs_.load (std::memory_order_relaxed);
+            if (std::isfinite (cf) && hopK > 0.0 && offsetDb() + 10.0 * std::log10 (hopK) > (double) cf) heardAboveHops_ += 1.0;
+        }
         ring_[(size_t) ringPos_] = hopK;
         ringPos_ = (ringPos_ + 1) % kHopsPerBlock;
         if (ringFill_ < kHopsPerBlock) ++ringFill_;
@@ -329,6 +338,7 @@ private:
         Snapshot s;
         s.kWeighted     = weighting_ == Weighting::K;
         s.heardSeconds  = (float) (heardHops_ * kHopSeconds);
+        s.heardAboveSeconds = (float) (heardAboveHops_ * kHopSeconds);
         s.windowSeconds = (float) juce::jmin ((double) s.heardSeconds, kEffectiveWindowSeconds);
         s.known = s.heardSeconds >= kHeardFloorSeconds;
         if (! s.known) return s;   // every number stays NaN

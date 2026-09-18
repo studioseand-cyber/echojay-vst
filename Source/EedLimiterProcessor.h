@@ -72,6 +72,10 @@ public:
     const echojay::ParamSchema& paramSchema() const override { return schema(); }
     bool   setParamValue (const juce::String& id, double value) override;
     double getParamValue (const juce::String& id) const override;
+    // 18 Sep 2026 (loudness loop): the limiter's own meters for the final bubble.
+    double inputDb() const noexcept { return inputDb_; }
+    float  outputPeakDbMax() const noexcept { const float p = outPeakMax_.load (std::memory_order_relaxed); return p > 0.0f ? 20.0f * std::log10 (p) : -120.0f; }
+    void   resetOutputPeak() noexcept { outPeakMax_.store (0.0f, std::memory_order_relaxed); }
 
     static constexpr const char* kCeilingDb   = "ceiling_db";
     static constexpr const char* kReleaseMs   = "release_ms";
@@ -130,6 +134,8 @@ private:
     double releaseMs_ = 50.0;
     double inputDb_   = 0.0;    // dialled input gain, dB; linear factor recomputed on set
     float  inputGain_ = 1.0f;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputGainSmooth_ { 1.0f };   // 50 ms ease (loudness loop)
+    std::atomic<float> outPeakMax_ { 0.0f };   // max |output sample| since resetOutputPeak (\"Peaks\" in the loop bubble)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterProcessor)
 };

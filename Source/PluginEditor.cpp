@@ -17909,6 +17909,13 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     int bubbleX = chatX + chatW - avatarSize - 12 - bubbleW;
                     g.setColour(C::bg4);
                     g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)tH, 10.0f);
+                    if (msg.loopProgress >= 0.0f)
+                    {   // ruling G: the loudness loop's progress arc, top-right of its bubble
+                        const float cx = (float) (bubbleX + bubbleW - 16), cy = (float) (drawY + 14), rad = 6.0f;
+                        g.setColour(juce::Colour(0x553c4a66)); g.drawEllipse(cx - rad, cy - rad, rad * 2, rad * 2, 1.5f);
+                        juce::Path arc; arc.addCentredArc(cx, cy, rad, rad, 0.0f, 0.0f, juce::MathConstants<float>::twoPi * juce::jlimit(0.0f, 1.0f, msg.loopProgress), true);
+                        g.setColour(juce::Colour(0xff7fe3f2)); g.strokePath(arc, juce::PathStrokeType(2.0f));
+                    }
                     layout.draw(g, { (float)(bubbleX + 10), (float)(drawY + 10), (float)(bubbleW - 20), (float)(textH - 20) });
 
                     // Waveform card — play button + waveform only
@@ -22327,6 +22334,66 @@ void EchoJayEditor::appendLocalResultBubble(const juce::String& text,
     repaint();
 }
 
+// ---- ruling G (18 Sep 2026): the loudness loop's bubbles and verbs ----------------------------------------
+void EchoJayEditor::appendLocalUserBubble(const juce::String& text)
+{
+    if (text.isEmpty()) return;
+    ChatMsg cm; cm.role = "user"; cm.content = text;
+    chatMessages.push_back(cm);
+    processorRef.chatHistory.push_back({ "user", text });
+    processorRef.chatRoles.add("user");
+    processorRef.chatContents.add(text);
+    workspace.appendMessageToChat(currentChatId, "user", text, {}, {}, {}, {}, {}, {}, {});
+    workspace.requestMutationSync();
+    repaint();
+}
+
+void EchoJayEditor::armLoudnessLoopIfTargeted()
+{
+    auto& loop = processorRef.loudnessLoop();
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    loop.onBubble = [safeThis](const LoudnessLoop::Bubble& b)
+    {
+        if (safeThis == nullptr) return;
+        auto* ed = safeThis.getComponent();
+        int idx = -1;
+        if (b.replace && ed->loopBubbleSeq_ > 0)
+            for (int i = (int) ed->chatMessages.size() - 1; i >= 0; --i)
+                if (ed->chatMessages[(size_t) i].loopBubbleId == ed->loopBubbleSeq_) { idx = i; break; }
+        if (idx >= 0)
+        {
+            auto& m = ed->chatMessages[(size_t) idx];
+            m.content = b.text; m.loopProgress = b.final ? -1.0f : b.progress;
+            if (b.final) { m.loopBubbleId = 0; ed->workspace.appendMessageToChat(ed->currentChatId, "assistant", b.text, {}, {}, {}, {}, {}, {}, {}); ed->workspace.requestMutationSync(); }
+            ed->resized(); ed->repaint();
+            return;
+        }
+        ed->appendLocalResultBubble(b.text);
+        if (! b.final) { ed->chatMessages.back().loopBubbleId = ++ed->loopBubbleSeq_; ed->chatMessages.back().loopProgress = b.progress; }
+        ed->resized(); ed->repaint();
+    };
+    if (loop.armFromChain())
+        EchoJay_NSLog(("EJLoudness: armed, target " + juce::String(loop.target(), 1) + " LUFS").toRawUTF8());
+}
+
+bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg)
+{
+    auto& loop = processorRef.loudnessLoop();
+    if (! loop.everArmed()) return false;
+    const auto t = msg.trim().toLowerCase();
+    const bool louder = t.contains("bit louder") || t == "louder" || t.contains("little louder") || t.contains("touch louder");
+    const bool softer = t.contains("bit softer") || t.contains("bit quieter") || t == "softer" || t == "quieter" || t.contains("little softer") || t.contains("little quieter");
+    const bool again  = t.contains("check the level") || t.contains("check level") || t.contains("measure again");
+    const bool undo   = t == "undo" || t == "undo that" || t == "undo the level";
+    if (! (louder || softer || again || undo)) return false;
+    appendLocalUserBubble(msg);
+    if (louder)      loop.nudgeTarget(+1.0f);
+    else if (softer) loop.nudgeTarget(-1.0f);
+    else if (again)  loop.recheck();
+    else if (! loop.undo()) appendLocalResultBubble("Nothing to undo - the level loop has not changed the limiter.");
+    return true;
+}
+
 // ---- Apply-time honesty (26 Jul 2026) --------------------------------------
 // C1' (7 Sep 2026 ruling, DERIVED): the bubble waits for the dial to settle in
 // 250 ms steps. It was 8 steps = 2,000 ms; the longest fetch measured in Sean's
@@ -22600,6 +22667,7 @@ void EchoJayEditor::finishChainBubbleWhenDialSettled(const juce::String& chainJs
     const auto b = composeBuildBubble(ch, chainJson);
     clearStageStatus();   // the bubble replaces the load/dial-window label
     appendLocalResultBubble(b.text, b.altPrompt, b.altLabel, {}, b.dialWarning);
+    armLoudnessLoopIfTargeted();   // ruling G
 }
 
 // Stale-map ladder, unmapped rung: the ONE user-pressed follow-up. Same
@@ -26395,6 +26463,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
                                     const juce::String& displayLabel,
                                     const juce::String& turnTypeOverride)
 {
+    if (handleLoudnessVerb(msg)) return;   // ruling G: local first, no network
     // ---- DEV ONLY: /eqtest {...} -----------------------------------------
     // Intercepted before the send-quota gate and before any network call, so
     // it costs nothing and never reaches the backend. Compiled in always but

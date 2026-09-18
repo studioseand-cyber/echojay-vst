@@ -1161,6 +1161,9 @@ public:
     struct SlotLevels { echojay::LevelTally::Snapshot in, out; bool measured = false; };
     echojay::LevelTally::Snapshot getChainInLevels() const  { return chainInTally_.snapshot(); }
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
+    // 18 Sep 2026 (loudness loop): reset ONLY the chain-output tally and set its counting floor.
+    void resetChainOutLevels() { chainOutTally_.reset(); }
+    void setChainOutCountFloor (float lufs) { chainOutTally_.setCountFloor (lufs); }
     SlotLevels getSlotLevels(int i) const;
     void resetAllLevels();   // source change, manual reset
 

@@ -13,6 +13,7 @@
 #include "LinkShm.h"
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EedKeyWorker.h"
+#include "LoudnessLoop.h"
 
 // Temporary diagnostic: append a timestamped line to the EchoJay teardown log
 // file (Release-safe; DBG is compiled out of Release). Used to trace the
@@ -908,6 +909,7 @@ public:
     bool shouldAutoFeedback() const { return autoFeedbackReady.exchange(false); }
     bool isAudioSilent() const { return audioSilent.load(); }
     bool isTransportPlaying() const { return transportPlaying.load(); }
+    LoudnessLoop& loudnessLoop() noexcept { return loudnessLoop_; }
 
     // Chat history — stored here so it persists when the editor is destroyed/recreated
     struct ChatEntry { 
@@ -1200,6 +1202,7 @@ private:
     ReferenceAnalyser refAnalyser;
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
     ChainHost chainHost;           // Plugin chain hosting (CHAIN tab)
+    LoudnessLoop loudnessLoop_ { chainHost };   // 18 Sep 2026 ruling G: the interactive loudness closed loop (declared after chainHost)
     // Declared AFTER chainHost and before nothing that uses it at
     // construction. See getApi() above for the lifetime argument.
     EchoJayAPI api;

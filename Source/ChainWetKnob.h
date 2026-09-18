@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include "EJKnobGesture.h"
 #include "EchoJayWetKnobFilmstrip.h"
 
 // Compact wet/dry rotary shared by the main plugin's Chain tab rack and the
@@ -140,6 +141,7 @@ struct ChainWetKnob : public juce::Component,
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+        echojay::knobGestureBegan();   // loudness loop: never trim under a hand
         // Right-click / ctrl-click: a small menu the owner fills (the master
         // knob offers "Reset level tally"), no drag begins
         if (e.mods.isPopupMenu()) { if (onPopup) onPopup(); return; }
@@ -157,11 +159,12 @@ struct ChainWetKnob : public juce::Component,
     }
 
     void mouseUp(const juce::MouseEvent&) override
-    { if (onGestureEnd) onGestureEnd(); }
+    { echojay::knobGestureEnded(); if (onGestureEnd) onGestureEnd(); }
 
     void mouseDoubleClick(const juce::MouseEvent&) override
     {
         setValue(1.0f, true);
+        echojay::knobGestureEnded();
         if (onGestureEnd) onGestureEnd();
     }
 
