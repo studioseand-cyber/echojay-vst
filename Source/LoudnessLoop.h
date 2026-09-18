@@ -74,6 +74,7 @@ public:
         if (lim == nullptr) return;
         target_ = targetLufs; slot_ = limiterSlot; passesLeft_ = passes; pass_ = 0;
         if (! haveUndo_) { preLoopInputDb_ = lim->inputDb(); haveUndo_ = true; }
+        atCeiling_ = false; grMaxPass1_ = -1.0f;
         startPass();
         emit ("Chain built. Play the loudest part of the song - the chorus or the drop - and I'll set the level after about ten seconds of audio.", 0.0f, false, false);
         if (! juce::MessageManager::getInstanceWithoutCreating() || ! isTimerRunning()) startTimer (kTickMs);
@@ -104,6 +105,8 @@ public:
     float lastMeasured() const noexcept { return measured_[1] > -200.0f ? measured_[1] : measured_[0]; }
     float measuredPass (int p) const noexcept { return p >= 1 && p <= 2 ? measured_[p - 1] : std::numeric_limits<float>::quiet_NaN(); }
     float countedSeconds() const { return host_.getChainOutLevels().heardAboveSeconds; }
+    float grMaxPass1() const noexcept { return grMaxPass1_; }
+    bool  atCeiling() const noexcept { return atCeiling_; }
     juce::String lastBubble() const { return lastBubble_; }
 
     // The tick. The plugin calls it from the timer; a harness calls it directly between audio blocks.
@@ -135,31 +138,37 @@ public:
         if (! std::isfinite (measured)) return;
         measured_[juce::jmin (1, pass_)] = measured; ++pass_;
         const float needed = target_ - measured;
-        const float mixReads = measured - (float) lim->inputDb();          // the raw mix: what the limiter is fed before its push
-        const float totalPush = target_ - mixReads;                         // everything the push would have to be, open-loop gain included
-        if (pass_ == 1 && totalPush > kTotalPushLimitDb)
-        {   // the edge: say what it would take, offer, change nothing (no silent clamp)
+        // CHECK 2 (18 Sep 2026): ONE behaviour with the server's open-loop pass, which may already sit at +12: the edge
+        // is (current input_db + trim) > +12, never the trim alone. The trim goes to the +12 ceiling (0 when already
+        // there) and the miss is reported honestly - never a silent clamp.
+        const double curDb = lim->inputDb();
+        float trim = juce::jlimit (-kPassClampDb, kPassClampDb, needed);
+        if (curDb + (double) trim > (double) kTotalPushLimitDb) { trim = (float) ((double) kTotalPushLimitDb - curDb); atCeiling_ = true; }
+        if (pass_ == 1 && grMax_ >= 0.0f) grMaxPass1_ = grMax_;
+        if (atCeiling_ && trim <= 0.05f)
+        {   // already at the ceiling: nothing more to push - say the miss now
             state_ = State::hold; stopTimer();
-            emit ("Your mix reads " + fmt (mixReads) + " LUFS; hitting " + fmt (target_) + " would need " + fmtSigned (totalPush) + " dB. I can push the compressor and saturator first - say 'push it'.", -1.0f, true, true);
+            emit ("Hitting " + fmt (measured) + " LUFS, target " + fmt (target_) + " - the limiter is at its +12 ceiling; I can push the compressor and saturator first - say 'push it'.", -1.0f, true, true);
             return;
         }
-        const float trim = juce::jlimit (-kPassClampDb, kPassClampDb, needed);
-        const double newDb = juce::jlimit (-12.0, 12.0, lim->inputDb() + (double) trim);
+        const double newDb = juce::jlimit (-12.0, 12.0, curDb + (double) trim);
         writeInputDb (newDb);
         --passesLeft_;
         if (passesLeft_ > 0)
         {
-            emit ("Measured " + fmt (measured) + ". Pushing " + fmtSigned (trim) + " dB - checking.", 1.0f, true, false);
+            emit ("Measured " + fmt (measured) + ". Pushing " + fmtSigned (trim) + " dB" + (atCeiling_ ? " to the +12 ceiling" : "") + " - checking.", 1.0f, true, false);
             startPass();
             return;
         }
         // final: HOLD
         state_ = State::hold; stopTimer();
-        const float peak = lim->outputPeakDbMax();
+        const float peak = out.truePeakDb;   // the chain OUTPUT, 4x oversampled, held since the pass started (CHECK 1)
         const float grAvg = grN_ > 0 ? grSum_ / (float) grN_ : 0.0f;
-        juce::String text = "Hitting " + fmt (measured) + " LUFS, target " + fmt (target_) + "."
-            + (std::abs (trim) >= 0.05f ? " Trimmed " + fmtSigned (trim) + " dB." : juce::String())
-            + " Peaks " + fmt (peak) + " dBTP, limiter working " + fmt (juce::jmax (0.0f, grMin_ == std::numeric_limits<float>::max() ? 0.0f : grMin_)) + "-" + fmt (juce::jmax (0.0f, grMax_)) + " dB.";
+        const float grLo = grMin_ == std::numeric_limits<float>::max() ? 0.0f : juce::jmax (0.0f, grMin_);
+        juce::String text = "Hitting " + fmt (measured) + " LUFS, target " + fmt (target_)
+            + (atCeiling_ ? " - the limiter is at its +12 ceiling; I can push the compressor and saturator first - say 'push it'." : ".")
+            + (std::abs (trim) >= 0.05f && ! atCeiling_ ? " Trimmed " + fmtSigned (trim) + " dB." : juce::String())
+            + " Peaks " + fmt (peak) + " dBTP, limiter working " + fmt (grLo) + "-" + fmt (juce::jmax (0.0f, grMax_)) + " dB.";
         if (grAvg > kGrOfferDb)
             text += " The limiter is averaging " + fmt (grAvg) + " dB of reduction: a clipper before it, or a " + fmt (target_ - 1.0f) + " target, would be gentler - say which.";
         emit (text, -1.0f, true, true);
@@ -205,5 +214,6 @@ private:
     double preLoopInputDb_ = 0.0; bool haveUndo_ = false;
     float lastCounted_ = 0.0f; bool waitingSaid_ = false; juce::int64 passStartMs_ = 0;
     float grMin_ = std::numeric_limits<float>::max(), grMax_ = 0.0f, grSum_ = 0.0f; int grN_ = 0;
+    float grMaxPass1_ = -1.0f; bool atCeiling_ = false;
     juce::String lastBubble_;
 };

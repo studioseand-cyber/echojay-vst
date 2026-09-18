@@ -95,6 +95,7 @@ public:
         bool  kWeighted = false;      // levelDb and the percentiles are LUFS (true) or dBFS RMS (false)
         float heardSeconds  = 0.0f;   // gated audio heard since reset, undecayed
         float heardAboveSeconds = 0.0f;   // 18 Sep 2026 (loudness loop): hops above the counting floor (setCountFloor), undecayed
+        float truePeakDb = -200.0f;   // 18 Sep 2026 (loudness loop): TRUE PEAK, 4x oversampled, max hold since reset (dBTP), undecayed
         float windowSeconds = 0.0f;   // how much of it the estimate describes
         // Everything below is NaN while !known. Read known first.
         float levelDb = std::numeric_limits<float>::quiet_NaN();   // gated: LUFS (K) or dBFS RMS (Plain)
@@ -114,6 +115,7 @@ public:
     {
         sampleRate_ = sampleRate > 1000.0 ? sampleRate : 48000.0;
         computeKWeightingCoeffs (sampleRate_, k1_, k2_);
+        computeTruePeakCoeffs();
         hopSamples_ = juce::jmax (1, (int) std::lround (sampleRate_ * kHopSeconds));
         decayPerHop_ = std::pow (2.0, -kHopSeconds / kHalfLifeSeconds);
         prepared_ = true;
@@ -138,6 +140,7 @@ public:
             hopPlainPow_ += 0.5 * ((double) l * l + (double) r * r);
             const float a = std::max (std::abs (l), std::abs (r));
             if (a > hopPeak_) hopPeak_ = a;
+            truePeakPush (l, r);
             if (weighting_ == Weighting::K)
             {
                 // K-weighted power, summed over channels as BS.1770 does
@@ -255,6 +258,16 @@ private:
     std::array<double, kBins> binPow_ {}; // decayed K-power sums per bin: the gated mean is exact, not bin-centred
     double heardHops_ = 0.0;              // undecayed count of absolute-gated hops
     double heardAboveHops_ = 0.0;         // hops above countFloorLufs_ (loudness loop)
+    // TRUE PEAK: the same 4x interpolator the limiter's detector uses (EJTruePeakInterp.h, 33-tap Blackman sinc),
+    // one per channel, max |value| held undecayed since the last reset.
+    echojay::TruePeakInterp tpL_, tpR_;
+    float tpMax_ = 0.0f;
+    void computeTruePeakCoeffs() noexcept { tpL_.prepare(); tpR_.prepare(); }
+    inline void truePeakPush (float l, float r) noexcept
+    {
+        const float a = std::max (tpL_.maxAbs4 (l), tpR_.maxAbs4 (r));
+        if (a > tpMax_) tpMax_ = a;
+    }
     std::atomic<float> countFloorLufs_ { std::numeric_limits<float>::quiet_NaN() };
     double plainPow_ = 0.0, plainW_ = 0.0;   // decayed plain-power sum and its weight (gated hops)
     float  peak_ = 0.0f;                  // recent peak, decayed hold
@@ -270,7 +283,7 @@ private:
         zl1_ = zr1_ = zl2_ = zr2_ = Z {};
         hopFill_ = 0; hopKPow_ = hopPlainPow_ = 0.0; hopPeak_ = 0.0f;
         ring_.fill (0.0); ringPos_ = 0; ringFill_ = 0;
-        bins_.fill (0.0); binPow_.fill (0.0); heardHops_ = 0.0; heardAboveHops_ = 0.0; plainPow_ = plainW_ = 0.0; peak_ = 0.0f;
+        bins_.fill (0.0); binPow_.fill (0.0); heardHops_ = 0.0; heardAboveHops_ = 0.0; tpMax_ = 0.0f; plainPow_ = plainW_ = 0.0; peak_ = 0.0f;
     }
 
     void closeHop() noexcept
@@ -339,6 +352,7 @@ private:
         s.kWeighted     = weighting_ == Weighting::K;
         s.heardSeconds  = (float) (heardHops_ * kHopSeconds);
         s.heardAboveSeconds = (float) (heardAboveHops_ * kHopSeconds);
+        s.truePeakDb = (float) (tpMax_ > 0.0f ? 20.0 * std::log10 (tpMax_) : -200.0);
         s.windowSeconds = (float) juce::jmin ((double) s.heardSeconds, kEffectiveWindowSeconds);
         s.known = s.heardSeconds >= kHeardFloorSeconds;
         if (! s.known) return s;   // every number stays NaN
