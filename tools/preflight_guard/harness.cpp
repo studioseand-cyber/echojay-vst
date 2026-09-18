@@ -17,7 +17,21 @@
 #include "EJDisableReasons.h"
 #include "PluginCatalog.h"
 #include "EedCompressorProcessor.h"   // force-link the built-in's registrar (static-lib dead stripping)
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include <cstdio>
+// (g) 18 Sep 2026 - the pre-flight LIVENESS leg runs the REAL build entry (EchoJayEditor::sendChainToLink) on a
+// real editor with a real engaged borrowed host; the three names resolve through the primary host's recommendable
+// list (the friend below puts them there, as buildRecommendable would from a scan).
+struct EchoJayTabStripTestAccess { static void build (EchoJayEditor& e, const juce::String& uid, const juce::String& json) { e.sendChainToLink (uid, json); }
+                                   static juce::String status (EchoJayEditor& e) { return e.chainListPanel.statusText; } };
+// The build's tab switch rebuilds recommendable_ from the (empty) scan, so the names must ALSO be in the known-plugin
+// list, which descriptionsForNames falls back to through resolveByName - the same list a real scan fills.
+struct EchoJayBorrowHostTestAccess { static void addRecommendable (ChainHost& h, const juce::PluginDescription& d)
+{   // seed the SAME stores a real scan fills: the host's scanned entries (buildRecommendable's source) + its known list
+    { std::lock_guard<std::mutex> lk (h.pluginsMutex_); h.entries_.add (d); }
+    h.knownPlugins_.addType (d); h.recommendable_.push_back ({ d.name, d });
+} };
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 juce::PluginDescription fake (int uid, const juce::String& name) { juce::PluginDescription d; d.name = name; d.pluginFormatName = "AudioUnit"; d.manufacturerName = "Guard"; d.fileOrIdentifier = "AudioUnit:Effects/aufx,gd" + juce::String (uid) + ",Grd_"; d.uniqueId = 0x5E6D000 + uid; d.version = "1.0"; return d; }
@@ -109,6 +123,55 @@ int main()
 #else
     std::printf ("  (skipped in TODAY mode)\n"); ++failures;
 #endif
+    std::printf ("== (g) 18 Sep 2026 LIVENESS: a build whose chain names THREE not-known-good products spawns THREE probes ==\n");
+    // Pro Tools, 18 Sep 13:39: spiff, UAD dbx 160 and Looptrotter SA2RATE2 were not known-good, the build placed all
+    // three in-host and no EJPreflight line was ever written - the names for the pre-flight were read out of a freed
+    // array (PluginEditor.cpp:28687, the same expression that crashed in roleByNameFor). Under the scribble leg that
+    // read is deterministic garbage; this leg asserts the probes actually spawn, one per name, on the real path.
+    {
+        ChainHost::resetPreflightVerdictsForTest();
+        auto af = echojay::userAppData().getChildFile ("EchoJay/auth.json"); af.getParentDirectory().createDirectory();
+        af.replaceWithText ("{\"endpoint\":\"https://localhost.invalid\",\"token\":\"harness-token\",\"email\":\"ui@test.local\",\"tier\":\"pro\",\"tierLevel\":2,\"messageLimit\":999,\"credits\":999}");
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get());
+        check (ed != nullptr, "(g) precondition: a real editor");
+        if (ed != nullptr)
+        {
+            ed->setSize (2000, 1100); pumpMeasuring (60);
+            const juce::String uid = "uid-LINK-G";
+            proc.borrowEngageBegin (uid, "lease-" + uid, true, true);
+            auto* bh = proc.borrowHostIfActiveFor (uid);
+            check (bh != nullptr, "(g) precondition: the Link rack is engaged (borrowed host live)");
+            if (bh != nullptr)
+            {
+                const auto d1 = fake (31, "Guard Probe One"), d2 = fake (32, "Guard Probe Two"), d3 = fake (33, "Guard Probe Three");
+                for (const auto& d : { d1, d2, d3 }) EchoJayBorrowHostTestAccess::addRecommendable (proc.getChainHost(), d);
+                check (proc.getChainHost().descriptionsForNames ({ "Guard Probe One", "Guard Probe Two", "Guard Probe Three" }).size() == 3
+                       && ! ChainHost::isKnownGood (d1) && ! ChainHost::isKnownGood (d2) && ! ChainHost::isKnownGood (d3),
+                       "(g) precondition: the three names resolve and none is known-good");
+                juce::StringArray probed;
+                bh->preflightCommand = [&probed] (const juce::PluginDescription& d) -> juce::StringArray { probed.add (d.name); return { "/bin/sleep", "30" }; };
+                const juce::String json = "{\"chain\":[{\"name\":\"Guard Probe One\",\"role\":\"compressor\"},{\"name\":\"Guard Probe Two\",\"role\":\"eq\"},{\"name\":\"Guard Probe Three\",\"role\":\"saturation\"}]}";
+                EchoJayTabStripTestAccess::build (*ed, uid, json);
+                pumpMeasuring (50);
+                {   // diagnostics for the FAIL line: where did the descriptions go?
+                    auto descs = proc.getChainHost().descriptionsForNames ({ "Guard Probe One", "Guard Probe Two", "Guard Probe Three" });
+                    juce::String diag = "descs=" + juce::String ((int) descs.size()) + " sameHost=" + juce::String (proc.borrowHostIfActiveFor (uid) == bh ? "y" : "n")
+                        + " primarySpawns=" + juce::String (proc.getChainHost().preflightSpawnCount()) + " borrowSpawns=" + juce::String (bh->preflightSpawnCount());
+                    for (const auto& d : descs) diag += " [" + d.name + " uid=" + juce::String (d.uniqueId) + " builtin=" + (ChainHost::isBuiltinDescription (d) ? "y" : "n") + " knownGood=" + (ChainHost::isKnownGood (d) ? "y" : "n")
+                                                   + " verdict=" + juce::String ((int) ChainHost::preflightVerdictFor (d).state) + "]";
+                    std::printf ("  diag  %s\n", diag.toRawUTF8());
+                }
+                check (bh->preflightSpawnCount() == 3, "(g) THREE probes spawned by the real build entry (one per not-known-good name)", "spawned=" + juce::String (bh->preflightSpawnCount()));
+                check (probed.size() == 3 && probed.contains ("Guard Probe One") && probed.contains ("Guard Probe Two") && probed.contains ("Guard Probe Three"),
+                       "(g) each name was probed exactly once (EJPreflight: probing ... per name)", probed.joinIntoString (", "));
+                check (EchoJayTabStripTestAccess::status (*ed).startsWith (juce::String::fromUTF8 ("Checking plugins")), "(g) the overlay says \"Checking plugins...\" while the probes run", EchoJayTabStripTestAccess::status (*ed));
+                bh->preflightCommand = nullptr;
+            }
+            proc.borrowRelease (false);
+        }
+    }
     std::printf ("\n==== preflight_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
