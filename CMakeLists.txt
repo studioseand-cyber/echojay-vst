@@ -376,6 +376,31 @@ target_link_libraries(EchoJay
 # needs WebKit linked on macOS.
 target_link_libraries(EchoJay PRIVATE "-framework WebKit")
 
+juce_add_binary_data(EchoJayPlaybackArt
+    HEADER_NAME EJPlaybackArt.h
+    NAMESPACE   EJPlaybackArt
+    SOURCES
+        Assets/playback/bedroom.jpg
+        Assets/playback/bt_speaker.jpg
+        Assets/playback/car_interior.jpg
+        Assets/playback/car_speaker.jpg
+        Assets/playback/club_floor.jpg
+        Assets/playback/club_pa.jpg
+        Assets/playback/codec_lossy.jpg
+        Assets/playback/codec_loudness.jpg
+        Assets/playback/codec_transparent.jpg
+        Assets/playback/earbuds.jpg
+        Assets/playback/festival_field.jpg
+        Assets/playback/headphones.jpg
+        Assets/playback/kitchen.jpg
+        Assets/playback/laptop.jpg
+        Assets/playback/phone_speaker.jpg
+        Assets/playback/small_bar.jpg
+        Assets/playback/studio_monitors.jpg
+        Assets/playback/tv_soundbar.jpg
+)
+target_link_libraries(EchoJay PRIVATE EchoJayPlaybackArt)
+
 # --- Built-in device self-registration vs. the static linker -----------------
 # Built-in devices (Source/Eed*.cpp, SurgicalEq*) add themselves to
 # BuiltinDeviceRegistry from a file-scope static in their OWN .cpp. That is what

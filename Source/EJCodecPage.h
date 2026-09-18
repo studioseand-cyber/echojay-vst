@@ -93,4 +93,66 @@ inline CodecPageRects codecPageLayout (juce::Rectangle<int> contentArea, int pre
     return r;
 }
 
+// =============================================================================
+//  THE PICTURE GRID: tiles of 3:2 art with a label band below.
+// =============================================================================
+//
+// The same shape as codecCardRows and codecCardHeight above, on purpose: one
+// function owns the row count, and the height is derived FROM it, never from
+// a second copy of the same division. That is the property cp PIN5 pins for
+// the presets and pg PIN3 pins here; it is what stops paint and layout from
+// drifting apart.
+//
+// THE COLUMN COUNT IS DERIVED FROM THE WIDTH, NOT CHOSEN. However many tiles
+// of at least kPlaybackTileMinW fit, up to kPlaybackGridMaxCols. There is no
+// floor of 2: the floor is 1, to keep the division defined, and the reason
+// the count never falls below 2 on any page this plugin can show is the
+// arithmetic, which pg PIN1 checks across 400 to 1400 in steps of 10.
+//
+// THE NUMBERS ARE TIGHTER THAN THEY LOOK. At the smallest page this plugin can
+// produce (565 x 405: the minimum window with the A/B bar showing) nine tiles
+// fit only at four columns: 133 x 88 tiles, three rows, 360 px. A minimum tile
+// width of 134 or more drops that page to three columns and 456 px, which does
+// not fit. pg PIN5 is the pin that says so.
+inline constexpr int kPlaybackTileMinW    = 130;  // narrowest a tile may be
+inline constexpr int kPlaybackTileGap     = 10;   // between tiles, both ways
+inline constexpr int kPlaybackTileLabelH  = 22;   // the label band under the art
+inline constexpr int kPlaybackGridMaxCols = 4;
+
+/** Columns that fit in availableWidth, 1 to kPlaybackGridMaxCols. */
+inline int playbackGridColumns (int availableWidth)
+{
+    const int fit = (juce::jmax (0, availableWidth) + kPlaybackTileGap)
+                  / (kPlaybackTileMinW + kPlaybackTileGap);
+    return juce::jlimit (1, kPlaybackGridMaxCols, fit);
+}
+
+/** How many rows a tile count occupies at a column count. Exported, like
+    codecCardRows, because whatever paints the grid needs this same number. */
+inline int playbackGridRows (int tileCount, int columns)
+{
+    const int c = juce::jmax (1, columns);
+    return (juce::jmax (0, tileCount) + c - 1) / c;
+}
+
+/** One tile's width at availableWidth, after the gaps between columns. */
+inline int playbackTileWidth (int availableWidth)
+{
+    const int c = playbackGridColumns (availableWidth);
+    return juce::jmax (0, (juce::jmax (0, availableWidth) - (c - 1) * kPlaybackTileGap) / c);
+}
+
+/** One tile's height: 3:2 art above the label band. */
+inline int playbackTileHeight (int availableWidth)
+{
+    return playbackTileWidth (availableWidth) * 2 / 3 + kPlaybackTileLabelH;
+}
+
+/** The grid's height, DERIVED FROM playbackGridRows, the one row count. */
+inline int playbackGridHeight (int tileCount, int availableWidth)
+{
+    return playbackGridRows (tileCount, playbackGridColumns (availableWidth))
+         * (playbackTileHeight (availableWidth) + kPlaybackTileGap);
+}
+
 } // namespace echojay

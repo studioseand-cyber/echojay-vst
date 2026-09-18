@@ -9953,6 +9953,113 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                "cp PIN6: pure, and the count is a parameter rather than a lookup");
     }
 
+    // ======================================================================
+    // pg -- THE PICTURE GRID (EJCodecPage.h, playbackGrid*)
+    //
+    // PREFIX pg: checked against every prefix already in the suite rather than
+    // assumed free. Pure arithmetic, no art: the images live in their own
+    // library, which this suite does not link, so nothing here may name an
+    // EJPlaybackArt symbol.
+    // ======================================================================
+    {
+        using namespace echojay;
+
+        // pg PIN1 -- THE COLUMN COUNT STAYS WITHIN 2 TO 4, at EVERY width from
+        // 400 to 1400 in steps of 10, not at three hand-picked ones. The upper
+        // bound is a named cap; the lower one is NOT a clamp (the function's
+        // floor is 1) but a consequence of the minimum tile width, which is why
+        // raising that width far enough reddens this pin.
+        {
+            juce::String pgBad;
+            int pgLo = 99, pgHi = 0;
+            for (int w = 400; w <= 1400; w += 10)
+            {
+                const int c = playbackGridColumns (w);
+                pgLo = juce::jmin (pgLo, c);
+                pgHi = juce::jmax (pgHi, c);
+                if (c < 2 || c > 4)
+                    pgBad << w << "px->" << c << " cols; ";
+            }
+            check (pgBad.isEmpty(),
+                   "pg PIN1: 400 to 1400 px in steps of 10 always gives 2 to 4 columns",
+                   pgBad);
+            check (pgLo == 2 && pgHi == 4,
+                   "pg PIN1: and both bounds are actually reached, so neither is a clamp "
+                   "the sweep never touches",
+                   "min " + juce::String (pgLo) + ", max " + juce::String (pgHi));
+        }
+
+        // pg PIN2 -- THE ROW COUNT: none, one, an exact multiple of the columns
+        // and one past it, at each column count the grid can use.
+        for (int c : { 2, 3, 4 })
+            check (playbackGridRows (0, c) == 0
+                   && playbackGridRows (1, c) == 1
+                   && playbackGridRows (2 * c, c) == 2
+                   && playbackGridRows (2 * c + 1, c) == 3,
+                   "pg PIN2: at " + juce::String (c) + " columns, 0 / 1 / "
+                   + juce::String (2 * c) + " / " + juce::String (2 * c + 1)
+                   + " tiles take 0 / 1 / 2 / 3 rows");
+
+        // pg PIN3 -- THE HEIGHT IS DERIVED FROM THE ROW COUNT, NOT A SECOND
+        // COPY, asserted the way cp PIN5 asserts it: the height equals the
+        // expression built from playbackGridRows. Swept over counts including
+        // negatives and over the page widths, because a second row calculation
+        // is only visible where it disagrees with the first.
+        {
+            juce::String pgBad;
+            for (int w : { 400, 565, 741, 1150, 1360, 1780 })
+                for (int n = -12; n <= 40; ++n)
+                    if (playbackGridHeight (n, w)
+                        != playbackGridRows (n, playbackGridColumns (w))
+                           * (playbackTileHeight (w) + kPlaybackTileGap))
+                        pgBad << "w" << w << " n" << n << "; ";
+            check (pgBad.isEmpty(),
+                   "pg PIN3: the height is derived from playbackGridRows, not a second copy",
+                   pgBad);
+        }
+
+        // pg PIN4 -- A ZERO OR NEGATIVE TILE COUNT IS FLOORED, NOT WRAPPED,
+        // following cp PIN5's negative case: no rows and no height, never a
+        // negative height or an enormous one.
+        {
+            bool pgOk = true;
+            for (int n : { 0, -1, -4, -5, -100 })
+                for (int c : { 1, 2, 3, 4 })
+                    pgOk = pgOk && playbackGridRows (n, c) == 0;
+            for (int n : { 0, -1, -100 })
+                pgOk = pgOk && playbackGridHeight (n, 565) == 0;
+            check (pgOk, "pg PIN4: a zero or negative tile count is floored to no rows "
+                         "and no height, not wrapped");
+        }
+
+        // pg PIN5 -- NINE TILES FIT, at the extremes of the pages this plugin
+        // can produce, not only on the laptop it was written on. Page sizes as
+        // resized() derives them (content area = main column less 10 px each
+        // side, height less the header, tab strip, reference bar, sub-tab row,
+        // 10 px margin and the 32 px A/B bar), stated here because the editor
+        // cannot be linked into this suite:
+        //   smallest window 900 x 580, A/B bar showing   -> 565  x 405
+        //   largest 1800 x 1200, sidebar open, A/B bar    -> 1360 x 1025
+        //   largest 1800 x 1200, sidebar collapsed        -> 1780 x 1025
+        // THE GRID ALONE against the whole page: necessary, not sufficient.
+        // Whatever chrome shares the page with the grid is not in this sum.
+        {
+            struct Page { const char* name; int w, h; };
+            for (const Page& p : { Page { "smallest window, A/B bar",           565,  405 },
+                                   Page { "largest window, sidebar open",       1360, 1025 },
+                                   Page { "largest window, sidebar collapsed",  1780, 1025 } })
+            {
+                const int gh = playbackGridHeight (9, p.w);
+                check (gh <= p.h,
+                       "pg PIN5: nine tiles fit the " + juce::String (p.name) + " page ("
+                       + juce::String (p.w) + " x " + juce::String (p.h) + ")",
+                       "grid " + juce::String (gh) + " px at "
+                       + juce::String (playbackGridColumns (p.w)) + " columns of "
+                       + juce::String (playbackTileWidth (p.w)) + " px");
+            }
+        }
+    }
+
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
     return failN == 0 ? 0 : 1;
 }
