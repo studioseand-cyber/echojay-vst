@@ -73,7 +73,7 @@ bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
     if (id == kCeilingDb) { core_.setThresholdDb ((float) value); ceilLin_ = (float) std::pow (10.0, value / 20.0); return true; }
     if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); inputGainSmooth_.setTargetValue (inputGain_); return true; }
     if (id == kScHpfHz)   { core_.setSidechainHpfHz (value);      return true; }
-    if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5); truePeakOn_ = value >= 0.5;     return true; }
+    if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5); truePeakOn_ = value >= 0.5; applyLookahead();     return true; }
 
     // Release and lookahead are both stored and then re-derived, because `clip`
     // overrides what the core runs for each of them.
@@ -111,7 +111,7 @@ double EedLimiterProcessor::getParamValue (const juce::String& id) const
 void EedLimiterProcessor::applyLookahead()
 {
     // the wall's window = the lookahead (at least 1 sample, at most kMaxWindow); its release = the dialled release
-    windowSamples_ = juce::jlimit (1, kMaxWindow - 1, (int) std::lround ((mode_ == Mode::Clip ? 0.0 : lookaheadMs_) * 0.001 * sampleRate_) + 1);
+    windowSamples_ = juce::jlimit (1, kMaxWindow - 1, (int) std::lround ((mode_ == Mode::Clip ? 0.0 : lookaheadMs_) * 0.001 * sampleRate_) + 1 + (truePeakOn_ && mode_ != Mode::Clip ? echojay::TruePeakInterp::kDelay : 0));
     wallRelCoeff_  = (float) (releaseMs_ > 0.0 ? 1.0 - std::exp (-1.0 / (0.001 * releaseMs_ * sampleRate_)) : 1.0f);
     // CLIP is a hard ceiling, and that is entirely expressed by three zeroes: no
     // delay, no attack and no release. The gain then becomes the instantaneous
@@ -125,7 +125,11 @@ void EedLimiterProcessor::applyLookahead()
     // land milliseconds away from the peak that caused it.
     const bool clip = mode_ == Mode::Clip;
 
-    delay_.setDelayMs (clip ? 0.0 : lookaheadMs_);
+    // CHECK 2 (18 Sep 2026): the true-peak interpolator reads the sidechain kTaps/2 samples LATE, so under true_peak
+    // the audio is delayed by that much more - the wall then covers every inter-sample peak the output carries.
+    // The extra delay is REPORTED like the rest (ejSetLatencyLogged below reads delay_.delaySamples()).
+    const double tpDelayMs = (truePeakOn_ && ! clip) ? 1000.0 * (double) (echojay::TruePeakInterp::kDelay) / sampleRate_ : 0.0;
+    delay_.setDelayMs (clip ? 0.0 : lookaheadMs_ + tpDelayMs);
 
     if (clip)
     {
@@ -163,7 +167,7 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
 
     // Sized ONCE, for the schema's maximum. Every later lookahead change is a
     // read-pointer move inside this buffer, never a reallocation.
-    delay_.prepare (sampleRate_, kMaxLookaheadMs, 2);
+    delay_.prepare (sampleRate_, kMaxLookaheadMs + 1.0, 2);   // + the true-peak interpolator's group delay (kTaps/2 samples < 1 ms at 44.1k)
     delay_.reset();
 
     applyLookahead();
@@ -203,7 +207,7 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // THE WALL: the largest sidechain value the delayed output is about to carry (4x true peak when asked)
         const float scPeak = truePeakOn_ ? std::max (tpL_.maxAbs4 (scL), tpR_.maxAbs4 (scR)) : std::max (std::abs (scL), std::abs (scR));
         const float wmax   = windowMaxPush (scPeak);
-        const float ceilDet = truePeakOn_ ? ceilLin_ * 0.98855f : ceilLin_;   // -0.1 dB detector margin under true peak: the interpolator's residual under-read
+        const float ceilDet = truePeakOn_ ? ceilLin_ * 0.97724f : ceilLin_;   // -0.2 dB detector margin under true peak: the interpolator's residual
         const float gTarget = wmax > ceilDet ? ceilDet / wmax : 1.0f;
         if (gTarget < wallGain_) wallGain_ = gTarget; else wallGain_ += (gTarget - wallGain_) * wallRelCoeff_;
         const float g = byp ? 1.0f : std::min (gCore, wallGain_);

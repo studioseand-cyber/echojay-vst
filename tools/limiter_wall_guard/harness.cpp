@@ -36,6 +36,10 @@ int main()
         check (pkDb <= -0.1f + 0.01f, label + ": output SAMPLE peak <= -0.1 dBFS", "peak " + juce::String (pkDb, 2) + " dBFS, GR max " + juce::String (grMax, 2) + " dB");
         check (tp.db() <= -0.1f + 0.1f, label + ": output TRUE peak within 0.1 dB of the ceiling (independent 4x meter)", juce::String (tp.db(), 2) + " dBTP");
         check (grMax >= 5.5f, label + ": the wall reduced about 6 dB", juce::String (grMax, 2) + " dB");
+        {   // CHECK 1 (latency): the reported latency == the lookahead in samples + the true-peak interpolator's group delay (16 at any rate)
+            const int want = (int) std::lround (la * 0.001 * 48000.0) + echojay::TruePeakInterp::kDelay;
+            check (lim.getLatencySamples() == want, label + ": reported latency == lookahead samples + interpolator delay (" + juce::String (want) + ")", "reported " + juce::String (lim.getLatencySamples()));
+        }
     }
     std::printf ("\n==== limiter_wall_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

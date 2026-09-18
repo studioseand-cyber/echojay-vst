@@ -259,7 +259,7 @@ private:
     std::array<double, kBins> binPow_ {}; // decayed K-power sums per bin: the gated mean is exact, not bin-centred
     double heardHops_ = 0.0;              // undecayed count of absolute-gated hops
     double heardAboveHops_ = 0.0;         // hops above countFloorLufs_ (loudness loop)
-    // TRUE PEAK: the same 4x interpolator the limiter's detector uses (EJTruePeakInterp.h, 33-tap Blackman sinc),
+    // TRUE PEAK: the same 4x interpolator the limiter's detector uses (EJTruePeakInterp.h, 24-tap Blackman sinc),
     // one per channel, max |value| held undecayed since the last reset.
     echojay::TruePeakInterp tpL_, tpR_;
     float tpMax_ = 0.0f;

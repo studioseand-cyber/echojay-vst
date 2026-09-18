@@ -161,10 +161,10 @@ int main()
         const auto last = R.bubbles.isEmpty() ? juce::String() : R.bubbles[R.bubbles.size() - 1];
         check (R.grMaxPass1 >= 3.0f && R.grMaxPass1 <= 6.0f, "the limiter worked 3-6 dB in pass 1 (the programme is peaky enough)", "GR max pass 1: " + f1 (R.grMaxPass1) + " dB");
         check (std::abs (R.outAfter - (-9.0f)) <= 1.0f, "pass 2 lands within +-1 dB of -9", "output " + f1 (R.outAfter) + " LUFS, input_db " + juce::String (R.inputDbAfter, 1));
-        check (R.indTpPass2 <= -0.1f + 0.1f, "output TRUE PEAK within 0.1 dB of the -0.1 dBTP ceiling (independent 4x meter on the same buffers)", f1 (R.indTpPass2) + " dBTP");
+        check (R.indTpPass2 <= -0.1f, "output TRUE PEAK <= -0.1 dBTP by the INDEPENDENT meter (same 24-tap 4x interpolator as limiter_wall_guard's)", f1 (R.indTpPass2) + " dBTP");
         const float bubbleLufs = numberAfter (last, "Hitting"), bubbleTp = numberAfter (last, "Peaks");
         check (std::isfinite (bubbleLufs) && std::abs (bubbleLufs - R.indLufsPass2) <= 0.5f, "the bubble's LUFS agrees with the independent meter (+-0.5)", "bubble " + f1 (bubbleLufs) + " vs independent " + f1 (R.indLufsPass2));
-        check (std::isfinite (bubbleTp) && std::abs (bubbleTp - R.indTpPass2) <= 0.5f, "the bubble's dBTP agrees with the independent meter (+-0.5)", "bubble " + f1 (bubbleTp) + " vs independent " + f1 (R.indTpPass2));
+        check (std::isfinite (bubbleTp) && std::abs (bubbleTp - R.indTpPass2) <= 0.1f, "the bubble's dBTP is within 0.1 dB of the independent meter (sign stated)", juce::String ("bubble ") + (bubbleTp >= 0 ? "+" : "") + f1 (bubbleTp) + " vs independent " + (R.indTpPass2 >= 0 ? "+" : "") + f1 (R.indTpPass2));
         check (last.contains ("limiter working ") && ! last.contains ("working 0.0-0.0"), "the GR range in the bubble is non-zero", last);
     }
     std::printf ("== C. CHECK 2: input_db already +12 from the server, -24 programme, target -9 ==\n");
