@@ -26,9 +26,20 @@ int main (int argc, char** argv)
     d.fileOrIdentifier = (argc >= 3) ? juce::String::fromUTF8 (argv[2]) : juce::String();
     if (argc >= 4) d.uniqueId = d.deprecatedUid = (int) (juce::int64) juce::String (argv[3]).getHexValue64();
 
-    std::printf ("probe: \"%s\" | %s | uid=%s\n",
+   #if defined(__x86_64__)
+    const char* probeArch = "x86_64";
+   #elif defined(__arm64__) || defined(__aarch64__)
+    const char* probeArch = "arm64";
+   #else
+    const char* probeArch = "unknown";
+   #endif
+    std::printf ("probe: \"%s\" | %s | uid=%s | arch=%s\n",
                  d.name.toRawUTF8(), d.fileOrIdentifier.toRawUTF8(),
-                 argc >= 4 ? argv[3] : "(none)");
+                 argc >= 4 ? argv[3] : "(none)", probeArch);
+    // 18 Sep 2026: argv[4] = a marker file the HOST polls. Touched the moment the instance exists, so a
+    // crash or stall in the render check below (AMEK Mastering Compressor segfaults there, exit 139) can
+    // never read as "hangs on load".
+    const juce::File marker = (argc >= 5) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
@@ -47,6 +58,7 @@ int main (int argc, char** argv)
     std::printf ("INSTANTIATE: OK  name=\"%s\" latency=%d\n",
                  inst->getName().toRawUTF8(), inst->getLatencySamples());
     std::fflush (stdout);
+    if (marker != juce::File()) marker.create();
 
     // PREPARE == the initialise that matters for the crash path: the headless
     // AU host's prepareToPlay calls AudioUnitInitialize. Then render a few
