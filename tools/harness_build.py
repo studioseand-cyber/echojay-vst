@@ -42,4 +42,22 @@ print("running ...", flush=True)
 r = subprocess.run([OUT], cwd=ROOT, capture_output=True, text=True, timeout=180)
 sys.stdout.write(r.stdout); sys.stderr.write(r.stderr)
 print("\nexit code: %d  (0 == GREEN, nonzero == RED)" % r.returncode)
-sys.exit(r.returncode)
+rc = r.returncode
+
+# SCRIBBLE LEG (18 Sep 2026 ruling, after the Pro Tools crash in roleByNameFor): a harness that exercises the real
+# build/apply/bubble path runs TWICE - plain, then with malloc scribbling so a read of freed memory is deterministic
+# rather than luck (the plain bubble_parity run was GREEN on the crashing lib; the scribbled run died in the same
+# frame as Pro Tools). Opt in per script with EJ_SCRIBBLE_LEG=1. The script fails if EITHER run fails.
+if os.environ.get("EJ_SCRIBBLE_LEG") == "1":
+    env = dict(os.environ, MallocScribble="1", MallocPreScribble="1", MallocGuardEdges="1")
+    print("\nSCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ...", flush=True)
+    try:
+        r2 = subprocess.run([OUT], cwd=ROOT, capture_output=True, text=True, timeout=300, env=env)
+        sys.stdout.write(r2.stdout); sys.stderr.write(r2.stderr[-3000:])
+        sig = (" (signal %d%s)" % (-r2.returncode, ", SIGSEGV" if r2.returncode == -11 else "")) if r2.returncode < 0 else ""
+        print("\nscribble leg exit code: %d%s  (0 == GREEN, nonzero == RED)" % (r2.returncode, sig))
+        if r2.returncode != 0: rc = rc or (r2.returncode if r2.returncode > 0 else 128 - r2.returncode)
+    except subprocess.TimeoutExpired:
+        print("\nscribble leg: TIMEOUT (300 s) -> RED"); rc = rc or 124
+    print("\nBOTH LEGS: %s" % ("GREEN" if rc == 0 else "RED (plain %d, see above)" % r.returncode))
+sys.exit(rc)
