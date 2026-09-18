@@ -544,7 +544,11 @@ public:
     // the reason the ceiling is margin-over-max rather than a completion
     // percentile. From this side a hang and a slow call are identical;
     // production watches the split via intentFallback = 'timeout'.
-    static constexpr int kClassifyBudgetMs         = 3200;
+    // 18 Sep 2026: 6700 = the server's CLASSIFY_TIMEOUT_MS (6000, 18 Sep ruling) + the split-call guard's
+    // surroundings (384 + 300). The client MUST outwait the server or the server's budget is inert: on 18 Sep the
+    // split call fell back at 3068 ms. Decision beyond the ruling, flagged: the user waits up to 6.7 s for the ack
+    // on a slow classify instead of 3.2 s.
+    static constexpr int kClassifyBudgetMs         = 6700;
     static constexpr int kClassifyQuestionBudgetMs = 2800;
 
     /** Call 1. Calls back EXACTLY ONCE on the message thread.
