@@ -15,10 +15,10 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 DEST="/Library/Application Support/Avid/Audio/Plug-Ins"
 
 # THE FOUR SLICE UUIDs of this build (preserved through wraptool signing).
-WANT_V2="2A8390F1-0C4F-3DDC-B5F4-708E2FEA5AE1"        # V2  x86_64 (Pro Tools under Rosetta loads THIS line)
-WANT_V2_ARM="66418C5C-EA0C-312B-9B74-6C7934795012"    # V2  arm64
-WANT_LK="E42E913D-D60C-30E8-B155-9D76C4DDB39D"        # Link x86_64
-WANT_LK_ARM="98985F83-B434-3D4F-9288-E52B9004C3F7"    # Link arm64
+WANT_V2="4B45E6C4-AE0E-3290-8CB1-C9655F9CBEAE"        # V2  x86_64 (Pro Tools under Rosetta loads THIS line)
+WANT_V2_ARM="EE90D9A6-D308-3460-842D-2B147F833670"    # V2  arm64
+WANT_LK="E0DBDF40-F70C-3B47-924F-B42126B2AB00"        # Link x86_64
+WANT_LK_ARM="635D0D8C-D0ED-3CB2-9D8B-B10308AEC1F3"    # Link arm64
 
 BK="$HOME/Desktop/DO_NOT_SIGN_pre18c_backup_2026-09-18"
 
