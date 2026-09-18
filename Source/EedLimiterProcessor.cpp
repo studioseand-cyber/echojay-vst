@@ -70,10 +70,10 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
 
 bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
 {
-    if (id == kCeilingDb) { core_.setThresholdDb ((float) value); return true; }
+    if (id == kCeilingDb) { core_.setThresholdDb ((float) value); ceilLin_ = (float) std::pow (10.0, value / 20.0); return true; }
     if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); inputGainSmooth_.setTargetValue (inputGain_); return true; }
     if (id == kScHpfHz)   { core_.setSidechainHpfHz (value);      return true; }
-    if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5);     return true; }
+    if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5); truePeakOn_ = value >= 0.5;     return true; }
 
     // Release and lookahead are both stored and then re-derived, because `clip`
     // overrides what the core runs for each of them.
@@ -110,6 +110,9 @@ double EedLimiterProcessor::getParamValue (const juce::String& id) const
 
 void EedLimiterProcessor::applyLookahead()
 {
+    // the wall's window = the lookahead (at least 1 sample, at most kMaxWindow); its release = the dialled release
+    windowSamples_ = juce::jlimit (1, kMaxWindow - 1, (int) std::lround ((mode_ == Mode::Clip ? 0.0 : lookaheadMs_) * 0.001 * sampleRate_) + 1);
+    wallRelCoeff_  = (float) (releaseMs_ > 0.0 ? 1.0 - std::exp (-1.0 / (0.001 * releaseMs_ * sampleRate_)) : 1.0f);
     // CLIP is a hard ceiling, and that is entirely expressed by three zeroes: no
     // delay, no attack and no release. The gain then becomes the instantaneous
     // ceiling/peak ratio applied to the sample it was measured from, which IS
@@ -155,6 +158,8 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
     core_.reset();
     inputGainSmooth_.reset (sampleRate_, 0.05);   // 50 ms ease on the loudness push
     inputGainSmooth_.setCurrentAndTargetValue (inputGain_);
+    tpL_.prepare(); tpR_.prepare(); wallGain_ = 1.0f; winHead_ = winTail_ = winN_ = 0; winSample_ = 0;
+    ceilLin_ = (float) std::pow (10.0, core_.getThresholdDb() / 20.0);
 
     // Sized ONCE, for the schema's maximum. Every later lookahead change is a
     // read-pointer move inside this buffer, never a reallocation.
@@ -194,7 +199,14 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // trick: it sees the peak while the audio carrying it is still in flight.
         const float scL = l[i];
         const float scR = r != nullptr ? r[i] : l[i];
-        const float g   = byp ? 1.0f : core_.gainForSidechain (scL, scR);
+        const float gCore = byp ? 1.0f : core_.gainForSidechain (scL, scR);   // the core still meters (dwell, character depth)
+        // THE WALL: the largest sidechain value the delayed output is about to carry (4x true peak when asked)
+        const float scPeak = truePeakOn_ ? std::max (tpL_.maxAbs4 (scL), tpR_.maxAbs4 (scR)) : std::max (std::abs (scL), std::abs (scR));
+        const float wmax   = windowMaxPush (scPeak);
+        const float ceilDet = truePeakOn_ ? ceilLin_ * 0.98855f : ceilLin_;   // -0.1 dB detector margin under true peak: the interpolator's residual under-read
+        const float gTarget = wmax > ceilDet ? ceilDet / wmax : 1.0f;
+        if (gTarget < wallGain_) wallGain_ = gTarget; else wallGain_ += (gTarget - wallGain_) * wallRelCoeff_;
+        const float g = byp ? 1.0f : std::min (gCore, wallGain_);
 
         float frame[2] = { l[i], r != nullptr ? r[i] : 0.0f };
         delay_.process (frame, 2);
@@ -214,10 +226,11 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // in punchy while it is not reducing, so the ceiling is never coloured by
         // a limiter that is doing nothing. It can only ever pull a sample toward
         // zero, so it cannot break the wall it sits behind.
-        l[i] = core_.shapeCharacter (frame[0] * g);
-        if (r != nullptr) r[i] = core_.shapeCharacter (frame[1] * g);
+        l[i] = juce::jlimit (-ceilLin_, ceilLin_, core_.shapeCharacter (frame[0] * g));   // the safety clip: nothing above the ceiling in the sample domain
+        if (r != nullptr) r[i] = juce::jlimit (-ceilLin_, ceilLin_, core_.shapeCharacter (frame[1] * g));
         pk = juce::jmax (pk, std::abs (l[i]), r != nullptr ? std::abs (r[i]) : 0.0f);
     }
+    wallGrDb_.store (wallGain_ < 1.0f ? 20.0f * std::log10 (wallGain_) : 0.0f, std::memory_order_relaxed);
     if (pk > outPeakMax_.load (std::memory_order_relaxed)) outPeakMax_.store (pk, std::memory_order_relaxed);
 }
 

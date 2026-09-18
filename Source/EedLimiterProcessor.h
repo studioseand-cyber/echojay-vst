@@ -53,6 +53,7 @@
 #pragma once
 
 #include "EedDeviceProcessor.h"
+#include "EJTruePeakInterp.h"
 #include "EedDynamicsCore.h"
 
 class EedLimiterProcessor : public EedDeviceProcessor
@@ -104,7 +105,7 @@ public:
     bool releaseInUse()   const noexcept { return mode_ != Mode::Clip; }
     bool lookaheadInUse() const noexcept { return mode_ != Mode::Clip; }
 
-    float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
+    float gainReductionDb() const noexcept { return wallGrDb_.load (std::memory_order_relaxed); }   // the WALL's reduction (18 Sep 2026), negative
     float detectorLevelDb()  const noexcept { return core_.detectorLevelDb(); }
 
     // Where the signal LIVES on that curve — the dwell histogram behind the
@@ -136,6 +137,24 @@ private:
     float  inputGain_ = 1.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputGainSmooth_ { 1.0f };   // 50 ms ease (loudness loop)
     std::atomic<float> outPeakMax_ { 0.0f };   // max |output sample| since resetOutputPeak (\"Peaks\" in the loop bubble)
+    // THE WALL (18 Sep 2026): a brick-wall gain computed from the running MAX of the sidechain over the lookahead
+    // window (instant attack, one-pole release), on the 4x-oversampled sidechain when true_peak is on, plus a
+    // sample-domain safety clip at the ceiling. The core's one-pole attack let a +6 dBFS burst leave at +2.2 dBFS.
+    static constexpr int kMaxWindow = 1024;
+    float winVal_[kMaxWindow] {}; int winIdx_[kMaxWindow] {}; int winHead_ = 0, winTail_ = 0, winN_ = 0; long long winSample_ = 0;
+    int   windowSamples_ = 1;
+    float wallGain_ = 1.0f; float wallRelCoeff_ = 0.0f; float ceilLin_ = 1.0f;
+    echojay::TruePeakInterp tpL_, tpR_; bool truePeakOn_ = false;
+    std::atomic<float> wallGrDb_ { 0.0f };
+    inline float windowMaxPush (float v) noexcept
+    {   // monotonic deque over the last windowSamples_ values, fixed storage
+        while (winN_ > 0) { const int last = (winTail_ + kMaxWindow - 1) % kMaxWindow; if (winVal_[last] <= v) { winTail_ = last; --winN_; } else break; }
+        winVal_[winTail_] = v; winIdx_[winTail_] = (int) (winSample_ % 1000000000LL); winTail_ = (winTail_ + 1) % kMaxWindow; ++winN_;
+        const long long oldest = winSample_ - windowSamples_;
+        while (winN_ > 0 && (long long) winIdx_[winHead_] <= (oldest % 1000000000LL) && winSample_ >= (long long) windowSamples_) { winHead_ = (winHead_ + 1) % kMaxWindow; --winN_; }
+        ++winSample_;
+        return winN_ > 0 ? winVal_[winHead_] : v;
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterProcessor)
 };
