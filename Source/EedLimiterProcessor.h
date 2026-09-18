@@ -79,6 +79,7 @@ public:
     static constexpr const char* kMode        = "mode";
     static constexpr const char* kTruePeak    = "true_peak";
     static constexpr const char* kScHpfHz     = "sc_hpf_hz";
+    static constexpr const char* kInputDb     = "input_db";   // 18 Sep 2026 (item 5): gain INTO the limiter, the loudness push
 
     // The ceiling the lookahead buffer is sized for, once, in prepareToPlay.
     // Also the schema's maximum: asking for more than the buffer holds would be
@@ -127,6 +128,8 @@ private:
     // can no longer be asked what the user set — and a state round-trip that gave
     // back 0 ms would quietly rewrite the dial the next time the mode changed.
     double releaseMs_ = 50.0;
+    double inputDb_   = 0.0;    // dialled input gain, dB; linear factor recomputed on set
+    float  inputGain_ = 1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLimiterProcessor)
 };

@@ -3,6 +3,7 @@
 */
 
 #include "EedLimiterProcessor.h"
+#include <cmath>
 #include "EedLatencyLog.h"
 #include "EedLimiterEditor.h"
 #include "EedDeviceRegistry.h"
@@ -29,6 +30,11 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
         { kCeilingDb, "dB", -24.0, 0.0, -0.3,
           "the level nothing is allowed above; -0.3 leaves headroom for the "
           "inter-sample peaks a lossy encoder will reconstruct", false },
+
+        { kInputDb, "dB", -12.0, 12.0, 0.0,
+          "gain into the limiter, the loudness push: on a bus or master aimed at a loudness target this is "
+          "the measured integrated LUFS to the genre target (e.g. -15.5 measured, -8 target -> +7.5), "
+          "clamped to +12; 0 leaves the level alone", false },
 
         { kReleaseMs, "ms", 1.0, 1000.0, 50.0,
           "how fast it lets go after a peak; short is louder and more audible, "
@@ -65,6 +71,7 @@ const echojay::ParamSchema& EedLimiterProcessor::schema()
 bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
 {
     if (id == kCeilingDb) { core_.setThresholdDb ((float) value); return true; }
+    if (id == kInputDb)   { inputDb_ = value; inputGain_ = (float) std::pow (10.0, value / 20.0); return true; }
     if (id == kScHpfHz)   { core_.setSidechainHpfHz (value);      return true; }
     if (id == kTruePeak)  { core_.setTruePeak (value >= 0.5);     return true; }
 
@@ -92,6 +99,7 @@ bool EedLimiterProcessor::setParamValue (const juce::String& id, double value)
 double EedLimiterProcessor::getParamValue (const juce::String& id) const
 {
     if (id == kCeilingDb)   return (double) core_.getThresholdDb();
+    if (id == kInputDb)     return inputDb_;
     if (id == kReleaseMs)   return releaseMs_;
     if (id == kLookaheadMs) return lookaheadMs_;
     if (id == kMode)        return (double) (int) mode_;
@@ -175,8 +183,10 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // keeps the delay.
     const bool byp = isBypassed();
 
+    const float ig = byp ? 1.0f : inputGain_;   // the loudness push, before the detector and the delay
     for (int i = 0; i < n; ++i)
     {
+        l[i] *= ig; if (r != nullptr) r[i] *= ig;
         // The detector reads the input BEFORE the delay — that is the whole
         // trick: it sees the peak while the audio carrying it is still in flight.
         const float scL = l[i];
