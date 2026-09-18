@@ -711,13 +711,27 @@ public:
     // (non-zero exit, no hang) is NOT evidence - licence-bound plugins fail out
     // of process - and the in-host create proceeds as today.
     enum class PreflightState { unknown, ok, hang, error };
-    struct PreflightVerdict { PreflightState state = PreflightState::unknown; juce::String note; int exitCode = 0; double ms = 0; };
+    struct PreflightVerdict { PreflightState state = PreflightState::unknown; juce::String note; int exitCode = 0; double ms = 0; int attempts = 1; bool instantiated = false; };
+    // 18 Sep 2026 (AMEK Mastering Compressor, marked hangs-on-load though it loads in-host): a timeout is
+    // "slow", not a verdict. The first bound is kPreflightTimeoutMs; one retry runs with kPreflightRetryMs;
+    // only TWO consecutive timeouts mark hangs-on-load. The probe writes a marker file the moment the
+    // instance exists (INSTANTIATE: OK): a child that then hangs or dies in its render check has LOADED,
+    // and is never marked (the AMEK probe segfaults in the render step, exit 139, in both architectures).
     static constexpr int kPreflightTimeoutMs = 10000;
+    static constexpr int kPreflightRetryMs   = 30000;
+    static void setPreflightBoundsForTest (int firstMs, int retryMs);   // shrink the bounds in a harness
+    static int  preflightFirstBoundMs();
+    static int  preflightRetryBoundMs();
+    static juce::String hostArchName();                                      // "x86_64" under Rosetta, "arm64" native
+    static juce::File   preflightMarkerFile (const juce::PluginDescription& desc);   // touched by the probe after INSTANTIATE: OK
     static juce::File   knownGoodFile();
     static bool         isKnownGood (const juce::PluginDescription& desc);
     static void         markKnownGood (const juce::PluginDescription& desc);
     static juce::File   probeHelperFile();                                   // Contents/MacOS/EchoJayProbe beside this binary
-    static juce::StringArray defaultPreflightCommand (const juce::PluginDescription& desc);
+    // The probe runs under the HOST's architecture (Pro Tools under Rosetta = x86_64): spawned through
+    // /usr/bin/arch -x86_64 when the host is x86_64, so it loads the same slice the host will. The last
+    // argument is the marker file path. hostArch defaults to this process's; the harness passes both.
+    static juce::StringArray defaultPreflightCommand (const juce::PluginDescription& desc, const juce::String& hostArch = hostArchName());
     // Test seam: the command line to run for a plugin (default: the helper + name/id/uid).
     std::function<juce::StringArray(const juce::PluginDescription&)> preflightCommand;
     // A hangs-on-load verdict withholds the plugin from the feed: the processor wires this to the scanner.
@@ -1897,7 +1911,8 @@ private:
     void armMapFetchBound (const juce::String& fp);   // the 4 s bound, per fetch
     std::map<juce::String, juce::String> buildRoles_;        // pre-flight substitution roles
     int                                  preflightSpawns_ = 0;
-    struct PreflightRun { juce::PluginDescription desc; std::unique_ptr<juce::ChildProcess> proc; double t0 = 0; };
+    struct PreflightRun { juce::PluginDescription desc; std::unique_ptr<juce::ChildProcess> proc; double t0 = 0; int attempt = 1; int boundMs = kPreflightTimeoutMs; juce::File marker; };
+    bool spawnPreflightRun (PreflightRun& run);   // (re)spawns run.proc with the attempt's bound; false if it could not start
     std::vector<std::unique_ptr<PreflightRun>> preflightRuns_;
     std::function<void()>                preflightDone_;
     void preflightPoll();

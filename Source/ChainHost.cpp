@@ -10,7 +10,8 @@
 #include "EJParamReads.h"    // 6c section 8: one slot's current reads, header-inline for the pins
 #include "EchoJayParamApply.h"
 #include "EchoJayParamMaps.h"
-#include "NotDialableText.h"   // item 3: the built-in by role (one table, shared with the card)
+#include "NotDialableText.h"
+#include "BuiltinIntentTranslate.h"   // item 3: the built-in by role (one table, shared with the card)
 #include "NearAcceptance.h"     // amendment 1: the partial acceptance rule (essentials + Tier-1)
 #include "EJDisableReasons.h"    // pre-flight: "hangs-on-load" in the disabled-set note
 #include "PluginCatalog.h"        // makeUid: the scanner/checklist key
@@ -2876,7 +2877,26 @@ void ChainHost::setSlotStructuredSettings(int i, const juce::var& structured)
         && ! (structured.isArray() && isBuiltinSlot(i)))
         return;
 
-    slots_[(size_t)i].structuredSettings = structured;
+    juce::var stored = structured;
+    // 18 Sep 2026 (item 4): a built-in handed the THIRD-PARTY shape ({"controls": {...}}: the model wrote for
+    // the plugin the built-in stands in for) is translated by semantic into its own schema before it is
+    // stored, so applyStructuredIfReady dials it and the card can never say "needs hand-dialing".
+    if (isBuiltinSlot(i) && structured.getDynamicObject() != nullptr && structured.hasProperty("controls")
+        && ! structured.hasProperty("params") && ! structured.hasProperty("eq_bands"))
+    {
+        if (auto* device = dynamic_cast<EedDeviceProcessor*>(getSlotProcessor(i)))
+        {
+            float p90 = std::numeric_limits<float>::quiet_NaN();
+            { const auto lv = getSlotLevels(i); if (lv.measured && lv.in.known) p90 = lv.in.p90; }
+            if (! std::isfinite(p90)) { const auto cin = getChainInLevels(); if (cin.known) p90 = cin.p90; }
+            const auto tr = echojay::translateControlsForBuiltin(slots_[(size_t) i].desc.name, device->paramSchema(), structured, p90);
+            EchoJay_NSLog(("EJDial: TRANSLATED slot " + juce::String(i) + " (\"" + slots_[(size_t) i].desc.name + "\") third-party controls -> built-in schema: "
+                           + tr.note + (tr.translated.isEmpty() ? juce::String() : " [" + tr.translated.joinIntoString("; ") + "]")
+                           + (tr.dropped.isEmpty() ? juce::String() : " dropped [" + tr.dropped.joinIntoString("; ") + "]")).toRawUTF8());
+            if (tr.payload.getDynamicObject() != nullptr) stored = tr.payload;
+        }
+    }
+    slots_[(size_t)i].structuredSettings = stored;
     slots_[(size_t)i].structuredApplied  = false;
     // New request, new denominator: a lingering count from the previous
     // apply must not travel with this request's declines (dial-3 A3).
@@ -7344,7 +7364,9 @@ std::vector<ChainHost::Substitution> ChainHost::substituteNoMapSlots(const std::
         juce::var payload;
         if (auto* po = structured.getProperty("params", juce::var()).getDynamicObject())
         { auto* w = new juce::DynamicObject(); w->setProperty("params", juce::var(po)); payload = juce::var(w); }
-        else if (structured.getDynamicObject() != nullptr && ! structured.hasProperty("controls"))
+        else if (structured.getDynamicObject() != nullptr && structured.hasProperty("controls"))
+            payload = structured;   // 18 Sep 2026 (item 4): the third-party shape - the setter translates it by semantic
+        else if (structured.getDynamicObject() != nullptr)
         { auto* w = new juce::DynamicObject(); w->setProperty("params", structured); payload = juce::var(w); }
         if (payload.getDynamicObject() != nullptr) setSlotStructuredSettings(i, payload);
         auto& fs = slots_[(size_t) i];
@@ -7466,9 +7488,46 @@ juce::File ChainHost::probeHelperFile()
     return juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory().getChildFile("EchoJayProbe");
 }
 
-juce::StringArray ChainHost::defaultPreflightCommand(const juce::PluginDescription& desc)
+static int gPreflightFirstBoundMs = ChainHost::kPreflightTimeoutMs;
+static int gPreflightRetryBoundMs = ChainHost::kPreflightRetryMs;
+void ChainHost::setPreflightBoundsForTest(int firstMs, int retryMs) { gPreflightFirstBoundMs = firstMs; gPreflightRetryBoundMs = retryMs; }
+int  ChainHost::preflightFirstBoundMs() { return gPreflightFirstBoundMs; }
+int  ChainHost::preflightRetryBoundMs() { return gPreflightRetryBoundMs; }
+juce::String ChainHost::hostArchName() { return processArchName(); }
+
+juce::File ChainHost::preflightMarkerFile(const juce::PluginDescription& desc)
 {
-    return { probeHelperFile().getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString(desc.uniqueId) };
+    return juce::File::getSpecialLocation(juce::File::tempDirectory)
+               .getChildFile("ej_preflight_" + juce::String::toHexString(desc.uniqueId) + "_" + juce::String((int) getpid()) + ".instantiated");
+}
+
+juce::StringArray ChainHost::defaultPreflightCommand(const juce::PluginDescription& desc, const juce::String& hostArch)
+{
+    juce::StringArray cmd;
+    if (hostArch == "x86_64") cmd.addArray({ "/usr/bin/arch", "-x86_64" });   // the host's slice, explicitly (Rosetta)
+    cmd.addArray({ probeHelperFile().getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString(desc.uniqueId),
+                   preflightMarkerFile(desc).getFullPathName() });
+    return cmd;
+}
+
+bool ChainHost::spawnPreflightRun(PreflightRun& run)
+{
+    const auto cmd = preflightCommand ? preflightCommand(run.desc) : defaultPreflightCommand(run.desc);
+    run.marker = preflightMarkerFile(run.desc);
+    run.marker.deleteFile();
+    run.proc = std::make_unique<juce::ChildProcess>();
+    run.t0 = juce::Time::getMillisecondCounterHiRes();
+    run.boundMs = run.attempt == 1 ? gPreflightFirstBoundMs : gPreflightRetryBoundMs;
+    ++preflightSpawns_;
+    if (! run.proc->start(cmd, 0))   // spawn only: nothing else on the message thread
+    {
+        preflightVerdicts()[echojay::productKeyForDescription(run.desc)] = { PreflightState::error, "probe could not start (" + cmd[0] + ")", -1, 0, run.attempt, false };
+        EchoJay_NSLog(("EJPreflight: could not start the probe for \"" + run.desc.name + "\" (" + cmd[0] + ") - in-host create proceeds").toRawUTF8());
+        return false;
+    }
+    EchoJay_NSLog(("EJPreflight: probing \"" + run.desc.name + "\" out of process as " + (cmd[0].endsWith("/arch") ? cmd[1].trimCharactersAtStart("-") : hostArchName())
+                   + " (attempt " + juce::String(run.attempt) + ", " + juce::String(run.boundMs) + " ms bound)").toRawUTF8());
+    return true;
 }
 
 ChainHost::PreflightVerdict ChainHost::preflightVerdictFor(const juce::PluginDescription& desc)
@@ -7505,17 +7564,9 @@ void ChainHost::preflightPlugins(const std::vector<juce::PluginDescription>& des
         bool running = false;
         for (const auto& r : preflightRuns_) if (echojay::productKeyForDescription(r->desc) == key) { running = true; break; }
         if (running) continue;
-        const auto cmd = preflightCommand ? preflightCommand(d) : defaultPreflightCommand(d);
         auto run = std::make_unique<PreflightRun>();
-        run->desc = d; run->proc = std::make_unique<juce::ChildProcess>(); run->t0 = juce::Time::getMillisecondCounterHiRes();
-        ++preflightSpawns_;
-        if (! run->proc->start(cmd, 0))   // spawn only: nothing else on the message thread
-        {
-            preflightVerdicts()[key] = { PreflightState::error, "probe could not start (" + cmd[0] + ")", -1, 0 };
-            EchoJay_NSLog(("EJPreflight: could not start the probe for \"" + d.name + "\" (" + cmd[0] + ") - in-host create proceeds").toRawUTF8());
-            continue;
-        }
-        EchoJay_NSLog(("EJPreflight: probing \"" + d.name + "\" out of process (" + juce::String(kPreflightTimeoutMs) + " ms bound)").toRawUTF8());
+        run->desc = d;
+        if (! spawnPreflightRun(*run)) continue;
         preflightRuns_.push_back(std::move(run));
     }
     if (preflightRuns_.empty()) { if (done) done(); return; }
@@ -7532,29 +7583,45 @@ void ChainHost::preflightPoll()
         auto& r = **it;
         const auto key = echojay::productKeyForDescription(r.desc);
         const double ms = now - r.t0;
+        const bool instantiated = r.marker.existsAsFile();   // the probe touched it after INSTANTIATE: OK
         if (! r.proc->isRunning())
         {
             const auto code = r.proc->getExitCode();
-            PreflightVerdict v; v.ms = ms; v.exitCode = (int) code;
+            PreflightVerdict v; v.ms = ms; v.exitCode = (int) code; v.attempts = r.attempt; v.instantiated = instantiated;
             if (code == 0) { v.state = PreflightState::ok; v.note = "probe ok"; }
+            else if (instantiated) { v.state = PreflightState::ok; v.note = "instantiated; the probe's render check exited " + juce::String((int) code) + " (not a load hang) - in-host create proceeds"; }
             else { v.state = PreflightState::error; v.note = "probe exit " + juce::String((int) code) + " (not evidence: licence-bound plugins fail out of process) - in-host create proceeds"; }
             preflightVerdicts()[key] = v;
-            EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" " + v.note + " in " + juce::String((int) ms) + " ms").toRawUTF8());
+            r.marker.deleteFile();
+            EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" " + v.note + " in " + juce::String((int) ms) + " ms (attempt " + juce::String(r.attempt) + ")").toRawUTF8());
             it = preflightRuns_.erase(it); continue;
         }
-        if (ms >= kPreflightTimeoutMs)
+        if (ms >= r.boundMs)
         {
             r.proc->kill();
-            PreflightVerdict v; v.state = PreflightState::hang; v.ms = ms; v.note = "hangs on load: the out-of-process probe did not return in " + juce::String(kPreflightTimeoutMs) + " ms";
-            preflightVerdicts()[key] = v;
-            // Keyed by the SCANNER uid (makeUid name_manufacturer - the key plugin_disabled.json and the
-            // Settings checklist use), with the detail line and the 7-day expiry; the plugin is withheld
-            // from the feed through the scanner (onWithholdPlugin, wired by the processor).
+            if (instantiated)
+            {   // LOADED, then stalled in the render check: not a load hang, never marked
+                PreflightVerdict v; v.state = PreflightState::ok; v.ms = ms; v.attempts = r.attempt; v.instantiated = true;
+                v.note = "instantiated within the bound; the probe's render check did not finish in " + juce::String(r.boundMs) + " ms (not a load hang) - in-host create proceeds";
+                preflightVerdicts()[key] = v; r.marker.deleteFile();
+                EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" " + v.note).toRawUTF8());
+                it = preflightRuns_.erase(it); continue;
+            }
+            if (r.attempt == 1)
+            {   // a timeout is "slow", not a verdict: retry once with the longer bound
+                EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" no instance within " + juce::String(r.boundMs) + " ms - slow, not a verdict; retrying once with a " + juce::String(gPreflightRetryBoundMs) + " ms bound").toRawUTF8());
+                r.attempt = 2;
+                if (spawnPreflightRun(r)) { ++it; continue; }
+                it = preflightRuns_.erase(it); continue;   // could not respawn: verdict error recorded, not marked
+            }
+            PreflightVerdict v; v.state = PreflightState::hang; v.ms = ms; v.attempts = 2;
+            v.note = "hangs on load: two consecutive out-of-process probes produced no instance (" + juce::String(gPreflightFirstBoundMs) + " ms, then " + juce::String(gPreflightRetryBoundMs) + " ms)";
+            preflightVerdicts()[key] = v; r.marker.deleteFile();
             const auto scanUid = echojay::makeUid(r.desc.name, r.desc.manufacturerName);
             echojay::recordDisableReasons({ scanUid }, echojay::kDisableWhyHangsOnLoad,
-                "hangs on load (the out-of-process check timed out after " + juce::String(kPreflightTimeoutMs / 1000) + " s)");
+                "hangs on load (two out-of-process checks timed out: " + juce::String(gPreflightFirstBoundMs / 1000) + " s, then " + juce::String(gPreflightRetryBoundMs / 1000) + " s)");
             if (onWithholdPlugin) onWithholdPlugin(scanUid, r.desc.name);
-            EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" HANGS ON LOAD (probe killed after " + juce::String((int) ms) + " ms) - marked in the disabled-set note; the build substitutes").toRawUTF8());
+            EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" HANGS ON LOAD (two consecutive timeouts, last probe killed after " + juce::String((int) ms) + " ms) - marked in the disabled-set note; the build substitutes").toRawUTF8());
             it = preflightRuns_.erase(it); continue;
         }
         ++it;

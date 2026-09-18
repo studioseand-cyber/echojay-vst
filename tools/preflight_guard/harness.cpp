@@ -62,6 +62,9 @@ int main()
     // two shapes are real binaries): a helper whose "initialiser" never returns (/bin/sleep 30) and one that exits
     // non-zero without hanging (/usr/bin/false).
     ChainHost::resetPreflightVerdictsForTest();
+    // 18 Sep 2026: a timeout is "slow", not a verdict - a hang is TWO consecutive timeouts (first bound, then the retry
+    // bound). The retry bound is shrunk here (3 s) so leg (a) stays a 13 s wait instead of 40.
+    ChainHost::setPreflightBoundsForTest (ChainHost::kPreflightTimeoutMs, 3000);
     ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512);
     const auto dHang = fake (1, "Guard Hanger"), dErr = fake (2, "Guard Failer"), dGood = fake (3, "Guard Good");
     h.preflightCommand = [&] (const juce::PluginDescription& d) -> juce::StringArray
@@ -72,11 +75,11 @@ int main()
     bool done = false; const double t0 = juce::Time::getMillisecondCounterHiRes();
     h.preflightPlugins ({ dHang, dErr, dGood }, [&] { done = true; });
     check (h.preflightSpawnCount() == 2, "(c) two probes spawned (the known-good product needed none), in parallel", juce::String (h.preflightSpawnCount()));
-    double worst = 0; while (! done && juce::Time::getMillisecondCounterHiRes() - t0 < 14000) worst = juce::jmax (worst, pumpMeasuring (200));
+    double worst = 0; while (! done && juce::Time::getMillisecondCounterHiRes() - t0 < 18000) worst = juce::jmax (worst, pumpMeasuring (200));
     const double waited = juce::Time::getMillisecondCounterHiRes() - t0;
     check (done, "the pre-flight settled", juce::String ((int) waited) + " ms");
     const auto vh = ChainHost::preflightVerdictFor (dHang), ve = ChainHost::preflightVerdictFor (dErr), vg = ChainHost::preflightVerdictFor (dGood);
-    check (vh.state == ChainHost::PreflightState::hang && waited >= 9900 && waited < 12500, "(a) the sleeping fixture TIMED OUT at 10 s (probe killed)", "state=" + juce::String ((int) vh.state) + " after " + juce::String ((int) waited) + " ms: " + vh.note);
+    check (vh.state == ChainHost::PreflightState::hang && vh.attempts == 2 && waited >= 12900 && waited < 16500, "(a) the sleeping fixture timed out at 10 s, was RETRIED (3 s test bound) and timed out again -> hang (two consecutive timeouts)", "state=" + juce::String ((int) vh.state) + " after " + juce::String ((int) waited) + " ms: " + vh.note);
     check (echojay::disableReasonFor (echojay::makeUid (dHang.name, dHang.manufacturerName)) == "hangs-on-load", "(a) the identity is marked hangs-on-load in the disabled-set note (scanner key name_manufacturer)", echojay::disableReasonDetailFor (echojay::makeUid (dHang.name, dHang.manufacturerName)));
     check (worst < 250.0, "(a) the message thread was never blocked during the wait (worst tick gap < 250 ms)", juce::String (worst, 1) + " ms");
     juce::String errH; bool cbH = false;
@@ -117,11 +120,73 @@ int main()
         juce::String errF; bool cbF = false;
         h2.loadPluginAsync (dFresh, ChainHost::LoadOrigin::Assistant, [&] (const juce::String& err) { errF = err; cbF = true; }); pumpMeasuring (100);
         check (cbF && h2.getNumSlots() == 1 && h2.getSlotInfo (0).name == "EchoJay Compressor", "(e) the live-marked plugin is never loaded in-host: substituted", h2.getNumSlots() ? h2.getSlotInfo (0).name : juce::String ("none"));
-        const double t2 = juce::Time::getMillisecondCounterHiRes(); while (! done2 && juce::Time::getMillisecondCounterHiRes() - t2 < 14000) pumpMeasuring (200);
+        const double t2 = juce::Time::getMillisecondCounterHiRes(); while (! done2 && juce::Time::getMillisecondCounterHiRes() - t2 < 18000) pumpMeasuring (200);
         check (done2 && ChainHost::preflightVerdictFor (dStale).state == ChainHost::PreflightState::hang && echojay::hangsOnLoadMarkLive (uStale), "(f) the re-probe timed out again -> a NEW mark with a new 7-day expiry", echojay::disableReasonDetailFor (uStale));
     }
 #else
     std::printf ("  (skipped in TODAY mode)\n"); ++failures;
+#endif
+    std::printf ("== (h)(i)(j)(k) 18 Sep 2026: host arch, retry, two-timeouts, instantiated-marker (AMEK Mastering Compressor) ==\n");
+#ifndef EJ_GUARD_TODAY
+    {
+        // (h) ARCH: the probe runs under the HOST's architecture. Pro Tools under Rosetta is x86_64: the command is
+        // spawned through /usr/bin/arch -x86_64; a native host runs the helper directly. Both end with the marker path.
+        const auto dA = fake (41, "Guard Arch");
+        const auto cx = ChainHost::defaultPreflightCommand (dA, "x86_64"), ca = ChainHost::defaultPreflightCommand (dA, "arm64");
+        check (cx.size() == 7 && cx[0] == "/usr/bin/arch" && cx[1] == "-x86_64" && cx[2] == ChainHost::probeHelperFile().getFullPathName(),
+               "(h) an x86_64 (Rosetta) host spawns the probe through /usr/bin/arch -x86_64", cx.joinIntoString (" "));
+        check (ca.size() == 5 && ca[0] == ChainHost::probeHelperFile().getFullPathName(), "(h) a native arm64 host spawns the helper directly", ca.joinIntoString (" "));
+        check (cx[cx.size() - 1] == ChainHost::preflightMarkerFile (dA).getFullPathName() && ca[ca.size() - 1] == cx[cx.size() - 1],
+               "(h) both carry the INSTANTIATE marker path as the last argument", cx[cx.size() - 1]);
+        check (ChainHost::defaultPreflightCommand (dA)[0] == (ChainHost::hostArchName() == "x86_64" ? juce::String ("/usr/bin/arch") : ChainHost::probeHelperFile().getFullPathName()),
+               "(h) the default picks this process's architecture (" + ChainHost::hostArchName() + ")");
+    }
+    {
+        ChainHost::resetPreflightVerdictsForTest();
+        ChainHost::setPreflightBoundsForTest (1500, 2000);   // short bounds: the legs prove the rule, not the seconds
+        ChainHost h3 (ChainHost::Mode::Primary); h3.prepare (48000.0, 512); h3.setBuildRoles ({ { "guard slow", "compressor" }, { "guard twice", "compressor" }, { "guard loaded", "compressor" } });
+        const auto dSlow = fake (42, "Guard Slow"), dTwice = fake (43, "Guard Twice"), dLoaded = fake (44, "Guard Loaded");
+        std::map<int, int> attempts;
+        h3.preflightCommand = [&attempts, dSlow, dTwice] (const juce::PluginDescription& d) -> juce::StringArray
+        {
+            const int a = ++attempts[d.uniqueId];
+            if (d.uniqueId == dSlow.uniqueId) return a == 1 ? juce::StringArray { "/bin/sleep", "30" } : juce::StringArray { "/usr/bin/true" };   // slow once, then fine
+            return { "/bin/sleep", "30" };                                                                                                    // never returns
+        };
+        bool done3 = false; const double t3 = juce::Time::getMillisecondCounterHiRes();
+        h3.preflightPlugins ({ dSlow, dTwice, dLoaded }, [&] { done3 = true; });
+        // (k) the LOADED case: the probe touched the marker (INSTANTIATE: OK) right after spawning, then stalled in its
+        // render check. (The spawn clears a stale marker first, so the touch comes after the spawn - as the real probe's does.)
+        ChainHost::preflightMarkerFile (dLoaded).create();
+        while (! done3 && juce::Time::getMillisecondCounterHiRes() - t3 < 9000) pumpMeasuring (100);
+        const auto vS = ChainHost::preflightVerdictFor (dSlow), vT = ChainHost::preflightVerdictFor (dTwice), vL = ChainHost::preflightVerdictFor (dLoaded);
+        check (done3, "(i)(j)(k) the pre-flight settled", juce::String ((int) (juce::Time::getMillisecondCounterHiRes() - t3)) + " ms");
+        check (attempts[dSlow.uniqueId] == 2 && vS.state == ChainHost::PreflightState::ok && vS.attempts == 2,
+               "(i) RETRY: first timeout -> retried once -> success -> verdict ok", "attempts=" + juce::String (attempts[dSlow.uniqueId]) + " state=" + juce::String ((int) vS.state) + " " + vS.note);
+        check (echojay::disableReasonFor (echojay::makeUid (dSlow.name, dSlow.manufacturerName)).isEmpty(), "(i) ...and it was NOT marked hangs-on-load");
+        check (attempts[dTwice.uniqueId] == 2 && vT.state == ChainHost::PreflightState::hang && vT.attempts == 2,
+               "(j) TWO consecutive timeouts -> hang", "attempts=" + juce::String (attempts[dTwice.uniqueId]) + " " + vT.note);
+        check (echojay::disableReasonFor (echojay::makeUid (dTwice.name, dTwice.manufacturerName)) == "hangs-on-load", "(j) ...and only then is it marked hangs-on-load");
+        check (attempts[dLoaded.uniqueId] == 1 && vL.state == ChainHost::PreflightState::ok && vL.instantiated,
+               "(k) INSTANTIATED then stalled in the render check -> ok, no retry, never a hang (the AMEK case)", vL.note);
+        check (echojay::disableReasonFor (echojay::makeUid (dLoaded.name, dLoaded.manufacturerName)).isEmpty(), "(k) ...and NOT marked");
+        check (! ChainHost::preflightMarkerFile (dLoaded).existsAsFile(), "(k) the marker is cleaned up after the verdict");
+        ChainHost::setPreflightBoundsForTest (ChainHost::kPreflightTimeoutMs, 3000);
+    }
+#else
+    {   // RED on the old single-shot, with the OLD API only: a fake SLOW probe (times out once, fine the second time) must not be marked
+        ChainHost::resetPreflightVerdictsForTest();
+        ChainHost hOld (ChainHost::Mode::Primary); hOld.prepare (48000.0, 512); hOld.setBuildRoles ({ { "guard slow", "compressor" } });
+        const auto dSlow = fake (42, "Guard Slow"); int calls = 0;
+        hOld.preflightCommand = [&calls] (const juce::PluginDescription&) -> juce::StringArray { return ++calls == 1 ? juce::StringArray { "/bin/sleep", "30" } : juce::StringArray { "/usr/bin/true" }; };
+        bool doneOld = false; const double tOld = juce::Time::getMillisecondCounterHiRes();
+        hOld.preflightPlugins ({ dSlow }, [&] { doneOld = true; });
+        while (! doneOld && juce::Time::getMillisecondCounterHiRes() - tOld < 45000) pumpMeasuring (100);
+        check (calls == 2, "(i) a slow probe is RETRIED once (the seam was asked twice)", "calls=" + juce::String (calls));
+        check (echojay::disableReasonFor (echojay::makeUid (dSlow.name, dSlow.manufacturerName)).isEmpty() && ChainHost::preflightVerdictFor (dSlow).state == ChainHost::PreflightState::ok,
+               "(i) ...and after the retry succeeds it is NOT marked hangs-on-load", "state=" + juce::String ((int) ChainHost::preflightVerdictFor (dSlow).state) + " " + ChainHost::preflightVerdictFor (dSlow).note);
+        check (false, "(h) an x86_64 (Rosetta) host spawns the probe through /usr/bin/arch -x86_64", "TODAY: no arch, no marker");
+    }
 #endif
     std::printf ("== (g) 18 Sep 2026 LIVENESS: a build whose chain names THREE not-known-good products spawns THREE probes ==\n");
     // Pro Tools, 18 Sep 13:39: spiff, UAD dbx 160 and Looptrotter SA2RATE2 were not known-good, the build placed all
