@@ -7,7 +7,7 @@
 //
 //   au_instantiate_probe "<name>" "<AudioUnit:...identifier...>" <uidHex>
 //
-// Reports, per plugin: INSTANTIATE ok/fail, PREPARE (initialise) ok/fail via a
+// Reports, per plugin: INSTANTIATE ok/fail (the render step was removed 18 Sep 2026; formerly PREPARE+RENDER via a
 // few process blocks (alive/silent/passthrough). A hang on a licensing dialog
 // is the caller's job to time out and kill — this program never dismisses one.
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
@@ -60,32 +60,10 @@ int main (int argc, char** argv)
     std::fflush (stdout);
     if (marker != juce::File()) marker.create();
 
-    // PREPARE == the initialise that matters for the crash path: the headless
-    // AU host's prepareToPlay calls AudioUnitInitialize. Then render a few
-    // blocks to prove it is a live, initialised AU (and does not fault).
-    inst->prepareToPlay (48000.0, 512);
-    juce::AudioBuffer<float> buf (2, 512);
-    juce::MidiBuffer midi;
-    juce::Random rng (7);
-    double inSum = 0, outSum = 0, diff = 0;
-    for (int b = 0; b < 40; ++b)
-    {
-        for (int ch = 0; ch < 2; ++ch)
-            for (int i = 0; i < 512; ++i)
-                buf.setSample (ch, i, rng.nextFloat() * 0.5f - 0.25f);
-        juce::AudioBuffer<float> in; in.makeCopyOf (buf);
-        inst->processBlock (buf, midi);
-        for (int i = 0; i < 512; ++i)
-        {
-            inSum  += std::abs (in.getSample (0, i));
-            outSum += std::abs (buf.getSample (0, i));
-            diff   += std::abs (buf.getSample (0, i) - in.getSample (0, i));
-        }
-    }
-    std::printf ("PREPARE+RENDER: OK  inSum=%.1f outSum=%.1f diff=%.1f -> %s\n",
-                 inSum, outSum, diff,
-                 outSum < 1e-6 ? "silent" : diff < 1e-6 ? "passthrough" : "processing(alive)");
-    inst->releaseResources();
+    // 18 Sep 2026: the probe's job is LOAD hangs. It used to prepare and render 40 blocks after this point; AMEK
+    // Mastering Compressor segfaulted there (renderGetInput inside the headless AU host's input callback, exit 139,
+    // both architectures) and in-host that step stalled to the bound and read as "hangs on load". There is no stated
+    // reason to render: the verdict is the instance. Stop here.
     inst.reset();
     std::printf ("RESULT: OK\n");
     return 0;

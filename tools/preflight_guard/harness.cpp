@@ -171,6 +171,24 @@ int main()
                "(k) INSTANTIATED then stalled in the render check -> ok, no retry, never a hang (the AMEK case)", vL.note);
         check (echojay::disableReasonFor (echojay::makeUid (dLoaded.name, dLoaded.manufacturerName)).isEmpty(), "(k) ...and NOT marked");
         check (! ChainHost::preflightMarkerFile (dLoaded).existsAsFile(), "(k) the marker is cleaned up after the verdict");
+        // (l) 18 Sep 2026: a probe that CRASHES after instantiate (the AMEK shape: marker touched, then SIGSEGV) is ok, never marked
+        {
+            ChainHost::resetPreflightVerdictsForTest();
+            ChainHost h4 (ChainHost::Mode::Primary); h4.prepare (48000.0, 512); h4.setBuildRoles ({ { "guard crasher", "compressor" } });
+            const auto dCrash = fake (45, "Guard Crasher");
+            const auto marker = ChainHost::preflightMarkerFile (dCrash).getFullPathName();
+            h4.preflightCommand = [marker] (const juce::PluginDescription&) -> juce::StringArray
+            { return { "/bin/sh", "-c", "/usr/bin/touch '" + marker + "'; kill -SEGV $$" }; };   // instantiate ok, then die
+            bool done4 = false; const double t4 = juce::Time::getMillisecondCounterHiRes();
+            h4.preflightPlugins ({ dCrash }, [&] { done4 = true; });
+            while (! done4 && juce::Time::getMillisecondCounterHiRes() - t4 < 6000) pumpMeasuring (100);
+            const auto vC = ChainHost::preflightVerdictFor (dCrash);
+            // juce::ChildProcess::getExitCode reports a signal death as 0, so the exit code is no evidence here; the
+            // marker (instantiated) and the verdict are.
+            check (done4 && vC.state == ChainHost::PreflightState::ok && vC.instantiated,
+                   "(l) a probe that crashes AFTER instantiate -> ok (instantiated; a render/exit crash is not a load hang)", "state=" + juce::String ((int) vC.state) + " instantiated=" + (vC.instantiated ? "y" : "n") + " exit=" + juce::String (vC.exitCode) + " " + vC.note);
+            check (echojay::disableReasonFor (echojay::makeUid (dCrash.name, dCrash.manufacturerName)).isEmpty(), "(l) ...and NOT marked hangs-on-load");
+        }
         ChainHost::setPreflightBoundsForTest (ChainHost::kPreflightTimeoutMs, 3000);
     }
 #else
