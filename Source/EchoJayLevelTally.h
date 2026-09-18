@@ -58,6 +58,7 @@
 // House rules: no em-dashes anywhere in this file.
 // ===========================================================================
 #include <juce_core/juce_core.h>
+#include "EJTruePeakInterp.h"
 #include "EchoJayKWeighting.h"
 #include <array>
 #include <atomic>
