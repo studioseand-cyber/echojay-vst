@@ -51,6 +51,7 @@
 #include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
 #include "EJTooltipPlace.h"     // the tooltip placement rule: the shipped origin
 #include "EJPlaybackSim.h"      // the inline monitoring stage: the shipped no-op
+#include "EJPlaybackVoicing.h"  // the voicing table and its chain: the shipped coefficients
 #include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
@@ -9255,6 +9256,225 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (ec.contains ("monoRect = monoRow.withWidth"),
                        "pb PIN9: the hit rectangle is computed in paint, like every "
                        "other rect on this page, so it cannot drift from what is drawn");
+            }
+        }
+
+        // pv PIN1 to pv PIN5 -- THE PLAYBACK VOICING TABLE (EJPlaybackVoicing.h).
+        // PREFIX pv: checked against every two-letter prefix already in the
+        // suite (ap bd cg cp dp dw ef ej fb fd mc md ml mp nl og ot pb ps rb rf
+        // ri se sp sv tr tt wa wr ws) rather than assumed free.
+        //
+        // NOTHING PLAYS A VOICING YET. These pin the numbers, and the chain that
+        // turns them into coefficients, at every rate a host is likely to run,
+        // so the commit that makes a voicing audible inherits a table already
+        // known to sit inside the clamp and to be stable.
+        {
+            using echojay::VoicingChain;
+            using echojay::kVoicingTable;
+            using PV = echojay::PlaybackVoicing;
+
+            const double pvRates[] = { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 };
+            const char* const pvNames[] = { "None", "PhoneSpeaker", "Laptop",
+                                            "CarDashboard", "KitchenRadio", "Earbuds" };
+            static_assert (sizeof (pvNames) / sizeof (pvNames[0]) == (size_t) PV::Count,
+                           "one name per voicing, so a FAIL line can say which");
+            const char* const pvWhich[3] = { "high pass", "low pass", "peak" };
+
+            // pv PIN1 -- EVERY SPECIFIED FREQUENCY IS STRICTLY INSIDE Biquad's
+            // CLAMP, AT EVERY RATE. Biquad::clampFreq (EedDynamicsCore.h:172)
+            // moves an out-of-range corner and says nothing, so an entry that is
+            // right at 48 kHz can silently be a different filter at 44.1 kHz,
+            // where the ceiling is 19845 Hz rather than 21600. This is the pin
+            // that catches that. STRICTLY inside: a frequency sitting exactly on
+            // a bound is one rounding step from being moved.
+            //
+            // THE BOUNDS ARE READ FROM THE CLAMP, NOT RESTATED. clampFreq maps
+            // 0 Hz to its own floor and an absurd frequency to its own ceiling,
+            // so if the clamp ever moves, this pin moves with it.
+            //
+            // It also catches a voicing added to the enum with no row: aggregate
+            // initialisation gives that row zeros, and 0 Hz is below the floor.
+            //
+            // The peak is checked against Biquad's clamp as well. PeakBiquad
+            // clamps with its own copy of the same two numbers
+            // (EedHarmonicCore.h:391), and this pin would not see them diverge.
+            for (double pvRate : pvRates)
+            {
+                const double pvLo = echojay::Biquad::clampFreq (0.0, pvRate);
+                const double pvHi = echojay::Biquad::clampFreq (1.0e12, pvRate);
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    const auto& row = kVoicingTable[(size_t) v];
+                    const double hz[3] = { row.hpHz, row.lpHz, row.peakHz };
+                    for (int k = 0; k < 3; ++k)
+                        if (! (hz[k] > pvLo && hz[k] < pvHi))
+                            pvBad << pvNames[v] << " " << pvWhich[k] << " " << hz[k] << " Hz; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN1: every voicing's frequencies are strictly inside "
+                       "Biquad's clamp at " + juce::String ((int) pvRate) + " Hz",
+                       "outside (" + juce::String (pvLo) + ", " + juce::String (pvHi) + "): " + pvBad);
+            }
+
+            // pv PIN2 -- EVERY SECTION OF EVERY VOICING IS STABLE, AT EVERY RATE.
+            // DERIVED through the shipped chain (prepare, then setVoicing) and
+            // read back from the sections it holds, so this tests the numbers the
+            // audio would run, not a re-derivation. For 1 + a1 z^-1 + a2 z^-2 both
+            // poles are inside the unit circle exactly when |a2| < 1 and
+            // |a1| < 1 + a2 (the stability triangle). Evaluated in double on the
+            // STORED FLOAT coefficients, because the floats are what process()
+            // runs.
+            //
+            // WHAT IT CAN CATCH, stated so nobody over-trusts it. In exact
+            // arithmetic a clamped RBJ low pass, high pass or peak is stable for
+            // ANY table entry: the clamp holds the corner in (10 Hz, 0.45 fs) and
+            // Q at 0.05 or more. So a mistyped frequency or Q cannot fail here,
+            // and pv PIN1 is the pin for those. What this catches is a broken
+            // DERIVATION, and a gross GAIN typo: 400 dB instead of 4 rounds the
+            // peak's a2 to exactly 1.0f, a pole ON the circle. The tightest
+            // section in today's table is Earbuds' 40 Hz high pass at 192 kHz,
+            // which clears the triangle by about 1.7e-6, some seven float steps.
+            for (double pvRate : pvRates)
+            {
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    VoicingChain chain;
+                    chain.prepare (pvRate);
+                    chain.setVoicing ((PV) v);
+                    float pb0 = 0, pb1 = 0, pb2 = 0, pa1 = 0, pa2 = 0;
+                    chain.resonance().getCoefficients (pb0, pb1, pb2, pa1, pa2);
+                    const double a1[3] = { chain.highPass().a1, chain.lowPass().a1, pa1 };
+                    const double a2[3] = { chain.highPass().a2, chain.lowPass().a2, pa2 };
+                    for (int k = 0; k < 3; ++k)
+                        if (! (std::abs (a2[k]) < 1.0 && std::abs (a1[k]) < 1.0 + a2[k]))
+                            pvBad << pvNames[v] << " " << pvWhich[k]
+                                  << " a1=" << a1[k] << " a2=" << a2[k] << "; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN2: every section of every voicing has its poles inside "
+                       "the unit circle at " + juce::String ((int) pvRate) + " Hz",
+                       pvBad);
+            }
+
+            // pv PIN3 -- THE HIGH PASS PASSES NOTHING AT DC. H(z) evaluated at
+            // z = 1 from the chain's stored coefficients, (b0 + b1 + b2) over
+            // (1 + a1 + a2): the DC gain of the float filter process() runs.
+            //
+            // A TOLERANCE OF 1e-6 (-120 dB), NOT AN EQUALITY. The RBJ high pass
+            // numerator, (1 + cos w)/2, -(1 + cos w), (1 + cos w)/2, sums to zero
+            // in exact arithmetic, but these are floats divided through by a0 and
+            // nothing about floats promises three rounded terms still cancel.
+            // Today they do, exactly, because Biquad::highpass halves by a power
+            // of two, which commutes with rounding; that is a property of how the
+            // factory is SPELLED, not of the filter, and the tan form MeterEngine
+            // uses would leave a residue. The mono fold is different in kind: its
+            // bit identity is a property of IEEE arithmetic itself (x + x and
+            // * 0.5 only move the exponent), which is why pb PIN2 can demand
+            // memcmp and this pin cannot.
+            //
+            // The denominator is small at a low corner and a high rate (about
+            // 1.7e-6 for Earbuds at 192 kHz), so a residue of one rounding step
+            // in the numerator WOULD fail here. That failure would be true: it is
+            // the DC the float filter really passes.
+            for (double pvRate : pvRates)
+            {
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    VoicingChain chain;
+                    chain.prepare (pvRate);
+                    chain.setVoicing ((PV) v);
+                    const auto& s = chain.highPass();
+                    const double num = (double) s.b0 + (double) s.b1 + (double) s.b2;
+                    const double den = 1.0 + (double) s.a1 + (double) s.a2;
+                    const double mag = std::abs (num / den);
+                    if (! (mag < 1.0e-6))
+                        pvBad << pvNames[v] << " |H(1)|=" << mag << "; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN3: every voicing's high pass has |H| below 1e-6 at DC, at "
+                           + juce::String ((int) pvRate) + " Hz",
+                       pvBad);
+            }
+
+            // pv PIN4 -- THE LOW PASS PASSES NOTHING AT NYQUIST. The same method
+            // at z = -1: (b0 - b1 + b2) over (1 - a1 + a2). The same tolerance,
+            // for the same reason: the RBJ low pass numerator, (1 - cos w)/2,
+            // (1 - cos w), (1 - cos w)/2, cancels at z = -1 in exact arithmetic
+            // and only by the factory's spelling in float.
+            for (double pvRate : pvRates)
+            {
+                juce::String pvBad;
+                for (int v = (int) PV::None + 1; v < (int) PV::Count; ++v)
+                {
+                    VoicingChain chain;
+                    chain.prepare (pvRate);
+                    chain.setVoicing ((PV) v);
+                    const auto& s = chain.lowPass();
+                    const double num = (double) s.b0 - (double) s.b1 + (double) s.b2;
+                    const double den = 1.0 - (double) s.a1 + (double) s.a2;
+                    const double mag = std::abs (num / den);
+                    if (! (mag < 1.0e-6))
+                        pvBad << pvNames[v] << " |H(-1)|=" << mag << "; ";
+                }
+                check (pvBad.isEmpty(),
+                       "pv PIN4: every voicing's low pass has |H| below 1e-6 at Nyquist, at "
+                           + juce::String ((int) pvRate) + " Hz",
+                       pvBad);
+            }
+
+            // pv PIN5 -- NONE IS A NO-OP, BIT FOR BIT. memcmp against a copy, not
+            // a tolerance, because the claim is that None does not TOUCH the
+            // buffer, and a filter set to unity is not that: 1 * x + 0.0 turns
+            // -0.0 into +0.0, and a NaN fed to a section poisons its state for
+            // every sample after. So the buffer carries both zeros, a denormal,
+            // a NaN and an infinity, each of which a "transparent" filter would
+            // change or spread.
+            {
+                const float pvIn[10] = { 0.3f, -0.7f, 1.0f, -1.0f,
+                                         std::numeric_limits<float>::denorm_min(),
+                                         0.1f, 0.0f, -0.0f,
+                                         std::numeric_limits<float>::quiet_NaN(),
+                                         std::numeric_limits<float>::infinity() };
+
+                // A FRESH CHAIN: None is the default, and it is prepared.
+                {
+                    VoicingChain chain;
+                    chain.prepare (48000.0);
+                    float buf[10];
+                    std::memcpy (buf, pvIn, sizeof (buf));
+                    check (! chain.process (buf, 10),
+                           "pv PIN5: a fresh chain is None and reports that it ran nothing");
+                    check (std::memcmp (buf, pvIn, sizeof (buf)) == 0,
+                           "pv PIN5: and the buffer is BIT-IDENTICAL, signed zero, "
+                           "denormal, NaN and infinity included");
+                }
+
+                // SWITCHED TO NONE FROM A VOICING THAT HAS STATE. setVoicing keeps
+                // the sections' memory (EedDynamicsCore.h:225), so after a block
+                // of PhoneSpeaker that memory is not zero. None must not flush it
+                // into the next buffer: it must not run at all.
+                {
+                    VoicingChain chain;
+                    chain.prepare (48000.0);
+                    chain.setVoicing (PV::PhoneSpeaker);
+                    float warm[64];
+                    for (int i = 0; i < 64; ++i)
+                        warm[i] = (i % 2 == 0 ? 0.5f : -0.5f) * (float) (i % 7) / 7.0f;
+                    check (chain.process (warm, 64),
+                           "pv PIN5: PhoneSpeaker runs, so the sections now hold state");
+
+                    chain.setVoicing (PV::None);
+                    float buf[10];
+                    std::memcpy (buf, pvIn, sizeof (buf));
+                    check (! chain.process (buf, 10),
+                           "pv PIN5: switched to None, the chain reports that it ran nothing");
+                    check (std::memcmp (buf, pvIn, sizeof (buf)) == 0,
+                           "pv PIN5: and the buffer is BIT-IDENTICAL, so no filter tail "
+                           "leaks into audio after a voicing is turned off");
+                }
             }
         }
 
