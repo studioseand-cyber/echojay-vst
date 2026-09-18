@@ -720,6 +720,8 @@ public:
     static juce::StringArray defaultPreflightCommand (const juce::PluginDescription& desc);
     // Test seam: the command line to run for a plugin (default: the helper + name/id/uid).
     std::function<juce::StringArray(const juce::PluginDescription&)> preflightCommand;
+    // A hangs-on-load verdict withholds the plugin from the feed: the processor wires this to the scanner.
+    std::function<void(const juce::String& scanUid, const juce::String& name)> onWithholdPlugin;
     // Runs the probes for every third-party, not-known-good, not-yet-judged description, in
     // parallel; `done` fires on the message thread when all have a verdict (or at once when
     // there is nothing to probe). Verdicts are process-wide (main and borrowed hosts, V2 and Link).

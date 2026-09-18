@@ -328,6 +328,13 @@ EchoJayProcessor::EchoJayProcessor()
         chainHost.invalidateRecommendable();
     };
 
+    // 18 Sep 2026: a pre-flight hangs-on-load verdict withholds the plugin from the feed (the
+    // disabled set + the Settings checklist), the same door "Don't suggest again" uses.
+    chainHost.onWithholdPlugin = [this](const juce::String& scanUid, const juce::String& name)
+    {
+        pluginScanner.setPluginEnabled(scanUid, false);
+        EchoJay_NSLog(("EJPreflight: \"" + name + "\" withheld from the feed (uid " + scanUid + ")").toRawUTF8());
+    };
     chainHost.onChainChanged = [this]
     {
         // Through the hard-block accessor, never getTotalLatencySamples

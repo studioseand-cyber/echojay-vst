@@ -308,9 +308,28 @@ void PluginChecklistComponent::paint(juce::Graphics& g)
             // Name.
             g.setColour(on ? C::text : C::text3);
             g.setFont(juce::Font(juce::FontOptions(13.0f)));
-            g.drawText(e.name,
-                       boxX + kCheckSz + 8, ln.y, w - (boxX + kCheckSz + 8) - kPadX, kRowH,
-                       juce::Justification::centredLeft);
+            const int nameX = boxX + kCheckSz + 8;
+            const int nameW = juce::jmin(w - nameX - kPadX, 260);
+            g.drawText(e.name, nameX, ln.y, nameW, kRowH, juce::Justification::centredLeft);
+            // 18 Sep 2026: WHY a plugin is disabled, beside its name, and a Clear pill for a
+            // hangs-on-load mark (the pre-flight's verdict) so the user can lift it.
+            const auto why = rowReasonText(e.uid);
+            if (why.isNotEmpty())
+            {
+                g.setFont(juce::Font(juce::FontOptions(11.0f)));
+                g.setColour(C::text3);
+                const int rx = nameX + nameW + 8;
+                const bool clearable = rowMarkClearable(e.uid);
+                const int pillW = clearable ? 52 : 0;
+                g.drawText(why, rx, ln.y, juce::jmax(0, w - rx - kPadX - pillW - 6), kRowH, juce::Justification::centredLeft, true);
+                if (clearable)
+                {
+                    auto pill = clearPillBounds(ln, w);
+                    g.setColour(C::bg3); g.fillRoundedRectangle(pill.toFloat(), 4.0f);
+                    g.setColour(C::border2); g.drawRoundedRectangle(pill.toFloat(), 4.0f, 1.0f);
+                    g.setColour(C::text); g.drawText("Clear", pill, juce::Justification::centred);
+                }
+            }
         }
     }
 }
@@ -357,6 +376,13 @@ void PluginChecklistComponent::mouseDown(const juce::MouseEvent& ev)
         else // PluginRow — toggle enabled (local only, instant)
         {
             auto& e = allRows[(size_t) ln.entryIndex];
+            if (rowMarkClearable(e.uid) && clearPillBounds(ln, getWidth()).contains(ev.x, ev.y))
+            {
+                clearMark(e.uid);   // 18 Sep 2026: lift the hangs-on-load mark and re-enable
+                repaint(0, ln.y, getWidth(), ln.height);
+                if (onChanged) onChanged();
+                return;
+            }
             if (disabled.count(e.uid)) disabled.erase(e.uid);
             else                       disabled.insert(e.uid);
             dirty = (disabled != committedDisabled);
@@ -366,4 +392,29 @@ void PluginChecklistComponent::mouseDown(const juce::MouseEvent& ev)
         }
         return;
     }
+}
+
+// ---- 18 Sep 2026: the disabled-list reason and the Clear action -------------------
+juce::String PluginChecklistComponent::rowReasonText(const juce::String& uid) const
+{
+    if (! disabled.count(uid) && echojay::disableReasonFor(uid).isEmpty()) return {};
+    return echojay::disableReasonDetailFor(uid);
+}
+
+bool PluginChecklistComponent::rowMarkClearable(const juce::String& uid) const
+{
+    return echojay::disableReasonFor(uid) == juce::String(echojay::kDisableWhyHangsOnLoad);
+}
+
+juce::Rectangle<int> PluginChecklistComponent::clearPillBounds(const Line& ln, int w) const
+{
+    return { w - kPadX - 52, ln.y + (kRowH - 18) / 2, 52, 18 };
+}
+
+void PluginChecklistComponent::clearMark(const juce::String& uid)
+{
+    echojay::clearDisableReasons({ uid });
+    disabled.erase(uid);
+    dirty = (disabled != committedDisabled);
+    scanner.setPluginEnabled(uid, true);
 }

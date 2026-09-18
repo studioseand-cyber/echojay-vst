@@ -13,6 +13,7 @@
 #include "NotDialableText.h"   // item 3: the built-in by role (one table, shared with the card)
 #include "NearAcceptance.h"     // amendment 1: the partial acceptance rule (essentials + Tier-1)
 #include "EJDisableReasons.h"    // pre-flight: "hangs-on-load" in the disabled-set note
+#include "PluginCatalog.h"        // makeUid: the scanner/checklist key
 #include <regex>
 #include "EJDialTally.h"          // dial-4 A8: requestedEntryCount, the A7.2 keys semantic
 #include "SurgicalEqProcessor.h"   // built-in EQ device (see kBuiltinFormat)
@@ -7487,6 +7488,20 @@ void ChainHost::preflightPlugins(const std::vector<juce::PluginDescription>& des
         if (d.uniqueId == 0 || isBuiltinDescription(d) || isKnownGood(d)) continue;
         const auto key = echojay::productKeyForDescription(d);
         if (preflightVerdicts().count(key) > 0) continue;
+        // 18 Sep 2026: a LIVE hangs-on-load mark (< 7 days) is the verdict - no probe, never in-host;
+        // an EXPIRED mark is cleared and the plugin is probed again.
+        const auto scanUid = echojay::makeUid(d.name, d.manufacturerName);
+        if (echojay::hangsOnLoadMarkLive(scanUid))
+        {
+            preflightVerdicts()[key] = { PreflightState::hang, "hangs on load (marked " + echojay::disableReasonDetailFor(scanUid) + ")", 0, 0 };
+            EchoJay_NSLog(("EJPreflight: \"" + d.name + "\" carries a live hangs-on-load mark - not probed, not loaded; substituted").toRawUTF8());
+            continue;
+        }
+        if (echojay::hangsOnLoadMarkExpired(scanUid))
+        {
+            echojay::clearDisableReasons({ scanUid });
+            EchoJay_NSLog(("EJPreflight: \"" + d.name + "\" hangs-on-load mark expired (" + juce::String(echojay::kHangsOnLoadExpiryDays) + " days) - cleared, probing again").toRawUTF8());
+        }
         bool running = false;
         for (const auto& r : preflightRuns_) if (echojay::productKeyForDescription(r->desc) == key) { running = true; break; }
         if (running) continue;
@@ -7532,7 +7547,13 @@ void ChainHost::preflightPoll()
             r.proc->kill();
             PreflightVerdict v; v.state = PreflightState::hang; v.ms = ms; v.note = "hangs on load: the out-of-process probe did not return in " + juce::String(kPreflightTimeoutMs) + " ms";
             preflightVerdicts()[key] = v;
-            echojay::recordDisableReasons({ juce::String::toHexString(r.desc.uniqueId) }, "hangs-on-load");
+            // Keyed by the SCANNER uid (makeUid name_manufacturer - the key plugin_disabled.json and the
+            // Settings checklist use), with the detail line and the 7-day expiry; the plugin is withheld
+            // from the feed through the scanner (onWithholdPlugin, wired by the processor).
+            const auto scanUid = echojay::makeUid(r.desc.name, r.desc.manufacturerName);
+            echojay::recordDisableReasons({ scanUid }, echojay::kDisableWhyHangsOnLoad,
+                "hangs on load (the out-of-process check timed out after " + juce::String(kPreflightTimeoutMs / 1000) + " s)");
+            if (onWithholdPlugin) onWithholdPlugin(scanUid, r.desc.name);
             EchoJay_NSLog(("EJPreflight: \"" + r.desc.name + "\" HANGS ON LOAD (probe killed after " + juce::String((int) ms) + " ms) - marked in the disabled-set note; the build substitutes").toRawUTF8());
             it = preflightRuns_.erase(it); continue;
         }

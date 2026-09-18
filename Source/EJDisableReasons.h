@@ -70,19 +70,32 @@ inline juce::String disableReasonFor (const juce::String& uid)
 
 /** Stamp `why` and today's date against each uid, merging into what is there.
     Called at BOTH disable sites; a uid disabled twice keeps the latest reason. */
-inline void recordDisableReasons (const juce::StringArray& uids, const juce::String& why)
+// 18 Sep 2026 (pre-flight amendments): a "hangs-on-load" mark carries a timestamp AND
+// an expiry - until = at + 7 days - after which the plugin is probed AGAIN (never loaded
+// in-host without a probe); `detail` is the human line the Settings list shows.
+inline const char* kDisableWhyHangsOnLoad = "hangs-on-load";
+inline constexpr int kHangsOnLoadExpiryDays = 7;
+inline void recordDisableReasons (const juce::StringArray& uids, const juce::String& why, const juce::String& detail = {})
 {
     if (uids.isEmpty()) return;
     auto all = readDisableReasons();
     auto* o = all.getDynamicObject();
     if (o == nullptr) return;
-    const auto at = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    const auto now = juce::Time::getCurrentTime();
+    const auto at = now.formatted ("%Y-%m-%d");
     for (const auto& u : uids)
     {
         if (u.isEmpty()) continue;
         juce::DynamicObject::Ptr e = new juce::DynamicObject();
         e->setProperty ("why", why);
         e->setProperty ("at",  at);
+        if (detail.isNotEmpty()) e->setProperty ("detail", detail);
+        if (why == juce::String (kDisableWhyHangsOnLoad))
+        {
+            e->setProperty ("atMs",    (double) now.toMilliseconds());
+            e->setProperty ("untilMs", (double) (now + juce::RelativeTime::days (kHangsOnLoadExpiryDays)).toMilliseconds());
+            e->setProperty ("until",   (now + juce::RelativeTime::days (kHangsOnLoadExpiryDays)).formatted ("%Y-%m-%d"));
+        }
         o->setProperty (juce::Identifier (u), juce::var (e.get()));
     }
     disableReasonsFile().getParentDirectory().createDirectory();
@@ -106,4 +119,39 @@ inline void clearDisableReasons (const juce::StringArray& uids)
     disableReasonsFile().replaceWithText (juce::JSON::toString (all, true));
 }
 
+/** The human line for the Settings list: the detail when recorded, else the why. */
+inline juce::String disableReasonDetailFor (const juce::String& uid)
+{
+    auto all = readDisableReasons();
+    if (auto* o = all.getDynamicObject())
+        if (o->hasProperty (juce::Identifier (uid)))
+        {
+            auto e = o->getProperty (juce::Identifier (uid));
+            const auto d = e.getProperty ("detail", juce::var()).toString();
+            const auto until = e.getProperty ("until", juce::var()).toString();
+            const auto base = d.isNotEmpty() ? d : e.getProperty ("why", juce::var()).toString();
+            return until.isNotEmpty() ? base + " - re-checked after " + until : base;
+        }
+    return {};
+}
+/** True when the uid carries a hangs-on-load mark whose expiry has passed (>= 7 days):
+    the plugin is probed again rather than loaded in-host. */
+inline bool hangsOnLoadMarkExpired (const juce::String& uid, juce::int64 nowMs = juce::Time::currentTimeMillis())
+{
+    auto all = readDisableReasons();
+    if (auto* o = all.getDynamicObject())
+        if (o->hasProperty (juce::Identifier (uid)))
+        {
+            auto e = o->getProperty (juce::Identifier (uid));
+            if (e.getProperty ("why", juce::var()).toString() != juce::String (kDisableWhyHangsOnLoad)) return false;
+            const auto until = (juce::int64) (double) e.getProperty ("untilMs", 0.0);
+            return until > 0 && nowMs >= until;
+        }
+    return false;
+}
+/** True when the uid carries a LIVE (unexpired) hangs-on-load mark. */
+inline bool hangsOnLoadMarkLive (const juce::String& uid, juce::int64 nowMs = juce::Time::currentTimeMillis())
+{
+    return disableReasonFor (uid) == juce::String (kDisableWhyHangsOnLoad) && ! hangsOnLoadMarkExpired (uid, nowMs);
+}
 } // namespace echojay

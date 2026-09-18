@@ -66,6 +66,10 @@ public:
 
     // Fired on any local selection change. NOT a commit — cheap.
     std::function<void()> onChanged;
+    // 18 Sep 2026: the disabled-list reason and the Clear action (a hangs-on-load mark can be lifted).
+    juce::String rowReasonText(const juce::String& uid) const;
+    bool rowMarkClearable(const juce::String& uid) const;
+    void clearMark(const juce::String& uid);
 
     void resized() override;
     void paint(juce::Graphics&) override;
@@ -97,6 +101,7 @@ private:
         int height = 0;
     };
 
+    juce::Rectangle<int> clearPillBounds(const Line& ln, int w) const;
     PluginScanner& scanner;
 
     std::vector<Entry> allRows;
