@@ -1,5 +1,5 @@
 #include "EedLevelEditor.h"
-namespace { constexpr int kDefaultW = 300, kDefaultH = 150 + 3 * 18 + 12; }
+namespace { constexpr int kDefaultW = 300, kDefaultH = 150 + 4 * 18 + 12; }
 using C = echojay::device::Colours;
 EedLevelEditor::EedLevelEditor (EedLevelProcessor& p) : DeviceEditorBase (p, "LEVEL", kDefaultW, kDefaultH), proc_ (p)
 {
@@ -11,7 +11,7 @@ EedLevelEditor::EedLevelEditor (EedLevelProcessor& p) : DeviceEditorBase (p, "LE
         gainKnob_.onValueChange = [this] { if (! suppressCallbacks_) proc_.setParamValue (EedLevelProcessor::kGainDb, gainKnob_.getRealValue()); };
         addAndMakeVisible (gainKnob_);
     }
-    for (auto* l : { &inLabel_, &outLabel_, &targetLabel_ })
+    for (auto* l : { &inLabel_, &outLabel_, &grLabel_, &targetLabel_ })
     {
         l->setJustificationType (juce::Justification::centred);
         l->setFont (echojay::device::uiFont (10.0f));
@@ -22,9 +22,9 @@ EedLevelEditor::EedLevelEditor (EedLevelProcessor& p) : DeviceEditorBase (p, "LE
 }
 void EedLevelEditor::layoutContent (juce::Rectangle<int> content)
 {
-    auto rows = content.removeFromBottom (3 * 18 + 6);
+    auto rows = content.removeFromBottom (4 * 18 + 6);
     gainKnob_.setBounds (content.withSizeKeepingCentre (juce::jmin (content.getWidth(), 120), juce::jmin (content.getHeight(), 120)));
-    inLabel_.setBounds (rows.removeFromTop (18)); outLabel_.setBounds (rows.removeFromTop (18)); targetLabel_.setBounds (rows.removeFromTop (18));
+    inLabel_.setBounds (rows.removeFromTop (18)); outLabel_.setBounds (rows.removeFromTop (18)); grLabel_.setBounds (rows.removeFromTop (18)); targetLabel_.setBounds (rows.removeFromTop (18));
 }
 void EedLevelEditor::timerCallback()
 {
@@ -39,6 +39,8 @@ void EedLevelEditor::timerCallback()
         return t;
     };
     inLabel_.setText (fmt (proc_.inputLevels(), "IN  "), juce::dontSendNotification);
-    outLabel_.setText (fmt (proc_.outputLevels(), "OUT "), juce::dontSendNotification);
+    outLabel_.setText (fmt (proc_.outputLevels(), juce::String::fromUTF8 ("OUT \xe2\x86\x92 limiter  ").toRawUTF8()), juce::dontSendNotification);   // 18f: the output feeds the limiter; +9.5 dBTP here is intended
+    const float gr = proc_.downstreamGrDb();
+    grLabel_.setText (std::isfinite (gr) ? "limiter GR " + juce::String (gr, 1) + " dB" : juce::String ("limiter GR --"), juce::dontSendNotification);
     targetLabel_.setText ("target " + juce::String (proc_.targetLufs(), 1) + " LUFS (" + juce::String (EedLevelProcessor::optionName (proc_.loudnessOption())) + ")", juce::dontSendNotification);
 }

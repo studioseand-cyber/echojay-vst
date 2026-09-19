@@ -15,7 +15,7 @@ private:
     void timerCallback() override;
     EedLevelProcessor& proc_;
     echojay::device::EchoJayDeviceKnob gainKnob_;
-    juce::Label inLabel_, outLabel_, targetLabel_;
+    juce::Label inLabel_, outLabel_, grLabel_, targetLabel_;
     bool suppressCallbacks_ = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EedLevelEditor)
 };

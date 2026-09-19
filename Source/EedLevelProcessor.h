@@ -12,6 +12,7 @@
 #include "EedDeviceProcessor.h"
 #include "EchoJayLevelTally.h"
 #include <atomic>
+#include <limits>
 
 class EedLevelProcessor : public EedDeviceProcessor
 {
@@ -42,10 +43,14 @@ public:
     echojay::LevelTally::Snapshot inputLevels()  const { return in_.snapshot(); }
     echojay::LevelTally::Snapshot outputLevels() const { return out_.snapshot(); }
     void resetMeters() { in_.reset(); out_.reset(); in_.resetShortTermMax(); out_.resetShortTermMax(); }
+    // 18f: the limiter after this slot - its current gain reduction, written by the loop's tick (NaN = unknown / not an EchoJay limiter)
+    void  setDownstreamGrDb (float db) noexcept { downstreamGr_.store (db, std::memory_order_relaxed); }
+    float downstreamGrDb() const noexcept { return downstreamGr_.load (std::memory_order_relaxed); }
 
 private:
     std::atomic<double> gainDb_ { 0.0 }, targetLufs_ { -9.0 };
     std::atomic<int>    option_ { 0 };
+    std::atomic<float>  downstreamGr_ { std::numeric_limits<float>::quiet_NaN() };
     float  curLin_ = 1.0f;          // audio-thread smoothed linear gain
     float  ramp_   = 0.0f;          // per-sample ramp coefficient
     echojay::LevelTally in_ { echojay::LevelTally::Weighting::K }, out_ { echojay::LevelTally::Weighting::K };
