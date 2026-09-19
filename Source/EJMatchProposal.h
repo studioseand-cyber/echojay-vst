@@ -42,6 +42,16 @@
 //   clipping upstream        true peak above 0 dBTP or overs above 0; this is
 //                            not a refusal, it puts the ceiling move first
 //
+// And one the plan's section 5 does not list, added with M2's answer:
+//
+//   gain below its floor     the two integrated figures closer than
+//                            kMatchGainFloorDb. A refusal naming the floor and
+//                            BOTH figures, never a silent absence. A capture
+//                            under kMatchDynamicsMinSeconds never reaches it:
+//                            the duration refusal already says why there is no
+//                            loudness move, and two refusals for one absent
+//                            move would teach the user nothing.
+//
 // Two are absent because nothing could decide them:
 //
 //   substitution   CaptureSnapshot::outputSubstitution is "" on every capture
@@ -77,8 +87,10 @@ namespace echojay
 // calls this "the existing flag threshold of 2 dB", and that conflates them.
 // The other one is unchanged by this header.
 //
-// All four numbers are chosen, not measured (plan open question M1). Section 7
-// has the experiment that settles the two durations.
+// All five numbers are chosen, not measured. Four are plan open question M1;
+// the fifth, kMatchGainFloorDb, is M2's answer and adds itself to that list.
+// Section 7 has the experiment that settles the two durations. Nothing yet
+// settles the two floors or the cap.
 
 /** A band move is proposed when the magnitude of its delta is >= this.
     ">=", not "exceeds": exactly 2.0 dB proposes a move, 1.999 does not. That
@@ -95,6 +107,28 @@ inline constexpr float kMatchBandMinSeconds = 30.0f;
 /** Below this many seconds, on either side, no loudness move and no dynamics
     finding (LRA, PSR, PLR, crest) is offered. */
 inline constexpr float kMatchDynamicsMinSeconds = 60.0f;
+
+/** The gain offset is proposed when the two integrated figures are this far
+    apart or more. ">=" exactly as kMatchBandFloorDb: a gap of exactly 1.0 dB
+    proposes a move, 0.999 is refused.
+
+    ITS OWN FLOOR, NOT THE BANDS' 2 dB (plan M2, answered 19 Sep 2026). A level
+    difference is audible well below 2 dB, and every other comparison in the
+    proposal is unreliable while the two sides sit at different loudnesses, so
+    getting them level is closer to the first move than to an optional one.
+
+    1.0 IS CHOSEN, NOT MEASURED. Nothing stands behind it, the same as the
+    other four thresholds in plan M1. Do not read it as a measured JND.
+
+    NO CAP, AND NONE IS DECIDED. The band cap exists because a large band delta
+    is more likely to be a measurement artefact than a real difference. That
+    argument does not obviously carry to level: each integrated figure is one
+    gated mean over the whole run, not a relative level read off a narrow band
+    of bins. Whether a large level gap is ever an artefact has not been measured
+    either, so it is left open rather than capped by analogy or declared safe.
+    There is no kMatchGainCapDb, deliberately, and not 3 dB copied from the
+    bands. */
+inline constexpr float kMatchGainFloorDb = 1.0f;
 
 // -----------------------------------------------------------------------------
 // INPUT
@@ -185,17 +219,30 @@ enum class MatchRefusalKind
 {
     BandsTooShort,      ///< a side is shorter than kMatchBandMinSeconds
     DynamicsTooShort,   ///< a side is shorter than kMatchDynamicsMinSeconds
-    BandsNotAverage     ///< a side's macro bands are not an average reduction
+    BandsNotAverage,    ///< a side's macro bands are not an average reduction
+    GainBelowFloor      ///< the two integrated figures are closer than kMatchGainFloorDb
 };
 
 /** A refusal names its threshold and the value that failed it (decision 7). */
 struct MatchRefusal
 {
     MatchRefusalKind  kind = MatchRefusalKind::BandsTooShort;
-    juce::String      side;                    ///< "the capture" or "the reference"
+    /** "the capture" or "the reference"; for GainBelowFloor, which is about
+        both, "the capture and the reference". */
+    juce::String      side;
     float             thresholdSeconds = 0.0f; ///< the TooShort kinds
     float             measuredSeconds  = 0.0f; ///< the TooShort kinds, 0 = unknown
     SpectralReduction measuredReduction = SpectralReduction::Unknown; ///< BandsNotAverage
+
+    // GainBelowFloor only. TWO-SIDED, where the TooShort kinds are one-sided:
+    // the refusal is about the gap between two figures, so it carries both
+    // figures and the floor, not one "measured" value against a limit. The
+    // generalisation into value plus unit is open list 189, triggered by a
+    // fifth field group.
+    float             gainFloorDb   = 0.0f;     ///< GainBelowFloor: kMatchGainFloorDb
+    float             captureLufs   = -100.0f;  ///< GainBelowFloor: the capture's integrated
+    float             referenceLufs = -100.0f;  ///< GainBelowFloor: the reference's integrated
+
     juce::String      message;
 };
 
@@ -278,6 +325,30 @@ inline bool matchBandRelatives (const std::array<float, 6>& db, std::array<float
     const float mean = sum / 6.0f;
     for (int i = 0; i < 6; ++i) rel[(size_t) i] = db[(size_t) i] - mean;
     return true;
+}
+
+/** Whether a gap in integrated loudness, reference minus capture, proposes a
+    gain move: its magnitude >= kMatchGainFloorDb. A NaN gap proposes nothing. */
+inline bool matchGainProposes (float deltaDb) noexcept
+{
+    return std::abs (deltaDb) >= kMatchGainFloorDb;
+}
+
+/** The gain refusal's message: the floor and BOTH integrated figures, and the
+    gap between them.
+
+    THE GAP IS TRUNCATED, NOT ROUNDED, to two decimals, for the reason
+    matchSecondsText truncates: a gap of 0.999 dB must never print as 1.00
+    beside a 1.0 dB floor it failed. The two figures are printed to two
+    decimals as well; the gap is stated outright so that two figures which
+    happen to round 1.00 apart cannot be read as meeting the floor. */
+inline juce::String matchGainFloorMessage (float captureLufs, float referenceLufs)
+{
+    const float gap = std::floor (std::abs (referenceLufs - captureLufs) * 100.0f) / 100.0f;
+    return "No gain move: the capture measures " + juce::String (captureLufs, 2)
+         + " LUFS integrated and the reference " + juce::String (referenceLufs, 2)
+         + " LUFS, " + juce::String (gap, 2) + " dB apart, and a gain move needs at least "
+         + juce::String (kMatchGainFloorDb, 1) + " dB.";
 }
 
 /** Seconds as the refusal prints them: one decimal, TRUNCATED, so 29.96 s
@@ -373,17 +444,30 @@ inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide
     }
 
     // ---- Exact: the gain offset --------------------------------------------
+    // A duration refusal comes first and this is never reached: a capture too
+    // short for a loudness claim gets that one refusal, not a second one here.
     if (! dynamicsRefused && mix.integrated > -99.0f && ref.integrated > -99.0f)
     {
         const float delta = ref.integrated - mix.integrated;
-        if (delta != 0.0f)
+        if (matchGainProposes (delta))
         {
             MatchMove m;
             m.kind = MatchMoveKind::Gain;
             m.tier = MatchTier::Exact;
-            m.valueDb = delta;
+            m.valueDb = delta;      // no cap: see kMatchGainFloorDb
             m.measuredDb = delta;
             p.moves.push_back (m);
+        }
+        else
+        {
+            MatchRefusal r;
+            r.kind          = MatchRefusalKind::GainBelowFloor;
+            r.side          = "the capture and the reference";
+            r.gainFloorDb   = kMatchGainFloorDb;
+            r.captureLufs   = mix.integrated;
+            r.referenceLufs = ref.integrated;
+            r.message       = matchGainFloorMessage (mix.integrated, ref.integrated);
+            p.refusals.push_back (r);
         }
     }
 

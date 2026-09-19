@@ -11079,6 +11079,103 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 if (mv.kind == MatchMoveKind::Ceiling) anyCeiling = true;
             check (! anyCeiling, "mr PIN7: a capture that does not clip gets no ceiling move");
         }
+
+        // mr PIN8 to mr PIN11 -- THE GAIN OFFSET AND ITS FLOOR (plan M2).
+        //
+        // THE FIRST COVERAGE THE GAIN BRANCH HAS EVER HAD. Every fixture above
+        // gives both sides -14.0 LUFS, so until these no pin produced a gain
+        // move, and none showed one absent for a reason. These go through it
+        // in both directions, at the floor, below it, and behind the duration
+        // refusal. All behavioural, on the pure header: no text pins.
+        const juce::String bothSides ("the capture and the reference");
+        auto gainMove = [] (const MatchProposal& p) -> const MatchMove*
+        {
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Gain) return &m;
+            return nullptr;
+        };
+        // The capture at a given loudness; the reference stays at -14.0.
+        auto withLufs = [&] (float mixLufs) { auto m = mixSide(); m.integrated = mixLufs; return m; };
+
+        // mr PIN8 -- ABOVE THE FLOOR A MOVE IS PROPOSED, with the gap as its
+        // value and the gap's sign as its direction.
+        {
+            const auto up   = computeMatchProposal (withLufs (-16.0f), refSide());
+            const auto down = computeMatchProposal (withLufs (-12.0f), refSide());
+            const auto* gu = gainMove (up);
+            const auto* gd = gainMove (down);
+            check (gu != nullptr && gu->valueDb == 2.0f && gu->measuredDb == 2.0f
+                   && gu->tier == MatchTier::Exact,
+                   "mr PIN8: a capture 2.0 dB quieter than the reference gets an exact +2.0 dB gain move",
+                   gu ? juce::String (gu->valueDb, 4) : juce::String ("no gain move"));
+            check (gd != nullptr && gd->valueDb == -2.0f,
+                   "mr PIN8: and one 2.0 dB louder gets -2.0 dB",
+                   gd ? juce::String (gd->valueDb, 4) : juce::String ("no gain move"));
+            check (hasRefusal (up, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr
+                   && hasRefusal (down, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr,
+                   "mr PIN8: and a proposed gain move carries no gain refusal beside it");
+        }
+
+        // mr PIN9 -- THE FLOOR, AT THE BOUNDARY, BOTH WAYS. Exactly 1.0 dB
+        // proposes; 0.999 is refused. Through the predicate and through the
+        // whole proposal.
+        {
+            check (matchGainProposes (1.0f) && matchGainProposes (-1.0f),
+                   "mr PIN9: a gap of exactly 1.0 dB either way proposes");
+            check (! matchGainProposes (0.999f) && ! matchGainProposes (-0.999f),
+                   "mr PIN9: a gap of 0.999 dB either way does not");
+            const auto at    = computeMatchProposal (withLufs (-15.0f), refSide());
+            const auto under = computeMatchProposal (withLufs (-14.999f), refSide());
+            check (gainMove (at) != nullptr && gainMove (at)->valueDb == 1.0f
+                   && hasRefusal (at, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr,
+                   "mr PIN9: through the proposal, a capture exactly 1.0 dB quieter gets +1.0 dB");
+            check (gainMove (under) == nullptr
+                   && hasRefusal (under, MatchRefusalKind::GainBelowFloor, bothSides) != nullptr,
+                   "mr PIN9: and one 0.999 dB quieter gets no move, and a refusal in its place");
+        }
+
+        // mr PIN10 -- THE REFUSAL NAMES THE FLOOR AND BOTH FIGURES. A user who
+        // can see two loudness figures differ and is told nothing concludes the
+        // feature is broken. And the gap it prints is truncated, so 0.999 dB
+        // never reads as 1.00 beside the 1.0 dB floor it failed.
+        {
+            const auto p = computeMatchProposal (withLufs (-14.5f), refSide());
+            const auto* r = hasRefusal (p, MatchRefusalKind::GainBelowFloor, bothSides);
+            check (r != nullptr && r->gainFloorDb == 1.0f
+                   && r->captureLufs == -14.5f && r->referenceLufs == -14.0f,
+                   "mr PIN10: the gain refusal carries the 1.0 dB floor and both integrated figures");
+            check (r != nullptr && r->message.contains ("1.0 dB")
+                   && r->message.contains ("-14.50") && r->message.contains ("-14.00")
+                   && r->message.contains ("0.50 dB apart"),
+                   "mr PIN10: and its message names the floor, both figures and the gap",
+                   r ? r->message : juce::String ("no refusal"));
+            const auto pu = computeMatchProposal (withLufs (-14.999f), refSide());
+            const auto* ru = hasRefusal (pu, MatchRefusalKind::GainBelowFloor, bothSides);
+            check (ru != nullptr && ru->message.contains ("0.99 dB apart")
+                   && ! ru->message.contains ("1.00 dB apart"),
+                   "mr PIN10: a 0.999 dB gap prints as 0.99, never as 1.00 beside the floor it failed",
+                   ru ? ru->message : juce::String ("no refusal"));
+        }
+
+        // mr PIN11 -- THE DURATION REFUSAL COMES FIRST. A capture too short
+        // for a loudness claim gets that one refusal: the floor is never
+        // reached, below it or above it.
+        {
+            auto shortNear = withLufs (-14.5f);  shortNear.durationSeconds = 45.0f;
+            auto shortFar  = withLufs (-17.0f);  shortFar.durationSeconds  = 45.0f;
+            const auto pn = computeMatchProposal (shortNear, refSide());
+            const auto pf = computeMatchProposal (shortFar, refSide());
+            juce::String kinds;
+            for (const auto& r : pn.refusals) kinds << (int) r.kind << " ";
+            check (pn.refusals.size() == 1 && pn.refusals[0].kind == MatchRefusalKind::DynamicsTooShort,
+                   "mr PIN11: a 45 s capture 0.5 dB from the reference gets one refusal, the duration "
+                   "one, not a gain refusal as well",
+                   "refusal kinds: " + kinds);
+            check (gainMove (pf) == nullptr
+                   && hasRefusal (pf, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr
+                   && hasRefusal (pf, MatchRefusalKind::DynamicsTooShort, "the capture") != nullptr,
+                   "mr PIN11: and 3.0 dB apart it gets no gain move either, only the duration refusal");
+        }
     }
 
     std::cout << (failN == 0 ? "PASS" : "FAIL") << "  (" << passN << " ok, " << failN << " failed)\n";
