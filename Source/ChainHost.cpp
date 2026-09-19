@@ -1611,6 +1611,15 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
         {
             const auto k = kv.name.toString();
             if (k == "controls" || k == "bands" || k == "dropped_controls") continue;
+            // 18e (item 6): a nested object (params, eq_settings, ...) prints as key=value pairs, never "Object 0x..."
+            if (auto* inner = kv.value.getDynamicObject())
+            {
+                juce::StringArray kvs;
+                for (const auto& ik : inner->getProperties()) kvs.add(ik.name.toString() + "=" + fmtVal(ik.value));
+                parts.add(k + " {" + kvs.joinIntoString(", ") + "}");
+                continue;
+            }
+            if (kv.value.isArray()) { parts.add(k + " [" + juce::String(kv.value.getArray()->size()) + "]"); continue; }
             parts.add(k + " " + fmtVal(kv.value));
         }
         if (auto* ba = o->getProperty("bands").getArray())
