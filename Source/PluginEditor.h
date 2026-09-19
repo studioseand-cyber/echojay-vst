@@ -1215,6 +1215,7 @@ private:
         int provisionalId = 0;
         float loopProgress = -1.0f;   // ruling G: the loudness loop's progress arc on its bubble (-1 = none)
         int   loopBubbleId = 0;       // identity of the loop's live bubble (updated in place, never by index)
+        juce::StringArray loopPills;  // 18f: the loop bubble's verbs as pills (Go / Leave it / Undo / ...); a tap runs handleLoudnessVerb(label)
         // Which client-rendered ASK this message IS, when the client built it
         // rather than the model ("channel_mismatch"). Empty for every other
         // message, including model-authored ASK blocks.
@@ -3156,7 +3157,7 @@ private:
     // consume; paint measures nothing. resultChipRow lists (label,kind) so
     // the two passes cannot disagree on WHICH chips exist. kind: 0 alt,
     // 1 exclude.
-    static constexpr int kMaxResultChips = 4;
+    static constexpr int kMaxResultChips = 12;   // 18f: a result bubble carries four pills and a proposal two; the pool spans the visible transcript
     std::array<juce::TextButton, kMaxResultChips> resultChipBtns;
     std::array<int, kMaxResultChips> resultChipMsgIdx { };
     std::array<int, kMaxResultChips> resultChipKind { };

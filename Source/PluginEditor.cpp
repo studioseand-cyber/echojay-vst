@@ -22224,6 +22224,7 @@ EchoJayEditor::resultChipList(const ChatMsg& m) const
     if (m.editAltPrompt.isNotEmpty())
         chips.push_back({ m.editAltPrompt.startsWith("These")
                             ? "Suggest alternatives" : "Suggest an alternative", 0 });
+    for (const auto& pill : m.loopPills) chips.push_back({ pill, 2 });   // 18f: the loop bubble's verbs (kind 2 -> handleLoudnessVerb(label))
     return chips;
 }
 
@@ -22262,6 +22263,17 @@ void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)
         const juce::String label  = m.editAltLabel;
         m.editAltPrompt.clear();
         sendChatMessage(prompt, label);
+        return;
+    }
+    if (kind == 2)
+    {   // 18f: a loop pill - the SAME local handler as the typed words; the pill's label is the verb
+        const int ci = (int) std::distance(resultChipKind.begin(), std::find(resultChipKind.begin(), resultChipKind.end(), 2));
+        juce::ignoreUnused(ci);
+        for (size_t i = 0; i < resultChipBtns.size(); ++i)
+            if (resultChipMsgIdx[i] == msgIdx && resultChipKind[i] == 2 && resultChipBtns[i].isVisible() && resultChipBtns[i].isMouseOver())
+            { handleLoudnessVerb(resultChipBtns[i].getButtonText()); return; }
+        // no hovered button (a synthetic tap): the first pill of the bubble
+        if (! m.loopPills.isEmpty()) handleLoudnessVerb(m.loopPills[0]);
         return;
     }
     // The batch "stop suggesting" handler (kind == 1) was DELETED 29 Aug 2026.
@@ -22356,20 +22368,28 @@ void EchoJayEditor::armLoudnessLoopIfTargeted()
     {
         if (safeThis == nullptr) return;
         auto* ed = safeThis.getComponent();
+        // 18f: bubbles are HISTORY. Only a PROGRESS bubble ("Listening..." / "Checking...") replaces the previous progress
+        // bubble; every other bubble (arm, proposal, result, quiet, back-off, info) is appended and never rewritten.
         int idx = -1;
-        if (b.replace && ed->loopBubbleSeq_ > 0)
+        if (b.kind == LoudnessLoop::Bubble::Kind::progress && ed->loopBubbleSeq_ > 0)
             for (int i = (int) ed->chatMessages.size() - 1; i >= 0; --i)
                 if (ed->chatMessages[(size_t) i].loopBubbleId == ed->loopBubbleSeq_) { idx = i; break; }
         if (idx >= 0)
         {
             auto& m = ed->chatMessages[(size_t) idx];
-            m.content = b.text; m.loopProgress = b.final ? -1.0f : b.progress;
-            if (b.final) { m.loopBubbleId = 0; ed->workspace.appendMessageToChat(ed->currentChatId, "assistant", b.text, {}, {}, {}, {}, {}, {}, {}); ed->workspace.requestMutationSync(); }
+            m.content = b.text; m.loopProgress = b.progress;
             ed->resized(); ed->repaint();
             return;
         }
+        // a non-progress bubble closes the open progress bubble (it stays as the record of the listening)
+        if (b.kind != LoudnessLoop::Bubble::Kind::progress && ed->loopBubbleSeq_ > 0)
+            for (auto& m : ed->chatMessages) if (m.loopBubbleId == ed->loopBubbleSeq_) { m.loopBubbleId = 0; m.loopProgress = -1.0f; }
         ed->appendLocalResultBubble(b.text);
-        if (! b.final) { ed->chatMessages.back().loopBubbleId = ++ed->loopBubbleSeq_; ed->chatMessages.back().loopProgress = b.progress; }
+        auto& nm = ed->chatMessages.back();
+        nm.loopPills = b.pills;
+        if (b.kind == LoudnessLoop::Bubble::Kind::progress) { nm.loopBubbleId = ++ed->loopBubbleSeq_; nm.loopProgress = b.progress; }
+        ed->workspace.appendMessageToChat(ed->currentChatId, "assistant", b.text, {}, {}, {}, {}, {}, {}, {});
+        ed->workspace.requestMutationSync();
         ed->resized(); ed->repaint();
     };
     loop.logLine = [](const juce::String& line) { EchoJay_NSLog(line.toRawUTF8()); };   // 18e (item 5): every measurement, trim, branch and bubble
@@ -22392,10 +22412,17 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     const bool again  = t.contains("check the level") || t.contains("check level") || t.contains("measure again") || t.contains("check it again");
     const bool undo   = t == "undo" || t == "undo that" || t == "undo the level";
     const bool leave  = t == "leave it" || t == "leave it there" || t == "keep it" || t == "stop" || t == "that's fine" || t == "fine";
-    if (! (go || push || louder || softer || again || undo || leave || forced)) return false;
+    const bool listen = t == "listen again" || t == "listen" || t == "try again";                                            // 18f
+    const bool loudest = t == "this is the loudest part" || t == "loudest part" || t == "this is the loudest" || t == "that's the loudest part" || t == "it is the loudest part";
+    const bool backoff = t == "back off" || t == "back it off" || t.startsWith("back off ");
+    if (! (go || push || louder || softer || again || undo || leave || listen || loudest || backoff || forced)) return false;
+    chatInput.clear();   // 18f: a verb, typed or tapped, never leaves its words in the composer
     appendLocalUserBubble(msg);
-    EchoJay_NSLog(("EJLoudness: verb \"" + t + "\"" + (forced ? juce::String(" (server loop_verb)") : juce::String()) + " state " + juce::String((int) loop.state())).toRawUTF8());
-    if (go)          { if (! loop.go()) appendLocalResultBubble("Nothing proposed yet - play the loudest part and I'll measure it first."); }
+    loop.note("verb \"" + t + "\"" + (forced ? juce::String(" (server loop_verb)") : juce::String()) + " state " + juce::String((int) loop.state()));   // 18f: one EJLoudness stream (the loop's logLine -> NSLog)
+    if (listen)      { if (! loop.listenAgain()) appendLocalResultBubble("Nothing to re-listen for - play the loudest part and I'll measure it."); }
+    else if (loudest) { if (! loop.loudestPart()) appendLocalResultBubble("No held measurement - play the loudest part and I'll measure it."); }
+    else if (backoff) { if (! loop.backOff()) appendLocalResultBubble("No back-off is proposed right now."); }
+    else if (go)     { if (! loop.go()) appendLocalResultBubble("Nothing proposed yet - play the loudest part and I'll measure it first."); }
     else if (push)   { if (! loop.pushIt()) appendLocalResultBubble("Nothing measured yet - play the loudest part first."); }
     else if (louder) loop.nudgeTarget(+1.0f);
     else if (softer) loop.nudgeTarget(-1.0f);
@@ -22403,6 +22430,7 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     else if (leave)  loop.leaveIt();
     else if (undo)   { if (! loop.undo()) appendLocalResultBubble("Nothing to undo - the level loop has not changed the Level slot."); }
     else appendLocalResultBubble("Say go to apply, push it, a bit louder or softer, check the level again, undo, or leave it.");
+    resized(); repaint();
     return true;
 }
 

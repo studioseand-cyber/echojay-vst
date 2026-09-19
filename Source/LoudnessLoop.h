@@ -1,6 +1,7 @@
 #pragma once
 #define EJ_LOUDNESSLOOP_ARMSOURCE 1   // 18d: armSource() / loudnessOption() / ceilingDb() exist on this build
 #define EJ_LOUDNESSLOOP_V2 1          // 18e: the Level slot, max short-term, ask-before-apply, the verbs, EJLoudness lines
+#define EJ_LOUDNESSLOOP_PILLS 1       // 18f: bubbles carry their verbs as pills; the quiet-window and back-off asks
 // LoudnessLoop v2 (18e, 19 Sep 2026): deterministic inside V2, no server round-trip.
 //
 //  Arm      a chain whose Level slot (or, for an older server's chain, whose EchoJay Limiter) carries target_lufs in
@@ -36,8 +37,20 @@
 class LoudnessLoop : private juce::Timer
 {
 public:
-    enum class State { idle, waitAudio, measuring, proposed, hold, tracking };
-    struct Bubble { juce::String text; float progress = -1.0f; bool replace = false; bool final = false; };
+    enum class State { idle, waitAudio, measuring, proposed, hold, tracking, quietAsked };
+    // 18f: kind decides the editor's treatment - progress bubbles ("Listening..." / "Checking...") replace the previous
+    // PROGRESS bubble only; every other bubble is history and stays. pills = the verbs the bubble offers, in order; a pill
+    // tap runs the same handler as the typed words (PluginEditor::handleLoudnessVerb).
+    struct Bubble
+    {
+        enum class Kind { progress, arm, proposal, result, stuck, quiet, backoff, info };
+        juce::String text; float progress = -1.0f; bool replace = false; bool final = false; Kind kind = Kind::info; juce::StringArray pills;
+    };
+    static juce::StringArray resultPills()   { return { "Undo", "A bit louder", "A bit softer", "Push it" }; }
+    static juce::StringArray proposalPills() { return { "Go", "Leave it" }; }
+    static juce::StringArray stuckPills()    { return { "Push it", "Leave it" }; }
+    static juce::StringArray quietPills()    { return { "Listen again", "This is the loudest part" }; }
+    static juce::StringArray backoffPills()  { return { "Back off", "Leave it" }; }
 
     static constexpr float kCountFloorLufs   = -40.0f;
     static constexpr float kNeedSeconds      = 10.0f;
@@ -169,7 +182,7 @@ public:
         log ("armed: target " + fmt (target_) + " LUFS (" + armSource_ + (loudnessOption_.isNotEmpty() ? ", " + loudnessOption_ : juce::String()) + "), Level slot " + juce::String (slot_)
              + " gain " + fmtSigned ((float) lv->gainDb()) + " dB, limiter slot " + juce::String (limiterSlot_) + " (" + limiterName() + "), build-time input " + fmt (buildInputLufs_) + " LUFS");
         startWindow();
-        emit ("Chain built. Play the loudest part of the song - the chorus or the drop - and I'll measure it, then ask before I set the level.", 0.0f, false, false);
+        emit ("Chain built. Play the loudest part of the song - the chorus or the drop - and I'll measure it, then ask before I set the level.", -1.0f, false, false, Bubble::Kind::arm);
         if (! juce::MessageManager::getInstanceWithoutCreating() || ! isTimerRunning()) startTimer (kTickMs);
     }
 
@@ -185,9 +198,32 @@ public:
         ++round_;
         pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
         startWindow();
-        emit ("Applied. Play the loudest part again - I'll check it.", 0.0f, true, false);
+        emit ("Applied. Play the loudest part again - I'll check it.", -1.0f, false, false, Bubble::Kind::info);
         if (! isTimerRunning()) startTimer (kTickMs);
         return true;
+    }
+    // 18f: the quiet-window answers
+    bool listenAgain()              // "listen again": re-arm the window
+    {
+        if (state_ != State::quietAsked || level (slot_) == nullptr) return false;
+        quietMeasured_ = std::numeric_limits<float>::quiet_NaN();
+        startWindow();
+        emit ("Play the loudest part and I'll check again.", -1.0f, false, false, Bubble::Kind::info);
+        if (! isTimerRunning()) startTimer (kTickMs);
+        return true;
+    }
+    bool loudestPart()              // "this is the loudest part": proceed with the held measurement -> the normal proposal
+    {
+        if (state_ != State::quietAsked || level (slot_) == nullptr || ! std::isfinite (quietMeasured_)) return false;
+        const float m = quietMeasured_; quietMeasured_ = std::numeric_limits<float>::quiet_NaN();
+        log ("quiet window accepted as the loudest part: proceeding with " + fmt (m) + " LUFS");
+        proposeFrom (m, host_.getChainOutLevels().truePeakDb);
+        return true;
+    }
+    bool backOff()                  // "back off": apply the pending back-off (the same as go on a back-off proposal)
+    {
+        if (state_ != State::proposed || pendingKind_ != PendingKind::backOff) return false;
+        return go();
     }
     bool pushIt()                   // raise the Level by the shortfall, clamped, one pass, then measure
     {
@@ -197,7 +233,7 @@ public:
         applyTrim (trim, "push it");
         round_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
         startWindow();
-        emit ("Pushed " + fmtSigned (trim) + " dB on the Level slot. Play the loudest part again - I'll check it.", 0.0f, true, false);
+        emit ("Pushed " + fmtSigned (trim) + " dB on the Level slot. Play the loudest part again - I'll check it.", -1.0f, false, false, Bubble::Kind::info);
         if (! isTimerRunning()) startTimer (kTickMs);
         return true;
     }
@@ -207,7 +243,7 @@ public:
         target_ += deltaDb; round_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
         log ("target nudged " + fmtSigned (deltaDb) + " dB -> " + fmt (target_) + " LUFS");
         startWindow();
-        emit ("Target now " + fmt (target_) + " LUFS. Play the loudest part again - one more pass.", 0.0f, false, false);
+        emit ("Target now " + fmt (target_) + " LUFS. Play the loudest part again - one more pass.", -1.0f, false, false, Bubble::Kind::info);
         if (! isTimerRunning()) startTimer (kTickMs);
     }
     void recheck()                 // "check the level again"
@@ -215,7 +251,7 @@ public:
         if (level (slot_) == nullptr) return;
         round_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
         startWindow();
-        emit ("Checking the level again - play the loudest part.", 0.0f, false, false);
+        emit ("Checking the level again - play the loudest part.", -1.0f, false, false, Bubble::Kind::info);
         if (! isTimerRunning()) startTimer (kTickMs);
     }
     bool undo()
@@ -225,14 +261,14 @@ public:
         writeGainDb (preLoopGainDb_);
         state_ = State::hold; stopTimer();
         log ("undo: Level gain restored to " + fmtSigned (preLoopGainDb_) + " dB");
-        emit ("Restored the Level slot to " + fmtSigned (preLoopGainDb_) + " dB (before the loop).", -1.0f, false, true);
+        emit ("Restored the Level slot to " + fmtSigned (preLoopGainDb_) + " dB (before the loop).", -1.0f, false, true, Bubble::Kind::result, resultPills());
         return true;
     }
     void leaveIt()
     {
         state_ = State::hold; stopTimer(); pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
         log ("leave it: holding at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB");
-        emit ("Leaving it at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB.", -1.0f, false, true);
+        emit ("Leaving it at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB.", -1.0f, false, true, Bubble::Kind::result, resultPills());
     }
 
     State state() const noexcept { return state_; }
@@ -250,6 +286,12 @@ public:
     float grAvg() const noexcept { return grN_ > 0 ? grSum_ / (float) grN_ : 0.0f; }
     float grMax() const noexcept { return juce::jmax (0.0f, grMax_); }
     juce::String lastBubble() const { return lastBubble_; }
+    Bubble::Kind lastKind() const noexcept { return lastKind_; }
+    juce::StringArray lastPills() const { return lastPills_; }
+    int bubbleCount() const noexcept { return bubbleCount_; }   // non-progress bubbles emitted (a verb must produce exactly one)
+    // 18f: the editor's verb line ("verb \"go\" state 3") rides the SAME EJLoudness stream as the loop's own lines, so a
+    // pill and the typed word can be compared as one sequence (the guard captures logLine; NSLog was outside it).
+    void note (const juce::String& s) const { log (s); }
     int   levelSlot() const noexcept { return slot_; }
     int   limiterSlot() const noexcept { return limiterSlot_; }
 
@@ -258,7 +300,8 @@ public:
     {
         if (state_ != State::waitAudio && state_ != State::measuring && state_ != State::tracking) return;
         auto* lv = level (slot_);
-        if (lv == nullptr) { state_ = State::hold; stopTimer(); log ("stopped: the Level slot is no longer in the chain"); emit ("The Level slot is no longer in the chain - level loop stopped.", -1.0f, false, true); return; }
+        if (lv == nullptr) { state_ = State::hold; stopTimer(); log ("stopped: the Level slot is no longer in the chain"); emit ("The Level slot is no longer in the chain - level loop stopped.", -1.0f, false, true, Bubble::Kind::info); return; }
+        if (auto* lim = echoJayLimiter()) lv->setDownstreamGrDb (-lim->gainReductionDb()); else lv->setDownstreamGrDb (std::numeric_limits<float>::quiet_NaN());
         const auto out = host_.getChainOutLevels();
         const float counted = out.heardAboveSeconds;
         if (counted > lastCounted_ + 0.05f)
@@ -276,7 +319,7 @@ public:
             {
                 lastMeasured_ = m; pendingTrim_ = target_ - m; pendingKind_ = PendingKind::backOff; state_ = State::proposed; stopTimer();
                 log ("tracking: max short-term " + fmt (m) + " LUFS is " + fmt (m - target_) + " dB over the target -> propose back-off " + fmtSigned (pendingTrim_) + " dB");
-                emit ("That section is running " + fmt (m) + " LUFS, " + fmt (m - target_) + " dB over the target. Back off " + fmt (-pendingTrim_) + " dB? say go, or leave it.", -1.0f, false, false);
+                emit ("That section is louder than the one I levelled on (" + fmt (m) + " LUFS, " + fmt (m - target_) + " dB over the target) - back off " + fmtSigned (pendingTrim_) + " dB?", -1.0f, false, false, Bubble::Kind::backoff, backoffPills());
             }
             return;
         }
@@ -284,8 +327,8 @@ public:
         if (counted < kNeedSeconds)
         {
             if (counted <= 0.0f && ! waitingSaid_ && nowMs() - passStartMs_ >= kWaitWallMs)
-            { waitingSaid_ = true; emit ("Still waiting for audio - play the loudest part of the song and I'll measure it.", 0.0f, true, false); }
-            else if (counted > 0.0f) emit (round_ == 0 && pendingKind_ == PendingKind::none ? "Listening..." : "Checking...", progress, true, false);
+            { waitingSaid_ = true; emit ("Still waiting for audio - play the loudest part of the song and I'll measure it.", 0.0f, true, false, Bubble::Kind::progress); }
+            else if (counted > 0.0f) emit (round_ == 0 && pendingKind_ == PendingKind::none ? "Listening..." : "Checking...", progress, true, false, Bubble::Kind::progress);
             return;
         }
         if (knobGestureOpen()) return;
@@ -296,12 +339,18 @@ public:
         lastMeasured_ = measured;
         // ---- window sanity: a quiet section is not the chorus ----
         if (std::isfinite (buildInputLufs_) && std::isfinite (lastInputWindow_) && lastInputWindow_ <= buildInputLufs_ - kQuietUnderDb)
-        {
-            log ("window rejected: input max short-term " + fmt (lastInputWindow_) + " LUFS is " + fmt (buildInputLufs_ - lastInputWindow_) + " dB under the build-time integrated input " + fmt (buildInputLufs_) + " - nothing applied");
-            startWindow();
-            emit ("That sounded like a quiet section (" + fmt (lastInputWindow_) + " LUFS in, the mix measured " + fmt (buildInputLufs_) + " at build) - play the chorus and I'll try again.", 0.0f, true, false);
+        {   // 18f: ASK rather than restart - the measurement is held until "listen again" or "this is the loudest part"
+            log ("window quiet: input max short-term " + fmt (lastInputWindow_) + " LUFS is " + fmt (buildInputLufs_ - lastInputWindow_) + " dB under the build-time integrated input " + fmt (buildInputLufs_) + " - asking, nothing applied");
+            quietMeasured_ = measured; state_ = State::quietAsked; stopTimer();
+            emit ("This is quieter than the section the chain was built on (" + fmt (lastInputWindow_) + " now vs " + fmt (buildInputLufs_) + " at build). Is this the loudest part of the song?", -1.0f, false, false, Bubble::Kind::quiet, quietPills());
             return;
         }
+        proposeFrom (measured, out.truePeakDb);
+    }
+    // 18f: the decision after a measurement (also reached from loudestPart()) - proposal / on-target / stuck / at the limit
+    void proposeFrom (float measured, float truePeakDb)
+    {
+        auto* lv = level (slot_); if (lv == nullptr) return;
         const float needed = target_ - measured;
         const float cur = (float) lv->gainDb();
         float trim = juce::jlimit (-kPassClampDb, kPassClampDb, needed);
@@ -313,23 +362,23 @@ public:
         if (std::abs (needed) <= kCloseEnoughDb)
         {
             state_ = State::tracking; startTracking();
-            emit ("Hitting " + fmt (measured) + " LUFS (loudest 3 s), target " + fmt (target_) + " - on target. Peaks " + fmt (out.truePeakDb) + " dBTP, " + grText + " I'll keep watching for a louder section.", -1.0f, true, true);
+            emit ("Hitting " + fmt (measured) + " LUFS (loudest 3 s), target " + fmt (target_) + " - on target. Peaks " + fmt (truePeakDb) + " dBTP, " + grText + " I'll keep watching for a louder section.", -1.0f, false, true, Bubble::Kind::result, resultPills());
             return;
         }
         if (round_ >= kMaxRounds)
         {
             state_ = State::hold; stopTimer();
-            emit ("Stuck at " + fmt (measured) + " LUFS after " + juce::String (round_) + " rounds, target " + fmt (target_) + ": " + grText + " Say push it or leave it.", -1.0f, true, true);
+            emit ("Stuck at " + fmt (measured) + " LUFS after " + juce::String (round_) + " rounds, target " + fmt (target_) + ": " + grText, -1.0f, false, true, Bubble::Kind::stuck, stuckPills());
             return;
         }
         if (atCeiling && std::abs (trim) < 0.05f)
         {
             state_ = State::hold; stopTimer();
-            emit ("Hitting " + fmt (measured) + " LUFS, target " + fmt (target_) + " - the Level slot is at its " + fmtSigned (cur) + " dB limit; " + grText + " Say push it (the compressor and saturator can do more) or leave it.", -1.0f, true, true);
+            emit ("Hitting " + fmt (measured) + " LUFS, target " + fmt (target_) + " - the Level slot is at its " + fmtSigned (cur) + " dB limit; " + grText + " Push it drives the compressor and saturator harder.", -1.0f, false, true, Bubble::Kind::stuck, stuckPills());
             return;
         }
         pendingTrim_ = trim; pendingKind_ = PendingKind::propose; state_ = State::proposed; stopTimer();
-        emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). Push " + fmtSigned (trim) + " dB to reach " + fmt (target_) + "? say go" + (atCeiling ? " (that is the Level slot's limit)" : "") + ". " + grText, -1.0f, true, false);
+        emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). Push " + fmtSigned (trim) + " dB to reach " + fmt (target_) + "?" + (atCeiling ? " (that is the Level slot's limit)" : "") + " " + grText, -1.0f, false, false, Bubble::Kind::proposal, proposalPills());
     }
 
 private:
@@ -382,11 +431,12 @@ private:
         if (auto* lv = level (slot_)) if (std::abs (lv->gainDb() - db) > 0.01) lv->setParamValue ("gain_db", db);
         host_.setSlotSettings (slot_, "Level " + fmtSigned (db) + " dB (set by the level loop toward the " + fmt (target_) + " LUFS target)");
     }
-    void emit (const juce::String& text, float progress, bool replace, bool final)
+    void emit (const juce::String& text, float progress, bool replace, bool final, Bubble::Kind kind = Bubble::Kind::info, juce::StringArray pills = {})
     {
-        lastBubble_ = text;
-        log ("bubble: " + text);
-        if (onBubble) { Bubble b; b.text = text; b.progress = progress; b.replace = replace; b.final = final; onBubble (b); }
+        lastBubble_ = text; lastKind_ = kind; lastPills_ = pills;
+        if (kind != Bubble::Kind::progress) ++bubbleCount_;
+        log ("bubble: " + text + (pills.isEmpty() ? juce::String() : " [" + pills.joinIntoString (" | ") + "]"));
+        if (onBubble) { Bubble b; b.text = text; b.progress = progress; b.replace = replace; b.final = final; b.kind = kind; b.pills = pills; onBubble (b); }
     }
     void log (const juce::String& s) const { if (logLine) logLine ("EJLoudness: " + s); }
     static juce::String fmt (float v) { return std::isfinite (v) ? juce::String (v, 1).replace ("-0.0", "0.0") : juce::String ("n/a"); }
@@ -403,5 +453,6 @@ private:
     float preLoopGainDb_ = 0.0f; bool haveUndo_ = false;
     float lastCounted_ = 0.0f; bool waitingSaid_ = false; juce::int64 passStartMs_ = 0;
     float grMin_ = std::numeric_limits<float>::max(), grMax_ = 0.0f, grSum_ = 0.0f; int grN_ = 0;
-    juce::String lastBubble_;
+    juce::String lastBubble_; Bubble::Kind lastKind_ = Bubble::Kind::info; juce::StringArray lastPills_; int bubbleCount_ = 0;
+    float quietMeasured_ = std::numeric_limits<float>::quiet_NaN();   // the measurement held while the quiet-window question is open
 };
