@@ -27,6 +27,7 @@
 #include "ChainHost.h"
 #include "EedLimiterProcessor.h"
 #include "EedLevelProcessor.h"
+#include "EedDeviceRegistry.h"
 #include "EJKnobGesture.h"
 #include <cmath>
 #include <functional>
@@ -116,12 +117,39 @@ public:
         const auto l = name.toLowerCase();
         return l.contains ("limit") || l.contains ("maxim") || l.contains ("clip") || l.contains ("ceiling");
     }
-    // Arms when the chain carries a target AND a Level slot. Returns false (and says why on the log) otherwise.
+    // COMPATIBILITY (19e on the live 88x7asebn server, which puts target_lufs on the EchoJay Limiter and no Level slot):
+    // a chain that carries a target but no "EchoJay Level" slot gets one inserted immediately before its last slot, the
+    // target and option copied onto it, and the loop arms from THAT slot. The limiter's own input_db is left as the
+    // server set it; the loop only ever moves the Level slot. Returns the index of the Level slot or -1.
+    int ensureLevelSlot()
+    {
+        auto t = findTarget();
+        if (! std::isfinite (t.lufs)) return -1;
+        if (t.levelSlot >= 0) return t.levelSlot;
+        const int n = host_.getNumSlots();
+        if (n <= 0) return -1;
+        const auto* dev = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        if (dev == nullptr) { log ("cannot insert EchoJay Level: not registered"); return -1; }
+        const int at = n - 1;
+        const auto err = host_.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*dev), at);
+        if (err.isNotEmpty()) { log ("could not insert EchoJay Level: " + err); return -1; }
+        auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 0.0); pp->setProperty ("target_lufs", (double) t.lufs);
+        const juce::StringArray opts { "commercial", "pushed", "dynamic", "keep" };
+        pp->setProperty ("loudness_option", juce::jmax (0, opts.indexOf (t.option)));
+        auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+        host_.setSlotStructuredSettings (at, juce::var (w));
+        host_.setSlotSettings (at, "Level 0.0 dB - the level loop drives this slot toward the " + fmt (t.lufs) + " LUFS target");
+        log ("inserted EchoJay Level at slot " + juce::String (at) + " (target " + fmt (t.lufs) + " from " + t.source + "; the chain had none)");
+        return at;
+    }
+    // Arms when the chain carries a target: from the Level slot, inserting one first when the target sits on the limiter
+    // (an 18d-shaped chain). Returns false (and says why on the log) otherwise.
     bool armFromChain (int /*passes*/ = 2)
     {
+        ensureLevelSlot();
         const auto t = findTarget();
         if (! std::isfinite (t.lufs)) { log ("not armed: no target in the chain"); return false; }
-        if (t.levelSlot < 0) { log ("not armed: no EchoJay Level slot (target " + fmt (t.lufs) + " from " + t.source + ")"); return false; }
+        if (t.levelSlot < 0) { log ("not armed: no EchoJay Level slot could be placed (target " + fmt (t.lufs) + " from " + t.source + ")"); return false; }
         armSource_ = t.source; loudnessOption_ = t.option; ceilingDb_ = t.ceiling;
         arm (t.lufs, t.levelSlot, t.limiterSlot);
         return true;
