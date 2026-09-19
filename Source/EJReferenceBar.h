@@ -227,9 +227,14 @@ inline int refBarStep (int current, int count, int delta)
 // ---------------------------------------------------------------------------
 // THE SUB-TAB ROW inside REFERENCE.
 //
-// Compare and Playback. NOT Match: it has no screen yet, and a dead sub-tab is
-// the same defect as a dead arrow, which is what the last six commits have
-// been about. It joins when it does something.
+// Compare, Match and Playback, IN THAT ORDER, which MATCH_REFERENCE_PLAN 8A.1
+// decided: Compare describes the delta, Match proposes moves against it,
+// Playback plays the user's audio through a simulated end. Match sits between
+// the two because it is the step between describing and listening, not an
+// extra appended after them.
+//
+// Match joined on 19 Sep 2026 with a page that says what it is for. It was kept
+// out until then because a dead sub-tab is the same defect as a dead arrow.
 //
 // The row sits BELOW the reference bar, because the selected reference is
 // shared by all three surfaces: it belongs to the section, not to one sub-tab.
@@ -242,7 +247,7 @@ inline int refBarStep (int current, int count, int delta)
 // Count IS A SENTINEL, NEVER A TAB. It is last so that it equals the number of
 // real values, and kRefSubTabCount is taken from it rather than written as a
 // second literal that could disagree with the enum.
-enum class RefSubTab { Compare = 0, Playback = 1, Count };
+enum class RefSubTab { Compare = 0, Match = 1, Playback = 2, Count };
 
 inline constexpr int kRefSubTabCount = (int) RefSubTab::Count;
 inline constexpr int kRefSubTabH     = 24;
@@ -260,7 +265,7 @@ inline constexpr bool refSubTabIndexValid (int i) noexcept
 /** The painted names, BY POSITION. The static_assert ties the table to the
     enum, so a value added before Count without a name here does not compile,
     rather than painting a blank or a neighbour's name. */
-inline constexpr const char* kRefSubTabNames[] = { "COMPARE", "PLAYBACK" };
+inline constexpr const char* kRefSubTabNames[] = { "COMPARE", "MATCH", "PLAYBACK" };
 static_assert (sizeof (kRefSubTabNames) / sizeof (kRefSubTabNames[0]) == (size_t) kRefSubTabCount,
                "every RefSubTab before Count needs exactly one name in kRefSubTabNames");
 

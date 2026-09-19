@@ -18,6 +18,7 @@
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EJPlaybackArtMap.h"       // the Playback grid's pictures; .cpp-only, because
                                     // its generated header reaches EchoJay's TUs only
+#include "EJMatchProposal.h"        // the Match page's statement; computeMatchProposal is not called yet
 #include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h"
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
@@ -1412,6 +1413,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     codecPanel_.setWantsKeyboardFocus(true);
     codecPanel_.setVisible(false);
     addChildComponent(codecPanel_);
+
+    // The Match page, added the same way and right after it: hidden, and made
+    // visible only by setRefSubTab (Match). See MatchPanel in the header.
+    matchPanel_.owner = this;
+    matchPanel_.setWantsKeyboardFocus(true);
+    addChildComponent(matchPanel_);
 
     // Reference browser, CodecPanel's shell with real children inside it.
     refBrowser_.owner = this;
@@ -6753,8 +6760,14 @@ void EchoJayEditor::applyReferenceToSlot (bool isTop, int refIndex)
 void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
 {
     refSubTab_ = t;
-    const bool playback = (t == echojay::RefSubTab::Playback);
-    if (playback)
+    // EACH PAGE IS ITS OWN CASE. A switch, not "Playback or not", because with
+    // Match added "not Playback" would have sent Match down Compare's branch:
+    // Compare's ten controls shown over an empty page and codec mode left
+    // running. A sub-tab added to the enum without a case here is now a
+    // compiler warning rather than a quiet fall into a neighbour's branch.
+    switch (t)
+    {
+    case echojay::RefSubTab::Playback:
     {
         // LEAVING THE CODEC A/B FOR THE GRID EXITS CODEC MODE. Codec mode lives
         // on the Compare sub-tab, where its chip is drawn; the grid draws no
@@ -6774,6 +6787,9 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         codecStatusSurvivesOpen_ = false;
         codecPanel_.hoverIdx = -1;
         codecPanel_.renderView = false; // the page opens on the grid, every time
+        // Hidden BEFORE the Playback page takes focus below, so hiding a
+        // focused Match page cannot move focus off the page just opened.
+        matchPanel_.setVisible(false);
         codecPanel_.setVisible(true);
         EchoJay_NSLog(("EJCodec: playback page src=" + (codecSrcPath_.isEmpty()
                         ? juce::String("NONE") : codecSrcLabel_)).toRawUTF8());
@@ -6781,8 +6797,24 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         // makes focus possible; nothing was giving it, so CodecPanel::keyPressed
         // never ran and the page had no exit at all.
         codecPanel_.grabKeyboardFocus();
+        break;
     }
-    else
+    case echojay::RefSubTab::Match:
+    {
+        // THE MATCH PAGE EXITS CODEC MODE, for the Playback branch's reason:
+        // codec mode's chip is drawn only on Compare, so staying engaged here
+        // would keep the lossy render playing with nothing on screen saying
+        // so, which the 25 Jul rule forbids by any route.
+        if (codecModeActive_) exitCodecMode();
+        codecPanel_.setVisible(false);
+        matchPanel_.setVisible(true);
+        // Focus for the same reason as the Playback page: so Escape reaches
+        // MatchPanel::keyPressed at all.
+        matchPanel_.grabKeyboardFocus();
+        break;
+    }
+    case echojay::RefSubTab::Compare:
+    case echojay::RefSubTab::Count:   // never passed: the one cast is guarded (rs PIN3)
     {
         // CHOOSING COMPARE HIDES THE PANEL AND TEARS NOTHING DOWN. Codec mode
         // lives here now, with its chip, so arriving here is arriving at it,
@@ -6790,14 +6822,17 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         // teardown ended the comparison on the way IN, and because the
         // sub-tab row calls this for the tab already selected, clicking
         // "Compare" while on the codec A/B ended the comparison too. The
-        // teardown now sits on the ways OUT: the Playback branch above, the
-        // chip's X, and hideCompareView leaving the Reference tab.
+        // teardown now sits on the ways OUT: the Playback and Match branches
+        // above, the chip's X, and hideCompareView leaving the Reference tab.
         codecPanel_.setVisible(false);
+        matchPanel_.setVisible(false);
+        break;
     }
-    // THE DERIVED VALUE, NOT ! playback. With the Compare view up the two
-    // agree at every sub-tab. They differ only when the view is down, which is
-    // hideCompareView's call: there this applies hidden, where ! playback
-    // would have shown the controls in the middle of the teardown.
+    }
+    // THE DERIVED VALUE. compareFurnitureVisible is true only for the Compare
+    // sub-tab with the view up, so Compare's ten controls hide on Match exactly
+    // as they do on Playback. When the view is down, which is hideCompareView's
+    // call, this applies hidden rather than showing them mid-teardown.
     showCompareFurniture (compareFurnitureShouldShow());
     resized();
     repaint();
@@ -7353,6 +7388,62 @@ bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
         // BACK TO COMPARE, not a bare hide. closeCodecPanel alone would leave
         // refSubTab_ saying PLAYBACK with the page gone and the Compare
         // furniture still hidden: an empty screen under a lying tab row.
+        owner->setRefSubTab (echojay::RefSubTab::Compare);
+        return true;
+    }
+    return false;
+}
+
+// THE MATCH PAGE. It draws what the Match sub-tab is for, from
+// echojay::matchPageStatement, and nothing else: no proposal is computed here
+// yet. The card treatment is the Playback page's render view (bg2 fill, border),
+// so the page reads as one of the three rather than as a notice.
+//
+// IT FITS AT THE SMALLEST PAGE. The smallest the product produces is 565 x 373
+// (pg PIN5). The text is laid out at 12.5 pt and, only if it would not fit,
+// at a smaller size, down to 10.5 pt, so a narrow window loses size before it
+// loses any of the four things the page promises.
+void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
+{
+    if (owner == nullptr) return;
+    const auto st   = echojay::matchPageStatement();
+    const auto area = getLocalBounds();
+
+    g.setColour (C::bg2);
+    g.fillRoundedRectangle (area.toFloat(), 10.0f);
+    g.setColour (C::border);
+    g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 10.0f, 1.0f);
+
+    // A readable measure: at most 620 px wide, left-aligned in the card.
+    auto col = area.reduced (24, 20);
+    col = col.withWidth (juce::jmin (col.getWidth(), 620));
+
+    juce::TextLayout layout;
+    for (float body = 12.5f; ; body -= 0.5f)
+    {
+        juce::AttributedString as;
+        as.setWordWrap (juce::AttributedString::byWord);
+        as.setJustification (juce::Justification::topLeft);
+        as.append (st.title + "\n\n", juce::Font (juce::FontOptions (body - 0.5f, juce::Font::bold)), C::blue);
+        as.append (st.lead + "\n\n", juce::Font (juce::FontOptions (body)), C::text);
+        for (int i = 0; i < st.items.size(); ++i)
+            as.append (juce::String (i + 1) + ".  " + st.items[i] + "\n\n",
+                       juce::Font (juce::FontOptions (body)), C::text2);
+        as.append (st.status, juce::Font (juce::FontOptions (body - 1.5f)), C::text3);
+        layout.createLayout (as, (float) col.getWidth());
+        if (layout.getHeight() <= (float) col.getHeight() || body <= 10.5f)
+            break;
+    }
+    layout.draw (g, col.toFloat());
+}
+
+// ESCAPE RETURNS TO COMPARE, the Playback page's rule for its grid, and the
+// only rule: Match has no inner view to step back through first, so there is
+// no Playback-style render-view step here and no third behaviour.
+bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)
+{
+    if (k == juce::KeyPress::escapeKey && owner != nullptr)
+    {
         owner->setRefSubTab (echojay::RefSubTab::Compare);
         return true;
     }
@@ -11946,8 +12037,9 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     cy += echojay::kRefBarBandH;
 
     // --- THE SUB-TAB ROW ---
-    // Compare and Playback. Match is NOT here: it has no screen, and a dead
-    // sub-tab is the same defect as a dead arrow. It joins when it acts.
+    // Compare, Match and Playback, in that order (MATCH_REFERENCE_PLAN 8A.1).
+    // Drawn from the names table by position, so the row is whatever the enum
+    // says and never a list written out here.
     {
         const auto& sr = refSubTabRects_;
         for (int i = 0; i < echojay::kRefSubTabCount; ++i)
@@ -21420,13 +21512,19 @@ void EchoJayEditor::resized()
         // won and put the page over the tab strip and over the row that selects
         // it. Deleted, not guarded: a flag choosing between two authors is two
         // authors with extra steps.
+        //
+        // THE MATCH PAGE TAKES THE SAME AREA, from the same rectangle, computed
+        // once here, so the two pages cannot disagree about where the content
+        // area is. Only the visible page is bounded, as before.
+        const juce::Rectangle<int> refPageArea { cPad, cy2, mW - cPad * 2,
+                                                 getHeight() - cy2 - 10 - bottomBarsH() };
         if (refSubTab_ == echojay::RefSubTab::Playback)
         {
             codecPanel_.setBounds (echojay::codecPageLayout (
-                { cPad, cy2, mW - cPad * 2,
-                  getHeight() - cy2 - 10 - bottomBarsH() },
-                (int) CodecRender::presets().size()).page);
+                refPageArea, (int) CodecRender::presets().size()).page);
         }
+        if (refSubTab_ == echojay::RefSubTab::Match)
+            matchPanel_.setBounds (refPageArea);
 
         // rowW: content width from computeColumns, the single width source.
         // The comment that used to live here said "paint() and resized() use

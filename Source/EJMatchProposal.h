@@ -12,8 +12,9 @@
 // =============================================================================
 //
 // MATCH_REFERENCE_PLAN sections 2.1, 3, 4 and 5. This computes what Match
-// Reference would propose against one reference and applies nothing. There is
-// no screen and no sub-tab yet; nothing calls this outside tools/mapfps_test.
+// Reference would propose against one reference and applies nothing. The Match
+// sub-tab exists (19 Sep 2026) and draws matchPageStatement, at the end of this
+// file; computeMatchProposal is still called only from tools/mapfps_test.
 //
 // WHY A HEADER AND NOT PluginProcessor.cpp. The compare figures live in an
 // anonymous namespace there (CompareFig, computeCompareFig, fillBandRel), where
@@ -530,6 +531,50 @@ inline MatchProposal computeMatchProposal (const MatchSide& mix, const MatchSide
     find (MatchFigure::Correlation, mix.correlation, ref.correlation);
 
     return p;
+}
+
+// -----------------------------------------------------------------------------
+// THE MATCH PAGE'S STATEMENT, before the proposal is drawn there.
+// -----------------------------------------------------------------------------
+//
+// What a user who opens the Match sub-tab reads: what the page is for, and the
+// four things it will show, from MATCH_REFERENCE_PLAN section 6 (the tiered
+// moves, the directional findings with no apply affordance, the refusals with
+// their numbers) and section 5 (a refusal names its number), and that nothing
+// has been written. Not "coming soon", and not a spinner: the last line says
+// plainly that this version does not compute a proposal.
+//
+// THE NUMBERS COME FROM THE CONSTANTS ABOVE, so the page cannot promise a floor
+// or a cap the arithmetic does not use. Pinned by mr PIN12.
+struct MatchPageStatement
+{
+    juce::String      title;
+    juce::String      lead;
+    juce::StringArray items;    // exactly four, in plan section 6's order
+    juce::String      status;
+};
+
+inline MatchPageStatement matchPageStatement()
+{
+    auto dB = [] (float v) { return juce::String (v, 1) + " dB"; };
+    MatchPageStatement s;
+    s.title = "MATCH REFERENCE";
+    s.lead  = "Match proposes moves that would bring your capture closer to the selected "
+              "reference. Compare describes the difference; Match says what to do about it. "
+              "This page will show:";
+    s.items.add ("Proposed moves, grouped by tier. Exact: a gain offset of at least "
+                 + dB (kMatchGainFloorDb) + ", and a true-peak ceiling when the capture clips. "
+                 "Bounded: EQ moves on six bands, each at least " + dB (kMatchBandFloorDb)
+                 + " and at most " + dB (kMatchBandCapDb)
+                 + ". Every move shows the measurement it came from.");
+    s.items.add ("Directional findings, kept apart from the moves: LRA, PSR, PLR, crest, width "
+                 "and correlation, each with its number and no apply button. A finding is "
+                 "evidence, not a move.");
+    s.items.add ("Refusals, wherever a proposal cannot be trusted, each naming the threshold and "
+                 "the measured value that failed it.");
+    s.items.add ("That nothing has been written. A proposal changes nothing in your chain by itself.");
+    s.status = "This version does not compute a proposal yet.";
+    return s;
 }
 
 } // namespace echojay

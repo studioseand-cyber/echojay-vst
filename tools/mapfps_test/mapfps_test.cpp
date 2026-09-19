@@ -8151,8 +8151,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // the same rects, and ALL OF IT DRIVEN BY kRefSubTabCount: every
         // adjacent pair and every tab, so a third tab is tested the day it
         // exists rather than sitting untested behind checks written for
-        // tab[0] and tab[1]. Compare and Playback only: Match has no screen yet
-        // and a dead sub-tab is the same defect as a dead arrow.
+        // tab[0] and tab[1]. That day was 19 Sep 2026: Match joined, at index
+        // 1, with a page, and every loop here picked it up with no edit. Its
+        // two by-hand checks were rewritten, not renumbered around: the names
+        // are now all three by position, and the old tripwire (count == 2,
+        // "MATCH IS NOT HERE until it has a screen") is succeeded by two that
+        // still mean something: the count agrees with the names table, and
+        // MATCH is at index 1 specifically, because the order is a decision.
         {
             for (int w : { 300, 565, 585, 900, 1800 })
             {
@@ -8193,10 +8198,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rf PIN8: and a click past the tabs selects nothing, "
                    "rather than the nearest");
             check (juce::String (refSubTabName (0)) == "COMPARE"
-                   && juce::String (refSubTabName (1)) == "PLAYBACK",
-                   "rf PIN8: the two names, and there is no third");
-            check (kRefSubTabCount == 2,
-                   "rf PIN8: MATCH IS NOT HERE until it has a screen");
+                   && juce::String (refSubTabName (1)) == "MATCH"
+                   && juce::String (refSubTabName (2)) == "PLAYBACK"
+                   && ! refSubTabIndexValid (3),
+                   "rf PIN8: the three names by position, COMPARE, MATCH, PLAYBACK, and no fourth");
+            check (kRefSubTabCount == (int) (sizeof (kRefSubTabNames) / sizeof (kRefSubTabNames[0])),
+                   "rf PIN8: the tab count agrees with the names table, so no tab paints without a name");
+            check ((int) RefSubTab::Match == 1 && juce::String (refSubTabName (1)) == "MATCH"
+                   && (int) RefSubTab::Playback == 2,
+                   "rf PIN8: MATCH is at index 1, between Compare and Playback, the order "
+                   "MATCH_REFERENCE_PLAN 8A.1 decided; appending it after Playback reddens this");
         }
 
         // rs -- THE REFERENCE SUB-TAB ENUM AND ITS GUARDS (EJReferenceBar.h).
@@ -8299,6 +8310,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rs PIN4: view up, sub-tab Compare: shown");
             check (! compareFurnitureVisible (true, RefSubTab::Playback),
                    "rs PIN4: view up, sub-tab Playback: hidden");
+            // Match, added 19 Sep 2026: its page covers the content area, so
+            // Compare's ten controls hide there exactly as on Playback.
+            check (! compareFurnitureVisible (true, RefSubTab::Match)
+                   && ! compareFurnitureVisible (false, RefSubTab::Match),
+                   "rs PIN4: sub-tab Match, view up or down: hidden");
 
             // rs PIN9 -- THE ROW'S OWN HIT TEST. refSubTabRowHit is what the
             // editor's right-click and double-click handlers consume on. It
@@ -8896,6 +8912,116 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     check (w1 != std::string::npos && ! writesOnlyInPanel (strayWrite, where2),
                            "rs PIN12 (text pin): control: a seek area written from mouseDown is reported",
                            where2);
+                }
+
+                // rs PIN13 to rs PIN15 -- THE MATCH SUB-TAB'S WIRING. TEXT PINS:
+                // they pin what the editor's source says about the Match page,
+                // not what it does, which this suite cannot drive. Each has a
+                // negative control.
+
+                // rs PIN13 -- setRefSubTab HAS MATCH AS ITS OWN CASE, in a
+                // switch, so Match cannot fall into Compare's branch. The Match
+                // case shows the Match page, hides the Playback page, exits
+                // codec mode and takes focus; Compare and Playback each hide the
+                // Match page.
+                {
+                    const std::string sig = "void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)";
+                    // The text of one case: from its label to its break.
+                    auto caseText = [&] (const std::string& body, const std::string& label)
+                    {
+                        const std::regex lab ("case\\s+echojay::RefSubTab::" + label + "\\s*:");
+                        std::smatch m;
+                        if (! std::regex_search (body, m, lab)) return std::string();
+                        const std::string from = body.substr ((size_t) m.position (0));
+                        const auto br = from.find ("break;");
+                        return from.substr (0, br == std::string::npos ? from.size() : br);
+                    };
+                    auto has = [] (const std::string& t, const char* re)
+                    { return std::regex_search (t, std::regex (re)); };
+                    auto matchCaseOwn = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, sig);
+                        const std::string mc = caseText (body, "Match");
+                        return has (body, R"(switch\s*\(\s*t\s*\))") && ! mc.empty()
+                            && has (mc, R"(matchPanel_\.setVisible\s*\(\s*true\s*\))")
+                            && has (mc, R"(codecPanel_\.setVisible\s*\(\s*false\s*\))")
+                            && has (mc, R"(exitCodecMode\s*\()")
+                            && has (mc, R"(matchPanel_\.grabKeyboardFocus\s*\()");
+                    };
+                    auto othersHide = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, sig);
+                        const std::string cc = caseText (body, "Compare"), pc = caseText (body, "Playback");
+                        return ! cc.empty() && ! pc.empty()
+                            && has (cc, R"(matchPanel_\.setVisible\s*\(\s*false\s*\))")
+                            && has (pc, R"(matchPanel_\.setVisible\s*\(\s*false\s*\))");
+                    };
+                    check (matchCaseOwn (cpp),
+                           "rs PIN13 (text pin): setRefSubTab switches on the sub-tab and Match has its "
+                           "own case: it shows the Match page, hides Playback's, exits codec mode and "
+                           "takes focus");
+                    check (othersHide (cpp),
+                           "rs PIN13 (text pin): and the Compare and Playback cases each hide the Match page");
+
+                    std::string folded = cpp;
+                    const std::string lab = "    case echojay::RefSubTab::Match:";
+                    const auto f1 = folded.find (lab);
+                    if (f1 != std::string::npos) folded.replace (f1, lab.size(), "    default:");
+                    check (f1 != std::string::npos && ! matchCaseOwn (folded),
+                           "rs PIN13 (text pin): control: without its own Match case it is reported");
+
+                    std::string leaky = cpp;
+                    const auto cb = leaky.find ("    case echojay::RefSubTab::Compare:");
+                    const auto hideAt = (cb == std::string::npos) ? std::string::npos
+                                        : leaky.find ("        matchPanel_.setVisible(false);\n", cb);
+                    if (hideAt != std::string::npos)
+                        leaky.erase (hideAt, std::string ("        matchPanel_.setVisible(false);\n").size());
+                    check (hideAt != std::string::npos && ! othersHide (leaky),
+                           "rs PIN13 (text pin): control: a Compare case that leaves the Match page "
+                           "showing is reported");
+                }
+
+                // rs PIN14 -- THE MATCH PAGE IS BOUNDED FROM THE SAME RECTANGLE AS
+                // THE PLAYBACK PAGE, in resized(), so the two cannot disagree
+                // about where the content area is.
+                {
+                    auto sameArea = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, "void EchoJayEditor::resized()");
+                        return std::regex_search (body, std::regex (R"(codecPageLayout\s*\(\s*refPageArea\b)"))
+                            && std::regex_search (body, std::regex (R"(matchPanel_\.setBounds\s*\(\s*refPageArea\s*\))"));
+                    };
+                    check (sameArea (cpp),
+                           "rs PIN14 (text pin): resized bounds the Match page and the Playback page from "
+                           "one rectangle, refPageArea");
+                    std::string drift = cpp;
+                    const std::string mb = "matchPanel_.setBounds (refPageArea);";
+                    const auto d1 = drift.find (mb);
+                    if (d1 != std::string::npos) drift.replace (d1, mb.size(), "matchPanel_.setBounds (getLocalBounds());");
+                    check (d1 != std::string::npos && ! sameArea (drift),
+                           "rs PIN14 (text pin): control: a Match page bounded from its own rectangle "
+                           "is reported");
+                }
+
+                // rs PIN15 -- ESCAPE ON THE MATCH PAGE RETURNS TO COMPARE, the
+                // Playback page's rule for its grid, not a third behaviour.
+                {
+                    const std::string sig = "bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)";
+                    auto escapes = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, sig);
+                        return std::regex_search (body, std::regex (R"(escapeKey)"))
+                            && std::regex_search (body, std::regex (R"(setRefSubTab\s*\(\s*echojay::RefSubTab::Compare\s*\))"));
+                    };
+                    check (escapes (cpp),
+                           "rs PIN15 (text pin): Escape on the Match page calls setRefSubTab (Compare)");
+                    std::string noEsc = cpp;
+                    const auto kp = noEsc.find (sig);
+                    const std::string call = "owner->setRefSubTab (echojay::RefSubTab::Compare);";
+                    const auto e1 = (kp == std::string::npos) ? std::string::npos : noEsc.find (call, kp);
+                    if (e1 != std::string::npos) noEsc.erase (e1, call.size());
+                    check (e1 != std::string::npos && ! escapes (noEsc),
+                           "rs PIN15 (text pin): control: a Match page whose Escape goes nowhere is reported");
                 }
             }
         }
@@ -11175,6 +11301,37 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    && hasRefusal (pf, MatchRefusalKind::GainBelowFloor, bothSides) == nullptr
                    && hasRefusal (pf, MatchRefusalKind::DynamicsTooShort, "the capture") != nullptr,
                    "mr PIN11: and 3.0 dB apart it gets no gain move either, only the duration refusal");
+        }
+
+        // mr PIN12 -- THE MATCH PAGE SAYS WHAT IT IS FOR. Behavioural, on the
+        // pure statement the page draws. Four things in plan section 6's
+        // order, the numbers taken from the constants the arithmetic uses, and
+        // no "coming soon": the last line says plainly that no proposal is
+        // computed yet.
+        {
+            const auto st = matchPageStatement();
+            auto dB = [] (float v) { return juce::String (v, 1) + " dB"; };
+            check (st.title == "MATCH REFERENCE" && st.items.size() == 4,
+                   "mr PIN12: the page has its title and exactly four things it will show",
+                   juce::String (st.items.size()) + " items");
+            const juce::String i0 = st.items[0], i1 = st.items[1], i2 = st.items[2], i3 = st.items[3];
+            check (i0.contains ("tier") && i0.contains ("Exact") && i0.contains ("Bounded")
+                   && i0.contains (dB (kMatchGainFloorDb)) && i0.contains (dB (kMatchBandFloorDb))
+                   && i0.contains (dB (kMatchBandCapDb)),
+                   "mr PIN12: first, the moves by tier, with the gain floor, band floor and band cap "
+                   "the arithmetic uses", i0);
+            check (i1.contains ("Directional") && i1.contains ("no apply"),
+                   "mr PIN12: second, the directional findings, with no apply affordance", i1);
+            check (i2.contains ("Refusals") && i2.contains ("threshold") && i2.contains ("measured value"),
+                   "mr PIN12: third, the refusals, each naming its threshold and measured value", i2);
+            check (i3.containsIgnoreCase ("nothing has been written"),
+                   "mr PIN12: fourth, that nothing has been written", i3);
+            juce::String all = st.title + " " + st.lead + " " + st.status;
+            for (const auto& it : st.items) all << " " << it;
+            check (st.status.contains ("does not compute a proposal")
+                   && ! all.containsIgnoreCase ("soon") && ! all.containsIgnoreCase ("loading"),
+                   "mr PIN12: and it says plainly that no proposal is computed yet, never "
+                   "\"coming soon\"", st.status);
         }
     }
 

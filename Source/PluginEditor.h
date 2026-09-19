@@ -1068,6 +1068,33 @@ private:
     };
     CodecPanel codecPanel_;
 
+    // ============================ MATCH PAGE =============================
+    // The Match sub-tab's page (19 Sep 2026). A child component over the
+    // content area, added and bounded exactly as codecPanel_ is.
+    //
+    // THE COVER IS ON PURPOSE. Open list items 183 and 188 record that this
+    // editor keeps being protected by whatever happens to cover what: the
+    // Playback page shields Compare's click handlers only because it is a child
+    // laid over them. The Match page is the first page where that cover is the
+    // design rather than the accident. It is a child so that a click on it goes
+    // to it and stops there, and Compare's rename, delete and seek code never
+    // sees it. The explicit guards in mouseDown and mouseDoubleClick stand as
+    // well; this is the second line, stated, not the only one.
+    //
+    // WHAT IT DRAWS: a statement of what the page is for, from
+    // echojay::matchPageStatement. No proposal yet: computeMatchProposal is not
+    // called from the editor until the next commit.
+    //
+    // ESCAPE RETURNS TO COMPARE, the Playback page's rule for its grid. Match
+    // has no inner view to step back through first.
+    struct MatchPanel : juce::Component
+    {
+        EchoJayEditor* owner = nullptr;
+        void paint (juce::Graphics& g) override;
+        bool keyPressed (const juce::KeyPress& k) override;
+    };
+    MatchPanel matchPanel_;
+
     // ======================= REFERENCE BROWSER ==========================
     // Commit one of three: the shell and the track list. Folders are commit
     // two, the transport is commit three.
