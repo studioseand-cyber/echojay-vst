@@ -11057,9 +11057,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // gives the grid what is left, and these are the three things that must
         // hold whatever the tile count:
         //   the header (title, subtitle, note, source) and the status line are each
-        //     their full height, and the status line ends inside the page
+        //     their full height, and the status line ends inside the page. INSIDE
+        //     THE PAGE, not above the bottom pad, since 19 Sep 2026: a last row
+        //     short by no more than the pad takes it (pg PIN9)
         //   the grid area is at least one whole row tall, or the whole grid if
-        //     it is shorter than a row
+        //     it is shorter than a row, at the grid's OWN width, which is the
+        //     page's less the scrollbar's gutter
         //   the layout spends exactly kPlaybackPageChromeH (98 px) outside the
         //     grid area, the figure the paint is built on
         //
@@ -11093,9 +11096,10 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                         || L.note.getHeight()     != kPlaybackPageNoteH
                         || L.source.getHeight()   != kPlaybackPageSourceH
                         || L.status.getHeight()   != kPlaybackPageStatusH
-                        || L.status.getBottom()   >  p.h - kPlaybackPagePadBottom)
+                        || L.status.getBottom()   >  p.h)
                         hdrBad << n << " tiles: status " << L.status.toString() << "; ";
-                    const int oneRow = juce::jmin (playbackTileHeight (p.w), playbackGridHeight (n, p.w));
+                    const int gw     = L.grid.getWidth();
+                    const int oneRow = juce::jmin (playbackTileHeight (gw), playbackGridHeight (n, gw));
                     if (L.grid.getHeight() < oneRow)
                         rowBad << n << " tiles: grid " << L.grid.getHeight() << " < " << oneRow << "; ";
                     const int spent = L.status.getBottom() - L.grid.getHeight() + kPlaybackPagePadBottom;
@@ -11120,11 +11124,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // grid area is 91 to 350: 259 px, since the note line took 16 px of the
         // page (19 Sep 2026; it was 75 to 350 before). Fifteen tiles are four
         // rows of 120, 480 px of content whose last tile ends 10 px before that.
+        // The tile arithmetic is read at the GRID's width, 558 since the
+        // scrollbar's gutter; the figures did not move, because a 132 px tile
+        // is 110 tall like the 133 px one was.
         {
             const auto grid = playbackPageLayout ({ 0, 0, 565, 373 }, 15).grid;
             const int  maxS = playbackGridMaxScroll (15, grid);
             check (grid.getY() == 91 && grid.getHeight() == 259
-                   && maxS == playbackGridHeight (15, 565) - kPlaybackTileGap - grid.getHeight()
+                   && maxS == playbackGridHeight (15, grid.getWidth()) - kPlaybackTileGap - grid.getHeight()
                    && maxS == 211,
                    "pg PIN6: 15 tiles at the smallest page scroll until the last tile's bottom meets "
                    "the grid's: 480 less the trailing 10 px gap less 259 = 211",
@@ -11143,21 +11150,21 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // 441 against a grid ending at 350.
             const auto placed8 = playbackTilePlacedRect (grid, 8, 0);
             const auto vis8    = playbackTileVisibleRect (grid, 8, 0);
-            check (placed8.getHeight() == playbackTileHeight (565) && placed8.getY() == 331
+            check (placed8.getHeight() == playbackTileHeight (grid.getWidth()) && placed8.getY() == 331
                    && vis8.getY() == 331 && vis8.getBottom() == grid.getBottom()
                    && vis8.getHeight() == 19 && vis8.getWidth() == placed8.getWidth(),
                    "pg PIN6: a tile partly scrolled out below is stored as its visible part: 19 of its "
                    "110 px, at full width",
                    "placed " + placed8.toString() + ", visible " + vis8.toString());
             const auto vis0 = playbackTileVisibleRect (grid, 0, 40);
-            check (vis0.getY() == grid.getY() && vis0.getHeight() == playbackTileHeight (565) - 40,
+            check (vis0.getY() == grid.getY() && vis0.getHeight() == playbackTileHeight (grid.getWidth()) - 40,
                    "pg PIN6: and one partly scrolled under the top is cut at the grid's top, so it "
                    "cannot be pressed over the header", vis0.toString());
             check (playbackTileVisibleRect (grid, 12, 0).isEmpty(),
                    "pg PIN6: a tile scrolled wholly out has no visible rect, so it cannot be pressed at all");
 
             const auto grid7 = playbackPageLayout ({ 0, 0, 565, 373 }, 7).grid;
-            check (playbackGridMaxScroll (7, grid7) == 0 && grid7.getHeight() == playbackGridHeight (7, 565),
+            check (playbackGridMaxScroll (7, grid7) == 0 && grid7.getHeight() == playbackGridHeight (7, grid7.getWidth()),
                    "pg PIN6: seven tiles do not scroll at the smallest page and keep their full grid "
                    "height, which is why no build today exercises any of this");
 
@@ -11168,50 +11175,77 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "one unit moves kPlaybackWheelPxPerUnit");
         }
 
-        // pg PIN7 -- A SCROLL IS VISIBLE. The status line carries a count of
-        // the tiles hidden above and below, and nothing when none are. A grid
-        // with more below it and nothing saying so reads as all the tiles there
-        // are, which is a refusal rendered as an absence.
+        // pg PIN7 -- A SCROLL IS VISIBLE. A grid with more below it and nothing
+        // saying so reads as all the tiles there are, which is a refusal
+        // rendered as an absence.
+        //
+        // REWRITTEN 19 SEP 2026, NOT RENUMBERED. It pinned a count of hidden
+        // tiles in the status line ("7 more below"), and that count and its two
+        // functions are gone: a tile counted as hidden when one pixel of it was
+        // cut, and at the default window the page said "2 more below" over ten
+        // whole tiles (pg PIN9). What says so now is a scrollbar in a gutter
+        // down the grid's right edge, and this pin holds what the count's did:
+        // it shows exactly when the grid can scroll. And one thing the count
+        // never needed: the bar stays out of the tiles' hit area.
+        //
+        // At the smallest page with 15 tiles: 259 px of 470 is visible, so the
+        // thumb is 259 * 259 / 470 = 142 px, and it travels the other 117.
         {
-            const auto grid = playbackPageLayout ({ 0, 0, 565, 373 }, 15).grid;
-            const int  maxS = playbackGridMaxScroll (15, grid);
-            const auto top  = playbackGridHidden (15, grid, 0);
-            check (top.above == 0 && top.below == 7 && playbackScrollHint (top) == "7 more below",
-                   "pg PIN7: at the top of 15 tiles the page says 7 more below: the partly hidden third "
-                   "row of 4 and the hidden fourth row of 3",
-                   playbackScrollHint (top));
-            const auto bot = playbackGridHidden (15, grid, maxS);
-            check (bot.below == 0 && bot.above == 8 && playbackScrollHint (bot) == "8 more above",
-                   "pg PIN7: scrolled to the bottom it says 8 more above, and nothing below",
-                   playbackScrollHint (bot));
-            const auto mid = playbackGridHidden (15, grid, 100);
-            check (mid.above > 0 && mid.below > 0
-                   && playbackScrollHint (mid) == juce::String (mid.above) + " above, "
-                                                  + juce::String (mid.below) + " below",
-                   "pg PIN7: in between it names both", playbackScrollHint (mid));
+            const auto L    = playbackPageLayout ({ 0, 0, 565, 373 }, 15);
+            const int  maxS = playbackGridMaxScroll (15, L.grid);
+            check (L.scrollTrack == juce::Rectangle<int> (565 - kPlaybackScrollBarW, L.grid.getY(),
+                                                          kPlaybackScrollBarW, L.grid.getHeight())
+                   && L.grid.getWidth() == 565 - kPlaybackScrollGutterW,
+                   "pg PIN7: the scrollbar's track runs down the page's right edge, 4 px wide and as tall "
+                   "as the grid, and the grid is the page less the 7 px gutter",
+                   "track " + L.scrollTrack.toString() + ", grid " + L.grid.toString());
+            const auto top = playbackScrollThumb (15, L.grid, L.scrollTrack, 0);
+            const auto bot = playbackScrollThumb (15, L.grid, L.scrollTrack, maxS);
+            check (top.getHeight() == 142 && top.getY() == L.scrollTrack.getY()
+                   && bot.getHeight() == 142 && bot.getBottom() == L.scrollTrack.getBottom()
+                   && top.getX() == L.scrollTrack.getX() && top.getWidth() == L.scrollTrack.getWidth(),
+                   "pg PIN7: the thumb is 142 of the track's 259 px, at the top at 0 and on the track's "
+                   "bottom at the last row", "top " + top.toString() + ", bottom " + bot.toString());
+            check (playbackScrollThumb (15, L.grid, L.scrollTrack, -50) == top
+                   && playbackScrollThumb (15, L.grid, L.scrollTrack, maxS + 500) == bot,
+                   "pg PIN7: an offset outside the range is clamped, like every other reader of it");
 
-            // THE RULE, SWEPT: the hint is there whenever the grid can scroll
-            // and absent whenever it cannot, at every tile count and offset
-            // tried, on every page.
+            // THE RULE, SWEPT: the thumb is there exactly when the grid can
+            // scroll, it never leaves the track or moves up as the grid moves
+            // down, and no tile's rect, at any offset, reaches within the 3 px
+            // beside the track.
             juce::String bad;
             for (const auto& pg : { juce::Rectangle<int> (0, 0, 565, 373), juce::Rectangle<int> (0, 0, 565, 405),
+                                    juce::Rectangle<int> (0, 0, 741, 553), juce::Rectangle<int> (0, 0, 741, 521),
                                     juce::Rectangle<int> (0, 0, 1360, 1025), juce::Rectangle<int> (0, 0, 1780, 1025) })
-                for (int n : { 0, 1, 7, 8, 9, 12, 13, 15, 40 })
+                for (int n : { 0, 1, 7, 8, 9, 10, 12, 13, 15, 40 })
                 {
-                    const auto g2 = playbackPageLayout (pg, n).grid;
-                    const int  m  = playbackGridMaxScroll (n, g2);
+                    const auto L2 = playbackPageLayout (pg, n);
+                    const int  m  = playbackGridMaxScroll (n, L2.grid);
+                    int lastY = -1;
                     for (int sc = 0; sc <= m + 5; sc = (sc == m ? m + 6 : juce::jmin (m, sc + 7)))
                     {
-                        const int  cs   = playbackClampScroll (sc, n, g2);
-                        const bool hint = playbackScrollHint (playbackGridHidden (n, g2, cs)).isNotEmpty();
-                        if (hint != (m > 0))
-                            bad << pg.getWidth() << "x" << pg.getHeight() << " n=" << n << " s=" << cs
-                                << " max=" << m << "; ";
+                        const auto th = playbackScrollThumb (n, L2.grid, L2.scrollTrack, sc);
+                        const bool shown = ! th.isEmpty();
+                        if (shown != (m > 0)
+                            || (shown && (! L2.scrollTrack.contains (th) || th.getY() < lastY)))
+                            bad << pg.getWidth() << "x" << pg.getHeight() << " n=" << n << " s=" << sc
+                                << " max=" << m << " thumb " << th.toString() << "; ";
+                        if (shown) lastY = th.getY();
+                        for (int i = 0; i < n; ++i)
+                            if (playbackTilePlacedRect (L2.grid, i, playbackClampScroll (sc, n, L2.grid)).getRight()
+                                    > L2.scrollTrack.getX() - (kPlaybackScrollGutterW - kPlaybackScrollBarW))
+                            {
+                                bad << pg.getWidth() << "x" << pg.getHeight() << " n=" << n
+                                    << " tile " << i << " reaches the gutter; ";
+                                break;
+                            }
                     }
                 }
             check (bad.isEmpty(),
-                   "pg PIN7: the count is shown exactly when the grid can scroll, at 0 to 40 tiles and "
-                   "every offset tried on all four pages", bad);
+                   "pg PIN7: the thumb shows exactly when the grid can scroll, stays in its track and "
+                   "follows the offset down, and no tile reaches the gutter, at 0 to 40 tiles and every "
+                   "offset tried on six pages", bad);
         }
 
         // pg PIN8 -- THE SCROLL'S TWO LOAD-BEARING PROPERTIES, AS TEXT. A TEXT
@@ -11335,6 +11369,99 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (c2 != cppRaw && ! m2.editorOk,
                    "pg PIN8 (text pin): control: a tile rect translated by the scroll in paint, outside "
                    "playbackTilePlacedRect, is reported", m2.detail);
+        }
+
+        // pg PIN9 -- A GRID NEVER SCROLLS BY A FEW PIXELS (19 Sep 2026).
+        //
+        // THE REPORT: at Kathy's window all ten tiles were drawn whole, and the
+        // status line said "2 more below". Neither the count nor the paint was
+        // off the other's geometry: both read the same grid rect and the same
+        // offset, and the paint is clipped to that rect. At the default window,
+        // 1170 x 696 with the sidebar open and no bottom bar, the page is
+        // 741 x 553 (resized(): width 1170 - 409 - 20; height 696 less the
+        // 67 px header and tab strip, 4, the 34 px reference bar band, the
+        // 28 px sub-tab band and the 10 px margin). The grid got 439 px for
+        // tiles ending at 440, so it scrolled by 1 px, and the count called
+        // the two tiles of the third row hidden for the one row of pixels that
+        // held the bottom of their outline.
+        //
+        // THE FIX IS IN THE LAYOUT, because the scrollbar reads the same
+        // maximum: a last row short of the room by no more than the bottom pad
+        // takes the pad. So the grid scrolls by 0 or by more than the pad.
+        //
+        // AT KATHY'S PAGE THE GUTTER ALONE ALSO REMOVES IT, and this pin says so
+        // rather than crediting the pad rule: 734 px of grid gives 176 x 139
+        // tiles, whose last row ends at 437, inside the 439. The pad rule is
+        // what stops the same thing at the heights just below, 741 x 544 to
+        // 741 x 550, which the second and third checks and the sweep hold.
+        {
+            // 1. Kathy's page: the old arithmetic reproduces the report, the
+            //    new layout fits all ten whole with no thumb.
+            const int  oldGrid = juce::jmin (playbackGridHeight (10, 741), 553 - kPlaybackPageChromeH);
+            const int  oldMax  = juce::jmax (0, playbackGridHeight (10, 741) - kPlaybackTileGap - oldGrid);
+            const auto K       = playbackPageLayout ({ 0, 0, 741, 553 }, 10);
+            bool whole = true;
+            for (int i = 0; i < 10; ++i)
+                whole = whole && playbackTileVisibleRect (K.grid, i, 0) == playbackTilePlacedRect (K.grid, i, 0);
+            check (oldGrid == 439 && oldMax == 1
+                   && playbackGridMaxScroll (10, K.grid) == 0 && whole
+                   && playbackScrollThumb (10, K.grid, K.scrollTrack, 0).isEmpty(),
+                   "pg PIN9: at the default window's page, 741 x 553, the old layout gave ten tiles a 1 px "
+                   "scroll; now all ten are whole, nothing scrolls and no scrollbar shows",
+                   "old grid " + juce::String (oldGrid) + " max " + juce::String (oldMax)
+                   + "; now grid " + K.grid.toString() + " max "
+                   + juce::String (playbackGridMaxScroll (10, K.grid)));
+
+            // 2. The pad taken: at 741 x 544 the last row ends 7 px past the
+            //    room, and at 741 x 547, 4 px past it.
+            juce::String takeBad;
+            for (int h : { 544, 547 })
+            {
+                const auto T = playbackPageLayout ({ 0, 0, 741, h }, 10);
+                if (playbackGridMaxScroll (10, T.grid) != 0
+                    || T.grid.getHeight() != playbackGridHeight (10, T.grid.getWidth()) - kPlaybackTileGap
+                    || T.status.getHeight() != kPlaybackPageStatusH || T.status.getBottom() > h)
+                    takeBad << h << ": grid " << T.grid.toString() << ", status " << T.status.toString() << "; ";
+            }
+            check (takeBad.isEmpty(),
+                   "pg PIN9: a last row up to the pad's 7 px short takes the pad: the grid ends on it, "
+                   "nothing scrolls, and the status line is whole and inside the page", takeBad);
+
+            // 3. And not a pixel more: at 741 x 543 it is 8 px short, the
+            //    grid keeps its room, the pad stays, and the scroll is 8.
+            const auto S = playbackPageLayout ({ 0, 0, 741, 543 }, 10);
+            check (playbackGridMaxScroll (10, S.grid) == kPlaybackPagePadBottom + 1
+                   && S.status.getBottom() == 543 - kPlaybackPagePadBottom
+                   && ! playbackScrollThumb (10, S.grid, S.scrollTrack, 0).isEmpty(),
+                   "pg PIN9: 8 px short, the pad is kept, the grid scrolls by 8 and the scrollbar shows",
+                   S.grid.toString() + ", status " + S.status.toString());
+
+            // 4. THE RULE, SWEPT over every page height from the smallest to the
+            //    largest, widths in steps of 5, and 0 to 40 tiles: the scroll is
+            //    0 or more than the pad; the status line is whole and inside the
+            //    page; and the pad is given up only when that leaves nothing to
+            //    scroll.
+            juce::String bad;
+            int taken = 0;
+            for (int w = 565; w <= 1780 && bad.length() < 400; w += 5)
+                for (int h = 373; h <= 1025; ++h)
+                    for (int n : { 0, 1, 7, 8, 9, 10, 12, 13, 15, 40 })
+                    {
+                        const auto P = playbackPageLayout ({ 0, 0, w, h }, n);
+                        const int  m = playbackGridMaxScroll (n, P.grid);
+                        const bool padTaken = P.status.getBottom() > h - kPlaybackPagePadBottom;
+                        if (padTaken) ++taken;
+                        if ((m >= 1 && m <= kPlaybackPagePadBottom)
+                            || P.status.getHeight() != kPlaybackPageStatusH || P.status.getBottom() > h
+                            || (padTaken && m != 0))
+                            bad << w << "x" << h << " n=" << n << " max=" << m
+                                << " status " << P.status.toString() << "; ";
+                    }
+            check (bad.isEmpty() && taken > 0,
+                   "pg PIN9: at every page from 565 x 373 to 1780 x 1025, the grid scrolls by 0 or by more "
+                   "than 7 px, the status line stays whole inside the page, and the pad is taken only to "
+                   "leave nothing to scroll (and it is taken somewhere, so the sweep sees the rule)",
+                   bad + " pad taken " + juce::String (taken) + " times");
         }
     }
 

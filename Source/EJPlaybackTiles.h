@@ -40,15 +40,16 @@ struct PlaybackTile
 
     THE CODEC TILE'S LABEL SAYS IT RENDERS. "Render a codec": 92.9 px in the
     system bold face at 12 pt, the wider of the two faces the LookAndFeel can
-    fall back to (DM Sans is not installed everywhere), inside the 117 px a
-    133 px tile leaves after its 8 px insets. The longest live label is now
-    "Bluetooth speaker", 110.1 px, measured the same way (19 Sep 2026): 7 px
-    to spare. "TV soundbar" is 76.9 px and "Club PA" 47.2 px.
+    fall back to (DM Sans is not installed everywhere), inside the 116 px a
+    132 px tile leaves after its 8 px insets (132 since the scrollbar's gutter,
+    19 Sep 2026; it was 133). The longest live label is now "Bluetooth
+    speaker", 110.1 px, measured the same way (19 Sep 2026): 5.9 px to spare.
+    "TV soundbar" is 76.9 px and "Club PA" 47.2 px.
 
     TEN TILES SCROLL. At the smallest page the grid shows two whole rows,
     eight tiles, so the tenth, the codec tile, sits in the partly visible third
-    row until the grid is scrolled, and the status line says how many are
-    below. */
+    row until the grid is scrolled, and the scrollbar at the grid's right edge
+    says there is more. */
 inline constexpr std::array<PlaybackTile, 10> kPlaybackTiles {{
     { PlaybackTileKind::Live,        PlaybackSim::MonoFold,     PlaybackVoicing::None,         "Mono" },
     { PlaybackTileKind::Live,        PlaybackSim::PhoneSpeaker, PlaybackVoicing::PhoneSpeaker, "Phone speaker" },

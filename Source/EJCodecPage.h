@@ -108,10 +108,12 @@ inline CodecPageRects codecPageLayout (juce::Rectangle<int> contentArea, int pre
 // WHAT FITS, COUNTED WITH THE PAGE'S CHROME. At the smallest page this plugin
 // can produce (565 x 373: the minimum window with both bottom bars) the grid
 // gets 373 - 114 = 259 px once the header, the note line and the status line
-// have their kPlaybackPageChromeH. At four columns a tile is 133 x 110 (88 of
-// 3:2 art plus the 22 px label band) and a row is 120 with its gap, so two
-// whole rows are visible: eight tiles. The widest page is no better, because
-// tile height follows tile width: 1780 x 1025 also shows eight.
+// have their kPlaybackPageChromeH. Its width is the page's less the
+// scrollbar's 7 px gutter, 558, so at four columns a tile is 132 x 110 (88 of
+// 3:2 art plus the 22 px label band; 133 before the gutter, the same height)
+// and a row is 120 with its gap, so two whole rows are visible: eight tiles.
+// The widest page is no better, because tile height follows tile width: 1780
+// x 1025 also shows eight.
 //
 // A GRID TALLER THAN ITS AREA SCROLLS; it no longer has to fit. This comment
 // used to say nine tiles fit at 565 x 405 in 360 px, which counted the grid
@@ -120,9 +122,9 @@ inline CodecPageRects codecPageLayout (juce::Rectangle<int> contentArea, int pre
 // line and the status line always fit whole and that at least one whole row is
 // visible, not that every tile is.
 //
-// A minimum tile width of 134 or more drops the smallest page to three columns
-// (181 x 142 tiles), which still shows one whole row; the column count is pg
-// PIN1's concern, and it is unchanged by scrolling.
+// A minimum tile width of 133 or more drops the smallest page's 558 px grid to
+// three columns (179 x 141 tiles), which still shows one whole row; the column
+// count is pg PIN1's concern, and it is unchanged by scrolling.
 inline constexpr int kPlaybackTileMinW    = 130;  // narrowest a tile may be
 inline constexpr int kPlaybackTileGap     = 10;   // between tiles, both ways
 inline constexpr int kPlaybackTileLabelH  = 22;   // the label band under the art
@@ -188,9 +190,11 @@ inline juce::Rectangle<int> playbackTileRect (juce::Rectangle<int> grid, int ind
 //
 // NO SIDE PADDING, on purpose and not to make anything fit: the page rect is
 // already inset 10 px from the column by resized(), on the same edges as the
-// reference bar and the sub-tab row above it, so the grid lines up with them.
-// Note what an inset would cost: at the smallest page (565 px) any side inset
-// over 7 px drops the grid to three columns, and pg PIN5 would say so.
+// reference bar and the sub-tab row above it, so the grid's left edge lines up
+// with them. The one inset is the scrollbar's gutter on the right, below.
+// Note what an inset costs: at the smallest page (565 px) more than 7 px on
+// both sides, or more than 15 px on one, drops the grid to three columns, and
+// pg PIN5 would say so.
 inline constexpr int kPlaybackPagePadTop    = 7;
 inline constexpr int kPlaybackPageTitleH    = 22;   // "PLAYBACK", as the card's title row
 inline constexpr int kPlaybackPageSubtitleH = 18;
@@ -221,9 +225,27 @@ inline constexpr int kPlaybackPageChromeH = kPlaybackPagePadTop + kPlaybackPageT
                                           + kPlaybackPageSourceGap + kPlaybackPageStatusH
                                           + kPlaybackPagePadBottom;
 
+/** THE SCROLLBAR'S GUTTER (19 Sep 2026), reserved down the grid's right edge
+    whether or not the grid scrolls: a 4 px bar at the page's right edge and
+    3 px between it and the tiles.
+
+    ALWAYS RESERVED, so the tiles never change width when scrolling engages. A
+    gutter taken only when the grid scrolls would narrow the tiles, which
+    shortens them, which can make the grid fit again: a window dragged across
+    that height would see the tiles jump in width. The cost is 7 px of the
+    grid's width everywhere. At the smallest page that costs nothing in height:
+    558 px of grid gives 132 px tiles, 110 tall, the same as 565 gave.
+
+    THE TILES CANNOT REACH IT. The grid rect excludes the gutter, a tile's
+    stored hit rect is clipped to the grid (playbackTileVisibleRect), and the
+    bar is drawn in the gutter only, so a press on the bar is in no tile. */
+inline constexpr int kPlaybackScrollBarW      = 4;
+inline constexpr int kPlaybackScrollGutterW   = 7;    // the bar and the 3 px beside it
+inline constexpr int kPlaybackScrollThumbMinH = 20;   // shortest thumb, however long the grid
+
 struct PlaybackPageRects
 {
-    juce::Rectangle<int> title, subtitle, note, source, grid, status;
+    juce::Rectangle<int> title, subtitle, note, source, grid, scrollTrack, status;
 };
 
 /** The page's layout, the ONE author of its rects; paint consumes these and
@@ -239,19 +261,42 @@ struct PlaybackPageRects
     The grid area is the SMALLER of its content and that space, and the status
     line sits directly under it, so a grid that fits is laid out exactly as it
     was. A grid taller than the space scrolls inside it (playbackTilePlacedRect
-    and the functions below). */
+    and the functions below).
+
+    A LAST ROW SHORT BY LESS THAN THE BOTTOM PAD TAKES THE PAD (19 Sep 2026).
+    Without this, a page a few pixels short of the grid gave it a scroll of a
+    few pixels. At 741 x 553, the default window, the grid got 439 px for
+    tiles ending at 440: a 1 px scroll, and the page announced "2 more below"
+    over two tiles whose only missing pixel was the bottom of their outline.
+    Now, when the last row's bottom is past the room by no more than
+    kPlaybackPagePadBottom, the grid is given exactly the room to that bottom
+    and the status line moves down into the pad, still whole and still inside
+    the page. So the grid scrolls by 0, or by more than the pad, never by 1 to
+    7 px, and a scrollbar never appears over nothing (pg PIN9). */
 inline PlaybackPageRects playbackPageLayout (juce::Rectangle<int> page, int tileCount)
 {
     PlaybackPageRects r;
-    auto a = page.withTrimmedTop (kPlaybackPagePadTop).withTrimmedBottom (kPlaybackPagePadBottom);
+    auto a = page.withTrimmedTop (kPlaybackPagePadTop);
     r.title    = a.removeFromTop (kPlaybackPageTitleH);
     r.subtitle = a.removeFromTop (kPlaybackPageSubtitleH);
     r.note     = a.removeFromTop (kPlaybackPageNoteH);
     r.source   = a.removeFromTop (kPlaybackPageSourceH);
     a.removeFromTop (kPlaybackPageSourceGap);
-    const int gridRoom = juce::jmax (0, a.getHeight() - kPlaybackPageStatusH);   // status first
-    r.grid     = a.removeFromTop (juce::jmin (playbackGridHeight (tileCount, a.getWidth()), gridRoom));
-    r.status   = a.removeFromTop (kPlaybackPageStatusH);
+
+    const int gridW    = juce::jmax (0, a.getWidth() - kPlaybackScrollGutterW);
+    const int content  = playbackGridHeight (tileCount, gridW);
+    const int lastEdge = juce::jmax (0, content - kPlaybackTileGap);   // the last row's bottom
+    const int gridRoom = juce::jmax (0, a.getHeight() - kPlaybackPageStatusH
+                                          - kPlaybackPagePadBottom);     // status first
+    int gridH = juce::jmin (content, gridRoom);
+    if (lastEdge > gridRoom && lastEdge - gridRoom <= kPlaybackPagePadBottom)
+        gridH = lastEdge;                                                // take the pad
+
+    auto row      = a.removeFromTop (gridH);
+    r.scrollTrack = row.removeFromRight (juce::jmin (kPlaybackScrollGutterW, row.getWidth()))
+                       .removeFromRight (kPlaybackScrollBarW);
+    r.grid        = row;
+    r.status      = a.removeFromTop (kPlaybackPageStatusH);
     return r;
 }
 
@@ -272,9 +317,10 @@ inline PlaybackPageRects playbackPageLayout (juce::Rectangle<int> page, int tile
 
     NOT playbackGridHeight less the area. That height includes the gap after
     the last row, so it would leave up to a gap's worth of scroll over nothing
-    at all, and a grid could scroll while no tile was hidden: the scroll hint
-    would then be absent while the grid moved. Measured to the last tile's edge,
-    "can scroll" and "a tile is hidden" are the same statement (pg PIN7). */
+    at all, and a grid could scroll while no tile was hidden. Measured to the
+    last tile's edge, "can scroll" and "part of a tile is out of sight" are the
+    same statement. With the layout's pad rule above, the answer is 0 or more
+    than kPlaybackPagePadBottom, never a few pixels (pg PIN9). */
 inline int playbackGridMaxScroll (int tileCount, juce::Rectangle<int> grid)
 {
     const int content = playbackGridHeight (tileCount, grid.getWidth());
@@ -303,35 +349,29 @@ inline juce::Rectangle<int> playbackTileVisibleRect (juce::Rectangle<int> grid, 
     return playbackTilePlacedRect (grid, index, scroll).getIntersection (grid);
 }
 
-/** How many tiles are not wholly visible, above the grid area and below it. A
-    tile partly scrolled out counts as hidden in its direction, because part of
-    it is. */
-struct PlaybackGridHidden { int above = 0, below = 0; };
+/** THE SCROLL SAYS SO: the scrollbar's thumb in the layout's scrollTrack, and
+    an EMPTY rect whenever the grid cannot scroll, which is the one test paint
+    makes before drawing the bar. A grid with more below it and nothing saying
+    so reads as all the tiles there are, which is a refusal rendered as an
+    absence.
 
-inline PlaybackGridHidden playbackGridHidden (int tileCount, juce::Rectangle<int> grid, int scroll)
+    The thumb is the track's height scaled by what is visible of the grid's
+    tiles, visible / (visible + max scroll), no shorter than
+    kPlaybackScrollThumbMinH, and it travels the rest of the track in
+    proportion to the offset: at the top at 0, on the track's bottom at the
+    maximum. The offset is clamped first, like every other reader of it. */
+inline juce::Rectangle<int> playbackScrollThumb (int tileCount, juce::Rectangle<int> grid,
+                                                 juce::Rectangle<int> track, int scroll)
 {
-    PlaybackGridHidden h;
-    for (int i = 0; i < juce::jmax (0, tileCount); ++i)
-    {
-        const auto placed = playbackTilePlacedRect (grid, i, scroll);
-        if      (placed.getY()      < grid.getY())      ++h.above;
-        else if (placed.getBottom() > grid.getBottom()) ++h.below;
-    }
-    return h;
-}
-
-/** THE SCROLL SAYS SO. The text the page shows when tiles are hidden, and ""
-    when none are. A grid with more below it and nothing saying so reads as
-    all the tiles there are, which is a refusal rendered as an absence. It is a
-    COUNT, not a bar or a fade: a count says there is more and how much, and it
-    needs no knowledge of the colour behind the page. */
-inline juce::String playbackScrollHint (PlaybackGridHidden h)
-{
-    if (h.above > 0 && h.below > 0)
-        return juce::String (h.above) + " above, " + juce::String (h.below) + " below";
-    if (h.below > 0) return juce::String (h.below) + " more below";
-    if (h.above > 0) return juce::String (h.above) + " more above";
-    return {};
+    const int maxS = playbackGridMaxScroll (tileCount, grid);
+    if (maxS <= 0 || track.isEmpty())
+        return {};
+    const int s      = juce::jlimit (0, maxS, scroll);
+    const int trackH = track.getHeight();
+    const int prop   = (int) ((juce::int64) trackH * grid.getHeight() / (grid.getHeight() + maxS));
+    const int h      = juce::jlimit (juce::jmin (kPlaybackScrollThumbMinH, trackH), trackH, prop);
+    const int y      = track.getY() + (int) ((juce::int64) (trackH - h) * s / maxS);
+    return { track.getX(), y, track.getWidth(), h };
 }
 
 /** Pixels to scroll for a wheel or trackpad delta. Positive deltaY scrolls

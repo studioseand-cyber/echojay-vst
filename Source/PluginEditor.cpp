@@ -7301,36 +7301,36 @@ void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
         g.setColour (selected ? accent : kPlaybackTileStroke);
         g.drawRoundedRectangle (placed.toFloat().reduced (0.5f), 6.0f, selected ? 1.4f : 1.0f);
     }
-    }   // the grid clip ends here; the status line is outside it
+    }   // the grid clip ends here; the scrollbar and the status line are outside it
 
-    // THE STATUS LINE. Its height is reserved before the grid's, so it is
-    // always whole. It carries two things, one at each end.
+    // THE SCROLL SAYS SO: a scrollbar in the gutter down the grid's right edge,
+    // drawn ONLY when the grid can scroll, which is exactly when the thumb is
+    // not empty. It replaced a count of hidden tiles in the status line, which
+    // called a tile hidden when one pixel of it was cut.
     //
-    // RIGHT: THE SCROLL SAYS SO. When tiles are hidden above or below the grid
-    // area, a count of them, in the accent; when none are, nothing. A grid with
-    // more below it and nothing saying so reads as all the tiles there are. A
-    // count rather than a bar or a fade: it says there is more AND how much, it
-    // sits in a row that is always visible, and it covers no tile.
-    const auto hint = echojay::playbackScrollHint (
-        echojay::playbackGridHidden ((int) tiles.size(), pl.grid, gridScroll));
-    auto statusLeft = pl.status;
-    if (hint.isNotEmpty())
+    // AN INDICATOR, NOT A CONTROL: it is not draggable. The wheel and the
+    // trackpad scroll the grid; a press on the bar lands in the gutter, which is
+    // in no tile's stored rect, so it does nothing. The track is the tiles'
+    // outline colour and the thumb the page's muted text colour, so it reads as
+    // part of the page rather than as a selection.
+    const auto thumb = echojay::playbackScrollThumb ((int) tiles.size(), pl.grid,
+                                                     pl.scrollTrack, gridScroll);
+    if (! thumb.isEmpty())
     {
-        const juce::Font hf (juce::FontOptions (10.5f, juce::Font::bold));
-        const int hw = juce::GlyphArrangement::getStringWidthInt (hf, hint) + 4;
-        g.setColour (accent);
-        g.setFont (hf);
-        g.drawText (hint, statusLeft.removeFromRight (hw), juce::Justification::centredRight, false);
-        statusLeft.removeFromRight (12);
+        g.setColour (kPlaybackTileStroke);
+        g.fillRoundedRectangle (pl.scrollTrack.toFloat(), 2.0f);
+        g.setColour (C::text3);
+        g.fillRoundedRectangle (thumb.toFloat(), 2.0f);
     }
 
-    // LEFT: the codec status, only when it has text. A codec error can be
-    // standing when the user comes back to the grid.
+    // THE STATUS LINE. Its height is reserved before the grid's, so it is
+    // always whole. It carries the codec status, only when it has text: a codec
+    // error can be standing when the user comes back to the grid.
     if (owner->codecStatus_.isNotEmpty())
     {
         g.setColour (juce::Colour (0xfff87171));   // coral
         g.setFont (juce::Font (juce::FontOptions (10.5f)));
-        g.drawText (owner->codecStatus_, statusLeft, juce::Justification::centredLeft, true);
+        g.drawText (owner->codecStatus_, pl.status, juce::Justification::centredLeft, true);
     }
 }
 
