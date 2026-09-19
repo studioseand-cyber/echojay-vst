@@ -34,6 +34,15 @@ struct MockManley final : juce::AudioPluginInstance
     const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
     void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
 };
+// a PLAIN LINEAR table (101 points, far past the stepped-grid ceiling) for an unpaired control: the apply path must land
+// exactly (question 1 before signing 19e: was 0.537 the fixture's taper or the apply path?)
+juce::var linearEntry (const char* name, int index, double lo, double hi, const char* unit)
+{
+    auto* e = new juce::DynamicObject(); e->setProperty ("name", name); e->setProperty ("index", index); e->setProperty ("kind", "anchored"); e->setProperty ("unit", unit); e->setProperty ("trust", "setread");
+    juce::Array<juce::var> range; range.add (lo); range.add (hi); e->setProperty ("range", range);
+    juce::Array<juce::var> anchors; for (int k = 0; k <= 100; ++k) { const double t = k / 100.0; juce::Array<juce::var> a; a.add (lo + (hi - lo) * t); a.add (t); anchors.add (juce::var (a)); } e->setProperty ("anchors", anchors);
+    return juce::var (e);
+}
 juce::var entry (const char* name, int index, double lo, double hi, const char* unit)
 {
     auto* e = new juce::DynamicObject(); e->setProperty ("name", name); e->setProperty ("index", index); e->setProperty ("kind", "anchored"); e->setProperty ("unit", unit); e->setProperty ("trust", "setread");
@@ -50,7 +59,7 @@ int main()
     auto* controls = new juce::DynamicObject();
     controls->setProperty ("L Attack", entry ("L Attack", 0, 1.0, 30.0, "ms")); controls->setProperty ("R Attack", entry ("R Attack", 1, 1.0, 30.0, "ms"));
     controls->setProperty ("L Output", entry ("L Output", 2, -20.0, 20.0, "db")); controls->setProperty ("R Output", entry ("R Output", 3, -20.0, 20.0, "db"));
-    controls->setProperty ("Mix", entry ("Mix", 4, 0.0, 100.0, "pct"));
+    controls->setProperty ("Mix", linearEntry ("Mix", 4, 0.0, 100.0, "pct"));   // plain linear, unpaired
     auto* map = new juce::DynamicObject(); map->setProperty ("plugin", "UAD Manley Variable Mu"); map->setProperty ("controls", juce::var (controls));
     const juce::var mapVar (map);   // ONE var owns the object (a second juce::var(map) would double-own it: the 18 Sep UAF)
     auto* req = new juce::DynamicObject(); req->setProperty ("L Attack", 30.0); req->setProperty ("L Output", 20.0); req->setProperty ("Mix", 50.0);
@@ -60,7 +69,7 @@ int main()
     check (std::abs (ps[0]->getValue() - 1.0f) < 0.02f, "L Attack 30 ms -> parameter 0 at 1.0 (the side the model named)", juce::String (ps[0]->getValue(), 3));
     check (std::abs (ps[1]->getValue() - 1.0f) < 0.02f, "R Attack follows to 1.0 - the PAIR is dialled from the one side named (RED before 18e: stays 0)", juce::String (ps[1]->getValue(), 3));
     check (std::abs (ps[2]->getValue() - 1.0f) < 0.02f && std::abs (ps[3]->getValue() - 1.0f) < 0.02f, "L Output +20 (top of the table) -> both Output sides at 1.0", juce::String (ps[2]->getValue(), 3) + " / " + juce::String (ps[3]->getValue(), 3));
-    check (std::abs (ps[4]->getValue() - 0.537f) < 0.02f, "Mix 50 (no pair) applies alone (0.537 on this tapered table)", juce::String (ps[4]->getValue(), 3));
+    check (std::abs (ps[4]->getValue() - 0.5f) < 0.02f, "Mix 50 on a PLAIN LINEAR table lands at 0.500 +-0.02 (the earlier 0.537 was the tapered fixture, not the apply path)", juce::String (ps[4]->getValue(), 3));
     juce::StringArray names, notes; for (const auto& r : results) { names.add (r.semantic); notes.add (r.semantic + ": " + r.note); }
     std::printf ("  results: %s\n", notes.joinIntoString (" | ").toRawUTF8());
     check (names.contains ("R Attack") && names.contains ("R Output"), "the results list the mirrored sides (so the bubble counts them as dialled, never \"by hand\")", names.joinIntoString (", "));
