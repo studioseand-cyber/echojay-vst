@@ -107,17 +107,18 @@ inline CodecPageRects codecPageLayout (juce::Rectangle<int> contentArea, int pre
 //
 // WHAT FITS, COUNTED WITH THE PAGE'S CHROME. At the smallest page this plugin
 // can produce (565 x 373: the minimum window with both bottom bars) the grid
-// gets 373 - 98 = 275 px once the header and status line have their
-// kPlaybackPageChromeH. At four columns a tile is 133 x 110 (88 of 3:2 art plus
-// the 22 px label band) and a row is 120 with its gap, so two whole rows are
-// visible: eight tiles. The widest page is no better, because tile height
-// follows tile width: 1780 x 1025 also shows eight.
+// gets 373 - 114 = 259 px once the header, the note line and the status line
+// have their kPlaybackPageChromeH. At four columns a tile is 133 x 110 (88 of
+// 3:2 art plus the 22 px label band) and a row is 120 with its gap, so two
+// whole rows are visible: eight tiles. The widest page is no better, because
+// tile height follows tile width: 1780 x 1025 also shows eight.
 //
 // A GRID TALLER THAN ITS AREA SCROLLS; it no longer has to fit. This comment
 // used to say nine tiles fit at 565 x 405 in 360 px, which counted the grid
-// alone and forgot the 98 px of chrome: nine need 458 there. What pg PIN5 now
-// guarantees is that the header and status line always fit whole and that at
-// least one whole row is visible, not that every tile is.
+// alone and forgot the chrome (98 px then, 114 since the note line): nine
+// needed 458 there. What pg PIN5 now guarantees is that the header, the note
+// line and the status line always fit whole and that at least one whole row is
+// visible, not that every tile is.
 //
 // A minimum tile width of 134 or more drops the smallest page to three columns
 // (181 x 142 tiles), which still shows one whole row; the column count is pg
@@ -193,12 +194,21 @@ inline juce::Rectangle<int> playbackTileRect (juce::Rectangle<int> grid, int ind
 inline constexpr int kPlaybackPagePadTop    = 7;
 inline constexpr int kPlaybackPageTitleH    = 22;   // "PLAYBACK", as the card's title row
 inline constexpr int kPlaybackPageSubtitleH = 18;
+inline constexpr int kPlaybackPageNoteH     = 16;   // the note: impressions, not measurements
 inline constexpr int kPlaybackPageSourceH   = 20;   // the capture line: KEPT, see below
 inline constexpr int kPlaybackPageSourceGap = 8;
 inline constexpr int kPlaybackPageStatusH   = 16;   // the codec status, when it has text
 inline constexpr int kPlaybackPagePadBottom = 7;
 
-/** Everything that shares the page with the grid: 98 px.
+/** THE NOTE LINE, under the subtitle (19 Sep 2026). Eight of the page's tiles
+    are chosen numbers, and until this line nothing on the page said so: open
+    list item 171. One line, and not an apology. 381.6 px in the system face at
+    11 pt, measured with CoreText, inside the 565 px of the smallest page. */
+inline constexpr const char* kPlaybackPageNote =
+    "These are impressions of how a place sounds, not measurements of one.";
+
+/** Everything that shares the page with the grid: 114 px, since the note line
+    joined it (98 before).
 
     THE SOURCE LINE STAYS because startCodecRender returns silently when there
     is no capture (PluginEditor.cpp, the codecSrcPath_ check at its top): without
@@ -206,13 +216,14 @@ inline constexpr int kPlaybackPagePadBottom = 7;
     has now found six times. The status line is counted whether or not it has
     text, because it can appear while the grid is showing. */
 inline constexpr int kPlaybackPageChromeH = kPlaybackPagePadTop + kPlaybackPageTitleH
-                                          + kPlaybackPageSubtitleH + kPlaybackPageSourceH
+                                          + kPlaybackPageSubtitleH + kPlaybackPageNoteH
+                                          + kPlaybackPageSourceH
                                           + kPlaybackPageSourceGap + kPlaybackPageStatusH
                                           + kPlaybackPagePadBottom;
 
 struct PlaybackPageRects
 {
-    juce::Rectangle<int> title, subtitle, source, grid, status;
+    juce::Rectangle<int> title, subtitle, note, source, grid, status;
 };
 
 /** The page's layout, the ONE author of its rects; paint consumes these and
@@ -235,6 +246,7 @@ inline PlaybackPageRects playbackPageLayout (juce::Rectangle<int> page, int tile
     auto a = page.withTrimmedTop (kPlaybackPagePadTop).withTrimmedBottom (kPlaybackPagePadBottom);
     r.title    = a.removeFromTop (kPlaybackPageTitleH);
     r.subtitle = a.removeFromTop (kPlaybackPageSubtitleH);
+    r.note     = a.removeFromTop (kPlaybackPageNoteH);
     r.source   = a.removeFromTop (kPlaybackPageSourceH);
     a.removeFromTop (kPlaybackPageSourceGap);
     const int gridRoom = juce::jmax (0, a.getHeight() - kPlaybackPageStatusH);   // status first

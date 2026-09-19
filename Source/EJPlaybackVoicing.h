@@ -47,6 +47,9 @@ enum class PlaybackVoicing
     CarDashboard,
     KitchenRadio,
     Earbuds,
+    TvSoundbar,       ///< a soundbar under a television: stereo, no mono sum
+    BluetoothSpeaker, ///< a portable speaker: one box, summed to mono first
+    ClubPA,           ///< a club's PA: one system, summed to mono first
 
     /** SENTINEL, ALWAYS LAST. NEW VALUES GO ABOVE THIS LINE, NEVER BELOW IT.
         The table below is sized by it and the pv pins sweep up to it, so a
@@ -67,6 +70,23 @@ struct VoicingRow
     double hpHz,   hpQ;          ///< high pass corner and Q
     double lpHz,   lpQ;          ///< low pass corner and Q
     double peakHz, peakQ, peakDb;///< resonance centre, Q and gain in dB
+
+    /** SUM TO MONO FIRST, THEN FILTER. True for a device that is one speaker
+        or one system heard as one source: a portable speaker, a PA. The stage
+        folds the pair to mono and THEN runs the voicing, the physical order:
+        the device plays the sum, and its response acts on that.
+
+        WHAT THE FLAG CHANGES IS THE SUM, NOT THE ORDER. Both channels run the
+        same high pass, low pass and resonance, and all three are linear, so
+        filtering the pair and summing afterwards gives the same samples up to
+        floating-point rounding. The audible difference is the fold itself: the
+        stereo image collapses and anti-phase content cancels, where a stereo
+        voicing keeps both. pb PIN12 pins the fold, not the order.
+
+        A DEFAULT, so the rows that do not name it are stereo, which is what
+        they were before this flag existed. The Mono tile is not a voicing and
+        does not use this: it stays a selection of its own, the fold alone. */
+    bool   monoFirst = false;
 };
 
 /** THE NUMBERS ARE INFORMED ESTIMATES, NOT MEASUREMENTS.
@@ -77,6 +97,21 @@ struct VoicingRow
     are good enough to hear the difference a device class makes to a mix, and
     no more than that. If anyone ever measures a real device, that response
     should replace the row it belongs to, and this comment should say so.
+
+    THE LAST THREE ROWS (19 Sep 2026) ARE CHOSEN THE SAME WAY, and are no more
+    than that either:
+      TvSoundbar        small drivers in a bar: little below about 90 Hz, a
+                        top that holds to about 14 kHz, and the presence lift
+                        at 2.5 kHz that soundbars use to carry dialogue.
+      BluetoothSpeaker  one box, summed to mono: little below about 110 Hz, a
+                        top falling from about 13 kHz, and the bass lift at
+                        160 Hz a small speaker's tuning uses to sound bigger.
+      ClubPA            one system, summed to mono: subs reaching about 35 Hz,
+                        a top held to about 16 kHz, and a 5 dB lift at 55 Hz,
+                        where a club system is run hot. It is the system, not
+                        the room: no reverb, no reflections, no crowd.
+    THE ONLY REAL TEST AVAILABLE IS LISTENING against the actual device or the
+    actual place. Until someone has, read every row here as an impression.
 
     Indexed by PlaybackVoicing. The None row is never read: None does not run
     the filters at all (see VoicingChain::process), so its zeros are a
@@ -95,7 +130,21 @@ inline constexpr std::array<VoicingRow, (std::size_t) PlaybackVoicing::Count> kV
     /* CarDashboard */ {  60.0, 0.707, 14000.0, 0.707,   100.0, 1.2,  3.0 },
     /* KitchenRadio */ { 250.0, 0.707,  5000.0, 0.707,  1500.0, 1.0,  3.0 },
     /* Earbuds      */ {  40.0, 0.707, 16000.0, 0.707,    60.0, 1.0,  2.0 },
+    //                                                                          mono first
+    /* TvSoundbar   */ {  90.0, 0.707, 14000.0, 0.707,  2500.0, 0.9,  2.5,  false },
+    /* BluetoothSpk */ { 110.0, 0.707, 13000.0, 0.707,   160.0, 1.2,  4.0,  true  },
+    /* ClubPA       */ {  35.0, 0.707, 16000.0, 0.707,    55.0, 1.0,  5.0,  true  },
 }};
+
+/** Whether voicing v sums the pair to mono before its filters: the row's
+    monoFirst, or false for None, Count and anything outside them, so a bad
+    cast can never index past the table. */
+inline bool voicingSumsToMono (PlaybackVoicing v) noexcept
+{
+    const int i = (int) v;
+    if (i <= (int) PlaybackVoicing::None || i >= (int) PlaybackVoicing::Count) return false;
+    return kVoicingTable[(std::size_t) i].monoFirst;
+}
 
 /** One channel's voicing: high pass, low pass, resonance, in series.
 

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "EJPlaybackVoicing.h"   // echojay::VoicingChain: the five device voicings
+#include "EJPlaybackVoicing.h"   // echojay::VoicingChain: the eight device voicings
 
 // =============================================================================
 //  PLAYBACK SIMULATION: the inline stage, and where it is allowed to live.
@@ -11,7 +11,7 @@
 // by someone holding the whole argument rather than by whoever added the first
 // curve.
 //
-// THE SELECTION. None, the mono fold, and five device voicings. Each voicing is
+// THE SELECTION. None, the mono fold, and eight device voicings. Each voicing is
 // a device class (a phone speaker, a laptop, a car), never a brand: decision 11
 // of COMPARE_REFERENCE_PLAN, because a generic response curve cannot deliver the
 // fidelity a manufacturer's name implies. The voicings' numbers live in
@@ -29,6 +29,9 @@ enum class PlaybackSim
     CarDashboard, ///< echojay::PlaybackVoicing::CarDashboard
     KitchenRadio, ///< echojay::PlaybackVoicing::KitchenRadio
     Earbuds,      ///< echojay::PlaybackVoicing::Earbuds
+    TvSoundbar,       ///< echojay::PlaybackVoicing::TvSoundbar, stereo
+    BluetoothSpeaker, ///< echojay::PlaybackVoicing::BluetoothSpeaker, mono first
+    ClubPA,           ///< echojay::PlaybackVoicing::ClubPA, mono first
 
     /** SENTINEL, ALWAYS LAST. NEW VALUES GO ABOVE THIS LINE, NEVER BELOW IT.
 
@@ -70,6 +73,9 @@ inline const char* playbackSimName (PlaybackSim s) noexcept
         case PlaybackSim::CarDashboard: return "CarDashboard";
         case PlaybackSim::KitchenRadio: return "KitchenRadio";
         case PlaybackSim::Earbuds:      return "Earbuds";
+        case PlaybackSim::TvSoundbar:       return "TvSoundbar";
+        case PlaybackSim::BluetoothSpeaker: return "BluetoothSpeaker";
+        case PlaybackSim::ClubPA:           return "ClubPA";
         case PlaybackSim::Count:        return "Count";
     }
     return "(out of range)";
@@ -119,6 +125,43 @@ private:
 class PlaybackSimStage;
 inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
                               int numChannels, int numSamples) noexcept;
+
+/** THE FOLD: both channels become (L + R) * 0.5, in place. ONE DEFINITION,
+    used by the Mono tile and by every voicing whose row sums to mono first,
+    so the two cannot come to disagree about what "mono" means.
+
+    The caller has already refused a missing or aliased pair; this only folds.
+
+    ONE LOCAL, WRITTEN TWICE. Writing the expression into each channel
+    separately would be two expressions that agree today and could stop
+    agreeing after any edit to either line. Computed once, the two channels are
+    identical BY CONSTRUCTION rather than by coincidence, which is what pb PIN4
+    asserts.
+
+    THE GAIN IS 0.5f, NOT 0.70710678f. A centred source must come out at exactly
+    the level it went in. With the power-preserving gain it would come out 3 dB
+    up, and then every environment on this page reads as "mono is louder", and
+    the collapse the user is actually listening for gets buried under a level
+    change they did not ask for. The point of the fold is to hear what survives
+    the collapse, not to hear a different volume.
+
+    AND BOTH CLAIMS ARE EXACT, NOT APPROXIMATE. In binary floating point L + L
+    only increments the exponent and multiplying by 0.5 only decrements it, with
+    the significand untouched, so a centred source comes out BIT-IDENTICAL rather
+    than nearly unchanged. L + (-L) is exactly +0.0 under round-to-nearest, so
+    anti-correlated content vanishes completely rather than nearly. pb PIN2 and
+    pb PIN3 assert both with memcmp rather than a tolerance, because a tolerance
+    would also pass an implementation that is merely close. */
+inline void monoFoldInPlace (float* left, float* right, int numSamples) noexcept
+{
+    for (int i = 0; i < numSamples; ++i)
+    {
+        float m = left[i] + right[i];
+        m *= 0.5f;
+        left[i]  = m;
+        right[i] = m;
+    }
+}
 
 /** THE STAGE: the selection, the filters a voicing needs, and one block of
     memory about which voicing ran last.
@@ -218,6 +261,24 @@ private:
         }
         previousVoicing_ = v;
 
+        // MONO FIRST, FILTERS AFTER, for a voicing whose row says so (a
+        // portable speaker, a PA): one source, so the pair is folded and THEN
+        // voiced, the order the device plays it in. With identical linear
+        // filters on both channels the other order would give the same samples
+        // up to rounding; what matters is the fold, which collapses the image
+        // and cancels anti-phase content (VoicingRow::monoFirst). A mono buffer
+        // is one channel already and is not folded against itself.
+        //
+        // BOTH CHAINS RUN, on what is now the same signal, so each chain's
+        // memory stays current for the next voicing. From an activation both
+        // chains start zeroed, so the two channels are bit-identical from the
+        // first sample (pb PIN12). After a switch from a stereo voicing the two
+        // chains keep their own few samples of memory, so the channels differ
+        // until that decays, a few milliseconds; the reset rule above keeps
+        // state across a switch on purpose, and this does not override it.
+        if (stereo && echojay::voicingSumsToMono (v))
+            monoFoldInPlace (left, right, numSamples);
+
         chains_[0].process (left, numSamples);
         if (stereo)
             chains_[1].process (right, numSamples);
@@ -298,36 +359,11 @@ inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
             // and the second sample onward would be folded against itself.
             if (left == right) return false;
 
-            // ONE LOCAL, WRITTEN TWICE. Writing the expression into each
-            // channel separately would be two expressions that agree today and
-            // could stop agreeing after any edit to either line. Computed once,
-            // the two channels are identical BY CONSTRUCTION rather than by
-            // coincidence, which is what pb PIN4 asserts.
-            //
-            // THE GAIN IS 0.5f, NOT 0.70710678f. A centred source must come out
-            // at exactly the level it went in. With the power-preserving gain it
-            // would come out 3 dB up, and then every environment on this page
-            // reads as "mono is louder", and the collapse the user is actually
-            // listening for gets buried under a level change they did not ask
-            // for. The point of the fold is to hear what survives the collapse,
-            // not to hear a different volume.
-            //
-            // AND BOTH CLAIMS ARE EXACT, NOT APPROXIMATE. In binary floating
-            // point L + L only increments the exponent and multiplying by 0.5
-            // only decrements it, with the significand untouched, so a centred
-            // source comes out BIT-IDENTICAL rather than nearly unchanged.
-            // L + (-L) is exactly +0.0 under round-to-nearest, so anti-
-            // correlated content vanishes completely rather than nearly. pb PIN2
-            // and pb PIN3 assert both with memcmp rather than a tolerance,
-            // because a tolerance would also pass an implementation that is
-            // merely close.
-            for (int i = 0; i < numSamples; ++i)
-            {
-                float m = left[i] + right[i];
-                m *= 0.5f;
-                left[i]  = m;
-                right[i] = m;
-            }
+            // THE FOLD ITSELF, now one function shared with the voicings that
+            // sum to mono first. The loop, the 0.5f and why both are exact are
+            // at monoFoldInPlace, unchanged; this case is the Mono tile exactly
+            // as it was.
+            monoFoldInPlace (left, right, numSamples);
 
             // ZERO SAMPLES RETURNS TRUE, DECIDED RATHER THAN EMERGENT. A block
             // of zero samples is a loop with zero iterations: the stage ran, it
@@ -338,7 +374,7 @@ inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
             return true;
         }
 
-        // THE FIVE VOICINGS. One case each, mapping the selection to its row
+        // THE EIGHT VOICINGS. One case each, mapping the selection to its row
         // and running the chain, so deleting any one of them sends that value
         // to the trailing false below, where pb PIN7 names it.
         case PlaybackSim::PhoneSpeaker:
@@ -355,6 +391,15 @@ inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
                                      channels, numChannels, numSamples);
         case PlaybackSim::Earbuds:
             return stage.runVoicing (echojay::PlaybackVoicing::Earbuds,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::TvSoundbar:
+            return stage.runVoicing (echojay::PlaybackVoicing::TvSoundbar,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::BluetoothSpeaker:
+            return stage.runVoicing (echojay::PlaybackVoicing::BluetoothSpeaker,
+                                     channels, numChannels, numSamples);
+        case PlaybackSim::ClubPA:
+            return stage.runVoicing (echojay::PlaybackVoicing::ClubPA,
                                      channels, numChannels, numSamples);
 
         case PlaybackSim::None:

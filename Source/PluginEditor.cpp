@@ -7194,8 +7194,8 @@ void EchoJayEditor::CodecPanel::paintRenderView(juce::Graphics& g)
 // step above the tile body.
 static const juce::Colour kPlaybackTileStroke { 0xff2c3150 };
 
-// THE GRID: the Playback page. Six live tiles change what is playing now; the
-// seventh opens the codec card as the render view. Every rect comes from
+// THE GRID: the Playback page. Nine live tiles change what is playing now; the
+// tenth opens the codec card as the render view. Every rect comes from
 // echojay::playbackPageLayout and the scroll functions beside it in
 // EJCodecPage.h, and the paint computes none of its own, so the allowance
 // pg PIN5 checks is the one this paint spends.
@@ -7213,6 +7213,12 @@ void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
     g.setFont (juce::Font (juce::FontOptions (11.5f)));
     g.drawText ("Hear this mix on other speakers, or render it through a codec.",
                 pl.subtitle, juce::Justification::centredLeft, true);
+
+    // THE NOTE: what the environments are. Eight of them are chosen numbers, and
+    // the page now says so in one line under the subtitle (open list 171).
+    // Smaller than the subtitle, so it reads as a qualifier on it.
+    g.setFont (juce::Font (juce::FontOptions (11.0f)));
+    g.drawText (echojay::kPlaybackPageNote, pl.note, juce::Justification::centredLeft, true);
 
     // THE SOURCE LINE, KEPT. startCodecRender returns silently when there is no
     // capture, so without this line the codec tile leads to presets that do
@@ -20609,8 +20615,9 @@ void EchoJayEditor::paintEnvBar (juce::Graphics& g)
 
     // SAYS THE AUDIO IS BEING ALTERED, not just what is on, so a glance
     // explains why the mix sounds wrong. Measured with CoreText at 11.5 pt:
-    // 332.5 px for the longest name ("Phone speaker"), inside the ~366 px the
-    // narrowest window (compact mode, 420 px) leaves after the dot and the X.
+    // 350.9 px for the longest name, "Bluetooth speaker" (19 Sep 2026; it was
+    // "Phone speaker" at 332.5), inside the ~366 px the narrowest window
+    // (compact mode, 420 px) leaves after the dot and the X. 15 px to spare.
     g.setColour (C::text);
     g.setFont (juce::Font (juce::FontOptions (11.5f)));
     g.drawText (name + " is altering what you hear. This is not your mix.",

@@ -9,7 +9,7 @@
 //  PLAYBACK ART: which picture belongs to which voicing and which codec tile.
 // =============================================================================
 //
-// The eighteen images in Assets/playback are compiled into their own static
+// The nineteen images in Assets/playback are compiled into their own static
 // library, EchoJayPlaybackArt, by juce_add_binary_data in CMakeLists.txt, with
 // a named header and namespace (EJPlaybackArt.h, EJPlaybackArt::) so JUCE's
 // default BinaryData.h is not included into every translation unit through
@@ -23,12 +23,14 @@
 // a pin reading these symbols would need the test's link line changed, which
 // is the same shape as the OpenGL gap in that script.
 //
-// THE PLAYBACK GRID DRAWS SEVEN OF THEM, through playbackArtForTile below:
-// mono_fold.jpg for the Mono tile, the five voicing pictures, and
-// codec_lossy.jpg for the codec tile. Referencing
-// them is what makes the linker pull those images into the AU and VST3; the
-// others (codec_transparent, codec_loudness, car_speaker and the room and
-// venue pictures) stay embedded in the library and unmapped.
+// THE PLAYBACK GRID DRAWS TEN OF THEM, through playbackArtForTile below:
+// mono_fold.jpg for the Mono tile, the eight voicing pictures, and
+// codec_lossy.jpg for the codec tile. Referencing them is what makes the
+// linker pull those images into the AU and VST3. Of the other nine,
+// codec_transparent and codec_loudness have cases in codecArtFor that nothing
+// calls, and car_speaker, bedroom, small_bar, club_floor, festival_field,
+// headphones and studio_monitors are embedded in the library and mapped to
+// nothing.
 
 namespace echojay
 {
@@ -45,7 +47,8 @@ struct PlaybackArt
 /** The picture for a device voicing. None, and the Count sentinel, have none.
 
     CarDashboard uses car_interior.jpg, the dashboard view; car_speaker.jpg is
-    embedded but mapped to nothing yet, as are the room and venue pictures. */
+    embedded but mapped to nothing yet, as are the room pictures (bedroom,
+    small_bar, club_floor, festival_field), headphones and studio_monitors. */
 inline PlaybackArt playbackArtFor (PlaybackVoicing v) noexcept
 {
     switch (v)
@@ -55,6 +58,9 @@ inline PlaybackArt playbackArtFor (PlaybackVoicing v) noexcept
         case PlaybackVoicing::CarDashboard: return { EJPlaybackArt::car_interior_jpg,  EJPlaybackArt::car_interior_jpgSize };
         case PlaybackVoicing::KitchenRadio: return { EJPlaybackArt::kitchen_jpg,       EJPlaybackArt::kitchen_jpgSize };
         case PlaybackVoicing::Earbuds:      return { EJPlaybackArt::earbuds_jpg,       EJPlaybackArt::earbuds_jpgSize };
+        case PlaybackVoicing::TvSoundbar:       return { EJPlaybackArt::tv_soundbar_jpg, EJPlaybackArt::tv_soundbar_jpgSize };
+        case PlaybackVoicing::BluetoothSpeaker: return { EJPlaybackArt::bt_speaker_jpg,  EJPlaybackArt::bt_speaker_jpgSize };
+        case PlaybackVoicing::ClubPA:           return { EJPlaybackArt::club_pa_jpg,     EJPlaybackArt::club_pa_jpgSize };
         case PlaybackVoicing::None:
         case PlaybackVoicing::Count:
             break;

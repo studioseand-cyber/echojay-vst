@@ -10134,30 +10134,62 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "pb PIN9: the hit rectangles are the ones paint drew, so they cannot "
                        "drift from what is on screen");
 
-                // THE TABLE THE HANDLER WALKS: six live tiles in the order the
-                // page shows them, each storing its own selection, then the codec
-                // tile, which stores nothing. Dropping or reordering a row here is
-                // the per-tile deletion the lines above cannot see.
+                // THE TABLE THE HANDLER WALKS, rewritten for ten tiles (19 Sep 2026)
+                // rather than renumbered: it no longer names each row by hand,
+                // it says what must be true of the table as a whole.
+                //
+                // THE TABLE AND THE HANDLER AGREE: every selection the stage can
+                // run has exactly one live tile, in the selections' own order
+                // (the Mono tile first), each storing its own selection, and each
+                // voiced tile carries the voicing that selection runs, so its
+                // picture and its sound are the same device. The Mono tile runs
+                // no voicing. Dropping, duplicating or reordering a row, or
+                // pairing a tile with another device's voicing, is the per-tile
+                // deletion the source lines above cannot see.
+                //
+                // THE CODEC TILE IS WHAT IT SAYS IT IS: the last row, the only
+                // row that is not live, storing nothing.
                 using echojay::kPlaybackTiles;
                 using echojay::PlaybackTileKind;
-                const PlaybackSim pbLive[6] = { PlaybackSim::MonoFold, PlaybackSim::PhoneSpeaker,
-                                                PlaybackSim::Laptop, PlaybackSim::CarDashboard,
-                                                PlaybackSim::KitchenRadio, PlaybackSim::Earbuds };
+                using PVt = echojay::PlaybackVoicing;
+                const int pbSims = (int) PlaybackSim::Count - 1;   // every selection but None
                 juce::String pbBad;
-                if (kPlaybackTiles.size() != 7)
-                    pbBad << "size " << (int) kPlaybackTiles.size() << "; ";
-                for (int i = 0; i < 6 && i < (int) kPlaybackTiles.size(); ++i)
-                    if (kPlaybackTiles[(size_t) i].kind != PlaybackTileKind::Live
-                        || kPlaybackTiles[(size_t) i].sim != pbLive[i])
-                        pbBad << "row " << i << " is not the live " << playbackSimName (pbLive[i]) << " tile; ";
-                if (kPlaybackTiles.size() == 7
-                    && (kPlaybackTiles[6].kind != PlaybackTileKind::CodecRender
-                        || kPlaybackTiles[6].sim != PlaybackSim::None))
-                    pbBad << "row 6 is not the codec tile storing nothing; ";
+                if ((int) kPlaybackTiles.size() != pbSims + 1)
+                    pbBad << "size " << (int) kPlaybackTiles.size() << ", expected "
+                          << (pbSims + 1) << " (one per selection, and the codec tile); ";
+                for (int i = 0; i < pbSims && i < (int) kPlaybackTiles.size(); ++i)
+                {
+                    const auto& t    = kPlaybackTiles[(size_t) i];
+                    const auto  want = (PlaybackSim) (i + 1);
+                    // The voicing each selection runs: none for the fold, and
+                    // otherwise the voicing of the same name, one step down,
+                    // because PlaybackVoicing has no fold of its own.
+                    const auto  voiced = (want == PlaybackSim::MonoFold) ? PVt::None
+                                                                        : (PVt) ((int) want - 1);
+                    if (t.kind != PlaybackTileKind::Live || t.sim != want)
+                        pbBad << "row " << i << " is not the live " << playbackSimName (want) << " tile; ";
+                    else if (t.voicing != voiced)
+                        pbBad << "row " << i << " (" << playbackSimName (want) << ") carries voicing "
+                              << (int) t.voicing << ", not " << (int) voiced << "; ";
+                }
                 check (pbBad.isEmpty(),
-                       "pb PIN9: the table the handler walks has the six live tiles in order, "
-                       "each storing its own selection, then the codec tile, which stores nothing",
+                       "pb PIN9: the table the handler walks has one live tile per selection, in "
+                       "the selections' order, each storing its own selection and carrying the "
+                       "voicing it runs",
                        pbBad);
+
+                juce::String pbCodec;
+                int pbNonLive = 0;
+                for (const auto& t : kPlaybackTiles)
+                    if (t.kind != PlaybackTileKind::Live) ++pbNonLive;
+                const auto& pbLast = kPlaybackTiles[kPlaybackTiles.size() - 1];
+                if (pbLast.kind != PlaybackTileKind::CodecRender)   pbCodec << "the last row is not the codec tile; ";
+                if (pbLast.sim != PlaybackSim::None)                pbCodec << "the codec tile stores a selection; ";
+                if (pbNonLive != 1)                                 pbCodec << pbNonLive << " rows are not live; ";
+                check (pbCodec.isEmpty(),
+                       "pb PIN9: and the codec tile is the last row, the only one that is not "
+                       "live, and stores nothing",
+                       pbCodec);
             }
 
             // pb PIN10 and pb PIN11 -- THE RESET RULE, BOTH HALVES.
@@ -10315,6 +10347,103 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                            "pb PIN11: and on the right (" + pbWhich (gotR, zR, cR) + ")",
                            pbDetail (gotR, zR, cR));
                 }
+
+                // pb PIN12 -- A MONO-FIRST VOICING FOLDS THE PAIR, THEN VOICES IT
+                // (19 Sep 2026). The bluetooth speaker and the club PA are one
+                // source each, so they sum to mono; the TV soundbar does not.
+                //
+                // WHAT IS PINNED IS THE FOLD, NOT THE ORDER. Both channels run
+                // the same linear filters, so filtering first and summing after
+                // gives the same samples up to rounding, and a check that the
+                // two orders differ would pass on rounding bits alone. What
+                // matters, and what this checks, is that the fold happens: the
+                // two channels become one, where the same filters on the
+                // unfolded pair, and the stereo soundbar, keep them apart.
+                {
+                    check (echojay::voicingSumsToMono (PV::BluetoothSpeaker)
+                           && echojay::voicingSumsToMono (PV::ClubPA)
+                           && ! echojay::voicingSumsToMono (PV::TvSoundbar),
+                           "pb PIN12: the bluetooth speaker and the club PA sum to mono first; the "
+                           "TV soundbar does not");
+                    juce::String pbOthers;
+                    for (int v = -1; v <= (int) PV::Count + 2; ++v)
+                        if (echojay::voicingSumsToMono ((PV) v)
+                            && v != (int) PV::BluetoothSpeaker && v != (int) PV::ClubPA)
+                            pbOthers << v << " ";
+                    check (pbOthers.isEmpty(),
+                           "pb PIN12: and nothing else does: the five original rows keep their stereo "
+                           "default, and None, Count and anything outside them read as no",
+                           pbOthers);
+
+                    constexpr int pbN = 64;
+                    float pbSrcL[pbN], pbSrcR[pbN];
+                    for (int i = 0; i < pbN; ++i)
+                    {
+                        pbSrcL[i] = 0.6f * std::sin (0.30f * (float) i);
+                        pbSrcR[i] = 0.4f * std::cos (0.17f * (float) i + 1.0f);
+                    }
+                    auto pbRun = [&] (PS sel, float* L, float* R)
+                    {
+                        PlaybackSimStage st;
+                        st.prepare (pbRate);
+                        st.select (sel);
+                        float* ch[2] = { L, R };
+                        return applyPlaybackSim (st, ch, 2, pbN);
+                    };
+
+                    // From an activation, both mono-first voicings put out one
+                    // signal on both channels, and it is the pair folded THEN
+                    // voiced, bit for bit.
+                    juce::String pbSame1, pbOrder;
+                    for (PS sel : { PS::BluetoothSpeaker, PS::ClubPA })
+                    {
+                        float L[pbN], R[pbN];
+                        std::copy (pbSrcL, pbSrcL + pbN, L);
+                        std::copy (pbSrcR, pbSrcR + pbN, R);
+                        const bool ran = pbRun (sel, L, R);
+                        if (! ran || std::memcmp (L, R, sizeof (L)) != 0)
+                            pbSame1 << playbackSimName (sel) << " ";
+
+                        float fL[pbN], fR[pbN];
+                        std::copy (pbSrcL, pbSrcL + pbN, fL);
+                        std::copy (pbSrcR, pbSrcR + pbN, fR);
+                        monoFoldInPlace (fL, fR, pbN);
+                        echojay::VoicingChain c;
+                        c.prepare (pbRate);
+                        c.setVoicing (sel == PS::BluetoothSpeaker ? PV::BluetoothSpeaker : PV::ClubPA);
+                        c.process (fL, pbN);
+                        if (std::memcmp (L, fL, sizeof (L)) != 0)
+                            pbOrder << playbackSimName (sel) << " ";
+                    }
+                    check (pbSame1.isEmpty(),
+                           "pb PIN12: from activation, the bluetooth speaker and the club PA put out "
+                           "bit-identical left and right channels", pbSame1);
+                    check (pbOrder.isEmpty(),
+                           "pb PIN12: and that signal is the pair folded to mono and then voiced, bit "
+                           "for bit", pbOrder);
+
+                    // CONTROLS: the fold is what made the channels one. The same
+                    // bluetooth filters on the UNFOLDED pair keep them apart, and
+                    // the stereo soundbar, through the stage, keeps them apart.
+                    float uL[pbN], uR[pbN];
+                    std::copy (pbSrcL, pbSrcL + pbN, uL);
+                    std::copy (pbSrcR, pbSrcR + pbN, uR);
+                    {
+                        echojay::VoicingChain a, b;
+                        a.prepare (pbRate); b.prepare (pbRate);
+                        a.setVoicing (PV::BluetoothSpeaker); b.setVoicing (PV::BluetoothSpeaker);
+                        a.process (uL, pbN); b.process (uR, pbN);
+                    }
+                    check (std::memcmp (uL, uR, sizeof (uL)) != 0,
+                           "pb PIN12: control: the same filters on the unfolded pair leave the "
+                           "channels different, so the identity above comes from the fold");
+                    float tL[pbN], tR[pbN];
+                    std::copy (pbSrcL, pbSrcL + pbN, tL);
+                    std::copy (pbSrcR, pbSrcR + pbN, tR);
+                    check (pbRun (PS::TvSoundbar, tL, tR) && std::memcmp (tL, tR, sizeof (tL)) != 0,
+                           "pb PIN12: and the TV soundbar, which is stereo, keeps them different "
+                           "through the stage");
+                }
             }
         }
 
@@ -10334,7 +10463,8 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
             const double pvRates[] = { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 };
             const char* const pvNames[] = { "None", "PhoneSpeaker", "Laptop",
-                                            "CarDashboard", "KitchenRadio", "Earbuds" };
+                                            "CarDashboard", "KitchenRadio", "Earbuds",
+                                            "TvSoundbar", "BluetoothSpeaker", "ClubPA" };
             static_assert (sizeof (pvNames) / sizeof (pvNames[0]) == (size_t) PV::Count,
                            "one name per voicing, so a FAIL line can say which");
             const char* const pvWhich[3] = { "high pass", "low pass", "peak" };
@@ -10926,7 +11056,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         // line to nothing. The layout now reserves the status line first and
         // gives the grid what is left, and these are the three things that must
         // hold whatever the tile count:
-        //   the header (title, subtitle, source) and the status line are each
+        //   the header (title, subtitle, note, source) and the status line are each
         //     their full height, and the status line ends inside the page
         //   the grid area is at least one whole row tall, or the whole grid if
         //     it is shorter than a row
@@ -10960,6 +11090,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     const auto L = playbackPageLayout ({ 0, 0, p.w, p.h }, n);
                     if (L.title.getHeight()    != kPlaybackPageTitleH
                         || L.subtitle.getHeight() != kPlaybackPageSubtitleH
+                        || L.note.getHeight()     != kPlaybackPageNoteH
                         || L.source.getHeight()   != kPlaybackPageSourceH
                         || L.status.getHeight()   != kPlaybackPageStatusH
                         || L.status.getBottom()   >  p.h - kPlaybackPagePadBottom)
@@ -10986,16 +11117,17 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
         // pg PIN6 -- THE SCROLL ARITHMETIC, with a synthetic tile count, since
         // the table's seven never scroll. At the smallest page (565 x 373) the
-        // grid area is 75 to 350: 275 px. Fifteen tiles are four rows of 120,
-        // 480 px of content whose last tile ends 10 px before that, at 470.
+        // grid area is 91 to 350: 259 px, since the note line took 16 px of the
+        // page (19 Sep 2026; it was 75 to 350 before). Fifteen tiles are four
+        // rows of 120, 480 px of content whose last tile ends 10 px before that.
         {
             const auto grid = playbackPageLayout ({ 0, 0, 565, 373 }, 15).grid;
             const int  maxS = playbackGridMaxScroll (15, grid);
-            check (grid.getY() == 75 && grid.getHeight() == 275
+            check (grid.getY() == 91 && grid.getHeight() == 259
                    && maxS == playbackGridHeight (15, 565) - kPlaybackTileGap - grid.getHeight()
-                   && maxS == 195,
+                   && maxS == 211,
                    "pg PIN6: 15 tiles at the smallest page scroll until the last tile's bottom meets "
-                   "the grid's: 480 less the trailing 10 px gap less 275 = 195",
+                   "the grid's: 480 less the trailing 10 px gap less 259 = 211",
                    grid.toString() + ", max " + juce::String (maxS));
             check (playbackClampScroll (-50, 15, grid) == 0 && playbackClampScroll (0, 15, grid) == 0,
                    "pg PIN6: clamped at the top: never above 0");
@@ -11007,14 +11139,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "pg PIN6: scrolled to the bottom, the last tile is wholly visible and ends on the "
                    "grid's bottom edge");
 
-            // Tile 8, the first of the third row, at scroll 0: placed 315 to
-            // 425 against a grid ending at 350.
+            // Tile 8, the first of the third row, at scroll 0: placed 331 to
+            // 441 against a grid ending at 350.
             const auto placed8 = playbackTilePlacedRect (grid, 8, 0);
             const auto vis8    = playbackTileVisibleRect (grid, 8, 0);
-            check (placed8.getHeight() == playbackTileHeight (565) && placed8.getY() == 315
-                   && vis8.getY() == 315 && vis8.getBottom() == grid.getBottom()
-                   && vis8.getHeight() == 35 && vis8.getWidth() == placed8.getWidth(),
-                   "pg PIN6: a tile partly scrolled out below is stored as its visible part: 35 of its "
+            check (placed8.getHeight() == playbackTileHeight (565) && placed8.getY() == 331
+                   && vis8.getY() == 331 && vis8.getBottom() == grid.getBottom()
+                   && vis8.getHeight() == 19 && vis8.getWidth() == placed8.getWidth(),
+                   "pg PIN6: a tile partly scrolled out below is stored as its visible part: 19 of its "
                    "110 px, at full width",
                    "placed " + placed8.toString() + ", visible " + vis8.toString());
             const auto vis0 = playbackTileVisibleRect (grid, 0, 40);
