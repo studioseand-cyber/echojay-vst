@@ -1,11 +1,10 @@
-// loudness_loop_guard (18 Sep 2026 ruling G + the two checks) on the REAL objects: EchoJayProcessor -> ChainHost ->
-// EchoJay Limiter, the real chain-output tally (LUFS + 4x true peak) and the real LoudnessLoop.
-//   A. a -18 LUFS noise programme (calibrated at the chain input) with a 2 s silence gap, target -9, open-loop +6 (3 dB
-//      short): RED (-DEJ_GUARD_TODAY, no loop) = the open-loop miss; GREEN = within +-1 dB after two passes, gap not counted.
-//   B. CHECK 1: a PEAKY programme (drum-hit bursts on a -18 LUFS bed, crest >= 12 dB) so the limiter works 3-6 dB in
-//      pass 1: pass 2 within +-1 dB, output true peak <= -0.1 dBTP, and the bubble's LUFS and dBTP agree with an
-//      INDEPENDENT meter in this file (its own K-filter, gating and 4x oversampler) on the same output buffers.
-//   C. CHECK 2: input_db already +12 from the server, -24 programme: the ceiling message, input_db == +12.
+// loudness_loop_guard v2 (18e, 19 Sep 2026) on the REAL objects: EchoJayProcessor -> ChainHost -> [EchoJay Level, <limiter>],
+// the real chain tallies (LUFS, max short-term, 4x true peak) and the real LoudnessLoop.
+//   The loop drives the LEVEL slot's gain_db, never a limiter param; measures the loudest 3 s across a 10 s counted
+//   window; asks before applying (nothing moves until "go"); refuses a quiet window; keeps tracking after applying and
+//   proposes a back-off (never applies) when a later section runs > 1 dB over; the verbs are deterministic; the GR text
+//   reads "working X dB average, up to Y dB on the hits"; arm-after-exact-apply stays GREEN.
+// RED on 18c/18d (EJ_LIB/EJ_SRC_ROOT = the pre-round lib + headers): no EJ_LOUDNESSLOOP_V2, every v2 leg reports FAIL.
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
@@ -14,8 +13,11 @@
 #include <cstdio>
 #include <cmath>
 #include <deque>
-struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }     static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }   // 19 Sep 2026 (18d): the EXACT built-in apply path a live build takes
-};
+#ifdef EJ_LOUDNESSLOOP_V2
+#include "EedLevelProcessor.h"
+#endif
+struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }
+    static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); } };
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 juce::String f1 (float v) { return juce::String (v, 2); }
@@ -28,13 +30,10 @@ struct IndependentMeter
     double b0b = 1.0, b1b = -2.0, b2b = 1.0, a1b = -1.99004745483398, a2b = 0.99007225036621;
     struct BQ { double z1 = 0, z2 = 0; double run (double x, double b0, double b1, double b2, double a1, double a2) { const double y = b0 * x + z1; z1 = b1 * x - a1 * y + z2; z2 = b2 * x - a2 * y; return y; } };
     BQ l1, l2, r1, r2;
-    std::vector<double> hop;   // 100 ms hop powers (L+R), K-weighted
-    double acc = 0; int accN = 0; const int hopN = 4800;
-    std::deque<double> ring;   // last 4 hops
-    std::vector<double> blocks;   // 400 ms block powers
+    std::vector<double> hop; double acc = 0; int accN = 0; const int hopN = 4800; std::deque<double> ring; std::vector<double> blocks;
     float tpMax = 0; std::vector<float> hl, hr; int hpos = 0; float coef[4][24];
     IndependentMeter() { hl.assign (24, 0.0f); hr.assign (24, 0.0f);
-        for (int ph = 0; ph < 4; ++ph) { double sum = 0; for (int k = 0; k < 24; ++k) { const double x = (k - 11.5) - ph / 4.0 + 0.5; const double sinc = x == 0 ? 1 : std::sin (M_PI * x) / (M_PI * x); const double w = 0.42 - 0.5 * std::cos (2 * M_PI * (k + 0.5) / 24) + 0.08 * std::cos (4 * M_PI * (k + 0.5) / 24); coef[ph][k] = (float) (sinc * w); sum += sinc * w; } for (int k = 0; k < 24; ++k) coef[ph][k] = (float) (coef[ph][k] / sum); } }
+        for (int ph = 0; ph < 4; ++ph) { double sum = 0; for (int k = 0; k < 24; ++k) { const double x = (k - 11.5) - ph / 4.0 + 0.5; const double sinc = x == 0 ? 1 : std::sin (M_PI * x) / (M_PI * x); const double w = 0.42 - 0.5 * std::cos (2 * M_PI * (k + 0.5) / 24) + 0.08 * std::cos (4 * M_PI * (k + 0.5) / 24); coef[ph][k] = (float) (sinc * w); sum += coef[ph][k]; } for (int k = 0; k < 24; ++k) coef[ph][k] /= (float) sum; } }
     void reset() { hop.clear(); acc = 0; accN = 0; ring.clear(); blocks.clear(); tpMax = 0; l1 = l2 = r1 = r2 = BQ(); }
     void push (const float* L, const float* R, int n)
     {
@@ -61,13 +60,14 @@ struct IndependentMeter
 };
 
 struct Programme { juce::Random rng { 4242 }; float amp = 0.1f; bool peaky = false; int blockCount = 0; };
-void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, LoudnessLoop* loop, IndependentMeter* ind)
+void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, LoudnessLoop* loop, IndependentMeter* ind, float gainDb = 0.0f)
 {
     juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi;
+    const float g = std::pow (10.0f, gainDb / 20.0f);
     for (int b = 0; b < blocks; ++b)
     {
         const bool burst = prog.peaky && (prog.blockCount % 12) == 0;   // a drum hit every ~128 ms: 3 ms of noise at +14 dB
-        for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = silent ? 0.0f : (prog.rng.nextFloat() * 2.0f - 1.0f) * prog.amp * ((burst && i < 144) ? 5.0f : 1.0f); }
+        for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = silent ? 0.0f : (prog.rng.nextFloat() * 2.0f - 1.0f) * prog.amp * g * ((burst && i < 144) ? 5.0f : 1.0f); }
         ++prog.blockCount;
         p.processBlock (buf, midi);
         if (ind != nullptr) ind->push (buf.getReadPointer (0), buf.getReadPointer (1), 512);
@@ -83,160 +83,185 @@ float calibrate (EchoJayProcessor& p, Programme& prog, float wantLufs)
     return p.getChainHost().getChainInLevels().levelDb;
 }
 float numberAfter (const juce::String& text, const juce::String& key)
-{   // "Hitting -8.9 LUFS" -> -8.9 ; "Peaks -0.3 dBTP" -> -0.3
+{
     const int i = text.indexOf (key); if (i < 0) return std::numeric_limits<float>::quiet_NaN();
-    return text.substring (i + key.length()).trim().initialSectionContainingOnly ("-0123456789.").getFloatValue();
+    return text.substring (i + key.length()).trim().initialSectionContainingOnly ("-0123456789.+").getFloatValue();
 }
+#ifdef EJ_LOUDNESSLOOP_V2
+// A stand-in for a THIRD-PARTY limiter sitting last: a hard clipper at -0.5 dBFS that is not an EchoJay device.
+struct EJTestLimiter final : juce::AudioProcessor
+{
+    EJTestLimiter() : juce::AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true).withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override { return "EJ Test Limiter"; }
+    void prepareToPlay (double, int) override {} void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override { const float c = 0.944f; for (int ch = 0; ch < b.getNumChannels(); ++ch) { auto* d = b.getWritePointer (ch); for (int i = 0; i < b.getNumSamples(); ++i) d[i] = juce::jlimit (-c, c, d[i]); } }
+    double getTailLengthSeconds() const override { return 0.0; } bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
+};
+BuiltinDevice makeTestLimiter() { BuiltinDevice d; d.name = "EJ Test Limiter"; d.category = "Dynamics"; d.descriptiveName = d.name; d.summary = "harness stand-in for a third-party limiter"; d.identifier = "echojay:test:limiter"; d.uid = 0x454A544C; d.create = [] { return std::unique_ptr<juce::AudioProcessor> (new EJTestLimiter()); }; return d; }
+const BuiltinDeviceRegistrar testLimReg { makeTestLimiter() };
+
+struct Rig
+{
+    EchoJayProcessor proc; ChainHost& h; LoudnessLoop& loop; juce::StringArray bubbles, logs; Programme prog;
+    int levelSlot = -1, limSlot = -1;
+    Rig (bool thirdPartyLast) : h (proc.getChainHost()), loop (proc.loudnessLoop())
+    {
+        proc.prepareToPlay (48000.0, 512);
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        const auto* lm = BuiltinDeviceRegistry::instance().findByName (thirdPartyLast ? "EJ Test Limiter" : "EchoJay Limiter");
+        check (lv != nullptr && lm != nullptr, "precondition: EchoJay Level and the limiter are registered");
+        EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lv));
+        EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lm));
+        levelSlot = 0; limSlot = 1;
+        loop.onBubble = [this] (const LoudnessLoop::Bubble& b) { if (b.text.startsWith ("Listening") || b.text.startsWith ("Checking...")) return; bubbles.add (b.text); };
+        loop.logLine = [this] (const juce::String& l) { logs.add (l); };
+        loop.isPlaying = [] { return true; };
+    }
+    void setTarget (float t, double limiterInputDb = 0.0)
+    {
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 0.0); pp->setProperty ("target_lufs", (double) t); pp->setProperty ("loudness_option", 0);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (levelSlot, juce::var (w)); }
+        if (h.getSlotInfo (limSlot).name == "EchoJay Limiter")
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", limiterInputDb); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (limSlot, juce::var (w)); }
+    }
+    float levelGain() const { return (float) dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (levelSlot))->gainDb(); }
+    double limiterInput() const { auto* l = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limSlot)); return l ? l->inputDb() : 0.0; }
+    juce::String last() const { return bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]; }
+    // feed until the loop leaves waitAudio/measuring (a proposal, a hold or a rejection), bounded
+    void runWindow (float gainDb = 0.0f, IndependentMeter* ind = nullptr) { for (int k = 0; k < 16 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, ind, gainDb); }
+    // after applying the loop TRACKS: feed while it tracks (bounded), so a louder section can raise a back-off proposal
+    void runTracking (float gainDb, int rounds = 16) { for (int k = 0; k < rounds && loop.state() == LoudnessLoop::State::tracking; ++k) feed (proc, prog, 100, false, &loop, nullptr, gainDb); }
+};
+#endif
 } // namespace
 
 int main()
 {
     std::setvbuf (stdout, nullptr, _IONBF, 0); juce::ScopedJuceInitialiser_GUI gui;
     auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ej_loudloop_" + juce::String (juce::Time::getMillisecondCounter()));
-    tmp.createDirectory(); setenv ("ECHOJAY_STATE_HOME", tmp.getFullPathName().toRawUTF8(), 1);
-    std::printf ("loudness_loop_guard: the loop on the real objects, an independent meter beside it\n");
+    std::printf ("loudness_loop_guard v2 (18e): the Level slot, max short-term, ask-before-apply, the verbs, tracking\n");
+    (void) EedLimiterProcessor::schema();   // reference the limiter so the static archive links its registrar object on every build (the v2 legs reference it only under EJ_LOUDNESSLOOP_V2)
     const auto* dev = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
     check (dev != nullptr, "precondition: EchoJay Limiter is registered");
     if (! dev) return 2;
-
-    struct Result { juce::StringArray bubbles; float outAfter = 0; double inputDbAfter = 0; LoudnessLoop::State st {}; float gapCountedDelta = 0; float indLufsPass2 = 0, indTpPass2 = 0, grMaxPass1 = -1; };
-    auto runScenario = [&] (float programmeLufs, bool peaky, float target, double openLoopDb, bool armLoop, bool withGap) -> Result
-    {
-        Result R;
-        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
-        auto& h = proc.getChainHost();
-        const auto err = EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*dev));
-        check (err.isEmpty() && h.getNumSlots() == 1 && h.getSlotInfo (0).name == "EchoJay Limiter", "the limiter is slot 0", err);
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", openLoopDb); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (0, juce::var (w)); }
-        h.setSlotSettings (0, "input gain " + juce::String (openLoopDb, 1) + " dB to the " + juce::String (target, 0) + " LUFS target, ceiling -0.1 dBTP");
-        Programme prog; prog.peaky = peaky;
-        const float cal = calibrate (proc, prog, programmeLufs);
-        check (std::abs (cal - programmeLufs) < 0.6f, juce::String (peaky ? "the PEAKY programme" : "the programme") + " is calibrated at the chain input to " + f1 (programmeLufs) + " LUFS", f1 (cal));
-        if (peaky) { const auto in = h.getChainInLevels(); check (in.crestDb >= 12.0f, "the peaky programme's crest factor is >= 12 dB at the chain input", f1 (in.crestDb) + " dB"); }
-        auto& loop = proc.loudnessLoop();
-        loop.isPlaying = [] { return true; };
-        IndependentMeter ind; bool pass2Started = false;
-        loop.onBubble = [&] (const LoudnessLoop::Bubble& b) { if (b.text.startsWith ("Listening") || b.text.startsWith ("Checking...")) return; R.bubbles.add (b.text); if (b.text.startsWith ("Measured")) { ind.reset(); pass2Started = true; } };
-        LoudnessLoop* lp = armLoop ? &loop : nullptr;
-        if (armLoop) check (loop.armFromChain(), "armed from the chain (the limiter's settings name the target)", h.getSlotInfo (0).settings);
-        // pass 1 (with an optional 2 s gap), then pass 2, the independent meter reading pass 2 only
-        feed (proc, prog, 375, false, lp, nullptr);
-        const float countedBeforeGap = h.getChainOutLevels().heardAboveSeconds;
-        if (withGap) feed (proc, prog, 188, true, lp, nullptr);
-        R.gapCountedDelta = h.getChainOutLevels().heardAboveSeconds - countedBeforeGap;
-        feed (proc, prog, 750, false, lp, nullptr);
-        for (int k = 0; k < 6 && armLoop && ! pass2Started; ++k) feed (proc, prog, 100, false, lp, nullptr);
-        feed (proc, prog, 1100, false, lp, &ind);
-        R.indLufsPass2 = ind.lufs(); R.indTpPass2 = ind.truePeakDb(); R.grMaxPass1 = loop.grMaxPass1();
-        // settle: measure the output as it now stands, loop or not
-        h.resetChainOutLevels(); feed (proc, prog, 940, false, nullptr, nullptr);
-        R.outAfter = h.getChainOutLevels().levelDb;
-        R.inputDbAfter = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (0))->inputDb();
-        R.st = loop.state();
-        return R;
-    };
-
-    std::printf ("== A. the loop: -18 programme, target -9, open loop +6 (3 dB short), 2 s gap ==\n");
-#ifdef EJ_GUARD_TODAY
-    {
-        auto R = runScenario (-18.0f, false, -9.0f, 6.0, false, true);
-        check (std::abs (R.outAfter - (-9.0f)) <= 1.0f, "output within +-1 dB of the -9 target after two passes", "TODAY (no loop): output " + f1 (R.outAfter) + " LUFS, input_db still " + juce::String (R.inputDbAfter, 1) + " - the open-loop miss");
-        check (false, "B. the peaky programme lands within +-1 dB with true peak <= -0.1 dBTP", "TODAY: no loop");
-        check (false, "C. the +12 ceiling message", "TODAY: no loop");
-    }
+#ifndef EJ_LOUDNESSLOOP_V2
+    for (const char* leg : { "A. ask before applying: nothing moves until go", "A. the loop drives the Level slot, the limiter's input_db is untouched", "A. after go the second window lands within +-1 dB and the loop tracks",
+                             "B. quiet section: the window is refused, nothing applied", "C. chorus after verse: a back-off is PROPOSED, never applied", "D. third-party limiter last: the target is reached through the Level slot",
+                             "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", "F. GR text: working X dB average, up to Y dB on the hits", "G. arm after the exact built-in apply (18d) stays GREEN",
+                             "H. peaky programme: output true peak <= -0.1 dBTP by the independent meter" })
+        check (false, leg, "no LoudnessLoop v2 on this build (18c/18d)");
 #else
+    std::printf ("== A. ask before applying: -18 programme, target -9, Level 0 dB ==\n");
     {
-        auto R = runScenario (-18.0f, false, -9.0f, 6.0, true, true);
-        check (std::abs (R.outAfter - (-9.0f)) <= 1.0f, "output within +-1 dB of the -9 target after two passes", "output " + f1 (R.outAfter) + " LUFS, input_db " + juce::String (R.inputDbAfter, 1));
-        check (R.st == LoudnessLoop::State::hold, "the loop HOLDS after pass 2 (never a third pass)", juce::String ((int) R.st));
-        check (R.gapCountedDelta < 0.3f, "the 2 s silence gap was NOT counted toward the 10 s", "counted during the gap: " + f1 (R.gapCountedDelta) + " s");
-        const auto& bb = R.bubbles;
-        check (bb.size() >= 3 && bb[0].startsWith ("Chain built. Play the loudest part"), "bubble 1: the arm text", bb.joinIntoString (" | ").substring (0, 200));
-        check (bb.size() >= 3 && bb[bb.size() - 2].startsWith ("Measured -1") && bb[bb.size() - 2].contains ("Pushing +") && bb[bb.size() - 2].contains ("- checking."), "bubble after pass 1: \"Measured -x. Pushing +y dB - checking.\"", bb[juce::jmax (0, bb.size() - 2)]);
-        check (bb.size() >= 3 && bb[bb.size() - 1].startsWith ("Hitting -") && bb[bb.size() - 1].contains ("target -9.0") && bb[bb.size() - 1].contains ("Peaks ") && bb[bb.size() - 1].contains ("limiter working "), "final bubble: \"Hitting -x LUFS, target -9. Peaks -y dBTP, limiter working a-b dB.\"", bb[bb.size() - 1]);
+        Rig r (false); r.setTarget (-9.0f, 0.0);
+        const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.6f, "programme calibrated at the chain input to -18 LUFS", f1 (cal));
+        check (r.loop.armFromChain(), "armed from the Level slot's params", r.logs.joinIntoString (" | ").substring (0, 200));
+        check (r.loop.armSource() == "level_params" && r.loop.levelSlot() == 0 && r.loop.limiterSlot() == 1, "arm source level_params, Level slot 0, limiter slot 1", r.loop.armSource());
+        r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed, "after the window the loop PROPOSES (state proposed)", juce::String ((int) r.loop.state()));
+        check (std::abs (r.levelGain()) < 0.01f, "A. ask before applying: nothing moves until go", "Level gain " + f1 (r.levelGain()) + " dB");
+        const auto prop = r.last();
+        check (prop.startsWith ("Measured -1") && prop.contains ("(loudest 3 s)") && prop.contains ("Push +") && prop.contains ("to reach -9.0? say go"), "the proposal reads \"Measured -x LUFS (loudest 3 s). Push +y dB to reach -9.0? say go\"", prop);
+        const float proposed = numberAfter (prop, "Push ");
+        check (proposed >= 5.5f && proposed <= 6.0f, "the proposed trim is the pass clamp (+6 of the ~+9 needed)", f1 (proposed));
+        check (r.loop.go(), "go applies");
+        check (std::abs (r.levelGain() - proposed) < 0.05f, "A. the loop drives the Level slot, the limiter's input_db is untouched", "Level " + f1 (r.levelGain()) + " dB, limiter input_db " + f1 ((float) r.limiterInput()));
+        check (std::abs (r.limiterInput()) < 0.01, "limiter input_db still 0.0", f1 ((float) r.limiterInput()));
+        r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed, "second window proposes the remainder", r.last());
+        r.loop.go(); r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::tracking && r.last().startsWith ("Hitting -") && r.last().contains ("on target"), "A. after go the second window lands within +-1 dB and the loop tracks", r.last() + " | Level " + f1 (r.levelGain()));
+        check (r.logs.size() >= 6 && r.logs[0].startsWith ("EJLoudness: armed") && r.logs.joinIntoString ("\n").contains ("EJLoudness: measured:") && r.logs.joinIntoString ("\n").contains ("EJLoudness: applied on go"), "item 5: EJLoudness lines for arm, measurement and apply", r.logs.joinIntoString (" | ").substring (0, 300));
     }
-    std::printf ("== B. CHECK 1: the PEAKY programme (bursts on a -18 bed), target -9, open loop +9 ==\n");
+    std::printf ("== B. quiet section: build-time input -18, the window plays at -24 ==\n");
     {
-        auto R = runScenario (-18.0f, true, -9.0f, 9.0, true, false);
-        const auto last = R.bubbles.isEmpty() ? juce::String() : R.bubbles[R.bubbles.size() - 1];
-        check (R.grMaxPass1 >= 3.0f && R.grMaxPass1 <= 6.0f, "the limiter worked 3-6 dB in pass 1 (the programme is peaky enough)", "GR max pass 1: " + f1 (R.grMaxPass1) + " dB");
-        check (std::abs (R.outAfter - (-9.0f)) <= 1.0f, "pass 2 lands within +-1 dB of -9", "output " + f1 (R.outAfter) + " LUFS, input_db " + juce::String (R.inputDbAfter, 1));
-        check (R.indTpPass2 <= -0.1f, "output TRUE PEAK <= -0.1 dBTP by the INDEPENDENT meter (same 24-tap 4x interpolator as limiter_wall_guard's)", f1 (R.indTpPass2) + " dBTP");
-        const float bubbleLufs = numberAfter (last, "Hitting"), bubbleTp = numberAfter (last, "Peaks");
-        check (std::isfinite (bubbleLufs) && std::abs (bubbleLufs - R.indLufsPass2) <= 0.5f, "the bubble's LUFS agrees with the independent meter (+-0.5)", "bubble " + f1 (bubbleLufs) + " vs independent " + f1 (R.indLufsPass2));
-        check (std::isfinite (bubbleTp) && std::abs (bubbleTp - R.indTpPass2) <= 0.1f, "the bubble's dBTP is within 0.1 dB of the independent meter (sign stated)", juce::String ("bubble ") + (bubbleTp >= 0 ? "+" : "") + f1 (bubbleTp) + " vs independent " + (R.indTpPass2 >= 0 ? "+" : "") + f1 (R.indTpPass2));
-        check (last.contains ("limiter working ") && ! last.contains ("working 0.0-0.0"), "the GR range in the bubble is non-zero", last);
+        Rig r (false); r.setTarget (-9.0f, 0.0);
+        calibrate (r.proc, r.prog, -18.0f);
+        r.loop.armFromChain();
+        check (std::abs (r.loop.buildInputLufs() + 18.0f) < 0.8f, "the build-time integrated input is captured at arm (-18)", f1 (r.loop.buildInputLufs()));
+        r.runWindow (-6.0f);   // the verse: 6 dB under
+        check (std::abs (r.levelGain()) < 0.01f && r.loop.state() != LoudnessLoop::State::proposed, "B. quiet section: the window is refused, nothing applied", "Level " + f1 (r.levelGain()) + " state " + juce::String ((int) r.loop.state()));
+        check (r.last().startsWith ("That sounded like a quiet section") && r.last().contains ("play the chorus and I'll try again"), "the quiet-section bubble", r.last());
+        check (r.logs.joinIntoString ("\n").contains ("window rejected"), "logged as window rejected");
+        r.runWindow (0.0f);   // then the chorus
+        check (r.loop.state() == LoudnessLoop::State::proposed, "the chorus window proposes", r.last());
     }
-    std::printf ("== C. CHECK 2: input_db already +12 from the server, -24 programme, target -9 ==\n");
+    std::printf ("== C. chorus after verse: applied on a -18 window, then a +3 dB section ==\n");
     {
-        auto R = runScenario (-24.0f, false, -9.0f, 12.0, true, false);
-        const auto last = R.bubbles.isEmpty() ? juce::String() : R.bubbles[R.bubbles.size() - 1];
-        check (last.startsWith ("Hitting -1") && last.contains ("target -9.0 - the limiter is at its +12 ceiling") && last.contains ("say 'push it'"), "the ceiling message: \"Hitting -x LUFS, target -9 - the limiter is at its +12 ceiling; ... say 'push it'\"", last);
-        check (std::abs (R.inputDbAfter - 12.0) < 0.01, "input_db == +12 (never above the ceiling, never silently clamped)", juce::String (R.inputDbAfter, 2));
-        check (R.st == LoudnessLoop::State::hold, "the loop holds");
+        Rig r (false); r.setTarget (-9.0f, 0.0);
+        calibrate (r.proc, r.prog, -12.0f);   // needs +3 (within one pass)
+        r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::tracking, "on target and tracking", r.last());
+        const float g0 = r.levelGain();
+        r.runTracking (+3.0f);   // a louder section while the loop tracks
+        check (r.loop.state() == LoudnessLoop::State::proposed && r.last().contains ("over the target") && r.last().contains ("Back off"), "C. chorus after verse: a back-off is PROPOSED, never applied", r.last());
+        check (std::abs (r.levelGain() - g0) < 0.01f, "the Level gain did not move on its own", f1 (r.levelGain()) + " vs " + f1 (g0));
+        r.loop.go(); check (r.levelGain() < g0 - 1.0f, "go applies the back-off", f1 (r.levelGain()));
     }
-    std::printf ("== C'. the edge with room left: input_db +10 from the server, -24 programme (needs +5, only +2 available) ==\n");
+    std::printf ("== D. a THIRD-PARTY limiter last (EJ Test Limiter, a clipper): the Level slot reaches the target ==\n");
     {
-        auto R = runScenario (-24.0f, false, -9.0f, 10.0, true, false);
-        const auto& bb = R.bubbles;
-        check (bb.size() >= 2 && bb[1].contains ("Pushing +2.0 dB to the +12 ceiling"), "pass 1 pushes only to the ceiling and says so", bb.size() >= 2 ? bb[1] : juce::String());
-        check (std::abs (R.inputDbAfter - 12.0) < 0.01 && bb[bb.size() - 1].contains ("at its +12 ceiling"), "ends at +12 with the honest miss", juce::String (R.inputDbAfter, 2) + " | " + bb[bb.size() - 1]);
+        Rig r (true); r.setTarget (-9.0f);
+        calibrate (r.proc, r.prog, -14.0f);
+        check (r.loop.armFromChain() && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (1).name == "EJ Test Limiter", "armed with a non-EchoJay limiter last", r.logs.joinIntoString (" | ").substring (0, 160));
+        r.runWindow(); r.loop.go(); r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::tracking || (r.loop.state() == LoudnessLoop::State::proposed && std::abs (numberAfter (r.last(), "Push ")) < 1.0f), "D. third-party limiter last: the target is reached through the Level slot", r.last() + " | Level " + f1 (r.levelGain()));
+        check (r.last().contains ("limiter GR unknown (EJ Test Limiter"), "the GR text says the limiter is not an EchoJay device", r.last());
     }
-#endif
-
-    // ---- 18d (19 Sep 2026): ARM AFTER THE EXACT BUILT-IN APPLY ---------------------------------------------------
-    // Sean's live build 11:32 BST: the server's settings text carried "to the -9 LUFS target", the EXACT built-in apply
-    // (ChainHost.cpp:3948) replaced it with "Applied automatically\n<summary>" BEFORE armLoudnessLoopIfTargeted ran at
-    // build finish, armFromChain read the replaced text, found no target, and the loop never armed (no bubble, no
-    // EJLoudness line). The loop must arm from the slot's STRUCTURED params (target_lufs, ceiling_db, loudness_option -
-    // the server emits them beside input_db) and fall back to the text only when the params are absent.
-    std::printf ("== 18d: arm AFTER the exact built-in apply (the live order) ==\n");
+    std::printf ("== E. the verbs ==\n");
     {
-        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
-        auto& h = proc.getChainHost();
-        const auto err = EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*dev));
-        check (err.isEmpty() && h.getNumSlots() == 1, "the limiter is slot 0", err);
-        h.setSlotSettings (0, "input gain +8.8 dB to the -9 LUFS target (Commercial), ceiling -0.1 dBTP, true peak on; EchoJay Limiter last so the level loop can set the level");
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 8.8); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
-          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("loudness_option", "commercial");
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (0, juce::var (w)); }
-        EchoJayBorrowHostTestAccess::applyExact (h, 0);
-        const auto text = h.getSlotInfo (0).settings;
-        check (text.startsWith ("Applied automatically"), "PRECONDITION: the exact apply replaced the settings text (the live overwrite, ChainHost.cpp:3948)", text.substring (0, 80));
-        check (! text.toLowerCase().contains ("lufs target"), "PRECONDITION: the replaced text no longer names the LUFS target", text.substring (0, 120));
-        auto* lim = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (0));
-        check (lim != nullptr && std::abs (lim->inputDb() - 8.8) < 0.05, "input_db +8.8 was applied; the unknown params (target_lufs, loudness_option) were skipped, not fatal", lim ? juce::String (lim->inputDb(), 2) : "no limiter");
-        auto& loop = proc.loudnessLoop();
-        loop.onBubble = [] (const LoudnessLoop::Bubble&) {};
-        const bool armed = loop.armFromChain();
-        check (armed, "ARMED after the exact apply, from the structured params (RED on 18c: the text was the only source and it is gone)", text.substring (0, 60));
-        check (armed && std::abs (loop.target() - (-9.0f)) < 0.01f, "target -9 from params.target_lufs", juce::String (loop.target(), 1));
-#ifdef EJ_LOUDNESSLOOP_ARMSOURCE
-        check (armed && loop.armSource() == "params", "the arm source is the params, not the text", loop.armSource());
-#else
-        check (false, "the arm source is the params, not the text", "no armSource() on this build (18c)");
-#endif
-        loop.undo();   // hold, no timer left running
+        Rig r (false); r.setTarget (-9.0f, 0.0);
+        calibrate (r.proc, r.prog, -12.0f);
+        r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.runWindow();
+        const float g0 = r.levelGain();
+        r.loop.nudgeTarget (+1.0f); check (std::abs (r.loop.target() + 8.0f) < 0.01f && r.last().startsWith ("Target now -8.0"), "a bit louder: target -8, one more pass", r.last());
+        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed && numberAfter (r.last(), "Push ") > 0.5f, "...which proposes about +1", r.last());
+        r.loop.go(); r.runWindow();
+        r.loop.nudgeTarget (-1.0f); check (std::abs (r.loop.target() + 9.0f) < 0.01f, "a bit softer: target back to -9");
+        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed && numberAfter (r.last(), "Push ") < -0.5f, "...which proposes about -1", r.last());
+        r.loop.leaveIt(); check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Leaving it at"), "leave it: holds, says where", r.last());
+        r.loop.recheck(); check (r.loop.state() == LoudnessLoop::State::waitAudio && r.last().startsWith ("Checking the level again"), "check the level again: a new window");
+        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed, "...which proposes");
+        const float before = r.levelGain(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs (r.levelGain() - before) > 0.4f, "...and moved the Level by the shortfall", f1 (before) + " -> " + f1 (r.levelGain()));
+        check (r.loop.undo() && std::abs (r.levelGain()) < 0.01f && r.last().startsWith ("Restored the Level slot to +0.0 dB"), "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", r.last() + " | Level " + f1 (r.levelGain()) + " (g0 " + f1 (g0) + ")");
     }
-    std::printf ("== 18d: params ABSENT -> the text is the fallback (an older server's chain) ==\n");
+    std::printf ("== F. GR text on a PEAKY programme + H. true peak by the independent meter ==\n");
     {
-        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
-        auto& h = proc.getChainHost();
+        Rig r (false); r.setTarget (-9.0f, 0.0); r.prog.peaky = true;
+        calibrate (r.proc, r.prog, -15.0f);
+        r.loop.armFromChain(); r.runWindow(); r.loop.go();
+        IndependentMeter ind; r.runWindow (0.0f, &ind);
+        const auto last = r.last();
+        check (last.contains ("limiter working ") && last.contains (" dB average, up to ") && last.contains (" dB on the hits"), "F. GR text: working X dB average, up to Y dB on the hits", last);
+        const float avg = numberAfter (last, "limiter working "), up = numberAfter (last, "up to ");
+        check (std::isfinite (avg) && std::isfinite (up) && up >= avg && up > 0.5f, "...average <= max, max > 0.5 dB", f1 (avg) + " / " + f1 (up));
+        check (ind.truePeakDb() <= -0.1f + 0.05f, "H. peaky programme: output true peak <= -0.1 dBTP by the independent meter", f1 (ind.truePeakDb()) + " dBTP");
+    }
+    std::printf ("== G. 18d: arm AFTER the exact built-in apply (the live order) - on the Level slot ==\n");
+    {
+        Rig r (false);
+        r.h.setSlotSettings (r.levelSlot, "Level 0 dB to the -9 LUFS target");   // the text first, as a build attaches it
+        r.setTarget (-9.0f, 8.8);                                                  // then the structured settings: the exact apply replaces the text
+        EchoJayBorrowHostTestAccess::applyExact (r.h, r.levelSlot); EchoJayBorrowHostTestAccess::applyExact (r.h, r.limSlot);
+        check (r.h.getSlotInfo (r.levelSlot).settings.startsWith ("Applied automatically"), "the exact apply replaced the Level slot's text", r.h.getSlotInfo (r.levelSlot).settings.substring (0, 60));
+        check (r.loop.armFromChain() && std::abs (r.loop.target() + 9.0f) < 0.01f && r.loop.armSource() == "level_params", "G. arm after the exact built-in apply (18d) stays GREEN", r.loop.armSource());
+        r.loop.leaveIt();
+    }
+    std::printf ("== I. an 18d chain (target on the limiter, no Level slot) does NOT arm; findTarget still reads the target ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512); auto& h = proc.getChainHost();
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*dev));
-        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 6.0); pp->setProperty ("ceiling_db", -0.1);
-          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (0, juce::var (w)); }
-        h.setSlotSettings (0, "input gain +6 dB to the -10 LUFS target, ceiling -0.1 dBTP");   // text intact (set after the apply)
-        auto& loop = proc.loudnessLoop(); loop.onBubble = [] (const LoudnessLoop::Bubble&) {};
-        const bool armed = loop.armFromChain();
-#ifdef EJ_LOUDNESSLOOP_ARMSOURCE
-        check (armed && std::abs (loop.target() - (-10.0f)) < 0.01f && loop.armSource() == "text", "no target_lufs in the params -> armed from the text, target -10", armed ? juce::String (loop.target(), 1) + " " + loop.armSource() : "not armed");
-#else
-        check (armed && std::abs (loop.target() - (-10.0f)) < 0.01f, "no target_lufs in the params -> armed from the text, target -10", armed ? juce::String (loop.target(), 1) : "not armed");
-#endif
-        loop.undo();   // hold, no timer left running
+        auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 8.8); pp->setProperty ("target_lufs", -9.0); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (0, juce::var (w));
+        auto& loop = proc.loudnessLoop(); juce::StringArray logs; loop.logLine = [&] (const juce::String& l) { logs.add (l); };
+        const auto t = loop.findTarget();
+        check (std::isfinite (t.lufs) && std::abs (t.lufs + 9.0f) < 0.01f && t.levelSlot < 0 && t.source == "limiter_params", "findTarget: -9 from limiter_params, no Level slot", t.source);
+        check (! loop.armFromChain() && logs.joinIntoString (" ").contains ("no EchoJay Level slot"), "not armed without a Level slot (the editor inserts one first)", logs.joinIntoString (" | "));
     }
-
+#endif
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

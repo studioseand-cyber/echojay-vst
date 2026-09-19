@@ -22372,25 +22372,59 @@ void EchoJayEditor::armLoudnessLoopIfTargeted()
         if (! b.final) { ed->chatMessages.back().loopBubbleId = ++ed->loopBubbleSeq_; ed->chatMessages.back().loopProgress = b.progress; }
         ed->resized(); ed->repaint();
     };
+    loop.logLine = [](const juce::String& line) { EchoJay_NSLog(line.toRawUTF8()); };   // 18e (item 5): every measurement, trim, branch and bubble
+    // 18e (item 1): a loudness-target chain with no "EchoJay Level" slot gets one inserted before the last slot (any limiter
+    // may sit last); the target rides onto it so the loop arms from the Level slot.
+    {
+        auto& ch = processorRef.getChainHost();
+        const auto t = loop.findTarget();
+        if (std::isfinite(t.lufs) && t.levelSlot < 0 && ch.getNumSlots() > 0)
+        {
+            const auto* dev = BuiltinDeviceRegistry::instance().findByName("EchoJay Level");
+            const int at = juce::jmax(0, ch.getNumSlots() - 1);
+            const auto err = dev != nullptr ? ch.insertBuiltinAt(BuiltinDeviceRegistry::descriptionFor(*dev), at) : juce::String("EchoJay Level is not registered");
+            if (err.isEmpty())
+            {
+                auto* pp = new juce::DynamicObject(); pp->setProperty("gain_db", 0.0); pp->setProperty("target_lufs", (double) t.lufs);
+                const juce::StringArray opts { "commercial", "pushed", "dynamic", "keep" };
+                pp->setProperty("loudness_option", juce::jmax(0, opts.indexOf(t.option)));
+                auto* w = new juce::DynamicObject(); w->setProperty("params", juce::var(pp));
+                ch.setSlotStructuredSettings(at, juce::var(w));
+                ch.setSlotSettings(at, "Level 0.0 dB - the level loop drives this slot toward the " + juce::String(t.lufs, 1) + " LUFS target");
+                EchoJay_NSLog(("EJLoudness: inserted EchoJay Level at slot " + juce::String(at) + " (target " + juce::String(t.lufs, 1) + " from " + t.source + "; the chain had none)").toRawUTF8());
+            }
+            else EchoJay_NSLog(("EJLoudness: could not insert EchoJay Level: " + err).toRawUTF8());
+        }
+    }
     if (loop.armFromChain())
-        EchoJay_NSLog(("EJLoudness: armed, target " + juce::String(loop.target(), 1) + " LUFS").toRawUTF8());
+        EchoJay_NSLog(("EJLoudness: armed, target " + juce::String(loop.target(), 1) + " LUFS, source " + loop.armSource()).toRawUTF8());
 }
 
-bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg)
+bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
 {
+    // 18e (item 3): the loop's verbs are DETERMINISTIC and client-side - never a chat. "forced" = the server's classify
+    // answered loop_verb for a message the local match did not recognise: handled here anyway, never sent.
     auto& loop = processorRef.loudnessLoop();
     if (! loop.everArmed()) return false;
-    const auto t = msg.trim().toLowerCase();
+    const auto t = msg.trim().toLowerCase().trimCharactersAtEnd(".!");
+    const bool go     = t == "go" || t == "apply" || t == "yes go" || t == "go ahead" || t == "do it" || t == "apply it" || t == "yes";
+    const bool push   = t.contains("push it") || t == "push" || t.contains("push harder");
     const bool louder = t.contains("bit louder") || t == "louder" || t.contains("little louder") || t.contains("touch louder");
     const bool softer = t.contains("bit softer") || t.contains("bit quieter") || t == "softer" || t == "quieter" || t.contains("little softer") || t.contains("little quieter");
-    const bool again  = t.contains("check the level") || t.contains("check level") || t.contains("measure again");
+    const bool again  = t.contains("check the level") || t.contains("check level") || t.contains("measure again") || t.contains("check it again");
     const bool undo   = t == "undo" || t == "undo that" || t == "undo the level";
-    if (! (louder || softer || again || undo)) return false;
+    const bool leave  = t == "leave it" || t == "leave it there" || t == "keep it" || t == "stop" || t == "that's fine" || t == "fine";
+    if (! (go || push || louder || softer || again || undo || leave || forced)) return false;
     appendLocalUserBubble(msg);
-    if (louder)      loop.nudgeTarget(+1.0f);
+    EchoJay_NSLog(("EJLoudness: verb \"" + t + "\"" + (forced ? juce::String(" (server loop_verb)") : juce::String()) + " state " + juce::String((int) loop.state())).toRawUTF8());
+    if (go)          { if (! loop.go()) appendLocalResultBubble("Nothing proposed yet - play the loudest part and I'll measure it first."); }
+    else if (push)   { if (! loop.pushIt()) appendLocalResultBubble("Nothing measured yet - play the loudest part first."); }
+    else if (louder) loop.nudgeTarget(+1.0f);
     else if (softer) loop.nudgeTarget(-1.0f);
     else if (again)  loop.recheck();
-    else if (! loop.undo()) appendLocalResultBubble("Nothing to undo - the level loop has not changed the limiter.");
+    else if (leave)  loop.leaveIt();
+    else if (undo)   { if (! loop.undo()) appendLocalResultBubble("Nothing to undo - the level loop has not changed the Level slot."); }
+    else appendLocalResultBubble("Say go to apply, push it, a bit louder or softer, check the level again, undo, or leave it.");
     return true;
 }
 
@@ -26894,11 +26928,13 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
-                        sysPrompt, channelName, genreName, userContent,
+                        sysPrompt, channelName, genreName, userContent, msg,
                         rolesSnap, contentsSnap]
                        (const EchoJayAPI::ClassifyResult& c)
     {
         if (safeThis == nullptr) return;
+        // 18e (item 9): the server says this is a loop verb after a loop bubble - handled here, never sent.
+        if (c.intent == "loop_verb") { safeThis->handleLoudnessVerb(msg, true); return; }
 
         // A held channel-mismatch advisory describes ONE turn's recall
         // block. Every classify result starts clean; a leftover here means
