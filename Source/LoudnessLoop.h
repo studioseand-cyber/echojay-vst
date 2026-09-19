@@ -1,4 +1,5 @@
 #pragma once
+#define EJ_LOUDNESSLOOP_ARMSOURCE 1   // 18d: armSource() / loudnessOption() / ceilingDb() exist on this build
 // LoudnessLoop (18 Sep 2026 ruling G, the interactive closed loop): deterministic inside V2, no server round-trip.
 //
 //  Arm      a chain whose EchoJay Limiter settings carry a LUFS target ("... to the -8 LUFS target ...") arms the loop
@@ -57,17 +58,39 @@ public:
         if (num.isEmpty() || num == "-" ) return std::numeric_limits<float>::quiet_NaN();
         return (float) num.getDoubleValue();
     }
+    // 18d (19 Sep 2026): the loop arms from the limiter slot's STRUCTURED params - target_lufs (with ceiling_db and
+    // loudness_option beside it, emitted by the server next to input_db) - NEVER from the settings text first: the
+    // EXACT built-in apply replaces that text with "Applied automatically\n<summary>" before the arm runs at build
+    // finish (Sean's 19 Sep 11:32 build: target in the text, text overwritten, no arm). The text is the fallback only
+    // when the params carry no target (a chain from an older server).
     bool armFromChain (int passes = 2)
     {
         for (int i = host_.getNumSlots() - 1; i >= 0; --i)
         {
             const auto info = host_.getSlotInfo (i);
             if (info.name != "EchoJay Limiter") continue;
-            const float t = targetFromSettingsText (info.settings);
-            if (std::isfinite (t)) { arm (t, i, passes); return true; }
+            float t = std::numeric_limits<float>::quiet_NaN();
+            juce::String source;
+            {
+                const auto st = host_.getSlotStructured (i);
+                const auto params = st.getDynamicObject() != nullptr ? st.getProperty ("params", juce::var()) : juce::var();
+                if (auto* po = params.getDynamicObject())
+                {
+                    const auto tv = po->getProperty ("target_lufs");
+                    if (tv.isDouble() || tv.isInt() || tv.isInt64()) { t = (float) (double) tv; source = "params"; }
+                    const auto cv = po->getProperty ("ceiling_db");
+                    if (cv.isDouble() || cv.isInt()) ceilingDb_ = (float) (double) cv;
+                    loudnessOption_ = po->getProperty ("loudness_option").toString();
+                }
+            }
+            if (! std::isfinite (t)) { t = targetFromSettingsText (info.settings); if (std::isfinite (t)) source = "text"; }
+            if (std::isfinite (t)) { armSource_ = source; arm (t, i, passes); return true; }
         }
         return false;
     }
+    juce::String armSource() const noexcept { return armSource_; }          // "params" | "text" | "" (never armed)
+    juce::String loudnessOption() const noexcept { return loudnessOption_; }
+    float ceilingDb() const noexcept { return ceilingDb_; }
     void arm (float targetLufs, int limiterSlot, int passes = 2)
     {
         auto* lim = limiter (limiterSlot);
@@ -210,6 +233,8 @@ private:
     State state_ = State::idle;
     int   slot_ = -1, passesLeft_ = 0, pass_ = 0;
     float target_ = -9.0f;
+    juce::String armSource_, loudnessOption_;                       // 18d
+    float ceilingDb_ = -0.1f;                                       // 18d
     float measured_[2] { -999.0f, -999.0f };
     double preLoopInputDb_ = 0.0; bool haveUndo_ = false;
     float lastCounted_ = 0.0f; bool waitingSaid_ = false; juce::int64 passStartMs_ = 0;

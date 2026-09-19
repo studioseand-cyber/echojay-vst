@@ -14,7 +14,8 @@
 #include <cstdio>
 #include <cmath>
 #include <deque>
-struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); } };
+struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }     static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }   // 19 Sep 2026 (18d): the EXACT built-in apply path a live build takes
+};
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 juce::String f1 (float v) { return juce::String (v, 2); }
@@ -183,6 +184,59 @@ int main()
         check (std::abs (R.inputDbAfter - 12.0) < 0.01 && bb[bb.size() - 1].contains ("at its +12 ceiling"), "ends at +12 with the honest miss", juce::String (R.inputDbAfter, 2) + " | " + bb[bb.size() - 1]);
     }
 #endif
+
+    // ---- 18d (19 Sep 2026): ARM AFTER THE EXACT BUILT-IN APPLY ---------------------------------------------------
+    // Sean's live build 11:32 BST: the server's settings text carried "to the -9 LUFS target", the EXACT built-in apply
+    // (ChainHost.cpp:3948) replaced it with "Applied automatically\n<summary>" BEFORE armLoudnessLoopIfTargeted ran at
+    // build finish, armFromChain read the replaced text, found no target, and the loop never armed (no bubble, no
+    // EJLoudness line). The loop must arm from the slot's STRUCTURED params (target_lufs, ceiling_db, loudness_option -
+    // the server emits them beside input_db) and fall back to the text only when the params are absent.
+    std::printf ("== 18d: arm AFTER the exact built-in apply (the live order) ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        auto& h = proc.getChainHost();
+        const auto err = EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*dev));
+        check (err.isEmpty() && h.getNumSlots() == 1, "the limiter is slot 0", err);
+        h.setSlotSettings (0, "input gain +8.8 dB to the -9 LUFS target (Commercial), ceiling -0.1 dBTP, true peak on; EchoJay Limiter last so the level loop can set the level");
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 8.8); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
+          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("loudness_option", "commercial");
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (0, juce::var (w)); }
+        EchoJayBorrowHostTestAccess::applyExact (h, 0);
+        const auto text = h.getSlotInfo (0).settings;
+        check (text.startsWith ("Applied automatically"), "PRECONDITION: the exact apply replaced the settings text (the live overwrite, ChainHost.cpp:3948)", text.substring (0, 80));
+        check (! text.toLowerCase().contains ("lufs target"), "PRECONDITION: the replaced text no longer names the LUFS target", text.substring (0, 120));
+        auto* lim = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (0));
+        check (lim != nullptr && std::abs (lim->inputDb() - 8.8) < 0.05, "input_db +8.8 was applied; the unknown params (target_lufs, loudness_option) were skipped, not fatal", lim ? juce::String (lim->inputDb(), 2) : "no limiter");
+        auto& loop = proc.loudnessLoop();
+        loop.onBubble = [] (const LoudnessLoop::Bubble&) {};
+        const bool armed = loop.armFromChain();
+        check (armed, "ARMED after the exact apply, from the structured params (RED on 18c: the text was the only source and it is gone)", text.substring (0, 60));
+        check (armed && std::abs (loop.target() - (-9.0f)) < 0.01f, "target -9 from params.target_lufs", juce::String (loop.target(), 1));
+#ifdef EJ_LOUDNESSLOOP_ARMSOURCE
+        check (armed && loop.armSource() == "params", "the arm source is the params, not the text", loop.armSource());
+#else
+        check (false, "the arm source is the params, not the text", "no armSource() on this build (18c)");
+#endif
+        loop.undo();   // hold, no timer left running
+    }
+    std::printf ("== 18d: params ABSENT -> the text is the fallback (an older server's chain) ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        auto& h = proc.getChainHost();
+        EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*dev));
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 6.0); pp->setProperty ("ceiling_db", -0.1);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (0, juce::var (w)); }
+        h.setSlotSettings (0, "input gain +6 dB to the -10 LUFS target, ceiling -0.1 dBTP");   // text intact (set after the apply)
+        auto& loop = proc.loudnessLoop(); loop.onBubble = [] (const LoudnessLoop::Bubble&) {};
+        const bool armed = loop.armFromChain();
+#ifdef EJ_LOUDNESSLOOP_ARMSOURCE
+        check (armed && std::abs (loop.target() - (-10.0f)) < 0.01f && loop.armSource() == "text", "no target_lufs in the params -> armed from the text, target -10", armed ? juce::String (loop.target(), 1) + " " + loop.armSource() : "not armed");
+#else
+        check (armed && std::abs (loop.target() - (-10.0f)) < 0.01f, "no target_lufs in the params -> armed from the text, target -10", armed ? juce::String (loop.target(), 1) : "not armed");
+#endif
+        loop.undo();   // hold, no timer left running
+    }
+
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
