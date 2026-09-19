@@ -8147,37 +8147,49 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rf PIN10: and at the default window both are carried");
         }
 
-        // rf PIN8 -- THE SUB-TAB ROW. Two tabs, laid out once, hit-tested from
-        // the same rects. Compare and Playback only: Match has no screen yet
+        // rf PIN8 -- THE SUB-TAB ROW. Every tab laid out once, hit-tested from
+        // the same rects, and ALL OF IT DRIVEN BY kRefSubTabCount: every
+        // adjacent pair and every tab, so a third tab is tested the day it
+        // exists rather than sitting untested behind checks written for
+        // tab[0] and tab[1]. Compare and Playback only: Match has no screen yet
         // and a dead sub-tab is the same defect as a dead arrow.
         {
             for (int w : { 300, 565, 585, 900, 1800 })
             {
                 const juce::Rectangle<int> row (10, 70, w, kRefSubTabH);
                 const auto r = refSubTabLayout (row);
-                check (! r.tab[0].intersects (r.tab[1]),
-                       "rf PIN8: the two sub-tabs do not overlap",
-                       "w=" + juce::String (w));
-                check (r.tab[0].getX() < r.tab[1].getX(),
-                       "rf PIN8: Compare is left of Playback");
-                // Left aligned and FIXED width, not the top strip's
-                // divide-the-window rule: two tabs stretched across 1800px
-                // would read as a header rather than as a choice.
-                check (r.tab[0].getWidth() == kRefSubTabW
-                       && r.tab[1].getWidth() == kRefSubTabW,
-                       "rf PIN8: fixed width, whatever the window does",
-                       "w=" + juce::String (w));
                 check (r.tab[0].getX() == row.getX(),
-                       "rf PIN8: and left aligned to the row");
+                       "rf PIN8: and left aligned to the row",
+                       "w=" + juce::String (w));
+                // Left aligned and FIXED width, not the top strip's
+                // divide-the-window rule: tabs stretched across 1800px would
+                // read as a header rather than as a choice.
+                for (int i = 0; i < kRefSubTabCount; ++i)
+                    check (r.tab[i].getWidth() == kRefSubTabW,
+                           "rf PIN8: fixed width, whatever the window does",
+                           "w=" + juce::String (w) + " tab " + juce::String (i));
+                for (int i = 0; i + 1 < kRefSubTabCount; ++i)
+                {
+                    check (! r.tab[i].intersects (r.tab[i + 1]),
+                           "rf PIN8: adjacent sub-tabs do not overlap",
+                           "w=" + juce::String (w) + " tabs " + juce::String (i)
+                           + " and " + juce::String (i + 1));
+                    check (r.tab[i].getX() < r.tab[i + 1].getX(),
+                           "rf PIN8: each tab is left of the next, in enum order: "
+                           + juce::String (refSubTabName (i)) + " before "
+                           + juce::String (refSubTabName (i + 1)),
+                           "w=" + juce::String (w));
+                }
             }
             // The hit test reads the same rects, so it cannot disagree with
-            // the paint about where a tab is.
+            // the paint about where a tab is. Every tab, from the count.
             const auto r = refSubTabLayout ({ 10, 70, 900, kRefSubTabH });
-            check (refSubTabAt (r, r.tab[0].getCentre()) == 0,
-                   "rf PIN8: a click in Compare's rect selects Compare");
-            check (refSubTabAt (r, r.tab[1].getCentre()) == 1,
-                   "rf PIN8: a click in Playback's rect selects Playback");
-            check (refSubTabAt (r, { r.tab[1].getRight() + 40, r.tab[1].getCentreY() }) == -1,
+            for (int i = 0; i < kRefSubTabCount; ++i)
+                check (refSubTabAt (r, r.tab[i].getCentre()) == i,
+                       "rf PIN8: a click in " + juce::String (refSubTabName (i))
+                       + "'s rect selects " + juce::String (refSubTabName (i)));
+            const auto& lastTab = r.tab[kRefSubTabCount - 1];
+            check (refSubTabAt (r, { lastTab.getRight() + 40, lastTab.getCentreY() }) == -1,
                    "rf PIN8: and a click past the tabs selects nothing, "
                    "rather than the nearest");
             check (juce::String (refSubTabName (0)) == "COMPARE"
@@ -8185,6 +8197,94 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rf PIN8: the two names, and there is no third");
             check (kRefSubTabCount == 2,
                    "rf PIN8: MATCH IS NOT HERE until it has a screen");
+        }
+
+        // rs -- THE REFERENCE SUB-TAB ENUM AND ITS GUARDS (EJReferenceBar.h).
+        //
+        // PREFIX rs, checked against every prefix in this suite and in every
+        // other harness under tools/ before use: none uses it. rf PIN8 above
+        // pins the ROW; these pin the enum the row is indexed by.
+        {
+            // rs PIN1 -- THE COUNT IS THE ENUM'S. kRefSubTabCount is taken from
+            // RefSubTab::Count, and every position below it has a real name,
+            // each different, none of them the out-of-range marker.
+            check (kRefSubTabCount == (int) RefSubTab::Count,
+                   "rs PIN1: the count is RefSubTab::Count, not a second literal");
+            for (int i = 0; i < kRefSubTabCount; ++i)
+            {
+                const juce::String n (refSubTabName (i));
+                check (n.isNotEmpty() && n != juce::String (kRefSubTabInvalidName),
+                       "rs PIN1: position " + juce::String (i) + " has a real name",
+                       n);
+                for (int j = 0; j < i; ++j)
+                    check (n != juce::String (refSubTabName (j)),
+                           "rs PIN1: and it is not another tab's name",
+                           juce::String (i) + " and " + juce::String (j) + " are both " + n);
+            }
+
+            // rs PIN2 -- OUT OF RANGE IS VISIBLY WRONG. The ternary this
+            // replaced answered "COMPARE" for every position but Playback's,
+            // so a bad index painted as a plausible tab.
+            for (int bad : { -1, kRefSubTabCount, kRefSubTabCount + 7 })
+            {
+                const juce::String n (refSubTabName (bad));
+                check (n == juce::String (kRefSubTabInvalidName),
+                       "rs PIN2: position " + juce::String (bad) + " is named as no tab",
+                       n);
+                check (n != "COMPARE",
+                       "rs PIN2: and it is not quietly Compare",
+                       "position " + juce::String (bad));
+            }
+
+            // rs PIN3 -- NO INDEX AT OR PAST Count BECOMES A TAB. Two things,
+            // and only two:
+            //
+            // THE PREDICATE, AT ITS EDGES. refSubTabIndexValid is a real test
+            // with real edges: -1 and Count are refused, every tab below Count
+            // is accepted.
+            //
+            // THE CAST, GUARDED BY IT. mouseDown is the one place an index
+            // becomes a RefSubTab, so it is where the guard lives. It is read
+            // from the source because the cast is the editor's and this suite
+            // cannot drive it. The condition checked is the NEAREST "if (" above
+            // the cast, not merely one somewhere in the neighbourhood, and a
+            // NEGATIVE CONTROL runs the same matcher over a copy of the source
+            // with the old st >= 0 guard put back, which it must report as
+            // unguarded. Without that, a matcher that could never fail would
+            // read as green.
+            //
+            // NOT HERE: refSubTabAt's own range. Its loop bound already keeps
+            // every index it returns below Count, so there is nothing for a pin
+            // to catch there.
+            check (! refSubTabIndexValid (-1) && ! refSubTabIndexValid (kRefSubTabCount),
+                   "rs PIN3: -1 and Count are not tabs");
+            for (int i = 0; i < kRefSubTabCount; ++i)
+                check (refSubTabIndexValid (i),
+                       "rs PIN3: position " + juce::String (i) + " is a tab");
+            {
+                std::ifstream fe ("Source/PluginEditor.cpp");
+                std::stringstream ss; ss << fe.rdbuf();
+                const juce::String ed (ss.str());
+                const juce::String cast  ("setRefSubTab ((echojay::RefSubTab) st);");
+                const juce::String guard ("if (echojay::refSubTabIndexValid (st))");
+                auto castIsGuarded = [&cast, &guard] (const juce::String& src)
+                {
+                    const int at = src.indexOf (cast);
+                    if (at < 0) return false;
+                    const juce::String head = src.substring (0, at);
+                    const int ifAt = head.lastIndexOf ("if (");
+                    return ifAt >= 0 && head.substring (ifAt).startsWith (guard);
+                };
+                const int at = ed.indexOf (cast);
+                check (at > 0 && ed.indexOf (at + 1, cast) < 0,
+                       "rs PIN3: mouseDown casts a hit index to RefSubTab in exactly one place");
+                check (castIsGuarded (ed),
+                       "rs PIN3: and the condition nearest that cast is refSubTabIndexValid (st)");
+                const juce::String unguarded = ed.replace (guard, "if (st >= 0)");
+                check (unguarded != ed && ! castIsGuarded (unguarded),
+                       "rs PIN3: control: the same source with the old st >= 0 guard put back "
+                       "reads as unguarded");
+            }
         }
 
         // rf PIN11 -- RESOLVING A DROPPED FILE BY PATH.

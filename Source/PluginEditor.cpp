@@ -35095,7 +35095,18 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         if (! e.mods.isPopupMenu())
         {
             const int st = echojay::refSubTabAt (refSubTabRects_, pos);
-            if (st >= 0)
+            // THE CAST IS GUARDED BY THE ENUM'S OWN RANGE, not by st >= 0: a
+            // position at or past RefSubTab::Count names no tab and must not
+            // become one.
+            //
+            // THE FALSE ARM CANNOT FIRE, AT ANY COUNT, while st comes from
+            // refSubTabAt: that function's loop bound keeps every index it
+            // returns below Count, and the loop bound is the guarantee. It
+            // stays because this call site cannot see that loop. The bound
+            // lives in another function, and nothing but this comment ties
+            // the two together. The guard goes live the day the index comes
+            // from anywhere other than refSubTabAt.
+            if (echojay::refSubTabIndexValid (st))
             {
                 setRefSubTab ((echojay::RefSubTab) st);
                 return;

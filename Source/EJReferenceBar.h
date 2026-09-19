@@ -234,17 +234,47 @@ inline int refBarStep (int current, int count, int delta)
 // The row sits BELOW the reference bar, because the selected reference is
 // shared by all three surfaces: it belongs to the section, not to one sub-tab.
 // ---------------------------------------------------------------------------
-enum class RefSubTab { Compare = 0, Playback = 1 };
+//
+// ENUM VALUE == POSITION IN THE ROW. The paint highlight compares the loop
+// index with (int) refSubTab_, and mouseDown casts the hit index back to the
+// enum, so the order here IS the order on screen.
+//
+// Count IS A SENTINEL, NEVER A TAB. It is last so that it equals the number of
+// real values, and kRefSubTabCount is taken from it rather than written as a
+// second literal that could disagree with the enum.
+enum class RefSubTab { Compare = 0, Playback = 1, Count };
 
-inline constexpr int kRefSubTabCount = 2;
+inline constexpr int kRefSubTabCount = (int) RefSubTab::Count;
 inline constexpr int kRefSubTabH     = 24;
 inline constexpr int kRefSubTabBandH = kRefSubTabH + 4;
 inline constexpr int kRefSubTabW     = 96;
 inline constexpr int kRefSubTabGap   = 4;
 
+/** True for a position that names a real sub-tab: 0 up to, not including,
+    Count. The one test every index-to-enum conversion goes through. */
+inline constexpr bool refSubTabIndexValid (int i) noexcept
+{
+    return i >= 0 && i < kRefSubTabCount;
+}
+
+/** The painted names, BY POSITION. The static_assert ties the table to the
+    enum, so a value added before Count without a name here does not compile,
+    rather than painting a blank or a neighbour's name. */
+inline constexpr const char* kRefSubTabNames[] = { "COMPARE", "PLAYBACK" };
+static_assert (sizeof (kRefSubTabNames) / sizeof (kRefSubTabNames[0]) == (size_t) kRefSubTabCount,
+               "every RefSubTab before Count needs exactly one name in kRefSubTabNames");
+
+/** What an out-of-range position is called. Deliberately wrong-looking: the
+    ternary this replaces answered "COMPARE" for every position that was not
+    Playback, so a bad index painted as a plausible tab. This cannot be taken
+    for one. */
+inline constexpr const char* kRefSubTabInvalidName = "NO SUCH TAB";
+
 inline const char* refSubTabName (int i)
 {
-    return i == (int) RefSubTab::Playback ? "PLAYBACK" : "COMPARE";
+    if (! refSubTabIndexValid (i))
+        return kRefSubTabInvalidName;
+    return kRefSubTabNames[i];
 }
 
 struct RefSubTabRects
@@ -272,7 +302,14 @@ inline RefSubTabRects refSubTabLayout (juce::Rectangle<int> row)
 }
 
 /** Which sub-tab contains p, or -1. Pure, so the hit test and the painting
-    cannot disagree about where a tab is. */
+    cannot disagree about where a tab is.
+
+    THE LOOP BOUND IS THE GUARANTEE. i runs from 0 to kRefSubTabCount - 1, so
+    every index returned here is a real tab at any count, and there is nothing
+    for a check inside the loop to catch. This returns an int, not an enum.
+    The place an index BECOMES a RefSubTab is the cast in mouseDown
+    (PluginEditor.cpp), and that is where the real guard lives:
+    refSubTabIndexValid, pinned by rs PIN3. */
 inline int refSubTabAt (const RefSubTabRects& r, juce::Point<int> p)
 {
     for (int i = 0; i < kRefSubTabCount; ++i)
