@@ -163,6 +163,7 @@ void EedLimiterProcessor::prepareToPlay (double sampleRate, int)
     inputGainSmooth_.reset (sampleRate_, 0.05);   // 50 ms ease on the loudness push
     inputGainSmooth_.setCurrentAndTargetValue (inputGain_);
     tpL_.prepare(); tpR_.prepare(); wallGain_ = 1.0f; winHead_ = winTail_ = winN_ = 0; winSample_ = 0;
+    inMeter_.prepare (sampleRate_); outMeter_.prepare (sampleRate_);   // 18e (item 4)
     ceilLin_ = (float) std::pow (10.0, core_.getThresholdDb() / 20.0);
 
     // Sized ONCE, for the schema's maximum. Every later lookahead change is a
@@ -194,6 +195,16 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // keeps the delay.
     const bool byp = isBypassed();
 
+    {   // 18e (item 4): the INPUT meter reads the signal INTO the wall (after input_db, before the delay): a scaled copy at the block's current gain
+        const float igNow = byp ? 1.0f : inputGainSmooth_.getCurrentValue();
+        float tl[512], tr[512];
+        for (int off = 0; off < n; off += 512)
+        {
+            const int m = juce::jmin (512, n - off);
+            for (int i = 0; i < m; ++i) { tl[i] = l[off + i] * igNow; tr[i] = r != nullptr ? r[off + i] * igNow : tl[i]; }
+            inMeter_.push (tl, tr, m);
+        }
+    }
     float pk = 0.0f;
     for (int i = 0; i < n; ++i)
     {
@@ -236,6 +247,7 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     }
     wallGrDb_.store (wallGain_ < 1.0f ? 20.0f * std::log10 (wallGain_) : 0.0f, std::memory_order_relaxed);
     if (pk > outPeakMax_.load (std::memory_order_relaxed)) outPeakMax_.store (pk, std::memory_order_relaxed);
+    outMeter_.push (l, r, n);   // 18e (item 4): the OUTPUT meter
 }
 
 juce::AudioProcessorEditor* EedLimiterProcessor::createEditor()

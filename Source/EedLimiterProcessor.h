@@ -53,6 +53,7 @@
 #pragma once
 
 #include "EedDeviceProcessor.h"
+#include "EchoJayLevelTally.h"
 #include "EJTruePeakInterp.h"
 #include "EedDynamicsCore.h"
 
@@ -75,6 +76,9 @@ public:
     double getParamValue (const juce::String& id) const override;
     // 18 Sep 2026 (loudness loop): the limiter's own meters for the final bubble.
     double inputDb() const noexcept { return inputDb_; }
+    // 18e (item 4): input (after input_db, before the wall) and output meters - short-term LUFS + true peak for the UI
+    echojay::LevelTally::Snapshot inputLevels()  const { return inMeter_.snapshot(); }
+    echojay::LevelTally::Snapshot outputLevels() const { return outMeter_.snapshot(); }
     float  outputPeakDbMax() const noexcept { const float p = outPeakMax_.load (std::memory_order_relaxed); return p > 0.0f ? 20.0f * std::log10 (p) : -120.0f; }
     void   resetOutputPeak() noexcept { outPeakMax_.store (0.0f, std::memory_order_relaxed); }
 
@@ -136,6 +140,7 @@ private:
     double inputDb_   = 0.0;    // dialled input gain, dB; linear factor recomputed on set
     float  inputGain_ = 1.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Multiplicative> inputGainSmooth_ { 1.0f };   // 50 ms ease (loudness loop)
+    echojay::LevelTally inMeter_ { echojay::LevelTally::Weighting::K }, outMeter_ { echojay::LevelTally::Weighting::K };   // 18e (item 4)
     std::atomic<float> outPeakMax_ { 0.0f };   // max |output sample| since resetOutputPeak (\"Peaks\" in the loop bubble)
     // THE WALL (18 Sep 2026): a brick-wall gain computed from the running MAX of the sidechain over the lookahead
     // window (instant attack, one-pole release), on the 4x-oversampled sidechain when true_peak is on, plus a

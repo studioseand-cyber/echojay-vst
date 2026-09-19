@@ -42,7 +42,7 @@ protected:
     int  topContentHeight() const override;
     void layoutTopContent (juce::Rectangle<int> area) override;
 
-    int  extraContentHeight() const override { return 14; }
+    int  extraContentHeight() const override { return 30; }   // 18e: two rows (latency, in/out readouts)
     void layoutExtraContent (juce::Rectangle<int> area) override;
 
     bool knobVisible (int index) const override;
@@ -52,6 +52,7 @@ private:
     EedLimiterProcessor&            limiter_;
     echojay::viz::TransferCurveView curve_;
     juce::Label                     latencyLabel_;
+    juce::Label                     inOutLabel_;      // 18e (item 4): input / output LUFS-S + true peak beside GR
 
     juce::ComboBox   modeBox_;
     juce::TextButton truePeakBtn_;

@@ -90,6 +90,10 @@ EedLimiterEditor::EedLimiterEditor (EedLimiterProcessor& p)
     latencyLabel_.setFont (uiFont (9.0f));
     latencyLabel_.setColour (juce::Label::textColourId, C::text3);
     addAndMakeVisible (latencyLabel_);
+    inOutLabel_.setJustificationType (juce::Justification::centred);   // 18e (item 4)
+    inOutLabel_.setFont (uiFont (9.0f));
+    inOutLabel_.setColour (juce::Label::textColourId, C::text2);
+    addAndMakeVisible (inOutLabel_);
 
     refreshExtras();
 }
@@ -132,6 +136,7 @@ void EedLimiterEditor::layoutTopContent (juce::Rectangle<int> area)
 
 void EedLimiterEditor::layoutExtraContent (juce::Rectangle<int> area)
 {
+    inOutLabel_.setBounds (area.removeFromTop (14));   // 18e (item 4)
     latencyLabel_.setBounds (area);
 }
 
@@ -183,4 +188,11 @@ void EedLimiterEditor::refreshExtras()
 
     if (latencyLabel_.getText() != txt)
         latencyLabel_.setText (txt, juce::dontSendNotification);
+    {   // 18e (item 4): IN / OUT short-term LUFS + true peak, beside the GR meter
+        auto fmt = [] (const echojay::LevelTally::Snapshot& s) {
+            return (std::isfinite (s.shortTermDb) ? juce::String (s.shortTermDb, 1) : juce::String ("--")) + " LUFS-S "
+                 + (s.truePeakDb > -150.0f ? juce::String (s.truePeakDb, 1) : juce::String ("--")) + " dBTP"; };
+        const juce::String io = "in " + fmt (limiter_.inputLevels()) + "   out " + fmt (limiter_.outputLevels());
+        if (inOutLabel_.getText() != io) inOutLabel_.setText (io, juce::dontSendNotification);
+    }
 }
