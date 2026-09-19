@@ -54,6 +54,7 @@
 #include "EJPlaybackVoicing.h"  // the voicing table and its chain: the shipped coefficients
 #include "EJPlaybackTiles.h"    // the Playback grid's tile table: what pb PIN9 walks
 #include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
+#include "EJMatchProposal.h"   // Match Reference phase 2a: the shipped proposal arithmetic
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -10130,6 +10131,240 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        + juce::String (kPlaybackPageChromeH) + ", grid "
                        + juce::String (L.grid.getHeight()) + " vs " + juce::String (gh));
             }
+        }
+    }
+
+    // ======================================================================
+    // mr -- MATCH REFERENCE, PHASE 2a (EJMatchProposal.h)
+    //
+    // PREFIX mr, NOT mp: mp was already taken by the move log persistence
+    // family (mp PIN1 to mp PIN5), and two pins sharing a name cannot be told
+    // apart in a FAIL line.
+    //
+    // THE FIXTURES ARE CHOSEN SO THE ARITHMETIC IS EXACT IN FLOAT. Every side's
+    // six bands sum to -120 with steps of whole or half dB, so the mean is
+    // exactly -20 and every relative and delta is exact. A pin that asserts
+    // "exactly 3.0" must not be at the mercy of a rounding in the mean.
+    //
+    // NO FIXTURE OUTSIDE mr PIN2 PUTS A DELTA EXACTLY ON THE FLOOR, so the
+    // ">= to >" mutant reddens the at-the-floor cases and nothing else.
+    // ======================================================================
+    {
+        std::cout << "match reference proposal:\n";
+        using namespace echojay;
+
+        // A side long enough for everything, with an average reduction and
+        // flat bands at -20. Each pin perturbs only what it is about.
+        auto side = [] (SpectralReduction red)
+        {
+            MatchSide s;
+            s.macro = { -20, -20, -20, -20, -20, -20 };
+            s.hasMacro = true;
+            s.macroReduction = red;
+            s.durationSeconds = 180.0f;
+            s.integrated = -14.0f; s.truePeak = -1.0f; s.overs = 0;
+            s.lra = 6.0f; s.psr = 8.0f; s.plr = 10.0f;
+            s.crest = 12.0f; s.width = 40.0f; s.correlation = 0.5f;
+            return s;
+        };
+        auto refSide = [&] { return side (SpectralReduction::WholeFileAverage); };
+        auto mixSide = [&] { return side (SpectralReduction::WholeWindowAverage); };
+        auto bandMoves = [] (const MatchProposal& p)
+        {
+            std::vector<MatchMove> v;
+            for (const auto& m : p.moves) if (m.kind == MatchMoveKind::Band) v.push_back (m);
+            return v;
+        };
+        auto moveFor = [] (const MatchProposal& p, int band) -> const MatchMove*
+        {
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Band && m.band == band) return &m;
+            return nullptr;
+        };
+        auto hasRefusal = [] (const MatchProposal& p, MatchRefusalKind k, const juce::String& sideName)
+            -> const MatchRefusal*
+        {
+            for (const auto& r : p.refusals)
+                if (r.kind == k && r.side == sideName) return &r;
+            return nullptr;
+        };
+        // The 9 dB fixture: the capture's sub is 9 dB hot and its low is 9 dB
+        // shy, relative to its own mean. Sum -120, mean -20, exact.
+        auto nineDb = [&]
+        {
+            auto m = mixSide();
+            m.macro = { -11, -29, -20, -20, -20, -20 };
+            return m;
+        };
+
+        // mr PIN1 -- THE CEILING. A 9 dB gap proposes 3.0, never 9, and the
+        // result says the gap is larger than one move closes.
+        {
+            const auto p = computeMatchProposal (nineDb(), refSide());
+            const auto* sub = moveFor (p, 0);
+            const auto* low = moveFor (p, 1);
+            check (sub != nullptr && sub->valueDb == -3.0f && sub->capped && sub->measuredDb == -9.0f,
+                   "mr PIN1: a 9 dB hot band proposes a cut of exactly 3.0, not 9",
+                   sub ? ("move " + juce::String (sub->valueDb, 4) + " from " + juce::String (sub->measuredDb, 4))
+                       : juce::String ("no move"));
+            check (low != nullptr && low->valueDb == 3.0f && low->capped && low->measuredDb == 9.0f,
+                   "mr PIN1: and a 9 dB shy band a boost of exactly 3.0",
+                   low ? ("move " + juce::String (low->valueDb, 4)) : juce::String ("no move"));
+            check (low != nullptr && low->tier == MatchTier::Bounded,
+                   "mr PIN1: a band move is bounded tier");
+            bool said = false;
+            for (const auto& n : p.notes)
+                if (n.contains ("larger than one move closes") && n.contains ("9.0")) said = true;
+            check (said, "mr PIN1: and the result says the 9.0 dB gap is larger than one move closes",
+                   p.notes.joinIntoString (" | "));
+        }
+
+        // mr PIN2 -- THE FLOOR, AT THE BOUNDARY, BOTH SIDES OF IT. Exactly 2.0
+        // proposes; 1.999 does not. Through the decision itself and through the
+        // whole proposal.
+        {
+            const auto at  = matchBandMove (2.0f);
+            const auto atN = matchBandMove (-2.0f);
+            check (at.propose && at.valueDb == 2.0f && ! at.capped,
+                   "mr PIN2: a delta of exactly 2.0 proposes a 2.0 move");
+            check (atN.propose && atN.valueDb == -2.0f,
+                   "mr PIN2: and exactly -2.0 proposes a -2.0 move");
+            check (! matchBandMove (1.999f).propose && ! matchBandMove (-1.999f).propose,
+                   "mr PIN2: 1.999 either way proposes nothing");
+
+            auto m = mixSide();
+            m.macro = { -18, -22, -20, -20, -20, -20 };   // deltas exactly -2 and +2
+            const auto p = computeMatchProposal (m, refSide());
+            const auto* a = moveFor (p, 0);
+            const auto* b = moveFor (p, 1);
+            check (a != nullptr && a->valueDb == -2.0f && b != nullptr && b->valueDb == 2.0f
+                   && bandMoves (p).size() == 2,
+                   "mr PIN2: through the proposal, two bands exactly on the floor both move",
+                   juce::String ((int) bandMoves (p).size()) + " band moves");
+
+            auto m2 = mixSide();
+            m2.macro = { -18.001f, -21.999f, -20, -20, -20, -20 };   // deltas about 1.999
+            const auto p2 = computeMatchProposal (m2, refSide());
+            check (bandMoves (p2).empty(),
+                   "mr PIN2: and just under the floor, no band moves",
+                   juce::String ((int) bandMoves (p2).size()) + " band moves");
+        }
+
+        // mr PIN3 -- THE SUM IS THE SUM OF THE MOVES, from the same expression
+        // the proposal uses, the way cp PIN5 asserts a height against the row
+        // function it came from. Deltas -4, +2.5 and +1.5 give moves -3
+        // (capped), +2.5 and none.
+        {
+            auto m = mixSide();
+            m.macro = { -16, -22.5f, -21.5f, -20, -20, -20 };
+            const auto p = computeMatchProposal (m, refSide());
+            check (p.bandMoveSumDb == matchBandMoveSum (p.moves),
+                   "mr PIN3: the reported sum is matchBandMoveSum of the moves it reports",
+                   juce::String (p.bandMoveSumDb, 4) + " vs " + juce::String (matchBandMoveSum (p.moves), 4));
+            check (bandMoves (p).size() == 2 && p.bandMoveSumDb == -0.5f,
+                   "mr PIN3: and here that is -3.0 + 2.5 = -0.5",
+                   juce::String ((int) bandMoves (p).size()) + " moves, sum " + juce::String (p.bandMoveSumDb, 4));
+        }
+
+        // mr PIN4 -- A REFUSAL NAMES BOTH NUMBERS. A 20 s capture refuses band
+        // proposals, and the message carries the 30 it failed and the 20 it
+        // measured.
+        {
+            auto m = nineDb();
+            m.durationSeconds = 20.0f;
+            const auto p = computeMatchProposal (m, refSide());
+            const auto* r = hasRefusal (p, MatchRefusalKind::BandsTooShort, "the capture");
+            check (r != nullptr && r->thresholdSeconds == 30.0f && r->measuredSeconds == 20.0f,
+                   "mr PIN4: a 20 s capture refuses bands against 30 s");
+            check (r != nullptr && r->message.contains ("30") && r->message.contains ("20"),
+                   "mr PIN4: and the message names both 30 and 20",
+                   r ? r->message : juce::String ("no refusal"));
+            check (bandMoves (p).empty(),
+                   "mr PIN4: and no band move survives the refusal");
+            const auto* d = hasRefusal (p, MatchRefusalKind::DynamicsTooShort, "the capture");
+            check (d != nullptr && d->message.contains ("60") && d->message.contains ("20"),
+                   "mr PIN4: the loudness and dynamics refusal names 60 and 20 the same way",
+                   d ? d->message : juce::String ("no refusal"));
+        }
+
+        // mr PIN5 -- A DIRECTIONAL FINDING NEVER CARRIES AN APPLICABLE NUMBER.
+        // Every directional figure, one at a time, differs between two sides
+        // that agree on everything else. Each must appear as a finding with its
+        // difference, and none may produce a move of any kind.
+        {
+            for (int fi = 0; fi < (int) MatchFigure::Count; ++fi)
+            {
+                const auto f = (MatchFigure) fi;
+                auto m = mixSide();
+                switch (f)
+                {
+                    case MatchFigure::LRA:         m.lra += 5.0f;          break;
+                    case MatchFigure::PSR:         m.psr += 5.0f;          break;
+                    case MatchFigure::PLR:         m.plr += 5.0f;          break;
+                    case MatchFigure::Crest:       m.crest += 5.0f;        break;
+                    case MatchFigure::Width:       m.width += 25.0f;       break;
+                    case MatchFigure::Correlation: m.correlation -= 0.5f;  break;
+                    case MatchFigure::Count:                               break;
+                }
+                const auto p = computeMatchProposal (m, refSide());
+                check (p.moves.empty(),
+                       "mr PIN5: a difference in " + juce::String (matchFigureName (f))
+                       + " produces no move",
+                       juce::String ((int) p.moves.size()) + " moves");
+                bool found = false;
+                for (const auto& x : p.findings)
+                    if (x.figure == f && x.difference != 0.0f) found = true;
+                check (found, "mr PIN5: and it is reported as a finding with its difference: "
+                              + juce::String (matchFigureName (f)));
+            }
+        }
+
+        // mr PIN6 -- A PEAK HOLD ON EITHER SIDE REFUSES BANDS. Each side on its
+        // own, over the 9 dB fixture, with the both-average control first so
+        // the refusal is what removed the moves.
+        {
+            check (! bandMoves (computeMatchProposal (nineDb(), refSide())).empty(),
+                   "mr PIN6: control, two averages over the 9 dB fixture propose band moves");
+
+            auto m = nineDb();
+            m.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            const auto pm = computeMatchProposal (m, refSide());
+            check (bandMoves (pm).empty()
+                   && hasRefusal (pm, MatchRefusalKind::BandsNotAverage, "the capture") != nullptr,
+                   "mr PIN6: a peak hold on the capture refuses bands, and names the capture");
+
+            auto r = refSide();
+            r.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            const auto pr = computeMatchProposal (nineDb(), r);
+            check (bandMoves (pr).empty()
+                   && hasRefusal (pr, MatchRefusalKind::BandsNotAverage, "the reference") != nullptr,
+                   "mr PIN6: a peak hold on the reference refuses bands, and names the reference");
+        }
+
+        // mr PIN7 -- CLIPPING PUTS THE CEILING FIRST. With a true peak above 0
+        // the first move is the ceiling, ahead of every band move; without it
+        // there is no ceiling at all.
+        {
+            auto m = nineDb();
+            m.truePeak = 1.5f; m.overs = 3;
+            const auto p = computeMatchProposal (m, refSide());
+            check (p.clipping && ! p.moves.empty() && p.moves.front().kind == MatchMoveKind::Ceiling
+                   && p.moves.front().tier == MatchTier::Exact,
+                   "mr PIN7: a +1.5 dBTP capture's first move is the exact ceiling");
+            int firstBand = -1;
+            for (int i = 0; i < (int) p.moves.size(); ++i)
+                if (p.moves[(size_t) i].kind == MatchMoveKind::Band) { firstBand = i; break; }
+            check (firstBand > 0,
+                   "mr PIN7: and band moves exist and all come after it",
+                   "first band move at " + juce::String (firstBand));
+            check (p.moves.front().valueDb == -1.0f && p.moves.front().measuredDb == 1.5f,
+                   "mr PIN7: the ceiling is the reference's -1.0 dBTP, from the capture's +1.5");
+
+            auto clean = nineDb();   // -1.0 dBTP, no overs
+            bool anyCeiling = false;
+            for (const auto& mv : computeMatchProposal (clean, refSide()).moves)
+                if (mv.kind == MatchMoveKind::Ceiling) anyCeiling = true;
+            check (! anyCeiling, "mr PIN7: a capture that does not clip gets no ceiling move");
         }
     }
 
