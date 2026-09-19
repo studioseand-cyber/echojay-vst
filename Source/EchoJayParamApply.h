@@ -1449,9 +1449,46 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
     // entries are already in applyOne's shape (index/kind/anchors/labels);
     // trust->method and the unit field are translated inside applyOne.
     auto controlsReq = settings.getProperty ("controls", juce::var());
-    if (auto* co = controlsReq.getDynamicObject())
+    if (auto* co0 = controlsReq.getDynamicObject())
     {
         auto mapControls = map.getProperty ("controls", juce::var());
+        // 18e (item 7): PAIRED controls. A map carrying "L X"/"R X", "X 1"/"X 2" or "X A"/"X B" and settings that name ONE
+        // side get the same value on the other side, so a stereo pair is never half-dialled and never "by hand".
+        juce::DynamicObject::Ptr expanded = new juce::DynamicObject();
+        for (auto& kv : co0->getProperties()) expanded->setProperty (kv.name, kv.value);
+        {
+            auto hasControl = [&] (const juce::String& nm) -> bool
+            {
+                if (mapControls.getProperty (juce::Identifier (nm), juce::var()).isObject()) return true;
+                if (auto* mo = mapControls.getDynamicObject())
+                    for (auto& mk : mo->getProperties())
+                        if (normalizeControlName (mk.name.toString()).equalsIgnoreCase (normalizeControlName (nm))) return true;
+                return false;
+            };
+            auto hasRequested = [&] (const juce::String& nm) -> bool
+            {
+                for (auto& kv : co0->getProperties())
+                    if (normalizeControlName (kv.name.toString()).equalsIgnoreCase (normalizeControlName (nm))) return true;
+                return false;
+            };
+            for (auto& kv : co0->getProperties())
+            {
+                const juce::String nm = kv.name.toString();
+                juce::StringArray twins;
+                if (nm.startsWith ("L ")) twins.add ("R " + nm.substring (2));
+                else if (nm.startsWith ("R ")) twins.add ("L " + nm.substring (2));
+                else if (nm.startsWith ("Left ")) twins.add ("Right " + nm.substring (5));
+                else if (nm.startsWith ("Right ")) twins.add ("Left " + nm.substring (6));
+                if (nm.endsWith (" 1")) twins.add (nm.dropLastCharacters (2) + " 2");
+                else if (nm.endsWith (" 2")) twins.add (nm.dropLastCharacters (2) + " 1");
+                if (nm.endsWith (" A")) twins.add (nm.dropLastCharacters (2) + " B");
+                else if (nm.endsWith (" B")) twins.add (nm.dropLastCharacters (2) + " A");
+                for (const auto& tw : twins)
+                    if (hasControl (tw) && ! hasRequested (tw) && ! expanded->hasProperty (juce::Identifier (tw)))
+                        expanded->setProperty (juce::Identifier (tw), kv.value);
+            }
+        }
+        auto* co = expanded.get();
         for (auto& kv : co->getProperties())
         {
             const juce::String name = kv.name.toString();
