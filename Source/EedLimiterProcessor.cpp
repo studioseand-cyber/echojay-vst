@@ -218,7 +218,7 @@ void EedLimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // THE WALL: the largest sidechain value the delayed output is about to carry (4x true peak when asked)
         const float scPeak = truePeakOn_ ? std::max (tpL_.maxAbs4 (scL), tpR_.maxAbs4 (scR)) : std::max (std::abs (scL), std::abs (scR));
         const float wmax   = windowMaxPush (scPeak);
-        const float ceilDet = truePeakOn_ ? ceilLin_ * 0.97724f : ceilLin_;   // -0.2 dB detector margin under true peak: the interpolator's residual
+        const float ceilDet = truePeakOn_ ? ceilLin_ * 0.98855f : ceilLin_;   // 18e (item 12): -0.1 dB detector margin under true peak (was -0.2); limiter_wall_guard holds the output within [-0.25, -0.10] dBTP
         const float gTarget = wmax > ceilDet ? ceilDet / wmax : 1.0f;
         if (gTarget < wallGain_) wallGain_ = gTarget; else wallGain_ += (gTarget - wallGain_) * wallRelCoeff_;
         const float g = byp ? 1.0f : std::min (gCore, wallGain_);
