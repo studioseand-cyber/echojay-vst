@@ -1398,8 +1398,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     aiCompareBtn.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
     aiCompareBtn.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
     aiCompareBtn.onClick = [this] { runAICompare(); };
-    aiCompareBtn.setVisible(false);
-    addAndMakeVisible(aiCompareBtn);
+    // addChildComponent, NOT setVisible (false) then addAndMakeVisible, which
+    // made it visible again. Its visibility is showCompareFurniture's, applied
+    // once all ten exist (end of Stage 3 below).
+    addChildComponent(aiCompareBtn);
 
     // + modal panel
     // codecsBtn_ IS GONE (13 Sep 2026). Playback Simulation is a sub-tab of
@@ -1454,7 +1456,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         for (int i = 0; i < 5; ++i)
         {
             compareMeterBtns[(size_t)i].setButtonText(kMeterLabels[i]);
-            compareMeterBtns[(size_t)i].setVisible(false);
             compareMeterBtns[(size_t)i].setColour(juce::TextButton::buttonColourId,
                 i == 0 ? juce::Colour(0xff1a2d4a) : C::bg3);
             compareMeterBtns[(size_t)i].setColour(juce::TextButton::textColourOffId,
@@ -1472,7 +1473,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 }
                 repaint();
             };
-            addAndMakeVisible(compareMeterBtns[(size_t)i]);
+            addChildComponent(compareMeterBtns[(size_t)i]);   // hidden; see aiCompareBtn
         }
     }
 
@@ -1482,8 +1483,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             btn.setColour(juce::TextButton::buttonColourId,   juce::Colours::transparentBlack);
             btn.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff1a2030));
             btn.setColour(juce::TextButton::textColourOffId,  C::text2);
-            btn.setVisible(false);
-            addAndMakeVisible(btn);
+            addChildComponent(btn);   // hidden; see aiCompareBtn
         };
         styleSlotBtn(compareTopSlotBtn_);
         styleSlotBtn(compareBotSlotBtn_);
@@ -1504,8 +1504,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             btn.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
             btn.setColour(juce::TextButton::textColourOffId, C::text3);
             btn.setEnabled(false);
-            btn.setVisible(false);
-            addAndMakeVisible(btn);
+            addChildComponent(btn);   // hidden; see aiCompareBtn
         };
         stylePlayBtn(comparePlayTopBtn_, juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
         stylePlayBtn(comparePlayBotBtn_, juce::String(juce::CharPointer_UTF8("\xe2\x96\xb6")));
@@ -1516,8 +1515,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         auto styleTBar = [&](juce::TextButton& btn) {
             btn.setColour(juce::TextButton::buttonColourId, C::bg3);
             btn.setColour(juce::TextButton::textColourOffId, C::text3);
-            btn.setVisible(false);
-            addAndMakeVisible(btn);
+            addChildComponent(btn);   // hidden; see aiCompareBtn
         };
 
         cmpABtn_.setButtonText("A");
@@ -1545,7 +1543,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         compareSyncBtn_.setButtonText("SYNC");
         compareSyncBtn_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1a2d4a));
         compareSyncBtn_.setColour(juce::TextButton::textColourOffId, C::blue);
-        compareSyncBtn_.setVisible(false);
         compareSyncBtn_.onClick = [this]
         {
             bool cur = processorRef.cmpSyncToTransport.load();
@@ -1570,8 +1567,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 !cur ? C::blue : C::text3);
             repaint();
         };
-        addAndMakeVisible(compareSyncBtn_);
+        addChildComponent(compareSyncBtn_);   // hidden; see aiCompareBtn
     }
+
+    // ALL TEN NOW EXIST, so they come under their one author here, from the
+    // first frame. compareVisible is false at construction, so this applies
+    // hidden, which is what addChildComponent already left them. The call is
+    // here so construction goes through the same decision as every later
+    // change, rather than being a fourth place that sets them itself.
+    showCompareFurniture (compareFurnitureShouldShow());
 
     refStatusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffFF6B9D));
     refStatusLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -2935,8 +2939,11 @@ void EchoJayEditor::showLoginScreen()
     settingsManualBtn.setVisible(false);
     dumpMetersBtn.setVisible(false);
 
-    // Also hide compare fields
-    aiCompareBtn.setVisible(false);
+    // Also hide compare fields. The ten Compare controls through their one
+    // author: compareVisible is false here (hideCompareView above cleared it,
+    // or the view was never up), so this applies hidden to all ten, where it
+    // used to hide only AI Compare.
+    showCompareFurniture (compareFurnitureShouldShow());
     closeCodecPanel();   // also disengages codec preview if it was active
     refStatusLabel.setVisible(false);
     loadRefBtn.setVisible(false);
@@ -5060,10 +5067,13 @@ void EchoJayEditor::showCompareView()
     // The reference-preset controls that used to be rebuilt here are gone with
     // the feature.
 
-    // The sub-tab's ten controls, through their ONE author. Visible because
-    // hideCompareView always leaves the sub-tab on Compare, so re-entering the
-    // Reference tab always lands there.
-    showCompareFurniture (true);
+    // The sub-tab's ten controls, through their ONE author, with the DERIVED
+    // value. This used to pass true, on the grounds that hideCompareView
+    // always leaves the sub-tab on Compare. That holds on ENTRY, but this
+    // function is also a refresh, called while the view is already up: after a
+    // file drop, removing a reference, and renaming or deleting a pass. From
+    // the Playback sub-tab those put the Compare controls over the page.
+    showCompareFurniture (compareFurnitureShouldShow());
     updateCompareSlotBtn(true);
     updateCompareSlotBtn(false);
 
@@ -5086,11 +5096,14 @@ void EchoJayEditor::hideCompareView()
     // rather than hiding, so visibleState and the component agree.
     if (refBrowser_.visibleState) closeReferenceBrowser();
     // Back to the Compare sub-tab on the way out, so re-entering never lands
-    // on Playback. The FIELD is reset directly rather than through
-    // setRefSubTab: that would re-show the Compare furniture and call resized()
-    // in the middle of a teardown that is about to hide all of it. The
-    // disengage is already done, by closeCodecPanel above.
-    refSubTab_ = echojay::RefSubTab::Compare;
+    // on Playback. THROUGH setRefSubTab, the one writer of refSubTab_. This
+    // used to write the field directly, because setRefSubTab re-showed the
+    // Compare controls. It no longer takes that from the sub-tab alone: it
+    // applies compareFurnitureShouldShow(), and compareVisible was cleared at
+    // the top of this function, so the value it applies here is hidden. No
+    // show-then-hide. The codec disengage is already done, by closeCodecPanel
+    // above, and the Compare branch of setRefSubTab starts nothing.
+    setRefSubTab (echojay::RefSubTab::Compare);
     // The text is KEPT, only the label is hidden: re-entering Compare brings
     // a standing message back rather than losing what the last drop said.
     refStatusLabel.setVisible(false);
@@ -5098,8 +5111,9 @@ void EchoJayEditor::hideCompareView()
     for (auto* b : { &refPrevBtn, &refNextBtn, &refPlayBtn, &refBrowseBtn })
         b->setVisible(false);
     compareClickCatcher.setVisible(false);
-    // The sub-tab's ten controls, through their ONE author.
-    showCompareFurniture (false);
+    // The sub-tab's ten controls are already hidden: setRefSubTab above
+    // applied the derived value, with compareVisible false. A second call
+    // here would be a second author passing a literal.
     processorRef.stopAllCompare();
     resized(); repaint();
 }
@@ -6780,23 +6794,32 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         // chip's X, and hideCompareView leaving the Reference tab.
         codecPanel_.setVisible(false);
     }
-    showCompareFurniture (! playback);
+    // THE DERIVED VALUE, NOT ! playback. With the Compare view up the two
+    // agree at every sub-tab. They differ only when the view is down, which is
+    // hideCompareView's call: there this applies hidden, where ! playback
+    // would have shown the controls in the middle of the teardown.
+    showCompareFurniture (compareFurnitureShouldShow());
     resized();
     repaint();
 }
 
 // THE ONE AUTHOR of the Compare sub-tab's ten controls' visibility: the meter
 // row, the two slot buttons, the two play buttons, A, B, the shared play, sync
-// and AI Compare. setRefSubTab, showCompareView, hideCompareView and
-// enterCodecMode all call this and none of them sets those controls itself.
+// and AI Compare. Nothing else calls setVisible on them, and every caller
+// passes compareFurnitureShouldShow(), the two-input rule in EJReferenceBar.h.
+// The callers are the constructor, the login screen, showCompareView and
+// setRefSubTab; hideCompareView and enterCodecMode reach it through
+// setRefSubTab.
 //
-// THERE WERE THREE AUTHORS BEFORE THIS (18 Sep 2026): showCompareView,
-// hideCompareView and setRefSubTab each set all ten. They agreed only by
-// convention: hideCompareView reset the sub-tab to Compare on the way out, so
-// showCompareView's unconditional "visible" happened to be right. enterCodecMode
-// needed the same state, and a fourth copy is how the first three would have
-// started to drift. (Construction and the login screen still set their own
-// initial hidden state; neither is part of this navigation.)
+// THERE WERE THREE AUTHORS BEFORE 18 Sep 2026: showCompareView,
+// hideCompareView and setRefSubTab each set all ten. That commit gave them one
+// function, but still passed it three different values: true, false and
+// ! playback. The true was wrong whenever showCompareView ran as a refresh
+// from the Playback sub-tab. Construction and the login screen set their own
+// state outside it, and construction's was wrong: each control was
+// setVisible (false) and then addAndMakeVisible, which made it visible again,
+// with empty bounds, until the first Compare layout. Now the value is derived
+// in one place and applied in one place.
 void EchoJayEditor::showCompareFurniture (bool visible)
 {
     for (int i = 0; i < 5; ++i) compareMeterBtns[(size_t)i].setVisible(visible);

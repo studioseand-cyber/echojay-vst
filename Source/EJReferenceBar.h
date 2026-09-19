@@ -277,6 +277,27 @@ inline const char* refSubTabName (int i)
     return kRefSubTabNames[i];
 }
 
+/** WHETHER THE COMPARE SUB-TAB'S TEN CONTROLS SHOW: the meter row, the two
+    slot buttons, the two play buttons, A, B, the shared play, sync and AI
+    Compare. The editor's showCompareFurniture applies it and nothing else
+    decides it.
+
+    TWO INPUTS, NOT ONE. The sub-tab alone cannot be the rule: leaving the
+    Reference tab resets the sub-tab to Compare AND hides the controls, so
+    "Compare" is true both while they show and while they must not. Whether the
+    Compare view is up at all is the second input.
+
+    Before this there were two authors that disagreed. setRefSubTab derived
+    the value from the sub-tab alone, and showCompareView passed true
+    unconditionally, justified by a comment saying the sub-tab was always
+    Compare on entry. showCompareView is also a refresh called from Playback
+    (a file drop, removing a reference, rename and delete), so it showed the
+    controls over the Playback page. */
+inline constexpr bool compareFurnitureVisible (bool compareVisible, RefSubTab t) noexcept
+{
+    return compareVisible && t == RefSubTab::Compare;
+}
+
 struct RefSubTabRects
 {
     juce::Rectangle<int> row;

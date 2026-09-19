@@ -1174,8 +1174,12 @@ private:
     echojay::RefSubTabRects refSubTabRects_;
     void setRefSubTab (echojay::RefSubTab t);
     // The ONE author of the Compare sub-tab's ten controls' visibility; see the
-    // definition for the three authors it replaced.
+    // definition for the three authors it replaced. Every caller passes
+    // compareFurnitureShouldShow(), never a literal (rs PIN7, a text pin).
     void showCompareFurniture (bool visible);
+    // The decision, fed from the two fields it depends on. The rule itself is
+    // echojay::compareFurnitureVisible in EJReferenceBar.h, pinned by rs PIN4.
+    bool compareFurnitureShouldShow() const { return echojay::compareFurnitureVisible (compareVisible, refSubTab_); }
 
     // ---- Folders (browser commit two) ----
     /** Inline folder naming. A TextEditor over the left pane rather than a

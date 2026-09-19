@@ -8285,6 +8285,382 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "rs PIN3: control: the same source with the old st >= 0 guard put back "
                        "reads as unguarded");
             }
+
+            // rs PIN4 -- THE COMPARE CONTROLS' RULE, ALL FOUR INPUTS. The ten
+            // show only when the Compare view is up AND the sub-tab is Compare.
+            // Two inputs, because the sub-tab alone cannot say it: leaving the
+            // Reference tab resets the sub-tab to Compare and hides the ten.
+            // This is behaviour of the pure function, not of the editor.
+            check (! compareFurnitureVisible (false, RefSubTab::Compare),
+                   "rs PIN4: view down, sub-tab Compare: hidden");
+            check (! compareFurnitureVisible (false, RefSubTab::Playback),
+                   "rs PIN4: view down, sub-tab Playback: hidden");
+            check (compareFurnitureVisible (true, RefSubTab::Compare),
+                   "rs PIN4: view up, sub-tab Compare: shown");
+            check (! compareFurnitureVisible (true, RefSubTab::Playback),
+                   "rs PIN4: view up, sub-tab Playback: hidden");
+        }
+
+        // rs PIN5 to rs PIN7 -- ONE AUTHOR OF THE COMPARE CONTROLS, AS TEXT.
+        //
+        // THESE ARE TEXT PINS. They read Source/PluginEditor.cpp and .h and
+        // pin what the source SAYS: who assigns the sub-tab, who sets the ten
+        // controls' visibility, and what value is passed. They do not show
+        // what the editor DOES, which this suite cannot reach because it never
+        // builds an editor. The rule's behaviour is rs PIN4's.
+        //
+        // EACH HAS A NEGATIVE CONTROL, like rs PIN3's: the same detector run
+        // over a copy of the source with the defect put back, which it must
+        // report. A detector shown able to fail is the only kind worth a green.
+        {
+            auto slurp = [] (const char* path)
+            {
+                std::ifstream f (path);
+                std::stringstream ss; ss << f.rdbuf();
+                return ss.str();
+            };
+            const std::string cpp = slurp ("Source/PluginEditor.cpp");
+            const std::string hdr = slurp ("Source/PluginEditor.h");
+            // A top-level function's body: from its signature to the first
+            // closing brace in column 0 after it.
+            auto body = [] (const std::string& src, const std::string& sig,
+                            size_t& b, size_t& e)
+            {
+                b = src.find (sig);
+                e = (b == std::string::npos) ? std::string::npos : src.find ("\n}\n", b);
+                return b != std::string::npos && e != std::string::npos;
+            };
+            auto lineOf = [] (const std::string& src, size_t pos)
+            {
+                return 1 + (int) std::count (src.begin(), src.begin() + (long) pos, '\n');
+            };
+
+            // rs PIN5 -- refSubTab_ IS ASSIGNED ONLY INSIDE setRefSubTab. A
+            // text pin. hideCompareView wrote the field directly until this
+            // commit, so there were two writers of the sub-tab.
+            {
+                const std::regex assign (R"(refSubTab_\s*=(?!=))");
+                auto count = [&] (const std::string& c, const std::string& h,
+                                  int& inside, juce::String& where)
+                {
+                    size_t b = 0, e = 0;
+                    const bool found = body (c, "void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)", b, e);
+                    int outside = 0; inside = 0;
+                    for (std::sregex_iterator it (c.begin(), c.end(), assign), end; it != end; ++it)
+                    {
+                        const auto pos = (size_t) it->position();
+                        if (found && pos > b && pos < e) ++inside;
+                        else { ++outside; where << "cpp:" << lineOf (c, pos) << " "; }
+                    }
+                    for (std::sregex_iterator it (h.begin(), h.end(), assign), end; it != end; ++it)
+                    { ++outside; where << "h:" << lineOf (h, (size_t) it->position()) << " "; }
+                    return outside;
+                };
+                int inside = 0; juce::String where;
+                const int outside = count (cpp, hdr, inside, where);
+                check (inside == 1,
+                       "rs PIN5 (text pin): setRefSubTab assigns refSubTab_ once",
+                       juce::String (inside) + " assignments inside");
+                check (outside == 0,
+                       "rs PIN5 (text pin): and nothing else assigns it",
+                       where);
+
+                std::string planted = cpp;
+                const std::string call = "    setRefSubTab (echojay::RefSubTab::Compare);";
+                const auto at = planted.find (call);
+                if (at != std::string::npos)
+                    planted.replace (at, call.size(), "    refSubTab_ = echojay::RefSubTab::Compare;");
+                int inside2 = 0; juce::String where2;
+                check (at != std::string::npos && count (planted, hdr, inside2, where2) == 1,
+                       "rs PIN5 (text pin): control: the old direct write in hideCompareView, "
+                       "put back, is reported as a second writer",
+                       where2);
+            }
+
+            // rs PIN6 -- THE TEN CONTROLS' VISIBILITY IS SET ONLY INSIDE
+            // showCompareFurniture. A text pin. Two ways to set it: setVisible,
+            // and addAndMakeVisible, which construction used after
+            // setVisible (false) and so left all ten visible. The three styling
+            // helpers take the button as a parameter named btn, where the
+            // names cannot be seen, so their bodies are checked directly.
+            {
+                const std::string ten =
+                    R"(\b(compareMeterBtns\[[^\]]*\]|compareTopSlotBtn_|compareBotSlotBtn_|comparePlayTopBtn_|)"
+                    R"(comparePlayBotBtn_|cmpABtn_|cmpBBtn_|cmpPlayBtn_|compareSyncBtn_|aiCompareBtn))";
+                const std::regex setVis (ten + R"(\s*(\.|->)\s*setVisible\s*\()");
+                const std::regex addVis (R"(addAndMakeVisible\s*\(\s*\*?\s*)" + ten);
+
+                auto setVisOutside = [&] (const std::string& c, const std::string& h,
+                                          int& inside, juce::String& where)
+                {
+                    size_t b = 0, e = 0;
+                    const bool found = body (c, "void EchoJayEditor::showCompareFurniture (bool visible)", b, e);
+                    int outside = 0; inside = 0;
+                    for (std::sregex_iterator it (c.begin(), c.end(), setVis), end; it != end; ++it)
+                    {
+                        const auto pos = (size_t) it->position();
+                        if (found && pos > b && pos < e) ++inside;
+                        else { ++outside; where << "cpp:" << lineOf (c, pos) << " "; }
+                    }
+                    for (std::sregex_iterator it (h.begin(), h.end(), setVis), end; it != end; ++it)
+                    { ++outside; where << "h:" << lineOf (h, (size_t) it->position()) << " "; }
+                    return outside;
+                };
+                auto addVisCount = [&] (const std::string& c, const std::string& h)
+                {
+                    return (int) std::distance (std::sregex_iterator (c.begin(), c.end(), addVis), std::sregex_iterator())
+                         + (int) std::distance (std::sregex_iterator (h.begin(), h.end(), addVis), std::sregex_iterator());
+                };
+                auto helpersClean = [] (const std::string& c, juce::String& bad)
+                {
+                    bool ok = true;
+                    for (const char* lam : { "auto styleSlotBtn = [&]", "auto stylePlayBtn = [&]", "auto styleTBar = [&]" })
+                    {
+                        const auto i = c.find (lam);
+                        const auto j = (i == std::string::npos) ? std::string::npos : c.find ("};", i);
+                        const std::string b = (j == std::string::npos) ? std::string() : c.substr (i, j - i);
+                        const bool clean = ! b.empty()
+                                        && b.find ("addChildComponent(btn)") != std::string::npos
+                                        && b.find ("setVisible") == std::string::npos
+                                        && b.find ("addAndMakeVisible") == std::string::npos;
+                        if (! clean) { ok = false; bad << lam << " "; }
+                    }
+                    return ok;
+                };
+
+                int inside = 0; juce::String where;
+                check (setVisOutside (cpp, hdr, inside, where) == 0,
+                       "rs PIN6 (text pin): no setVisible on the ten outside showCompareFurniture",
+                       where);
+                check (inside == 10,
+                       "rs PIN6 (text pin): and showCompareFurniture sets all ten",
+                       juce::String (inside) + " found inside");
+                check (addVisCount (cpp, hdr) == 0,
+                       "rs PIN6 (text pin): none of the ten is added with addAndMakeVisible");
+                juce::String bad;
+                check (helpersClean (cpp, bad),
+                       "rs PIN6 (text pin): the three styling helpers add with addChildComponent "
+                       "and set no visibility",
+                       bad);
+
+                // Controls: construction as it was before this commit.
+                std::string planted = cpp;
+                const std::string add = "addChildComponent(aiCompareBtn);";
+                const auto at = planted.find (add);
+                if (at != std::string::npos)
+                    planted.replace (at, add.size(),
+                                     "aiCompareBtn.setVisible(false);\n    addAndMakeVisible(aiCompareBtn);");
+                int inside2 = 0; juce::String where2;
+                check (at != std::string::npos && setVisOutside (planted, hdr, inside2, where2) == 1,
+                       "rs PIN6 (text pin): control: AI Compare's old setVisible (false), put "
+                       "back, is reported",
+                       where2);
+                check (at != std::string::npos && addVisCount (planted, hdr) == 1,
+                       "rs PIN6 (text pin): control: and its old addAndMakeVisible is reported");
+
+                std::string plantedHelper = cpp;
+                const auto li = plantedHelper.find ("auto styleSlotBtn = [&]");
+                const auto ci = (li == std::string::npos) ? std::string::npos
+                                                          : plantedHelper.find ("addChildComponent(btn);", li);
+                if (ci != std::string::npos)
+                    plantedHelper.replace (ci, std::string ("addChildComponent(btn);").size(),
+                                           "btn.setVisible(false);\n            addAndMakeVisible(btn);");
+                juce::String bad2;
+                check (ci != std::string::npos && ! helpersClean (plantedHelper, bad2)
+                           && bad2.contains ("styleSlotBtn"),
+                       "rs PIN6 (text pin): control: a styling helper's old setVisible and "
+                       "addAndMakeVisible, put back, are reported");
+            }
+
+            // rs PIN7 -- showCompareFurniture IS ONLY EVER PASSED THE DERIVED
+            // VALUE. A text pin. It was passed true, false and ! playback from
+            // three places; a literal at any call site is a second decision.
+            {
+                const std::regex anyCall (R"(showCompareFurniture\s*\()");
+                const std::regex derived (R"(showCompareFurniture\s*\(\s*compareFurnitureShouldShow\s*\(\s*\)\s*\))");
+                auto calls = [&] (const std::string& c, int& nDerived, juce::String& where)
+                {
+                    int n = 0;
+                    for (std::sregex_iterator it (c.begin(), c.end(), anyCall), end; it != end; ++it)
+                    {
+                        const auto pos = (size_t) it->position();
+                        const std::string qual = "EchoJayEditor::";
+                        const bool isDefinition = pos >= qual.size()
+                                               && c.compare (pos - qual.size(), qual.size(), qual) == 0;
+                        if (isDefinition) continue;
+                        ++n; where << lineOf (c, pos) << " ";
+                    }
+                    nDerived = (int) std::distance (std::sregex_iterator (c.begin(), c.end(), derived),
+                                                    std::sregex_iterator());
+                    return n;
+                };
+                int nDerived = 0; juce::String where;
+                const int n = calls (cpp, nDerived, where);
+                check (n > 0 && n == nDerived,
+                       "rs PIN7 (text pin): every showCompareFurniture call passes "
+                       "compareFurnitureShouldShow(), never a literal",
+                       juce::String (n) + " calls at lines " + where + ", "
+                       + juce::String (nDerived) + " derived");
+
+                std::string planted = cpp;
+                const std::string good = "showCompareFurniture (compareFurnitureShouldShow());";
+                const auto at = planted.find (good);
+                if (at != std::string::npos)
+                    planted.replace (at, good.size(), "showCompareFurniture (true);");
+                int nDerived2 = 0; juce::String where2;
+                const int n2 = calls (planted, nDerived2, where2);
+                check (at != std::string::npos && n2 != nDerived2,
+                       "rs PIN7 (text pin): control: a literal true, put back at one call, "
+                       "is reported");
+            }
+
+            // rs PIN8 -- NOTHING TAKES currentView OFF View::Compare WITHOUT
+            // hideCompareView. A text pin.
+            //
+            // WHY IT EXISTS. compareFurnitureShouldShow() reads compareVisible,
+            // and the login screen relies on compareVisible being false whenever
+            // currentView is not Compare. That holds because every assignment
+            // that moves currentView off Compare goes through hideCompareView,
+            // which clears it. Nothing pinned that until now.
+            //
+            // THE RULE, AS MATCHED. With comments stripped (so a comment naming
+            // hideCompareView() cannot satisfy it), every assignment of
+            // currentView to anything but View::Compare must have a real
+            // hideCompareView() call either EARLIER IN THE SAME FUNCTION or
+            // LATER IN THE SAME BRACE BLOCK. The second form is switchToTab's,
+            // which reads { currentView = View::Meters; hideCompareView(); }.
+            //
+            // IT DOES NOT PARSE CONDITIONS, deliberately: matching the if
+            // around each call would redden on a reformat. So it cannot tell a
+            // hideCompareView() that runs on the Compare path from one that
+            // does not, and a call earlier in a function also covers an
+            // assignment inside a lambda defined after it. What it does catch
+            // is the defect that matters here: a new way off Compare that never
+            // calls hideCompareView at all.
+            //
+            // EXCLUDED BY NAME, as a decision: showSettingsView and
+            // hideSettingsView. hideSettingsView returns at once unless the view
+            // is Settings, so it only ever leaves Settings. showSettingsView's
+            // only caller is switchToTab (Settings), which leaves Compare
+            // through hideCompareView before it gets there. Renaming either
+            // function drops its exclusion and reddens this pin, which is the
+            // intended way to find out.
+            {
+                // Comments to spaces, string and character literals kept, and
+                // every newline kept so line numbers still match the file.
+                auto stripComments = [] (const std::string& src)
+                {
+                    std::string out = src;
+                    const size_t n = src.size();
+                    size_t i = 0;
+                    while (i < n)
+                    {
+                        const char c = src[i];
+                        if (c == '/' && i + 1 < n && src[i + 1] == '/')
+                        {
+                            while (i < n && src[i] != '\n') out[i++] = ' ';
+                        }
+                        else if (c == '/' && i + 1 < n && src[i + 1] == '*')
+                        {
+                            while (i < n && ! (src[i] == '*' && i + 1 < n && src[i + 1] == '/'))
+                            {
+                                if (src[i] != '\n') out[i] = ' ';
+                                ++i;
+                            }
+                            if (i + 1 < n) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
+                            else i = n;
+                        }
+                        else if (c == '"' || c == '\'')
+                        {
+                            ++i;
+                            while (i < n && src[i] != c && src[i] != '\n')
+                                i += (src[i] == '\\') ? 2 : 1;
+                            ++i;
+                        }
+                        else ++i;
+                    }
+                    return out;
+                };
+
+                struct Verdict { int checked = 0, excluded = 0; juce::String bad, covered; };
+                auto detect = [&] (const std::string& raw)
+                {
+                    const std::string s = stripComments (raw);
+                    Verdict v;
+
+                    // Member function starts: a line at column 0 naming
+                    // EchoJayEditor:: before its first '('.
+                    std::vector<std::pair<size_t, std::string>> fns;
+                    for (size_t ls = 0; ls < s.size();)
+                    {
+                        const size_t le = std::min (s.find ('\n', ls), s.size());
+                        const std::string line = s.substr (ls, le - ls);
+                        const auto q = line.find ("EchoJayEditor::");
+                        const auto par = line.find ('(');
+                        if (! line.empty() && (std::isalpha ((unsigned char) line[0]) || line[0] == '_')
+                            && q != std::string::npos && par != std::string::npos && q < par
+                            && line.substr (0, par).find (';') == std::string::npos)
+                        {
+                            std::string name = line.substr (q + 15, par - (q + 15));
+                            const auto lastScope = name.rfind ("::");
+                            if (lastScope != std::string::npos) name = name.substr (lastScope + 2);
+                            while (! name.empty() && name.back() == ' ') name.pop_back();
+                            fns.push_back ({ ls, name });
+                        }
+                        ls = le + 1;
+                    }
+
+                    const std::regex assign (R"(\bcurrentView\s*=(?!=)\s*([^;]*);)");
+                    const std::regex hide   (R"(\bhideCompareView\s*\(\s*\))");
+                    const std::regex toCompare (R"(\s*View::Compare\s*)");
+                    for (std::sregex_iterator it (s.begin(), s.end(), assign), end; it != end; ++it)
+                    {
+                        if (std::regex_match ((*it)[1].str(), toCompare)) continue;   // onto Compare
+                        const size_t pos = (size_t) it->position();
+                        const int line = lineOf (s, pos);
+                        const std::pair<size_t, std::string>* fn = nullptr;
+                        for (const auto& f : fns) if (f.first < pos) fn = &f;
+                        if (fn == nullptr) { v.bad << line << " (outside any member function) "; continue; }
+                        if (fn->second == "showSettingsView" || fn->second == "hideSettingsView")
+                        { ++v.excluded; continue; }
+                        ++v.checked;
+                        const std::string before = s.substr (fn->first, pos - fn->first);
+                        const size_t stmtEnd = pos + (size_t) it->length();
+                        const size_t close = s.find ('}', stmtEnd);
+                        const std::string after = s.substr (stmtEnd, (close == std::string::npos ? s.size() : close) - stmtEnd);
+                        if (std::regex_search (before, hide) || std::regex_search (after, hide))
+                            v.covered << line << " ";
+                        else
+                            v.bad << line << " (" << fn->second << ") ";
+                    }
+                    return v;
+                };
+
+                const Verdict v = detect (cpp);
+                check (v.checked > 0 && v.bad.isEmpty(),
+                       "rs PIN8 (text pin): every assignment taking currentView off View::Compare "
+                       "has hideCompareView() earlier in its function or later in its brace block. "
+                       "Covers showLoginScreen, switchToTab and the compact, visual and visual-only "
+                       "toggles. Excludes showSettingsView and hideSettingsView by name: "
+                       "hideSettingsView only ever leaves Settings, and showSettingsView's only "
+                       "caller, switchToTab, has already left Compare",
+                       "checked " + juce::String (v.checked) + " (lines " + v.covered + "), excluded "
+                       + juce::String (v.excluded) + ", unguarded: " + v.bad);
+
+                // Control: the login screen without its hideCompareView line,
+                // the exact dependency this pin was written for.
+                std::string planted = cpp;
+                const std::string guard = "    if (currentView == View::Compare) hideCompareView();\n"
+                                          "    currentView = View::Meters;\n";
+                const auto at = planted.find (guard);
+                if (at != std::string::npos)
+                    planted.replace (at, guard.size(), "    currentView = View::Meters;\n");
+                const Verdict v2 = detect (planted);
+                check (at != std::string::npos && v2.bad.contains ("showLoginScreen"),
+                       "rs PIN8 (text pin): control: showLoginScreen with its hideCompareView line "
+                       "removed is reported as leaving Compare unguarded",
+                       v2.bad);
+            }
         }
 
         // rf PIN11 -- RESOLVING A DROPPED FILE BY PATH.
