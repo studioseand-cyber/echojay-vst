@@ -105,11 +105,23 @@ inline CodecPageRects codecPageLayout (juce::Rectangle<int> contentArea, int pre
 // the count never falls below 2 on any page this plugin can show is the
 // arithmetic, which pg PIN1 checks across 400 to 1400 in steps of 10.
 //
-// THE NUMBERS ARE TIGHTER THAN THEY LOOK. At the smallest page this plugin can
-// produce (565 x 405: the minimum window with the A/B bar showing) nine tiles
-// fit only at four columns: 133 x 88 tiles, three rows, 360 px. A minimum tile
-// width of 134 or more drops that page to three columns and 456 px, which does
-// not fit. pg PIN5 is the pin that says so.
+// WHAT FITS, COUNTED WITH THE PAGE'S CHROME. At the smallest page this plugin
+// can produce (565 x 373: the minimum window with both bottom bars) the grid
+// gets 373 - 98 = 275 px once the header and status line have their
+// kPlaybackPageChromeH. At four columns a tile is 133 x 110 (88 of 3:2 art plus
+// the 22 px label band) and a row is 120 with its gap, so two whole rows are
+// visible: eight tiles. The widest page is no better, because tile height
+// follows tile width: 1780 x 1025 also shows eight.
+//
+// A GRID TALLER THAN ITS AREA SCROLLS; it no longer has to fit. This comment
+// used to say nine tiles fit at 565 x 405 in 360 px, which counted the grid
+// alone and forgot the 98 px of chrome: nine need 458 there. What pg PIN5 now
+// guarantees is that the header and status line always fit whole and that at
+// least one whole row is visible, not that every tile is.
+//
+// A minimum tile width of 134 or more drops the smallest page to three columns
+// (181 x 142 tiles), which still shows one whole row; the column count is pg
+// PIN1's concern, and it is unchanged by scrolling.
 inline constexpr int kPlaybackTileMinW    = 130;  // narrowest a tile may be
 inline constexpr int kPlaybackTileGap     = 10;   // between tiles, both ways
 inline constexpr int kPlaybackTileLabelH  = 22;   // the label band under the art
@@ -204,8 +216,19 @@ struct PlaybackPageRects
 };
 
 /** The page's layout, the ONE author of its rects; paint consumes these and
-    computes nothing. A page too short for all of it crops the grid and the
-    status line from the bottom, never the header. */
+    computes nothing.
+
+    THE STATUS LINE IS RESERVED FIRST, and the grid gets what is left. It used
+    to be the other way round: the grid took its full height and the status
+    line got whatever remained, so a grid taller than the page cropped the
+    status line to nothing (and with it the grid's only place for a codec
+    error) and ran its lower rows off the bottom. Now the header and the status
+    line always fit whole, and the grid area is at most the space between them.
+
+    The grid area is the SMALLER of its content and that space, and the status
+    line sits directly under it, so a grid that fits is laid out exactly as it
+    was. A grid taller than the space scrolls inside it (playbackTilePlacedRect
+    and the functions below). */
 inline PlaybackPageRects playbackPageLayout (juce::Rectangle<int> page, int tileCount)
 {
     PlaybackPageRects r;
@@ -214,9 +237,107 @@ inline PlaybackPageRects playbackPageLayout (juce::Rectangle<int> page, int tile
     r.subtitle = a.removeFromTop (kPlaybackPageSubtitleH);
     r.source   = a.removeFromTop (kPlaybackPageSourceH);
     a.removeFromTop (kPlaybackPageSourceGap);
-    r.grid     = a.removeFromTop (playbackGridHeight (tileCount, a.getWidth()));
+    const int gridRoom = juce::jmax (0, a.getHeight() - kPlaybackPageStatusH);   // status first
+    r.grid     = a.removeFromTop (juce::jmin (playbackGridHeight (tileCount, a.getWidth()), gridRoom));
     r.status   = a.removeFromTop (kPlaybackPageStatusH);
     return r;
+}
+
+// =============================================================================
+//  THE GRID'S SCROLL: one offset, and the arithmetic every use of it shares.
+// =============================================================================
+//
+// The Playback page is one component that computes its rects in paint and
+// hit-tests the stored ones, so the scroll is a manual offset rather than a
+// Viewport, which would split rect computation and hit testing across two
+// classes. The offset is applied in ONE place, playbackTilePlacedRect; paint
+// draws a tile at that rect and stores what is VISIBLE of it for the hit test,
+// so a tile scrolled under the header or the status line cannot be pressed
+// where it cannot be seen, and mouseUp needs no offset of its own.
+
+/** How far the grid can scroll: until the last row's BOTTOM meets the grid
+    area's bottom, or 0 when every tile is already wholly visible.
+
+    NOT playbackGridHeight less the area. That height includes the gap after
+    the last row, so it would leave up to a gap's worth of scroll over nothing
+    at all, and a grid could scroll while no tile was hidden: the scroll hint
+    would then be absent while the grid moved. Measured to the last tile's edge,
+    "can scroll" and "a tile is hidden" are the same statement (pg PIN7). */
+inline int playbackGridMaxScroll (int tileCount, juce::Rectangle<int> grid)
+{
+    const int content = playbackGridHeight (tileCount, grid.getWidth());
+    if (content <= 0) return 0;
+    return juce::jmax (0, content - kPlaybackTileGap - grid.getHeight());
+}
+
+/** An offset clamped to what the grid can scroll: never above the top, never
+    past the last row. */
+inline int playbackClampScroll (int scroll, int tileCount, juce::Rectangle<int> grid)
+{
+    return juce::jlimit (0, playbackGridMaxScroll (tileCount, grid), scroll);
+}
+
+/** Tile `index` where it sits after scrolling, at full size. THE ONE PLACE THE
+    OFFSET IS APPLIED. Paint draws the tile here, clipped to the grid. */
+inline juce::Rectangle<int> playbackTilePlacedRect (juce::Rectangle<int> grid, int index, int scroll)
+{
+    return playbackTileRect (grid, index).translated (0, -scroll);
+}
+
+/** What is VISIBLE of tile `index`: its placed rect clipped to the grid area.
+    Empty when it is scrolled wholly out. This is what the hit test stores. */
+inline juce::Rectangle<int> playbackTileVisibleRect (juce::Rectangle<int> grid, int index, int scroll)
+{
+    return playbackTilePlacedRect (grid, index, scroll).getIntersection (grid);
+}
+
+/** How many tiles are not wholly visible, above the grid area and below it. A
+    tile partly scrolled out counts as hidden in its direction, because part of
+    it is. */
+struct PlaybackGridHidden { int above = 0, below = 0; };
+
+inline PlaybackGridHidden playbackGridHidden (int tileCount, juce::Rectangle<int> grid, int scroll)
+{
+    PlaybackGridHidden h;
+    for (int i = 0; i < juce::jmax (0, tileCount); ++i)
+    {
+        const auto placed = playbackTilePlacedRect (grid, i, scroll);
+        if      (placed.getY()      < grid.getY())      ++h.above;
+        else if (placed.getBottom() > grid.getBottom()) ++h.below;
+    }
+    return h;
+}
+
+/** THE SCROLL SAYS SO. The text the page shows when tiles are hidden, and ""
+    when none are. A grid with more below it and nothing saying so reads as
+    all the tiles there are, which is a refusal rendered as an absence. It is a
+    COUNT, not a bar or a fade: a count says there is more and how much, and it
+    needs no knowledge of the colour behind the page. */
+inline juce::String playbackScrollHint (PlaybackGridHidden h)
+{
+    if (h.above > 0 && h.below > 0)
+        return juce::String (h.above) + " above, " + juce::String (h.below) + " below";
+    if (h.below > 0) return juce::String (h.below) + " more below";
+    if (h.above > 0) return juce::String (h.above) + " more above";
+    return {};
+}
+
+/** Pixels to scroll for a wheel or trackpad delta. Positive deltaY scrolls
+    toward the top.
+
+    224 px per unit of delta is CHOSEN, not measured: it is the scale JUCE's own
+    Viewport applies by default as I recall it (14 times a 16 px step), not read
+    from JUCE's source here. Nobody has watched it on this page, because with
+    seven tiles the grid never scrolls; it is tuned the first time a build has
+    more than eight. A nonzero delta always moves at least one pixel, so a slow
+    trackpad cannot round to nothing. */
+inline constexpr float kPlaybackWheelPxPerUnit = 224.0f;
+
+inline int playbackWheelStepPx (float deltaY)
+{
+    if (deltaY == 0.0f) return 0;
+    const float px = deltaY * kPlaybackWheelPxPerUnit;
+    return px > 0.0f ? juce::jmax (1, juce::roundToInt (px)) : juce::jmin (-1, juce::roundToInt (px));
 }
 
 } // namespace echojay

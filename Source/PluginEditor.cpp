@@ -6787,6 +6787,7 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         codecStatusSurvivesOpen_ = false;
         codecPanel_.hoverIdx = -1;
         codecPanel_.renderView = false; // the page opens on the grid, every time
+        codecPanel_.gridScroll = 0;     // and at its top, every time
         // Hidden BEFORE the Playback page takes focus below, so hiding a
         // focused Match page cannot move focus off the page just opened.
         matchPanel_.setVisible(false);
@@ -7195,9 +7196,9 @@ static const juce::Colour kPlaybackTileStroke { 0xff2c3150 };
 
 // THE GRID: the Playback page. Six live tiles change what is playing now; the
 // seventh opens the codec card as the render view. Every rect comes from
-// echojay::playbackPageLayout and echojay::playbackTileRect, and the paint
-// computes none of its own, so the allowance pg PIN5 adds to the grid is the
-// one this paint spends.
+// echojay::playbackPageLayout and the scroll functions beside it in
+// EJCodecPage.h, and the paint computes none of its own, so the allowance
+// pg PIN5 checks is the one this paint spends.
 void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
 {
     const auto& tiles  = echojay::kPlaybackTiles;
@@ -7235,21 +7236,40 @@ void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
     // another. pb PIN9 asserts this line.
     const PlaybackSim current = owner->processorRef.playbackSim();
 
+    // THE SCROLL, clamped against the grid as it is laid out on THIS paint, so
+    // a window made taller cannot leave the grid scrolled past its last row.
+    gridScroll = echojay::playbackClampScroll (gridScroll, (int) tiles.size(), pl.grid);
+
     tileRects.assign (tiles.size(), {});
+    {
+    // THE GRID IS CLIPPED TO ITS AREA, so a tile scrolled under the header or
+    // the status line paints nothing over either. Scoped to the tile loop, so
+    // the status line below is drawn outside the clip.
+    juce::Graphics::ScopedSaveState gridClip (g);
+    g.reduceClipRegion (pl.grid);
+
     for (int i = 0; i < (int) tiles.size(); ++i)
     {
         const auto& t    = tiles[(size_t) i];
-        const auto  tile = echojay::playbackTileRect (pl.grid, i);
+        // THE OFFSET, APPLIED ONCE, inside playbackTilePlacedRect: where the
+        // tile sits after scrolling, at full size. It is drawn there, clipped.
+        const auto  placed = echojay::playbackTilePlacedRect (pl.grid, i, gridScroll);
+        // What is STORED for the hit test is what is VISIBLE of it, so a tile
+        // cannot be pressed where it cannot be seen and mouseUp needs no
+        // offset of its own.
+        const auto  tile = echojay::playbackTileVisibleRect (pl.grid, i, gridScroll);
         tileRects[(size_t) i] = tile;
+        if (tile.isEmpty())
+            continue;   // scrolled wholly out: nothing to draw, nothing to press
 
         const bool live     = (t.kind == echojay::PlaybackTileKind::Live);
         const bool selected = live && current == t.sim;
 
-        auto art = tile;
+        auto art = placed;
         const auto band = art.removeFromBottom (echojay::kPlaybackTileLabelH);
 
         g.setColour (C::bg3);
-        g.fillRoundedRectangle (tile.toFloat(), 6.0f);
+        g.fillRoundedRectangle (placed.toFloat(), 6.0f);
 
         // EVERY TILE HAS A PICTURE, Mono included (mono_fold.jpg), all through
         // the ONE loader, which decodes via ImageCache and never through a
@@ -7273,17 +7293,62 @@ void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
         g.drawText (t.label, band.reduced (8, 0), juce::Justification::centredLeft, true);
 
         g.setColour (selected ? accent : kPlaybackTileStroke);
-        g.drawRoundedRectangle (tile.toFloat().reduced (0.5f), 6.0f, selected ? 1.4f : 1.0f);
+        g.drawRoundedRectangle (placed.toFloat().reduced (0.5f), 6.0f, selected ? 1.4f : 1.0f);
+    }
+    }   // the grid clip ends here; the status line is outside it
+
+    // THE STATUS LINE. Its height is reserved before the grid's, so it is
+    // always whole. It carries two things, one at each end.
+    //
+    // RIGHT: THE SCROLL SAYS SO. When tiles are hidden above or below the grid
+    // area, a count of them, in the accent; when none are, nothing. A grid with
+    // more below it and nothing saying so reads as all the tiles there are. A
+    // count rather than a bar or a fade: it says there is more AND how much, it
+    // sits in a row that is always visible, and it covers no tile.
+    const auto hint = echojay::playbackScrollHint (
+        echojay::playbackGridHidden ((int) tiles.size(), pl.grid, gridScroll));
+    auto statusLeft = pl.status;
+    if (hint.isNotEmpty())
+    {
+        const juce::Font hf (juce::FontOptions (10.5f, juce::Font::bold));
+        const int hw = juce::GlyphArrangement::getStringWidthInt (hf, hint) + 4;
+        g.setColour (accent);
+        g.setFont (hf);
+        g.drawText (hint, statusLeft.removeFromRight (hw), juce::Justification::centredRight, false);
+        statusLeft.removeFromRight (12);
     }
 
-    // THE STATUS LINE, only when it has text. Its height is in the allowance
-    // whether or not it shows, because a codec error can be standing when the
-    // user comes back to the grid.
+    // LEFT: the codec status, only when it has text. A codec error can be
+    // standing when the user comes back to the grid.
     if (owner->codecStatus_.isNotEmpty())
     {
         g.setColour (juce::Colour (0xfff87171));   // coral
         g.setFont (juce::Font (juce::FontOptions (10.5f)));
-        g.drawText (owner->codecStatus_, pl.status, juce::Justification::centredLeft, true);
+        g.drawText (owner->codecStatus_, statusLeft, juce::Justification::centredLeft, true);
+    }
+}
+
+// THE GRID SCROLLS; THE RENDER VIEW DOES NOT. A wheel or trackpad over the grid
+// moves the one offset by echojay::playbackWheelStepPx, clamped, and repaints.
+// In the render view, or on a grid with nothing to scroll (every grid today:
+// seven tiles fit on every page), the event goes on to the base class exactly
+// as it did before this handler existed.
+void EchoJayEditor::CodecPanel::mouseWheelMove (const juce::MouseEvent& e,
+                                                const juce::MouseWheelDetails& w)
+{
+    const int n = (int) echojay::kPlaybackTiles.size();
+    const auto grid = echojay::playbackPageLayout (getLocalBounds(), n).grid;
+    if (renderView || echojay::playbackGridMaxScroll (n, grid) == 0)
+    {
+        juce::Component::mouseWheelMove (e, w);
+        return;
+    }
+    const int next = echojay::playbackClampScroll (gridScroll - echojay::playbackWheelStepPx (w.deltaY),
+                                                   n, grid);
+    if (next != gridScroll)
+    {
+        gridScroll = next;
+        repaint();
     }
 }
 

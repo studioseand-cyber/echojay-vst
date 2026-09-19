@@ -10914,22 +10914,28 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                          "and no height, not wrapped");
         }
 
-        // pg PIN5 -- THE GRID AND EVERYTHING THAT SHARES THE PAGE WITH IT FIT,
-        // at the extremes of the pages this plugin can produce, not only on the
-        // laptop it was written on. The tile count is the table's, so a tile
-        // added to EJPlaybackTiles.h is counted here without an edit.
+        // pg PIN5 -- THE HEADER AND THE STATUS LINE ALWAYS FIT WHOLE, THE GRID
+        // AREA SHOWS AT LEAST ONE WHOLE ROW, AND THE LAYOUT SPENDS EXACTLY THE
+        // CHROME ALLOWANCE OUTSIDE THE GRID.
         //
-        // WITH ITS ALLOWANCE (kPlaybackPageChromeH, 98 px): padding, the title,
-        // the subtitle, the capture source line, its gap and the status line.
-        // Without it this pin compared the grid alone against the whole page,
-        // which is necessary and not sufficient.
+        // REWRITTEN 19 SEP 2026, NOT RENUMBERED. It used to require every tile
+        // to fit: grid plus allowance within the page, and the grid given its
+        // full height. That stopped being the guarantee when the grid learned
+        // to scroll, and it had a flaw underneath: the layout took the grid's
+        // full height FIRST, so a grid taller than the page cropped the status
+        // line to nothing. The layout now reserves the status line first and
+        // gives the grid what is left, and these are the three things that must
+        // hold whatever the tile count:
+        //   the header (title, subtitle, source) and the status line are each
+        //     their full height, and the status line ends inside the page
+        //   the grid area is at least one whole row tall, or the whole grid if
+        //     it is shorter than a row
+        //   the layout spends exactly kPlaybackPageChromeH (98 px) outside the
+        //     grid area, the figure the paint is built on
         //
-        // AND THE ALLOWANCE IS THE ONE THE PAINT SPENDS. playbackPageLayout is
-        // the paint's only source of rects; the second check measures what it
-        // spends outside the grid (page top to the status line's bottom, less
-        // the grid, plus the bottom padding) and requires it to equal the
-        // constant, so a row added to the layout without the constant, or the
-        // constant changed without the layout, reddens here.
+        // AT THE TABLE'S TILE COUNT AND AT SYNTHETIC ONES (9, 15, 40). With the
+        // table's seven nothing scrolls on any page, so a pin that only saw
+        // seven would never see the layout that scrolling depends on.
         //
         // Page sizes as resized() derives them (content area = main column less
         // 10 px each side, height less the header, tab strip, reference bar,
@@ -10940,8 +10946,6 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         //     environment bar, 32 px each (18 Sep 2026)  -> 565  x 373
         //   largest 1800 x 1200, sidebar open, A/B bar    -> 1360 x 1025
         //   largest 1800 x 1200, sidebar collapsed        -> 1780 x 1025
-        // The environment bar shows on EVERY view, the Playback page included,
-        // so the smallest page is the one with both bars.
         {
             const int pgTiles = (int) kPlaybackTiles.size();
             struct Page { const char* name; int w, h; };
@@ -10950,26 +10954,255 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                                    Page { "largest window, sidebar open",       1360, 1025 },
                                    Page { "largest window, sidebar collapsed",  1780, 1025 } })
             {
-                const int gh    = playbackGridHeight (pgTiles, p.w);
-                const int total = gh + kPlaybackPageChromeH;
-                check (total <= p.h,
-                       "pg PIN5: all " + juce::String (pgTiles) + " tiles and the page's chrome fit the "
-                       + juce::String (p.name) + " page (" + juce::String (p.w) + " x "
-                       + juce::String (p.h) + ")",
-                       "grid " + juce::String (gh) + " + allowance " + juce::String (kPlaybackPageChromeH)
-                       + " = " + juce::String (total) + ", margin " + juce::String (p.h - total)
-                       + ", at " + juce::String (playbackGridColumns (p.w)) + " columns of "
-                       + juce::String (playbackTileWidth (p.w)) + " px");
-
-                const auto L = playbackPageLayout ({ 0, 0, p.w, p.h }, pgTiles);
-                const int spent = L.status.getBottom() - L.grid.getHeight() + kPlaybackPagePadBottom;
-                check (spent == kPlaybackPageChromeH && L.grid.getHeight() == gh,
-                       "pg PIN5: and the layout the paint draws from spends exactly that allowance "
-                       "outside the grid on the " + juce::String (p.name) + " page",
-                       "spent " + juce::String (spent) + " vs allowance "
-                       + juce::String (kPlaybackPageChromeH) + ", grid "
-                       + juce::String (L.grid.getHeight()) + " vs " + juce::String (gh));
+                juce::String hdrBad, rowBad, spendBad;
+                for (int n : { pgTiles, 9, 15, 40 })
+                {
+                    const auto L = playbackPageLayout ({ 0, 0, p.w, p.h }, n);
+                    if (L.title.getHeight()    != kPlaybackPageTitleH
+                        || L.subtitle.getHeight() != kPlaybackPageSubtitleH
+                        || L.source.getHeight()   != kPlaybackPageSourceH
+                        || L.status.getHeight()   != kPlaybackPageStatusH
+                        || L.status.getBottom()   >  p.h - kPlaybackPagePadBottom)
+                        hdrBad << n << " tiles: status " << L.status.toString() << "; ";
+                    const int oneRow = juce::jmin (playbackTileHeight (p.w), playbackGridHeight (n, p.w));
+                    if (L.grid.getHeight() < oneRow)
+                        rowBad << n << " tiles: grid " << L.grid.getHeight() << " < " << oneRow << "; ";
+                    const int spent = L.status.getBottom() - L.grid.getHeight() + kPlaybackPagePadBottom;
+                    if (spent != kPlaybackPageChromeH)
+                        spendBad << n << " tiles: spent " << spent << "; ";
+                }
+                const juce::String where = juce::String (p.name) + " page (" + juce::String (p.w)
+                                         + " x " + juce::String (p.h) + ")";
+                check (hdrBad.isEmpty(),
+                       "pg PIN5: the header and the status line fit whole on the " + where
+                       + ", at " + juce::String (pgTiles) + ", 9, 15 and 40 tiles", hdrBad);
+                check (rowBad.isEmpty(),
+                       "pg PIN5: the grid area shows at least one whole row on the " + where, rowBad);
+                check (spendBad.isEmpty(),
+                       "pg PIN5: and the layout spends exactly the " + juce::String (kPlaybackPageChromeH)
+                       + " px chrome allowance outside the grid on the " + where, spendBad);
             }
+        }
+
+        // pg PIN6 -- THE SCROLL ARITHMETIC, with a synthetic tile count, since
+        // the table's seven never scroll. At the smallest page (565 x 373) the
+        // grid area is 75 to 350: 275 px. Fifteen tiles are four rows of 120,
+        // 480 px of content whose last tile ends 10 px before that, at 470.
+        {
+            const auto grid = playbackPageLayout ({ 0, 0, 565, 373 }, 15).grid;
+            const int  maxS = playbackGridMaxScroll (15, grid);
+            check (grid.getY() == 75 && grid.getHeight() == 275
+                   && maxS == playbackGridHeight (15, 565) - kPlaybackTileGap - grid.getHeight()
+                   && maxS == 195,
+                   "pg PIN6: 15 tiles at the smallest page scroll until the last tile's bottom meets "
+                   "the grid's: 480 less the trailing 10 px gap less 275 = 195",
+                   grid.toString() + ", max " + juce::String (maxS));
+            check (playbackClampScroll (-50, 15, grid) == 0 && playbackClampScroll (0, 15, grid) == 0,
+                   "pg PIN6: clamped at the top: never above 0");
+            check (playbackClampScroll (100000, 15, grid) == maxS
+                   && playbackClampScroll (maxS + 1, 15, grid) == maxS,
+                   "pg PIN6: clamped at the bottom: never past the last row");
+            check (playbackTileVisibleRect (grid, 14, maxS) == playbackTilePlacedRect (grid, 14, maxS)
+                   && playbackTilePlacedRect (grid, 14, maxS).getBottom() == grid.getBottom(),
+                   "pg PIN6: scrolled to the bottom, the last tile is wholly visible and ends on the "
+                   "grid's bottom edge");
+
+            // Tile 8, the first of the third row, at scroll 0: placed 315 to
+            // 425 against a grid ending at 350.
+            const auto placed8 = playbackTilePlacedRect (grid, 8, 0);
+            const auto vis8    = playbackTileVisibleRect (grid, 8, 0);
+            check (placed8.getHeight() == playbackTileHeight (565) && placed8.getY() == 315
+                   && vis8.getY() == 315 && vis8.getBottom() == grid.getBottom()
+                   && vis8.getHeight() == 35 && vis8.getWidth() == placed8.getWidth(),
+                   "pg PIN6: a tile partly scrolled out below is stored as its visible part: 35 of its "
+                   "110 px, at full width",
+                   "placed " + placed8.toString() + ", visible " + vis8.toString());
+            const auto vis0 = playbackTileVisibleRect (grid, 0, 40);
+            check (vis0.getY() == grid.getY() && vis0.getHeight() == playbackTileHeight (565) - 40,
+                   "pg PIN6: and one partly scrolled under the top is cut at the grid's top, so it "
+                   "cannot be pressed over the header", vis0.toString());
+            check (playbackTileVisibleRect (grid, 12, 0).isEmpty(),
+                   "pg PIN6: a tile scrolled wholly out has no visible rect, so it cannot be pressed at all");
+
+            const auto grid7 = playbackPageLayout ({ 0, 0, 565, 373 }, 7).grid;
+            check (playbackGridMaxScroll (7, grid7) == 0 && grid7.getHeight() == playbackGridHeight (7, 565),
+                   "pg PIN6: seven tiles do not scroll at the smallest page and keep their full grid "
+                   "height, which is why no build today exercises any of this");
+
+            check (playbackWheelStepPx (0.0f) == 0
+                   && playbackWheelStepPx (0.0001f) == 1 && playbackWheelStepPx (-0.0001f) == -1
+                   && playbackWheelStepPx (1.0f) == (int) kPlaybackWheelPxPerUnit,
+                   "pg PIN6: a wheel delta of 0 moves nothing, any other moves at least one pixel, and "
+                   "one unit moves kPlaybackWheelPxPerUnit");
+        }
+
+        // pg PIN7 -- A SCROLL IS VISIBLE. The status line carries a count of
+        // the tiles hidden above and below, and nothing when none are. A grid
+        // with more below it and nothing saying so reads as all the tiles there
+        // are, which is a refusal rendered as an absence.
+        {
+            const auto grid = playbackPageLayout ({ 0, 0, 565, 373 }, 15).grid;
+            const int  maxS = playbackGridMaxScroll (15, grid);
+            const auto top  = playbackGridHidden (15, grid, 0);
+            check (top.above == 0 && top.below == 7 && playbackScrollHint (top) == "7 more below",
+                   "pg PIN7: at the top of 15 tiles the page says 7 more below: the partly hidden third "
+                   "row of 4 and the hidden fourth row of 3",
+                   playbackScrollHint (top));
+            const auto bot = playbackGridHidden (15, grid, maxS);
+            check (bot.below == 0 && bot.above == 8 && playbackScrollHint (bot) == "8 more above",
+                   "pg PIN7: scrolled to the bottom it says 8 more above, and nothing below",
+                   playbackScrollHint (bot));
+            const auto mid = playbackGridHidden (15, grid, 100);
+            check (mid.above > 0 && mid.below > 0
+                   && playbackScrollHint (mid) == juce::String (mid.above) + " above, "
+                                                  + juce::String (mid.below) + " below",
+                   "pg PIN7: in between it names both", playbackScrollHint (mid));
+
+            // THE RULE, SWEPT: the hint is there whenever the grid can scroll
+            // and absent whenever it cannot, at every tile count and offset
+            // tried, on every page.
+            juce::String bad;
+            for (const auto& pg : { juce::Rectangle<int> (0, 0, 565, 373), juce::Rectangle<int> (0, 0, 565, 405),
+                                    juce::Rectangle<int> (0, 0, 1360, 1025), juce::Rectangle<int> (0, 0, 1780, 1025) })
+                for (int n : { 0, 1, 7, 8, 9, 12, 13, 15, 40 })
+                {
+                    const auto g2 = playbackPageLayout (pg, n).grid;
+                    const int  m  = playbackGridMaxScroll (n, g2);
+                    for (int sc = 0; sc <= m + 5; sc = (sc == m ? m + 6 : juce::jmin (m, sc + 7)))
+                    {
+                        const int  cs   = playbackClampScroll (sc, n, g2);
+                        const bool hint = playbackScrollHint (playbackGridHidden (n, g2, cs)).isNotEmpty();
+                        if (hint != (m > 0))
+                            bad << pg.getWidth() << "x" << pg.getHeight() << " n=" << n << " s=" << cs
+                                << " max=" << m << "; ";
+                    }
+                }
+            check (bad.isEmpty(),
+                   "pg PIN7: the count is shown exactly when the grid can scroll, at 0 to 40 tiles and "
+                   "every offset tried on all four pages", bad);
+        }
+
+        // pg PIN8 -- THE SCROLL'S TWO LOAD-BEARING PROPERTIES, AS TEXT. A TEXT
+        // PIN: it reads the source with comments stripped and pins what it
+        // says, not what the page does, which this suite cannot drive.
+        //
+        // 1. gridScroll APPEARS WHERE IT SHOULD AND NOWHERE ELSE: declared
+        //    once; reset once, directly beside renderView = false in
+        //    setRefSubTab; read in paintGrid and in the wheel handler; and
+        //    NEVER IN mouseUp. That last part is the one that matters. The hit
+        //    rects paint stores are already the scrolled, visible ones, so an
+        //    offset applied in mouseUp as well sends a click a screen away from
+        //    the tile, and as a "fix" for a click landing wrong it would look
+        //    entirely reasonable.
+        //
+        // 2. THE OFFSET IS APPLIED IN ONE FUNCTION. playbackTilePlacedRect is
+        //    the only place a tile rect is translated by a scroll: it holds the
+        //    one .translated call in EJCodecPage.h, and the editor neither
+        //    translates a rect by a scroll nor calls playbackTileRect directly,
+        //    which would compute a tile outside the placed-rect path.
+        //
+        // One negative control per part, each putting back the mistake it is
+        // for: gridScroll used in mouseUp's hit test, and a second translation
+        // of a tile rect in paint.
+        {
+            auto slurp = [] (const char* path)
+            {
+                std::ifstream f (path);
+                std::stringstream ss; ss << f.rdbuf();
+                return juce::String (ss.str());
+            };
+            const juce::String cppRaw   = slurp ("Source/PluginEditor.cpp");
+            const juce::String hdrCode  = codeOnly (slurp ("Source/PluginEditor.h"));
+            const juce::String pageCode = codeOnly (slurp ("Source/EJCodecPage.h"));
+
+            auto count = [] (const juce::String& t, const char* re)
+            {
+                const auto st = t.toStdString();
+                const std::regex rx (re);
+                return (int) std::distance (std::sregex_iterator (st.begin(), st.end(), rx),
+                                            std::sregex_iterator());
+            };
+            const char* gs = R"(\bgridScroll\b)";
+
+            struct Placement { bool placed = false, notInMouseUp = false; juce::String detail; };
+            auto placement = [&] (const juce::String& raw)
+            {
+                const auto c  = codeOnly (raw);
+                const auto sb = functionBody (c, "void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)");
+                const auto pb = functionBody (c, "void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)");
+                const auto wb = functionBody (c, "void EchoJayEditor::CodecPanel::mouseWheelMove (const juce::MouseEvent& e,");
+                const auto ub = functionBody (c, "void EchoJayEditor::CodecPanel::mouseUp(const juce::MouseEvent& e)");
+                const int decl   = count (hdrCode, R"(\bint\s+gridScroll\s*=\s*0\s*;)");
+                const int hdrAll = count (hdrCode, gs);
+                const int nS = count (sb, gs), nP = count (pb, gs), nW = count (wb, gs);
+                const int nU = count (ub, gs), tot = count (c, gs);
+                const bool beside = count (sb, R"(codecPanel_\.renderView\s*=\s*false\s*;\s*codecPanel_\.gridScroll\s*=\s*0\s*;)") == 1;
+                Placement p;
+                p.placed = decl == 1 && hdrAll == 1 && nS == 1 && beside && nP >= 1 && nW >= 1
+                        && tot == nS + nP + nW && ub.isNotEmpty();
+                p.notInMouseUp = ub.isNotEmpty() && nU == 0;
+                p.detail << "declared " << decl << " (header uses " << hdrAll << "), setRefSubTab " << nS
+                         << (beside ? " beside renderView" : " NOT beside renderView") << ", paintGrid " << nP
+                         << ", wheel " << nW << ", mouseUp " << nU << ", total " << tot;
+                return p;
+            };
+
+            struct OneOffset { bool pageOk = false, editorOk = false; juce::String detail; };
+            auto oneOffset = [&] (const juce::String& raw)
+            {
+                OneOffset o;
+                const auto pst = pageCode.toStdString();
+                const std::regex tr (R"(\.translated\s*\()");
+                std::vector<long> at;
+                for (std::sregex_iterator it (pst.begin(), pst.end(), tr), end; it != end; ++it)
+                    at.push_back ((long) it->position());
+                const auto b = pst.find ("inline juce::Rectangle<int> playbackTilePlacedRect (");
+                const auto e = (b == std::string::npos) ? std::string::npos : pst.find ("\n}\n", b);
+                o.pageOk = at.size() == 1 && b != std::string::npos && e != std::string::npos
+                        && at[0] > (long) b && at[0] < (long) e;
+
+                const auto c = codeOnly (raw);
+                const int scrolledRects = count (c, R"(\.(translated|translate|withY|setY|withPosition|setPosition)\s*\([^;]*[Ss]croll)");
+                const int directTiles   = count (c, R"(\bplaybackTileRect\s*\()");
+                o.editorOk = scrolledRects == 0 && directTiles == 0;
+                o.detail << (int) at.size() << " translation(s) in EJCodecPage.h"
+                         << (o.pageOk ? ", inside playbackTilePlacedRect" : ", NOT only inside playbackTilePlacedRect")
+                         << "; editor: " << scrolledRects << " rect(s) moved by a scroll, "
+                         << directTiles << " direct playbackTileRect call(s)";
+                return o;
+            };
+
+            const auto p1 = placement (cppRaw);
+            check (p1.placed,
+                   "pg PIN8 (text pin): gridScroll is declared once, reset once beside renderView = false "
+                   "in setRefSubTab, read in paintGrid and the wheel handler, and used nowhere else",
+                   p1.detail);
+            check (p1.notInMouseUp,
+                   "pg PIN8 (text pin): and gridScroll never appears in mouseUp, whose hit rects are "
+                   "already the scrolled ones paint stored", p1.detail);
+            const auto o1 = oneOffset (cppRaw);
+            check (o1.pageOk,
+                   "pg PIN8 (text pin): the offset is applied in one function: EJCodecPage.h's only "
+                   "translation is inside playbackTilePlacedRect", o1.detail);
+            check (o1.editorOk,
+                   "pg PIN8 (text pin): and the editor neither moves a rect by a scroll nor computes a "
+                   "tile with playbackTileRect outside that path", o1.detail);
+
+            // Control 1: the offset applied a second time, in mouseUp.
+            const juce::String hit ("if (! tileRects[(size_t) i].contains (pos)) continue;");
+            const auto c1 = cppRaw.replace (hit, "if (! tileRects[(size_t) i].contains (pos.translated (0, gridScroll))) continue;");
+            const auto m1 = placement (c1);
+            check (c1 != cppRaw && ! m1.notInMouseUp && ! m1.placed,
+                   "pg PIN8 (text pin): control: gridScroll used in mouseUp's hit test is reported",
+                   m1.detail);
+
+            // Control 2: a second translation of a tile rect, in paint.
+            const juce::String once ("const auto  placed = echojay::playbackTilePlacedRect (pl.grid, i, gridScroll);");
+            const auto c2 = cppRaw.replace (once, "const auto  placed = echojay::playbackTileRect (pl.grid, i).translated (0, -gridScroll);");
+            const auto m2 = oneOffset (c2);
+            check (c2 != cppRaw && ! m2.editorOk,
+                   "pg PIN8 (text pin): control: a tile rect translated by the scroll in paint, outside "
+                   "playbackTilePlacedRect, is reported", m2.detail);
         }
     }
 

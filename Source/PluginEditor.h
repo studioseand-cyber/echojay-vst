@@ -1048,6 +1048,9 @@ private:
         void paint(juce::Graphics& g) override;
         void mouseUp(const juce::MouseEvent& e) override;
         void mouseMove(const juce::MouseEvent& e) override;
+        // The grid scrolls; the render view does not, and passes the wheel on
+        // exactly as before. So does a grid with nothing to scroll.
+        void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
         bool keyPressed(const juce::KeyPress& k) override;
         void paintGrid(juce::Graphics& g);
         void paintRenderView(juce::Graphics& g);
@@ -1056,6 +1059,12 @@ private:
         // PLAYING. The selected tile is read back from the processor, the rule
         // the Mono card followed, so no editor flag can disagree with the audio.
         bool renderView = false;
+
+        // THE GRID'S SCROLL, in pixels from the top: the one offset, applied
+        // only through echojay::playbackTilePlacedRect and clamped with
+        // echojay::playbackClampScroll. Reset to 0 whenever the page opens,
+        // beside renderView = false in setRefSubTab.
+        int gridScroll = 0;
 
         // Render view: preset cards and the toggle, computed in paint.
         std::vector<juce::Rectangle<int>> cardRects;
