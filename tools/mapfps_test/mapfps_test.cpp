@@ -8299,6 +8299,32 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "rs PIN4: view up, sub-tab Compare: shown");
             check (! compareFurnitureVisible (true, RefSubTab::Playback),
                    "rs PIN4: view up, sub-tab Playback: hidden");
+
+            // rs PIN9 -- THE ROW'S OWN HIT TEST. refSubTabRowHit is what the
+            // editor's right-click and double-click handlers consume on. It
+            // covers every tab, the row's empty width past the last tab, and a
+            // tab a narrow row does not fully contain; and nothing above, below
+            // or left of the row. Behaviour of the pure function, not of the
+            // editor: rs PIN10 and rs PIN11 pin that the editor calls it.
+            {
+                const auto r = refSubTabLayout ({ 10, 70, 900, kRefSubTabH });
+                for (int i = 0; i < kRefSubTabCount; ++i)
+                    check (refSubTabRowHit (r, r.tab[i].getCentre()),
+                           "rs PIN9: a press on " + juce::String (refSubTabName (i)) + " is on the row");
+                const auto& lastTab = r.tab[kRefSubTabCount - 1];
+                check (refSubTabRowHit (r, { lastTab.getRight() + 40, lastTab.getCentreY() }),
+                       "rs PIN9: and so is the row's empty width past the last tab");
+                check (! refSubTabRowHit (r, { 500, 70 - 1 })
+                       && ! refSubTabRowHit (r, { 500, 70 + kRefSubTabH })
+                       && ! refSubTabRowHit (r, { 9, 80 }),
+                       "rs PIN9: but not the pixel above it, the pixel below it, or left of it");
+                // A row narrower than its tabs: the last tab pokes out past
+                // the row's right edge, and is still the row.
+                const auto narrow = refSubTabLayout ({ 10, 70, kRefSubTabW + 10, kRefSubTabH });
+                const auto& poke = narrow.tab[kRefSubTabCount - 1];
+                check (! narrow.row.contains (poke.getCentre()) && refSubTabRowHit (narrow, poke.getCentre()),
+                       "rs PIN9: a tab past a narrow row's edge is still on the row");
+            }
         }
 
         // rs PIN5 to rs PIN7 -- ONE AUTHOR OF THE COMPARE CONTROLS, AS TEXT.
@@ -8514,6 +8540,43 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "is reported");
             }
 
+            // SHARED BY rs PIN8 TO rs PIN12, defined once. Comments become
+            // spaces; string and character literals are kept, and so is every
+            // newline, so line numbers still match the file.
+            auto stripComments = [] (const std::string& src)
+            {
+                std::string out = src;
+                const size_t n = src.size();
+                size_t i = 0;
+                while (i < n)
+                {
+                    const char c = src[i];
+                    if (c == '/' && i + 1 < n && src[i + 1] == '/')
+                    {
+                        while (i < n && src[i] != '\n') out[i++] = ' ';
+                    }
+                    else if (c == '/' && i + 1 < n && src[i + 1] == '*')
+                    {
+                        while (i < n && ! (src[i] == '*' && i + 1 < n && src[i + 1] == '/'))
+                        {
+                            if (src[i] != '\n') out[i] = ' ';
+                            ++i;
+                        }
+                        if (i + 1 < n) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
+                        else i = n;
+                    }
+                    else if (c == '"' || c == '\'')
+                    {
+                        ++i;
+                        while (i < n && src[i] != c && src[i] != '\n')
+                            i += (src[i] == '\\') ? 2 : 1;
+                        ++i;
+                    }
+                    else ++i;
+                }
+                return out;
+            };
+
             // rs PIN8 -- NOTHING TAKES currentView OFF View::Compare WITHOUT
             // hideCompareView. A text pin.
             //
@@ -8546,42 +8609,6 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             // function drops its exclusion and reddens this pin, which is the
             // intended way to find out.
             {
-                // Comments to spaces, string and character literals kept, and
-                // every newline kept so line numbers still match the file.
-                auto stripComments = [] (const std::string& src)
-                {
-                    std::string out = src;
-                    const size_t n = src.size();
-                    size_t i = 0;
-                    while (i < n)
-                    {
-                        const char c = src[i];
-                        if (c == '/' && i + 1 < n && src[i + 1] == '/')
-                        {
-                            while (i < n && src[i] != '\n') out[i++] = ' ';
-                        }
-                        else if (c == '/' && i + 1 < n && src[i + 1] == '*')
-                        {
-                            while (i < n && ! (src[i] == '*' && i + 1 < n && src[i + 1] == '/'))
-                            {
-                                if (src[i] != '\n') out[i] = ' ';
-                                ++i;
-                            }
-                            if (i + 1 < n) { out[i] = ' '; out[i + 1] = ' '; i += 2; }
-                            else i = n;
-                        }
-                        else if (c == '"' || c == '\'')
-                        {
-                            ++i;
-                            while (i < n && src[i] != c && src[i] != '\n')
-                                i += (src[i] == '\\') ? 2 : 1;
-                            ++i;
-                        }
-                        else ++i;
-                    }
-                    return out;
-                };
-
                 struct Verdict { int checked = 0, excluded = 0; juce::String bad, covered; };
                 auto detect = [&] (const std::string& raw)
                 {
@@ -8660,6 +8687,216 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "rs PIN8 (text pin): control: showLoginScreen with its hideCompareView line "
                        "removed is reported as leaving Compare unguarded",
                        v2.bad);
+            }
+
+            // rs PIN10 to rs PIN12 -- A CLICK THAT IS NOT ON COMPARE'S CONTENT
+            // DOES NOT REACH COMPARE'S HANDLERS. TEXT PINS: they read the
+            // source with comments stripped and pin what it says, not what the
+            // editor does, which this suite cannot drive. Each has a negative
+            // control that puts the pre-commit shape back.
+            {
+                // The source between a signature and the first closing brace
+                // in column 0 after it, comments stripped.
+                auto fnBody = [&] (const std::string& raw, const std::string& sig)
+                {
+                    const std::string st = stripComments (raw);
+                    const auto b = st.find (sig);
+                    if (b == std::string::npos) return std::string();
+                    const auto e = st.find ("\n}\n", b);
+                    return st.substr (b, (e == std::string::npos ? st.size() : e) - b);
+                };
+                auto posOf = [] (const std::string& text, const std::regex& re) -> long
+                {
+                    std::smatch m;
+                    return std::regex_search (text, m, re) ? (long) m.position (0) : -1L;
+                };
+                const std::regex renamePass (R"(compareClickIsTopSlot\s*\(\s*pos\s*\))");
+
+                // rs PIN10 -- mouseDown CONSUMES A RIGHT-CLICK ON THE ROW, and
+                // does nothing else with it. The condition must be followed
+                // directly by return: a guard that switched tabs first would
+                // be consumed and acted on, which is not what the row does.
+                {
+                    const std::regex guard (R"(if\s*\(\s*e\.mods\.isPopupMenu\s*\(\s*\)\s*&&\s*echojay::refSubTabRowHit\s*\(\s*refSubTabRects_\s*,\s*pos\s*\)\s*\)\s*return\s*;)");
+                    auto consumed = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, "void EchoJayEditor::mouseDown(const juce::MouseEvent& e)");
+                        const long g = posOf (body, guard), rp = posOf (body, renamePass);
+                        return g >= 0 && rp >= 0 && g < rp;
+                    };
+                    check (consumed (cpp),
+                           "rs PIN10 (text pin): mouseDown returns on a right-click on the sub-tab row, "
+                           "before the rename and delete pass, and does nothing else with it");
+
+                    const std::string guardText =
+                        "        if (e.mods.isPopupMenu() && echojay::refSubTabRowHit (refSubTabRects_, pos))\n"
+                        "            return;\n";
+                    std::string removed = cpp;
+                    const auto at = removed.find (guardText);
+                    if (at != std::string::npos) removed.erase (at, guardText.size());
+                    check (at != std::string::npos && ! consumed (removed),
+                           "rs PIN10 (text pin): control: mouseDown without the guard is reported");
+
+                    std::string acting = cpp;
+                    const auto at2 = acting.find (guardText);
+                    if (at2 != std::string::npos)
+                        acting.replace (at2, guardText.size(),
+                            "        if (e.mods.isPopupMenu() && echojay::refSubTabRowHit (refSubTabRects_, pos))\n"
+                            "            { setRefSubTab (echojay::RefSubTab::Compare); return; }\n");
+                    check (at2 != std::string::npos && ! consumed (acting),
+                           "rs PIN10 (text pin): control: a guard that switches tabs before returning "
+                           "is reported, because consumed must also mean ignored");
+                }
+
+                // rs PIN11 -- mouseDoubleClick CONSUMES A DOUBLE-CLICK ON THE
+                // ROW, AND ASKS THE SUB-TAB, both before it picks a slot to
+                // rename. It asks through compareFurnitureShouldShow(), the one
+                // rule for whether the slot buttons the box opens under are up.
+                {
+                    const std::regex rowGuard (R"(if\s*\(\s*echojay::refSubTabRowHit\s*\(\s*refSubTabRects_\s*,\s*pos\s*\)\s*\)\s*return\s*;)");
+                    const std::regex tabGuard (R"(if\s*\(\s*!\s*compareFurnitureShouldShow\s*\(\s*\)\s*\)\s*return\s*;)");
+                    auto before = [&] (const std::string& raw, const std::regex& g)
+                    {
+                        const std::string body = fnBody (raw, "void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)");
+                        const long gp = posOf (body, g), rp = posOf (body, renamePass);
+                        return gp >= 0 && rp >= 0 && gp < rp;
+                    };
+                    check (before (cpp, rowGuard),
+                           "rs PIN11 (text pin): mouseDoubleClick returns on a double-click on the "
+                           "sub-tab row, before it picks a slot to rename");
+                    check (before (cpp, tabGuard),
+                           "rs PIN11 (text pin): and returns unless compareFurnitureShouldShow(), so "
+                           "no rename box opens over another sub-tab's page");
+
+                    const std::string rowText = "    if (echojay::refSubTabRowHit (refSubTabRects_, pos)) return;\n";
+                    const std::string tabText = "    if (! compareFurnitureShouldShow()) return;\n";
+                    std::string noRow = cpp, noTab = cpp;
+                    const auto r1 = noRow.find (rowText);
+                    if (r1 != std::string::npos) noRow.erase (r1, rowText.size());
+                    const auto t1 = noTab.find (tabText);
+                    if (t1 != std::string::npos) noTab.erase (t1, tabText.size());
+                    check (r1 != std::string::npos && ! before (noRow, rowGuard),
+                           "rs PIN11 (text pin): control: without the row guard it is reported");
+                    check (t1 != std::string::npos && ! before (noTab, tabGuard),
+                           "rs PIN11 (text pin): control: without the sub-tab guard it is reported");
+                }
+
+                // rs PIN12 -- THE SEEK AREAS ARE ABSENT WHENEVER THE WAVEFORM
+                // THAT OWNS THEM DID NOT DRAW. A text pin over the three places
+                // that decide it, which is the only honest version: the areas
+                // are editor state set during paint, and this suite cannot
+                // paint an editor.
+                //
+                // THE RULE AS THE SOURCE STATES IT:
+                //   paintCompareView clears every area before any path in it
+                //     diverges: ahead of the sub-tab return and of both panels
+                //   the one write that makes an area present, the register in
+                //     paintCompareWaveform, comes after every return in that
+                //     function, so it is reached only when the waveform draws
+                //   nothing outside paintCompareWaveform writes an area
+                // Together: after any paint, an area is present only if its
+                // waveform drew on that paint. The skip paths this covers are
+                // the sub-tab return, a meter other than Waveform in either
+                // panel, an empty bottom panel, a panel under 10 px, a Live
+                // slot, and a slot with no stored waveform points.
+                // First move of open list 183.
+                {
+                    const std::string viewSig =
+                        "void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> area)";
+                    const std::string waveSig =
+                        "void EchoJayEditor::paintCompareWaveform(juce::Graphics& g, juce::Rectangle<int> area,";
+                    const std::regex clr      (R"(clearCmpWaveSeekAreas\s*\(\s*\)\s*;)");
+                    const std::regex early    (R"(if\s*\(\s*refSubTab_\s*!=\s*echojay::RefSubTab::Compare\s*\))");
+                    const std::regex panel    (R"(paintCompareWaveform\s*\()");
+                    const std::regex reg      (R"(cmpWaveSeekAreas_\s*\[[^\]]*\]\s*=\s*\{\s*inner\s*,\s*slotIdx\s*\})");
+                    const std::regex anyWrite (R"(cmpWaveSeekAreas_\s*(\[[^\]]*\])?\s*=(?!=))");
+                    const std::regex ret      (R"(\breturn\b)");
+
+                    // 1. The clear comes first in paintCompareView.
+                    auto clearsFirst = [&] (const std::string& raw)
+                    {
+                        const std::string body = fnBody (raw, viewSig);
+                        const long cp = posOf (body, clr), ep = posOf (body, early), pp = posOf (body, panel);
+                        return cp >= 0 && ep >= 0 && pp >= 0 && cp < ep && cp < pp;
+                    };
+                    // 2. Every return in paintCompareWaveform precedes the
+                    //    register, and the register exists.
+                    auto registerLast = [&] (const std::string& raw, juce::String& why)
+                    {
+                        const std::string body = fnBody (raw, waveSig);
+                        const long rp = posOf (body, reg);
+                        if (rp < 0) { why = "no register found"; return false; }
+                        for (std::sregex_iterator it (body.begin(), body.end(), ret), end; it != end; ++it)
+                            if ((long) it->position() > rp)
+                            { why = "a return after the register, at +" + juce::String ((int) (it->position() - rp)); return false; }
+                        return true;
+                    };
+                    // 3. No write to an area outside paintCompareWaveform.
+                    auto writesOnlyInPanel = [&] (const std::string& raw, juce::String& where)
+                    {
+                        const std::string st = stripComments (raw);
+                        const auto b = st.find (waveSig);
+                        const auto e = (b == std::string::npos) ? std::string::npos : st.find ("\n}\n", b);
+                        bool ok = b != std::string::npos;
+                        for (std::sregex_iterator it (st.begin(), st.end(), anyWrite), end; it != end; ++it)
+                        {
+                            const auto pos = (size_t) it->position();
+                            if (! (ok && pos > b && pos < e)) { ok = false; where << "cpp:" << lineOf (st, pos) << " "; }
+                        }
+                        return ok;
+                    };
+
+                    check (clearsFirst (cpp),
+                           "rs PIN12 (text pin): paintCompareView clears every seek area before the "
+                           "sub-tab return and before either panel paints");
+                    juce::String why;
+                    check (registerLast (cpp, why),
+                           "rs PIN12 (text pin): paintCompareWaveform's register comes after every "
+                           "return in it, so an area is registered only when its waveform draws",
+                           why);
+                    juce::String where;
+                    check (writesOnlyInPanel (cpp, where),
+                           "rs PIN12 (text pin): nothing outside paintCompareWaveform writes a seek area",
+                           where);
+
+                    const std::string st = stripComments (hdr);
+                    const auto hl = st.find ("void clearCmpWaveSeekAreas()");
+                    const std::string hline = (hl == std::string::npos) ? std::string()
+                                            : st.substr (hl, st.find ('\n', hl) - hl);
+                    check (hline.find ("sa.inner = {};") != std::string::npos
+                           && hline.find ("sa.slotIdx = -1;") != std::string::npos,
+                           "rs PIN12 (text pin): and the clear leaves every area with no rectangle "
+                           "and no slot, which the click-to-seek loop reads as nothing to hit",
+                           juce::String (hline));
+
+                    // Controls: each part of the rule broken on its own.
+                    const std::string call = "    clearCmpWaveSeekAreas();\n";
+                    std::string noClear = cpp;
+                    const auto c1 = noClear.find (call);
+                    if (c1 != std::string::npos) noClear.erase (c1, call.size());
+                    check (c1 != std::string::npos && ! clearsFirst (noClear),
+                           "rs PIN12 (text pin): control: paintCompareView without the clear is reported");
+
+                    const std::string regLine = "    cmpWaveSeekAreas_[(size_t)slotIdx] = { inner, slotIdx };\n";
+                    std::string lateSkip = cpp;
+                    const auto r1 = lateSkip.find (regLine);
+                    if (r1 != std::string::npos)
+                        lateSkip.insert (r1 + regLine.size(), "    if (area.isEmpty()) return;\n");
+                    juce::String why2;
+                    check (r1 != std::string::npos && ! registerLast (lateSkip, why2),
+                           "rs PIN12 (text pin): control: a skip path added after the register is reported",
+                           why2);
+
+                    const std::string seekMark = "        for (auto& sa : cmpWaveSeekAreas_)\n";
+                    std::string strayWrite = cpp;
+                    const auto w1 = strayWrite.find (seekMark);
+                    if (w1 != std::string::npos)
+                        strayWrite.insert (w1, "        cmpWaveSeekAreas_[0] = { {}, 0 };\n");
+                    juce::String where2;
+                    check (w1 != std::string::npos && ! writesOnlyInPanel (strayWrite, where2),
+                           "rs PIN12 (text pin): control: a seek area written from mouseDown is reported",
+                           where2);
+                }
             }
         }
 

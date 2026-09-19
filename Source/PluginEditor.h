@@ -1258,6 +1258,11 @@ private:
     // Compare static waveform seek areas — inner rect of each panel's waveform
     struct CmpWaveSeekArea { juce::Rectangle<int> inner; int slotIdx; };
     std::array<CmpWaveSeekArea, 2> cmpWaveSeekAreas_ = {};
+    // Every seek area ABSENT: no rectangle and no slot, which the click-to-seek
+    // loop reads as nothing to hit. Called at the top of every Compare paint,
+    // so an area is present only when the waveform that owns it drew on that
+    // paint, never left over from an earlier one (rs PIN12).
+    void clearCmpWaveSeekAreas() { for (auto& sa : cmpWaveSeekAreas_) { sa.inner = {}; sa.slotIdx = -1; } }
     
     // Chat wave card positions for direct mouseDown hit testing (Windows overlay workaround)
     std::vector<CompareWavePos> chatWavePositions;

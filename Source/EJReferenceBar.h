@@ -338,4 +338,17 @@ inline int refSubTabAt (const RefSubTabRects& r, juce::Point<int> p)
     return -1;
 }
 
+/** Whether p is on the sub-tab row at all: the row's band, or any tab,
+    including a tab a narrow row does not fully contain.
+
+    A press here is navigation or nothing. It never belongs to whatever the row
+    sits above, and that is the whole use of this: the editor's right-click and
+    double-click handlers consume a press here instead of letting it fall
+    through to Compare's rename and delete. Pure, and from the same rects the
+    paint draws, so the two cannot disagree about where the row is. */
+inline bool refSubTabRowHit (const RefSubTabRects& r, juce::Point<int> p)
+{
+    return r.row.contains (p) || refSubTabAt (r, p) >= 0;
+}
+
 } // namespace echojay

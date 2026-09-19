@@ -11965,6 +11965,23 @@ void EchoJayEditor::paintCompareView(juce::Graphics& g, juce::Rectangle<int> are
     }
     cy += echojay::kRefSubTabBandH;
 
+    // THE SEEK AREAS ARE ABSENT WHENEVER THE WAVEFORM THAT OWNS THEM DID NOT
+    // DRAW. Cleared here, on every paint, before any path below diverges; the
+    // only thing that makes one present again is paintCompareWaveform's
+    // register, which comes after every early return in that function, so it
+    // is reached only when the static waveform actually draws.
+    //
+    // Before this, an area stayed live from whatever paint last drew a waveform
+    // there, and mouseDown's click-to-seek reads them whenever the Compare view
+    // is up. The paths that drew no waveform and left the old rectangle were:
+    // the sub-tab return just below; a meter other than Waveform, in either
+    // panel; an empty bottom panel; and, inside paintCompareWaveform, a panel
+    // under 10 px, a Live slot, and a slot with no stored waveform points.
+    // Clearing once here covers all of them, and any skip path added later.
+    //
+    // Nothing that draws reads these areas, so clearing them changes no pixel.
+    clearCmpWaveSeekAreas();
+
     // EVERYTHING BELOW BELONGS TO THE COMPARE SUB-TAB. Playback draws itself,
     // as codecPanel_, which resized() has given the rest of the area.
     if (refSubTab_ != echojay::RefSubTab::Compare)
@@ -35115,6 +35132,16 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
         // echojay::refSubTabAt. Before the rename/delete pass, because a click
         // on the row is a navigation and must not also be read as a click on
         // whatever the row happens to sit above.
+        //
+        // A RIGHT-CLICK ON THE ROW IS CONSUMED AND IGNORED. The tab hit test
+        // below skips popup clicks, so a right-click on COMPARE or PLAYBACK
+        // used to fall past it into the rename and delete pass further down,
+        // which picks a slot by height and offered to rename or delete a pass
+        // from the tab row, on either sub-tab. It does not switch tabs either:
+        // a right-click is not a choice of tab.
+        if (e.mods.isPopupMenu() && echojay::refSubTabRowHit (refSubTabRects_, pos))
+            return;
+
         if (! e.mods.isPopupMenu())
         {
             const int st = echojay::refSubTabAt (refSubTabRects_, pos);
@@ -35280,9 +35307,22 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
 void EchoJayEditor::mouseDoubleClick(const juce::MouseEvent& e)
 {
     auto pos = e.getEventRelativeTo(this).getPosition();
-    
+
     if (currentView != View::Compare) return;
-    
+
+    // A DOUBLE-CLICK ON THE SUB-TAB ROW IS CONSUMED. Its first click already
+    // did the row's work in mouseDown (it chose a tab); the double-click is not
+    // a second command. Without this, double-clicking PLAYBACK switched on the
+    // first click and then opened a rename box over the Playback page.
+    if (echojay::refSubTabRowHit (refSubTabRects_, pos)) return;
+
+    // AND ONLY WHILE COMPARE'S CONTROLS ARE UP. The rename box opens under a
+    // slot button; on any other sub-tab those buttons are hidden and the box
+    // would open over that page. compareFurnitureShouldShow() is the one rule
+    // for whether they are up, so this asks it rather than restating the
+    // sub-tab test in a sixth place.
+    if (! compareFurnitureShouldShow()) return;
+
     auto snaps = processorRef.getSnapshots();
 
     // THE SLOT ACTUALLY DOUBLE-CLICKED, for the same reason as the right-click
