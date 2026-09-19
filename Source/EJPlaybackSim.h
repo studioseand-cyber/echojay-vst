@@ -2,6 +2,15 @@
 
 #include <JuceHeader.h>
 #include "EJPlaybackVoicing.h"   // echojay::VoicingChain: the eight device voicings
+#include "EJPlaybackRoom.h"      // echojay::PlaybackRoom and its table; the reverb engine through it
+
+#include <algorithm>
+#include <cmath>
+#if defined(__APPLE__)
+ #include <mach/mach_time.h>     // the idle-gap rule's clock: mach_absolute_time
+#else
+ #include <chrono>
+#endif
 
 // =============================================================================
 //  PLAYBACK SIMULATION: the inline stage, and where it is allowed to live.
@@ -11,15 +20,17 @@
 // by someone holding the whole argument rather than by whoever added the first
 // curve.
 //
-// THE SELECTION. None, the mono fold, and eight device voicings. Each voicing is
-// a device class (a phone speaker, a laptop, a car), never a brand: decision 11
-// of COMPARE_REFERENCE_PLAN, because a generic response curve cannot deliver the
-// fidelity a manufacturer's name implies. The voicings' numbers live in
-// EJPlaybackVoicing.h; here they are only mapped and run.
+// THE SELECTION. None, the mono fold, eight device voicings and one room. Each
+// voicing is a device class (a phone speaker, a laptop, a car), never a brand:
+// decision 11 of COMPARE_REFERENCE_PLAN, because a generic response curve cannot
+// deliver the fidelity a manufacturer's name implies. The voicings' numbers live
+// in EJPlaybackVoicing.h and the rooms' in EJPlaybackRoom.h; here they are only
+// mapped and run.
 //
-// NO CARD SELECTS A VOICING YET. The five values exist, have bodies and are
-// pinned, but nothing in the interface stores them, so outside a test driving
-// the stage they are not audible.
+// EVERY SELECTION HAS A TILE on the Playback page's grid (EJPlaybackTiles.h),
+// which is what stores it; pb PIN9 holds the two together. (This paragraph used
+// to say no card selected a voicing, which stopped being true when the grid
+// arrived.)
 enum class PlaybackSim
 {
     None = 0,     ///< no simulation; the stage is a no-op and must stay one
@@ -32,6 +43,7 @@ enum class PlaybackSim
     TvSoundbar,       ///< echojay::PlaybackVoicing::TvSoundbar, stereo
     BluetoothSpeaker, ///< echojay::PlaybackVoicing::BluetoothSpeaker, mono first
     ClubPA,           ///< echojay::PlaybackVoicing::ClubPA, mono first
+    Bedroom,          ///< echojay::PlaybackRoom::Bedroom: the reverb, source None
 
     /** SENTINEL, ALWAYS LAST. NEW VALUES GO ABOVE THIS LINE, NEVER BELOW IT.
 
@@ -76,9 +88,36 @@ inline const char* playbackSimName (PlaybackSim s) noexcept
         case PlaybackSim::TvSoundbar:       return "TvSoundbar";
         case PlaybackSim::BluetoothSpeaker: return "BluetoothSpeaker";
         case PlaybackSim::ClubPA:           return "ClubPA";
+        case PlaybackSim::Bedroom:          return "Bedroom";
         case PlaybackSim::Count:        return "Count";
     }
     return "(out of range)";
+}
+
+/** The room a selection plays into, or None for every selection that is not a
+    room. No default label, so -Wswitch-enum makes each new selection say
+    whether it is one. pr PIN1 checks that every room belongs to exactly one
+    selection. */
+inline echojay::PlaybackRoom playbackSimRoom (PlaybackSim s) noexcept
+{
+    switch (s)
+    {
+        case PlaybackSim::Bedroom:          return echojay::PlaybackRoom::Bedroom;
+
+        case PlaybackSim::None:
+        case PlaybackSim::MonoFold:
+        case PlaybackSim::PhoneSpeaker:
+        case PlaybackSim::Laptop:
+        case PlaybackSim::CarDashboard:
+        case PlaybackSim::KitchenRadio:
+        case PlaybackSim::Earbuds:
+        case PlaybackSim::TvSoundbar:
+        case PlaybackSim::BluetoothSpeaker:
+        case PlaybackSim::ClubPA:
+        case PlaybackSim::Count:
+            break;
+    }
+    return echojay::PlaybackRoom::None;
 }
 
 /** THE STORED SELECTION, WITH ITS REFUSAL RULE, and both live here rather than
@@ -124,7 +163,9 @@ private:
 
 class PlaybackSimStage;
 inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
-                              int numChannels, int numSamples) noexcept;
+                              int numChannels, int numSamples, double nowSeconds) noexcept;
+inline bool playbackSimBody (PlaybackSimStage& stage, PlaybackSim s, float* const* channels,
+                             int numChannels, int numSamples) noexcept;
 
 /** THE FOLD: both channels become (L + R) * 0.5, in place. ONE DEFINITION,
     used by the Mono tile and by every voicing whose row sums to mono first,
@@ -178,11 +219,20 @@ inline void monoFoldInPlace (float* left, float* right, int numSamples) noexcept
     audio thread only apart from prepare(). A mono buffer uses the first.
 
     THE PREVIOUS VOICING is what the last block ran through the chains.
-    None, and the mono fold, both count as "no voicing": neither touches them. */
+    None, the mono fold and a room with no source all count as "no voicing":
+    none of them touches the chains.
+
+    THE ROOM (19 Sep 2026) is a reverb network, echojay::ReverbEngine, with
+    STATE OF ITS OWN, roomHeld_, and a rule of its own. It does not use the
+    previous voicing: that says "was any voicing running", and a room, then the
+    phone speaker for ten minutes, then the room again would find it set to the
+    phone, reset nothing, and replay a tail frozen ten minutes ago (open list
+    194). The two rules are independent, so a room that has a source device runs
+    that device's chains under the voicing rule and its network under this one. */
 class PlaybackSimStage
 {
 public:
-    /** Called from prepareToPlay, which has the rate (PluginProcessor.cpp:564).
+    /** Called from prepareToPlay, which has the rate (PluginProcessor.cpp:569).
 
         THE STATE IS ZEROED HERE, UNCONDITIONALLY, on every prepare. That is the
         rule EqEngine::prepare and MeterEngine::prepare follow for filter
@@ -193,12 +243,41 @@ public:
         and after a rate change they are not even valid.
 
         The previous voicing becomes None, so the next voiced block is an
-        activation and sets its coefficients at the new rate. */
-    void prepare (double sampleRate) noexcept
+        activation and sets its coefficients at the new rate. No room is held,
+        so the next room block is an engagement.
+
+        IT ALLOCATES, SO IT IS NOT noexcept (19 Sep 2026). ReverbEngine::prepare
+        sizes the room's delay lines: 320 KB at 44.1 and 48 kHz, 640 KB at 96,
+        1.28 MB at 192. An allocation failure inside a noexcept function
+        terminates the process. The one caller, prepareToPlay, is not noexcept
+        and already allocates three lines earlier (cmpTmpBuf, cmpMixBuf,
+        cmpGainScratch), so a failure here now behaves like one of those. */
+    void prepare (double sampleRate)
     {
+        sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
         for (auto& c : chains_)
-            c.prepare (sampleRate);
+            c.prepare (sampleRate_);
         previousVoicing_ = echojay::PlaybackVoicing::None;
+
+        // THE ROOM'S SETTINGS GO IN BEFORE THE ENGINE'S prepare, which derives
+        // the line lengths from them and snaps the lines there. See the
+        // engagement reset in runRoom for why the order matters (open list 195).
+        applyRoomSettings (echojay::PlaybackRoom::Bedroom);
+        room_.prepare (sampleRate_, kRoomChunkSamples);
+
+        roomHeld_         = echojay::PlaybackRoom::None;
+        roomPos_          = 0;
+        roomFadeLen_      = std::max (1, (int) std::lround (kRoomFadeSeconds * sampleRate_));
+        lastRoomSeconds_  = -1.0;
+        lastRoomBlockSec_ = 0.0;
+
+       #if defined(__APPLE__)
+        // The timebase, read here on the message thread so the audio thread
+        // never has to: 1/1 on Intel, 125/3 on Apple silicon.
+        mach_timebase_info_data_t tb {};
+        mach_timebase_info (&tb);
+        ticksToSeconds_ = (tb.denom != 0) ? (double) tb.numer / (double) tb.denom * 1.0e-9 : 1.0e-9;
+       #endif
     }
 
     /** Stores a selection, or refuses it: PlaybackSimSelection::set's rule. */
@@ -206,8 +285,44 @@ public:
 
     PlaybackSim selected() const noexcept { return selection_.get(); }
 
+    /** THE CLOCK THE IDLE-GAP RULE READS, in seconds. mach_absolute_time on
+        Apple, which is a read of a counter and safe on the audio thread. The
+        processor passes this to applyPlaybackSim on every block; the suite
+        passes times of its own, which is why it is a parameter there rather
+        than a read inside the stage. */
+    double clockSeconds() const noexcept
+    {
+       #if defined(__APPLE__)
+        return (double) mach_absolute_time() * ticksToSeconds_;
+       #else
+        return std::chrono::duration<double> (std::chrono::steady_clock::now().time_since_epoch()).count();
+       #endif
+    }
+
+    /** The room's fade, in samples at the prepared rate: 30 ms. For pr PIN2. */
+    int roomFadeSamples() const noexcept { return roomFadeLen_; }
+
+    /** The room's processing chunk: the dry copy the fade needs is this long,
+        so a block of any length is run through the room in pieces of at most
+        this many samples. A fixed size, so the stage needs no block size from
+        the host and allocates nothing for the fade. */
+    static constexpr int kRoomChunkSamples = 256;
+
 private:
-    friend bool applyPlaybackSim (PlaybackSimStage&, float* const*, int, int) noexcept;
+    friend bool applyPlaybackSim (PlaybackSimStage&, float* const*, int, int, double) noexcept;
+    friend bool playbackSimBody  (PlaybackSimStage&, PlaybackSim, float* const*, int, int) noexcept;
+
+    /** 30 ms, LINEAR, IN AND OUT. The project already ruled on an instant step
+        in a path someone listens through: editSoloMix_ got a real 30 ms ramp
+        because its engage and release were "an instant step, i.e. a click"
+        (PluginProcessor.cpp, prepareToPlay). A reverb switched off mid-tail
+        is the same step with a longer tail behind it.
+
+        NOT THE ENGINE'S OWN MIX SMOOTHER. That is exponential with a 20 ms
+        time constant (EedReverbEngine.h, mixSmooth_), so it takes about 140 ms
+        to fall 60 dB and never reaches zero, which would keep "off" audibly
+        reverberating for longer and still end on a step. */
+    static constexpr double kRoomFadeSeconds = 0.030;
 
     /** Runs voicing v through the chains, in place. Returns true when it ran,
         under applyPlaybackSim's contract. */
@@ -288,51 +403,227 @@ private:
         return true;
     }
 
+    /** A room selection's BODY: its source device through the chains, under
+        the voicing rule above, or nothing for a room with no source. The
+        room's network runs after the body, in runRoom, for every selection. */
+    bool runRoomSource (echojay::PlaybackRoom r, float* const* channels,
+                        int numChannels, int numSamples) noexcept
+    {
+        const auto source = echojay::roomRow (r).source;
+        if (source != echojay::PlaybackVoicing::None)
+            return runVoicing (source, channels, numChannels, numSamples);
+
+        // THE ROOM ALONE: the mix as it is, played into the space. The same
+        // guards as runVoicing, and, like the mono fold, for the voicing rule
+        // this block ran no voicing, so a device selected next is an activation.
+        if (numChannels < 1 || channels == nullptr || channels[0] == nullptr)
+            return false;
+        previousVoicing_ = echojay::PlaybackVoicing::None;
+        return true;
+    }
+
+    /** Room r's settings, from its row, into the engine. Mod depth, duck and
+        width are never set: the engine's defaults stand (EJPlaybackRoom.h,
+        RoomRow, says why). */
+    void applyRoomSettings (echojay::PlaybackRoom r) noexcept
+    {
+        const auto& row = echojay::roomRow (r);
+        room_.setAlgorithm    (row.algorithm);
+        room_.setSizePct      (row.sizePct);
+        room_.setDecaySeconds (row.decaySec);
+        room_.setPredelayMs   (row.predelayMs);
+        room_.setDampingPct   (row.dampingPct);
+        room_.setLowCutHz     (row.lowCutHz);
+        room_.setEarlyLatePct (row.earlyLatePct);
+        room_.setDiffusionPct (row.diffusionPct);
+        room_.setMixPct       (row.mixPct);
+    }
+
+    /** How long the held room's tail lasts: THE EchoJay Reverb PLUGIN'S OWN
+        FORMULA, EedReverbProcessor::getTailLengthSeconds, the predelay plus 1.2
+        times the decay the damping leaves. Written out again because that is a
+        member of another processor; pr PIN7 holds the two texts alike, so an
+        edit to one without the other reddens. */
+    double roomTailSeconds() const noexcept
+    {
+        const double pre = (double) room_.getPredelayMs() * 0.001;
+        return pre + room_.effectiveDecaySeconds() * 1.2;
+    }
+
+    /** THE ROOM, run after the selection's body on every block. Returns true
+        when it wrote the buffer.
+
+        THE ENGAGEMENT RULE. An engagement is a run of blocks in which one room
+        is selected and its network runs.
+          A block that wants room R while the stage holds no room starts an
+          engagement: R's settings, the network emptied, and a fade in from
+          the dry signal. The emptied network has no tail to fade; the fade is
+          for the dry, which the engine turns down by its mix.
+          A block that does not want the held room fades it out, still running
+          the network on what arrives, and when the fade reaches zero the
+          engagement is over and nothing is held. A room wanted again before
+          that fade ends continues its engagement, fading back up from where
+          the fade had got to: its tail is milliseconds old, not a replay.
+          Room A to room B is the same: A fades out, is let go, and B engages
+          on the next block with an emptied network.
+        So no tail is ever heard from an earlier engagement except in the 30 ms
+        fade that ends it.
+
+        THE IDLE-GAP RULE. The plugin reports no tail (getTailLengthSeconds
+        returns 0.0, PluginProcessor.h), so a host may stop calling processBlock
+        on an idle channel. The selection never changes, so the rule above sees
+        one engagement, and the tail frozen in the network would resume minutes
+        later. So: if more time has passed since the last block that ran the
+        room than the room's tail plus that block's own length, the network is
+        emptied. A real room's tail would have died in that time anyway. No fade:
+        the last sample this stage put out was that long ago. A fade-out
+        interrupted by such a gap simply ends.
+
+        THE ALIASED POINTER. For a one-channel buffer the call site passes
+        getWritePointer(0) twice. The engine treats any non-null right channel
+        as real and writes wetR into it, which here would be written over the
+        left channel's output. So a right channel that is the left one goes to
+        the engine as nullptr, the test runVoicing already makes (right != left),
+        and the engine then runs from the one channel. pr PIN6. */
+    bool runRoom (echojay::PlaybackRoom wanted, float* const* channels,
+                  int numChannels, int numSamples, double nowSeconds) noexcept
+    {
+        using echojay::PlaybackRoom;
+
+        // Nothing held and nothing wanted: the room does not exist this block.
+        // (roomPos_ is 0 whenever nothing is held.)
+        if (roomHeld_ == PlaybackRoom::None && wanted == PlaybackRoom::None)
+            return false;
+        if (numChannels < 1 || channels == nullptr || channels[0] == nullptr)
+            return false;
+
+        float* const left  = channels[0];
+        float* const right = (numChannels >= 2 && channels[1] != left) ? channels[1] : nullptr;
+
+        // THE IDLE GAP: time the host did not show this stage.
+        if (roomHeld_ != PlaybackRoom::None && lastRoomSeconds_ >= 0.0
+            && nowSeconds - lastRoomSeconds_ > roomTailSeconds() + lastRoomBlockSec_)
+        {
+            room_.reset();   // the same room's settings: open list 195 cannot bite here
+            if (wanted != roomHeld_)
+            {
+                roomHeld_ = PlaybackRoom::None;
+                roomPos_  = 0;
+            }
+        }
+
+        if (roomHeld_ == PlaybackRoom::None)
+        {
+            if (wanted == PlaybackRoom::None)
+            {
+                lastRoomSeconds_ = -1.0;
+                return false;   // a gap ended a fade-out: nothing left to play
+            }
+
+            // THE ENGAGEMENT RESET.
+            //
+            // OPEN LIST 195, NOT FIXED HERE: ReverbEngine::reset() snaps the
+            // lines to the lengths its last recompute() derived, and recompute()
+            // is private, run only by prepare() and by process() on its dirty
+            // flag. So a room whose settings differ from the last ones the
+            // engine derived would engage at the OLD room's lengths and glide to
+            // its own over the engine's 100 ms smoother, smearing the pitch of
+            // its opening tail. The fix is in EedReverbEngine.h and reaches the
+            // shipping EchoJay Reverb plugin, so it is not made from here.
+            //
+            // WITH ONE ROOM IT CANNOT BITE: prepare() applies the bedroom's
+            // settings before the engine's own prepare() derives the lengths,
+            // and nothing else is ever applied, so these setters change nothing
+            // and reset() snaps to the bedroom's lengths. THE SECOND ROOM BRINGS
+            // IT BACK, and the commit that adds one must deal with 195 first.
+            //
+            // THE ZERO ITSELF is 320 KB of std::fill on the audio thread at
+            // 48 kHz, once per engagement, estimated at tens of microseconds
+            // and never timed: open list 196.
+            applyRoomSettings (wanted);
+            room_.reset();
+            roomHeld_ = wanted;
+            roomPos_  = 0;
+        }
+
+        const int target = (wanted == roomHeld_) ? roomFadeLen_ : 0;
+        bool wrote = false;
+
+        for (int start = 0; start < numSamples; start += kRoomChunkSamples)
+        {
+            // THE FADE-OUT HAS ENDED: the engagement is over, and the rest of
+            // the block is left exactly as it arrived.
+            if (roomPos_ == 0 && target == 0)
+                break;
+
+            const int n = std::min (kRoomChunkSamples, numSamples - start);
+            float* const l = left + start;
+            float* const r = (right != nullptr) ? right + start : nullptr;
+
+            std::copy (l, l + n, dryL_);
+            if (r != nullptr) std::copy (r, r + n, dryR_);
+
+            room_.process (l, r, n);
+            wrote = true;
+
+            // FULLY ENGAGED: the network's output, exactly as it produced it.
+            if (roomPos_ == roomFadeLen_ && target == roomFadeLen_)
+                continue;
+
+            // THE FADE, per sample. At 0 the dry exactly, at the full length the
+            // network's output exactly, and a straight line between: the first
+            // sample of an engagement is the dry, and the first sample after a
+            // room is left is the one it would have played had it stayed.
+            for (int i = 0; i < n; ++i)
+            {
+                if (roomPos_ == 0)
+                {
+                    l[i] = dryL_[i];
+                    if (r != nullptr) r[i] = dryR_[i];
+                }
+                else if (roomPos_ < roomFadeLen_)
+                {
+                    const float g = (float) roomPos_ / (float) roomFadeLen_;
+                    l[i] = dryL_[i] + g * (l[i] - dryL_[i]);
+                    if (r != nullptr) r[i] = dryR_[i] + g * (r[i] - dryR_[i]);
+                }
+                roomPos_ += (roomPos_ < target) ? 1 : (roomPos_ > target ? -1 : 0);
+            }
+        }
+
+        if (roomPos_ == 0 && target == 0)
+            roomHeld_ = PlaybackRoom::None;
+
+        lastRoomSeconds_  = (roomHeld_ == PlaybackRoom::None) ? -1.0 : nowSeconds;
+        lastRoomBlockSec_ = (double) std::max (0, numSamples) / sampleRate_;
+        return wrote;
+    }
+
     PlaybackSimSelection     selection_;
     echojay::VoicingChain    chains_[2];
     echojay::PlaybackVoicing previousVoicing_ = echojay::PlaybackVoicing::None;
+
+    // ---- the room: audio thread only, apart from prepare() -------------------
+    echojay::ReverbEngine    room_;
+    echojay::PlaybackRoom    roomHeld_  = echojay::PlaybackRoom::None;  // whose signal the network holds
+    int                      roomPos_   = 0;   // fade position, 0 to roomFadeLen_: the network's share
+    int                      roomFadeLen_ = 1;
+    double                   sampleRate_  = 44100.0;
+    double                   lastRoomSeconds_  = -1.0;   // clock at the last block that ran the room
+    double                   lastRoomBlockSec_ = 0.0;    // and that block's length
+    double                   ticksToSeconds_   = 1.0e-9;
+    float                    dryL_[kRoomChunkSamples] {};
+    float                    dryR_[kRoomChunkSamples] {};
 };
 
-/** The stage itself: samples in place, or nothing at all.
-
-    REAL-TIME SAFE, and it has to stay that way. No allocation, no locks, no
-    file access, no logging. The voicings' filter state lives in the stage: it
-    is zeroed in prepareToPlay (PlaybackSimStage::prepare) and otherwise touched
-    only here, on the audio thread. The selection is read ONCE per call, so a
-    block runs one selection from its first sample to its last.
-
-    THE RETURN VALUE MEANS THE SIMULATION BODY RAN. True: the selection's body
-    executed. False: it did not.
-
-    IT IS NOT A CLAIM THAT ANY SAMPLE CHANGED, and reading it as one will
-    mislead you. A mono fold applied to channels that already hold identical
-    audio runs in full and leaves every sample bit-identical. It returns true,
-    because it ran; the buffer is untouched, because there was nothing to
-    change. Tying the return to sample values would make it a function of
-    CONTENT rather than of selection, and then no fixed test signal could
-    establish whether the stage executed.
-
-    IT IS FALSE WHEN THE STAGE CANNOT RUN AT ALL: nothing is selected, or the
-    buffer has too few channels for the selected simulation to be defined.
-
-    THE NO-OP IS NOT PINNED BY THIS VALUE. pb PIN1 copies the buffer and
-    compares it with memcmp afterwards, because the memcmp READS THE BUFFER
-    while this return only comments on it. A return value that lied would pass
-    a test built on the return value. */
-inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
-                              int numChannels, int numSamples) noexcept
+/** THE SELECTION'S BODY: one active selection, mapped to what it runs. True
+    when the body ran, false when it could not (the guards) or when the value
+    has no case (the trailing false, which pb PIN7 exists to find). The room's
+    network is not a body: applyPlaybackSim runs it after this, for every
+    selection, because a room being left keeps fading under whatever comes next. */
+inline bool playbackSimBody (PlaybackSimStage& stage, PlaybackSim s, float* const* channels,
+                             int numChannels, int numSamples) noexcept
 {
-    const PlaybackSim s = stage.selection_.get();
-
-    // THE EARLY-OUT. It writes one thing, and never to the buffer: the record
-    // that this block ran no voicing, so the next voiced block is an
-    // activation and starts from zeroed filters (pb PIN10).
-    if (! playbackSimActive (s))
-    {
-        stage.previousVoicing_ = echojay::PlaybackVoicing::None;
-        return false;
-    }
-
     switch (s)
     {
         case PlaybackSim::MonoFold:
@@ -343,7 +634,7 @@ inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
             stage.previousVoicing_ = echojay::PlaybackVoicing::None;
 
             // THE GUARDS. Each returns false having written nothing, because
-            // under the contract above false means the body did not run.
+            // under applyPlaybackSim's contract false means the body did not run.
             if (numChannels < 2)     return false;
             if (channels == nullptr) return false;
 
@@ -402,13 +693,20 @@ inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
             return stage.runVoicing (echojay::PlaybackVoicing::ClubPA,
                                      channels, numChannels, numSamples);
 
+        // THE ROOMS. The body is the room's source device, or nothing for a
+        // room with none; the network runs in applyPlaybackSim, after this.
+        case PlaybackSim::Bedroom:
+            return stage.runRoomSource (echojay::PlaybackRoom::Bedroom,
+                                        channels, numChannels, numSamples);
+
         case PlaybackSim::None:
         case PlaybackSim::Count:
-            // None never reaches here (the early-out took it) and Count is a
-            // sentinel, not a selection. Both are listed so -Wswitch-enum stays
-            // quiet WITHOUT a default label: a default would swallow a newly
-            // added value silently, and the whole arrangement depends on a new
-            // value being visible rather than absorbed.
+            // None never reaches here (applyPlaybackSim does not call the body
+            // for it) and Count is a sentinel, not a selection. Both are listed
+            // so -Wswitch-enum stays quiet WITHOUT a default label: a default
+            // would swallow a newly added value silently, and the whole
+            // arrangement depends on a new value being visible rather than
+            // absorbed.
             break;
     }
 
@@ -418,4 +716,69 @@ inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
     // no body. A new environment added without a case falls through to exactly
     // this line, and the sweep says which value did it.
     return false;
+}
+
+/** The stage itself: samples in place, or nothing at all.
+
+    REAL-TIME SAFE, and it has to stay that way. No allocation, no locks, no
+    file access, no logging. The voicings' filter state and the room's network
+    live in the stage: they are zeroed in prepareToPlay
+    (PlaybackSimStage::prepare) and otherwise touched only here, on the audio
+    thread. The selection is read ONCE per call, so a block runs one selection
+    from its first sample to its last. nowSeconds is the processor's clock,
+    PlaybackSimStage::clockSeconds, for the room's idle-gap rule.
+
+    THE CONTRACT CHANGED ON 19 SEP 2026, WITH THE ROOMS, AND THIS IS WHAT IS NOW
+    TRUE. Before, the return meant the selection's body ran, and it was false
+    whenever nothing was selected, from the very next block. A room cannot keep
+    that promise without clicking: switched off mid-tail, it fades out over
+    30 ms, and during that fade the stage runs and writes the buffer although
+    nothing is selected.
+
+    THE RETURN VALUE MEANS THE STAGE RAN SOMETHING OVER THIS BLOCK: the
+    selection's body, or a room's network, including a room still fading out
+    after the selection left it. False: it ran nothing, and the buffer is
+    bit-identical to what arrived.
+
+    IT IS FALSE when nothing is selected AND no room is fading out, or when the
+    buffer has too few channels for the selected simulation to be defined. So
+    after a room is switched off it is true for 30 ms more (1,440 samples at
+    48 kHz, rounded to the blocks that contain them), and false from the first
+    block after the fade has ended. After anything that is not a room, off is
+    still off from the very next block. pb PIN1 holds the first half of that
+    and pr PIN4 the second.
+
+    IT IS NOT A CLAIM THAT ANY SAMPLE CHANGED, and reading it as one will
+    mislead you. A mono fold applied to channels that already hold identical
+    audio runs in full and leaves every sample bit-identical. It returns true,
+    because it ran; the buffer is untouched, because there was nothing to
+    change. Tying the return to sample values would make it a function of
+    CONTENT rather than of selection, and then no fixed test signal could
+    establish whether the stage executed.
+
+    THE NO-OP IS NOT PINNED BY THIS VALUE. pb PIN1 and pr PIN4 copy the buffer
+    and compare it with memcmp afterwards, because the memcmp READS THE BUFFER
+    while this return only comments on it. A return value that lied would pass
+    a test built on the return value. */
+inline bool applyPlaybackSim (PlaybackSimStage& stage, float* const* channels,
+                              int numChannels, int numSamples, double nowSeconds) noexcept
+{
+    const PlaybackSim s = stage.selection_.get();
+
+    // THE BODY, or for nothing selected the one thing the early-out ever
+    // wrote, and never to the buffer: the record that this block ran no
+    // voicing, so the next voiced block is an activation and starts from
+    // zeroed filters (pb PIN10).
+    bool ran = false;
+    if (playbackSimActive (s))
+        ran = playbackSimBody (stage, s, channels, numChannels, numSamples);
+    else
+        stage.previousVoicing_ = echojay::PlaybackVoicing::None;
+
+    // THE ROOM, after the body, for every selection: a room being engaged, a
+    // room held, or a room fading out under whatever replaced it. With no room
+    // held and none wanted it returns at once, having touched nothing.
+    const bool roomRan = stage.runRoom (playbackSimRoom (s), channels, numChannels,
+                                        numSamples, nowSeconds);
+    return ran || roomRan;
 }

@@ -563,9 +563,11 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
-    // The playback stage's voicing filters: zeroed on EVERY prepare, the rule
-    // EqEngine::prepare and MeterEngine::prepare follow, not the tally rule
-    // that compares rates. PlaybackSimStage::prepare says why.
+    // The playback stage's voicing filters and its room: zeroed on EVERY
+    // prepare, the rule EqEngine::prepare and MeterEngine::prepare follow, not
+    // the tally rule that compares rates. PlaybackSimStage::prepare says why.
+    // It ALLOCATES (the room's delay lines, 320 KB at 48 kHz) and is not
+    // noexcept, so a failure behaves like the three allocations above.
     playbackStage_.prepare (sampleRate);
     chainHost.prepare(sampleRate, samplesPerBlock);
     // Solo crossfades, BOTH a real 30ms ramp (the busGainSmoothed_ idiom
@@ -1468,15 +1470,23 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // below this stage feeding its own clearly labelled figures, not this stage
     // moving above the one that exists.
     //
-    // REAL-TIME SAFE: early-out when nothing is selected, no allocation, no
-    // locks, no logging. See EJPlaybackSim.h.
+    // REAL-TIME SAFE: early-out when nothing is selected and no room is
+    // fading, no allocation, no locks, no logging. See EJPlaybackSim.h.
+    //
+    // A MONO BUFFER ARRIVES AS THE SAME POINTER TWICE, below. Every consumer in
+    // the stage treats a right channel equal to the left as absent, the room's
+    // reverb included, which would otherwise write its right output over the
+    // left (pr PIN6).
+    //
+    // THE CLOCK is for the room's idle-gap rule: a host that stops calling
+    // this on an idle channel must not get a tail back minutes later.
     {
         float* chans[2] = { buffer.getWritePointer(0),
                             buffer.getNumChannels() >= 2 ? buffer.getWritePointer(1)
                                                          : buffer.getWritePointer(0) };
         applyPlaybackSim (playbackStage_,
                           chans, juce::jmin(2, buffer.getNumChannels()),
-                          buffer.getNumSamples());
+                          buffer.getNumSamples(), playbackStage_.clockSeconds());
     }
 }
 

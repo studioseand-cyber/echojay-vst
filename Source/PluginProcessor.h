@@ -1212,9 +1212,11 @@ private:
     juce::String captureSubstitution_;
 
     // PLAYBACK SIMULATION, the whole stage: the selection (the same atomic and
-    // refusal rule as before), one voicing chain per channel, and the voicing
-    // the previous block ran. EJPlaybackSim.h is where the memory order and the
-    // reset rule are stated and argued once. It lives there rather than here so
+    // refusal rule as before), one voicing chain per channel, the voicing the
+    // previous block ran, and the room's reverb network with its own state and
+    // rule (about 320 KB of delay lines at 48 kHz, allocated in prepare).
+    // EJPlaybackSim.h is where the memory order and both reset rules are stated
+    // and argued once. It lives there rather than here so
     // mapfps_test can exercise the shipped stage instead of a copy of it.
     // Prepared in prepareToPlay; run at the end of processBlock.
     PlaybackSimStage playbackStage_;

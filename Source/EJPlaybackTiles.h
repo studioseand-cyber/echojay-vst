@@ -35,8 +35,12 @@ struct PlaybackTile
     const char*      label;     ///< the label band's text, sized to fit the smallest tile
 };
 
-/** Nine live tiles, then the codec tile, in drawing order. The live tiles run
+/** Ten live tiles, then the codec tile, in drawing order. The live tiles run
     in PlaybackSim's own order, the Mono tile first; pb PIN9 holds that.
+
+    A ROOM TILE CARRIES ITS ROOM'S SOURCE as its voicing: None for the bedroom,
+    which is the room alone. Its picture is matched on its room, not on that
+    voicing (playbackArtForTile).
 
     THE CODEC TILE'S LABEL SAYS IT RENDERS. "Render a codec": 92.9 px in the
     system bold face at 12 pt, the wider of the two faces the LookAndFeel can
@@ -44,13 +48,14 @@ struct PlaybackTile
     132 px tile leaves after its 8 px insets (132 since the scrollbar's gutter,
     19 Sep 2026; it was 133). The longest live label is now "Bluetooth
     speaker", 110.1 px, measured the same way (19 Sep 2026): 5.9 px to spare.
-    "TV soundbar" is 76.9 px and "Club PA" 47.2 px.
+    "TV soundbar" is 76.9 px and "Club PA" 47.2 px. "Bedroom" is 54.5 px, measured the same way.
 
-    TEN TILES SCROLL. At the smallest page the grid shows two whole rows,
-    eight tiles, so the tenth, the codec tile, sits in the partly visible third
-    row until the grid is scrolled, and the scrollbar at the grid's right edge
-    says there is more. */
-inline constexpr std::array<PlaybackTile, 10> kPlaybackTiles {{
+    ELEVEN TILES SCROLL. At the smallest page the grid shows two whole rows,
+    eight tiles, so the last three, Club PA, Bedroom and the codec tile, sit in
+    the partly visible third row until the grid is scrolled, and the scrollbar
+    at the grid's right edge says there is more. Eleven is still three rows of
+    four, so no grid figure moved from ten. */
+inline constexpr std::array<PlaybackTile, 11> kPlaybackTiles {{
     { PlaybackTileKind::Live,        PlaybackSim::MonoFold,     PlaybackVoicing::None,         "Mono" },
     { PlaybackTileKind::Live,        PlaybackSim::PhoneSpeaker, PlaybackVoicing::PhoneSpeaker, "Phone speaker" },
     { PlaybackTileKind::Live,        PlaybackSim::Laptop,       PlaybackVoicing::Laptop,       "Laptop" },
@@ -60,6 +65,7 @@ inline constexpr std::array<PlaybackTile, 10> kPlaybackTiles {{
     { PlaybackTileKind::Live,        PlaybackSim::TvSoundbar,       PlaybackVoicing::TvSoundbar,       "TV soundbar" },
     { PlaybackTileKind::Live,        PlaybackSim::BluetoothSpeaker, PlaybackVoicing::BluetoothSpeaker, "Bluetooth speaker" },
     { PlaybackTileKind::Live,        PlaybackSim::ClubPA,           PlaybackVoicing::ClubPA,           "Club PA" },
+    { PlaybackTileKind::Live,        PlaybackSim::Bedroom,          PlaybackVoicing::None,             "Bedroom" },
     { PlaybackTileKind::CodecRender, PlaybackSim::None,         PlaybackVoicing::None,         "Render a codec" },
 }};
 

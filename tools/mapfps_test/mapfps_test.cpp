@@ -9823,7 +9823,18 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ap PIN1: the onClick calls applyChainEditFromMsg");
         }
 
-        // pb PIN1 -- THE SIMULATION STAGE IS A NO-OP WHEN NOTHING IS SELECTED.
+        // pb PIN1 -- THE SIMULATION STAGE IS A NO-OP WHEN NOTHING IS SELECTED
+        // AND NO ROOM IS FADING OUT.
+        //
+        // REWRITTEN 19 SEP 2026, NOT RENUMBERED, WITH THE CONTRACT. It used to
+        // say the stage is a no-op whenever nothing is selected. Since the rooms
+        // that is untrue for 30 ms after a room is switched off, while its tail
+        // fades (applyPlaybackSim's contract comment in EJPlaybackSim.h, and
+        // pr PIN4, which pins that fade and the no-op that follows it). What
+        // this pin holds is the other half, unchanged in substance: a stage
+        // with no room held, which is every stage that never ran one, is
+        // untouched and says so.
+        //
         // PREFIX pb, NOT ps: ps was already taken by the PSR floor family
         // (2d351ce), and two unrelated pins under one name means a FAIL line
         // cannot say which subject failed. Checked against every prefix in the
@@ -9858,10 +9869,10 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::memcpy (rBefore, r, sizeof (r));
 
             float* chans[2] = { l, r };
-            const bool touched = applyPlaybackSim (st, chans, 2, 8);
+            const bool touched = applyPlaybackSim (st, chans, 2, 8, 0.0);
 
             check (! touched,
-                   "pb PIN1: with nothing selected the stage reports it did nothing");
+                   "pb PIN1: with nothing selected and no room fading, the stage reports it did nothing");
             check (std::memcmp (l, lBefore, sizeof (l)) == 0,
                    "pb PIN1: and the left channel is bit-identical afterwards");
             check (std::memcmp (r, rBefore, sizeof (r)) == 0,
@@ -9873,14 +9884,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             float m[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
             float mBefore[4]; std::memcpy (mBefore, m, sizeof (m));
             float* mono[2] = { m, m };
-            check (! applyPlaybackSim (st, mono, 1, 4)
+            check (! applyPlaybackSim (st, mono, 1, 4, 0.0)
                    && std::memcmp (m, mBefore, sizeof (m)) == 0,
                    "pb PIN1: a mono buffer is untouched too");
 
             // ZERO SAMPLES AND ZERO CHANNELS are reached on a stopped transport
             // in some hosts, and must not be a special case that only works
             // because nothing is selected.
-            check (! applyPlaybackSim (st, chans, 0, 0),
+            check (! applyPlaybackSim (st, chans, 0, 0, 0.0),
                    "pb PIN1: an empty block is a no-op rather than a branch nobody took");
         }
 
@@ -9905,7 +9916,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::memcpy (rBefore, r, sizeof (r));
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (fold, ch, 2, 8),
+                check (applyPlaybackSim (fold, ch, 2, 8, 0.0),
                        "pb PIN2: the fold reports that it ran on a correlated signal");
                 check (std::memcmp (l, lBefore, sizeof (l)) == 0,
                        "pb PIN2: and left is BIT-IDENTICAL, not merely close");
@@ -9929,7 +9940,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 float zeros[8] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (fold, ch, 2, 8),
+                check (applyPlaybackSim (fold, ch, 2, 8, 0.0),
                        "pb PIN3: the fold reports that it ran on an anti-correlated signal");
                 check (std::memcmp (l, zeros, sizeof (zeros)) == 0,
                        "pb PIN3: left is exactly +0.0, sign included");
@@ -9950,7 +9961,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 float r[4] = {  0.1f, -0.2f,   0.3f,   -0.4f  };
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (fold, ch, 2, 4),
+                check (applyPlaybackSim (fold, ch, 2, 4, 0.0),
                        "pb PIN4: the fold ran");
                 check (std::memcmp (l, r, sizeof (l)) == 0,
                        "pb PIN4: and the two channels are identical afterwards, "
@@ -9973,7 +9984,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::memcpy (rB, r, sizeof (r));
                 float* ch[2] = { l, r };
 
-                check (! applyPlaybackSim (fold, ch, 1, 4),
+                check (! applyPlaybackSim (fold, ch, 1, 4, 0.0),
                        "pb PIN5: one channel is too few for a fold, so it does not run");
                 check (std::memcmp (l, lB, sizeof (l)) == 0
                        && std::memcmp (r, rB, sizeof (r)) == 0,
@@ -9984,7 +9995,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 float a[4] = { 0.5f, -0.5f, 0.25f, -0.25f };
                 float aB[4]; std::memcpy (aB, a, sizeof (a));
                 float* same[2] = { a, a };
-                check (! applyPlaybackSim (fold, same, 2, 4),
+                check (! applyPlaybackSim (fold, same, 2, 4, 0.0),
                        "pb PIN5: two channels pointing at one buffer is not a fold");
                 check (std::memcmp (a, aB, sizeof (a)) == 0,
                        "pb PIN5: and that buffer is untouched, so the fold never "
@@ -10004,7 +10015,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 std::memcpy (rB, r, sizeof (r));
                 float* ch[2] = { l, r };
 
-                check (applyPlaybackSim (fold, ch, 2, 0),
+                check (applyPlaybackSim (fold, ch, 2, 0, 0.0),
                        "pb PIN6: zero samples still reports that the stage ran");
                 check (std::memcmp (l, lB, sizeof (l)) == 0
                        && std::memcmp (r, rB, sizeof (r)) == 0,
@@ -10043,7 +10054,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     PlaybackSimStage swept;
                     swept.prepare (48000.0);
                     swept.select ((PS) i);
-                    check (applyPlaybackSim (swept, ch, 2, 4),
+                    check (applyPlaybackSim (swept, ch, 2, 4, 0.0),
                            "pb PIN7: selection " + juce::String (i)
                            + " (" + playbackSimName ((PS) i) + ")"
                            + " has a body in the switch and reports that it ran");
@@ -10136,7 +10147,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
 
                 // THE TABLE THE HANDLER WALKS, rewritten for ten tiles (19 Sep 2026)
                 // rather than renumbered: it no longer names each row by hand,
-                // it says what must be true of the table as a whole.
+                // it says what must be true of the table as a whole. The
+                // bedroom made eleven with no edit here beyond the voicing a
+                // room tile carries, which is its room's source.
                 //
                 // THE TABLE AND THE HANDLER AGREE: every selection the stage can
                 // run has exactly one live tile, in the selections' own order
@@ -10161,11 +10174,16 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 {
                     const auto& t    = kPlaybackTiles[(size_t) i];
                     const auto  want = (PlaybackSim) (i + 1);
-                    // The voicing each selection runs: none for the fold, and
-                    // otherwise the voicing of the same name, one step down,
-                    // because PlaybackVoicing has no fold of its own.
-                    const auto  voiced = (want == PlaybackSim::MonoFold) ? PVt::None
-                                                                        : (PVt) ((int) want - 1);
+                    // The voicing each selection runs: none for the fold; for a
+                    // room, its source from the room table (19 Sep 2026: a room
+                    // has no voicing of its own, so "one step down" would name
+                    // Count for the bedroom); and otherwise the voicing of the
+                    // same name, one step down, because PlaybackVoicing has no
+                    // fold of its own.
+                    const auto  room   = playbackSimRoom (want);
+                    const auto  voiced = (want == PlaybackSim::MonoFold)       ? PVt::None
+                                       : (room != echojay::PlaybackRoom::None) ? echojay::roomRow (room).source
+                                                                               : (PVt) ((int) want - 1);
                     if (t.kind != PlaybackTileKind::Live || t.sim != want)
                         pbBad << "row " << i << " is not the live " << playbackSimName (want) << " tile; ";
                     else if (t.voicing != voiced)
@@ -10274,20 +10292,20 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     float dl[64], dr[64];
                     pbFillDrive (dl, dr);
                     float* drv[2] = { dl, dr };
-                    check (applyPlaybackSim (st, drv, 2, pbDrive),
+                    check (applyPlaybackSim (st, drv, 2, pbDrive, 0.0),
                            "pb PIN10: PhoneSpeaker runs a block, so its filters now hold state");
 
                     st.select (PS::None);
                     float offL[4] = { 0.9f, -0.9f, 0.9f, -0.9f };
                     float offR[4] = { -0.9f, 0.9f, -0.9f, 0.9f };
                     float* off[2] = { offL, offR };
-                    check (! applyPlaybackSim (st, off, 2, 4),
-                           "pb PIN10: one block of None runs nothing");
+                    check (! applyPlaybackSim (st, off, 2, 4, 0.0),
+                           "pb PIN10: one block of None runs nothing, with no room held to fade");
 
                     st.select (PS::PhoneSpeaker);
                     float gotL = pbFirstL, gotR = pbFirstR;
                     float* one[2] = { &gotL, &gotR };
-                    check (applyPlaybackSim (st, one, 2, 1),
+                    check (applyPlaybackSim (st, one, 2, 1, 0.0),
                            "pb PIN10: PhoneSpeaker selected again runs");
 
                     const float zL = pbZeroed (PV::PhoneSpeaker, pbFirstL);
@@ -10321,13 +10339,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                     float dl[64], dr[64];
                     pbFillDrive (dl, dr);
                     float* drv[2] = { dl, dr };
-                    check (applyPlaybackSim (st, drv, 2, pbDrive),
+                    check (applyPlaybackSim (st, drv, 2, pbDrive, 0.0),
                            "pb PIN11: PhoneSpeaker runs a block, so its filters now hold state");
 
                     st.select (PS::Laptop);
                     float gotL = pbFirstL, gotR = pbFirstR;
                     float* one[2] = { &gotL, &gotR };
-                    check (applyPlaybackSim (st, one, 2, 1),
+                    check (applyPlaybackSim (st, one, 2, 1, 0.0),
                            "pb PIN11: Laptop, selected straight after, runs");
 
                     const float zL = pbZeroed (PV::Laptop, pbFirstL);
@@ -10388,7 +10406,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                         st.prepare (pbRate);
                         st.select (sel);
                         float* ch[2] = { L, R };
-                        return applyPlaybackSim (st, ch, 2, pbN);
+                        return applyPlaybackSim (st, ch, 2, pbN, 0.0);
                     };
 
                     // From an activation, both mono-first voicings put out one
@@ -10444,6 +10462,512 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                            "pb PIN12: and the TV soundbar, which is stereo, keeps them different "
                            "through the stage");
                 }
+            }
+        }
+
+        // pr PIN1 to pr PIN7 -- THE ROOMS (EJPlaybackRoom.h, and the room's rule
+        // in PlaybackSimStage, EJPlaybackSim.h). 19 Sep 2026, with the bedroom.
+        // PREFIX pr: checked against every "xx PIN" in the suite rather than
+        // assumed free.
+        //
+        // BEHAVIOURAL, against the shipped engine. Every expected sample is
+        // computed here from a reference echojay::ReverbEngine given the
+        // bedroom's row, with the same float operations the stage's fade uses,
+        // so the comparisons are memcmp, not tolerances: the claims are "the
+        // network starts empty" and "the fade is this straight line", and a
+        // tolerance would also pass a network that kept a little of its tail.
+        {
+            using PS = PlaybackSim;
+            using PR = echojay::PlaybackRoom;
+            const double prRate  = 48000.0;
+            constexpr int prBlock = 240;                    // 5 ms at 48 kHz
+            const double prBlockSec = (double) prBlock / prRate;
+
+            // A deterministic stereo programme: two unrelated tones and a
+            // pseudo-random component, loud enough that a room's tail is far
+            // from zero, so "the tail is gone" and "the tail is there" differ
+            // by real samples rather than by rounding.
+            auto prSignal = [] (int n0, int n, float* L, float* R, float amp)
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    const unsigned k = (unsigned) (n0 + i);
+                    const float noise = (float) (((k * 1103515245u + 12345u) >> 16) & 0x7fffu) / 16384.0f - 1.0f;
+                    L[i] = amp * (0.5f * std::sin (0.031f * (float) k) + 0.3f * noise);
+                    R[i] = amp * (0.5f * std::sin (0.047f * (float) k + 0.7f) - 0.3f * noise);
+                }
+            };
+            auto prSame = [] (float a, float b) { return std::memcmp (&a, &b, sizeof (float)) == 0; };
+
+            // THE REFERENCE NETWORK: a fresh engine given the bedroom's row in
+            // the order the stage applies it, prepared and emptied. What the
+            // network does with no history.
+            auto prFreshRoom = [&] (echojay::ReverbEngine& e)
+            {
+                const auto& row = echojay::roomRow (PR::Bedroom);
+                e.setAlgorithm    (row.algorithm);
+                e.setSizePct      (row.sizePct);
+                e.setDecaySeconds (row.decaySec);
+                e.setPredelayMs   (row.predelayMs);
+                e.setDampingPct   (row.dampingPct);
+                e.setLowCutHz     (row.lowCutHz);
+                e.setEarlyLatePct (row.earlyLatePct);
+                e.setDiffusionPct (row.diffusionPct);
+                e.setMixPct       (row.mixPct);
+                e.prepare (prRate, PlaybackSimStage::kRoomChunkSamples);
+                e.reset();
+            };
+
+            // THE FADE, sample k of an engagement: the dry at 0, a straight
+            // line, and the network's own output from the fade's length on.
+            // A fade OUT is the same line read backwards: sample k after the
+            // room is left is prFade (len - k).
+            auto prFade = [] (int k, int len, float dry, float wet)
+            {
+                if (k <= 0)   return dry;
+                if (k >= len) return wet;
+                const float g = (float) k / (float) len;
+                return dry + g * (wet - dry);
+            };
+
+            // pr PIN1 -- THE ROOM TABLE, AND WHICH SELECTION IS WHICH ROOM.
+            // A missing row is a row of zeros, and for a reverb zeros PLAY: a
+            // decay of 0 is clamped to 0.1 s and a mix of 0 is silently off. So
+            // every field of every room is checked against the engine's own
+            // advertised ranges, and the mix must be above zero.
+            {
+                using RE = echojay::ReverbEngine;
+                juce::String bad;
+                for (int i = 1; i < (int) PR::Count; ++i)
+                {
+                    const auto& r = echojay::kRoomTable[(size_t) i];
+                    auto in = [&] (float v, float lo, float hi, const char* what)
+                    {
+                        if (! (v >= lo && v <= hi))
+                            bad << "room " << i << " " << what << " " << v << "; ";
+                    };
+                    in (r.sizePct,      RE::kMinSizePct,      RE::kMaxSizePct,      "size");
+                    in (r.decaySec,     RE::kMinDecaySec,     RE::kMaxDecaySec,     "decay");
+                    in (r.predelayMs,   RE::kMinPredelayMs,   RE::kMaxPredelayMs,   "predelay");
+                    in (r.dampingPct,   RE::kMinDampingPct,   RE::kMaxDampingPct,   "damping");
+                    in (r.lowCutHz,     RE::kMinLowCutHz,     RE::kMaxLowCutHz,     "low cut");
+                    in (r.earlyLatePct, RE::kMinEarlyLatePct, RE::kMaxEarlyLatePct, "early/late");
+                    in (r.diffusionPct, RE::kMinDiffusionPct, RE::kMaxDiffusionPct, "diffusion");
+                    if (! (r.mixPct > 0.0f && r.mixPct <= RE::kMaxMixPct))
+                        bad << "room " << i << " mix " << r.mixPct << "; ";
+                    if ((int) r.source < 0 || (int) r.source >= (int) echojay::PlaybackVoicing::Count)
+                        bad << "room " << i << " source " << (int) r.source << "; ";
+                    if ((int) r.algorithm < 0 || (int) r.algorithm >= echojay::kNumReverbAlgorithms)
+                        bad << "room " << i << " algorithm " << (int) r.algorithm << "; ";
+                }
+                check (bad.isEmpty(),
+                       "pr PIN1: every room's settings are inside the engine's own ranges, so none is "
+                       "clamped, and every mix is above zero, so no room is silently off", bad);
+
+                juce::String mapBad;
+                int owners[(int) PR::Count] = {};
+                for (int s = 0; s <= (int) PS::Count; ++s)
+                {
+                    const int r = (int) playbackSimRoom ((PS) s);
+                    if (r < 0 || r >= (int) PR::Count) mapBad << "selection " << s << " maps outside the rooms; ";
+                    else if (s < (int) PS::Count)       ++owners[r];
+                    else if (r != (int) PR::None)       mapBad << "Count maps to a room; ";
+                }
+                for (int r = 1; r < (int) PR::Count; ++r)
+                    if (owners[r] != 1) mapBad << "room " << r << " belongs to " << owners[r] << " selections; ";
+                if (&echojay::roomRow (PR::Count) != &echojay::kRoomTable[0]
+                    || &echojay::roomRow ((PR) -1) != &echojay::kRoomTable[0])
+                    mapBad << "a room outside the table does not read the None row; ";
+                check (mapBad.isEmpty(),
+                       "pr PIN1: every room belongs to exactly one selection, Count to none, and a room "
+                       "outside the table reads the None row rather than past it", mapBad);
+            }
+
+            // pr PIN2 -- ENGAGING FROM OFF: THE NETWORK STARTS EMPTY AND FADES IN.
+            // Select the bedroom on a fresh stage and run eight 5 ms blocks.
+            // Sample k must be prFade (k, 1440, dry, fresh network): the dry
+            // exactly at the first sample, a straight line for 30 ms, and the
+            // network's own output, starting from empty, bit for bit after.
+            {
+                PlaybackSimStage st;   st.prepare (prRate);
+                PlaybackSimStage st44; st44.prepare (44100.0);
+                check (st.roomFadeSamples() == 1440 && st44.roomFadeSamples() == 1323,
+                       "pr PIN2: the fade is 30 ms: 1,440 samples at 48 kHz and 1,323 at 44.1 kHz",
+                       juce::String (st.roomFadeSamples()) + ", " + juce::String (st44.roomFadeSamples()));
+
+                st.select (PS::Bedroom);
+                echojay::ReverbEngine ref;
+                prFreshRoom (ref);
+                const int len = st.roomFadeSamples();
+                juce::String bad;
+                bool allRan = true, firstDry = false, wetDiffers = false;
+                for (int b = 0; b < len / prBlock + 2; ++b)
+                {
+                    float L[prBlock], R[prBlock], dL[prBlock], dR[prBlock], wL[prBlock], wR[prBlock];
+                    prSignal (b * prBlock, prBlock, L, R, 0.8f);
+                    std::copy (L, L + prBlock, dL); std::copy (R, R + prBlock, dR);
+                    std::copy (L, L + prBlock, wL); std::copy (R, R + prBlock, wR);
+                    float* ch[2] = { L, R };
+                    allRan = applyPlaybackSim (st, ch, 2, prBlock, b * prBlockSec) && allRan;
+                    ref.process (wL, wR, prBlock);
+                    if (b == 0)
+                        firstDry = prSame (L[0], dL[0]) && prSame (R[0], dR[0]);
+                    for (int i = 0; i < prBlock; ++i)
+                    {
+                        const int k = b * prBlock + i;
+                        if ((! prSame (L[i], prFade (k, len, dL[i], wL[i]))
+                             || ! prSame (R[i], prFade (k, len, dR[i], wR[i]))) && bad.length() < 300)
+                            bad << "sample " << k << "; ";
+                        if (k >= len && ! prSame (wL[i], dL[i])) wetDiffers = true;
+                    }
+                }
+                check (allRan && firstDry,
+                       "pr PIN2: from Off the bedroom engages and runs, and its first sample is the dry "
+                       "signal exactly: no step as the room comes in");
+                check (bad.isEmpty() && wetDiffers,
+                       "pr PIN2: it fades in on a straight line over 30 ms and is then the network's own "
+                       "output, bit for bit, the network starting empty (and that output differs from the "
+                       "dry, so the comparison is not vacuous)", bad);
+            }
+
+            // pr PIN3 -- NO TAIL FROM AN EARLIER ENGAGEMENT: OPEN LIST 194'S CASE.
+            // The bedroom, driven loud; then the phone speaker, under which the
+            // voicing rule's previousVoicing_ is PhoneSpeaker, not None, so a
+            // rule keyed on it would reset nothing; then the bedroom again. The
+            // room's own rule must have let the first engagement go, so the
+            // second starts from an EMPTY network: prFade against a fresh one.
+            // A precondition shows the drive left a tail a kept network plays.
+            {
+                PlaybackSimStage st;
+                st.prepare (prRate);
+                st.select (PS::Bedroom);
+                double t = 0.0;
+                int    k0 = 0;
+                auto prStep = [&] (float amp)
+                {
+                    float L[prBlock], R[prBlock];
+                    prSignal (k0, prBlock, L, R, amp);
+                    float* ch[2] = { L, R };
+                    applyPlaybackSim (st, ch, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                };
+                for (int b = 0; b < 20; ++b) prStep (1.0f);   // 100 ms of drive: the network is full
+                st.select (PS::PhoneSpeaker);
+                for (int b = 0; b < 20; ++b) prStep (0.3f);   // 100 ms of phone: the room fades out in 30
+                st.select (PS::Bedroom);
+
+                const int probeK0 = k0;
+                echojay::ReverbEngine fresh, kept;
+                prFreshRoom (fresh);
+                prFreshRoom (kept);
+                for (int b = 0; b < 20; ++b)                  // kept: the same drive, and no let-go
+                {
+                    float L[prBlock], R[prBlock];
+                    prSignal (b * prBlock, prBlock, L, R, 1.0f);
+                    kept.process (L, R, prBlock);
+                }
+
+                const int len = st.roomFadeSamples();
+                juce::String bad;
+                bool ran = true, keptDiffers = false;
+                for (int b = 0; b < len / prBlock + 2; ++b)
+                {
+                    float L[prBlock], R[prBlock], dL[prBlock], dR[prBlock];
+                    float fL[prBlock], fR[prBlock], kL[prBlock], kR[prBlock];
+                    prSignal (probeK0 + b * prBlock, prBlock, L, R, 0.5f);
+                    std::copy (L, L + prBlock, dL); std::copy (R, R + prBlock, dR);
+                    std::copy (L, L + prBlock, fL); std::copy (R, R + prBlock, fR);
+                    std::copy (L, L + prBlock, kL); std::copy (R, R + prBlock, kR);
+                    float* ch[2] = { L, R };
+                    ran = applyPlaybackSim (st, ch, 2, prBlock, t) && ran;
+                    t += prBlockSec;
+                    fresh.process (fL, fR, prBlock);
+                    kept.process  (kL, kR, prBlock);
+                    for (int i = 0; i < prBlock; ++i)
+                    {
+                        const int k = b * prBlock + i;
+                        if ((! prSame (L[i], prFade (k, len, dL[i], fL[i]))
+                             || ! prSame (R[i], prFade (k, len, dR[i], fR[i]))) && bad.length() < 300)
+                            bad << "sample " << k << "; ";
+                        if (! prSame (kL[i], fL[i])) keptDiffers = true;
+                    }
+                }
+                check (keptDiffers,
+                       "pr PIN3: precondition, the drive leaves a tail: a network that kept it puts out "
+                       "something other than an empty one");
+                check (ran && bad.isEmpty(),
+                       "pr PIN3: room, then the phone speaker, then the room again: the second engagement "
+                       "starts from an EMPTY network, so no tail from the first is ever replayed", bad);
+            }
+
+            // pr PIN4 -- SWITCHED OFF MID-TAIL: A 30 ms FADE, AND THE NEW CONTRACT.
+            // Two stages, driven alike into the bedroom; one is then switched
+            // off, the other kept on. The one switched off must put out, for
+            // the first 1,440 samples, prFade (1440 - k) between the dry and the
+            // kept stage's output: the kept output exactly at the switch (no
+            // step), a straight line down, the dry exactly after. And the
+            // contract: true for the six 5 ms blocks of the fade although
+            // nothing is selected, then false and bit-identical.
+            {
+                PlaybackSimStage on, off;
+                on.prepare (prRate);  off.prepare (prRate);
+                on.select (PS::Bedroom);  off.select (PS::Bedroom);
+                double t = 0.0;
+                int    k0 = 0;
+                for (int b = 0; b < 20; ++b)
+                {
+                    float L1[prBlock], R1[prBlock], L2[prBlock], R2[prBlock];
+                    prSignal (k0, prBlock, L1, R1, 1.0f);
+                    prSignal (k0, prBlock, L2, R2, 1.0f);
+                    float* c1[2] = { L1, R1 };
+                    float* c2[2] = { L2, R2 };
+                    applyPlaybackSim (on,  c1, 2, prBlock, t);
+                    applyPlaybackSim (off, c2, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                }
+                off.select (PS::None);
+
+                const int len = off.roomFadeSamples();
+                const int fadeBlocks = len / prBlock;   // 6: the fade ends on a block edge at 48 kHz
+                juce::String bad;
+                bool firstSame = false, stepAtSwitch = false, afterQuiet = true;
+                int  ranBlocks = 0;
+                for (int b = 0; b < fadeBlocks + 3; ++b)
+                {
+                    float oL[prBlock], oR[prBlock], fL[prBlock], fR[prBlock], dL[prBlock], dR[prBlock];
+                    prSignal (k0, prBlock, oL, oR, 0.3f);
+                    std::copy (oL, oL + prBlock, fL); std::copy (oR, oR + prBlock, fR);
+                    std::copy (oL, oL + prBlock, dL); std::copy (oR, oR + prBlock, dR);
+                    float* c1[2] = { oL, oR };
+                    float* c2[2] = { fL, fR };
+                    applyPlaybackSim (on, c1, 2, prBlock, t);
+                    const bool offRan = applyPlaybackSim (off, c2, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                    if (b == 0)
+                    {
+                        firstSame    = prSame (fL[0], oL[0]) && prSame (fR[0], oR[0]);
+                        stepAtSwitch = ! prSame (oL[0], dL[0]) || ! prSame (oR[0], dR[0]);
+                    }
+                    if (b < fadeBlocks)
+                    {
+                        if (offRan) ++ranBlocks;
+                        for (int i = 0; i < prBlock; ++i)
+                        {
+                            const int k = b * prBlock + i;
+                            if ((! prSame (fL[i], prFade (len - k, len, dL[i], oL[i]))
+                                 || ! prSame (fR[i], prFade (len - k, len, dR[i], oR[i]))) && bad.length() < 300)
+                                bad << "sample " << k << "; ";
+                        }
+                    }
+                    else
+                    {
+                        afterQuiet = afterQuiet && ! offRan
+                                  && std::memcmp (fL, dL, sizeof (fL)) == 0
+                                  && std::memcmp (fR, dR, sizeof (fR)) == 0;
+                    }
+                }
+                check (stepAtSwitch,
+                       "pr PIN4: precondition, at the moment of switching off the room's output differs "
+                       "from the dry, so an instant cut there would be a step");
+                check (firstSame,
+                       "pr PIN4: the first sample after switching off is exactly the sample the room "
+                       "would have played had it stayed on: no step at the switch");
+                check (bad.isEmpty(),
+                       "pr PIN4: over the next 30 ms the output falls on a straight line from the room's "
+                       "to the dry, and is the dry exactly from then on", bad);
+                check (ranBlocks == fadeBlocks,
+                       "pr PIN4: THE CONTRACT: for the six blocks of the fade the stage reports that it "
+                       "ran, although nothing is selected",
+                       juce::String (ranBlocks) + " of " + juce::String (fadeBlocks));
+                check (afterQuiet,
+                       "pr PIN4: THE CONTRACT: from the first block after the fade the stage reports it "
+                       "ran nothing, and every sample is bit-identical to what arrived");
+            }
+
+            // pr PIN5 -- THE IDLE GAP. A host may stop calling processBlock on
+            // an idle channel, since the plugin reports no tail. If more time has
+            // passed since the last room block than the room's tail plus that
+            // block's length, the network is emptied: the next block is a fresh
+            // network's output (fully engaged, so no fade: the dry level carries
+            // on). Just short of that, the tail is kept. The tail is the Reverb
+            // plugin's formula, computed here from a reference engine.
+            {
+                echojay::ReverbEngine probe;
+                prFreshRoom (probe);
+                const double tail = (double) probe.getPredelayMs() * 0.001 + probe.effectiveDecaySeconds() * 1.2;
+                const double threshold = tail + prBlockSec;
+
+                // One run: drive 100 ms, then one block `elapsed` seconds after
+                // the last one. Returns the block, and the kept stage's and a
+                // fresh network's answers for it.
+                struct GapOut { float out[2][prBlock], carried[2][prBlock], zeroed[2][prBlock]; };
+                auto prGap = [&] (double elapsed)
+                {
+                    GapOut g {};
+                    PlaybackSimStage st, ref;
+                    st.prepare (prRate);  ref.prepare (prRate);
+                    st.select (PS::Bedroom);  ref.select (PS::Bedroom);
+                    double t = 0.0, tLast = 0.0;
+                    int    k0 = 0;
+                    for (int b = 0; b < 20; ++b)
+                    {
+                        float L1[prBlock], R1[prBlock], L2[prBlock], R2[prBlock];
+                        prSignal (k0, prBlock, L1, R1, 1.0f);
+                        prSignal (k0, prBlock, L2, R2, 1.0f);
+                        float* c1[2] = { L1, R1 };
+                        float* c2[2] = { L2, R2 };
+                        applyPlaybackSim (st,  c1, 2, prBlock, t);
+                        applyPlaybackSim (ref, c2, 2, prBlock, t);
+                        tLast = t;
+                        t += prBlockSec;
+                        k0 += prBlock;
+                    }
+                    prSignal (k0, prBlock, g.out[0], g.out[1], 0.3f);
+                    std::copy (g.out[0], g.out[0] + prBlock, g.carried[0]);
+                    std::copy (g.out[1], g.out[1] + prBlock, g.carried[1]);
+                    std::copy (g.out[0], g.out[0] + prBlock, g.zeroed[0]);
+                    std::copy (g.out[1], g.out[1] + prBlock, g.zeroed[1]);
+                    float* c1[2] = { g.out[0], g.out[1] };
+                    float* c2[2] = { g.carried[0], g.carried[1] };
+                    applyPlaybackSim (st,  c1, 2, prBlock, tLast + elapsed);
+                    applyPlaybackSim (ref, c2, 2, prBlock, t);          // no gap: the tail carried
+                    echojay::ReverbEngine fresh;
+                    prFreshRoom (fresh);
+                    fresh.process (g.zeroed[0], g.zeroed[1], prBlock);   // an empty network
+                    return g;
+                };
+                auto same = [] (const float (&a)[2][prBlock], const float (&b)[2][prBlock])
+                {
+                    return std::memcmp (a, b, sizeof (a)) == 0;
+                };
+
+                const auto longGap  = prGap (10.0);
+                const auto justLess = prGap (threshold - 0.001);
+                const auto justMore = prGap (threshold + 0.001);
+                check (! same (longGap.carried, longGap.zeroed),
+                       "pr PIN5: precondition, a carried tail and an empty network give different samples");
+                check (same (longGap.out, longGap.zeroed),
+                       "pr PIN5: after ten seconds unseen the network is empty: the block is a fresh "
+                       "network's, with no fade, so the dry level carries on");
+                check (same (justLess.out, justLess.carried),
+                       "pr PIN5: a gap just short of the tail plus a block keeps the tail",
+                       "threshold " + juce::String (threshold, 4) + " s");
+                check (same (justMore.out, justMore.zeroed),
+                       "pr PIN5: and one just past it empties the network",
+                       "threshold " + juce::String (threshold, 4) + " s");
+            }
+
+            // pr PIN6 -- THE ALIASED POINTER. For a one-channel buffer the call
+            // site passes getWritePointer(0) twice. The engine treats any
+            // non-null right channel as real and writes wetR into it, which
+            // here is the left channel. So the stage must hand it nullptr, and
+            // the output must be the engine run on the one channel. Both shapes
+            // a mono host can give: one channel, and two claimed over one
+            // buffer. A control shows what the nullptr prevents.
+            {
+                auto prMono = [&] (int numCh)
+                {
+                    juce::String bad;
+                    PlaybackSimStage st;
+                    st.prepare (prRate);
+                    st.select (PS::Bedroom);
+                    const int len = st.roomFadeSamples();
+                    echojay::ReverbEngine ref;
+                    prFreshRoom (ref);
+                    for (int b = 0; b < len / prBlock + 2; ++b)
+                    {
+                        float M[prBlock], D[prBlock], W[prBlock], unused[prBlock];
+                        prSignal (b * prBlock, prBlock, M, unused, 0.8f);
+                        std::copy (M, M + prBlock, D);
+                        std::copy (M, M + prBlock, W);
+                        float* ch[2] = { M, M };
+                        applyPlaybackSim (st, ch, numCh, prBlock, b * prBlockSec);
+                        ref.process (W, nullptr, prBlock);
+                        for (int i = 0; i < prBlock; ++i)
+                            if (! prSame (M[i], prFade (b * prBlock + i, len, D[i], W[i])) && bad.length() < 300)
+                                bad << "sample " << (b * prBlock + i) << "; ";
+                    }
+                    return bad;
+                };
+                const auto one = prMono (1);
+                check (one.isEmpty(),
+                       "pr PIN6: a one-channel buffer, as the call site passes it, is the engine run on "
+                       "that one channel, through the fade", one);
+                const auto two = prMono (2);
+                check (two.isEmpty(),
+                       "pr PIN6: and two channels claimed over one buffer are the same", two);
+
+                // CONTROL: the engine handed the same buffer as a real right
+                // channel, which is what the stage would do without the test.
+                echojay::ReverbEngine aliased, single;
+                prFreshRoom (aliased);
+                prFreshRoom (single);
+                bool differs = false;
+                for (int b = 0; b < 4; ++b)
+                {
+                    float A[prBlock], S[prBlock], unused[prBlock];
+                    prSignal (b * prBlock, prBlock, A, unused, 0.8f);
+                    std::copy (A, A + prBlock, S);
+                    aliased.process (A, A, prBlock);
+                    single.process (S, nullptr, prBlock);
+                    if (std::memcmp (A, S, sizeof (A)) != 0) differs = true;
+                }
+                check (differs,
+                       "pr PIN6: control: the engine given the one buffer as a real right channel writes a "
+                       "different left, which is the bug the nullptr prevents");
+            }
+
+            // pr PIN7 -- TWO TEXT FACTS THE BEHAVIOUR ABOVE CANNOT SEE (text pin).
+            // 1. The idle-gap rule's tail is the EchoJay Reverb plugin's own
+            //    formula, written out again in the stage because it is a member
+            //    of another processor. pr PIN5 computes the threshold from the
+            //    same two lines, so it would follow a change to either copy;
+            //    this is what says the two copies still agree.
+            // 2. The processor passes the stage's clock. The rule only exists
+            //    if the real call site feeds it time: every call in this suite
+            //    passes its own, so a call site passing a constant would leave
+            //    the rule dead with the suite green.
+            // One negative control each, putting the mistake back.
+            {
+                auto slurp = [] (const char* path)
+                {
+                    std::ifstream f (path);
+                    std::stringstream ss; ss << f.rdbuf();
+                    return juce::String (ss.str());
+                };
+                const auto proc  = codeOnly (slurp ("Source/EedReverbProcessor.cpp"));
+                const auto stage = codeOnly (slurp ("Source/EJPlaybackSim.h"));
+                const auto pp    = codeOnly (slurp ("Source/PluginProcessor.cpp"));
+
+                const juce::String l1 ("const double pre = (double) engine_.getPredelayMs() * 0.001;");
+                const juce::String l2 ("return pre + engine_.effectiveDecaySeconds() * 1.2;");
+                auto tailSame = [&] (const juce::String& procCode)
+                {
+                    const auto body = functionBody (procCode, "double EedReverbProcessor::getTailLengthSeconds() const");
+                    return body.contains (l1) && body.contains (l2)
+                        && stage.contains (l1.replace ("engine_", "room_"))
+                        && stage.contains (l2.replace ("engine_", "room_"));
+                };
+                check (tailSame (proc),
+                       "pr PIN7 (text pin): the idle-gap rule's tail is the Reverb plugin's own formula: "
+                       "getTailLengthSeconds and the stage's roomTailSeconds say the same two lines");
+                const auto procMut = proc.replace ("effectiveDecaySeconds() * 1.2", "effectiveDecaySeconds() * 1.5");
+                check (procMut != proc && ! tailSame (procMut),
+                       "pr PIN7 (text pin): control: the plugin's formula changed on its own is reported");
+
+                auto clockPassed = [] (const juce::String& code)
+                {
+                    return code.contains ("buffer.getNumSamples(), playbackStage_.clockSeconds());");
+                };
+                check (clockPassed (pp),
+                       "pr PIN7 (text pin): the processor passes the stage's clock to applyPlaybackSim, so "
+                       "the idle-gap rule is fed time rather than a constant");
+                const auto ppMut = pp.replace ("playbackStage_.clockSeconds());", "0.0);");
+                check (ppMut != pp && ! clockPassed (ppMut),
+                       "pr PIN7 (text pin): control: a constant in its place is reported");
             }
         }
 

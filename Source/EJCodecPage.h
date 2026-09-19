@@ -379,10 +379,10 @@ inline juce::Rectangle<int> playbackScrollThumb (int tileCount, juce::Rectangle<
 
     224 px per unit of delta is CHOSEN, not measured: it is the scale JUCE's own
     Viewport applies by default as I recall it (14 times a 16 px step), not read
-    from JUCE's source here. Nobody has watched it on this page, because with
-    seven tiles the grid never scrolls; it is tuned the first time a build has
-    more than eight. A nonzero delta always moves at least one pixel, so a slow
-    trackpad cannot round to nothing. */
+    from JUCE's source here. The grid has scrolled since 3ad3772 (ten tiles,
+    eleven now), but no one has yet reported watching the wheel on it, so the
+    number is still a guess waiting to be tuned. A nonzero delta always moves at
+    least one pixel, so a slow trackpad cannot round to nothing. */
 inline constexpr float kPlaybackWheelPxPerUnit = 224.0f;
 
 inline int playbackWheelStepPx (float deltaY)

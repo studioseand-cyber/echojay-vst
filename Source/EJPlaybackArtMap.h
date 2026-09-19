@@ -23,12 +23,12 @@
 // a pin reading these symbols would need the test's link line changed, which
 // is the same shape as the OpenGL gap in that script.
 //
-// THE PLAYBACK GRID DRAWS TEN OF THEM, through playbackArtForTile below:
-// mono_fold.jpg for the Mono tile, the eight voicing pictures, and
-// codec_lossy.jpg for the codec tile. Referencing them is what makes the
-// linker pull those images into the AU and VST3. Of the other nine,
-// codec_transparent and codec_loudness have cases in codecArtFor that nothing
-// calls, and car_speaker, bedroom, small_bar, club_floor, festival_field,
+// THE PLAYBACK GRID DRAWS ELEVEN OF THEM, through playbackArtForTile below:
+// mono_fold.jpg for the Mono tile, the eight voicing pictures, bedroom.jpg for
+// the one room, and codec_lossy.jpg for the codec tile. Referencing them is
+// what makes the linker pull those images into the AU and VST3. Of the other
+// eight, codec_transparent and codec_loudness have cases in codecArtFor that
+// nothing calls, and car_speaker, small_bar, club_floor, festival_field,
 // headphones and studio_monitors are embedded in the library and mapped to
 // nothing.
 
@@ -47,8 +47,9 @@ struct PlaybackArt
 /** The picture for a device voicing. None, and the Count sentinel, have none.
 
     CarDashboard uses car_interior.jpg, the dashboard view; car_speaker.jpg is
-    embedded but mapped to nothing yet, as are the room pictures (bedroom,
-    small_bar, club_floor, festival_field), headphones and studio_monitors. */
+    embedded but mapped to nothing yet, as are three of the room pictures
+    (small_bar, club_floor, festival_field), headphones and studio_monitors.
+    The rooms' pictures are looked up by room, in playbackRoomArtFor. */
 inline PlaybackArt playbackArtFor (PlaybackVoicing v) noexcept
 {
     switch (v)
@@ -63,6 +64,20 @@ inline PlaybackArt playbackArtFor (PlaybackVoicing v) noexcept
         case PlaybackVoicing::ClubPA:           return { EJPlaybackArt::club_pa_jpg,     EJPlaybackArt::club_pa_jpgSize };
         case PlaybackVoicing::None:
         case PlaybackVoicing::Count:
+            break;
+    }
+    return {};
+}
+
+/** The picture for a room. None, and the Count sentinel, have none. No default
+    label, so -Wswitch-enum names a room added without a picture. */
+inline PlaybackArt playbackRoomArtFor (PlaybackRoom r) noexcept
+{
+    switch (r)
+    {
+        case PlaybackRoom::Bedroom: return { EJPlaybackArt::bedroom_jpg, EJPlaybackArt::bedroom_jpgSize };
+        case PlaybackRoom::None:
+        case PlaybackRoom::Count:
             break;
     }
     return {};
@@ -88,11 +103,13 @@ inline PlaybackArt codecArtFor (CodecTile t) noexcept
     return {};
 }
 
-/** The picture a grid tile shows: mono_fold.jpg for Mono, a voicing tile's
-    voicing picture, codec_lossy.jpg for the codec tile. Every tile has one.
+/** The picture a grid tile shows: mono_fold.jpg for Mono, a room tile's room
+    picture, a voicing tile's voicing picture, codec_lossy.jpg for the codec
+    tile. Every tile has one.
 
     Mono is matched on its selection because it is not a voicing: it has no
-    PlaybackVoicing value for playbackArtFor to take. */
+    PlaybackVoicing value for playbackArtFor to take. A room is matched on its
+    room, because its voicing is its source, and the bedroom's source is None. */
 inline PlaybackArt playbackArtForTile (const PlaybackTile& t) noexcept
 {
     switch (t.kind)
@@ -101,6 +118,8 @@ inline PlaybackArt playbackArtForTile (const PlaybackTile& t) noexcept
         case PlaybackTileKind::Live:
             if (t.sim == PlaybackSim::MonoFold)
                 return { EJPlaybackArt::mono_fold_jpg, EJPlaybackArt::mono_fold_jpgSize };
+            if (playbackSimRoom (t.sim) != PlaybackRoom::None)
+                return playbackRoomArtFor (playbackSimRoom (t.sim));
             return playbackArtFor (t.voicing);
     }
     return {};
