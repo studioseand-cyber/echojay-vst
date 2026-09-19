@@ -2616,6 +2616,31 @@ void ChainHost::moveSlot(int i, int direction)
     }
 }
 
+juce::String ChainHost::insertBuiltinAt(const juce::PluginDescription& desc, int index)
+{
+    const auto err = loadBuiltinNow(desc);
+    if (err.isNotEmpty()) return err;
+    const int last = (int) slots_.size() - 1;
+    if (index >= 0 && index < last) moveSlotTo(last, index);
+    return {};
+}
+bool ChainHost::moveSlotTo(int from, int to)
+{
+    GraphMutation graphMutation(*this);
+    const int n = (int) slots_.size();
+    if (from < 0 || from >= n || to < 0 || to >= n || from == to) return false;
+    if (from < to) std::rotate(slots_.begin() + from, slots_.begin() + from + 1, slots_.begin() + to + 1);
+    else           std::rotate(slots_.begin() + to, slots_.begin() + from, slots_.begin() + from + 1);
+    bumpChainRevision();
+    rebuildGraph();
+    if (prepared_)
+    {
+        graph_->setPlayConfigDetails(2, 2, sampleRate_, blockSize_);
+        graph_->prepareToPlay(sampleRate_, blockSize_);
+    }
+    return true;
+}
+
 void ChainHost::setSlotBypassed(int i, bool bypassed)
 {
     GraphMutation graphMutation(*this);   // v9 change B

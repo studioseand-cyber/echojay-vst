@@ -234,6 +234,8 @@ target_sources(EchoJay PRIVATE
     Source/EedGainEditor.h
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
+    Source/EedLevelProcessor.cpp
+    Source/EedLevelEditor.cpp
     Source/EedGainProcessor.h
     Source/EedHarmonicAnalysis.cpp
     Source/EedHarmonicAnalysis.h
@@ -567,6 +569,8 @@ target_sources(EchoJayLink PRIVATE
     Source/EedGainEditor.h
     Source/EedGainEngine.h
     Source/EedGainProcessor.cpp
+    Source/EedLevelProcessor.cpp
+    Source/EedLevelEditor.cpp
     Source/EedGainProcessor.h
     Source/EedHarmonicAnalysis.cpp
     Source/EedHarmonicAnalysis.h
@@ -828,6 +832,8 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedExciterProcessor.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
+    Source/EedLevelProcessor.cpp
+    Source/EedLevelEditor.cpp
     Source/EedHarmonicAnalysis.cpp
     Source/EedHarmonicCore.cpp
     Source/EedKeyDetectorEditor.cpp
@@ -845,6 +851,8 @@ target_sources(EchoJayBuiltinRegistryTest PRIVATE
     Source/EedExpanderProcessor.cpp
     Source/EedGainEditor.cpp
     Source/EedGainProcessor.cpp
+    Source/EedLevelProcessor.cpp
+    Source/EedLevelEditor.cpp
     Source/EedGateEditor.cpp
     Source/EedGateProcessor.cpp
     Source/EedLimiterEditor.cpp

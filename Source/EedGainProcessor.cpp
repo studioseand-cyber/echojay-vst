@@ -201,7 +201,7 @@ namespace
                             "precise dB rather than approximated.";
         d.identifier      = "echojay:builtin:gain";
         d.uid             = 0x456A474E;   // 'EjGN' — frozen once shipped
-        d.aliases         = { "EchoJayGain", "EchoJay Level", "EchoJay Trim" };
+        d.aliases         = { "EchoJayGain", "EchoJay Trim" };   // 18e: "EchoJay Level" is its own device now (EedLevelProcessor)
         d.schema          = EedGainProcessor::schema();
         d.create          = [] { return std::make_unique<EedGainProcessor>(); };
         return d;

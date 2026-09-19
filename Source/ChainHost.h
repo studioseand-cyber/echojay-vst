@@ -856,6 +856,9 @@ public:
 
     void removeSlot(int i);
     void moveSlot(int i, int direction);    // direction: -1 = left, +1 = right
+    // 18e: a built-in placed at an index (the Level slot before the last limiter): appends, then rotates into place
+    juce::String insertBuiltinAt (const juce::PluginDescription& desc, int index);
+    bool moveSlotTo (int from, int to);
     void setSlotBypassed(int i, bool bypassed);
     // v9: the LEASE's write - effective state only, intended untouched. The
     // lease engages with setLeaseBypass(i, true) and releases with
@@ -1164,6 +1167,8 @@ public:
     // 18 Sep 2026 (loudness loop): reset ONLY the chain-output tally and set its counting floor.
     void resetChainOutLevels() { chainOutTally_.reset(); }
     void setChainOutCountFloor (float lufs) { chainOutTally_.setCountFloor (lufs); }
+    void resetChainOutShortTermMax() { chainOutTally_.resetShortTermMax(); }   // 18e: the loop's measurement window
+    void resetChainInShortTermMax()  { chainInTally_.resetShortTermMax(); }
     SlotLevels getSlotLevels(int i) const;
     void resetAllLevels();   // source change, manual reset
 

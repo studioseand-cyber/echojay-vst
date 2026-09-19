@@ -97,6 +97,11 @@ public:
         float heardSeconds  = 0.0f;   // gated audio heard since reset, undecayed
         float heardAboveSeconds = 0.0f;   // 18 Sep 2026 (loudness loop): hops above the counting floor (setCountFloor), undecayed
         float truePeakDb = -200.0f;   // 18 Sep 2026 (loudness loop): TRUE PEAK, 4x oversampled, max hold since reset (dBTP), undecayed
+        // 18e (19 Sep 2026, loop v2): SHORT-TERM loudness, the BS.1770 3 s window (30 hops), K-weighted, no gate.
+        // shortTermDb = the latest full 3 s window; maxShortTermDb = the loudest 3 s window since resetShortTermMax()
+        // (NaN until 30 hops have closed since that reset). Independent of the integrated stats and of reset().
+        float shortTermDb    = std::numeric_limits<float>::quiet_NaN();
+        float maxShortTermDb = std::numeric_limits<float>::quiet_NaN();
         float windowSeconds = 0.0f;   // how much of it the estimate describes
         // Everything below is NaN while !known. Read known first.
         float levelDb = std::numeric_limits<float>::quiet_NaN();   // gated: LUFS (K) or dBFS RMS (Plain)
@@ -127,6 +132,8 @@ public:
     void reset() noexcept { resetRequested_.store (true, std::memory_order_relaxed); }
     // Any thread. Hops whose momentary LUFS is above this floor count toward heardAboveSeconds (NaN = off).
     void setCountFloor (float lufs) noexcept { countFloorLufs_.store (lufs, std::memory_order_relaxed); }
+    // 18e: restart the max-short-term hold (the loop's measurement window) without touching the integrated stats.
+    void resetShortTermMax() noexcept { stResetRequested_.store (true, std::memory_order_relaxed); }
 
     // Audio thread. right may be null (mono). n >= 0.
     void push (const float* left, const float* right, int n) noexcept
@@ -254,6 +261,12 @@ private:
     // last kHopsPerBlock hop K-powers for the 400 ms momentary block
     std::array<double, kHopsPerBlock> ring_ {};
     int    ringPos_ = 0, ringFill_ = 0;
+    // 18e: the 3 s short-term ring (30 hops) and its max hold
+    static constexpr int kStHops = 30;
+    std::array<double, kStHops> stRing_ {};
+    int    stPos_ = 0, stFill_ = 0;
+    double stLastDb_ = std::numeric_limits<double>::quiet_NaN(), stMaxDb_ = std::numeric_limits<double>::quiet_NaN();
+    std::atomic<bool> stResetRequested_ { false };
     // the tally proper
     std::array<double, kBins> bins_ {};   // decayed weights of momentary loudness (absolute-gated hops)
     std::array<double, kBins> binPow_ {}; // decayed K-power sums per bin: the gated mean is exact, not bin-centred
@@ -308,6 +321,16 @@ private:
             const float cf = countFloorLufs_.load (std::memory_order_relaxed);
             if (std::isfinite (cf) && hopK > 0.0 && offsetDb() + 10.0 * std::log10 (hopK) > (double) cf) heardAboveHops_ += 1.0;
         }
+        {   // 18e: short-term (3 s) window, K-weighted, ungated; the max hold restarts on resetShortTermMax()
+            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; }
+            stRing_[(size_t) stPos_] = hopK; stPos_ = (stPos_ + 1) % kStHops; if (stFill_ < kStHops) ++stFill_;
+            if (stFill_ == kStHops)
+            {
+                double sp = 0.0; for (auto v : stRing_) sp += v; sp /= (double) kStHops;
+                stLastDb_ = sp > 0.0 ? offsetDb() + 10.0 * std::log10 (sp) : -200.0;
+                if (! std::isfinite (stMaxDb_) || stLastDb_ > stMaxDb_) stMaxDb_ = stLastDb_;
+            }
+        }
         ring_[(size_t) ringPos_] = hopK;
         ringPos_ = (ringPos_ + 1) % kHopsPerBlock;
         if (ringFill_ < kHopsPerBlock) ++ringFill_;
@@ -354,6 +377,8 @@ private:
         s.heardSeconds  = (float) (heardHops_ * kHopSeconds);
         s.heardAboveSeconds = (float) (heardAboveHops_ * kHopSeconds);
         s.truePeakDb = (float) (tpMax_ > 0.0f ? 20.0 * std::log10 (tpMax_) : -200.0);
+        s.shortTermDb    = (float) stLastDb_;     // 18e
+        s.maxShortTermDb = (float) stMaxDb_;
         s.windowSeconds = (float) juce::jmin ((double) s.heardSeconds, kEffectiveWindowSeconds);
         s.known = s.heardSeconds >= kHeardFloorSeconds;
         if (! s.known) return s;   // every number stays NaN
