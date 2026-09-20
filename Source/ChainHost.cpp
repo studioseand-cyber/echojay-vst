@@ -3881,6 +3881,157 @@ const char* ChainHost::dialTriggerName(DialTrigger t)
     return "?";
 }
 
+// 18g (item 5): BUBBLE TRUTH. The build bubble reports from the dial READBACK only. Before the report is recorded:
+//   - a FLAT top-level key (outside params/controls/bands) that names the same control as an APPLIED result is a
+//     duplicate (the loudness pass wrote controls.Ceiling AND ceiling_db on 20 Sep) - it collapses to the applied one;
+//   - a flat mode/text key that maps to nothing ("true peak on", a mode word) is dropped silently once the slot's
+//     value controls applied.
+// Both are logged as EJDial lines; neither can put an applied control on the hand-dial list.
+static juce::String ejNormLabel(const juce::String& s)
+{
+    juce::String o;
+    for (auto c : s.toLowerCase()) { if (juce::CharacterFunctions::isLetterOrDigit(c)) o << c; else if (! o.endsWith(" ")) o << ' '; }
+    return o.trim();
+}
+void ChainHost::collapseFlatDuplicates(const juce::var& structured, std::vector<ApplyReport>& report, const juce::String& slotName)
+{
+    auto* o = structured.getDynamicObject();
+    if (o == nullptr) return;
+    juce::StringArray applied;
+    for (const auto& r : report) if (r.applied) applied.add(ejNormLabel(r.semantic));
+    if (applied.isEmpty()) return;
+    for (int i = (int) report.size() - 1; i >= 0; --i)
+    {
+        const auto& r = report[(size_t) i];
+        if (r.applied) continue;
+        const juce::String key = r.semantic;
+        if (key == "params" || key == "controls" || key == "bands" || key == "eq_bands") continue;
+        if (! o->hasProperty(juce::Identifier(key))) continue;   // only FLAT keys; a controls{}/params{} entry is never collapsed
+        const auto label = ejNormLabel(echojay::semanticLabel(key));
+        bool duplicate = false;
+        for (const auto& a : applied) if (a == label || (label.length() >= 5 && a.contains(label))) duplicate = true;
+        const auto v = o->getProperty(juce::Identifier(key));
+        const bool modeKey = v.isString() || v.isBool()
+            || ((v.isInt() || v.isInt64()) && (label.contains("mode") || label.contains("true peak") || label.contains("enable") || label.contains("bypass") || label.contains("on off")));
+        if (! duplicate && ! modeKey) continue;
+        EchoJay_NSLog(("EJDial: slot \"" + slotName + "\": flat key \"" + key + "\" " + (duplicate ? "duplicates an APPLIED control - collapsed to the readback" : "is a mode/text key with no mapping - dropped (the slot's value controls applied)")).toRawUTF8());
+        report.erase(report.begin() + i);
+    }
+}
+// The report -> the slot's dial fields (manual / applied / readback lists, the status). Extracted (18g) so a harness can
+// record a report on a slot through EchoJayBorrowHostTestAccess and read the same bubble the build composes.
+juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& map, std::vector<ApplyReport>& report)
+{
+    auto& s = slots_[(size_t) slotIndex];
+    collapseFlatDuplicates(s.structuredSettings, report, s.desc.name);
+    EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + s.desc.name + "\"), "
+                   + juce::String((int)report.size()) + " result(s)").toRawUTF8());
+    juce::StringArray appliedSummary;
+    s.dialManual.clear();
+    s.dialApplied.clear();   // 18g
+    s.dialReadbackMiss.clear();
+    s.dialUnconfirmed.clear();
+    s.dialApproximate.clear();
+    s.dialServedFrom = map.getProperty("served_from", juce::var()).toString();
+    s.dialOutOfRange.clear();
+    // dial-3 denominator (A3): the count of settings the model asked for,
+    // stored HERE because appliedCount + manual.size() is not a substitute
+    // (both dedupe through semanticLabel).
+    s.dialRequestedCount = (int) report.size();
+    for (auto& r : report)
+    {
+        EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
+                       + (r.applied ? juce::String("APPLIED ") : juce::String("manual  "))
+                       + juce::String(r.normalized, 3) + "  (" + r.note + ")"
+                       + (r.landedText.isNotEmpty() ? "  landed \"" + r.landedText.trim() + "\""
+                                                    : juce::String())).toRawUTF8());
+        if (r.applied)
+        {
+            // The value comes off the RESULT, not a flat lookup on the
+            // settings object: band values live in bands[i] and control
+            // values in controls["Name"], so the flat lookup returned void
+            // and the card printed bare repeated labels ("freq Hz, gain dB,
+            // freq Hz, gain dB") - no values, no record of what happened.
+            auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);
+            // A successful write shows NOTHING extra (9 Aug 2026, Sean's
+            // call): silence is the signal that it worked, like everything
+            // else in the app. The old "(unverified)" suffix surfaced an
+            // INTERNAL proof-class distinction (norm round-trip vs display
+            // comparison) as user-facing doubt, on every setread map -
+            // i.e. the entire campaign corpus, forever. The distinction is
+            // not lost: r.note carries it in the EJParamApply log line,
+            // and the verification class is static per control
+            // (method/trust on the map entry). The dangerous case - the
+            // display DISAGREEING - was never silent and still is not: it
+            // reverts, lands in dialManual/dialReadbackMiss, and uploads a
+            // readback_mismatch dial_miss.
+            appliedSummary.add(line);
+            s.dialApplied.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));   // 18g: the readback list the bubble and the loop trust
+            // The bridged report-only case is NOT the silent class: the
+            // display DISAGREED and the write was kept anyway, on a measured
+            // fact about the instance. The 9 Aug silence rule reasoned "the
+            // display disagreeing was never silent - it reverts"; with the
+            // revert gone, the caveat must surface instead.
+            if (r.staleDisplayKept)
+                s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            // THE 9 AUG SILENCE RULE DOES NOT REACH HERE (26 Aug 2026). That
+            // rule says a successful write shows nothing extra, and it was
+            // right because silence meant "it landed as asked". On a product
+            // fallback the anchors came from another version and drift on
+            // ~19% of controls, so silence would be asserting something we
+            // measured to be false a fifth of the time. Named here, on the
+            // card, and marked to the model.
+            if (r.anchorsUnverified)
+                s.dialApproximate.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+        }
+        else
+        {
+            s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            if (r.readbackMismatch)
+                s.dialReadbackMiss.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+            if (r.outOfRange)
+                s.dialOutOfRange.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
+        }
+    }
+
+    // The range-check counter (12 Aug 2026), printed on EVERY dialled slot
+    // in the EJMapFps vocabulary, zero case included: if out-of-range asks
+    // turn out to be common on healthy (non-diverged) turns, the exposure
+    // is not communicating ranges to the model well enough - a finding
+    // nothing else can currently see.
+    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex)
+                   + " \"" + s.desc.name + "\""
+                   + " requested=" + juce::String((int) report.size())
+                   + " outOfRange=" + juce::String(s.dialOutOfRange.size())
+                   + (s.dialOutOfRange.isEmpty() ? juce::String()
+                        : " [" + s.dialOutOfRange.joinIntoString(", ") + "]")
+                   + (s.staleIndexedFp.isNotEmpty() ? " diverged=y" : " diverged=n")).toRawUTF8());
+
+    // Honest per-slot verdict: applied only when EVERY requested semantic
+    // was written; anything less is partial (some written) or unusableMap
+    // (map exists, nothing written). ">=1 written" reported as success
+    // would still overclaim (the spiff class of bug).
+    s.dialAppliedCount = (int) appliedSummary.size();
+    if (report.empty())
+        s.dialStatus = DialStatus::mapNoCoverage; // structured present, nothing requested survived
+    else if (s.dialManual.isEmpty())
+        s.dialStatus = DialStatus::applied;
+    else if (s.dialAppliedCount > 0)
+        s.dialStatus = DialStatus::partial;
+    else if (echojay::dialWritesBlocked())
+        // DO NOT DIAL: nothing was written because the user asked for nothing
+        // to be written. Its own status so the bubble can say that instead of
+        // the unsupported-plugin sentence, and so the dial-miss emitter can
+        // skip it: a deliberate setting is not a miss.
+        s.dialStatus = DialStatus::writesBlocked;
+    else
+        // The map covered it and the writes were ATTEMPTED — this is the only
+        // status that wrote anything, which is why it is the only one the
+        // emitter lets pair with readback_mismatch (A9 §1c).
+        s.dialStatus = DialStatus::writesRejected;
+    return appliedSummary;
+}
+
 void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
 {
     if (slotIndex < 0 || slotIndex >= (int)slots_.size()) return;
@@ -4156,109 +4307,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     auto report = applyStructuredSettings(slotIndex, s.structuredSettings, it->second);
     s.structuredApplied = true;
 
-    EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + s.desc.name + "\"), "
-                   + juce::String((int)report.size()) + " result(s)").toRawUTF8());
-    juce::StringArray appliedSummary;
-    s.dialManual.clear();
-    s.dialReadbackMiss.clear();
-    s.dialUnconfirmed.clear();
-    s.dialApproximate.clear();
-    s.dialServedFrom = it->second.getProperty("served_from", juce::var()).toString();
-    s.dialOutOfRange.clear();
-    // dial-3 denominator (A3): the count of settings the model asked for,
-    // stored HERE because appliedCount + manual.size() is not a substitute
-    // (both dedupe through semanticLabel).
-    s.dialRequestedCount = (int) report.size();
-    for (auto& r : report)
-    {
-        EchoJay_NSLog(("EJParamApply:   " + r.semantic + ": "
-                       + (r.applied ? juce::String("APPLIED ") : juce::String("manual  "))
-                       + juce::String(r.normalized, 3) + "  (" + r.note + ")"
-                       + (r.landedText.isNotEmpty() ? "  landed \"" + r.landedText.trim() + "\""
-                                                    : juce::String())).toRawUTF8());
-        if (r.applied)
-        {
-            // The value comes off the RESULT, not a flat lookup on the
-            // settings object: band values live in bands[i] and control
-            // values in controls["Name"], so the flat lookup returned void
-            // and the card printed bare repeated labels ("freq Hz, gain dB,
-            // freq Hz, gain dB") - no values, no record of what happened.
-            auto line = echojay::formatSemanticSetting(r.semantic, r.requestedValue);
-            // A successful write shows NOTHING extra (9 Aug 2026, Sean's
-            // call): silence is the signal that it worked, like everything
-            // else in the app. The old "(unverified)" suffix surfaced an
-            // INTERNAL proof-class distinction (norm round-trip vs display
-            // comparison) as user-facing doubt, on every setread map -
-            // i.e. the entire campaign corpus, forever. The distinction is
-            // not lost: r.note carries it in the EJParamApply log line,
-            // and the verification class is static per control
-            // (method/trust on the map entry). The dangerous case - the
-            // display DISAGREEING - was never silent and still is not: it
-            // reverts, lands in dialManual/dialReadbackMiss, and uploads a
-            // readback_mismatch dial_miss.
-            appliedSummary.add(line);
-            // The bridged report-only case is NOT the silent class: the
-            // display DISAGREED and the write was kept anyway, on a measured
-            // fact about the instance. The 9 Aug silence rule reasoned "the
-            // display disagreeing was never silent - it reverts"; with the
-            // revert gone, the caveat must surface instead.
-            if (r.staleDisplayKept)
-                s.dialUnconfirmed.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-            // THE 9 AUG SILENCE RULE DOES NOT REACH HERE (26 Aug 2026). That
-            // rule says a successful write shows nothing extra, and it was
-            // right because silence meant "it landed as asked". On a product
-            // fallback the anchors came from another version and drift on
-            // ~19% of controls, so silence would be asserting something we
-            // measured to be false a fifth of the time. Named here, on the
-            // card, and marked to the model.
-            if (r.anchorsUnverified)
-                s.dialApproximate.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-        }
-        else
-        {
-            s.dialManual.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-            if (r.readbackMismatch)
-                s.dialReadbackMiss.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-            if (r.outOfRange)
-                s.dialOutOfRange.addIfNotAlreadyThere(echojay::semanticLabel(r.semantic));
-        }
-    }
-
-    // The range-check counter (12 Aug 2026), printed on EVERY dialled slot
-    // in the EJMapFps vocabulary, zero case included: if out-of-range asks
-    // turn out to be common on healthy (non-diverged) turns, the exposure
-    // is not communicating ranges to the model well enough - a finding
-    // nothing else can currently see.
-    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex)
-                   + " \"" + s.desc.name + "\""
-                   + " requested=" + juce::String((int) report.size())
-                   + " outOfRange=" + juce::String(s.dialOutOfRange.size())
-                   + (s.dialOutOfRange.isEmpty() ? juce::String()
-                        : " [" + s.dialOutOfRange.joinIntoString(", ") + "]")
-                   + (s.staleIndexedFp.isNotEmpty() ? " diverged=y" : " diverged=n")).toRawUTF8());
-
-    // Honest per-slot verdict: applied only when EVERY requested semantic
-    // was written; anything less is partial (some written) or unusableMap
-    // (map exists, nothing written). ">=1 written" reported as success
-    // would still overclaim (the spiff class of bug).
-    s.dialAppliedCount = (int) appliedSummary.size();
-    if (report.empty())
-        s.dialStatus = DialStatus::mapNoCoverage; // structured present, nothing requested survived
-    else if (s.dialManual.isEmpty())
-        s.dialStatus = DialStatus::applied;
-    else if (s.dialAppliedCount > 0)
-        s.dialStatus = DialStatus::partial;
-    else if (echojay::dialWritesBlocked())
-        // DO NOT DIAL: nothing was written because the user asked for nothing
-        // to be written. Its own status so the bubble can say that instead of
-        // the unsupported-plugin sentence, and so the dial-miss emitter can
-        // skip it: a deliberate setting is not a miss.
-        s.dialStatus = DialStatus::writesBlocked;
-    else
-        // The map covered it and the writes were ATTEMPTED — this is the only
-        // status that wrote anything, which is why it is the only one the
-        // emitter lets pair with readback_mismatch (A9 §1c).
-        s.dialStatus = DialStatus::writesRejected;
+    juce::StringArray appliedSummary = recordApplyReport(slotIndex, it->second, report);   // 18g: extracted (bubble truth + the harness seam)
 
     // Card honesty (20 Aug 2026): the card read "attack 3ms, release 7ms"
     // while the knobs went to positions 3 and 7 on a 1..7 scale — the
@@ -7830,6 +7879,7 @@ std::vector<ChainHost::SlotDialInfo> ChainHost::getDialInfos() const
         di.fp           = s.fp;
         di.status       = s.dialStatus;
         di.manual       = s.dialManual;
+        di.applied      = s.dialApplied;   // 18g
         di.readbackMiss = s.dialReadbackMiss;
         di.unconfirmed  = s.dialUnconfirmed;
         di.appliedCount = s.dialAppliedCount;

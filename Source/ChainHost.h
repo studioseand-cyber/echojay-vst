@@ -615,6 +615,7 @@ public:
         juce::String      fp;          // fingerprint (for event logging)
         DialStatus        status = DialStatus::none;
         juce::StringArray manual;      // human labels of unwritten controls
+        juce::StringArray applied;     // 18g: labels of the controls that WROTE and read back (the bubble and the loop's ceiling check read only this)
         juce::StringArray readbackMiss; // subset of manual: wrote wrong, reverted
         juce::StringArray unconfirmed; // written and KEPT on norm proof; display
                                        // read was stale (bridged AU, report-only)
@@ -1251,6 +1252,10 @@ public:
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
+    // 18g (item 5): the apply report -> the slot's dial fields (extracted from applyStructuredIfReady so the harness seam can
+    // record a report on a slot and read the bubble the build composes). Returns the applied summary lines for the card.
+    juce::StringArray recordApplyReport(int slotIndex, const juce::var& map, std::vector<ApplyReport>& report);
+    static void collapseFlatDuplicates(const juce::var& structured, std::vector<ApplyReport>& report, const juce::String& slotName);
 
     // ---- Auto-apply pipeline (the ONE apply path) ------------------------
     // A chain reply's per-slot settings_structured object is handed to the
@@ -1874,6 +1879,7 @@ private:
         juce::StringArray                    dialApproximate;
         juce::String                         dialServedFrom;
         int                                  dialAppliedCount = 0;
+        juce::StringArray                    dialApplied;   // 18g: the applied controls' labels (readback), beside dialManual
         // dial-3 denominator (CONTRACT_racked_slot_controls.md A3/A7.2):
         // report.size() from the LAST apply loop; -1 = the apply never ran,
         // and getDialInfos derives the pre-apply key count instead.
