@@ -19,8 +19,8 @@ for a in args[1:]:
     if a in ('-c', '-o'): skip = (a == '-o'); continue
     if a.endswith('LinkProcessor.cpp') or a.endswith('.o'): continue
     out.append(a)
-cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'), src,
-        'build-release/EchoJayLink_artefacts/Release/libEchoJay Link_SharedCode.a',
+cmd = (['clang++'] + out + ['-I', os.path.abspath(os.path.join(os.environ.get('EJ_SRC_ROOT', '.'), 'Source')), src,
+        os.environ.get('EJ_LINK_LIB', 'build-release/EchoJayLink_artefacts/Release/libEchoJay Link_SharedCode.a'),   # EJ_LINK_LIB / EJ_SRC_ROOT: a RED run pairs the pre-round Link archive with the pre-round headers
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI','-framework','AudioToolbox','-framework','Accelerate',
         '-framework','QuartzCore','-framework','IOKit','-framework','Security','-framework','WebKit','-framework','Metal','-framework','MetalKit',
         '-framework','CoreAudioKit','-framework','UniformTypeIdentifiers','-framework','AVFoundation','-framework','CoreMedia','-framework','AVKit','-framework','OpenGL','-lcurl',

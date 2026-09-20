@@ -556,6 +556,24 @@ public:
     // owner — edits kept, unwritten-note recorded, failure LOGGED whether
     // or not a window ever reopens).
     void borrowApplyAndRelease(bool releaseLockOnFail);
+    // 20 Sep 2026 - THE DELETED-CHAIN BUG. Structural edits on a BORROWED rack (add / remove / move / replace / bypass) used to
+    // live only in this plugin's BorrowHost until deselect/close computed a plan; a host save in between saved the Link's
+    // pre-edit chain, and it came back on reopen. Now every structural edit is PUSHED to the Link at once over the chain-command
+    // transport (the same writer the Link tab's per-slot edits use, chain-cmd-<uid>.json v:2), carrying this session's leaseId so
+    // the Link accepts it under its own lease. After the Link acks, the session is REBASED (base identity = the live rack,
+    // origins = identity) so the deselect plan carries no structural op - only state commits.
+    //   op: "add" | "remove" | "move" | "replace" | "bypass"; slot0/to0 are 0-based indices in the rack BEFORE the edit
+    //   (add: -1 = append); name for add/replace; on for bypass; baseSlotsBefore = the slot names before the edit.
+    // Returns the command seq (>0) or -1 (no session / no shared dir). Logs "EJLink: push <op> slot=<n> count=<a>-><b> id=<uid>".
+    int  borrowPushStructuralEdit(const juce::String& op, int slot0, int to0, bool on, const juce::String& name,
+                                  const juce::StringArray& baseSlotsBefore, int countBefore);
+    // The ONE chain-command writer (chain-cmd-<uid>.json v:2): editOps + baseSlots (+ leaseId when the sender holds the rack's
+    // lease). Used by the editor's Link-tab edit path and by the borrowed-rack push above. Returns the seq or -1.
+    int  writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
+                               const juce::String& sourceNote, const juce::String& leaseId);
+    // After a pushed edit is acked: the session's base becomes the live rack (created slots gain a record so their state edits
+    // still commit at deselect). Public for the guard.
+    void borrowRebaseAfterPush();
     void borrowEditorClosed();
     // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
     // session is LIVE its uid is authoritative — a chat activation may

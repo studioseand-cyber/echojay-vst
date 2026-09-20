@@ -2568,6 +2568,99 @@ bool EchoJayProcessor::borrowSessionShapeDirty() const
     return false;
 }
 
+int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const juce::var& editOps, const juce::var& baseSlots,
+                                             const juce::String& sourceNote, const juce::String& leaseId)
+{
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || linkUid.isEmpty() || ! editOps.isArray()) return -1;
+    const int seq = LinkShm::nextCtrlSeq();
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",          2);
+    cmd->setProperty("seq",        seq);
+    cmd->setProperty("editOps",    editOps);
+    cmd->setProperty("baseSlots",  baseSlots);
+    cmd->setProperty("sourceNote", sourceNote);
+    if (leaseId.isNotEmpty()) cmd->setProperty("leaseId", leaseId);   // 20 Sep 2026: the lease holder's own structural edit
+    juce::File(dir + "chain-ack-" + linkUid + ".json").deleteFile();   // stale ack
+    if (! juce::File(dir + "chain-cmd-" + linkUid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
+        return -1;
+    return seq;
+}
+
+int EchoJayProcessor::borrowPushStructuralEdit(const juce::String& op, int slot0, int to0, bool on, const juce::String& name,
+                                                const juce::StringArray& baseSlotsBefore, int countBefore)
+{
+    if (! borrowActive()) return -1;
+    auto* bh = borrowHost();
+    const juce::String uid = borrowSession_.uid;
+    auto* o = new juce::DynamicObject();
+    o->setProperty("op", op);
+    if (slot0 >= 0) o->setProperty("slot", slot0 + 1);            // the edit JSON is 1-based
+    if (op == "add") o->setProperty("after", slot0 >= 0 ? slot0 + 1 : countBefore);   // append = after the last slot (1-based); "after" absent would insert FIRST
+    if (op == "move" && to0 >= 0) o->setProperty("to", to0 + 1);
+    if (op == "bypass") o->setProperty("on", on);
+    if (name.isNotEmpty()) o->setProperty("name", name);
+    juce::Array<juce::var> ops; ops.add(juce::var(o));
+    juce::Array<juce::var> base; for (const auto& n : baseSlotsBefore) base.add(n);
+    const int seq = writeChainEditCommand(uid, juce::var(ops), juce::var(base), "EchoJay V2 borrowed rack edit", borrowSession_.leaseId);
+    const int countAfter = bh ? bh->getNumSlots() : -1;
+    EchoJay_NSLog(("EJLink: push " + op + " slot=" + juce::String(slot0 + 1) + (op == "move" ? " to=" + juce::String(to0 + 1) : juce::String())
+                   + (op == "bypass" ? juce::String(on ? " on" : " off") : juce::String()) + (name.isNotEmpty() ? " name=\"" + name + "\"" : juce::String())
+                   + " count=" + juce::String(countBefore) + "->" + juce::String(countAfter) + " id=" + uid + " seq=" + juce::String(seq)
+                   + (seq < 0 ? " FAILED (no session / shared dir)" : "")).toRawUTF8());
+    if (seq > 0)
+    {
+        borrowRebaseAfterPush();
+        // the ack, read a beat later: "ok" is silence; anything else is said on the log (the rack stays as the Link has it)
+        std::weak_ptr<bool> alive = borrowAliveToken_;
+        juce::Timer::callAfterDelay(400, [this, alive, uid, seq]
+        {
+            if (alive.expired()) return;
+            int e2 = 0; const juce::String d = LinkShm::resolveDir(e2);
+            juce::File ack(d + "chain-ack-" + uid + ".json");
+            if (! ack.existsAsFile()) { EchoJay_NSLog(("EJLink: push seq=" + juce::String(seq) + " no ack yet id=" + uid).toRawUTF8()); return; }
+            auto v = juce::JSON::parse(ack.loadFileAsString());
+            const auto st = v.getProperty("status", juce::var()).toString();
+            if ((int) v.getProperty("seq", 0) == seq && st != "ok")
+                EchoJay_NSLog(("EJLink: push seq=" + juce::String(seq) + " ack=" + st + " id=" + uid + " - " + juce::JSON::toString(v.getProperty("perPluginResults", juce::var()), true).substring(0, 200)).toRawUTF8());
+        });
+    }
+    return seq;
+}
+
+void EchoJayProcessor::borrowRebaseAfterPush()
+{
+    auto* bh = borrowHost();
+    if (bh == nullptr) return;
+    const int n = bh->getNumSlots();
+    std::vector<LinkShm::StructureEdit::SlotIdentity> newBase;
+    std::vector<BorrowSlotRecord> newRecs;
+    for (int i = 0; i < n; ++i)
+    {
+        const int o = i < (int) borrowSlotOrigin_.size() ? borrowSlotOrigin_[(size_t) i] : -1;
+        if (o >= 0 && o < (int) borrowBaseIdentity_.size())
+        {
+            newBase.push_back(borrowBaseIdentity_[(size_t) o]);
+            newRecs.push_back(o < (int) borrowSlotRecords_.size() ? borrowSlotRecords_[(size_t) o] : BorrowSlotRecord{ bh->getSlotInfo(i).name });
+        }
+        else
+        {   // created here (or unknown): it is now a slot the Link holds; its state edits still commit (no baseline = edited)
+            newBase.push_back(i < (int) borrowCreatedIdentity_.size() && borrowCreatedIdentity_[(size_t) i].name.isNotEmpty()
+                                  ? borrowCreatedIdentity_[(size_t) i]
+                                  : LinkShm::StructureEdit::SlotIdentity{ bh->getSlotInfo(i).name, {}, {} });
+            BorrowSlotRecord r; r.name = bh->getSlotInfo(i).name; r.hadState = false; newRecs.push_back(std::move(r));
+        }
+    }
+    borrowBaseIdentity_ = std::move(newBase);
+    borrowSlotRecords_  = std::move(newRecs);
+    borrowSlotOrigin_.assign((size_t) n, -1);
+    for (int i = 0; i < n; ++i) borrowSlotOrigin_[(size_t) i] = i;
+    borrowCreatedIdentity_.assign((size_t) n, LinkShm::StructureEdit::SlotIdentity{});
+    borrowRemovedNames_.clear();
+    borrowRemovedWithheld_.clear();
+}
+
 void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
 {
     if (! borrowActive()) return;

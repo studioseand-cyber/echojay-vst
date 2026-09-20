@@ -1990,7 +1990,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 auto& cid = p3.borrowCreatedIdentity_;
                 if (i < (int) cid.size())
                     cid.erase(cid.begin() + i);
+                juce::StringArray baseBefore; for (int k = 0; k < bh2->getNumSlots(); ++k) baseBefore.add(bh2->getSlotInfo(k).name);
+                const int countBefore = bh2->getNumSlots();
                 bh2->removeSlot(i);
+                p3.borrowPushStructuralEdit("remove", i, -1, false, {}, baseBefore, countBefore);   // 20 Sep 2026: the delete reaches the Link NOW
                 safeThis->chainSelectedSlot_ =
                     juce::jlimit(-1, bh2->getNumSlots() - 1,
                                  safeThis->chainSelectedSlot_);
@@ -2035,7 +2038,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
         {
             if (i < 0 || i >= bh->getNumSlots()) return;
-            bh->setSlotBypassed(i, !bh->getSlotInfo(i).bypassed);
+            juce::StringArray baseBefore; for (int k = 0; k < bh->getNumSlots(); ++k) baseBefore.add(bh->getSlotInfo(k).name);
+            const bool nowOn = !bh->getSlotInfo(i).bypassed;
+            bh->setSlotBypassed(i, nowOn);
+            processorRef.borrowPushStructuralEdit("bypass", i, -1, nowOn, {}, baseBefore, bh->getNumSlots());   // 20 Sep 2026
             refreshChainPanelForView(false);   // borrowed revision is in the sig
             repaint();
             return;
@@ -2066,12 +2072,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (i < 0 || i >= bh->getNumSlots() || j2 < 0 || j2 >= bh->getNumSlots())
                 return;
             chainListPanel.noteSlotMoved(i, j2);
+            juce::StringArray baseBefore; for (int k = 0; k < bh->getNumSlots(); ++k) baseBefore.add(bh->getSlotInfo(k).name);
             bh->moveSlot(i, dir);
             auto& org = processorRef.borrowSlotOrigin_;
             auto& cid = processorRef.borrowCreatedIdentity_;
             if (i < (int) org.size() && j2 < (int) org.size())
             { std::swap(org[(size_t) i], org[(size_t) j2]);
               std::swap(cid[(size_t) i], cid[(size_t) j2]); }
+            processorRef.borrowPushStructuralEdit("move", i, j2, false, {}, baseBefore, bh->getNumSlots());   // 20 Sep 2026
             int newSel = chainSelectedSlot_;
             if (chainSelectedSlot_ == i)       newSel = j2;
             else if (chainSelectedSlot_ == j2) newSel = i;
@@ -24122,19 +24130,10 @@ int EchoJayEditor::sendChainEditToLink(const juce::String& linkUid,
 
     // Mirror of sendChainToLink, v:2: ops + baseSlots pass through verbatim
     // (the Link re-parses via the same ChainHost::parseChainEditOps and runs
-    // its own baseSlots staleness check — guard #2).
-    int seq = LinkShm::nextCtrlSeq();
-    auto* cmd = new juce::DynamicObject();
-    cmd->setProperty("v",          2);
-    cmd->setProperty("seq",        seq);
-    cmd->setProperty("editOps",    o->getProperty("edit"));
-    cmd->setProperty("baseSlots",  o->getProperty("baseSlots"));
-    cmd->setProperty("sourceNote", "EchoJay V2 chat edit");
-
-    juce::File(dir + "chain-ack-" + linkUid + ".json").deleteFile();   // stale ack
-    juce::File(dir + "chain-cmd-" + linkUid + ".json")
-        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
-    return seq;
+    // its own baseSlots staleness check — guard #2). 20 Sep 2026: ONE writer,
+    // shared with the borrowed-rack push (EchoJayProcessor::writeChainEditCommand).
+    juce::ignoreUnused(dir);
+    return processorRef.writeChainEditCommand(linkUid, o->getProperty("edit"), o->getProperty("baseSlots"), "EchoJay V2 chat edit", {});
 }
 
 void EchoJayEditor::pollLinkEditAck(const juce::String& linkUid, int seq, int attemptsLeft,
@@ -28621,6 +28620,10 @@ void EchoJayEditor::showChainPluginPicker()
                             // with uniqueId 0 — an unguarded uniqueId sends
                             // "0" and the Link resolves on name alone.
                             juce::String(ChainHost::descUid(picked)), {} });
+                    {   // 20 Sep 2026: the add reaches the Link NOW (appended; the Link resolves the picked name in its own list)
+                        juce::StringArray baseBefore; for (int k = 0; k < newSlot; ++k) baseBefore.add(bh2->getSlotInfo(k).name);
+                        p3.borrowPushStructuralEdit("add", -1, -1, false, picked.name, baseBefore, newSlot);
+                    }
                     // A created slot has a RECORD like every other slot
                     // (defect, 23 Aug 2026: the lost add — a slot without a
                     // record is invisible to every records-bounded consumer,

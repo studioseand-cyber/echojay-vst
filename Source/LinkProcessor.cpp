@@ -2565,7 +2565,11 @@ void LinkProcessor::pollChainCommand()
         // state and will restore it BY INDEX; an edit that removes or moves
         // slots underneath it would make that restore hit the wrong plugin.
         // Refused with a reason, never queued.
-        if (leaseActive_.load(std::memory_order_relaxed))
+        // 20 Sep 2026 (the deleted-chain bug): the LEASE HOLDER's own structural edits arrive here at once (chain-cmd v:2 with
+        // this lease's id) and are applied under the lease; anyone else's structure command is still refused while leased.
+        const juce::String cmdLease = obj->getProperty("leaseId").toString();
+        const bool fromLeaseHolder = leaseActive_.load(std::memory_order_relaxed) && cmdLease.isNotEmpty() && cmdLease == leaseGate_.activeId;
+        if (leaseActive_.load(std::memory_order_relaxed) && ! fromLeaseHolder)
         { writeChainAck(seq, "failed",
               { "this rack is being edited from the main plugin - try again after release" },
               {}); return; }
@@ -2589,10 +2593,23 @@ void LinkProcessor::pollChainCommand()
         auto self = this;   // processor outlives message-thread callbacks in-session
         juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq]() mutable
         {
+            const int countBefore = self->chainHost.getNumSlots();
+            const juce::String opNames = [&ops] { juce::StringArray o; for (const auto& op : ops) o.add(op.op + (op.slot >= 0 ? "@" + juce::String(op.slot + 1) : juce::String())); return o.joinIntoString(","); }();
             self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
-                [self, seq](const juce::StringArray& results, int applied, bool aborted)
+                [self, seq, countBefore, opNames](const juce::StringArray& results, int applied, bool aborted)
             {
+                // 20 Sep 2026: under a rack lease the priors (what the release restores, what the MODEL and the SAVED chunk
+                // report) follow the edited rack - one rule, the same as engage: the intent of every slot as it stands now.
+                if (self->rackLeaseActive_)
+                {
+                    self->rackLeasePrior_.clear();
+                    for (int i = 0; i < self->chainHost.getNumSlots(); ++i)
+                        self->rackLeasePrior_.push_back(self->chainHost.getSlotInfo(i).intendedBypassed);
+                }
                 self->syncModelAfterStructuralChange();
+                EchoJay_NSLog(("EJLink: applied " + opNames + " count=" + juce::String(countBefore) + "->" + juce::String(self->chainHost.getNumSlots())
+                               + " model=" + juce::String((int) self->chainModel.size()) + " lease=" + juce::String((int) self->rackLeaseActive_)
+                               + " seq=" + juce::String(seq) + (aborted ? " ABORTED" : "") + " applied=" + juce::String(applied) + "/" + juce::String(results.size())).toRawUTF8());
                 juce::String status = aborted ? "stale"
                                     : (applied == results.size() ? "ok" : "partial");
                 self->writeChainAck(seq, status, results, {});
