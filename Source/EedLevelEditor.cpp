@@ -41,6 +41,6 @@ void EedLevelEditor::timerCallback()
     inLabel_.setText (fmt (proc_.inputLevels(), "IN  "), juce::dontSendNotification);
     outLabel_.setText (fmt (proc_.outputLevels(), juce::String::fromUTF8 ("OUT \xe2\x86\x92 limiter  ").toRawUTF8()), juce::dontSendNotification);   // 18f: the output feeds the limiter; +9.5 dBTP here is intended
     const float gr = proc_.downstreamGrDb();
-    grLabel_.setText (std::isfinite (gr) ? "limiter GR " + juce::String (gr, 1) + " dB" : juce::String ("limiter GR --"), juce::dontSendNotification);
+    grLabel_.setText (std::isfinite (gr) ? "limiter GR " + juce::String (proc_.downstreamGrEstimated() ? "~" : "") + juce::String (juce::jmax (0.0f, gr), 1) + " dB" + (proc_.downstreamGrEstimated() ? " (est.)" : "") : juce::String ("limiter GR --"), juce::dontSendNotification);   // 18g: a third-party limiter's GR is the loop's estimate
     targetLabel_.setText ("target " + juce::String (proc_.targetLufs(), 1) + " LUFS (" + juce::String (EedLevelProcessor::optionName (proc_.loudnessOption())) + ")", juce::dontSendNotification);
 }

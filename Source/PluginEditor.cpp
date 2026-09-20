@@ -22412,14 +22412,20 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     const bool again  = t.contains("check the level") || t.contains("check level") || t.contains("measure again") || t.contains("check it again");
     const bool undo   = t == "undo" || t == "undo that" || t == "undo the level";
     const bool leave  = t == "leave it" || t == "leave it there" || t == "keep it" || t == "stop" || t == "that's fine" || t == "fine";
-    const bool listen = t == "listen again" || t == "listen" || t == "try again";                                            // 18f
+    const bool listenAgain = t == "listen again" || t == "try again";                                                         // 18f (the quiet-window pill)
+    const bool listen = t == "listen" || t == "listen now" || t == "start listening";                                          // 18g (item 1): the arm bubble's pill
+    const bool checkV = t == "check" || t == "check now" || t == "check it";                                                   // 18g (item 1): after Go when the audio had stopped
+    const bool doneV  = t == "done" || t == "i'm done" || t == "that's it" || t == "finished";                                  // 18g (item 3): ends the watch
     const bool loudest = t == "this is the loudest part" || t == "loudest part" || t == "this is the loudest" || t == "that's the loudest part" || t == "it is the loudest part";
     const bool backoff = t == "back off" || t == "back it off" || t.startsWith("back off ");
-    if (! (go || push || louder || softer || again || undo || leave || listen || loudest || backoff || forced)) return false;
+    if (! (go || push || louder || softer || again || undo || leave || listen || listenAgain || checkV || doneV || loudest || backoff || forced)) return false;
     chatInput.clear();   // 18f: a verb, typed or tapped, never leaves its words in the composer
     appendLocalUserBubble(msg);
     loop.note("verb \"" + t + "\"" + (forced ? juce::String(" (server loop_verb)") : juce::String()) + " state " + juce::String((int) loop.state()));   // 18f: one EJLoudness stream (the loop's logLine -> NSLog)
-    if (listen)      { if (! loop.listenAgain()) appendLocalResultBubble("Nothing to re-listen for - play the loudest part and I'll measure it."); }
+    if (listenAgain) { if (! loop.listenAgain()) appendLocalResultBubble("Nothing to re-listen for - tap Listen with the loudest part playing."); }
+    else if (listen) { if (! loop.listen()) appendLocalResultBubble("Already listening - keep the loudest part playing."); }
+    else if (checkV) { if (! loop.check()) appendLocalResultBubble("Nothing to check right now - tap Listen with the loudest part playing."); }
+    else if (doneV)  { if (! loop.done()) appendLocalResultBubble("The level loop is not running."); }
     else if (loudest) { if (! loop.loudestPart()) appendLocalResultBubble("No held measurement - play the loudest part and I'll measure it."); }
     else if (backoff) { if (! loop.backOff()) appendLocalResultBubble("No back-off is proposed right now."); }
     else if (go)     { if (! loop.go()) appendLocalResultBubble("Nothing proposed yet - play the loudest part and I'll measure it first."); }
@@ -22429,7 +22435,7 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     else if (again)  loop.recheck();
     else if (leave)  loop.leaveIt();
     else if (undo)   { if (! loop.undo()) appendLocalResultBubble("Nothing to undo - the level loop has not changed the Level slot."); }
-    else appendLocalResultBubble("Say go to apply, push it, a bit louder or softer, check the level again, undo, or leave it.");
+    else appendLocalResultBubble("Say listen, go, check, push it, a bit louder or softer, undo, leave it, or done.");
     resized(); repaint();
     return true;
 }

@@ -44,13 +44,15 @@ public:
     echojay::LevelTally::Snapshot outputLevels() const { return out_.snapshot(); }
     void resetMeters() { in_.reset(); out_.reset(); in_.resetShortTermMax(); out_.resetShortTermMax(); }
     // 18f: the limiter after this slot - its current gain reduction, written by the loop's tick (NaN = unknown / not an EchoJay limiter)
-    void  setDownstreamGrDb (float db) noexcept { downstreamGr_.store (db, std::memory_order_relaxed); }
+    void  setDownstreamGrDb (float db, bool estimated = false) noexcept { downstreamGr_.store (db, std::memory_order_relaxed); downstreamGrEst_.store (estimated, std::memory_order_relaxed); }
+    bool  downstreamGrEstimated() const noexcept { return downstreamGrEst_.load (std::memory_order_relaxed); }   // 18g: a third-party limiter's GR is an estimate (Level OUT - chain OUT)
     float downstreamGrDb() const noexcept { return downstreamGr_.load (std::memory_order_relaxed); }
 
 private:
     std::atomic<double> gainDb_ { 0.0 }, targetLufs_ { -9.0 };
     std::atomic<int>    option_ { 0 };
     std::atomic<float>  downstreamGr_ { std::numeric_limits<float>::quiet_NaN() };
+    std::atomic<bool>  downstreamGrEst_ { false };
     float  curLin_ = 1.0f;          // audio-thread smoothed linear gain
     float  ramp_   = 0.0f;          // per-sample ramp coefficient
     echojay::LevelTally in_ { echojay::LevelTally::Weighting::K }, out_ { echojay::LevelTally::Weighting::K };

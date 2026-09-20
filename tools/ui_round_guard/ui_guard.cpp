@@ -35,6 +35,16 @@ struct EchoJayTabStripTestAccess
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
+    // 18g (5): the ONE build-bubble composer, on the host's dial infos
+    static juce::String compose (EchoJayEditor& e, ChainHost& ch, const juce::String& json) { return e.composeBuildBubble (ch, json).text; }
+};
+struct EchoJayBorrowHostTestAccess
+{
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+    // 18g (5): record an apply REPORT on a slot exactly as the build does (ChainHost::recordApplyReport), so the bubble the
+    // composer writes from it can be read
+    static void record (ChainHost& h, int i, std::vector<ChainHost::ApplyReport>& report) { h.recordApplyReport (i, juce::var(), report); }
+#endif
 };
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
@@ -113,7 +123,7 @@ int main()
         loop.logLine = [&] (const juce::String& l) { logs.add (l); };   // installed AFTER the arm (the editor wires NSLog at arm time; the capture must be the live hook)
         auto& M = A::msgs (*ed);
         auto lastLoop = [&] () -> const A::Msg* { for (int i = (int) M.size() - 1; i >= 0; --i) if (M[(size_t) i].role == "assistant" && (M[(size_t) i].content.startsWith ("Chain built. Play") || ! M[(size_t) i].loopPills.isEmpty() || M[(size_t) i].loopBubbleId > 0)) return &M[(size_t) i]; return nullptr; };
-        check (loop.everArmed() && lastLoop() != nullptr && lastLoop()->content.startsWith ("Chain built. Play the loudest part"), "(4) the ARM bubble is shown after the build (before any Listening...)", lastLoop() ? lastLoop()->content.substring (0, 60) : "no loop bubble");
+        check (loop.everArmed() && lastLoop() != nullptr && (lastLoop()->content.startsWith ("Chain built. Play the loudest part") || lastLoop()->content.startsWith ("Cue the loudest section")), "(4) the ARM bubble is shown after the build (before any Listening...)", lastLoop() ? lastLoop()->content.substring (0, 60) : "no loop bubble");
         // progress bubbles: two ticks -> ONE progress bubble; a proposal -> a NEW bubble, the progress bubble stays
         const size_t n0 = M.size();
         LoudnessLoop::Bubble pb; pb.kind = LoudnessLoop::Bubble::Kind::progress; pb.replace = true; pb.text = "Listening..."; pb.progress = 0.2f; loop.onBubble (pb);
@@ -123,7 +133,7 @@ int main()
         check (M.size() == n0 + 2 && M[n0].content == "Listening..." && M[n0].loopBubbleId == 0 && M.back().content.startsWith ("Measured -12.0"), "(2) the proposal is a NEW bubble; the progress bubble stays as history (closed)", juce::String ((int) (M.size() - n0)));
         check (M.back().loopPills.joinIntoString ("|") == "Go|Leave it" && A::chips (*ed, M.back()).joinIntoString ("|") == "Go#2|Leave it#2", "(1) the proposal bubble renders [Go] [Leave it] as pills (kind 2)", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble res; res.kind = LoudnessLoop::Bubble::Kind::result; res.final = true; res.text = "Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target."; res.pills = LoudnessLoop::resultPills(); loop.onBubble (res);
-        check (A::chips (*ed, M.back()).joinIntoString ("|") == "Undo#2|A bit louder#2|A bit softer#2|Push it#2", "(1) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it]", A::chips (*ed, M.back()).joinIntoString ("|"));
+        check (A::chips (*ed, M.back()).joinIntoString ("|").startsWith ("Undo#2|A bit louder#2|A bit softer#2|Push it#2"), "(1) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it]", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble st; st.kind = LoudnessLoop::Bubble::Kind::stuck; st.text = "Stuck at -10.0 LUFS after 4 rounds"; st.pills = LoudnessLoop::stuckPills(); loop.onBubble (st);
         check (A::chips (*ed, M.back()).joinIntoString ("|") == "Push it#2|Leave it#2", "(1) the stuck bubble renders [Push it] [Leave it]", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble q; q.kind = LoudnessLoop::Bubble::Kind::quiet; q.text = "This is quieter than the section the chain was built on (-24.0 now vs -18.0 at build). Is this the loudest part of the song?"; q.pills = LoudnessLoop::quietPills(); loop.onBubble (q);
@@ -149,6 +159,57 @@ int main()
     for (const char* leg : { "(4) the ARM bubble is shown after the build (before any Listening...)", "(2) two progress ticks -> one progress bubble (replaced in place)", "(2) the proposal is a NEW bubble; the progress bubble stays as history (closed)", "(1) the proposal bubble renders [Go] [Leave it] as pills (kind 2)", "(1) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it]", "(1) the stuck bubble renders [Push it] [Leave it]", "(quiet) the quiet-window bubble renders [Listen again] [This is the loudest part]", "(1) the composer is CLEARED after a typed verb", "(1) a pill tap produces the SAME EJLoudness verb sequence as the typed word", "(1) the composer is CLEARED after a pill tap" })
         check (false, leg, "no loop pills on this build (18e)");
 #endif
+
+    std::printf ("== 18g: Listen / Check / Done pills; the arm bubble asks for Listen; a duplicate-ceiling fixture never says \"needs hand-dialing\" ==\n");
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+        auto& loop = proc.loudnessLoop(); juce::StringArray logs;
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\",\"settings_structured\":{\"params\":{\"gain_db\":0,\"target_lufs\":-9,\"loudness_option\":0}}},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\",\"settings_structured\":{\"params\":{\"ceiling_db\":-0.1,\"true_peak\":1}}}]}");
+        pumpMs (2500);
+        loop.logLine = [&] (const juce::String& l) { logs.add (l); };
+        auto& M = A::msgs (*ed);
+        int armIdx = -1; for (int i = (int) M.size() - 1; i >= 0; --i) if (M[(size_t) i].role == "assistant" && M[(size_t) i].content.startsWith ("Cue the loudest section")) { armIdx = i; break; }
+        check (loop.everArmed() && loop.state() == LoudnessLoop::State::armed && armIdx >= 0 && A::chips (*ed, M[(size_t) armIdx]).joinIntoString ("|") == "Listen#2", "18g (1) the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with the [Listen] pill; no window runs yet", armIdx >= 0 ? A::chips (*ed, M[(size_t) armIdx]).joinIntoString ("|") : juce::String ("no arm bubble; state ") + juce::String ((int) loop.state()));
+        // [Listen] runs the same handler as the typed word and starts the window
+        A::input (*ed).setText ("stale", juce::dontSendNotification);
+        if (armIdx >= 0) A::tapPill (*ed, armIdx); pumpMs (30);
+        check (logs.joinIntoString ("\n").contains ("verb \"listen\"") && loop.state() == LoudnessLoop::State::waitAudio && A::input (*ed).getText().isEmpty(), "18g (1) tapping [Listen] -> verb \"listen\" -> the window starts (state waitAudio), composer cleared", "state " + juce::String ((int) loop.state()));
+        // the Check and Done pills render, and Done reaches the handler
+        LoudnessLoop::Bubble ck; ck.kind = LoudnessLoop::Bubble::Kind::info; ck.text = "Tap Check when the loud part is playing."; ck.pills = LoudnessLoop::checkPills(); loop.onBubble (ck);
+        check (A::chips (*ed, M.back()).joinIntoString ("|") == "Check#2", "18g (1) the Check bubble renders [Check]", A::chips (*ed, M.back()).joinIntoString ("|"));
+        LoudnessLoop::Bubble res; res.kind = LoudnessLoop::Bubble::Kind::result; res.final = true; res.text = "Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target."; res.pills = LoudnessLoop::resultPills(); loop.onBubble (res);
+        check (A::chips (*ed, M.back()).joinIntoString ("|") == "Undo#2|A bit louder#2|A bit softer#2|Push it#2|Done#2", "18g (3) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it] [Done]", A::chips (*ed, M.back()).joinIntoString ("|"));
+        logs.clear(); A::send (*ed, "done"); pumpMs (30);
+        check (logs.joinIntoString ("\n").contains ("verb \"done\"") && loop.state() == LoudnessLoop::State::hold, "18g (3) typed \"done\" reaches the handler and ends the watch (state hold)", "state " + juce::String ((int) loop.state()));
+        LoudnessLoop::Bubble bo; bo.kind = LoudnessLoop::Bubble::Kind::backoff; bo.text = "That section is louder - back off -1.4 dB?"; bo.pills = LoudnessLoop::backoffPills(); loop.onBubble (bo);
+        check (A::chips (*ed, M.back()).joinIntoString ("|") == "Back off#2|Leave it#2", "18g (3) the watch's back-off bubble renders [Back off] [Leave it]", A::chips (*ed, M.back()).joinIntoString ("|"));
+        // (5) BUBBLE TRUTH: the 20 Sep fixture - controls{Ceiling, Limiter Mode} applied, a flat ceiling_db beside them with no mapping
+        auto& ch = proc.getChainHost();
+        { auto* co = new juce::DynamicObject(); co->setProperty ("Ceiling", -0.1); co->setProperty ("Limiter Mode", "Modern");
+          auto* pp = new juce::DynamicObject(); pp->setProperty ("ceiling_db", -0.1); pp->setProperty ("true_peak", 1);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); w->setProperty ("controls", juce::var (co)); w->setProperty ("ceiling_db", -0.1);
+          ch.setSlotStructuredSettings (1, juce::var (w)); }
+        std::vector<ChainHost::ApplyReport> report;
+        { ChainHost::ApplyReport r; r.semantic = "ceiling_db"; r.applied = false; r.normalized = 0.0f; r.note = "no mapping for this control on this plugin"; report.push_back (r); }
+        { ChainHost::ApplyReport r; r.semantic = "Ceiling"; r.applied = true; r.normalized = 0.945f; r.requestedValue = -0.1; r.note = "applied (display unverifiable on this plugin)"; r.landedText = "-0.09 dB"; report.push_back (r); }
+        { ChainHost::ApplyReport r; r.semantic = "Limiter Mode"; r.applied = true; r.normalized = 1.0f; r.requestedValue = "Modern"; r.note = "applied, reads \"Modern\""; r.landedText = "Modern"; report.push_back (r); }
+        EchoJayBorrowHostTestAccess::record (ch, 1, report);
+        const auto infos = ch.getDialInfos();
+        check (infos.size() >= 2 && infos[1].status == ChainHost::DialStatus::applied && infos[1].manual.isEmpty() && infos[1].applied.joinIntoString ("|") == "Ceiling|Limiter Mode", "18g (5) the duplicate flat ceiling_db collapses to the APPLIED Ceiling: status applied, nothing manual, applied = Ceiling | Limiter Mode", infos.size() >= 2 ? "status " + juce::String ((int) infos[1].status) + " manual [" + infos[1].manual.joinIntoString ("|") + "] applied [" + infos[1].applied.joinIntoString ("|") + "]" : juce::String ("no infos"));
+        const auto bubble = A::compose (*ed, ch, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\"},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\"}]}");
+        check (! bubble.contains ("hand-dialing") && bubble.startsWith ("Chain built"), "18g (5) the build bubble from that readback never says \"needs hand-dialing\" (a clean build line)", bubble.substring (0, 160));
+    }
+#else
+    for (const char* leg : { "18g (1) the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with the [Listen] pill; no window runs yet", "18g (1) tapping [Listen] -> verb \"listen\" -> the window starts (state waitAudio), composer cleared",
+                             "18g (1) the Check bubble renders [Check]", "18g (3) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it] [Done]", "18g (3) typed \"done\" reaches the handler and ends the watch (state hold)",
+                             "18g (3) the watch's back-off bubble renders [Back off] [Leave it]", "18g (5) the duplicate flat ceiling_db collapses to the APPLIED Ceiling: status applied, nothing manual, applied = Ceiling | Limiter Mode", "18g (5) the build bubble from that readback never says \"needs hand-dialing\"" })
+        check (false, leg, "no 18g on this build");
+#endif
+
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

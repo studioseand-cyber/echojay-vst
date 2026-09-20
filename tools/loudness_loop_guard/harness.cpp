@@ -17,7 +17,12 @@
 #include "EedLevelProcessor.h"
 #endif
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }
-    static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); } };
+    static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+    // 18g: the slot's dial READBACK says its ceiling applied (what a mapped bx_limiter reports after a build)
+    static void markCeilingApplied (ChainHost& h, int i) { auto& s = h.slots_[(size_t) i]; s.dialApplied = juce::StringArray { "Ceiling" }; s.dialAppliedCount = 1; s.dialStatus = ChainHost::DialStatus::applied; }
+#endif
+};
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 juce::String f1 (float v) { return juce::String (v, 2); }
@@ -101,6 +106,20 @@ struct EJTestLimiter final : juce::AudioProcessor
     const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
     void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
 };
+struct EJTestSoftLimiter final : juce::AudioProcessor
+{
+    EJTestSoftLimiter() : juce::AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true).withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override { return "EJ Test Soft Limiter"; }
+    void prepareToPlay (double, int) override {} void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override { for (int ch = 0; ch < b.getNumChannels(); ++ch) { auto* d = b.getWritePointer (ch); for (int i = 0; i < b.getNumSamples(); ++i) { const float x = d[i]; d[i] = (x < 0 ? -1.0f : 1.0f) * std::pow (std::abs (x), 0.6f); } } }
+    double getTailLengthSeconds() const override { return 0.0; } bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
+};
+BuiltinDevice makeTestSoftLimiter() { BuiltinDevice d; d.name = "EJ Test Soft Limiter"; d.category = "Dynamics"; d.descriptiveName = d.name; d.summary = "harness stand-in: 0.6 dB out per dB in"; d.identifier = "echojay:test:softlimiter"; d.uid = 0x454A5453; d.create = [] { return std::unique_ptr<juce::AudioProcessor> (new EJTestSoftLimiter()); }; return d; }
+const BuiltinDeviceRegistrar testSoftLimReg { makeTestSoftLimiter() };
 BuiltinDevice makeTestLimiter() { BuiltinDevice d; d.name = "EJ Test Limiter"; d.category = "Dynamics"; d.descriptiveName = d.name; d.summary = "harness stand-in for a third-party limiter"; d.identifier = "echojay:test:limiter"; d.uid = 0x454A544C; d.create = [] { return std::unique_ptr<juce::AudioProcessor> (new EJTestLimiter()); }; return d; }
 const BuiltinDeviceRegistrar testLimReg { makeTestLimiter() };
 
@@ -108,15 +127,22 @@ struct Rig
 {
     EchoJayProcessor proc; ChainHost& h; LoudnessLoop& loop; juce::StringArray bubbles, logs; Programme prog;
     int levelSlot = -1, limSlot = -1;
-    Rig (bool thirdPartyLast) : h (proc.getChainHost()), loop (proc.loudnessLoop())
+    // 18g: ceilingReadBack = the third-party limiter's dial readback confirms its ceiling (a mapped limiter after a build);
+    // false = no readback (no map), which the safety net substitutes. limiterName picks the stand-in.
+    Rig (bool thirdPartyLast, bool ceilingReadBack = true, const char* limiterName = "EJ Test Limiter") : h (proc.getChainHost()), loop (proc.loudnessLoop())
     {
         proc.prepareToPlay (48000.0, 512);
         const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
-        const auto* lm = BuiltinDeviceRegistry::instance().findByName (thirdPartyLast ? "EJ Test Limiter" : "EchoJay Limiter");
+        const auto* lm = BuiltinDeviceRegistry::instance().findByName (thirdPartyLast ? limiterName : "EchoJay Limiter");
         check (lv != nullptr && lm != nullptr, "precondition: EchoJay Level and the limiter are registered");
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lv));
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lm));
         levelSlot = 0; limSlot = 1;
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+        if (thirdPartyLast && ceilingReadBack) EchoJayBorrowHostTestAccess::markCeilingApplied (h, limSlot);
+#else
+        juce::ignoreUnused (ceilingReadBack);
+#endif
         loop.onBubble = [this] (const LoudnessLoop::Bubble& b) { if (b.text.startsWith ("Listening") || b.text.startsWith ("Checking...")) return; bubbles.add (b.text); };
         loop.logLine = [this] (const juce::String& l) { logs.add (l); };
         loop.isPlaying = [] { return true; };
@@ -133,7 +159,11 @@ struct Rig
     double limiterInput() const { auto* l = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limSlot)); return l ? l->inputDb() : 0.0; }
     juce::String last() const { return bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]; }
     // feed until the loop leaves waitAudio/measuring (a proposal, a hold or a rejection), bounded
-    void runWindow (float gainDb = 0.0f, IndependentMeter* ind = nullptr) { for (int k = 0; k < 16 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, ind, gainDb); }
+    void runWindow (float gainDb = 0.0f, IndependentMeter* ind = nullptr) {
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+        if (loop.state() == LoudnessLoop::State::armed) loop.listen();   // 18g: the window starts on Listen
+#endif
+        for (int k = 0; k < 16 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, ind, gainDb); }
     // after applying the loop TRACKS: feed while it tracks (bounded), so a louder section can raise a back-off proposal
     void runTracking (float gainDb, int rounds = 16) { for (int k = 0; k < rounds && loop.state() == LoudnessLoop::State::tracking; ++k) feed (proc, prog, 100, false, &loop, nullptr, gainDb); }
 };
@@ -195,7 +225,11 @@ int main()
         check (std::abs (r.levelGain()) < 0.01f && r.loop.state() == LoudnessLoop::State::quietAsked, "B. quiet section: the loop ASKS (state quietAsked), nothing applied until a pill", "Level " + f1 (r.levelGain()) + " state " + juce::String ((int) r.loop.state()));
         check (r.last().startsWith ("This is quieter than the section the chain was built on (") && r.last().contains ("at build). Is this the loudest part of the song?") && r.loop.lastPills().joinIntoString ("|") == "Listen again|This is the loudest part", "B. the quiet bubble names both numbers and carries [Listen again] [This is the loudest part]", r.last() + " " + r.loop.lastPills().joinIntoString ("|"));
         const int nb = r.loop.bubbleCount();
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+        check (r.loop.listenAgain() && r.loop.state() == LoudnessLoop::State::waitAudio && r.loop.lastBubble() == "Listening..." && r.loop.bubbleCount() == nb, "B. [Listen again] re-arms the window with one bubble (18g: the Listening... progress bubble)", r.loop.lastBubble());
+#else
         check (r.loop.listenAgain() && r.loop.state() == LoudnessLoop::State::waitAudio && r.last() == "Play the loudest part and I'll check again." && r.loop.bubbleCount() == nb + 1, "B. [Listen again] re-arms the window with one bubble", r.last());
+#endif
         r.runWindow (-6.0f);   // quiet again -> asked again
         check (r.loop.state() == LoudnessLoop::State::quietAsked, "B. a quiet window asks again");
         const float heldBefore = r.levelGain();
@@ -233,7 +267,11 @@ int main()
         check (r.loop.armFromChain() && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (1).name == "EJ Test Limiter", "armed with a non-EchoJay limiter last", r.logs.joinIntoString (" | ").substring (0, 160));
         r.runWindow(); r.loop.go(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking || (r.loop.state() == LoudnessLoop::State::proposed && std::abs (numberAfter (r.last(), "Push ")) < 1.0f), "D. third-party limiter last: the target is reached through the Level slot", r.last() + " | Level " + f1 (r.levelGain()));
-        check (r.last().contains ("limiter GR unknown (EJ Test Limiter"), "the GR text says the limiter is not an EchoJay device", r.last());
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+        check (r.last().contains ("limiter working ~") && r.last().contains ("dB (estimated)") && ! r.last().contains ("not an EchoJay device"), "18g (4) third-party limiter: the GR reads \"limiter working ~X dB (estimated)\", never \"not an EchoJay device\"", r.last());
+#else
+        check (false, "18g (4) third-party limiter: the GR reads \"limiter working ~X dB (estimated)\", never \"not an EchoJay device\"", "no 18g on this build: " + r.last());
+#endif
     }
     std::printf ("== E. the verbs ==\n");
     {
@@ -242,14 +280,24 @@ int main()
         r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.runWindow();
         const float g0 = r.levelGain();
 #ifdef EJ_LOUDNESSLOOP_PILLS
-        check (r.loop.lastKind() == LoudnessLoop::Bubble::Kind::result && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Push it", "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Push it]", r.loop.lastPills().joinIntoString ("|"));
+        check (r.loop.lastKind() == LoudnessLoop::Bubble::Kind::result && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Push it|Done", "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Push it] [Done] (18g adds Done)", r.loop.lastPills().joinIntoString ("|"));
         { const int nb = r.loop.bubbleCount(); r.loop.nudgeTarget (+1.0f); check (r.loop.bubbleCount() == nb + 1, "E. a verb after the result bubble produces exactly ONE reply bubble (a bit louder)", juce::String (r.loop.bubbleCount() - nb)); r.loop.nudgeTarget (-1.0f); }
-        { const int nb = r.loop.bubbleCount(); r.loop.leaveIt(); check (r.loop.bubbleCount() == nb + 1 && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Push it", "E. leave it: one bubble, the result pills", r.last()); }
+        { const int nb = r.loop.bubbleCount(); r.loop.leaveIt(); check (r.loop.bubbleCount() == nb + 1 && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Push it|Done", "E. leave it: one bubble, the result pills (with Done, 18g)", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]"); }
         { const int nb = r.loop.bubbleCount(); r.loop.recheck(); check (r.loop.bubbleCount() == nb + 1, "E. check the level again: one bubble"); r.runWindow(); }
 #else
         check (false, "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Push it]", "no pills on this build");
         check (false, "E. a verb after the result bubble produces exactly ONE reply bubble (a bit louder)", "no pills on this build");
 #endif
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+        { const float g1 = r.levelGain(); r.loop.nudgeTarget (+1.0f); check (std::abs (r.loop.target() + 8.0f) < 0.01f && r.last().startsWith ("Target now -8.0") && std::abs (r.levelGain() - g1 - 1.0f) < 0.05f, "a bit louder: target -8 AND the Level moved +1 now (18g: the nudge is the pass, +-1 is inside the on-target band)", r.last() + " | Level " + f1 (g1) + " -> " + f1 (r.levelGain())); }
+        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::tracking && r.last().contains ("on target"), "...and the check lands on target (-8)", r.last());
+        { const float g2 = r.levelGain(); r.loop.nudgeTarget (-1.0f); check (std::abs (r.loop.target() + 9.0f) < 0.01f && std::abs (r.levelGain() - g2 + 1.0f) < 0.05f, "a bit softer: target back to -9, the Level moved -1 now", f1 (g2) + " -> " + f1 (r.levelGain())); }
+        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::tracking && r.last().contains ("on target"), "...and the check lands on target (-9)", r.last());
+        r.loop.leaveIt(); check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Leaving it at"), "leave it: holds, says where", r.last());
+        r.loop.recheck(); check (r.loop.state() == LoudnessLoop::State::waitAudio && r.last().startsWith ("Checking the level again"), "check the level again: a new window");
+        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::tracking || r.loop.state() == LoudnessLoop::State::proposed, "...which measures (on target, or a proposal)", r.last());
+        { const float before = r.levelGain(), shortfall = r.loop.target() - r.loop.lastMeasured(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs ((r.levelGain() - before) - juce::jlimit (-6.0f, 6.0f, shortfall)) < 0.05f, "...and moved the Level by the shortfall", f1 (before) + " -> " + f1 (r.levelGain()) + " (shortfall " + f1 (shortfall) + ")"); }
+#else
         r.loop.nudgeTarget (+1.0f); check (std::abs (r.loop.target() + 8.0f) < 0.01f && r.last().startsWith ("Target now -8.0"), "a bit louder: target -8, one more pass", r.last());
         r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed && numberAfter (r.last(), "Push ") > 0.5f, "...which proposes about +1", r.last());
         r.loop.go(); r.runWindow();
@@ -259,6 +307,7 @@ int main()
         r.loop.recheck(); check (r.loop.state() == LoudnessLoop::State::waitAudio && r.last().startsWith ("Checking the level again"), "check the level again: a new window");
         r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed, "...which proposes");
         const float before = r.levelGain(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs (r.levelGain() - before) > 0.4f, "...and moved the Level by the shortfall", f1 (before) + " -> " + f1 (r.levelGain()));
+#endif
         check (r.loop.undo() && std::abs (r.levelGain()) < 0.01f && r.last().startsWith ("Restored the Level slot to +0.0 dB"), "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", r.last() + " | Level " + f1 (r.levelGain()) + " (g0 " + f1 (g0) + ")");
     }
     std::printf ("== F. GR text on a PEAKY programme + H. true peak by the independent meter ==\n");
@@ -301,11 +350,92 @@ int main()
         auto* lim = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limAt + 1));
         auto* lv  = dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (limAt));
         check (lim != nullptr && std::abs (lim->inputDb() - 8.8) < 0.01 && lv != nullptr && std::abs (lv->gainDb()) < 0.01, "I. the server's input_db +8.8 stays on the limiter; the Level starts at 0", lim ? juce::String (lim->inputDb(), 2) : "no limiter");
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+        loop.listen();   // 18g: the window starts on Listen
+#endif
         for (int k = 0; k < 16 && (loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring); ++k) feed (proc, prog, 100, false, &loop, nullptr);
         check (loop.state() == LoudnessLoop::State::proposed || loop.state() == LoudnessLoop::State::tracking, "I. a window measured -> a proposal (or on target)", bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]);
         if (loop.state() == LoudnessLoop::State::proposed) loop.go();
         check (lv != nullptr && lim != nullptr && std::abs (lim->inputDb() - 8.8) < 0.01, "I. after go the loop DROVE THE LEVEL SLOT and the limiter's input_db is still +8.8", "Level " + juce::String (lv ? lv->gainDb() : 0.0, 2) + " dB, limiter input_db " + juce::String (lim ? lim->inputDb() : 0.0, 2));
         check (logs.joinIntoString ("\n").contains ("EJLoudness: inserted EchoJay Level at slot"), "I. the insertion is logged as EJLoudness", logs.joinIntoString (" | ").substring (0, 160));
+    }
+#endif
+
+    std::printf ("== J. 18g loop manners: explicit Listen / Check, +-1 dB with step scaling and 3 proposals, Done, the GR estimate, the ceiling safety net ==\n");
+#ifdef EJ_LOUDNESSLOOP_MANNERS
+    {   // J1: no window before Listen
+        Rig r (false); r.setTarget (-9.0f, 0.0); calibrate (r.proc, r.prog, -18.0f);
+        r.loop.armFromChain();
+        check (r.loop.state() == LoudnessLoop::State::armed && r.last() == "Cue the loudest section, press play, then tap Listen." && r.loop.lastPills().joinIntoString ("|") == "Listen", "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]");
+        for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);   // 16 x ~1 s of the loudest part, ticking - no Listen
+        check (r.loop.state() == LoudnessLoop::State::armed && ! r.logs.joinIntoString ("\n").contains ("measured:") && std::abs (r.levelGain()) < 0.01f, "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing", "state " + juce::String ((int) r.loop.state()));
+        check (r.loop.listen() && r.loop.state() == LoudnessLoop::State::waitAudio, "J1. Listen starts the window");
+        r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.lastPills().joinIntoString ("|") == "Go|Leave it", "J1. ...which measures and proposes with [Go] [Leave it]", r.last());
+        // J2a: after Go with continuing audio, ONE automatic check
+        const int nMeasured = juce::StringArray::fromLines (r.logs.joinIntoString ("\n")).size();
+        r.loop.go(); r.runWindow();
+        check (r.logs.joinIntoString ("\n").contains ("round 1") && (r.loop.state() == LoudnessLoop::State::proposed || r.loop.state() == LoudnessLoop::State::tracking), "J2a. after Go with the audio continuing: one automatic check (a round-1 measurement, no verb)", r.last());
+        juce::ignoreUnused (nMeasured);
+    }
+    {   // J2b: after Go the audio stops -> "Tap Check when the loud part is playing" [Check]
+        Rig r (false); r.setTarget (-9.0f, 0.0); calibrate (r.proc, r.prog, -14.0f);
+        r.loop.armFromChain(); r.loop.listen(); r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed, "J2b. proposed", r.last());
+        r.loop.go();
+        feed (r.proc, r.prog, 23 * 10, true, &r.loop, nullptr, 0.0f);   // 10 ticks of silence after Go
+        check (r.loop.state() == LoudnessLoop::State::askCheck && r.last() == "Tap Check when the loud part is playing." && r.loop.lastPills().joinIntoString ("|") == "Check", "J2b. after Go with no audio: \"Tap Check when the loud part is playing\" [Check] (8 ticks = 2 s in the plugin)", r.last() + " state " + juce::String ((int) r.loop.state()));
+        check (r.loop.check() && r.loop.state() == LoudnessLoop::State::waitAudio, "J2b. Check starts the window");
+        r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed || r.loop.state() == LoudnessLoop::State::tracking, "J2b. ...which measures", r.last());
+    }
+    {   // J3: the limiter-nonlinearity fixture (EJ Test Soft Limiter: 0.6 dB out per dB in) - on target in <= 2 proposals
+        Rig r (true, true, "EJ Test Soft Limiter"); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -22.0f);
+        r.loop.armFromChain(); r.loop.listen(); r.runWindow();
+        int proposals = 0; float lastNeeded = 99.0f;
+        for (int k = 0; k < 6 && r.loop.state() == LoudnessLoop::State::proposed; ++k) { ++proposals; r.loop.go(); r.runWindow(); }
+        lastNeeded = r.loop.target() - r.loop.lastMeasured();
+        check (r.loop.state() == LoudnessLoop::State::tracking && std::abs (lastNeeded) <= 1.0f, "J3. the 0.6x fixture lands within +-1.0 dB of the target", "needed " + f1 (lastNeeded) + " state " + juce::String ((int) r.loop.state()));
+        check (proposals <= 2, "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", juce::String (proposals) + " proposal(s)");
+        check (r.logs.joinIntoString ("\n").contains ("step scaling: commanded") && r.logs.joinIntoString ("\n").contains ("ratio 0.6"), "J3. the scaling is logged (ratio 0.6x)", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("step scaling", true, false).substring (0, 120));
+        check (r.last().contains ("limiter working ~") && r.last().contains ("(estimated)"), "J3. the GR line on this third-party fixture is the estimate", r.last());
+        // J4: Done ends the watch - a louder section afterwards proposes nothing
+        const int nb = r.loop.bubbleCount();
+        check (r.loop.done() && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Done - Level "), "J4. Done: one bubble, the loop holds", r.last());
+        const float g0 = r.levelGain(); const int nb2 = r.loop.bubbleCount();
+        for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, +4.0f);   // a louder section after Done
+        check (r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb2 && std::abs (r.levelGain() - g0) < 0.01f, "J4. after Done a louder section is neither measured nor proposed on (the watch is over)", "state " + juce::String ((int) r.loop.state()));
+    }
+    {   // J5: the GR estimate (Level OUT - chain OUT) against the EchoJay Limiter's REAL GR on a steadily limited programme
+        Rig r (false); r.setTarget (-9.0f, 0.0); calibrate (r.proc, r.prog, +2.0f);   // noise at +2 LUFS in (peaks ~+3 dBFS): the -0.1 dBTP wall works steadily
+        r.loop.armFromChain(); r.loop.listen(); r.runWindow();
+        const float real = r.loop.grAvg(), est = r.loop.grEstimateDb();
+        check (std::isfinite (est) && real > 0.5f && std::abs (est - real) <= 1.0f, "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "estimate " + f1 (est) + " vs real " + f1 (real) + " dB");
+    }
+    {   // J6: the ceiling safety net - a third-party limiter with NO ceiling readback is replaced by EchoJay Limiter, said in one line
+        Rig r (true, false); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
+        const int nb = r.loop.bubbleCount();
+        check (r.loop.armFromChain() && r.h.getSlotInfo (1).name == "EchoJay Limiter" && r.loop.limiterSlot() == 1 && r.h.getSlotInfo (0).name == "EchoJay Level", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
+        check (r.loop.bubbleCount() == nb + 2 && r.bubbles.size() >= 2 && r.bubbles[r.bubbles.size() - 2] == "EJ Test Limiter's ceiling could not be confirmed, so EchoJay Limiter holds the ceiling instead (-0.1 dBTP).", "J6. ...said in one line before the arm bubble", r.bubbles.size() >= 2 ? r.bubbles[r.bubbles.size() - 2] : juce::String ("(none)"));
+        check (r.logs.joinIntoString ("\n").contains ("substituted EchoJay Limiter for EJ Test Limiter"), "J6. ...and logged");
+        r.loop.listen(); r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed || r.loop.state() == LoudnessLoop::State::tracking, "J6. the loop then runs against the substituted limiter (real GR)", r.last());
+    }
+    {   // J6b: a third-party limiter WITH a ceiling readback is kept
+        Rig r (true, true); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
+        check (r.loop.armFromChain() && r.h.getSlotInfo (1).name == "EJ Test Limiter", "J6. a third-party limiter whose ceiling READ BACK is kept", r.h.getSlotInfo (1).name);
+    }
+#else
+    for (const char* leg : { "J1. the arm bubble reads \"Cue the loudest section, press play, then tap Listen\" with [Listen]", "J1. NO window runs on the first audio: 16 s of audio without Listen measures nothing, proposes nothing",
+                             "J2a. after Go with the audio continuing: one automatic check (a round-1 measurement, no verb)", "J2b. after Go with no audio: \"Tap Check when the loud part is playing\" [Check] (8 ticks = 2 s in the plugin)",
+                             "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", "J4. Done: one bubble, the loop holds", "J4. after Done a louder section is neither measured nor proposed on (the watch is over)",
+                             "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "J6. ceiling readback absent -> EchoJay Limiter substituted at the last slot, the Level slot untouched" })
+        check (false, leg, "no 18g on this build");
+    {   // the 0.6x fixture AS IT STOOD, for the record: how many proposals does the unscaled loop need?
+        Rig r (true, true, "EJ Test Soft Limiter"); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -22.0f);
+        r.loop.armFromChain(); r.runWindow(); int proposals = 0;
+        for (int k = 0; k < 6 && r.loop.state() == LoudnessLoop::State::proposed; ++k) { ++proposals; r.loop.go(); r.runWindow(); }
+        check (proposals <= 2, "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", juce::String (proposals) + " proposal(s), last: " + r.last());
     }
 #endif
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
