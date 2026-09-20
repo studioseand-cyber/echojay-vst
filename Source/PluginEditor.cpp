@@ -22523,6 +22523,17 @@ std::map<juce::String, juce::String> EchoJayEditor::roleByNameFor(const juce::St
 // the own-rack path (finishChainBubbleWhenDialSettled) AND the borrowed-host SESSION
 // build path, so a Link-rack build renders the same text (applied names, partial
 // lists, SUBSTITUTED notes with applied counts, pending, stale) as an own-rack build.
+juce::String EchoJayEditor::stereoFlagLine(float widthPct, float correlation, bool isFullMix)
+{
+    if (! isFullMix) return {};
+    if (widthPct < 0.5f && correlation > 0.995f)
+        return "Stereo: MONO INPUT during this capture (left = right, correlation " + juce::String(correlation, 2)
+             + ") - the width figure is not meaningful for this capture\n";
+    if (widthPct < 10.0f) return "Stereo: Width " + juce::String(widthPct, 1) + "% - narrow\n";
+    if (widthPct > 55.0f) return "Stereo: Width " + juce::String(widthPct, 1) + "% - wide\n";
+    return {};
+}
+
 EchoJayEditor::BuildBubble EchoJayEditor::composeBuildBubble(ChainHost& ch, const juce::String& chainJson)
 {
     BuildBubble out;
@@ -31911,10 +31922,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     // Stereo data
     if (isFullMix)
     {
-        if (d.width < 10.0f)
-            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% - narrow\n";
-        else if (d.width > 55.0f)
-            flagsStr += "Stereo: Width " + juce::String(d.width, 1) + "% - wide\n";
+        flagsStr += stereoFlagLine(d.width, d.correlation, true);   // 20 Sep 2026: mono input is named as such, never "narrow"
         if (d.correlation < 0.0f)
             flagsStr += "Correlation: " + juce::String(d.correlation, 2) + " - PHASE ISSUES\n";
     }
@@ -32697,7 +32705,8 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
             " | Peak Max " + ff(pr.peakL) + "/" + ff(pr.peakR) + " dB"
             " | TP Max " + ff(pr.tpL) + "/" + ff(pr.tpR) + " dBTP\n"
             "Dynamics: Crest " + ff(pr.crest) + " dB | DC " + ff(pr.dc) + " mV\n"
-            "Stereo: Width " + ff(pr.width) + "% | Correlation " + ff(pr.corr) + "\n";
+            "Stereo: Width " + ff(pr.width) + "% | Correlation " + ff(pr.corr)
+            + (pr.width < 0.5f && pr.corr > 0.995f ? " (MONO INPUT during this capture: left = right, width not meaningful)" : "") + "\n";   // 20 Sep 2026
 
         juce::String userLabel = proj.isEmpty()
             ? ("Here's v" + juce::String(version) + ". Compare to the previous version.")

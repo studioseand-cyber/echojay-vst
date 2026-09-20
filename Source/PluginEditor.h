@@ -1306,6 +1306,11 @@ private:
     // Amendment 3 (17 Sep 2026): the one chain-built bubble composer (own rack + SESSION build).
     struct BuildBubble { juce::String text, altPrompt, altLabel; bool dialWarning = false; };
     BuildBubble composeBuildBubble(ChainHost& ch, const juce::String& chainJson);
+    // 20 Sep 2026 (capture width observation): the ONE wording for a capture's stereo figure. A window whose left and right
+    // were the same signal (width < 0.5 %, correlation > 0.995) is a MONO INPUT, not a "narrow" image - Sean's mix-bus
+    // capture read 0.0 % / 1.0 because the plugin received identical channels for the whole window (609,280 samples, 7 differ).
+#define EJ_CAPTURE_MONO_LINE 1   // 20 Sep 2026: stereoFlagLine exists on this build (the guard's RED-by-name key)
+    static juce::String stereoFlagLine(float widthPct, float correlation, bool isFullMix);
     static std::map<juce::String, juce::String> roleByNameFor(const juce::String& chainJson);
     void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
     void armLoudnessLoopIfTargeted();      // ruling G: arm after an own-rack build whose limiter names a LUFS target
