@@ -10151,6 +10151,15 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 // bedroom made eleven with no edit here beyond the voicing a
                 // room tile carries, which is its room's source.
                 //
+                // FOURTEEN SINCE 20 SEP 2026, and the count is still not written
+                // down here: it is derived from PlaybackSim::Count, so the three
+                // rooms added themselves. What they DID test is the voicing rule
+                // above: the club floor and the festival field carry ClubPA,
+                // which is their room's source, so two live tiles now carry the
+                // same voicing as a third. A check that read the voicing as "one
+                // step down from the selection", as this one did until the
+                // bedroom, would have called that a duplicate and reddened.
+                //
                 // THE TABLE AND THE HANDLER AGREE: every selection the stage can
                 // run has exactly one live tile, in the selections' own order
                 // (the Mono tile first), each storing its own selection, and each
@@ -10370,6 +10379,13 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 // (19 Sep 2026). The bluetooth speaker and the club PA are one
                 // source each, so they sum to mono; the TV soundbar does not.
                 //
+                // THE FESTIVAL PA JOINED THEM ON 20 SEP 2026 and is in the rule
+                // above but not in the behavioural loop below, because it is the
+                // only voicing with no selection of its own: it is reached as
+                // the festival field room's source, so the stage cannot be asked
+                // to run it alone. pr PIN8 runs it through that room and pins
+                // the same fold there, against the same hand-built composition.
+                //
                 // WHAT IS PINNED IS THE FOLD, NOT THE ORDER. Both channels run
                 // the same linear filters, so filtering first and summing after
                 // gives the same samples up to rounding, and a check that the
@@ -10380,13 +10396,15 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 {
                     check (echojay::voicingSumsToMono (PV::BluetoothSpeaker)
                            && echojay::voicingSumsToMono (PV::ClubPA)
+                           && echojay::voicingSumsToMono (PV::FestivalPA)
                            && ! echojay::voicingSumsToMono (PV::TvSoundbar),
-                           "pb PIN12: the bluetooth speaker and the club PA sum to mono first; the "
-                           "TV soundbar does not");
+                           "pb PIN12: the bluetooth speaker, the club PA and the festival PA sum to mono "
+                           "first; the TV soundbar does not");
                     juce::String pbOthers;
                     for (int v = -1; v <= (int) PV::Count + 2; ++v)
                         if (echojay::voicingSumsToMono ((PV) v)
-                            && v != (int) PV::BluetoothSpeaker && v != (int) PV::ClubPA)
+                            && v != (int) PV::BluetoothSpeaker && v != (int) PV::ClubPA
+                            && v != (int) PV::FestivalPA)
                             pbOthers << v << " ";
                     check (pbOthers.isEmpty(),
                            "pb PIN12: and nothing else does: the five original rows keep their stereo "
@@ -10969,6 +10987,230 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (ppMut != pp && ! clockPassed (ppMut),
                        "pr PIN7 (text pin): control: a constant in its place is reported");
             }
+
+            // Any room's settings into a reference engine, the way the stage
+            // applies them. prFreshRoom above is the bedroom's; the three rooms
+            // added on 20 Sep 2026 need the same for themselves.
+            auto prFreshOf = [&] (echojay::ReverbEngine& e, PR room)
+            {
+                const auto& row = echojay::roomRow (room);
+                e.setAlgorithm    (row.algorithm);
+                e.setSizePct      (row.sizePct);
+                e.setDecaySeconds (row.decaySec);
+                e.setPredelayMs   (row.predelayMs);
+                e.setDampingPct   (row.dampingPct);
+                e.setLowCutHz     (row.lowCutHz);
+                e.setEarlyLatePct (row.earlyLatePct);
+                e.setDiffusionPct (row.diffusionPct);
+                e.setMixPct       (row.mixPct);
+                e.prepare (prRate, PlaybackSimStage::kRoomChunkSamples);
+                e.reset();
+            };
+
+            // pr PIN8 -- A ROOM WITH A SOURCE IS THE DEVICE, THEN THE SPACE.
+            // The club floor is the club PA in its room, and the festival field
+            // is that system heard across a field, so their rows carry a source
+            // voicing instead of copying its numbers: ClubPA for the one, and
+            // FestivalPA, which is ClubPA plus the distance, for the other.
+            // What must be true of that composition:
+            //   the source device's chain runs FIRST, under the voicing rule,
+            //     including the mono fold ClubPA's row asks for, and the room's
+            //     network runs on what comes out;
+            //   so the stage's output is exactly: fold, voice, then the room.
+            // A control drops the fold, to show it is really in the path.
+            {
+                juce::String srcBad;
+                for (int i = 1; i < (int) PR::Count; ++i)
+                {
+                    const auto r    = (PR) i;
+                    const auto src  = echojay::roomRow (r).source;
+                    const auto want = (r == PR::ClubFloor)     ? echojay::PlaybackVoicing::ClubPA
+                                    : (r == PR::FestivalField) ? echojay::PlaybackVoicing::FestivalPA
+                                                               : echojay::PlaybackVoicing::None;
+                    if (src != want)
+                        srcBad << "room " << i << " source " << (int) src << "; ";
+                    if (want != echojay::PlaybackVoicing::None && ! echojay::voicingSumsToMono (src))
+                        srcBad << "room " << i << " does not inherit the fold; ";
+                }
+                check (srcBad.isEmpty(),
+                       "pr PIN8: the club floor takes ClubPA and the festival field takes FestivalPA, the "
+                       "same system heard from a distance, and both inherit the fold; the bedroom and the "
+                       "small bar take none", srcBad);
+
+                // THE DISTANCE IS IN THE VOICING, AND IT IS AUDIBLE (20 Sep
+                // 2026). The festival field composed from ClubPA until Kathy
+                // said it was not convincing, and she was right: that was a PA
+                // with the room taken away rather than a PA heard across a
+                // field. The engine cannot model the air (its damping is inside
+                // the feedback loop, its dry path has no filter), but the stage
+                // runs the source voicing BEFORE the room, so the roll-off
+                // belongs there. Measured through the shipped chains, not read
+                // off the table: at 10 kHz the festival PA must be well below
+                // the club PA, and at 50 Hz it must not be below it at all,
+                // because distance does not thin the bottom.
+                {
+                    auto prToneDb = [&] (echojay::PlaybackVoicing v, double hz)
+                    {
+                        echojay::VoicingChain c;
+                        c.prepare (prRate);
+                        c.setVoicing (v);
+                        constexpr int n = 8192;
+                        std::vector<float> x ((size_t) n);
+                        for (int i = 0; i < n; ++i)
+                            x[(size_t) i] = (float) std::sin (2.0 * 3.14159265358979323846 * hz
+                                                              * (double) i / prRate);
+                        c.process (x.data(), n);
+                        double e = 0.0;                      // the last half, once settled
+                        for (int i = n / 2; i < n; ++i) e += (double) x[(size_t) i] * (double) x[(size_t) i];
+                        return 20.0 * std::log10 (std::sqrt (e / (double) (n / 2)) + 1.0e-12);
+                    };
+                    const double hi = prToneDb (echojay::PlaybackVoicing::FestivalPA, 10000.0)
+                                    - prToneDb (echojay::PlaybackVoicing::ClubPA,     10000.0);
+                    const double lo = prToneDb (echojay::PlaybackVoicing::FestivalPA, 50.0)
+                                    - prToneDb (echojay::PlaybackVoicing::ClubPA,     50.0);
+                    check (hi <= -8.0 && lo >= 0.0,
+                           "pr PIN8: the festival PA is the club PA with the distance on it: at least 8 dB "
+                           "below it at 10 kHz, and no lower at 50 Hz, so the air takes the top and leaves "
+                           "the bottom",
+                           "10 kHz " + juce::String (hi, 2) + " dB, 50 Hz " + juce::String (lo, 2) + " dB");
+                }
+
+                struct Composed { PS sel; PR room; };
+                for (const Composed& cse : { Composed { PS::ClubFloor,     PR::ClubFloor },
+                                             Composed { PS::FestivalField, PR::FestivalField } })
+                {
+                    PlaybackSimStage st;
+                    st.prepare (prRate);
+                    st.select (cse.sel);
+                    const int len = st.roomFadeSamples();
+
+                    // The composition, by hand, and the same thing with the
+                    // fold left out: the control.
+                    echojay::ReverbEngine ref, noFold;
+                    prFreshOf (ref, cse.room);
+                    prFreshOf (noFold, cse.room);
+                    echojay::VoicingChain cl, cr, nl, nr;
+                    for (echojay::VoicingChain* c : { &cl, &cr, &nl, &nr })
+                    {
+                        c->prepare (prRate);
+                        c->setVoicing (echojay::roomRow (cse.room).source);   // each room's own
+                    }
+
+                    juce::String bad;
+                    bool foldMatters = false;
+                    for (int b = 0; b < len / prBlock + 2; ++b)
+                    {
+                        float L[prBlock], R[prBlock], eL[prBlock], eR[prBlock], dL[prBlock], dR[prBlock];
+                        float uL[prBlock], uR[prBlock], gL[prBlock], gR[prBlock];
+                        prSignal (b * prBlock, prBlock, L, R, 0.8f);
+                        std::copy (L, L + prBlock, eL); std::copy (R, R + prBlock, eR);
+                        std::copy (L, L + prBlock, uL); std::copy (R, R + prBlock, uR);
+                        float* ch[2] = { L, R };
+                        applyPlaybackSim (st, ch, 2, prBlock, b * prBlockSec);
+
+                        // Fold, voice, keep that as the dry, then the room,
+                        // then the fade.
+                        monoFoldInPlace (eL, eR, prBlock);
+                        cl.process (eL, prBlock);
+                        cr.process (eR, prBlock);
+                        std::copy (eL, eL + prBlock, dL); std::copy (eR, eR + prBlock, dR);
+                        ref.process (eL, eR, prBlock);
+
+                        // The same, with no fold at all.
+                        nl.process (uL, prBlock);
+                        nr.process (uR, prBlock);
+                        std::copy (uL, uL + prBlock, gL); std::copy (uR, uR + prBlock, gR);
+                        noFold.process (uL, uR, prBlock);
+
+                        for (int i = 0; i < prBlock; ++i)
+                        {
+                            const int k = b * prBlock + i;
+                            if ((! prSame (L[i], prFade (k, len, dL[i], eL[i]))
+                                 || ! prSame (R[i], prFade (k, len, dR[i], eR[i]))) && bad.length() < 300)
+                                bad << "sample " << k << "; ";
+                            if (! prSame (L[i], prFade (k, len, gL[i], uL[i]))
+                                || ! prSame (R[i], prFade (k, len, gR[i], uR[i]))) foldMatters = true;
+                        }
+                    }
+                    check (bad.isEmpty(),
+                           juce::String ("pr PIN8: ") + playbackSimName (cse.sel)
+                           + " is the pair folded to mono, voiced by its source's filters, and then "
+                             "played into its room, bit for bit", bad);
+                    check (foldMatters,
+                           juce::String ("pr PIN8: control: the same chain and room WITHOUT the fold give "
+                                         "a different output, so ") + playbackSimName (cse.sel)
+                           + "'s fold is really in the path");
+                }
+            }
+
+            // pr PIN9 -- ROOM TO ROOM, WHICH OPEN LIST 195 WAS BLOCKING.
+            // Until 513dfa5, ReverbEngine::reset() snapped the lines to the
+            // PREVIOUS room's lengths, so the second room opened on the first
+            // one's geometry and glided into its own. With that fixed, a room
+            // that follows another must be indistinguishable from that room on
+            // its own: the first fades out over 30 ms, is let go, and the second
+            // engages on the next block with an empty network AND its own line
+            // lengths. The precondition shows the two rooms really differ, which
+            // is what makes the equality a claim.
+            {
+                PlaybackSimStage st;
+                st.prepare (prRate);
+                st.select (PS::Bedroom);
+                double t = 0.0;
+                int    k0 = 0;
+                for (int b = 0; b < 20; ++b)      // 100 ms of the bedroom, loud
+                {
+                    float L[prBlock], R[prBlock];
+                    prSignal (k0, prBlock, L, R, 1.0f);
+                    float* ch[2] = { L, R };
+                    applyPlaybackSim (st, ch, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+                }
+                st.select (PS::SmallBar);
+
+                const int len       = st.roomFadeSamples();
+                const int outBlocks = len / prBlock;      // the bedroom's fade out
+                echojay::ReverbEngine bar, bed;
+                prFreshOf (bar, PR::SmallBar);
+                prFreshOf (bed, PR::Bedroom);
+
+                juce::String bad;
+                bool roomsDiffer = false;
+                for (int b = 0; b < outBlocks + len / prBlock + 2; ++b)
+                {
+                    float L[prBlock], R[prBlock], dL[prBlock], dR[prBlock];
+                    float wL[prBlock], wR[prBlock], oL[prBlock], oR[prBlock];
+                    prSignal (k0, prBlock, L, R, 0.5f);
+                    std::copy (L, L + prBlock, dL); std::copy (R, R + prBlock, dR);
+                    std::copy (L, L + prBlock, wL); std::copy (R, R + prBlock, wR);
+                    std::copy (L, L + prBlock, oL); std::copy (R, R + prBlock, oR);
+                    float* ch[2] = { L, R };
+                    applyPlaybackSim (st, ch, 2, prBlock, t);
+                    t += prBlockSec;
+                    k0 += prBlock;
+
+                    if (b >= outBlocks)   // the small bar's own engagement
+                    {
+                        bar.process (wL, wR, prBlock);
+                        bed.process (oL, oR, prBlock);
+                        for (int i = 0; i < prBlock; ++i)
+                        {
+                            const int k = (b - outBlocks) * prBlock + i;
+                            if ((! prSame (L[i], prFade (k, len, dL[i], wL[i]))
+                                 || ! prSame (R[i], prFade (k, len, dR[i], wR[i]))) && bad.length() < 300)
+                                bad << "sample " << k << "; ";
+                            if (! prSame (wL[i], oL[i]) || ! prSame (wR[i], oR[i])) roomsDiffer = true;
+                        }
+                    }
+                }
+                check (roomsDiffer,
+                       "pr PIN9: precondition, the bedroom and the small bar are different spaces on the "
+                       "same input");
+                check (bad.isEmpty(),
+                       "pr PIN9: the small bar after the bedroom is the small bar on its own, bit for bit: "
+                       "an empty network at ITS line lengths, not the bedroom's glided into place", bad);
+            }
         }
 
         // pv PIN1 to pv PIN5 -- THE PLAYBACK VOICING TABLE (EJPlaybackVoicing.h).
@@ -10986,9 +11228,15 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             using PV = echojay::PlaybackVoicing;
 
             const double pvRates[] = { 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 };
+            // ONE NAME PER VOICING, tied to the count by the assert below.
+            // FestivalPA (20 Sep 2026) has no selection of its own, only the
+            // festival field's source, but it is a row like any other and the
+            // pv pins sweep the table, so it needs its name here or this file
+            // does not compile.
             const char* const pvNames[] = { "None", "PhoneSpeaker", "Laptop",
                                             "CarDashboard", "KitchenRadio", "Earbuds",
-                                            "TvSoundbar", "BluetoothSpeaker", "ClubPA" };
+                                            "TvSoundbar", "BluetoothSpeaker", "ClubPA",
+                                            "FestivalPA" };
             static_assert (sizeof (pvNames) / sizeof (pvNames[0]) == (size_t) PV::Count,
                            "one name per voicing, so a FAIL line can say which");
             const char* const pvWhich[3] = { "high pass", "low pass", "peak" };
@@ -11590,9 +11838,11 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         //   the layout spends exactly kPlaybackPageChromeH (98 px) outside the
         //     grid area, the figure the paint is built on
         //
-        // AT THE TABLE'S TILE COUNT AND AT SYNTHETIC ONES (9, 15, 40). With the
-        // table's seven nothing scrolls on any page, so a pin that only saw
-        // seven would never see the layout that scrolling depends on.
+        // AT THE TABLE'S TILE COUNT AND AT SYNTHETIC ONES (9, 15, 40). The
+        // synthetic ones are still here now that the table's own count (14 since
+        // 20 Sep 2026) scrolls on every page: they keep the pin covering the
+        // counts the table does not have, including the ones that fit whole,
+        // which is the layout a grid that stops scrolling would land on.
         //
         // Page sizes as resized() derives them (content area = main column less
         // 10 px each side, height less the header, tab strip, reference bar,
@@ -11742,7 +11992,7 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             for (const auto& pg : { juce::Rectangle<int> (0, 0, 565, 373), juce::Rectangle<int> (0, 0, 565, 405),
                                     juce::Rectangle<int> (0, 0, 741, 553), juce::Rectangle<int> (0, 0, 741, 521),
                                     juce::Rectangle<int> (0, 0, 1360, 1025), juce::Rectangle<int> (0, 0, 1780, 1025) })
-                for (int n : { 0, 1, 7, 8, 9, 10, 12, 13, 15, 40 })
+                for (int n : { 0, 1, 7, 8, 9, 10, 12, 13, 14, 15, 40 })
                 {
                     const auto L2 = playbackPageLayout (pg, n);
                     const int  m  = playbackGridMaxScroll (n, L2.grid);
@@ -11770,6 +12020,36 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "pg PIN7: the thumb shows exactly when the grid can scroll, stays in its track and "
                    "follows the offset down, and no tile reaches the gutter, at 0 to 40 tiles and every "
                    "offset tried on six pages", bad);
+
+            // THE TABLE'S OWN COUNT, ON THE FOUR PAGES pg PIN5 TESTS (20 Sep
+            // 2026). Fourteen tiles are four rows, and four rows fit nowhere:
+            // this is the first table that scrolls on EVERY page this plugin can
+            // produce, so the scrollbar is reachable everywhere rather than on
+            // the small pages only. 1360 x 1025 is the one that changed
+            // character: eleven tiles fitted whole there and fourteen do not.
+            // The figures are here so that a later table that quietly stops
+            // scrolling somewhere reddens with the page named.
+            {
+                struct Page { int w, h, scroll; };
+                const int nTiles = (int) echojay::kPlaybackTiles.size();
+                juce::String pgBad;
+                for (const Page& p : { Page { 565,  405,  179 },
+                                       Page { 565,  373,  211 },
+                                       Page { 1360, 1025,  87 },
+                                       Page { 1780, 1025, 367 } })
+                {
+                    const auto L3 = playbackPageLayout ({ 0, 0, p.w, p.h }, nTiles);
+                    const int  m  = playbackGridMaxScroll (nTiles, L3.grid);
+                    if (m != p.scroll || playbackScrollThumb (nTiles, L3.grid, L3.scrollTrack, 0).isEmpty())
+                        pgBad << p.w << "x" << p.h << " scrolls " << m << " (expected " << p.scroll
+                              << (playbackScrollThumb (nTiles, L3.grid, L3.scrollTrack, 0).isEmpty()
+                                  ? ", no thumb" : "") << "); ";
+                }
+                check (pgBad.isEmpty() && nTiles == 14,
+                       "pg PIN7: at the table's own 14 tiles every one of the four pinned pages scrolls, "
+                       "by 179, 211, 87 and 367 px, and each shows a thumb",
+                       pgBad + " table " + juce::String (nTiles));
+            }
         }
 
         // pg PIN8 -- THE SCROLL'S TWO LOAD-BEARING PROPERTIES, AS TEXT. A TEXT

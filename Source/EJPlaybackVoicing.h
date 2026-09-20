@@ -50,6 +50,12 @@ enum class PlaybackVoicing
     TvSoundbar,       ///< a soundbar under a television: stereo, no mono sum
     BluetoothSpeaker, ///< a portable speaker: one box, summed to mono first
     ClubPA,           ///< a club's PA: one system, summed to mono first
+    FestivalPA,       ///< the same system outdoors, heard from a distance: mono first, top gone
+
+    /** NOT EVERY VOICING HAS A SELECTION OF ITS OWN. FestivalPA is reached
+        only as the festival field room's source (EJPlaybackRoom.h): it is the
+        distance, and the distance is only ever heard in that place. The pv
+        pins sweep the table, so it is pinned like the rest either way. */
 
     /** SENTINEL, ALWAYS LAST. NEW VALUES GO ABOVE THIS LINE, NEVER BELOW IT.
         The table below is sized by it and the pv pins sweep up to it, so a
@@ -110,6 +116,23 @@ struct VoicingRow
                         a top held to about 16 kHz, and a 5 dB lift at 55 Hz,
                         where a club system is run hot. It is the system, not
                         the room: no reverb, no reflections, no crowd.
+
+    FESTIVAL PA (20 Sep 2026) IS THE DISTANCE, AND IT IS A ROW BECAUSE THE
+    ENGINE CANNOT BE. What you hear on a field is air swallowing the top end
+    over a hundred metres, and the reverb cannot do it: its damping sits inside
+    the feedback loop, so it darkens the tail only, and its dry path has no
+    filter at all. The stage runs a room's SOURCE VOICING BEFORE the room, so a
+    low pass here filters the signal on its way in, which is exactly where the
+    air is. The festival field's row composed from ClubPA until this, and that
+    was a PA with the room taken away rather than a PA heard from a distance:
+      FestivalPA        the club system's shape, plus the distance. The same
+                        35 Hz bottom and the same tuning lift, one dB more of
+                        it (the sub is if anything MORE present at distance,
+                        not less, so the bottom is not thinned to make room for
+                        anything), and the top rolled off from 6.5 kHz instead
+                        of 16 kHz: about 9.5 dB below the club PA at 10 kHz and
+                        13.5 dB at 12 kHz, while 100 Hz and below are untouched.
+                        It sums to mono like the system it is.
     THE ONLY REAL TEST AVAILABLE IS LISTENING against the actual device or the
     actual place. Until someone has, read every row here as an impression.
 
@@ -134,6 +157,7 @@ inline constexpr std::array<VoicingRow, (std::size_t) PlaybackVoicing::Count> kV
     /* TvSoundbar   */ {  90.0, 0.707, 14000.0, 0.707,  2500.0, 0.9,  2.5,  false },
     /* BluetoothSpk */ { 110.0, 0.707, 13000.0, 0.707,   160.0, 1.2,  4.0,  true  },
     /* ClubPA       */ {  35.0, 0.707, 16000.0, 0.707,    55.0, 1.0,  5.0,  true  },
+    /* FestivalPA   */ {  35.0, 0.707,  6500.0, 0.707,    55.0, 1.0,  6.0,  true  },
 }};
 
 /** Whether voicing v sums the pair to mono before its filters: the row's

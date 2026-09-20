@@ -20,8 +20,11 @@
 // by someone holding the whole argument rather than by whoever added the first
 // curve.
 //
-// THE SELECTION. None, the mono fold, eight device voicings and one room. Each
-// voicing is a device class (a phone speaker, a laptop, a car), never a brand:
+// THE SELECTION. None, the mono fold, eight device voicings and four rooms. A
+// ninth voicing, FestivalPA, has no selection of its own: it is the festival
+// field's source, the club system heard across a field, and it is reached only
+// through that room. Each voicing is a device class (a phone speaker, a laptop,
+// a car), never a brand:
 // decision 11 of COMPARE_REFERENCE_PLAN, because a generic response curve cannot
 // deliver the fidelity a manufacturer's name implies. The voicings' numbers live
 // in EJPlaybackVoicing.h and the rooms' in EJPlaybackRoom.h; here they are only
@@ -44,6 +47,9 @@ enum class PlaybackSim
     BluetoothSpeaker, ///< echojay::PlaybackVoicing::BluetoothSpeaker, mono first
     ClubPA,           ///< echojay::PlaybackVoicing::ClubPA, mono first
     Bedroom,          ///< echojay::PlaybackRoom::Bedroom: the reverb, source None
+    SmallBar,         ///< echojay::PlaybackRoom::SmallBar, source None
+    ClubFloor,        ///< echojay::PlaybackRoom::ClubFloor, source ClubPA: the PA in its room
+    FestivalField,    ///< echojay::PlaybackRoom::FestivalField, source FestivalPA: the PA at a distance
 
     /** SENTINEL, ALWAYS LAST. NEW VALUES GO ABOVE THIS LINE, NEVER BELOW IT.
 
@@ -89,6 +95,9 @@ inline const char* playbackSimName (PlaybackSim s) noexcept
         case PlaybackSim::BluetoothSpeaker: return "BluetoothSpeaker";
         case PlaybackSim::ClubPA:           return "ClubPA";
         case PlaybackSim::Bedroom:          return "Bedroom";
+        case PlaybackSim::SmallBar:         return "SmallBar";
+        case PlaybackSim::ClubFloor:        return "ClubFloor";
+        case PlaybackSim::FestivalField:    return "FestivalField";
         case PlaybackSim::Count:        return "Count";
     }
     return "(out of range)";
@@ -103,6 +112,9 @@ inline echojay::PlaybackRoom playbackSimRoom (PlaybackSim s) noexcept
     switch (s)
     {
         case PlaybackSim::Bedroom:          return echojay::PlaybackRoom::Bedroom;
+        case PlaybackSim::SmallBar:         return echojay::PlaybackRoom::SmallBar;
+        case PlaybackSim::ClubFloor:        return echojay::PlaybackRoom::ClubFloor;
+        case PlaybackSim::FestivalField:    return echojay::PlaybackRoom::FestivalField;
 
         case PlaybackSim::None:
         case PlaybackSim::MonoFold:
@@ -695,8 +707,24 @@ inline bool playbackSimBody (PlaybackSimStage& stage, PlaybackSim s, float* cons
 
         // THE ROOMS. The body is the room's source device, or nothing for a
         // room with none; the network runs in applyPlaybackSim, after this.
+        // The club floor runs the club PA and the festival field runs the same
+        // system heard from a distance, so their bodies fold to mono first and
+        // carry that voicing's filters, under the voicing rule, while their
+        // networks follow the room's. THE ORDER IS WHAT MAKES THE FESTIVAL
+        // FIELD POSSIBLE: the source is filtered on its way INTO the room, so
+        // its low pass is the air over the distance, which the reverb itself
+        // could not model.
         case PlaybackSim::Bedroom:
             return stage.runRoomSource (echojay::PlaybackRoom::Bedroom,
+                                        channels, numChannels, numSamples);
+        case PlaybackSim::SmallBar:
+            return stage.runRoomSource (echojay::PlaybackRoom::SmallBar,
+                                        channels, numChannels, numSamples);
+        case PlaybackSim::ClubFloor:
+            return stage.runRoomSource (echojay::PlaybackRoom::ClubFloor,
+                                        channels, numChannels, numSamples);
+        case PlaybackSim::FestivalField:
+            return stage.runRoomSource (echojay::PlaybackRoom::FestivalField,
                                         channels, numChannels, numSamples);
 
         case PlaybackSim::None:

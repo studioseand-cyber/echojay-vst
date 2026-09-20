@@ -7194,8 +7194,8 @@ void EchoJayEditor::CodecPanel::paintRenderView(juce::Graphics& g)
 // step above the tile body.
 static const juce::Colour kPlaybackTileStroke { 0xff2c3150 };
 
-// THE GRID: the Playback page. Ten live tiles change what is playing now; the
-// eleventh opens the codec card as the render view. Every rect comes from
+// THE GRID: the Playback page. Thirteen live tiles change what is playing now;
+// the fourteenth opens the codec card as the render view. Every rect comes from
 // echojay::playbackPageLayout and the scroll functions beside it in
 // EJCodecPage.h, and the paint computes none of its own, so the allowance
 // pg PIN5 checks is the one this paint spends.
@@ -7336,9 +7336,10 @@ void EchoJayEditor::CodecPanel::paintGrid(juce::Graphics& g)
 
 // THE GRID SCROLLS; THE RENDER VIEW DOES NOT. A wheel or trackpad over the grid
 // moves the one offset by echojay::playbackWheelStepPx, clamped, and repaints.
-// In the render view, or on a grid with nothing to scroll (eleven tiles fit
-// whole on some pages, 1360 x 1025 among them, and scroll on most), the event
-// goes on to the base class exactly as it did before this handler existed.
+// In the render view, or on a grid with nothing to scroll, the event goes on to
+// the base class exactly as it did before this handler existed. Since the
+// fourteenth tile (20 Sep 2026) no page fits the table, so on the grid this
+// handler now always takes the event; the render view's behaviour is unchanged.
 void EchoJayEditor::CodecPanel::mouseWheelMove (const juce::MouseEvent& e,
                                                 const juce::MouseWheelDetails& w)
 {

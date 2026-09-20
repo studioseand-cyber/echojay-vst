@@ -23,14 +23,13 @@
 // a pin reading these symbols would need the test's link line changed, which
 // is the same shape as the OpenGL gap in that script.
 //
-// THE PLAYBACK GRID DRAWS ELEVEN OF THEM, through playbackArtForTile below:
-// mono_fold.jpg for the Mono tile, the eight voicing pictures, bedroom.jpg for
-// the one room, and codec_lossy.jpg for the codec tile. Referencing them is
-// what makes the linker pull those images into the AU and VST3. Of the other
-// eight, codec_transparent and codec_loudness have cases in codecArtFor that
-// nothing calls, and car_speaker, small_bar, club_floor, festival_field,
-// headphones and studio_monitors are embedded in the library and mapped to
-// nothing.
+// THE PLAYBACK GRID DRAWS FOURTEEN OF THEM, through playbackArtForTile below:
+// mono_fold.jpg for the Mono tile, the eight voicing pictures, the four room
+// pictures, and codec_lossy.jpg for the codec tile. Referencing them is what
+// makes the linker pull those images into the AU and VST3. Of the other five,
+// codec_transparent and codec_loudness have cases in codecArtFor that nothing
+// calls, and car_speaker, headphones and studio_monitors are embedded in the
+// library and mapped to nothing.
 
 namespace echojay
 {
@@ -47,9 +46,10 @@ struct PlaybackArt
 /** The picture for a device voicing. None, and the Count sentinel, have none.
 
     CarDashboard uses car_interior.jpg, the dashboard view; car_speaker.jpg is
-    embedded but mapped to nothing yet, as are three of the room pictures
-    (small_bar, club_floor, festival_field), headphones and studio_monitors.
-    The rooms' pictures are looked up by room, in playbackRoomArtFor. */
+    embedded but mapped to nothing yet, as are headphones and studio_monitors.
+    The rooms' pictures are looked up by room, in playbackRoomArtFor, so the
+    club floor and the festival field show their own places rather than the
+    club PA whose voicing they carry. */
 inline PlaybackArt playbackArtFor (PlaybackVoicing v) noexcept
 {
     switch (v)
@@ -62,6 +62,9 @@ inline PlaybackArt playbackArtFor (PlaybackVoicing v) noexcept
         case PlaybackVoicing::TvSoundbar:       return { EJPlaybackArt::tv_soundbar_jpg, EJPlaybackArt::tv_soundbar_jpgSize };
         case PlaybackVoicing::BluetoothSpeaker: return { EJPlaybackArt::bt_speaker_jpg,  EJPlaybackArt::bt_speaker_jpgSize };
         case PlaybackVoicing::ClubPA:           return { EJPlaybackArt::club_pa_jpg,     EJPlaybackArt::club_pa_jpgSize };
+        // FestivalPA has no picture of its own: it is the festival field's
+        // source, and that tile shows the field (playbackRoomArtFor).
+        case PlaybackVoicing::FestivalPA:
         case PlaybackVoicing::None:
         case PlaybackVoicing::Count:
             break;
@@ -75,7 +78,10 @@ inline PlaybackArt playbackRoomArtFor (PlaybackRoom r) noexcept
 {
     switch (r)
     {
-        case PlaybackRoom::Bedroom: return { EJPlaybackArt::bedroom_jpg, EJPlaybackArt::bedroom_jpgSize };
+        case PlaybackRoom::Bedroom:       return { EJPlaybackArt::bedroom_jpg,         EJPlaybackArt::bedroom_jpgSize };
+        case PlaybackRoom::SmallBar:      return { EJPlaybackArt::small_bar_jpg,       EJPlaybackArt::small_bar_jpgSize };
+        case PlaybackRoom::ClubFloor:     return { EJPlaybackArt::club_floor_jpg,      EJPlaybackArt::club_floor_jpgSize };
+        case PlaybackRoom::FestivalField: return { EJPlaybackArt::festival_field_jpg,  EJPlaybackArt::festival_field_jpgSize };
         case PlaybackRoom::None:
         case PlaybackRoom::Count:
             break;
