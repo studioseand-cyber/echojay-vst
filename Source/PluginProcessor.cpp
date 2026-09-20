@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "EJSpectralEvidence.h"   // spectral provenance + the moved band reduction
+#include "EJCompareFigures.h"     // CompareFig + computeCompareFig, moved out of this file
 #include "PluginEditor.h"
 #include "FaderTaper.h"   // shared mixer-fader mute taper (P17)
 #include "NativeClip.h"   // EchoJay_NSLog (memdiag)
@@ -3402,83 +3403,16 @@ juce::String EchoJayProcessor::saveCaptureWAV()
 // ============ Compare Context Builders ============
 
 namespace {
-    // ONE derivation of the compare figures, shared by the model's text table
-    // (figBlock) and the client-rendered figure card (buildCompareFiguresJson),
-    // so a visual can never disagree with the numbers the model reasons from.
-    // Sentinels are preserved: an unavailable reading stays at its sentinel
-    // (int/tp -100, lra 0, psr/plr/bandRel -999, overs -1) and renders/serialises
-    // as N/A, never a fabricated zero.
-    struct CompareFig {
-        float integrated = -100.0f, lra = 0.0f, tp = -100.0f, psr = -999.0f,
-              plr = -999.0f, crest = 0.0f, width = 0.0f, corr = 0.0f;
-        int   overs = -1;
-        std::array<float, 6> bandRel = { -999, -999, -999, -999, -999, -999 };
-        bool  bandValid = false;
-    };
-    /** THE BAND RELATIVES, WITH THEIR DENOMINATOR FIXED.
-
-        The old rule counted only bands above the floor and took the mean over
-        THOSE, so four surviving bands produced a four-band mean rendered under a
-        six-band label. That is not a refusal and not a correct figure: a real
-        number against the wrong denominator, carrying the same confidence as a
-        good one, and it shipped on 15 of a 45 file library while the input was a
-        ballistic tail.
-
-        THE MEAN IS OVER THE BANDS THE SCHEME HAS, OR THE FIGURE REFUSES. Six or
-        nothing. A band genuinely on the floor across a whole run is rare and
-        real: a bandpassed stem, a mono sub file, a track with nothing above
-        6 kHz. Those must read as unavailable rather than being renormalised into
-        a plausible-looking answer, and they become MORE dangerous once the input
-        is a whole-run accumulation, because the figure looks more trustworthy
-        than it did when everything was a tail.
-    */
-    static void fillBandRel (CompareFig& f, const std::array<float, 6>& db)
-    {
-        for (int i = 0; i < 6; ++i)
-            if (db[(size_t) i] <= -119.0f) return;   // six or nothing
-
-        float sum = 0.0f;
-        for (int i = 0; i < 6; ++i) sum += db[(size_t) i];
-        const float mean = sum / 6.0f;
-        f.bandValid = true;
-        for (int i = 0; i < 6; ++i)
-            f.bandRel[(size_t) i] = db[(size_t) i] - mean;
-    }
-
-    CompareFig computeCompareFig(const MeterData& m)
-    {
-        CompareFig f;
-        f.integrated = m.integrated;
-        f.lra        = m.loudnessRange;
-        f.tp = juce::jmax(m.truePeakMaxL, m.truePeakMaxR);
-        if (f.tp <= -99.0f) f.tp = juce::jmax(m.truePeakL, m.truePeakR);
-        f.psr = (m.psr > -99.0f) ? m.psr
-              : (m.shortTermTruePeak > -99.0f && m.shortTerm > -99.0f)
-                    ? (m.shortTermTruePeak - m.shortTerm) : -999.0f;
-        f.plr = (m.plr > -99.0f) ? m.plr
-              : (f.tp > -99.0f && m.integrated > -99.0f) ? (f.tp - m.integrated) : -999.0f;
-        f.crest = m.crestFactor;
-        f.width = m.width;
-        f.corr  = m.correlation;
-        f.overs = m.oversCount;
-        // NO BANDS FROM MeterData. The ballistic field this used to read is the
-        // meter's state at whatever moment the source stopped, and the overload
-        // below takes the accumulated figure instead. This one leaves bandValid
-        // false so a caller that has no evidence renders N/A rather than a tail.
-        return f;
-    }
-
-    /** The same figures, with the band relatives taken from the side's own
-        spectral evidence rather than from its MeterData. Every comparison path
-        uses this one; the MeterData-only overload above exists for callers that
-        have no evidence to offer and must then show no bands at all. */
-    CompareFig computeCompareFig(const MeterData& m, const echojay::SpectralEvidence& ev)
-    {
-        CompareFig f = computeCompareFig(m);
-        if (ev.hasMacro) fillBandRel (f, ev.macro);
-        return f;
-    }
-
+    // THE COMPARE FIGURES MOVED TO EJCompareFigures.h (20 Sep 2026), for the
+    // reason the band reduction moved to EJSpectralEvidence.h on 11 Sep: in
+    // this anonymous namespace nothing outside this file could call them, so
+    // the suite could only ever have pinned a re-implementation, and the Match
+    // screen could not reach them at all. The bodies were moved verbatim.
+    //
+    // These using-declarations keep every call site below unchanged.
+    using echojay::CompareFig;
+    using echojay::fillBandRel;
+    using echojay::computeCompareFig;
     // THE BAND REDUCTION AND THE TONAL DIFF NOW LIVE IN EJSpectralEvidence.h
     // (11 Sep 2026). They sat here, in an anonymous namespace, where neither
     // tools/mapfps_test nor an offline measurement could link them, so the
@@ -4139,6 +4073,14 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
             m->setProperty("correlation", s.averagedData.correlation);
             m->setProperty("momentary", s.averagedData.momentary);
             m->setProperty("shortTerm", s.averagedData.shortTerm);
+            // INTER-SAMPLE OVERS, WRITTEN SINCE 20 SEP 2026. It was measured and
+            // then dropped here, so a restored snapshot came back with
+            // MeterData's default of 0 and read as a measured "no clipping".
+            // Nothing consumed it as evidence until MatchSide, which treats
+            // overs < 0 as unavailable and a 0 as a measurement. The restore
+            // defaults to -1 when this key is absent, so an older save reads as
+            // unavailable, which is what it is.
+            m->setProperty("oversCount", s.averagedData.oversCount);
             obj->setProperty("meters", juce::var(m.release()));
             
             // Spectrum
@@ -4422,6 +4364,13 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                         s.averagedData.correlation = (float)(double)mo->getProperty("correlation");
                         s.averagedData.momentary = (float)(double)mo->getProperty("momentary");
                         s.averagedData.shortTerm = (float)(double)mo->getProperty("shortTerm");
+                        // ABSENT MEANS UNAVAILABLE, NOT ZERO (20 Sep 2026). Saves
+                        // written before the key existed carry no count, and
+                        // MeterData's default of 0 would present as a measured
+                        // "no overs" to MatchSide, which reads a negative as
+                        // unavailable. -1 says what is true: nobody recorded it.
+                        s.averagedData.oversCount = mo->hasProperty("oversCount")
+                                                  ? (int)mo->getProperty("oversCount") : -1;
                     }
                     
                     // Spectrum

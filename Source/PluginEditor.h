@@ -7,6 +7,7 @@
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
 #include "EJCodecPage.h"       // the Playback page's geometry: pinned
+#include "EJCompareFigures.h"  // CompareFig, computeCompareFig, matchSideFrom: the Match sides
 #include "ChainHost.h"
 #include "EJMisdialReport.h"
 #include "ChainWetKnob.h"
@@ -966,6 +967,25 @@ private:
     // unknown (Live), which the length-mismatch caveat treats as "skip".
     juce::String slotDisplayName(const CompareSlotState& slot) const;
     float slotDurationSeconds(const CompareSlotState& slot) const;
+
+    /** THE ONE WAY A MatchSide IS BUILT FROM A COMPARE SLOT (20 Sep 2026).
+        It reads the members that already answer these questions
+        (getSlotMeterData, getSlotSpectralEvidence, slotDurationSeconds) and
+        hands them to echojay::matchSideFrom, which owns the Live rules and the
+        sentinels. Nothing here decides anything: a second builder would be a
+        second set of those rules.
+
+        NOTHING CALLS IT FROM THE EDITOR YET, and that is the commit's scope:
+        the Match screen draws nothing and computeMatchProposal is called only
+        from the suite (MATCH_SCREEN_CONTRACT section 10, step one). */
+    echojay::MatchSide buildMatchSide(const CompareSlotState& slot) const;
+
+    /** The two sides of the compare, named by role rather than by position.
+        WHICH SLOT IS THE REFERENCE IS refBarIsTop()'s ANSWER, not a fresh
+        decision: the reference bar already drives one slot, and asking twice
+        is how the two come to disagree. */
+    struct MatchSides { echojay::MatchSide mix, ref; };
+    MatchSides buildMatchSides() const;
     // Step 2: cross-scope covers all three cases the send must ask about -
     // channel-vs-full, channel-vs-DIFFERENT-channel, and anything-vs-Live.
     // Keys off channelDataScoped (via slotChannelUid), never linkUid presence.

@@ -5202,6 +5202,37 @@ float EchoJayEditor::slotDurationSeconds(const CompareSlotState& slot) const
     return 0.0f;
 }
 
+// THE MATCH SIDES (20 Sep 2026). The Match screen is not drawn yet and nothing
+// in this file calls either of these; they exist so that the proposal is
+// REACHABLE, which is this commit's whole scope (MATCH_SCREEN_CONTRACT §10).
+//
+// EVERY ANSWER COMES FROM A MEMBER THAT ALREADY ANSWERS IT: getSlotMeterData
+// for the figures, getSlotSpectralEvidence for the macro bands and their stamp
+// (which for a reference is the whole-file average and not the ballistic tail),
+// slotDurationSeconds for the length, and refBarIsTop for which slot the
+// reference bar drives. Nothing is re-derived here, and the Live rules are not
+// here either: they belong to echojay::matchSideFrom, so a second caller cannot
+// get them wrong.
+echojay::MatchSide EchoJayEditor::buildMatchSide(const CompareSlotState& slot) const
+{
+    const MeterData               md = getSlotMeterData(slot);
+    const echojay::SpectralEvidence ev = getSlotSpectralEvidence(slot);
+    return echojay::matchSideFrom(echojay::computeCompareFig(md, ev), ev,
+                                  slotDurationSeconds(slot),
+                                  slot.kind == CompareSlotState::Kind::Live);
+}
+
+EchoJayEditor::MatchSides EchoJayEditor::buildMatchSides() const
+{
+    // The reference bar drives one slot; the OTHER one is the mix. Asking
+    // refBarIsTop() is reading the existing answer, not making a new one.
+    const bool refIsTop = refBarIsTop();
+    MatchSides s;
+    s.ref = buildMatchSide(refIsTop ? compareTop_ : compareBot_);
+    s.mix = buildMatchSide(refIsTop ? compareBot_ : compareTop_);
+    return s;
+}
+
 bool EchoJayEditor::crossScope(const CompareSlotState& a, const CompareSlotState& b) const
 {
     // Live is never a channel's own stored audio -> anything-vs-Live is cross.

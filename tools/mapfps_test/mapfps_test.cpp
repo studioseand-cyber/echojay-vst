@@ -55,6 +55,7 @@
 #include "EJPlaybackTiles.h"    // the Playback grid's tile table: what pb PIN9 walks
 #include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
 #include "EJMatchProposal.h"   // Match Reference phase 2a: the shipped proposal arithmetic
+#include "EJCompareFigures.h"  // the compare figures and matchSideFrom, now linkable
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -12628,6 +12629,195 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    && ! all.containsIgnoreCase ("soon") && ! all.containsIgnoreCase ("loading"),
                    "mr PIN12: and it says plainly that no proposal is computed yet, never "
                    "\"coming soon\"", st.status);
+        }
+
+        // mr PIN13 -- THE MOVED FIGURE DERIVATIONS COMPUTE WHAT THEY COMPUTED.
+        //
+        // CompareFig, fillBandRel and both computeCompareFig overloads moved out
+        // of PluginProcessor.cpp's anonymous namespace into EJCompareFigures.h
+        // on 20 Sep 2026. This pin is the only thing that says the move was a
+        // MOVE and not a rewrite.
+        //
+        // WHAT IT CAN AND CANNOT PROVE, stated rather than implied: the old
+        // code could not be linked by anything, here included, so there is no
+        // before-binary to diff against. What this encodes is the derivations
+        // as the pre-move source stated them, read off that source: true peak
+        // is the larger of the two MAX channels and falls back to the larger of
+        // the two instantaneous ones; PSR falls back to shortTermTruePeak minus
+        // shortTerm; PLR falls back to true peak minus integrated; the bands are
+        // six or nothing, mean-subtracted. A rewrite that changed any of those
+        // reddens here.
+        {
+            using echojay::CompareFig;
+            using echojay::computeCompareFig;
+
+            MeterData m;                       // defaults are the sentinels
+            m.integrated = -14.0f;
+            m.loudnessRange = 7.0f;
+            m.truePeakMaxL = -1.5f; m.truePeakMaxR = -0.8f;
+            m.truePeakL = -3.0f;    m.truePeakR = -2.0f;
+            m.crestFactor = 11.0f;  m.width = 42.0f; m.correlation = 0.65f;
+            m.oversCount = 3;
+
+            const CompareFig f = computeCompareFig (m);
+            check (f.tp == -0.8f && f.integrated == -14.0f && f.lra == 7.0f
+                   && f.crest == 11.0f && f.width == 42.0f && f.corr == 0.65f && f.overs == 3,
+                   "mr PIN13: true peak is the larger of the two MAX channels, and the plain figures "
+                   "pass through untouched",
+                   "tp " + juce::String (f.tp, 2) + ", overs " + juce::String (f.overs));
+
+            // No max-hold recorded: fall back to the instantaneous pair.
+            MeterData mNoMax = m;
+            mNoMax.truePeakMaxL = -100.0f; mNoMax.truePeakMaxR = -100.0f;
+            check (computeCompareFig (mNoMax).tp == -2.0f,
+                   "mr PIN13: with no max-hold it falls back to the larger instantaneous true peak",
+                   juce::String (computeCompareFig (mNoMax).tp, 2));
+
+            // PSR and PLR: measured value wins, then the fallback, then -999.
+            MeterData mDer = m;
+            mDer.psr = -999.0f; mDer.plr = -999.0f;
+            mDer.shortTermTruePeak = -1.0f; mDer.shortTerm = -10.0f;
+            const CompareFig fd = computeCompareFig (mDer);
+            MeterData mNone = mDer;
+            mNone.shortTermTruePeak = -999.0f; mNone.shortTerm = -999.0f;
+            const CompareFig fn = computeCompareFig (mNone);
+            MeterData mHave = mDer;
+            mHave.psr = 12.0f; mHave.plr = 13.0f;
+            const CompareFig fh = computeCompareFig (mHave);
+            check (std::abs (fd.psr - 9.0f) < 1.0e-4f
+                   && std::abs (fd.plr - ((-0.8f) - (-14.0f))) < 1.0e-4f
+                   && fn.psr == -999.0f && fh.psr == 12.0f && fh.plr == 13.0f,
+                   "mr PIN13: PSR falls back to shortTermTruePeak minus shortTerm and PLR to true peak "
+                   "minus integrated, a measured value wins over both, and neither invents a number "
+                   "when there is nothing to derive from",
+                   "psr " + juce::String (fd.psr, 2) + ", plr " + juce::String (fd.plr, 2)
+                   + ", none " + juce::String (fn.psr, 1));
+
+            // The bands: six or nothing, and the mean is over all six.
+            echojay::SpectralEvidence ev;
+            ev.hasMacro = true;
+            ev.macro = { -10.0f, -8.0f, -6.0f, -12.0f, -14.0f, -10.0f };   // mean -10
+            const CompareFig fb = computeCompareFig (m, ev);
+            echojay::SpectralEvidence evHole = ev;
+            evHole.macro[3] = -120.0f;
+            echojay::SpectralEvidence evNone;                              // hasMacro false
+            check (fb.bandValid
+                   && std::abs (fb.bandRel[0] - 0.0f) < 1.0e-4f
+                   && std::abs (fb.bandRel[1] - 2.0f) < 1.0e-4f
+                   && std::abs (fb.bandRel[4] + 4.0f) < 1.0e-4f
+                   && ! computeCompareFig (m, evHole).bandValid
+                   && ! computeCompareFig (m, evNone).bandValid,
+                   "mr PIN13: the band relatives are each band less the mean of ALL SIX, and one band "
+                   "on the floor, or no macro reading at all, refuses the whole set rather than "
+                   "renormalising");
+        }
+
+        // mr PIN14 -- A LIVE SIDE REFUSES WHAT A LIVE SIDE MUST REFUSE, AND THE
+        // RULES TRAVEL WITH THE SIDE.
+        //
+        // echojay::matchSideFrom owns them, so the editor's buildMatchSide (and
+        // anything later) cannot forget them: a Live side has NO loudness range
+        // (a session LRA is spread across whatever was played) and NO duration
+        // (a Live slot has no length). The proposal then refuses on its own
+        // rules, which is the point: the refusals are not a second list kept in
+        // the caller.
+        {
+            using echojay::matchSideFrom;
+            using echojay::MatchRefusalKind;
+
+            echojay::CompareFig f;
+            f.integrated = -14.0f; f.lra = 9.0f; f.tp = -1.0f; f.overs = 0;
+            f.crest = 11.0f; f.width = 40.0f; f.corr = 0.7f;
+            echojay::SpectralEvidence ev;
+            ev.hasMacro = true;
+            ev.macroReduction = echojay::SpectralReduction::WholeFileAverage;
+            ev.macro = { -10.0f, -8.0f, -6.0f, -12.0f, -14.0f, -10.0f };
+
+            const auto live   = matchSideFrom (f, ev, 120.0f, /*isLive*/ true);
+            const auto stored = matchSideFrom (f, ev, 120.0f, /*isLive*/ false);
+            check (live.lra == 0.0f && live.durationSeconds == 0.0f
+                   && stored.lra == 9.0f && stored.durationSeconds == 120.0f,
+                   "mr PIN14: a Live side carries no loudness range and no duration; a stored side "
+                   "keeps both, so the rule is the side's and not the caller's",
+                   "live lra " + juce::String (live.lra, 1) + " dur "
+                   + juce::String (live.durationSeconds, 1));
+
+            const auto p = echojay::computeMatchProposal (live, stored);
+            bool tooShortBands = false, tooShortDyn = false;
+            for (const auto& r : p.refusals)
+            {
+                if (r.kind == MatchRefusalKind::BandsTooShort)    tooShortBands = true;
+                if (r.kind == MatchRefusalKind::DynamicsTooShort) tooShortDyn = true;
+            }
+            bool anyBandMove = false;
+            for (const auto& mv : p.moves)
+                if (mv.kind == echojay::MatchMoveKind::Band) anyBandMove = true;
+            check (tooShortBands && tooShortDyn && ! anyBandMove,
+                   "mr PIN14: so a Live mix refuses the band proposal and the dynamics findings on "
+                   "length, and proposes no band move at all",
+                   juce::String ((int) p.refusals.size()) + " refusals, "
+                   + juce::String ((int) p.moves.size()) + " moves");
+
+            // The same side, not Live: the length refusals go away. The pin is
+            // otherwise asserting an absence that could have any cause.
+            const auto p2 = echojay::computeMatchProposal (stored, stored);
+            bool stillShort = false;
+            for (const auto& r : p2.refusals)
+                if (r.kind == MatchRefusalKind::BandsTooShort
+                    || r.kind == MatchRefusalKind::DynamicsTooShort) stillShort = true;
+            check (! stillShort,
+                   "mr PIN14: control: the same figures with a real duration draw no length refusal, "
+                   "so the refusals above came from the Live rule and not from the numbers");
+        }
+
+        // mr PIN15 -- A RESTORED SNAPSHOT WITH NO OVERS DOES NOT CLAIM ZERO.
+        //
+        // MeterData::oversCount defaults to 0 and MatchSide reads overs < 0 as
+        // unavailable, so a count that was never recorded would arrive as a
+        // measured "no clipping" and quietly withhold the ceiling move. The
+        // snapshot's saved meters never carried the count, so every restored
+        // snapshot was exactly that. Two halves: the sentinel survives the
+        // build, and the persistence writes and reads it.
+        {
+            echojay::CompareFig f;
+            f.integrated = -14.0f; f.tp = 0.6f; f.crest = 11.0f;
+            echojay::SpectralEvidence ev;
+
+            echojay::CompareFig unknown = f; unknown.overs = -1;
+            echojay::CompareFig none    = f; none.overs    = 0;
+            const auto sideUnknown = echojay::matchSideFrom (unknown, ev, 90.0f, false);
+            const auto sideNone    = echojay::matchSideFrom (none,    ev, 90.0f, false);
+            check (sideUnknown.overs < 0 && sideNone.overs == 0,
+                   "mr PIN15: an unrecorded overs count stays unavailable through the build, and a "
+                   "measured zero stays a measured zero",
+                   "unknown " + juce::String (sideUnknown.overs) + ", none "
+                   + juce::String (sideNone.overs));
+
+            // THE PERSISTENCE, AS TEXT (text pin): the save writes the count and
+            // the restore defaults to -1 when the key is absent, which is what
+            // an older save is. This half is text because the suite cannot link
+            // the processor's state code.
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pc = codeOnly (juce::String (sp.str()));
+            const juce::String writeLine ("m->setProperty(\"oversCount\", s.averagedData.oversCount);");
+            const juce::String readLine  ("s.averagedData.oversCount = mo->hasProperty(\"oversCount\")");
+            check (pc.contains (writeLine) && pc.contains (readLine) && pc.contains ("? (int)mo->getProperty(\"oversCount\") : -1;"),
+                   "mr PIN15 (text pin): the snapshot save writes oversCount and the restore reads it "
+                   "with -1, not 0, when it is absent");
+            const auto mut = juce::String (sp.str()).replace ("? (int)mo->getProperty(\"oversCount\") : -1;",
+                                                              "? (int)mo->getProperty(\"oversCount\") : 0;");
+            check (mut != juce::String (sp.str())
+                   && ! codeOnly (mut).contains ("? (int)mo->getProperty(\"oversCount\") : -1;"),
+                   "mr PIN15 (text pin): control: a restore defaulting to 0 is reported");
+
+            // WHAT IS NOT CLOSED, AND IS NOT PRETENDED TO BE: a REFERENCE never
+            // measures overs at all, so its side still reports 0. The ceiling
+            // move reads the MIX side's overs, so the proposal does not consult
+            // it today; a consumer that starts to must fix the analyser first.
+            check (echojay::matchSideFrom (none, ev, 90.0f, false).overs == 0,
+                   "mr PIN15: recorded here rather than hidden: a reference's overs are a default and "
+                   "not a measurement, and nothing in the proposal reads them yet");
         }
     }
 
