@@ -3,6 +3,7 @@
 #include "EJDialWrites.h"
 #include "MeterEngine.h"   // SpectrumWindow, for the v3 snapshot injection
 #include <JuceHeader.h>
+#include <limits>
 #include <functional>
 #include <memory>
 #include <atomic>
@@ -823,6 +824,7 @@ public:
     {
         bool  inKnown = false;
         float inLevelDb = 0.0f, inP10 = 0.0f, inP90 = 0.0f, inPeakDb = 0.0f, inCrestDb = 0.0f;
+        float inMaxShortTermDb = std::numeric_limits<float>::quiet_NaN();   // 18g: the loudest 3 s heard (max short-term LUFS-S), NaN = not yet 3 s
         float inHeardS = 0.0f, inWindowS = 0.0f;
         float preGainDb = 0.0f;
         bool  outKnown = false; float outLevelDb = 0.0f; int numSlots = 0;

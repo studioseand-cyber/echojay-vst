@@ -3289,6 +3289,7 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
     ChainLevelsData d;
     d.inKnown = in.known;
     d.inLevelDb = in.levelDb; d.inP10 = in.p10; d.inP90 = in.p90;
+    d.inMaxShortTermDb = in.maxShortTermDb;   // 18g: the loudest 3 s heard at the input - the server's opening-gain proxy
     d.inPeakDb = in.peakDb; d.inCrestDb = in.crestDb;
     d.inHeardS = in.heardSeconds; d.inWindowS = in.windowSeconds;
     d.preGainDb = chainHost.getPreGainDb();
@@ -3370,6 +3371,10 @@ juce::String EchoJayAPI::buildChainLevelsInjectionCore(const ChainLevelsData& d)
     b << "input " << fmt1(d.inLevelDb) << " LUFS (";
     b << (d.havePercentiles ? ("p10 " + fmt1(d.inP10) + ", p90 " + fmt1(d.inP90))
                             : juce::String("p10/p90 not available from a Link"));
+    // 18g (item 6): the loudest 3 s heard (max short-term). The server sets a bus/master opening gain from THIS, not the
+    // integrated figure (the loop then measures the loudest section directly). Absent until 3 s have been heard.
+    if (d.havePercentiles && std::isfinite(d.inMaxShortTermDb))
+        b << ", loudest 3 s " << fmt1(d.inMaxShortTermDb);
     b << "), peak " << fmt1(d.inPeakDb) << " dBFS, crest " << fmt1(d.inCrestDb) << " dB, heard "
       << formatHeard(d.inHeardS);
     if (d.inWindowS < d.inHeardS - 1.0f)
