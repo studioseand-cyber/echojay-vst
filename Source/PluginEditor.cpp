@@ -17671,7 +17671,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
         int editAreaH = isUser ? 0 : editCardHeight(msg);
         // Alt pill on PLAIN result bubbles (build failures) — same shared-
         // helper discipline, consumed by paint AND measure
-        int altAreaH = isUser ? 0 : altPillH(msg);
+        int altAreaH = isUser ? 0 : altPillH(msg, maxBubbleW - 20);   // 18h: rows within the bubble's max inner width
 
 
         // Extra height for AI gain-proposal APPLY cards
@@ -17905,7 +17905,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     int textRenderedW = (int)std::ceil(layout.getWidth()) + 20;
                     int bubbleW = (msg.hasWaveform && !msg.waveform.empty())
                                     ? maxBubbleW
-                                    : juce::jlimit(40, maxBubbleW, textRenderedW);
+                                    : juce::jlimit(40, maxBubbleW, juce::jmax(textRenderedW, altAreaH > 0 ? chipsNaturalWidth(msg) + 20 : 0));   // 18h: a bubble is at least as wide as one row of its pills (when that fits)
                     int bubbleX = chatX + chatW - avatarSize - 12 - bubbleW;
                     g.setColour(C::bg4);
                     g.fillRoundedRectangle((float)bubbleX, (float)drawY, (float)bubbleW, (float)tH, 10.0f);
@@ -18390,7 +18390,7 @@ void EchoJayEditor::paint(juce::Graphics& g)
                     const juce::Rectangle<int> chipArea(
                         bubbleX + 10,
                         drawY + bubbleH + chainAreaH + gainAreaH + editAreaH + 4,
-                        bubbleW - 20, 26);
+                        bubbleW - 20, altAreaH);   // 18h: rows
                     std::vector<juce::Rectangle<int>> chipRects;
                     layoutResultChips(msg, chipArea, chipRects);
                     const auto chips = resultChipList(msg);
@@ -20014,7 +20014,7 @@ int EchoJayEditor::measureChatContentHeight()
             }
             // Chain-edit preview card — same shared helper as the paint pass
             int editAreaH2 = (msg.role == "assistant") ? editCardHeight(msg) : 0;
-            int altAreaH2  = (msg.role == "assistant") ? altPillH(msg) : 0;   // SAME helper as paint
+            int altAreaH2  = (msg.role == "assistant") ? altPillH(msg, maxBW - 20) : 0;   // SAME helper as paint (18h: rows)
             tH = textH + waveCardH + chainAreaH2 + gainAreaH2 + editAreaH2 + altAreaH2 + figAreaH2;
         }
         totalH += tH + 10; // matches paint msgY += tH + 10
@@ -22232,22 +22232,37 @@ void EchoJayEditor::layoutResultChips(const ChatMsg& m, juce::Rectangle<int> are
                                       std::vector<juce::Rectangle<int>>& rectsOut) const
 {
     // ONE layout pass -> rects; paint consumes these and measures nothing.
-    // One row, left to right; labels shrink to fit the area width so two
-    // chips never overflow (they fit any real bubble; see altPillH).
+    // 18h (item 1): rows. Each chip is its natural width (text + 24, at least 40, at most the area width) and the row
+    // WRAPS when the next chip would cross the area's right edge - never clipped, never stretched to fill.
     rectsOut.clear();
     const auto chips = resultChipList(m);
     if (chips.empty()) return;
     const juce::Font pf(juce::FontOptions(12.0f));
-    const int chipH = 26, gap = 8;
-    int x = area.getX();
+    const int chipH = 26, gap = 8, rowH = 32;
+    int x = area.getX(), y = area.getY();
     for (const auto& c : chips)
     {
-        int w = juce::jmin(area.getRight() - x,
-                           pf.getStringWidth(c.label) + 24);
-        if (w < 40) w = juce::jmax(40, area.getRight() - x);
-        rectsOut.push_back({ x, area.getY(), w, chipH });
+        const int w = juce::jlimit(40, juce::jmax(40, area.getWidth()), pf.getStringWidth(c.label) + 24);
+        if (x > area.getX() && x + w > area.getRight()) { x = area.getX(); y += rowH; }
+        rectsOut.push_back({ x, y, w, chipH });
         x += w + gap;
     }
+}
+int EchoJayEditor::chipRows(const ChatMsg& m, int availW) const
+{
+    std::vector<juce::Rectangle<int>> rects;
+    layoutResultChips(m, { 0, 0, juce::jmax(40, availW), 26 }, rects);
+    if (rects.empty()) return 0;
+    return (rects.back().getY() / 32) + 1;
+}
+int EchoJayEditor::chipsNaturalWidth(const ChatMsg& m) const
+{
+    const auto chips = resultChipList(m);
+    if (chips.empty()) return 0;
+    const juce::Font pf(juce::FontOptions(12.0f));
+    int w = 0;
+    for (const auto& c : chips) w += juce::jmax(40, pf.getStringWidth(c.label) + 24) + 8;
+    return w - 8;
 }
 
 void EchoJayEditor::onResultChipTapped(int msgIdx, int kind)

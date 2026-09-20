@@ -35,6 +35,13 @@ struct EchoJayTabStripTestAccess
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
+    // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
+    static std::vector<juce::Rectangle<int>> layout (EchoJayEditor& e, const Msg& m, int w) { std::vector<juce::Rectangle<int>> r; e.layoutResultChips (m, { 0, 0, w, 26 }, r); return r; }
+#ifdef EJ_LOUDNESSLOOP_VERBS18H
+    static int rows (EchoJayEditor& e, const Msg& m, int w) { return e.chipRows (m, w); }
+#endif
+    static juce::StringArray visibleChips (EchoJayEditor& e) { juce::StringArray o; for (auto& b : e.resultChipBtns) if (b.isVisible()) o.add (b.getButtonText() + "@" + juce::String (b.getX()) + "," + juce::String (b.getY()) + " " + juce::String (b.getWidth()) + "x" + juce::String (b.getHeight())); return o; }
+    static juce::Rectangle<int> scrollBounds (EchoJayEditor& e) { return e.chatScroll.getBounds(); }
     // 18g (5): the ONE build-bubble composer, on the host's dial infos
     static juce::String compose (EchoJayEditor& e, ChainHost& ch, const juce::String& json) { return e.composeBuildBubble (ch, json).text; }
 };
@@ -133,7 +140,7 @@ int main()
         check (M.size() == n0 + 2 && M[n0].content == "Listening..." && M[n0].loopBubbleId == 0 && M.back().content.startsWith ("Measured -12.0"), "(2) the proposal is a NEW bubble; the progress bubble stays as history (closed)", juce::String ((int) (M.size() - n0)));
         check (M.back().loopPills.joinIntoString ("|") == "Go|Leave it" && A::chips (*ed, M.back()).joinIntoString ("|") == "Go#2|Leave it#2", "(1) the proposal bubble renders [Go] [Leave it] as pills (kind 2)", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble res; res.kind = LoudnessLoop::Bubble::Kind::result; res.final = true; res.text = "Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target."; res.pills = LoudnessLoop::resultPills(); loop.onBubble (res);
-        check (A::chips (*ed, M.back()).joinIntoString ("|").startsWith ("Undo#2|A bit louder#2|A bit softer#2|Push it#2"), "(1) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it]", A::chips (*ed, M.back()).joinIntoString ("|"));
+        check (A::chips (*ed, M.back()).joinIntoString ("|").startsWith ("Undo#2|A bit louder#2|A bit softer#2"), "(1) the result bubble renders [Undo] [A bit louder] [A bit softer] (+ Done since 18g; Push it only when short since 18h)", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble st; st.kind = LoudnessLoop::Bubble::Kind::stuck; st.text = "Stuck at -10.0 LUFS after 4 rounds"; st.pills = LoudnessLoop::stuckPills(); loop.onBubble (st);
         check (A::chips (*ed, M.back()).joinIntoString ("|") == "Push it#2|Leave it#2", "(1) the stuck bubble renders [Push it] [Leave it]", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble q; q.kind = LoudnessLoop::Bubble::Kind::quiet; q.text = "This is quieter than the section the chain was built on (-24.0 now vs -18.0 at build). Is this the loudest part of the song?"; q.pills = LoudnessLoop::quietPills(); loop.onBubble (q);
@@ -182,7 +189,7 @@ int main()
         LoudnessLoop::Bubble ck; ck.kind = LoudnessLoop::Bubble::Kind::info; ck.text = "Tap Check when the loud part is playing."; ck.pills = LoudnessLoop::checkPills(); loop.onBubble (ck);
         check (A::chips (*ed, M.back()).joinIntoString ("|") == "Check#2", "18g (1) the Check bubble renders [Check]", A::chips (*ed, M.back()).joinIntoString ("|"));
         LoudnessLoop::Bubble res; res.kind = LoudnessLoop::Bubble::Kind::result; res.final = true; res.text = "Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target."; res.pills = LoudnessLoop::resultPills(); loop.onBubble (res);
-        check (A::chips (*ed, M.back()).joinIntoString ("|") == "Undo#2|A bit louder#2|A bit softer#2|Push it#2|Done#2", "18g (3) the result bubble renders [Undo] [A bit louder] [A bit softer] [Push it] [Done]", A::chips (*ed, M.back()).joinIntoString ("|"));
+        check (A::chips (*ed, M.back()).joinIntoString ("|") == "Undo#2|A bit louder#2|A bit softer#2|Done#2", "18g (3) the result bubble renders [Undo] [A bit louder] [A bit softer] [Done] (Push it only when short, 18h)", A::chips (*ed, M.back()).joinIntoString ("|"));
         logs.clear(); A::send (*ed, "done"); pumpMs (30);
         check (logs.joinIntoString ("\n").contains ("verb \"done\"") && loop.state() == LoudnessLoop::State::hold, "18g (3) typed \"done\" reaches the handler and ends the watch (state hold)", "state " + juce::String ((int) loop.state()));
         LoudnessLoop::Bubble bo; bo.kind = LoudnessLoop::Bubble::Kind::backoff; bo.text = "That section is louder - back off -1.4 dB?"; bo.pills = LoudnessLoop::backoffPills(); loop.onBubble (bo);
@@ -209,6 +216,83 @@ int main()
                              "18g (3) the watch's back-off bubble renders [Back off] [Leave it]", "18g (5) the duplicate flat ceiling_db collapses to the APPLIED Ceiling: status applied, nothing manual, applied = Ceiling | Limiter Mode", "18g (5) the build bubble from that readback never says \"needs hand-dialing\"" })
         check (false, leg, "no 18g on this build");
 #endif
+
+    std::printf ("== 18h: pills wrap (420 / 1200 px); no stray panel after a pill in the Chat tab; Push it only when short; the after-verb bubble; Check reports ==\n");
+#ifdef EJ_LOUDNESSLOOP_VERBS18H
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (1400, 900); ed->setVisible (true); A::toChat (*ed); pumpMs (60);
+        auto& loop = proc.loudnessLoop(); juce::StringArray logs;
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\",\"settings_structured\":{\"params\":{\"gain_db\":0,\"target_lufs\":-9,\"loudness_option\":0}}},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\",\"settings_structured\":{\"params\":{\"ceiling_db\":-0.1,\"true_peak\":1}}}]}");
+        pumpMs (2500); A::toChat (*ed); pumpMs (100);
+        loop.logLine = [&] (const juce::String& l) { logs.add (l); };
+        auto& M = A::msgs (*ed);
+        // (1) the layout: five pills, then [Go] [Leave it], at 420 and 1200 px - every chip inside the width, natural size, rows counted
+        A::Msg five; five.role = "assistant"; five.content = "x"; five.loopPills = { "Check", "A bit louder", "A bit softer", "Undo", "Done" };
+        A::Msg two;  two.role = "assistant";  two.content = "x";  two.loopPills = LoudnessLoop::proposalPills();
+        for (int w : { 420, 1200 })
+            for (const auto* m : { &five, &two })
+            {
+                const auto rects = A::layout (*ed, *m, w); bool inside = true, natural = true; int maxRight = 0;
+                for (size_t i = 0; i < rects.size(); ++i) { inside = inside && rects[i].getX() >= 0 && rects[i].getRight() <= w; natural = natural && rects[i].getWidth() <= 140 && rects[i].getWidth() >= 40; maxRight = juce::jmax (maxRight, rects[i].getRight()); }
+                const int rows = A::rows (*ed, *m, w);
+                check (rects.size() == (size_t) m->loopPills.size() && inside && natural && rows >= 1 && rows == (rects.back().getY() / 32) + 1 && (w == 1200 ? rows == 1 : true), "18h (1) " + juce::String ((int) m->loopPills.size()) + " pills at " + juce::String (w) + " px: every chip inside the width at its natural size (40-140 px), rows = " + juce::String (rows), "rows " + juce::String (rows) + " maxRight " + juce::String (maxRight) + " widths " + [&] { juce::StringArray o; for (auto& r : rects) o.add (juce::String (r.getWidth())); return o.joinIntoString ("/"); }());
+            }
+        check (A::layout (*ed, two, 1200)[0].getWidth() <= 80, "18h (2) [Go] is a 40-80 px pill, not the bubble's width (the 1,130 px bar in the Chat tab)", juce::String (A::layout (*ed, two, 1200)[0].getWidth()) + " px");
+        // a real proposal in the Chat tab: Listen, audio, the proposal bubble - then every visible chip button is inside the transcript and narrow
+        loop.listen(); { juce::Random rng (7); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; int b = 0;
+          while (loop.state() != LoudnessLoop::State::proposed && loop.state() != LoudnessLoop::State::tracking && b < 6000) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((++b % 23) == 0) loop.tickNow(); } }
+        pumpMs (300); ed->repaint(); pumpMs (100);
+        // the chip pool is POSITIONED by the transcript's paint pass; a headless editor never paints, so paint it into an image first
+        auto paintOnce = [&] { juce::ignoreUnused (ed->createComponentSnapshot (ed->getLocalBounds(), false, 1.0f)); };
+        paintOnce();
+        check (loop.state() == LoudnessLoop::State::proposed && M.back().loopPills.joinIntoString ("|") == "Go|Leave it", "18h (2) a real proposal in the Chat tab", M.back().content.substring (0, 80));
+        auto chipsOk = [&] (const char* leg) { const auto vis = A::visibleChips (*ed); const auto sb = A::scrollBounds (*ed); bool ok = ! vis.isEmpty(); int wide = 0;
+            for (const auto& v : vis) { const auto geo = v.fromFirstOccurrenceOf ("@", false, false); const int x = geo.upToFirstOccurrenceOf (",", false, false).getIntValue(); const int w = geo.fromFirstOccurrenceOf (" ", false, false).upToFirstOccurrenceOf ("x", false, false).getIntValue(); if (w > 160) ++wide; if (x < sb.getX() || x + w > sb.getRight() + 2) ok = false; }
+            check (ok && wide == 0, leg, vis.joinIntoString (" | ") + " | scroll " + sb.toString()); };
+        chipsOk ("18h (2) every visible loop pill sits inside the transcript and is at most 160 px wide (no bar) - before the tap");
+        // tap a pill (the same path as the click), then: no stray panel - the only visible components >= 20000 px^2 are the ones before
+        auto bigVisible = [&] { juce::StringArray o; std::function<void (juce::Component&)> walk = [&] (juce::Component& c) { for (int i = 0; i < c.getNumChildComponents(); ++i) { auto* k = c.getChildComponent (i); if (! k->isVisible()) continue; if (k->getWidth() * k->getHeight() >= 20000) o.add (juce::String (typeid (*k).name()) + " " + k->getBounds().toString()); walk (*k); } }; walk (*ed); return o; };
+        const auto before = bigVisible();
+        int propIdx = (int) M.size() - 1; A::input (*ed).setText ("stale", juce::dontSendNotification); A::tapPill (*ed, propIdx); pumpMs (200); ed->repaint(); pumpMs (100); paintOnce();
+        const auto after = bigVisible();
+        check (after == before, "18h (2) no stray component after a pill tap in the Chat tab (the large visible components are the same set as before)", "before " + before.joinIntoString (" ; ") + " || after " + after.joinIntoString (" ; "));
+        chipsOk ("18h (2) ...and the pills after the tap are still inside the transcript, none wider than 160 px");
+        // (3)+(4): the verbs after a Go: "Applied +-X dB (Level now +Y). How's it sounding?" with exactly the five pills, no auto-check
+        // (the tapped pill above was [Go] - the first pill - so the loop is checking; let it finish on audio)
+        { juce::Random rng (8); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; int b = 0;
+          while ((loop.state() == LoudnessLoop::State::waitAudio || loop.state() == LoudnessLoop::State::measuring) && b < 6000) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((++b % 23) == 0) loop.tickNow(); } }
+        pumpMs (100);
+        for (const char* v : { "a bit louder", "a bit softer", "push it", "undo" })
+        {
+            const size_t n0 = M.size(); logs.clear(); A::send (*ed, v); pumpMs (100);
+            const auto& last = M.back();
+            check (M.size() == n0 + 2 && last.role == "assistant" && last.content.startsWith ("Applied ") && last.content.endsWith ("). How's it sounding?") && A::chips (*ed, last).joinIntoString ("|") == "Check#2|A bit louder#2|A bit softer#2|Undo#2|Done#2" && loop.state() == LoudnessLoop::State::hold, juce::String ("18h (4) \"") + v + "\": one bubble \"Applied +-X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", last.content.substring (0, 70) + " [" + A::chips (*ed, last).joinIntoString ("|") + "] state " + juce::String ((int) loop.state()));
+        }
+        // no auto-check after a verb: 8 s of audio, still holding, no measurement
+        { juce::Random rng (9); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; logs.clear();
+          for (int b = 0; b < 800; ++b) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((b % 23) == 22) loop.tickNow(); } }
+        check (loop.state() == LoudnessLoop::State::hold && ! logs.joinIntoString ("\n").contains ("measured:"), "18h (4) no automatic check after a verb (8 s of audio: nothing measured)", "state " + juce::String ((int) loop.state()));
+        // (3) Push it is absent on an on-target result
+        LoudnessLoop::Bubble res; res.kind = LoudnessLoop::Bubble::Kind::result; res.final = true; res.text = "Hitting -9.0 LUFS (loudest 3 s), target -9.0 - on target."; res.pills = LoudnessLoop::resultPills(); loop.onBubble (res);
+        check (! A::chips (*ed, M.back()).joinIntoString ("|").contains ("Push it"), "18h (3) Push it is absent on an on-target result", A::chips (*ed, M.back()).joinIntoString ("|"));
+        check (LoudnessLoop::shortPills().contains ("Push it") && LoudnessLoop::stuckPills().contains ("Push it") && ! LoudnessLoop::resultPills().contains ("Push it"), "18h (3) ...and present on the short / at-the-limit sets");
+    }
+#else
+    for (const char* leg : { "18h (1) 5 pills at 420 px: every chip inside the width at its natural size (40-140 px), rows = 2", "18h (1) 2 pills at 420 px: every chip inside the width at its natural size (40-140 px), rows = 1", "18h (1) 5 pills at 1200 px: every chip inside the width at its natural size (40-140 px), rows = 1", "18h (1) 2 pills at 1200 px: every chip inside the width at its natural size (40-140 px), rows = 1",
+                             "18h (2) [Go] is a 40-80 px pill, not the bubble's width (the 1,130 px bar in the Chat tab)", "18h (2) no stray component after a pill tap in the Chat tab (the large visible components are the same set as before)", "18h (2) every visible loop pill sits inside the transcript and is at most 160 px wide (no bar) - before the tap",
+                             "18h (4) \"a bit louder\": one bubble \"Applied +-X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "18h (4) no automatic check after a verb (8 s of audio: nothing measured)", "18h (3) Push it is absent on an on-target result" })
+        check (false, leg, "no 18h on this build");
+    {   // AS IT STOOD: [Go] at 1200 px
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512); std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor()); auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        A::Msg two; two.role = "assistant"; two.content = "x"; two.loopPills = { "Go", "Leave it" };
+        const auto rects = A::layout (*ed, two, 1200);
+        check (rects.size() == 2 && rects[0].getWidth() <= 80 && rects[1].getRight() <= 1200, "18h (2) [Go] is a 40-80 px pill, not the bubble's width (the 1,130 px bar in the Chat tab)", "Go " + juce::String (rects.empty() ? -1 : rects[0].getWidth()) + " px, Leave it right edge " + juce::String (rects.size() > 1 ? rects[1].getRight() : -1));
+    }
+#endif
+
 
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

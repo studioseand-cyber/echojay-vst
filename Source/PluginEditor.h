@@ -1409,14 +1409,16 @@ private:
     // Alt pill on PLAIN messages (result bubbles): height helper shared by
     // the measure and paint passes (edit cards carry their pill inside
     // editCardHeight; this returns 0 for them)
-    int altPillH(const ChatMsg& msg) const
+    // 18h (item 1): chip ROWS. The chips flow left to right at their natural width and WRAP within availW (the bubble's
+    // inner width); the height is rows x 32. Before 18h a label narrower than 40 px ("Go") took the whole remaining width -
+    // in the Chat tab a 1,130 px dark bar with "Go" in the middle, and "Leave it" pushed off the right edge (Sean's screenshot).
+    int chipRows(const ChatMsg& msg, int availW) const;
+    int altPillH(const ChatMsg& msg, int availW) const
     {
-        // Result-bubble chip ROW height (single source). One 32px row holding
-        // the single alternatives chip (the exclude chip was removed); it takes
-        // the full bubble width, and layoutResultChips shrinks its label to fit.
         return (msg.role == "assistant" && msg.editData.isEmpty()
-                && !resultChipList(msg).empty()) ? 32 : 0;
+                && !resultChipList(msg).empty()) ? 32 * chipRows(msg, availW) : 0;
     }
+    int chipsNaturalWidth(const ChatMsg& msg) const;   // one row, natural widths (so a bubble can widen to fit them)
     struct StageTicker : juce::Timer
     {
         EchoJayEditor& ed;
