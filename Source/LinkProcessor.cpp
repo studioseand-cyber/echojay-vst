@@ -2741,6 +2741,10 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("chainMasterWet", (double)chainHost.getMasterWet());
     juce::String json = juce::JSON::toString(juce::var(obj), true);
     dest.replaceAll(json.toRawUTF8(), json.getNumBytesAsUTF8());
+    // 20 Sep 2026 (the deleted-chain-came-back observation): what the SAVED chunk carries, always logged
+    EchoJay_NSLog(("EJLinkState: getState uid=" + instanceUid_ + " chainModel=" + juce::String((int) chainModel.size())
+                   + " slot(s), host=" + juce::String(chainHost.getNumSlots()) + " slot(s), lease=" + juce::String((int) rackLeaseActive_)
+                   + ", " + juce::String((juce::int64) dest.getSize()) + " bytes").toRawUTF8());
 }
 
 void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
@@ -2843,6 +2847,8 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         if (obj->hasProperty("editorH"))  editorH = juce::jlimit(580, 1200, (int)obj->getProperty("editorH"));
         if (obj->hasProperty("chain"))
         {
+            EchoJay_NSLog(("EJLinkState: setState uid=" + chunkUidIn + (ownChunk ? " (own)" : " (foreign/seed)") + " chain=" + juce::String(obj->getProperty("chain").isArray() ? obj->getProperty("chain").getArray()->size() : -1)
+                           + " slot(s) in the chunk; host has " + juce::String(chainHost.getNumSlots()) + " slot(s) now").toRawUTF8());   // 20 Sep 2026: what a restore is about to build
             // Restore on the message thread — sequential async instantiation;
             // missing plugins become named empty slots, the rest still load.
             auto chainVar = obj->getProperty("chain");
