@@ -3,6 +3,7 @@
 #define EJ_LOUDNESSLOOP_V2 1          // 18e: the Level slot, max short-term, ask-before-apply, the verbs, EJLoudness lines
 #define EJ_LOUDNESSLOOP_PILLS 1       // 18f: bubbles carry their verbs as pills; the quiet-window and back-off asks
 #define EJ_LOUDNESSLOOP_MANNERS 1     // 18g: explicit Listen / Check, +-1 dB with step scaling and 3 proposals, Done, GR estimate, ceiling-readback safety net
+#define EJ_LOUDNESSLOOP_VERBS18H 1    // 18h: a level verb applies and asks "How's it sounding?" (no auto-check); Push it only when short; peak GR estimate
 // LoudnessLoop v2 (18e, 19 Sep 2026): deterministic inside V2, no server round-trip.
 //
 //  Arm      a chain whose Level slot (or, for an older server's chain, whose EchoJay Limiter) carries target_lufs in
@@ -48,7 +49,11 @@ public:
         enum class Kind { progress, arm, proposal, result, stuck, quiet, backoff, info };
         juce::String text; float progress = -1.0f; bool replace = false; bool final = false; Kind kind = Kind::info; juce::StringArray pills;
     };
-    static juce::StringArray resultPills()   { return { "Undo", "A bit louder", "A bit softer", "Push it", "Done" }; }   // 18g: Done ends the watch
+    // 18h (item 3): [Push it] is offered only when the loop is SHORT of the target (shortPills), never on an on-target result
+    static juce::StringArray resultPills()   { return { "Undo", "A bit louder", "A bit softer", "Done" }; }
+    static juce::StringArray shortPills()    { return { "Push it", "Undo", "A bit louder", "A bit softer", "Done" }; }
+    // 18h (item 4): after a level verb (A bit louder / softer / Push it / Undo): "Applied +-X dB (Level now +Y). How's it sounding?"
+    static juce::StringArray afterVerbPills(){ return { "Check", "A bit louder", "A bit softer", "Undo", "Done" }; }
     static juce::StringArray armPills()      { return { "Listen" }; }
     static juce::StringArray checkPills()    { return { "Check" }; }
     static juce::StringArray proposalPills() { return { "Go", "Leave it" }; }
@@ -239,9 +244,11 @@ public:
         return true;
     }
     bool check()
-    {
-        if (state_ != State::askCheck || level (slot_) == nullptr) return false;
-        autoCheck_ = false; startWindow();
+    {   // 18h (item 4): Check measures ONCE and reports with the result pills (no proposal) - from the after-verb hold, from the
+        // "Tap Check" prompt, or from the watch; not while a window already runs or a proposal is open
+        if (level (slot_) == nullptr) return false;
+        if (state_ == State::waitAudio || state_ == State::measuring || state_ == State::proposed || state_ == State::armed) return false;
+        autoCheck_ = false; reportOnly_ = true; startWindow();
         emit ("Checking...", 0.0f, true, false, Bubble::Kind::progress);
         if (! isTimerRunning()) startTimer (kTickMs);
         return true;
@@ -298,28 +305,30 @@ public:
         const float shortfall = target_ - lastMeasured();
         const float trim = juce::jlimit (-kPassClampDb, kPassClampDb, shortfall);
         applyTrim (trim, "push it");
-        round_ = 0; proposals_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
-        startWindow();
-        emit ("Pushed " + fmtSigned (trim) + " dB on the Level slot. Play the loudest part again - I'll check it.", -1.0f, false, false, Bubble::Kind::info);
-        if (! isTimerRunning()) startTimer (kTickMs);
+        afterVerb (trim);
         return true;
+    }
+    // 18h (item 4): every level verb ends here - the Level moved, ONE bubble asks how it sounds, nothing measures until Check
+    void afterVerb (float deltaDb)
+    {
+        round_ = 0; proposals_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; autoCheck_ = false; lastCommanded_ = 0.0f;
+        state_ = State::hold; stopTimer();
+        emit ("Applied " + fmtSigned (deltaDb) + " dB (Level now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
     }
     void nudgeTarget (float deltaDb)   // "a bit louder" / "a bit softer": target +-1 AND the Level moves by it now (one pass), then one check
     {
         if (level (slot_) == nullptr) return;
-        target_ += deltaDb; round_ = 0; proposals_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
+        target_ += deltaDb;
         log ("target nudged " + fmtSigned (deltaDb) + " dB -> " + fmt (target_) + " LUFS");
-        // 18g: with on-target = +-1.0 dB a 1 dB nudge would otherwise measure as "on target" and move nothing, so the nudge IS the
-        // pass: the Level moves by the nudge immediately and the loop checks it (auto-check, else "Tap Check").
-        applyTrim (deltaDb, deltaDb > 0 ? "a bit louder" : "a bit softer"); lastCommanded_ = 0.0f;
-        startWindow(); autoCheck_ = true; zeroTicks_ = 0;
-        emit ("Target now " + fmt (target_) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB - checking while it plays.", -1.0f, false, false, Bubble::Kind::info);
-        if (! isTimerRunning()) startTimer (kTickMs);
+        // 18g/18h: the nudge IS the move - the Level moves by +-1 now; 18h: no automatic check, the bubble asks how it sounds
+        applyTrim (deltaDb, deltaDb > 0 ? "a bit louder" : "a bit softer");
+        afterVerb (deltaDb);
     }
-    void recheck()                 // "check the level again"
+    void recheck()                 // "check the level again" = Check (18h): one window, a report with the result pills
     {
         if (level (slot_) == nullptr) return;
-        round_ = 0; proposals_ = 0; lastCommanded_ = 0.0f; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
+        if (state_ == State::waitAudio || state_ == State::measuring) return;
+        round_ = 0; proposals_ = 0; lastCommanded_ = 0.0f; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; autoCheck_ = false; reportOnly_ = true;
         startWindow();
         emit ("Checking the level again - play the loudest part.", -1.0f, false, false, Bubble::Kind::info);
         if (! isTimerRunning()) startTimer (kTickMs);
@@ -328,10 +337,10 @@ public:
     {
         auto* lv = level (slot_);
         if (lv == nullptr || ! haveUndo_) return false;
+        const float delta = preLoopGainDb_ - (float) lv->gainDb();
         writeGainDb (preLoopGainDb_);
-        state_ = State::hold; stopTimer();
-        log ("undo: Level gain restored to " + fmtSigned (preLoopGainDb_) + " dB");
-        emit ("Restored the Level slot to " + fmtSigned (preLoopGainDb_) + " dB (before the loop).", -1.0f, false, true, Bubble::Kind::result, resultPills());
+        log ("undo: Level gain restored to " + fmtSigned (preLoopGainDb_) + " dB (delta " + fmtSigned (delta) + ")");
+        afterVerb (delta);   // 18h: "Applied -X dB (Level now +Y). How's it sounding?"
         return true;
     }
     void leaveIt()
@@ -341,7 +350,7 @@ public:
         if (watching) { state_ = State::tracking; startTracking(); }
         else { state_ = State::hold; stopTimer(); }
         log ("leave it: holding at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB" + (watching ? ", still watching" : ""));
-        emit ("Leaving it at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB." + (watching ? " Still watching for a louder section." : ""), -1.0f, false, true, Bubble::Kind::result, resultPills());
+        emit ("Leaving it at " + fmt (lastMeasured()) + " LUFS, Level " + fmtSigned (currentGainDb()) + " dB." + (watching ? " Still watching for a louder section." : ""), -1.0f, false, true, Bubble::Kind::result, pillsFor (target_ - lastMeasured()));
     }
 
     State state() const noexcept { return state_; }
@@ -369,6 +378,9 @@ public:
     int   proposals() const noexcept { return proposals_; }
     float lastCommandedDb() const noexcept { return lastCommanded_; }
     float grEstimateDb() const noexcept { return estN_ > 0 ? estSum_ / (float) estN_ : std::numeric_limits<float>::quiet_NaN(); }   // Level OUT minus chain OUT (LUFS-S), mean over the window
+    // 18h: the peak estimate - Level OUT true peak minus chain OUT true peak, both max-held over the window (the hits)
+    float grPeakEstimateDb() const { auto* lv = level (slot_); if (lv == nullptr) return std::numeric_limits<float>::quiet_NaN(); const float a = lv->outputLevels().truePeakDb, b = host_.getChainOutLevels().truePeakDb; return (a > -150.0f && b > -150.0f) ? a - b : std::numeric_limits<float>::quiet_NaN(); }
+    static juce::StringArray pillsFor (float needed) { return needed > kCloseEnoughDb ? shortPills() : resultPills(); }   // 18h: Push it only when SHORT
     bool  grIsEstimated() const { return echoJayLimiter() == nullptr; }
     int   levelSlot() const noexcept { return slot_; }
     int   limiterSlot() const noexcept { return limiterSlot_; }
@@ -462,6 +474,13 @@ public:
         if (cur + trim < -kLevelMaxDb) { trim = -kLevelMaxDb - cur; atCeiling = true; }
         log ("measured: max short-term " + fmt (measured) + " LUFS (input window " + fmt (lastInputWindow_) + "), target " + fmt (target_) + ", needed " + fmtSigned (needed) + " dB, Level " + fmtSigned (cur) + " dB, trim " + fmtSigned (trim) + (atCeiling ? " (Level ceiling)" : "") + ", limiter GR avg " + fmt (grAvg()) + " max " + fmt (grMax()) + " dB, round " + juce::String (round_));
         const juce::String grText = grText_();
+        if (reportOnly_)
+        {   // 18h (item 4): a Check REPORTS - on target, or the distance - with the result pills (Push it only when short), then watches
+            reportOnly_ = false; state_ = State::tracking; startTracking();
+            const bool on = std::abs (needed) <= kCloseEnoughDb;
+            emit ("Hitting " + fmt (measured) + " LUFS (loudest 3 s), target " + fmt (target_) + (on ? " - on target." : " - " + fmt (std::abs (needed)) + " dB " + (needed > 0 ? "under." : "over.")) + " Peaks " + fmt (truePeakDb) + " dBTP, " + grText, -1.0f, false, true, Bubble::Kind::result, pillsFor (needed));
+            return;
+        }
         if (std::abs (needed) <= kCloseEnoughDb)
         {
             state_ = State::tracking; startTracking();
@@ -473,7 +492,7 @@ public:
             // are used only when that is true; otherwise the distance is stated)
             state_ = State::tracking; startTracking();
             const bool within = std::abs (needed) <= kCloseEnoughDb;
-            emit ("Hitting " + fmt (measured) + " LUFS" + (within ? ", within a dB - leaving it." : " after " + juce::String (proposals_) + " passes, " + fmt (std::abs (needed)) + " dB " + (needed > 0 ? "under" : "over") + " the target - leaving it.") + " " + grText, -1.0f, false, true, Bubble::Kind::result, resultPills());
+            emit ("Hitting " + fmt (measured) + " LUFS" + (within ? ", within a dB - leaving it." : " after " + juce::String (proposals_) + " passes, " + fmt (std::abs (needed)) + " dB " + (needed > 0 ? "under" : "over") + " the target - leaving it.") + " " + grText, -1.0f, false, true, Bubble::Kind::result, pillsFor (needed));
             return;
         }
         if (atCeiling && std::abs (trim) < 0.05f)
@@ -504,7 +523,12 @@ private:
     juce::String grText_() const
     {
         if (echoJayLimiter() == nullptr)   // 18g (item 4): the estimate, never "not an EchoJay device"
-            return estN_ > 0 ? "limiter working ~" + fmt (juce::jmax (0.0f, grEstimateDb())) + " dB (estimated)." : "limiter GR not measured yet.";
+        {   // 18h (item 5): the loudness difference misses a limiter that gives the level back (auto make-up / level matching) or works
+            // only on the hits; the PEAK difference (Level OUT true peak - chain OUT true peak, both max-held over the window) shows them
+            if (estN_ == 0) return "limiter GR not measured yet.";
+            const float pk = grPeakEstimateDb();
+            return "limiter working ~" + fmt (juce::jmax (0.0f, grEstimateDb())) + " dB (estimated)" + (std::isfinite (pk) ? ", up to ~" + fmt (juce::jmax (0.0f, pk)) + " dB on the hits." : ".");
+        }
         return "limiter working " + fmt (grAvg()) + " dB average, up to " + fmt (grMax()) + " dB on the hits.";
     }
     void startWindow()
@@ -513,6 +537,7 @@ private:
         host_.resetChainOutLevels();
         host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
+        if (auto* lv = level (slot_)) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
         lastCounted_ = 0.0f; waitingSaid_ = false; passStartMs_ = nowMs();
         grMin_ = std::numeric_limits<float>::max(); grMax_ = 0.0f; grSum_ = 0.0f; grN_ = 0;
         estSum_ = 0.0f; estN_ = 0; estMax_ = 0.0f; zeroTicks_ = 0;
@@ -567,5 +592,6 @@ private:
     int   proposals_ = 0;                                              // proposals made since arm (cap kMaxProposals)
     float lastCommanded_ = 0.0f, prevMeasured_ = std::numeric_limits<float>::quiet_NaN();   // the previous pass, for the step scaling
     bool  autoCheck_ = false; int zeroTicks_ = 0;                      // after Go: one automatic check, else "Tap Check"
+    bool  reportOnly_ = false;                                         // 18h: a Check reports (result pills), never proposes
     float estSum_ = 0.0f, estMax_ = 0.0f; int estN_ = 0;               // third-party limiter GR estimate over the window
 };

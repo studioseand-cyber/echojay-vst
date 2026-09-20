@@ -118,6 +118,20 @@ struct EJTestSoftLimiter final : juce::AudioProcessor
     const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
     void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
 };
+struct EJTestBypass final : juce::AudioProcessor
+{
+    EJTestBypass() : juce::AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true).withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override { return "EJ Test Bypass"; }
+    void prepareToPlay (double, int) override {} void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+    double getTailLengthSeconds() const override { return 0.0; } bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
+};
+BuiltinDevice makeTestBypass() { BuiltinDevice d; d.name = "EJ Test Bypass"; d.category = "Dynamics"; d.descriptiveName = d.name; d.summary = "harness stand-in: identity (the pre-limiter truth)"; d.identifier = "echojay:test:bypass"; d.uid = 0x454A5442; d.create = [] { return std::unique_ptr<juce::AudioProcessor> (new EJTestBypass()); }; return d; }
+const BuiltinDeviceRegistrar testBypassReg { makeTestBypass() };
 BuiltinDevice makeTestSoftLimiter() { BuiltinDevice d; d.name = "EJ Test Soft Limiter"; d.category = "Dynamics"; d.descriptiveName = d.name; d.summary = "harness stand-in: 0.6 dB out per dB in"; d.identifier = "echojay:test:softlimiter"; d.uid = 0x454A5453; d.create = [] { return std::unique_ptr<juce::AudioProcessor> (new EJTestSoftLimiter()); }; return d; }
 const BuiltinDeviceRegistrar testSoftLimReg { makeTestSoftLimiter() };
 BuiltinDevice makeTestLimiter() { BuiltinDevice d; d.name = "EJ Test Limiter"; d.category = "Dynamics"; d.descriptiveName = d.name; d.summary = "harness stand-in for a third-party limiter"; d.identifier = "echojay:test:limiter"; d.uid = 0x454A544C; d.create = [] { return std::unique_ptr<juce::AudioProcessor> (new EJTestLimiter()); }; return d; }
@@ -280,23 +294,31 @@ int main()
         r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.runWindow();
         const float g0 = r.levelGain();
 #ifdef EJ_LOUDNESSLOOP_PILLS
-        check (r.loop.lastKind() == LoudnessLoop::Bubble::Kind::result && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Push it|Done", "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Push it] [Done] (18g adds Done)", r.loop.lastPills().joinIntoString ("|"));
+        check (r.loop.lastKind() == LoudnessLoop::Bubble::Kind::result && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Done", "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Done] - no Push it on target (18h item 3)", r.loop.lastPills().joinIntoString ("|"));
         { const int nb = r.loop.bubbleCount(); r.loop.nudgeTarget (+1.0f); check (r.loop.bubbleCount() == nb + 1, "E. a verb after the result bubble produces exactly ONE reply bubble (a bit louder)", juce::String (r.loop.bubbleCount() - nb)); r.loop.nudgeTarget (-1.0f); }
-        { const int nb = r.loop.bubbleCount(); r.loop.leaveIt(); check (r.loop.bubbleCount() == nb + 1 && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Push it|Done", "E. leave it: one bubble, the result pills (with Done, 18g)", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]"); }
+        { const int nb = r.loop.bubbleCount(); r.loop.leaveIt(); check (r.loop.bubbleCount() == nb + 1 && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Done", "E. leave it (on target): one bubble, the result pills without Push it (18h)", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]"); }
         { const int nb = r.loop.bubbleCount(); r.loop.recheck(); check (r.loop.bubbleCount() == nb + 1, "E. check the level again: one bubble"); r.runWindow(); }
 #else
         check (false, "E. the result bubble (on target) carries [Undo] [A bit louder] [A bit softer] [Push it]", "no pills on this build");
         check (false, "E. a verb after the result bubble produces exactly ONE reply bubble (a bit louder)", "no pills on this build");
 #endif
-#ifdef EJ_LOUDNESSLOOP_MANNERS
-        { const float g1 = r.levelGain(); r.loop.nudgeTarget (+1.0f); check (std::abs (r.loop.target() + 8.0f) < 0.01f && r.last().startsWith ("Target now -8.0") && std::abs (r.levelGain() - g1 - 1.0f) < 0.05f, "a bit louder: target -8 AND the Level moved +1 now (18g: the nudge is the pass, +-1 is inside the on-target band)", r.last() + " | Level " + f1 (g1) + " -> " + f1 (r.levelGain())); }
-        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::tracking && r.last().contains ("on target"), "...and the check lands on target (-8)", r.last());
-        { const float g2 = r.levelGain(); r.loop.nudgeTarget (-1.0f); check (std::abs (r.loop.target() + 9.0f) < 0.01f && std::abs (r.levelGain() - g2 + 1.0f) < 0.05f, "a bit softer: target back to -9, the Level moved -1 now", f1 (g2) + " -> " + f1 (r.levelGain())); }
-        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::tracking && r.last().contains ("on target"), "...and the check lands on target (-9)", r.last());
+#ifdef EJ_LOUDNESSLOOP_VERBS18H
+        // 18h (item 4): a level verb APPLIES and asks - one bubble, the after-verb pills, NO window runs until Check
+        { const float g1 = r.levelGain(); const int nb = r.loop.bubbleCount(); r.loop.nudgeTarget (+1.0f);
+          check (std::abs (r.loop.target() + 8.0f) < 0.01f && std::abs (r.levelGain() - g1 - 1.0f) < 0.05f && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied +1.0 dB (Level now ") && r.last().endsWith ("). How's it sounding?") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done", "K1. a bit louder: Level +1 now, target -8, ONE bubble \"Applied +1.0 dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "] state " + juce::String ((int) r.loop.state())); }
+        { const int nMeasured = r.logs.joinIntoString ("\n").indexOf ("measured:"); juce::ignoreUnused (nMeasured);
+          const juce::String before = r.logs.joinIntoString ("\n"); const int cnt0 = juce::StringArray::fromLines (before).size();
+          for (int k = 0; k < 16; ++k) feed (r.proc, r.prog, 100, false, &r.loop, nullptr, 0.0f);   // 16 s of audio after the verb
+          check (r.loop.state() == LoudnessLoop::State::hold && juce::StringArray::fromLines (r.logs.joinIntoString ("\n")).size() == cnt0, "K1. ...and NO automatic check follows a verb (16 s of audio: nothing measured, nothing logged)", "state " + juce::String ((int) r.loop.state())); }
+        check (r.loop.check() && r.loop.state() == LoudnessLoop::State::waitAudio, "K1. Check starts one window");
+        r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::tracking && r.last().startsWith ("Hitting -") && r.last().contains ("on target") && r.loop.lastPills().joinIntoString ("|") == "Undo|A bit louder|A bit softer|Done", "K1. ...which REPORTS on target with the result pills (no Push it, no proposal)", r.last() + " [" + r.loop.lastPills().joinIntoString ("|") + "]");
+        { const float g2 = r.levelGain(); r.loop.nudgeTarget (-1.0f); check (std::abs (r.loop.target() + 9.0f) < 0.01f && std::abs (r.levelGain() - g2 + 1.0f) < 0.05f && r.last().startsWith ("Applied -1.0 dB (Level now ") && r.loop.lastPills().joinIntoString ("|") == "Check|A bit louder|A bit softer|Undo|Done", "K1. a bit softer: Level -1 now, target back to -9, the same bubble and pills", r.last()); }
+        r.loop.check(); r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::tracking && r.last().contains ("on target"), "K1. Check after it: on target (-9)", r.last());
         r.loop.leaveIt(); check (r.loop.state() == LoudnessLoop::State::hold && r.last().startsWith ("Leaving it at"), "leave it: holds, says where", r.last());
-        r.loop.recheck(); check (r.loop.state() == LoudnessLoop::State::waitAudio && r.last().startsWith ("Checking the level again"), "check the level again: a new window");
-        r.runWindow(); check (r.loop.state() == LoudnessLoop::State::tracking || r.loop.state() == LoudnessLoop::State::proposed, "...which measures (on target, or a proposal)", r.last());
-        { const float before = r.levelGain(), shortfall = r.loop.target() - r.loop.lastMeasured(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs ((r.levelGain() - before) - juce::jlimit (-6.0f, 6.0f, shortfall)) < 0.05f, "...and moved the Level by the shortfall", f1 (before) + " -> " + f1 (r.levelGain()) + " (shortfall " + f1 (shortfall) + ")"); }
+        // Push it: offered only when SHORT - make the loop short by a softer target-side nudge... simpler: push it from here applies the shortfall (~0) and asks
+        { const float before = r.levelGain(), shortfall = r.loop.target() - r.loop.lastMeasured(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs ((r.levelGain() - before) - juce::jlimit (-6.0f, 6.0f, shortfall)) < 0.05f && r.last().startsWith ("Applied ") && r.last().endsWith ("). How's it sounding?") && r.loop.state() == LoudnessLoop::State::hold, "K1. push it: moved the Level by the shortfall, the after-verb bubble, no window", f1 (before) + " -> " + f1 (r.levelGain()) + " (shortfall " + f1 (shortfall) + ") " + r.last()); }
 #else
         r.loop.nudgeTarget (+1.0f); check (std::abs (r.loop.target() + 8.0f) < 0.01f && r.last().startsWith ("Target now -8.0"), "a bit louder: target -8, one more pass", r.last());
         r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed && numberAfter (r.last(), "Push ") > 0.5f, "...which proposes about +1", r.last());
@@ -308,7 +330,7 @@ int main()
         r.runWindow(); check (r.loop.state() == LoudnessLoop::State::proposed, "...which proposes");
         const float before = r.levelGain(); check (r.loop.pushIt(), "push it applies immediately"); check (std::abs (r.levelGain() - before) > 0.4f, "...and moved the Level by the shortfall", f1 (before) + " -> " + f1 (r.levelGain()));
 #endif
-        check (r.loop.undo() && std::abs (r.levelGain()) < 0.01f && r.last().startsWith ("Restored the Level slot to +0.0 dB"), "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", r.last() + " | Level " + f1 (r.levelGain()) + " (g0 " + f1 (g0) + ")");
+        check (r.loop.undo() && std::abs (r.levelGain()) < 0.01f && (r.last().startsWith ("Restored the Level slot to +0.0 dB") || (r.last().startsWith ("Applied ") && r.last().contains ("(Level now +0.0). How's it sounding?"))), "E. verbs: push it / a bit louder / a bit softer / check the level again / undo / leave it", r.last() + " | Level " + f1 (r.levelGain()) + " (g0 " + f1 (g0) + ")");
     }
     std::printf ("== F. GR text on a PEAKY programme + H. true peak by the independent meter ==\n");
     {
@@ -415,6 +437,32 @@ int main()
         const float real = r.loop.grAvg(), est = r.loop.grEstimateDb();
         check (std::isfinite (est) && real > 0.5f && std::abs (est - real) <= 1.0f, "J5. the estimate lands within 1 dB of the EchoJay Limiter's real GR", "estimate " + f1 (est) + " vs real " + f1 (real) + " dB");
     }
+#ifdef EJ_LOUDNESSLOOP_VERBS18H
+    {   // K5 (18h item 5): the THIRD-PARTY fixture (EJ Test Limiter: a clipper at -0.5 dBFS, no GR readout). Truth from OUTSIDE the
+        // loop: the SAME seeded programme through a second rig whose last slot is an identity stand-in (EJ Test Bypass) - its output
+        // by the INDEPENDENT meter is the pre-limiter signal (true peak and loudness); the clipper rig's output by the same meter is
+        // the post-limiter signal. (A sample-peak formula was wrong: white noise carries ~5 dB of intersample overshoot, so a clipper
+        // at -0.5 dBFS still reads +5.7 dBTP - Sean's observation (b) in miniature.)
+        Rig r (true, true); r.setTarget (-9.0f); calibrate (r.proc, r.prog, +3.0f);   // +3 LUFS in: sample peaks ~+1.7 dBFS, over the -0.5 dBFS clip
+        Rig b (true, true, "EJ Test Bypass"); b.setTarget (-9.0f); calibrate (b.proc, b.prog, +3.0f);
+        r.loop.armFromChain(); r.loop.listen(); IndependentMeter ind; r.runWindow (0.0f, &ind);
+        b.loop.armFromChain(); b.loop.listen(); IndependentMeter indB; b.runWindow (0.0f, &indB);
+        const float g = r.levelGain();
+        const auto in = r.h.getChainInLevels(), out = r.h.getChainOutLevels();
+        const float truthLoud = (in.maxShortTermDb + g) - out.maxShortTermDb;
+        const float truthPeak = indB.truePeakDb() - ind.truePeakDb();
+        const float estLoud = r.loop.grEstimateDb(), estPeak = r.loop.grPeakEstimateDb();
+        std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in maxST %.2f, chain out maxST %.2f | Level OUT TP %.2f, chain OUT TP %.2f (tallies) | independent TP clipper %.2f, bypass %.2f\n", r.prog.amp, b.prog.amp, g, b.levelGain(), in.maxShortTermDb, out.maxShortTermDb, dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot))->outputLevels().truePeakDb, out.truePeakDb, ind.truePeakDb(), indB.truePeakDb());
+        check (std::abs (r.prog.amp - b.prog.amp) < 1e-4f && std::abs (g - b.levelGain()) < 0.01f, "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)", juce::String (r.prog.amp, 4) + " / " + juce::String (b.prog.amp, 4));
+        check (std::isfinite (estLoud) && truthLoud > 0.3f && std::abs (estLoud - truthLoud) <= 1.0f, "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "estimate " + f1 (estLoud) + " vs truth " + f1 (truthLoud) + " dB");
+        check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
+        check (r.last().contains ("limiter working ~") && r.last().contains ("up to ~") && r.last().contains ("dB on the hits"), "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"", r.last());
+    }
+#else
+    for (const char* leg : { "K1. a bit louder: Level +1 now, target -8, ONE bubble \"Applied +1.0 dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done], no window", "K1. ...and NO automatic check follows a verb (16 s of audio: nothing measured, nothing logged)", "K1. ...which REPORTS on target with the result pills (no Push it, no proposal)", "K1. push it: moved the Level by the shortfall, the after-verb bubble, no window",
+                             "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "K5. the bubble reads \"limiter working ~X dB (estimated), up to ~Y dB on the hits\"" })
+        check (false, leg, "no 18h on this build");
+#endif
     {   // J6: the ceiling safety net - a third-party limiter with NO ceiling readback is replaced by EchoJay Limiter, said in one line
         Rig r (true, false); r.setTarget (-9.0f); calibrate (r.proc, r.prog, -14.0f);
         const int nb = r.loop.bubbleCount();
