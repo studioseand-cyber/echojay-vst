@@ -18,7 +18,8 @@
 #include "EchoJayFaderFilmstrip.h"  // Link mixer fader (128 x 60x480); .cpp-only
 #include "EJPlaybackArtMap.h"       // the Playback grid's pictures; .cpp-only, because
                                     // its generated header reaches EchoJay's TUs only
-#include "EJMatchProposal.h"        // the Match page's statement; computeMatchProposal is not called yet
+#include "EJMatchProposal.h"        // the proposal the Match screen draws
+#include "EJMatchPage.h"            // that screen's geometry and its sentences
 #include "EedDeviceRegistry.h"   // built-in editing copies (fix 2)
 #include "EedKeyDetectorProcessor.h"
 #include "viz/DwellGlow.h"           // KEY panel note wheel — the family's heat ramp
@@ -5222,14 +5223,23 @@ echojay::MatchSide EchoJayEditor::buildMatchSide(const CompareSlotState& slot) c
                                   slot.kind == CompareSlotState::Kind::Live);
 }
 
-EchoJayEditor::MatchSides EchoJayEditor::buildMatchSides() const
+EchoJayEditor::MatchSlotPair EchoJayEditor::matchSlots() const
 {
     // The reference bar drives one slot; the OTHER one is the mix. Asking
     // refBarIsTop() is reading the existing answer, not making a new one.
     const bool refIsTop = refBarIsTop();
+    MatchSlotPair p;
+    p.ref = refIsTop ? &compareTop_ : &compareBot_;
+    p.mix = refIsTop ? &compareBot_ : &compareTop_;
+    return p;
+}
+
+EchoJayEditor::MatchSides EchoJayEditor::buildMatchSides() const
+{
+    const auto slots = matchSlots();
     MatchSides s;
-    s.ref = buildMatchSide(refIsTop ? compareTop_ : compareBot_);
-    s.mix = buildMatchSide(refIsTop ? compareBot_ : compareTop_);
+    s.ref = buildMatchSide(*slots.ref);
+    s.mix = buildMatchSide(*slots.mix);
     return s;
 }
 
@@ -7497,57 +7507,446 @@ bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
     return false;
 }
 
-// THE MATCH PAGE. It draws what the Match sub-tab is for, from
-// echojay::matchPageStatement, and nothing else: no proposal is computed here
-// yet. The card treatment is the Playback page's render view (bg2 fill, border),
-// so the page reads as one of the three rather than as a notice.
+// IT FITS AT THE SMALLEST PAGE. The smallest this product produces is 565 x 373
+// (pg PIN5), which is the rect resized() hands this panel. The graph takes a
+// share with a floor, and the words below are laid out at 12 pt and, only if
+// they would not fit, smaller, down to 9 pt: a narrow window loses type size
+// before it loses a refusal, because the refusals ARE the feature.
 //
-// IT FITS AT THE SMALLEST PAGE. The smallest the product produces is 565 x 373
-// (pg PIN5). The text is laid out at 12.5 pt and, only if it would not fit,
-// at a smaller size, down to 10.5 pt, so a narrow window loses size before it
-// loses any of the four things the page promises.
+// THE MATCH SCREEN, STANDING STILL (20 Sep 2026). MATCH_SCREEN_CONTRACT §3 is
+// what it draws and §10 is what it must not: NOTHING SENDS, nothing is written,
+// nothing animates, and there is no axis control, because a control that cannot
+// send is a dead control. The morph is the next commit.
+//
+// TWO LAYERS FROM DIFFERENT DATA, and the whole point is that they are not
+// styled alike: the CURVES are each side's measured 64 log bins, and the BLOCKS
+// are the six macro band moves drawn as STEPS. A smooth line through six
+// numbers would assert shape between band centres that the arithmetic never
+// had, which is the failure MATCH_REFERENCE_PLAN §2 exists to prevent.
+//
+// EVERY RECT AND EVERY SENTENCE COMES FROM EJMatchPage.h, so the suite pins the
+// same geometry and the same words the user reads; this paint computes none of
+// its own beyond the anchors, which come from the bins it is about to draw.
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {
     if (owner == nullptr) return;
-    const auto st   = echojay::matchPageStatement();
     const auto area = getLocalBounds();
+
+    // THE PAGE FADES IN rather than cutting. 250 ms, through one transparency
+    // layer so the whole screen arrives together instead of in pieces.
+    const float fade = juce::jlimit (0.0f, 1.0f, openFade);
+    if (fade < 0.999f) g.beginTransparencyLayer (fade);
 
     g.setColour (C::bg2);
     g.fillRoundedRectangle (area.toFloat(), 10.0f);
     g.setColour (C::border);
     g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 10.0f, 1.0f);
 
-    // A readable measure: at most 620 px wide, left-aligned in the card.
-    auto col = area.reduced (24, 20);
-    col = col.withWidth (juce::jmin (col.getWidth(), 620));
+    const auto R = echojay::matchPageLayout (area);
 
-    juce::TextLayout layout;
-    for (float body = 12.5f; ; body -= 0.5f)
+    // ---- the data ----------------------------------------------------------
+    const auto slots = owner->matchSlots();
+    const auto sides = owner->buildMatchSides();
+    const auto evMix = owner->getSlotSpectralEvidence (*slots.mix);
+    const auto evRef = owner->getSlotSpectralEvidence (*slots.ref);
+    const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
+    const auto ready = echojay::matchReadiness (prop);
+    const auto moves = echojay::matchBandMoves (prop);
+
+    std::array<float, 6> deltas {};
+    const bool haveDeltas = echojay::matchBandDeltas (sides.mix, sides.ref, deltas);
+
+    // ---- the one line, above the button ------------------------------------
+    // Whether a match is possible and, if not, the single most important
+    // reason. The list went to the chat; this is what stops the press being a
+    // button that does nothing for reasons nobody gave.
     {
-        juce::AttributedString as;
-        as.setWordWrap (juce::AttributedString::byWord);
-        as.setJustification (juce::Justification::topLeft);
-        as.append (st.title + "\n\n", juce::Font (juce::FontOptions (body - 0.5f, juce::Font::bold)), C::blue);
-        as.append (st.lead + "\n\n", juce::Font (juce::FontOptions (body)), C::text);
-        for (int i = 0; i < st.items.size(); ++i)
-            as.append (juce::String (i + 1) + ".  " + st.items[i] + "\n\n",
-                       juce::Font (juce::FontOptions (body)), C::text2);
-        as.append (st.status, juce::Font (juce::FontOptions (body - 1.5f)), C::text3);
-        layout.createLayout (as, (float) col.getWidth());
-        if (layout.getHeight() <= (float) col.getHeight() || body <= 10.5f)
-            break;
+        const bool flash = refusedFor > 0.0f;
+        g.setColour (flash ? C::amber
+                           : (ready.possible ? C::text2
+                                             : (ready.goodNews ? C::green : C::amber)));
+        g.setFont (juce::Font (juce::FontOptions (11.0f)));
+        g.drawFittedText (flash ? refusedText : ready.line, R.status, juce::Justification::centred, 1);
     }
-    layout.draw (g, col.toFloat());
+
+    // ---- the setup row: your capture, the link, the button, the reference ---
+    {
+        g.setFont (juce::Font (juce::FontOptions (11.5f, juce::Font::bold)));
+        g.setColour (C::text);
+        g.drawFittedText (owner->slotDisplayName (*slots.mix), R.mixName,
+                          juce::Justification::centredLeft, 2);
+        g.setColour (C::text2);
+        g.drawFittedText (owner->slotDisplayName (*slots.ref), R.refName,
+                          juce::Justification::centredRight, 2);
+
+        // THE CONNECTOR IS THE STRONGEST THING IN THIS ROW (20 Sep 2026): the
+        // button REACHING OUT to both names, rather than two stubs beside it.
+        //
+        // TAPERED, NOT JUST FADED. It is a filled quad, 3.2 px at the button
+        // end and 0.6 px at the name end, under a gradient that falls to fully
+        // transparent. A line of one thickness that only loses alpha reads as a
+        // dimmer line; losing weight as well reads as reaching away and letting
+        // go, which is the thing being drawn. Nothing hard-stops at either end.
+        //
+        // AND IT STILL MOVES: a lit head travels from your capture toward the
+        // reference, because that is the direction the match runs, and its
+        // brightness follows the taper so it does not glow where the rail has
+        // already faded out. It is the only thing on the page that moves before
+        // the press, so the screen reads as ready rather than as a still.
+        auto rail = [&] (juce::Rectangle<int> r, bool buttonOnRight, float phase)
+        {
+            if (r.getWidth() < 2) return;
+            const float x0 = (float) r.getX(), x1 = (float) r.getRight();
+            const float w  = juce::jmax (1.0f, x1 - x0);
+            const float y  = (float) r.getCentreY();
+            const float bEnd = buttonOnRight ? x1 : x0;   // heavy, at the button
+            const float fEnd = buttonOnRight ? x0 : x1;   // thin, into the name
+            constexpr float thick = 3.2f, thin = 0.6f;
+
+            juce::Path p;
+            p.startNewSubPath (bEnd, y - thick * 0.5f);
+            p.lineTo (fEnd, y - thin * 0.5f);
+            p.lineTo (fEnd, y + thin * 0.5f);
+            p.lineTo (bEnd, y + thick * 0.5f);
+            p.closeSubPath();
+
+            juce::ColourGradient grad (C::blue.withAlpha (0.80f), bEnd, y,
+                                       C::blue.withAlpha (0.0f),  fEnd, y, false);
+            grad.addColour (0.45, C::blue.withAlpha (0.22f));
+            g.setGradientFill (grad);
+            g.fillPath (p);
+
+            const float px   = x0 + juce::jlimit (0.0f, 1.0f, phase) * w;
+            const float near = buttonOnRight ? (px - x0) / w : (x1 - px) / w;   // 1 at the button
+            const float a    = 0.55f * juce::jlimit (0.0f, 1.0f, near);
+            juce::ColourGradient head (C::blue2.withAlpha (0.0f), px - 24.0f, y,
+                                       C::blue2.withAlpha (a),    px,         y, false);
+            g.setGradientFill (head);
+            g.fillRect (juce::Rectangle<float> (px - 24.0f, y - 1.8f, 24.0f, 3.6f)
+                            .getIntersection (r.toFloat()));
+        };
+        rail (R.linkLeft,  true,  linkPhase);    // reaches left, toward your capture
+        rail (R.linkRight, false, linkPhase);    // reaches right, toward the reference
+
+        // THE BUTTON. Painted, not a child: the page has no other control and
+        // a child would need the overlay pool the wave cards fill.
+        //
+        // LIVE MEANS PLAYABLE, NOT OPTIMISTIC. The button is lit when there is
+        // something for the press to play, which is not the same question as
+        // whether the line above it is the cheerful one: a capture with no
+        // known length keeps its ceiling move and keeps its lit button, while
+        // the line leads with the length.
+        const bool live = ready.playable;
+        const auto bg   = buttonHot && live ? C::bg3.brighter (0.25f) : C::bg3;
+        g.setColour (bg);
+        g.fillRoundedRectangle (R.button.toFloat(), 8.0f);
+        g.setColour (live ? C::blue : C::border);
+        g.drawRoundedRectangle (R.button.toFloat().reduced (0.5f), 8.0f, live ? 1.4f : 1.0f);
+        if (live && (morphing || buttonHot))
+        {
+            g.setColour (C::blue.withAlpha (morphing ? 0.22f : 0.10f));
+            g.drawRoundedRectangle (R.button.toFloat().expanded (2.5f), 10.0f, 2.0f);
+        }
+        g.setColour (live ? C::text : C::text3);
+        g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
+        // ONE LABEL, ALWAYS. The button keeps its name after a play rather than
+        // turning into "again": a control that renames itself is a second
+        // control as far as the eye is concerned, and it is the same press.
+        g.drawText ("AI MATCH", R.button, juce::Justification::centred);
+    }
+
+    // ---- the picture -------------------------------------------------------
+    g.setColour (C::bg3);
+    g.fillRoundedRectangle (R.graph.toFloat(), 10.0f);
+    g.setColour (C::border);
+    g.drawRoundedRectangle (R.graph.toFloat().reduced (0.5f), 10.0f, 1.0f);
+
+    const auto plot = echojay::matchGraphPlot (R.graph);
+    const double visBinHz = 44100.0 / (double) MeterEngine::kVisFftSize;
+
+    if (evMix.valid && evRef.valid && plot.getWidth() > 8 && plot.getHeight() > 8)
+    {
+        const auto measured = expandLog64Spectrum (evMix.bins, visBinHz);
+        const auto refBins  = expandLog64Spectrum (evRef.bins, visBinHz);
+
+        // THE MORPH IS THE MEASURED CURVE WITH THE PROPOSAL'S GAINS ON IT, at
+        // the position the panel owns. A bin takes its OWN band's move, with no
+        // blending across a boundary: blending would smooth the step back into
+        // the curve, which is the one thing the contract forbids.
+        const float t = echojay::matchMorphEase (morphPos);
+        auto mixBins = measured;
+        if (t > 0.0f)
+            for (int k = 0; k < MeterEngine::kVisBins; ++k)
+                mixBins[(size_t) k] = echojay::matchMorphedDb (measured[(size_t) k],
+                                                               (double) k * visBinHz, moves, t);
+
+        // ONE SHARED dB RANGE over BOTH sides AND the morph's end state, so the
+        // picture does not re-scale under the animation: a curve that moves
+        // because the axis moved would be the most dishonest frame here.
+        const int binLo = juce::jmax (1, (int) (echojay::kMatchPlotLoHz / visBinHz));
+        const int binHi = juce::jmin (MeterEngine::kVisBins - 1,
+                                      (int) (echojay::kMatchPlotHiHz / visBinHz));
+        float peak = -200.0f;
+        for (int k = binLo; k <= binHi; ++k)
+        {
+            const double f = (double) k * visBinHz;
+            peak = juce::jmax (peak, spectrumTiltedDb (measured[(size_t) k], f));
+            peak = juce::jmax (peak, spectrumTiltedDb (refBins[(size_t) k], f));
+            peak = juce::jmax (peak, spectrumTiltedDb (
+                       echojay::matchMorphedDb (measured[(size_t) k], f, moves, 1.0f), f));
+        }
+        const float dbMax = std::max (-20.0f, peak + 3.0f);
+        const float dbMin = dbMax - echojay::kMatchPlotSpanDb;
+
+        // DEPTH: the reference is BEHIND and dimmer, an outline with no fill,
+        // and it never moves (plan 8A.2). The mix is in front with its heat
+        // fill falling away toward the floor, so one curve is the subject and
+        // the other is the target rather than two lights competing.
+        SpectrumCurveStyle refStyle;
+        refStyle.cyanHeat   = false;
+        refStyle.lineOnly   = true;
+        refStyle.lineAlpha  = 0.42f;
+        refStyle.wideGlow   = true;
+        refStyle.hasDbRange = true;
+        refStyle.dbMin = dbMin; refStyle.dbMax = dbMax;
+        owner->paintSpectrumCurve (g, plot.getX(), plot.getY(), plot.getWidth(), plot.getHeight(),
+                                   refBins, visBinHz, refStyle);
+
+        SpectrumCurveStyle mixStyle;
+        mixStyle.cyanHeat   = true;
+        mixStyle.wideGlow   = true;
+        mixStyle.hasDbRange = true;
+        mixStyle.dbMin = dbMin; mixStyle.dbMax = dbMax;
+        owner->paintSpectrumCurve (g, plot.getX(), plot.getY(), plot.getWidth(), plot.getHeight(),
+                                   mixBins, visBinHz, mixStyle);
+
+        // THE BLOCKS ARRIVE WITH THE PRESS, not with the page: before it there
+        // are two measured spectra and nothing drawn over them. They fade in
+        // over the first third of the morph, so the eye sees what is about to
+        // move before it moves.
+        const float blockAlpha = juce::jlimit (0.0f, 1.0f, morphPos * 3.0f);
+        const juce::String noCurve = echojay::matchNoCurveText (prop, haveDeltas);
+
+        if (blockAlpha > 0.01f && noCurve.isEmpty())
+        {
+            for (int b = 0; b < 6; ++b)
+            {
+                const auto span = echojay::matchBandSpanX (plot, b);
+                const double loHz = echojay::kMacroBandLoHz[(size_t) b];
+                const double hiHz = (b == 5) ? echojay::kMatchPlotHiHz
+                                             : echojay::kMacroBandLoHz[(size_t) b + 1];
+                const int kLo = juce::jlimit (1, MeterEngine::kVisBins - 1, (int) (loHz / visBinHz));
+                const int kHi = juce::jlimit (kLo, MeterEngine::kVisBins - 1, (int) (hiHz / visBinHz));
+                double sum = 0.0; int n = 0;
+                for (int k = kLo; k <= kHi; ++k)
+                {
+                    sum += (double) spectrumTiltedDb (measured[(size_t) k], (double) k * visBinHz);
+                    ++n;
+                }
+                const float anchor = n > 0 ? (float) (sum / (double) n) : dbMin;
+                const auto blk = echojay::matchBandBlock (b, anchor, deltas[(size_t) b]);
+
+                const float xL = span.getStart() + 1.5f, xR = span.getEnd() - 1.5f;
+                if (xR <= xL) continue;
+                const float yAnchor   = echojay::matchDbToY (plot, blk.anchorDb,   dbMin, dbMax);
+                const float yProposed = echojay::matchDbToY (plot, blk.proposedDb, dbMin, dbMax);
+                const float yMatched  = echojay::matchDbToY (plot, blk.matchedDb,  dbMin, dbMax);
+
+                // THE GAP THAT REMAINS: proposed to where this band would sit
+                // if it matched. It is the OUTPUT, not a shortfall, so it
+                // settles and STAYS rather than fading with the animation.
+                if (blk.hasGap)
+                {
+                    juce::Rectangle<float> gap (xL, juce::jmin (yProposed, yMatched),
+                                                xR - xL, std::abs (yMatched - yProposed));
+                    g.setColour (C::text3.withAlpha (0.16f * blockAlpha));
+                    g.fillRect (gap);
+                    g.setColour (C::text3.withAlpha (0.40f * blockAlpha));
+                    const float dash[2] = { 2.0f, 3.0f };
+                    g.drawDashedLine ({ xL, yMatched, xR, yMatched }, dash, 2, 1.0f);
+                }
+
+                // THE MOVE, AS A STEP: flat across the band, hard edges at the
+                // boundaries, never a slope.
+                if (blk.hasMove)
+                {
+                    const auto tone = blk.moveDb >= 0.0f ? C::blue : juce::Colour (0xffFF6B9D);
+                    juce::Rectangle<float> step (xL, juce::jmin (yAnchor, yProposed),
+                                                 xR - xL, std::abs (yProposed - yAnchor));
+                    g.setColour (tone.withAlpha (0.22f * blockAlpha));
+                    g.fillRect (step);
+                    g.setColour (tone.withAlpha (0.85f * blockAlpha));
+                    g.drawLine (xL, yProposed, xR, yProposed, 1.8f);
+                    g.setColour (tone.withAlpha (0.25f * blockAlpha));
+                    g.drawLine (xL, yProposed, xL, yAnchor, 1.0f);
+                    g.drawLine (xR, yProposed, xR, yAnchor, 1.0f);
+
+                    // A CAP LOOKS CAPPED: the block stops at 3 dB and an amber
+                    // mark sits where the gap actually went.
+                    if (blk.capped)
+                    {
+                        const float dash[2] = { 3.0f, 3.0f };
+                        g.setColour (C::amber.withAlpha (0.9f * blockAlpha));
+                        g.drawDashedLine ({ xL, yMatched, xR, yMatched }, dash, 2, 1.4f);
+                        g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+                        g.drawText ("capped", juce::Rectangle<float> (xL, yMatched - 12.0f,
+                                                                      xR - xL, 11.0f).toNearestInt(),
+                                    juce::Justification::centred);
+                    }
+                }
+            }
+        }
+        else if (! noCurve.isEmpty() && morphPos > 0.0f)
+        {
+            g.setColour (C::amber);
+            g.setFont (juce::Font (juce::FontOptions (11.0f)));
+            g.drawFittedText (noCurve, plot.reduced (8, 0), juce::Justification::centred, 2);
+        }
+
+        // Band boundaries, faint, so the steps read as bands and not as shapes.
+        g.setColour (C::border.withAlpha (0.5f));
+        for (int b = 1; b < 6; ++b)
+        {
+            const float bx = echojay::matchFreqToX (plot, echojay::kMacroBandLoHz[(size_t) b]);
+            g.drawLine (bx, (float) plot.getY(), bx, (float) plot.getBottom(), 0.5f);
+        }
+    }
+    else
+    {
+        g.setColour (C::text3);
+        g.setFont (juce::Font (juce::FontOptions (11.0f)));
+        g.drawFittedText ("No spectrum to draw for one of the two sides.",
+                          plot, juce::Justification::centred, 2);
+    }
+
+    // THE PROVENANCE, ON THE PICTURE (contract §3): a whole-file average
+    // against a ballistic tail is not a like-for-like curve, and prose
+    // elsewhere is not the picture saying so.
+    {
+        const auto prov = echojay::matchProvenanceText (evMix, evRef);
+        if (prov.isNotEmpty())
+        {
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (10.0f)));
+            g.drawText (prov, R.graph.reduced (10, 5).removeFromBottom (12),
+                        juce::Justification::centredLeft, true);
+        }
+    }
+
+    if (fade < 0.999f) g.endTransparencyLayer();
 }
 
-// ESCAPE RETURNS TO COMPARE, the Playback page's rule for its grid, and the
-// only rule: Match has no inner view to step back through first, so there is
-// no Playback-style render-view step here and no third behaviour.
+// THE PRESS. It plays the morph, or says why it cannot; it sends nothing and
+// writes nothing (MATCH_SCREEN_CONTRACT §10). Replayable by design: a second
+// press starts from the measured curve again rather than doing nothing because
+// the first one finished.
+void EchoJayEditor::MatchPanel::press()
+{
+    if (owner == nullptr) return;
+    // ONE read of the sides, not two: they are read from live slots, and two
+    // reads could disagree about what the press was for.
+    const auto sides = owner->buildMatchSides();
+    const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (sides.mix, sides.ref));
+
+    // PLAYABLE, NOT POSSIBLE. The press asks whether the proposal carries a
+    // move, which is what this test has always meant; `possible` now answers
+    // the narrower question of whether the LINE is the optimistic one, and
+    // gating the press on that would refuse a move the proposal is holding.
+    if (! ready.playable)
+    {
+        // A REFUSED PROPOSAL CANNOT ANIMATE, so the press SAYS so rather than
+        // playing nothing and leaving the user to guess whether it worked.
+        refusedText = echojay::matchPressRefusedText (ready);
+        refusedFor  = 2.5f;
+        morphing = false; morphDone = false; morphPos = 0.0f;
+        startTimerHz (30);
+        repaint();
+        return;
+    }
+
+    morphPos  = 0.0f;
+    morphing  = true;
+    morphDone = false;
+    refusedFor = 0.0f;
+    startTimerHz (30);
+    repaint();
+}
+
+void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
+{
+    if (echojay::matchPageLayout (getLocalBounds()).button.contains (e.getPosition()))
+        press();
+}
+
+void EchoJayEditor::MatchPanel::mouseMove (const juce::MouseEvent& e)
+{
+    const bool hot = echojay::matchPageLayout (getLocalBounds()).button.contains (e.getPosition());
+    if (hot != buttonHot) { buttonHot = hot; repaint(); }
+}
+
+// THE CLOCK RUNS ONLY WHILE THE PAGE IS ON SCREEN. An invisible page asking for
+// 30 repaints a second is the shape that makes a plugin feel heavy for no
+// reason anyone can see.
+void EchoJayEditor::MatchPanel::visibilityChanged()
+{
+    if (isVisible())
+    {
+        openFade = 0.0f;       // the page fades in every time it opens
+        morphPos = 0.0f; morphing = false; morphDone = false;
+        refusedFor = 0.0f; buttonHot = false;
+        startTimerHz (30);
+    }
+    else
+    {
+        stopTimer();
+    }
+}
+
+void EchoJayEditor::MatchPanel::timerCallback()
+{
+    constexpr float dt = 1.0f / 30.0f;
+    bool busy = false;
+
+    if (openFade < 1.0f) { openFade = juce::jmin (1.0f, openFade + dt * 4.0f); busy = true; }
+
+    // The link's pulse runs while the page is open: it is the one thing that
+    // moves before the press, and it says the screen is ready rather than
+    // stalled. 0.22 of the run per second, so it reads as a drift and not a
+    // scan line.
+    linkPhase += dt * 0.22f;
+    if (linkPhase > 1.0f) linkPhase -= 1.0f;
+    busy = true;
+
+    if (morphing)
+    {
+        morphPos += dt / 0.9f;                   // 900 ms end to end
+        if (morphPos >= 1.0f) { morphPos = 1.0f; morphing = false; morphDone = true; }
+        busy = true;
+    }
+
+    if (refusedFor > 0.0f)
+    {
+        refusedFor = juce::jmax (0.0f, refusedFor - dt);
+        busy = true;
+    }
+
+    if (! busy) stopTimer();
+    repaint();
+}
+
 bool EchoJayEditor::MatchPanel::keyPressed (const juce::KeyPress& k)
 {
     if (k == juce::KeyPress::escapeKey && owner != nullptr)
     {
         owner->setRefSubTab (echojay::RefSubTab::Compare);
+        return true;
+    }
+    // RETURN AND SPACE PRESS THE BUTTON. It is painted rather than a child, so
+    // without this the page's one control is reachable by mouse only, and the
+    // panel already takes keyboard focus when it opens.
+    if (k == juce::KeyPress::returnKey || k == juce::KeyPress::spaceKey)
+    {
+        press();
         return true;
     }
     return false;
@@ -17687,6 +18086,14 @@ void EchoJayEditor::paintSpectrogramContent(juce::Graphics& g, int x, int y, int
 // curve lands gracefully at 20k instead of nose-diving. Applied at draw
 // time only, referenced to 1 kHz.
 static constexpr float kSpectrumTiltDbPerOct = 4.5f;
+
+// THE ONE EXPRESSION OF THE TILT. paintSpectrumCurve applies it to every bin it
+// draws, and the Match page has to agree with the curve it draws over, so the
+// expression is a member rather than a lambda private to one function.
+float EchoJayEditor::spectrumTiltedDb (float db, double freqHz) noexcept
+{
+    return db + kSpectrumTiltDbPerOct * (float) std::log2 (freqHz / 1000.0);
+}
 // Frame-to-frame lerp for the visual-FFT bins — higher = snappier, keeps
 // Pro-Q-style peaks from being rounded off.
 static constexpr float kSpectrumVisLerp = 0.5f;
@@ -17789,10 +18196,10 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
         }
     }
 
-    // Display tilt (dB at this frequency, re 1 kHz) — display-only
-    auto tilted = [](float db, double freq) {
-        return db + kSpectrumTiltDbPerOct * (float)std::log2(freq / 1000.0);
-    };
+    // Display tilt (dB at this frequency, re 1 kHz), display-only, and now
+    // through the one exposed expression so the Match page's blocks sit where
+    // this curve draws rather than 4.5 dB per octave away from it.
+    auto tilted = [](float db, double freq) { return spectrumTiltedDb (db, freq); };
 
     // Auto-range over TILTED values; 20 Hz .. 20 kHz bins only
     const int binLoLimit = juce::jmax(1, (int)(20.0 / visBinHz));
@@ -17804,8 +18211,10 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
         if (hasPeak)
             vPeak = juce::jmax(vPeak, tilted((*style.peakHold)[(size_t)k], f));
     }
-    const float vDbMax = std::max(-20.0f, vPeak + 3.0f);
-    const float vDbMin = vDbMax - 66.0f;
+    // The caller's range when it supplied one (a surface drawing more than one
+    // curve in one rect), otherwise the auto-range this has always used.
+    const float vDbMax = style.hasDbRange ? style.dbMax : std::max(-20.0f, vPeak + 3.0f);
+    const float vDbMin = style.hasDbRange ? style.dbMin : vDbMax - 66.0f;
 
     // Region-aware knot sampling + clamped Catmull-Rom spline emit
     auto buildVisPath = [&](const std::array<float, MeterEngine::kVisBins>& bins,
@@ -17935,6 +18344,12 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
     // Heat-map fill — a TINT, not a solid: bright band concentrated at the
     // top, alpha falling away fast so the glow hugs the curve edge and the
     // lower area stays near-background navy.
+    //
+    // SKIPPED FOR A LINE-ONLY CURVE (20 Sep 2026). Two filled curves in one
+    // rect hide each other: the Match page draws the reference as an outline
+    // behind the mix's fill so both stay readable. Default false, so the
+    // spectrum panel and both Compare panels are untouched.
+    if (! style.lineOnly)
     {
         g.saveState();
         g.reduceClipRegion(activePath);
@@ -17950,15 +18365,31 @@ void EchoJayEditor::paintSpectrumCurve(juce::Graphics& g, int x, int y, int w, i
         g.restoreState();
     }
 
-    // Single subtle glow under a crisp level-coloured line
+    // Single subtle glow under a crisp level-coloured line.
+    //
+    // A WIDER, FAINTER PASS UNDER THE USUAL ONE when the caller asks for it
+    // (20 Sep 2026), so the light reads as coming OFF the curve rather than as
+    // a band beside it. OFF BY DEFAULT: the spectrum panel and both Compare
+    // panels are not asking, and this must not restyle them.
+    //
+    // style.lineAlpha scales the whole set: the Match page's reference sits
+    // back at less than one so the two curves stop competing. Every existing
+    // caller gets 1.0 and the picture it had.
     auto activeLine = buildVisPath(visDisplay, false);
-    g.setColour(glowCol.withAlpha(0.15f));
+    const float la = juce::jlimit (0.0f, 1.0f, style.lineAlpha);
+    if (style.wideGlow)
+    {
+        g.setColour(glowCol.withAlpha(0.05f * la));
+        g.strokePath(activeLine, juce::PathStrokeType(9.0f,
+                     juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    g.setColour(glowCol.withAlpha(0.15f * la));
     g.strokePath(activeLine, juce::PathStrokeType(5.0f,
                  juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     {
         juce::ColourGradient lineGrad(
-            heatTop, (float)x, (float)y,
-            lineBot, (float)x, (float)(y + barMaxH), false);
+            heatTop.withMultipliedAlpha (la), (float)x, (float)y,
+            lineBot.withMultipliedAlpha (la), (float)x, (float)(y + barMaxH), false);
         g.setGradientFill(lineGrad);
         g.strokePath(activeLine, juce::PathStrokeType(1.2f,
                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));

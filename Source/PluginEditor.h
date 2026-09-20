@@ -472,7 +472,32 @@ private:
         SpectrumCurveState* lerpState = nullptr;  // nullptr = static data, no frame lerp
         std::array<float, MeterEngine::kVisBins>* peakHold = nullptr;  // optional
         bool* peakHoldInit = nullptr;
+        // A CALLER-SUPPLIED dB RANGE (20 Sep 2026), for a surface that draws
+        // more than one curve in one rect. The range is otherwise computed
+        // inside the call from the bins handed in, so two curves would each
+        // scale to their own peak and disagree about what a decibel is.
+        // ABSENT BY DEFAULT: hasDbRange false leaves the auto-range exactly as
+        // it was, so the spectrum panel and both Compare panels are untouched.
+        bool  hasDbRange = false;
+        float dbMin = 0.0f, dbMax = 0.0f;
+        // A curve with no heat-map fill, for a surface drawing one curve
+        // behind another. Default false: nothing existing changes.
+        bool  lineOnly = false;
+        // How present the curve is, for the one BEHIND: the Match page's
+        // reference sits back at less than full alpha so the mix reads as the
+        // subject and the two do not compete. 1.0 is what every existing
+        // caller gets without asking.
+        float lineAlpha = 1.0f;
+        // One wider, fainter glow pass under the usual one. Off by default so
+        // no existing surface is restyled by a page that wanted more light.
+        bool  wideGlow = false;
     };
+
+    /** THE DISPLAY TILT paintSpectrumCurve applies, exposed so a surface that
+        must agree with the drawn curve reads the same expression instead of
+        keeping a second copy of 4.5 dB per octave. The Match page's blocks and
+        its shared dB range are both computed through this. */
+    static float spectrumTiltedDb (float db, double freqHz) noexcept;
     // binsIn are LINEAR-frequency dB magnitudes spaced visBinHz apart
     // (the visual-FFT shape). Stored 64-log-bin data enters through
     // expandLog64Spectrum below.
@@ -986,6 +1011,13 @@ private:
         is how the two come to disagree. */
     struct MatchSides { echojay::MatchSide mix, ref; };
     MatchSides buildMatchSides() const;
+
+    /** The two slots by ROLE, from refBarIsTop(). The page needs the slots
+        themselves as well as their sides, because the curves come from each
+        slot's spectral evidence and MatchSide carries only the six bands. One
+        answer to "which one is the reference", read in both places. */
+    struct MatchSlotPair { const CompareSlotState* mix = nullptr; const CompareSlotState* ref = nullptr; };
+    MatchSlotPair matchSlots() const;
     // Step 2: cross-scope covers all three cases the send must ask about -
     // channel-vs-full, channel-vs-DIFFERENT-channel, and anything-vs-Live.
     // Keys off channelDataScoped (via slotChannelUid), never linkUid presence.
@@ -1110,17 +1142,62 @@ private:
     // sees it. The explicit guards in mouseDown and mouseDoubleClick stand as
     // well; this is the second line, stated, not the only one.
     //
-    // WHAT IT DRAWS: a statement of what the page is for, from
-    // echojay::matchPageStatement. No proposal yet: computeMatchProposal is not
-    // called from the editor until the next commit.
+    // WHAT IT IS (restructured 20 Sep 2026, after Kathy saw the first one):
+    // the screen you set up and press.
+    //
+    //   YOUR CAPTURE ---- [ AI MATCH ] ---- THE REFERENCE
+    //   and under them the picture, which gets the room the text used to take.
+    //
+    // THE ANALYSIS IS NOT ON THE SCREEN. The moves list, the directional
+    // findings and the refusal list went to the chat, where every other piece
+    // of AI output in this product goes; they arrive there after the press,
+    // which is the next commit. ONE line stays above the button: whether a
+    // match is possible and, if not, the single most important reason, so
+    // nobody presses a button that does nothing for reasons no one gave them.
+    //
+    // THE BUTTON HAS A JOB TODAY: it plays the morph. Before the press, the two
+    // measured spectra and no blocks. On the press the blocks fade in, the
+    // mix's curve walks to the proposal, and the gap that remains settles and
+    // stays. Replayable. A refused proposal cannot animate, so the press says
+    // so instead of playing nothing.
+    //
+    // NOTHING SENDS AND NOTHING IS APPLIED: no axis control, no chat card, no
+    // turn type (MATCH_SCREEN_CONTRACT §10, no server edit until Sean's work is
+    // merged).
     //
     // ESCAPE RETURNS TO COMPARE, the Playback page's rule for its grid. Match
     // has no inner view to step back through first.
-    struct MatchPanel : juce::Component
+    struct MatchPanel : juce::Component, private juce::Timer
     {
         EchoJayEditor* owner = nullptr;
         void paint (juce::Graphics& g) override;
         bool keyPressed (const juce::KeyPress& k) override;
+        void mouseUp (const juce::MouseEvent& e) override;
+        void mouseMove (const juce::MouseEvent& e) override;
+        /** The page fades in when it opens and the clock stops when it
+            closes: an invisible page must not be asking for 30 repaints a
+            second. */
+        void visibilityChanged() override;
+        void timerCallback() override;
+
+        /** THE PRESS. Starts the morph, or says why it cannot. Also reached
+            from the keyboard, because the button is painted rather than a
+            child and a painted control with no key is unreachable without a
+            mouse. */
+        void press();
+
+        // ---- the animation's state, all of it here ------------------------
+        // NOT A SMOOTHER: an explicit position the panel owns, so the morph
+        // can be played, replayed and stopped rather than drifting toward
+        // whatever arrived last.
+        float openFade   = 0.0f;   ///< 0 to 1, the page's own fade in
+        float morphPos   = 0.0f;   ///< 0 measured, 1 the proposal applied
+        bool  morphing   = false;  ///< true while it is walking to 1
+        bool  morphDone  = false;  ///< it has played: the blocks and gap stay
+        float linkPhase  = 0.0f;   ///< the link's travelling pulse, 0 to 1
+        float refusedFor = 0.0f;   ///< seconds left on the press-refused line
+        bool  buttonHot  = false;  ///< the pointer is over the button
+        juce::String refusedText;
     };
     MatchPanel matchPanel_;
 

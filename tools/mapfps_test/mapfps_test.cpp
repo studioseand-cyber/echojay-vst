@@ -56,6 +56,7 @@
 #include "EJBandScheme.h"      // the band edges, the bin axis and the ballistics
 #include "EJMatchProposal.h"   // Match Reference phase 2a: the shipped proposal arithmetic
 #include "EJCompareFigures.h"  // the compare figures and matchSideFrom, now linkable
+#include "EJMatchPage.h"       // the Match screen's geometry and the words it draws
 #include "MeterEngine.h"        // psr floor: the REAL serialiser, called below
 #include "PluginScanner.h"
 #include "PluginCatalog.h"
@@ -12600,35 +12601,262 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "mr PIN11: and 3.0 dB apart it gets no gain move either, only the duration refusal");
         }
 
-        // mr PIN12 -- THE MATCH PAGE SAYS WHAT IT IS FOR. Behavioural, on the
-        // pure statement the page draws. Four things in plan section 6's
-        // order, the numbers taken from the constants the arithmetic uses, and
-        // no "coming soon": the last line says plainly that no proposal is
-        // computed yet.
+        // mr PIN12 -- THE ONE LINE, AND WHAT IT SAYS WHEN A MATCH IS OFF.
+        //
+        // REWRITTEN TWICE, NOT RENUMBERED. It first pinned matchPageStatement,
+        // the page's promise of what Match WOULD show; then the screen's moves,
+        // findings and refusals. Kathy saw that screen and said the shape was
+        // wrong: the analysis belongs in the chat, where every other piece of
+        // AI output in this product goes. So the screen keeps ONE line above
+        // the button, whether a match is possible and, if not, the single most
+        // important reason, and this pin holds that line.
+        //
+        // WITHOUT THE LINE the user presses a button that does nothing for
+        // reasons nobody gave them, which is this project's oldest defect
+        // wearing a new hat. The ORDER of importance is the pin's real subject:
+        // a length that cannot be judged outranks bands that are not an
+        // average, because it refuses the dynamics as well.
         {
-            const auto st = matchPageStatement();
-            auto dB = [] (float v) { return juce::String (v, 1) + " dB"; };
-            check (st.title == "MATCH REFERENCE" && st.items.size() == 4,
-                   "mr PIN12: the page has its title and exactly four things it will show",
-                   juce::String (st.items.size()) + " items");
-            const juce::String i0 = st.items[0], i1 = st.items[1], i2 = st.items[2], i3 = st.items[3];
-            check (i0.contains ("tier") && i0.contains ("Exact") && i0.contains ("Bounded")
-                   && i0.contains (dB (kMatchGainFloorDb)) && i0.contains (dB (kMatchBandFloorDb))
-                   && i0.contains (dB (kMatchBandCapDb)),
-                   "mr PIN12: first, the moves by tier, with the gain floor, band floor and band cap "
-                   "the arithmetic uses", i0);
-            check (i1.contains ("Directional") && i1.contains ("no apply"),
-                   "mr PIN12: second, the directional findings, with no apply affordance", i1);
-            check (i2.contains ("Refusals") && i2.contains ("threshold") && i2.contains ("measured value"),
-                   "mr PIN12: third, the refusals, each naming its threshold and measured value", i2);
-            check (i3.containsIgnoreCase ("nothing has been written"),
-                   "mr PIN12: fourth, that nothing has been written", i3);
-            juce::String all = st.title + " " + st.lead + " " + st.status;
-            for (const auto& it : st.items) all << " " << it;
-            check (st.status.contains ("does not compute a proposal")
-                   && ! all.containsIgnoreCase ("soon") && ! all.containsIgnoreCase ("loading"),
-                   "mr PIN12: and it says plainly that no proposal is computed yet, never "
-                   "\"coming soon\"", st.status);
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };   // sub +4, air -4
+            mix.integrated = -14.0f; ref.integrated = -9.0f;                 // a 5 dB gain move
+            mix.truePeak = 0.8f; ref.truePeak = -1.0f;                       // and a ceiling
+
+            const auto ok = echojay::matchReadiness (echojay::computeMatchProposal (mix, ref));
+            check (ok.possible && ! ok.goodNews
+                   && ok.line.containsIgnoreCase ("possible")
+                   && ok.line.contains ("2 on the spectrum"),
+                   "mr PIN12: with moves to play, the line says a match is possible and how much of it "
+                   "is spectrum, because that is what the press is about to play", ok.line);
+
+            // KATHY'S CAPTURE: a length nobody knows AND bands that are a power
+            // mean rather than an average. Both refuse; the LENGTH is the one
+            // that gets the line, because it refuses the dynamics too.
+            MatchSide unknown = mix;
+            unknown.durationSeconds = 0.0f;
+            unknown.macroReduction  = SpectralReduction::RollingWindowPowerMean;
+            const auto p2 = echojay::computeMatchProposal (unknown, ref);
+            const auto r2 = echojay::matchReadiness (p2);
+            bool sawBoth = false, sawAverage = false;
+            for (const auto& rf : p2.refusals)
+            {
+                if (rf.kind == MatchRefusalKind::BandsNotAverage) sawAverage = true;
+                if (rf.kind == MatchRefusalKind::BandsTooShort)   sawBoth = true;
+            }
+            check (sawBoth && sawAverage && ! r2.possible
+                   && r2.line.contains ("not known") && r2.line.contains ("30 s"),
+                   "mr PIN12: with BOTH a length nobody knows and bands that are not an average, the "
+                   "line is the length, with its threshold and what was measured, and the other "
+                   "reasons go to the chat", r2.line);
+
+            // Bands that are not an average, with a length that IS known: now
+            // that reason gets the line.
+            MatchSide peakHeld = mix;
+            peakHeld.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            const auto r3 = echojay::matchReadiness (echojay::computeMatchProposal (peakHeld, ref));
+            check (! r3.possible && r3.line.containsIgnoreCase ("peak hold"),
+                   "mr PIN12: and with the length known, the bands' own reason gets the line, naming "
+                   "the reduction it saw", r3.line);
+
+            // THE LINE IS ONE LINE. Not a list, whatever the proposal carries.
+            check (! ok.line.containsIgnoreCase ("\n") && ! r2.line.containsIgnoreCase ("\n")
+                   && ! r3.line.containsIgnoreCase ("\n"),
+                   "mr PIN12: and it is ONE line in every case, because the list is the chat's job");
+        }
+
+        // mr PIN12b -- A REFUSAL THAT IS GOOD NEWS DOES NOT READ AS A COMPLAINT.
+        //
+        // Two sides inside the 1 dB gain floor produce a refusal saying they
+        // are 0.00 dB apart. THAT IS THE FEATURE WORKING, so it is marked as
+        // good news, it still carries both figures and the floor, and the press
+        // says "these two already match" rather than playing nothing.
+        {
+            MatchSide a, b;
+            a.durationSeconds = b.durationSeconds = 120.0f;
+            a.integrated = b.integrated = -14.0f;          // 0.00 dB apart
+            a.hasMacro = b.hasMacro = true;
+            a.macroReduction = b.macroReduction = SpectralReduction::WholeFileAverage;
+            a.macro = b.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+
+            const auto r = echojay::matchReadiness (echojay::computeMatchProposal (a, b));
+            check (! r.possible && r.goodNews,
+                   "mr PIN12b: a gain gap inside the floor is GOOD NEWS, marked as such rather than "
+                   "filed with the refusals", r.line);
+            check (r.line.contains ("0.00 dB apart") && r.line.contains ("1.0 dB"),
+                   "mr PIN12b: and it still names both figures, the gap and the floor, because a "
+                   "refusal that hides its numbers is not a refusal", r.line);
+            check (echojay::matchPressRefusedText (r).containsIgnoreCase ("already match"),
+                   "mr PIN12b: and the press says these two already match, instead of playing nothing "
+                   "and leaving the user to guess", echojay::matchPressRefusedText (r));
+        }
+
+        // mr PIN12c -- THE MOVES OUTRANK THE GAIN FLOOR.
+        //
+        // The one refusal that is NOT a missing axis is the gain floor: it says
+        // the two sides already agree on level, which decides nothing about the
+        // spectrum. So a proposal carrying band moves AND that refusal leads
+        // with the moves. Levels already matching is not a reason to hide
+        // spectrum work that is ready to play, and this is the case that
+        // separates this precedence from the simpler "any refusal wins" rule.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };   // sub +4, air -4
+            mix.integrated = ref.integrated = -14.0f;                        // 0.00 dB apart
+
+            const auto p = echojay::computeMatchProposal (mix, ref);
+            const auto r = echojay::matchReadiness (p);
+            bool floorRefusal = false;
+            for (const auto& rf : p.refusals)
+                if (rf.kind == MatchRefusalKind::GainBelowFloor) floorRefusal = true;
+
+            check (r.possible && r.playable && ! r.goodNews
+                   && r.line.contains ("2 moves") && r.line.contains ("2 on the spectrum"),
+                   "mr PIN12c: band moves beside a gain-floor refusal headline the MOVES, with their "
+                   "count and how many are spectrum, not the good news", r.line);
+            check (floorRefusal,
+                   "mr PIN12c: and the gain-floor refusal is still in the proposal for the chat to "
+                   "carry: choosing a headline drops nothing");
+        }
+
+        // mr PIN12d -- AN UNAVAILABLE AXIS OUTRANKS A MOVE THAT SURVIVED IT.
+        //
+        // No six-band measurement at all, and a gain move that does not depend
+        // on one. The line leads with the bands, because that is the reason the
+        // spectrum half of this screen is empty, AND the move is still playable:
+        // the two answers are different questions and this is where they part.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = false;                       // nothing to compare on the spectrum
+            ref.hasMacro = true;
+            ref.macroReduction = SpectralReduction::WholeFileAverage;
+            ref.macro = { -8.0f, -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };
+            mix.integrated = -14.0f; ref.integrated = -9.0f;                 // a 5 dB gain move
+
+            const auto p = echojay::computeMatchProposal (mix, ref);
+            const auto r = echojay::matchReadiness (p);
+            check (! r.possible && r.playable
+                   && r.line.contains (p.bandsUnavailableWhy)
+                   && p.bandsUnavailableWhy.contains ("no six-band measurement"),
+                   "mr PIN12d: with no six-band measurement the line leads with that, and the gain "
+                   "move that survived it is still PLAYABLE, so the press still plays it",
+                   r.line + " | playable " + juce::String ((int) r.playable));
+        }
+
+        // mr PIN12e -- THE INVARIANT: playable IS the moves, whatever won the line.
+        //
+        // playable is set before any branch, so which reason takes the headline
+        // cannot change whether the press has something to play. Stated here
+        // across every shape this block builds, INCLUDING the two where possible
+        // and playable now disagree: the unknown length and the peak hold, which
+        // keep a ceiling or a gain move while the line leads with the refusal.
+        // Without this, a later edit could fold playable back into a branch and
+        // nothing would say the press had started refusing moves it holds.
+        {
+            MatchSide base, ref;
+            base.durationSeconds = ref.durationSeconds = 120.0f;
+            base.hasMacro = ref.hasMacro = true;
+            base.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            base.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro  = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };
+            base.integrated = -14.0f; ref.integrated = -9.0f;
+            base.truePeak = 0.8f; ref.truePeak = -1.0f;
+
+            MatchSide unknown = base;  unknown.durationSeconds = 0.0f;
+            unknown.macroReduction = SpectralReduction::RollingWindowPowerMean;
+            MatchSide peakHeld = base; peakHeld.macroReduction = SpectralReduction::WholeWindowPeakHold;
+            MatchSide levelled = base; levelled.integrated = ref.integrated;
+            levelled.truePeak = -1.0f;                      // the gain floor, and no ceiling
+            MatchSide noBands  = base; noBands.hasMacro = false;
+
+            struct Case { const char* name; const MatchSide* mix; };
+            juce::String bad, disagreed;
+            for (const Case& c : { Case { "plain",        &base },
+                                   Case { "unknown length", &unknown },
+                                   Case { "peak hold",    &peakHeld },
+                                   Case { "level matched", &levelled },
+                                   Case { "no bands",     &noBands } })
+            {
+                const auto p = echojay::computeMatchProposal (*c.mix, ref);
+                const auto r = echojay::matchReadiness (p);
+                if (r.playable != ! p.moves.empty())
+                    bad << c.name << ": playable " << (int) r.playable << " with "
+                        << (int) p.moves.size() << " moves; ";
+                if (r.playable && ! r.possible) disagreed << c.name << " ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN12e: playable is the proposal's moves in every case, whichever reason won "
+                   "the line", bad);
+            check (disagreed.contains ("unknown length") && disagreed.contains ("peak hold"),
+                   "mr PIN12e: and the two cases the reordering was for are exactly where it and the "
+                   "headline disagree: a move to play, and a refusal to lead with", disagreed);
+        }
+
+        // mr PIN20 -- THE MORPH IS THE MEASURED CURVE WITH THE PROPOSAL'S GAINS
+        // ON IT, AND THE EDGES STAY STEPS.
+        //
+        // The press plays it, so it is arithmetic the suite can hold: at 0 the
+        // measurement, at 1 the measurement plus each band's own move, and
+        // NOTHING BLENDED ACROSS A BOUNDARY. Blending would smooth the step
+        // back into the curve, which is the one thing MATCH_SCREEN_CONTRACT §3
+        // forbids: a smooth line through six numbers asserts shape the
+        // arithmetic never had.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -10.0f, -12.0f, -18.0f };
+            const auto p     = echojay::computeMatchProposal (mix, ref);
+            const auto moves = echojay::matchBandMoves (p);
+
+            // The moves come FROM the proposal: a band it declined moves by 0.
+            juce::String mvBad;
+            std::array<bool, 6> proposed { false, false, false, false, false, false };
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Band) proposed[(size_t) m.band] = true;
+            for (int i = 0; i < 6; ++i)
+                if (! proposed[(size_t) i] && moves[(size_t) i] != 0.0f)
+                    mvBad << "band " << i << " moves " << moves[(size_t) i] << " and was not proposed; ";
+            check (mvBad.isEmpty() && std::abs (moves[0] - kMatchBandCapDb) < 1.0e-4f
+                   && std::abs (moves[5] + kMatchBandCapDb) < 1.0e-4f,
+                   "mr PIN20: the morph moves exactly what the proposal offered, capped where the "
+                   "proposal capped, and a band it declined does not move at all", mvBad);
+
+            // At 0 the measurement, at 1 the measurement plus the band's move.
+            const float m40 = -30.0f;
+            check (echojay::matchMorphedDb (m40, 40.0, moves, 0.0f) == m40
+                   && std::abs (echojay::matchMorphedDb (m40, 40.0, moves, 1.0f)
+                                - (m40 + moves[0])) < 1.0e-4f,
+                   "mr PIN20: at 0 the morph IS the measurement, and at 1 it is the measurement plus "
+                   "that band's own move");
+
+            // THE EDGE IS A STEP. Two bins either side of 250 Hz differ by the
+            // difference of their bands' moves, not by a fraction of it.
+            const float lowSide  = echojay::matchMorphedDb (m40, 249.0, moves, 1.0f);
+            const float highSide = echojay::matchMorphedDb (m40, 251.0, moves, 1.0f);
+            check (std::abs ((highSide - lowSide) - (moves[2] - moves[1])) < 1.0e-4f
+                   && echojay::matchBandForHz (249.0) == 1 && echojay::matchBandForHz (251.0) == 2,
+                   "mr PIN20: across a band boundary the morph steps by the whole difference between "
+                   "the two bands' moves: no blending, because the proposal's move is a step",
+                   juce::String (highSide - lowSide, 3));
+
+            // The ease is a position, not a smoother: it starts at 0, ends at
+            // 1, and is clamped outside.
+            check (echojay::matchMorphEase (0.0f) == 0.0f && echojay::matchMorphEase (1.0f) == 1.0f
+                   && echojay::matchMorphEase (-2.0f) == 0.0f && echojay::matchMorphEase (5.0f) == 1.0f
+                   && echojay::matchMorphEase (0.5f) > 0.4f && echojay::matchMorphEase (0.5f) < 0.6f,
+                   "mr PIN20: the morph's ease is a clamped position the caller owns, so the animation "
+                   "can be played, replayed and stopped");
         }
 
         // mr PIN13 -- THE MOVED FIGURE DERIVATIONS COMPUTE WHAT THEY COMPUTED.
@@ -12818,6 +13046,223 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (echojay::matchSideFrom (none, ev, 90.0f, false).overs == 0,
                    "mr PIN15: recorded here rather than hidden: a reference's overs are a default and "
                    "not a measurement, and nothing in the proposal reads them yet");
+        }
+
+        // mr PIN16 -- THE SHAPE: SETUP AT THE TOP, THE PICTURE TAKING THE REST.
+        //
+        // REWRITTEN 20 SEP 2026 WITH THE SCREEN. It held a header, a graph with
+        // a share, and a body of text. Kathy's verdict was that the shape was
+        // wrong: the text belongs in the chat and the picture is the point of
+        // the screen. So the rows are now the one line, the setup row (your
+        // capture, the link, AI MATCH, the reference) and THE PICTURE, which
+        // takes everything left and therefore grows with the window.
+        //
+        // MatchPanel gets refPageArea from resized(), the SAME rect the Playback
+        // page gets, so the smallest it ever sees is 565 x 373 and the largest
+        // 1780 x 1025.
+        {
+            struct Page { const char* name; int w, h; };
+            juce::String bad;
+            for (const Page& p : { Page { "smallest, both bars",      565,  373 },
+                                   Page { "smallest, A/B bar",        565,  405 },
+                                   Page { "default window",           741,  553 },
+                                   Page { "largest, sidebar open",   1360, 1025 },
+                                   Page { "largest, collapsed",      1780, 1025 } })
+            {
+                const juce::Rectangle<int> page { 0, 0, p.w, p.h };
+                const auto R = echojay::matchPageLayout (page);
+                const auto plot = echojay::matchGraphPlot (R.graph);
+                if (R.status.getHeight() != echojay::kMatchStatusH
+                    || R.setup.getHeight() != echojay::kMatchSetupH)
+                    bad << p.name << ": rows " << R.status.getHeight() << "/"
+                        << R.setup.getHeight() << "; ";
+                if (! page.contains (R.status) || ! page.contains (R.setup)
+                    || ! page.contains (R.graph) || ! R.setup.contains (R.button))
+                    bad << p.name << ": a rect leaves its parent; ";
+                if (plot.getWidth() <= 0 || plot.getHeight() <= 0 || ! R.graph.contains (plot))
+                    bad << p.name << ": plot " << plot.toString() << "; ";
+                // The picture is the biggest thing on the page, by a long way.
+                if (R.graph.getHeight() < p.h / 2)
+                    bad << p.name << ": graph " << R.graph.getHeight() << " of " << p.h << "; ";
+                // The line sits ABOVE the button, which is where the brief put it.
+                if (R.status.getBottom() > R.button.getY())
+                    bad << p.name << ": the line is not above the button; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN16: on every page the product can produce, the one line and the setup row "
+                   "keep their heights, the line sits above the button, and the picture takes more "
+                   "than half the page", bad);
+
+            // THE ROW'S SHARE-OUT MOVED (20 Sep 2026, Kathy on the connector).
+            // The link used to be whatever the names left, which was a 10 px
+            // stub at EVERY width: two ticks beside the button rather than the
+            // button reaching out to both names. The name is now capped and the
+            // LINK takes the rest, so what this pin holds changed with it:
+            //   the button stays centred and the names never reach it, as
+            //     before;
+            //   the link NEVER VANISHES: it keeps kMatchLinkMinW wherever the
+            //     row has the room, which is every page this product makes;
+            //   and at a wide window the link is the LONGEST run in the row,
+            //     which is the thing Kathy asked for, stated as geometry so a
+            //     later tidy-up cannot quietly give the space back to a name.
+            juce::String rowBad;
+            for (int w : { 565, 741, 1150, 1360, 1780 })
+            {
+                const auto R = echojay::matchPageLayout ({ 0, 0, w, 600 });
+                const int leftGap  = R.button.getX() - R.setup.getX();
+                const int rightGap = R.setup.getRight() - R.button.getRight();
+                if (std::abs (leftGap - rightGap) > 1)
+                    rowBad << w << ": button off centre by " << std::abs (leftGap - rightGap) << "; ";
+                if (R.mixName.getRight() > R.button.getX() || R.refName.getX() < R.button.getRight())
+                    rowBad << w << ": a name overlaps the button; ";
+                if (R.linkLeft.getWidth() < echojay::kMatchLinkMinW
+                    || R.linkRight.getWidth() < echojay::kMatchLinkMinW)
+                    rowBad << w << ": link " << R.linkLeft.getWidth() << "/"
+                           << R.linkRight.getWidth() << "; ";
+                if (w >= 1150 && (R.linkLeft.getWidth() <= R.mixName.getWidth()
+                                  || R.linkLeft.getWidth() <= R.button.getWidth()))
+                    rowBad << w << ": the link is not the longest run; ";
+            }
+            check (rowBad.isEmpty(),
+                   "mr PIN16: the button stays centred between the two names at every width, the link "
+                   "keeps its floor at the narrowest page, and at a wide one it is the longest run in "
+                   "the row: the button reaching out, not two stubs beside it", rowBad);
+        }
+
+        // mr PIN17 -- THE PICTURE'S DELTAS ARE THE PROPOSAL'S DELTAS.
+        //
+        // matchBandDeltas is a second expression of refRel - mixRel, written
+        // because computeMatchProposal keeps a delta only on the bands that
+        // moved and the shading needs all six. This is what stops the two
+        // drifting: band by band, every move's measuredDb IS the delta the
+        // picture drew, and a band with no move is below the floor.
+        {
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 120.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -12.5f, -12.0f, -18.0f };
+
+            std::array<float, 6> deltas {};
+            const bool have = echojay::matchBandDeltas (mix, ref, deltas);
+            const auto p    = echojay::computeMatchProposal (mix, ref);
+
+            juce::String bad;
+            std::array<bool, 6> moved { false, false, false, false, false, false };
+            for (const auto& m : p.moves)
+                if (m.kind == MatchMoveKind::Band)
+                {
+                    moved[(size_t) m.band] = true;
+                    if (std::memcmp (&deltas[(size_t) m.band], &m.measuredDb, sizeof (float)) != 0)
+                        bad << "band " << m.band << ": picture " << deltas[(size_t) m.band]
+                            << " vs proposal " << m.measuredDb << "; ";
+                }
+            for (int i = 0; i < 6; ++i)
+                if (! moved[(size_t) i] && std::abs (deltas[(size_t) i]) >= kMatchBandFloorDb)
+                    bad << "band " << i << " has " << deltas[(size_t) i] << " dB and no move; ";
+            check (have && bad.isEmpty(),
+                   "mr PIN17: every band the proposal moved carries the delta the picture shades, bit "
+                   "for bit, and every band it left alone is under the floor", bad);
+
+            MatchSide noBands = mix;
+            noBands.hasMacro = false;
+            std::array<float, 6> ignored {};
+            const auto pNo = echojay::computeMatchProposal (noBands, ref);
+            check (! echojay::matchBandDeltas (noBands, ref, ignored)
+                   && echojay::matchNoCurveText (pNo, false).isNotEmpty()
+                   && echojay::matchNoCurveText (pNo, false).contains ("no six-band measurement"),
+                   "mr PIN17: with no six-band measurement there are no deltas, and the PICTURE says "
+                   "why rather than drawing a proposal that was never computed",
+                   echojay::matchNoCurveText (pNo, false));
+        }
+
+        // mr PIN18 -- A STEP IS A STEP, A CAP LOOKS CAPPED, AND THE GAP IS THE
+        // OUTPUT.
+        //
+        // Three levels in the curve's own dB: the anchor the curve sits at, the
+        // proposed level, and where the band would sit if it MATCHED. The block
+        // is anchor to proposed; the shading is proposed to matched. The
+        // reference is never moved by any of it (plan 8A.2): nothing here
+        // writes to the reference's side at all.
+        {
+            const float anchor = -30.0f;
+
+            const auto within = echojay::matchBandBlock (1, anchor, 2.5f);   // inside the cap
+            check (within.hasMove && ! within.capped && ! within.hasGap
+                   && std::abs (within.proposedDb - (anchor + 2.5f)) < 1.0e-4f
+                   && std::abs (within.matchedDb - within.proposedDb) < 1.0e-4f,
+                   "mr PIN18: a move inside the cap lands ON the matched level, so there is no gap "
+                   "left to shade",
+                   juce::String (within.proposedDb, 2) + " vs " + juce::String (within.matchedDb, 2));
+
+            const auto capped = echojay::matchBandBlock (0, anchor, 5.0f);   // beyond it
+            check (capped.hasMove && capped.capped && capped.hasGap
+                   && std::abs (capped.proposedDb - (anchor + kMatchBandCapDb)) < 1.0e-4f
+                   && std::abs (capped.matchedDb - (anchor + 5.0f)) < 1.0e-4f,
+                   "mr PIN18: a capped move stops at the cap and the picture keeps the other 2 dB as "
+                   "a visible gap, so a cap LOOKS capped",
+                   juce::String (capped.proposedDb, 2) + ", matched "
+                   + juce::String (capped.matchedDb, 2));
+
+            const auto under = echojay::matchBandBlock (3, anchor, 1.2f);    // below the floor
+            check (! under.hasMove && ! under.capped && under.hasGap
+                   && std::abs (under.proposedDb - anchor) < 1.0e-4f,
+                   "mr PIN18: below the floor nothing is proposed, the block is flat on the curve, and "
+                   "the whole difference stays in the gap");
+
+            const auto negative = echojay::matchBandBlock (5, anchor, -5.0f);
+            check (negative.hasMove && negative.capped
+                   && std::abs (negative.proposedDb - (anchor - kMatchBandCapDb)) < 1.0e-4f,
+                   "mr PIN18: and a cut is capped the same way, sign kept");
+
+            // The axis: the same log mapping paintSpectrumCurve uses.
+            const juce::Rectangle<int> plot { 10, 20, 400, 120 };
+            const float x20  = echojay::matchFreqToX (plot, 20.0);
+            const float x20k = echojay::matchFreqToX (plot, 20000.0);
+            juce::String axisBad;
+            if (std::abs (x20 - (float) plot.getX()) > 0.5f) axisBad << "20 Hz at " << x20 << "; ";
+            if (std::abs (x20k - (float) plot.getRight()) > 0.5f) axisBad << "20 kHz at " << x20k << "; ";
+            float prevEnd = (float) plot.getX();   // band 0 starts at the plot's left edge
+            for (int b = 0; b < 6; ++b)
+            {
+                const auto span = echojay::matchBandSpanX (plot, b);
+                if (span.getStart() < (float) plot.getX() - 0.5f
+                    || span.getEnd() > (float) plot.getRight() + 0.5f
+                    || span.getEnd() <= span.getStart()
+                    || std::abs (span.getStart() - prevEnd) > 0.5f)
+                    axisBad << "band " << b << " " << span.getStart() << ".." << span.getEnd() << "; ";
+                prevEnd = span.getEnd();
+            }
+            check (axisBad.isEmpty(),
+                   "mr PIN18: the six bands tile the plot end to end on the same 20 Hz to 20 kHz log "
+                   "axis the curves are drawn on, so a block sits over the frequencies it names",
+                   axisBad);
+        }
+
+        // mr PIN19 -- THE PICTURE CARRIES ITS OWN PROVENANCE.
+        //
+        // A whole-file average against a ballistic tail is not a like-for-like
+        // curve. Prose elsewhere saying so is not the picture saying it, and
+        // the picture is what the user is looking at.
+        {
+            echojay::SpectralEvidence a, b;
+            a.valid = b.valid = true;
+            a.reduction = b.reduction = SpectralReduction::WholeFileAverage;
+            check (echojay::matchProvenanceText (a, b).isEmpty(),
+                   "mr PIN19: two sides measured the same way need no caption");
+
+            b.reduction = SpectralReduction::BallisticTail;
+            const auto note = echojay::matchProvenanceText (a, b);
+            check (note.contains (echojay::reductionName (SpectralReduction::WholeFileAverage))
+                   && note.contains (echojay::reductionName (SpectralReduction::BallisticTail)),
+                   "mr PIN19: two sides measured differently get a caption naming BOTH reductions, on "
+                   "the picture", note);
+
+            echojay::SpectralEvidence none;
+            check (echojay::matchProvenanceText (a, none).isNotEmpty(),
+                   "mr PIN19: and a side with no spectrum at all says that rather than drawing nothing "
+                   "and explaining nothing");
         }
     }
 
