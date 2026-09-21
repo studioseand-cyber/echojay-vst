@@ -232,8 +232,14 @@ int main()
         // (1) the layout: five pills, then [Go] [Leave it], at 420 and 1200 px - every chip inside the width, natural size, rows counted
         A::Msg five; five.role = "assistant"; five.content = "x"; five.loopPills = { "Check", "A bit louder", "A bit softer", "Undo", "Done" };
         A::Msg two;  two.role = "assistant";  two.content = "x";  two.loopPills = LoudnessLoop::proposalPills();
+        A::Msg three; three.role = "assistant"; three.content = "x";
+#ifdef EJ_LOUDNESSLOOP_MANNERS21
+        three.loopPills = LoudnessLoop::proposalAfterApplyPills();   // 21 Sep: [Go] [Leave it] [Undo] on a proposal that follows an apply
+#else
+        three.loopPills = { "Go", "Leave it", "Undo" };
+#endif
         for (int w : { 420, 1200 })
-            for (const auto* m : { &five, &two })
+            for (const auto* m : { &five, &two, &three })
             {
                 const auto rects = A::layout (*ed, *m, w); bool inside = true, natural = true; int maxRight = 0;
                 for (size_t i = 0; i < rects.size(); ++i) { inside = inside && rects[i].getX() >= 0 && rects[i].getRight() <= w; natural = natural && rects[i].getWidth() <= 140 && rects[i].getWidth() >= 40; maxRight = juce::jmax (maxRight, rects[i].getRight()); }
@@ -260,6 +266,20 @@ int main()
         const auto after = bigVisible();
         check (after == before, "18h (2) no stray component after a pill tap in the Chat tab (the large visible components are the same set as before)", "before " + before.joinIntoString (" ; ") + " || after " + after.joinIntoString (" ; "));
         chipsOk ("18h (2) ...and the pills after the tap are still inside the transcript, none wider than 160 px");
+        // 21 Sep 2026 (loop manners): the tapped pill was [Go] - a level verb like every other: ONE bubble, the five pills, and NOTHING
+        // measures until Check (RED as it stood: "Applied - checking while it plays." then "Checking..." and a second proposal)
+#ifdef EJ_LOUDNESSLOOP_MANNERS21
+        { const auto goMsg = M.back();
+          check (goMsg.role == "assistant" && goMsg.content.startsWith ("Applied +") && goMsg.content.endsWith ("). How's it sounding?") && A::chips (*ed, goMsg).joinIntoString ("|") == "Check#2|A bit louder#2|A bit softer#2|Undo#2|Done#2" && loop.state() == LoudnessLoop::State::hold,
+                 "21 Sep (Go) the [Go] tap answers \"Applied +X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] and the loop holds", goMsg.content.substring (0, 90) + " | " + A::chips (*ed, goMsg).joinIntoString ("|") + " | state " + juce::String ((int) loop.state()));
+          juce::Random rng (12); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; logs.clear(); const size_t nMsgs = M.size();
+          for (int b = 0; b < 800; ++b) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((b % 23) == 22) loop.tickNow(); }
+          pumpMs (100);
+          check (loop.state() == LoudnessLoop::State::hold && ! logs.joinIntoString ("\n").contains ("measured:") && M.size() == nMsgs, "21 Sep (Go) 8 s of audio after Go: nothing measured, no new bubble, the loop holds until Check", "state " + juce::String ((int) loop.state()) + " msgs +" + juce::String ((int) (M.size() - nMsgs))); }
+#else
+        check (false, "21 Sep (Go) the [Go] tap answers \"Applied +X dB (Level now +Y). How's it sounding?\" with [Check] [A bit louder] [A bit softer] [Undo] [Done] and the loop holds", "no MANNERS21 on this build: " + M.back().content.substring (0, 80));
+        check (false, "21 Sep (Go) 8 s of audio after Go: nothing measured, no new bubble, the loop holds until Check", "no MANNERS21 on this build");
+#endif
         // (3)+(4): the verbs after a Go: "Applied +-X dB (Level now +Y). How's it sounding?" with exactly the five pills, no auto-check
         // (the tapped pill above was [Go] - the first pill - so the loop is checking; let it finish on audio)
         { juce::Random rng (8); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; int b = 0;

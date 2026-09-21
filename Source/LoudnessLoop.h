@@ -3,6 +3,7 @@
 #define EJ_LOUDNESSLOOP_V2 1          // 18e: the Level slot, max short-term, ask-before-apply, the verbs, EJLoudness lines
 #define EJ_LOUDNESSLOOP_PILLS 1       // 18f: bubbles carry their verbs as pills; the quiet-window and back-off asks
 #define EJ_LOUDNESSLOOP_MANNERS 1     // 18g: explicit Listen / Check, +-1 dB with step scaling and 3 proposals, Done, GR estimate, ceiling-readback safety net
+#define EJ_LOUDNESSLOOP_MANNERS21 1  // 21 Sep: Go is a level verb ("Applied +X dB (Level now +Y). How's it sounding?"); NO automatic check after it - nothing measures until Check; a proposal after any apply carries [Undo]
 #define EJ_LOUDNESSLOOP_VERBS18H 1    // 18h: a level verb applies and asks "How's it sounding?" (no auto-check); Push it only when short; peak GR estimate
 // LoudnessLoop v2 (18e, 19 Sep 2026): deterministic inside V2, no server round-trip.
 //
@@ -39,8 +40,9 @@
 class LoudnessLoop : private juce::Timer
 {
 public:
-    // 18g: armed = waiting for Listen (no window runs on the first audio); askCheck = after Go the audio stopped, waiting for Check
-    enum class State { idle, waitAudio, measuring, proposed, hold, tracking, quietAsked, armed, askCheck };
+    // 18g: armed = waiting for Listen (no window runs on the first audio). 21 Sep: the after-Go waiting state is gone - after Go the
+    // loop HOLDS like after any other level verb; the user presses Check (the "one automatic check if audio continues" branch was removed, not gated)
+    enum class State { idle, waitAudio, measuring, proposed, hold, tracking, quietAsked, armed };
     // 18f: kind decides the editor's treatment - progress bubbles ("Listening..." / "Checking...") replace the previous
     // PROGRESS bubble only; every other bubble is history and stays. pills = the verbs the bubble offers, in order; a pill
     // tap runs the same handler as the typed words (PluginEditor::handleLoudnessVerb).
@@ -57,6 +59,7 @@ public:
     static juce::StringArray armPills()      { return { "Listen" }; }
     static juce::StringArray checkPills()    { return { "Check" }; }
     static juce::StringArray proposalPills() { return { "Go", "Leave it" }; }
+    static juce::StringArray proposalAfterApplyPills() { return { "Go", "Leave it", "Undo" }; }   // 21 Sep: a proposal that follows ANY prior apply
     static juce::StringArray stuckPills()    { return { "Push it", "Leave it" }; }
     static juce::StringArray quietPills()    { return { "Listen again", "This is the loudest part" }; }
     static juce::StringArray backoffPills()  { return { "Back off", "Leave it" }; }
@@ -70,7 +73,6 @@ public:
     static constexpr float kCloseEnoughDb    = 1.0f;     // 18g: on target = within +-1.0 dB (was 0.5)
     static constexpr int   kMaxProposals     = 3;        // 18g: at most 3 proposals, then the result bubble (was 4 rounds)
     static constexpr float kRatioMin         = 0.5f, kRatioMax = 2.0f;   // 18g: achieved/commanded clamp for the step scaling
-    static constexpr int   kAutoCheckTicks   = 8;        // 18g: after Go, this many 250 ms ticks with no counted audio -> "Tap Check" (2 s of wall time in the plugin; ticks in a harness)
     static constexpr float kGrOfferDb        = 6.0f;
     static constexpr int   kWaitWallMs       = 60000;
     static constexpr int   kTickMs           = 250;
@@ -237,7 +239,7 @@ public:
     {
         if (level (slot_) == nullptr) return false;
         if (state_ == State::waitAudio || state_ == State::measuring || state_ == State::proposed) return false;
-        quietMeasured_ = std::numeric_limits<float>::quiet_NaN(); autoCheck_ = false; proposals_ = 0; lastCommanded_ = 0.0f;   // a fresh listen is a fresh sequence
+        quietMeasured_ = std::numeric_limits<float>::quiet_NaN(); continueAfterGo_ = false; proposals_ = 0; lastCommanded_ = 0.0f;   // a fresh listen is a fresh sequence
         startWindow();
         emit ("Listening...", 0.0f, true, false, Bubble::Kind::progress);
         if (! isTimerRunning()) startTimer (kTickMs);
@@ -248,7 +250,8 @@ public:
         // "Tap Check" prompt, or from the watch; not while a window already runs or a proposal is open
         if (level (slot_) == nullptr) return false;
         if (state_ == State::waitAudio || state_ == State::measuring || state_ == State::proposed || state_ == State::armed) return false;
-        autoCheck_ = false; reportOnly_ = true; startWindow();
+        reportOnly_ = ! continueAfterGo_; continueAfterGo_ = false;   // 21 Sep: after Go the Check continues the sequence (a proposal may follow); after any other verb it reports
+        startWindow();
         emit ("Checking...", 0.0f, true, false, Bubble::Kind::progress);
         if (! isTimerRunning()) startTimer (kTickMs);
         return true;
@@ -257,7 +260,7 @@ public:
     bool done()
     {
         if (slot_ < 0) return false;
-        state_ = State::hold; stopTimer(); pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; autoCheck_ = false;
+        state_ = State::hold; stopTimer(); pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false;
         log ("done: Level " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS - the loop is finished");
         emit ("Done - Level " + fmtSigned (currentGainDb()) + " dB, last measured " + fmt (lastMeasured()) + " LUFS. Say listen to measure again.", -1.0f, false, true, Bubble::Kind::result);
         return true;
@@ -272,12 +275,15 @@ public:
             applyTrim (pendingTrim_, pendingKind_ == PendingKind::backOff ? "back-off applied" : "push applied");
         }
         else applyTrim (pendingTrim_, "applied on go");
+        applied_ = true;   // 21 Sep: a USER apply - every proposal from here carries [Undo] (the arm-time exact apply is not one)
         ++round_;
         pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none;
-        // 18g (item 1): one AUTOMATIC check if counted audio continues; if none arrives within kAutoCheckTicks -> "Tap Check"
-        startWindow(); autoCheck_ = true; zeroTicks_ = 0;
-        emit ("Applied - checking while it plays.", -1.0f, false, false, Bubble::Kind::info);
-        if (! isTimerRunning()) startTimer (kTickMs);
+        // 21 Sep 2026 (Sean's ruling): Go is a level verb like every other - the Level moved, ONE bubble asks how it sounds and NOTHING
+        // measures until the user presses Check. The next Check continues the sequence (round_, proposals_, the step scaling), so
+        // it may propose again; that proposal carries [Undo]. (The 18g "one automatic check if audio continues" branch is removed.)
+        continueAfterGo_ = true; reportOnly_ = false;
+        state_ = State::hold; stopTimer();
+        emit ("Applied " + fmtSigned (appliedDelta_) + " dB (Level now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
         return true;
     }
     // 18f: the quiet-window answers
@@ -304,14 +310,14 @@ public:
         auto* lv = level (slot_); if (lv == nullptr || ! std::isfinite (lastMeasured())) return false;
         const float shortfall = target_ - lastMeasured();
         const float trim = juce::jlimit (-kPassClampDb, kPassClampDb, shortfall);
-        applyTrim (trim, "push it");
+        applyTrim (trim, "push it"); applied_ = true;
         afterVerb (trim);
         return true;
     }
     // 18h (item 4): every level verb ends here - the Level moved, ONE bubble asks how it sounds, nothing measures until Check
     void afterVerb (float deltaDb)
     {
-        round_ = 0; proposals_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; autoCheck_ = false; lastCommanded_ = 0.0f;
+        round_ = 0; proposals_ = 0; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false; lastCommanded_ = 0.0f;
         state_ = State::hold; stopTimer();
         emit ("Applied " + fmtSigned (deltaDb) + " dB (Level now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
     }
@@ -321,14 +327,14 @@ public:
         target_ += deltaDb;
         log ("target nudged " + fmtSigned (deltaDb) + " dB -> " + fmt (target_) + " LUFS");
         // 18g/18h: the nudge IS the move - the Level moves by +-1 now; 18h: no automatic check, the bubble asks how it sounds
-        applyTrim (deltaDb, deltaDb > 0 ? "a bit louder" : "a bit softer");
+        applyTrim (deltaDb, deltaDb > 0 ? "a bit louder" : "a bit softer"); applied_ = true;
         afterVerb (deltaDb);
     }
     void recheck()                 // "check the level again" = Check (18h): one window, a report with the result pills
     {
         if (level (slot_) == nullptr) return;
         if (state_ == State::waitAudio || state_ == State::measuring) return;
-        round_ = 0; proposals_ = 0; lastCommanded_ = 0.0f; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; autoCheck_ = false; reportOnly_ = true;
+        round_ = 0; proposals_ = 0; lastCommanded_ = 0.0f; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false; reportOnly_ = true;
         startWindow();
         emit ("Checking the level again - play the loudest part.", -1.0f, false, false, Bubble::Kind::info);
         if (! isTimerRunning()) startTimer (kTickMs);
@@ -393,7 +399,7 @@ public:
         // the Level card's GR row: the EchoJay Limiter's real GR, else the estimate (18g item 4)
         if (auto* lim = echoJayLimiter()) lv->setDownstreamGrDb (-lim->gainReductionDb(), false);
         else if (estN_ > 0) lv->setDownstreamGrDb (grEstimateDb(), true);
-        if (state_ != State::waitAudio && state_ != State::measuring && state_ != State::tracking) return;   // armed / askCheck / proposed / hold / quietAsked: nothing runs on its own
+        if (state_ != State::waitAudio && state_ != State::measuring && state_ != State::tracking) return;   // armed / proposed / hold / quietAsked: nothing runs on its own
         const auto out = host_.getChainOutLevels();
         const float counted = out.heardAboveSeconds;
         if (counted > lastCounted_ + 0.05f)
@@ -406,15 +412,6 @@ public:
                 if (std::isfinite (lvOut) && std::isfinite (chOut)) { const float e = lvOut - chOut; estSum_ += e; ++estN_; estMax_ = juce::jmax (estMax_, e); }
             }
             if (state_ == State::waitAudio) state_ = State::measuring;
-            zeroTicks_ = 0;
-        }
-        else if (autoCheck_ && (state_ == State::waitAudio || state_ == State::measuring) && counted < kNeedSeconds && ++zeroTicks_ >= kAutoCheckTicks)
-        {   // 18g (item 1): after Go the audio STALLED before a full window (the tally's first hops after a stop still read the
-            // tail of the loud audio, so the test is "no new counted audio for kAutoCheckTicks", not "none at all") - ask for Check
-            autoCheck_ = false; state_ = State::askCheck;
-            log ("after go: no new counted audio for " + juce::String (kAutoCheckTicks) + " ticks (" + fmt (counted) + " s counted) - asking for Check");
-            emit ("Tap Check when the loud part is playing.", -1.0f, false, false, Bubble::Kind::info, checkPills());
-            return;
         }
         lastCounted_ = counted;
         if (state_ == State::tracking)
@@ -502,7 +499,7 @@ public:
             return;
         }
         pendingTrim_ = trim; pendingKind_ = PendingKind::propose; state_ = State::proposed; stopTimer(); ++proposals_;
-        emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). Push " + fmtSigned (trim) + " dB to reach " + fmt (target_) + "?" + (atCeiling ? " (that is the Level slot's limit)" : "") + " " + grText, -1.0f, false, false, Bubble::Kind::proposal, proposalPills());
+        emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). Push " + fmtSigned (trim) + " dB to reach " + fmt (target_) + "?" + (atCeiling ? " (that is the Level slot's limit)" : "") + " " + grText, -1.0f, false, false, Bubble::Kind::proposal, applied_ ? proposalAfterApplyPills() : proposalPills());
     }
 
 private:
@@ -540,7 +537,7 @@ private:
         if (auto* lv = level (slot_)) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
         lastCounted_ = 0.0f; waitingSaid_ = false; passStartMs_ = nowMs();
         grMin_ = std::numeric_limits<float>::max(); grMax_ = 0.0f; grSum_ = 0.0f; grN_ = 0;
-        estSum_ = 0.0f; estN_ = 0; estMax_ = 0.0f; zeroTicks_ = 0;
+        estSum_ = 0.0f; estN_ = 0; estMax_ = 0.0f;
         state_ = State::waitAudio;
     }
     void startTracking()
@@ -553,6 +550,7 @@ private:
         auto* lv = level (slot_); if (lv == nullptr) return;
         lastCommanded_ = trim; prevMeasured_ = lastMeasured_;   // 18g (item 2): the next proposal scales its step by achieved/commanded
         const float newDb = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, (float) lv->gainDb() + trim);
+        appliedDelta_ = newDb - (float) lv->gainDb();   // 21 Sep: the delta the after-verb bubble reports
         log (juce::String (why) + ": Level " + fmtSigned ((float) lv->gainDb()) + " -> " + fmtSigned (newDb) + " dB (trim " + fmtSigned (trim) + ")");
         writeGainDb (newDb);
     }
@@ -591,7 +589,8 @@ private:
     // 18g
     int   proposals_ = 0;                                              // proposals made since arm (cap kMaxProposals)
     float lastCommanded_ = 0.0f, prevMeasured_ = std::numeric_limits<float>::quiet_NaN();   // the previous pass, for the step scaling
-    bool  autoCheck_ = false; int zeroTicks_ = 0;                      // after Go: one automatic check, else "Tap Check"
+    bool  continueAfterGo_ = false;                                    // 21 Sep: the Check after Go continues the sequence (may propose); after other verbs a Check reports
+    bool  applied_ = false; float appliedDelta_ = 0.0f;                // 21 Sep: any apply so far -> proposals carry [Undo]; the last apply's real delta (after the clamp)
     bool  reportOnly_ = false;                                         // 18h: a Check reports (result pills), never proposes
     float estSum_ = 0.0f, estMax_ = 0.0f; int estN_ = 0;               // third-party limiter GR estimate over the window
 };
