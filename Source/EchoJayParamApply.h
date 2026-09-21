@@ -607,6 +607,7 @@ inline juce::String normNameServerRule (const juce::String& raw)
 // NOT dialled at the guessed index: the caller logs "EJMap: unresolved <plugin> <control>" and declines. An entry with no name
 // at all (an old flat map) keeps its index, said in `how`.
 #define EJ_LAND_BY_NAME 1
+#define EJ_STEPPED_POSITIONS 1   // round (c), 21 Sep 2026: positions by panel text / number / index, snap to a detent, verify the text; anchored+steps snaps
 extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm (the log every harness and both plugins link)
 inline juce::String normalizeControlName (const juce::String& raw);   // defined below (the controls pass)
 inline int resolveParamIndex (juce::AudioPluginInstance& plugin, const juce::var& entry, const juce::String& semantic, juce::String& how)
@@ -742,17 +743,54 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
 
     if (kind == "position")
     {
-        // value is a 1-based position; convert to 0..1 across steps.
-        float pos;
-        if (! semanticToFloat (value, pos)) { r.note = "bad position value"; return r; }
+        // Round (c), 21 Sep 2026: a stepped control is dialled by POSITION. The map may carry `positions` (the panel texts by
+        // position, from the probe's per-step read); the value is then resolved as a panel text ("off"), as a number the text
+        // carries ("60" -> "60Hz", via the same unit parse the readback uses), or as a bare 1-based index - and an unknown
+        // position is REFUSED, never clamped to the last detent. With positions the landed text is verified against the
+        // position's text and a mismatch reverts; without them the norm round-trip is all that can be checked, as before.
         const int steps = juce::jmax (2, (int) mapEntry.getProperty ("steps", 2));
-        const int p = juce::jlimit (1, steps, (int) std::round (pos));
+        juce::StringArray positions; if (auto* pa = mapEntry.getProperty ("positions", juce::var()).getArray()) for (const auto& t : *pa) positions.add (t.toString().trim());
+        const bool havePositions = positions.size() == steps;
+        auto flatText = [] (const juce::String& t) { return t.removeCharacters (" \t").toLowerCase(); };
+        int p = -1;
+        float pos = 0.0f;
+        const bool numeric = semanticToFloat (value, pos);
+        if (havePositions)
+        {
+            const auto asked = value.toString().trim();
+            for (int i = 0; i < positions.size() && p < 0; ++i) if (flatText (positions[i]) == flatText (asked)) p = i + 1;   // the panel text itself
+            if (p < 0 && numeric)
+            {   // a number the panel text carries: "60" against "60Hz", "-12" against "-12 dB"
+                for (int i = 0; i < positions.size() && p < 0; ++i)
+                {
+                    const auto lead = positions[i].trim().retainCharacters ("0123456789.-+");
+                    if (lead.isNotEmpty() && lead.containsAnyOf ("0123456789") && std::abs (lead.getFloatValue() - pos) < 0.001f) p = i + 1;
+                }
+                if (p < 0 && ! value.isString() && pos >= 1.0f && pos <= (float) steps && std::abs (pos - std::round (pos)) < 0.001f)
+                    p = (int) std::round (pos);   // a bare 1-based index (a number a position text carries was tried first, so "2" on {1|2|3} means the text)
+            }
+            if (p < 0) { r.note = "unknown position \"" + asked + "\" (this control has " + positions.joinIntoString (" | ") + ")"; return r; }
+        }
+        else
+        {
+            if (! numeric) { r.note = "bad position value"; return r; }
+            p = juce::jlimit (1, steps, (int) std::round (pos));
+        }
         norm = (float) (p - 1) / (float) (steps - 1);
         writeNorm (norm);
         r.landedText = param->getCurrentValueAsText();
+        const bool normOk = std::abs (param->getValue() - norm) <= 0.5f / (float) (steps - 1);
+        if (havePositions)
+        {
+            const bool textOk = flatText (r.landedText) == flatText (positions[p - 1]);
+            if (normOk && textOk) { r.applied = true; r.normalized = norm; r.note = "position " + juce::String (p) + " of " + juce::String (steps) + " set, reads \"" + r.landedText.trim() + "\""; }
+            else if (staleDisplayReads) { r.applied = true; r.normalized = norm; r.staleDisplayKept = true; r.note = "position " + juce::String (p) + " of " + juce::String (steps) + " written; readback cannot be confirmed in-stack on this bridged plugin"; }
+            else { revert(); r.readbackMismatch = true; r.note = "asked position " + juce::String (p) + " (\"" + positions[p - 1] + "\"), plugin shows \"" + r.landedText.trim() + "\", value restored"; }
+            return r;
+        }
         // Positions carry no display expectation: norm round-trip proves
         // addressability only, and the result says so.
-        if (std::abs (param->getValue() - norm) <= 0.5f / (float) (steps - 1))
+        if (normOk)
         {
             r.applied = true;
             r.normalized = norm;
@@ -932,7 +970,8 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     // control: the cost is one refused write with the anchor values printed,
     // against a wrong write that reports success.
     const auto ladderVerdict = checkStepLadder (eff.table, target);
-    if (ladderVerdict.isLadder && ! ladderVerdict.onRung)
+    const int stepsDeclared = (int) mapEntry.getProperty ("steps", 0);   // round (c): a declared detent count SNAPS instead of refusing an off-rung value
+    if (ladderVerdict.isLadder && ! ladderVerdict.onRung && stepsDeclared < 2)
     {
         r.note = ladderVerdict.note;
         return r;
@@ -944,6 +983,11 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     if (ladderVerdict.onRung) target = ladderVerdict.snapped;
 
     norm = juce::jlimit (0.0f, 1.0f, interpolateAnchors (eff.table, target));
+    {   // Round (c), 21 Sep 2026: an anchored entry that carries `steps` (the plugin reports a discrete parameter) SNAPS to the
+        // nearest detent after interpolation - a value between detents is not a setting the panel can show.
+        const int stepsA = (int) mapEntry.getProperty ("steps", 0);
+        if (stepsA >= 2) norm = (float) std::round (norm * (float) (stepsA - 1)) / (float) (stepsA - 1);
+    }
     writeNorm (norm);
     r.normalized = norm;
     r.landedText = param->getCurrentValueAsText();
