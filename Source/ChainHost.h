@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginScanner.h"
+#include "EchoJayParamApply.h"   // 21 Sep 2026: the settle job keeps echojay::ApplyResult between message-loop ticks
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
@@ -2169,6 +2170,14 @@ private:
     // "after a chain edit settles" refresh point, reached through the same
     // debounce as everything else, so a burst of edit ops captures once at
     // the end rather than once per op.
+    // SETTLED READ-BACK (21 Sep 2026 ruling): results whose immediate read mismatched are re-read on a later message-loop tick
+    // (one tick minimum, bounded at 250 ms) and only then reverted; the ledger is re-recorded from the settled results.
+    struct SettleJob { int slot = -1; juce::var map; juce::Array<echojay::ApplyResult> results; juce::int64 t0 = 0; int ticks = 0; };
+    std::vector<SettleJob> settleJobs_;
+    std::shared_ptr<std::atomic<bool>> settleAlive_ = std::make_shared<std::atomic<bool>> (true);
+    void scheduleSettleTick(int delayMs);
+    void settleTick();
+    static constexpr int kSettleBoundMs = 250;
     void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed);
                                         noteHostedChange(); }
 

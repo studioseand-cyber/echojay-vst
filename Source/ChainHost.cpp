@@ -818,6 +818,7 @@ static std::vector<juce::AudioProcessorGraph::Node::Ptr>& leakedNodeStore()
 
 ChainHost::~ChainHost()
 {
+    *settleAlive_ = false;   // a settle tick that fires after this dies must not touch us
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
 
@@ -2541,20 +2542,63 @@ ChainHost::applyStructuredSettings (int slotIndex,
     // in-stack display read is pre-write, so display verification demotes
     // to norm round-trip instead of reverting correct work. Unknown or
     // unreadable components read native (EchoJayBridgedAU.h).
-    const bool staleDisplayReads = echojay::auComponentIsBridged (slot.desc);
-    if (staleDisplayReads)
-        EchoJay_NSLog(("EJDial: \"" + slot.desc.name
-                       + "\" is a bridged AU (no arm64 slice); display readback "
-                         "demoted to norm round-trip, mismatches reported not reverted").toRawUTF8());
-
-    auto results = echojay::applySettings (*instance, map, structuredSettings, staleDisplayReads);
+    // 21 Sep 2026 ruling: no bridged special case - every plugin gets the settled read-back (a WaveShell AU's reads are one write
+    // behind until the message loop runs; the immediate verdict used to revert a correct write as "did not stick").
+    auto results = echojay::applySettings (*instance, map, structuredSettings);
     for (auto& r : results)
         out.push_back ({ r.semantic, r.applied, r.normalized, r.note,
                          r.landedText, r.displayVerified, r.readbackMismatch,
                          r.staleDisplayKept, r.requestedValue, r.outOfRange,
                          r.index, r.anchorsUnverified, r.beforeText });
+    int pending = 0; for (const auto& r : results) if (r.pendingSettle) ++pending;
+    if (pending > 0)
+    {
+        EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + slot.desc.name + "\"): " + juce::String(pending)
+                       + " write(s) mismatched on the immediate read - verifying after a message-loop settle (bound " + juce::String(kSettleBoundMs) + " ms)").toRawUTF8());
+        SettleJob job; job.slot = slotIndex; job.map = map; job.results = results; job.t0 = juce::Time::currentTimeMillis();
+        settleJobs_.push_back (std::move (job));
+        scheduleSettleTick (0);   // the next message-loop tick, never this one
+    }
 
     return out;
+}
+
+void ChainHost::scheduleSettleTick(int delayMs)
+{
+    auto alive = settleAlive_;
+    auto fire = [this, alive] { if (*alive) settleTick(); };
+    if (delayMs <= 0) juce::MessageManager::callAsync (fire);
+    else juce::Timer::callAfterDelay (delayMs, fire);
+}
+
+void ChainHost::settleTick()
+{
+    const auto now = juce::Time::currentTimeMillis();
+    bool again = false;
+    for (auto it = settleJobs_.begin(); it != settleJobs_.end();)
+    {
+        auto& job = *it; ++job.ticks;
+        juce::AudioPluginInstance* instance = nullptr;
+        if (job.slot >= 0 && job.slot < (int) slots_.size() && slots_[(size_t) job.slot].node != nullptr)
+            instance = dynamic_cast<juce::AudioPluginInstance*> (slots_[(size_t) job.slot].node->getProcessor());
+        if (instance == nullptr) { it = settleJobs_.erase (it); continue; }   // the slot went away: nothing to verify or restore
+        const bool finalAttempt = (now - job.t0) >= kSettleBoundMs;
+        const int stillPending = echojay::settleVerify (*instance, job.results, finalAttempt);
+        if (stillPending > 0 && ! finalAttempt) { again = true; ++it; continue; }
+        // settled: re-record the ledger from the settled results (the same derivation the immediate report used)
+        std::vector<ApplyReport> report;
+        for (auto& r : job.results)
+            report.push_back ({ r.semantic, r.applied, r.normalized, r.note,
+                                r.landedText, r.displayVerified, r.readbackMismatch,
+                                r.staleDisplayKept, r.requestedValue, r.outOfRange,
+                                r.index, r.anchorsUnverified, r.beforeText });
+        int reverted = 0; for (const auto& r : job.results) if (r.readbackMismatch) ++reverted;
+        EchoJay_NSLog(("EJParamApply: slot " + juce::String(job.slot) + " settled after " + juce::String((int) (now - job.t0)) + " ms / "
+                       + juce::String(job.ticks) + " tick(s): " + juce::String((int) report.size()) + " result(s), " + juce::String(reverted) + " reverted").toRawUTF8());
+        if (job.slot < (int) slots_.size()) { recordApplyReport (job.slot, job.map, report); bumpChainRevision(); }
+        it = settleJobs_.erase (it);
+    }
+    if (again) scheduleSettleTick (30);
 }
 
 void ChainHost::removeSlot(int i)

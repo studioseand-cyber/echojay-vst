@@ -62,8 +62,17 @@ juce::var mapOf (const char* plugin, std::initializer_list<std::pair<const char*
     auto* m = new juce::DynamicObject(); m->setProperty ("plugin", plugin); m->setProperty ("controls", juce::var (c)); return juce::var (m);
 }
 juce::var ask (const char* name, const juce::var& value) { auto* r = new juce::DynamicObject(); r->setProperty (name, value); auto* s = new juce::DynamicObject(); s->setProperty ("controls", juce::var (r)); return juce::var (s); }
-echojay::ApplyResult one (juce::AudioPluginInstance& p, const juce::var& map, const char* name, const juce::var& value, bool stale = false)
-{ const auto rs = echojay::applySettings (p, map, ask (name, value), stale); for (const auto& r : rs) if (r.semantic == name) return r; return {}; }
+// the SHIPPING sequence (21 Sep 2026 ruling): write, then verify after a message-loop settle - a plugin whose reads are one write
+// behind (WaveShell) must not read as "did not stick". On a tree without the settle helper the immediate verdict stands (RED).
+echojay::ApplyResult one (juce::AudioPluginInstance& p, const juce::var& map, const char* name, const juce::var& value)
+{
+    auto rs = echojay::applySettings (p, map, ask (name, value));
+#ifdef EJ_SETTLED_READBACK
+    bool pending = false; for (const auto& r : rs) pending = pending || r.pendingSettle;
+    if (pending) { for (int k = 0; k < 12; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); } echojay::settleVerify (p, rs, true); }
+#endif
+    for (const auto& r : rs) if (r.semantic == name) return r; return {};
+}
 juce::String show (const echojay::ApplyResult& r) { return (r.applied ? "APPLIED" : "declined") + juce::String (" norm ") + juce::String (r.normalized, 3) + " text \"" + r.landedText + "\" note: " + r.note; }
 juce::String flat (juce::String s) { return s.removeCharacters (" ").toLowerCase(); }
 void pump (int ms) { for (int k = 0; k < ms / 20; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); } }   // the WaveShell AU's value/text reads settle on the message loop
@@ -109,17 +118,21 @@ int main()
             if (idx >= 0) { ps[idx]->setValueNotifyingHost (0.5f); pump (200); }   // start away from both asked positions
             std::printf ("  Analog at index %d, steps %d, panel texts at 0 / 0.5 / 1: %s\n", idx, idx >= 0 ? ps[idx]->getNumSteps() : -1, panel.joinIntoString (" / ").toRawUTF8());
             const auto map = mapOf ("CLA-76 (m)", { { "Analog", positionEntry ("Analog", idx, panel.size() == 3 ? panel : analog) } });
-            // FLAG (21 Sep 2026, found by this leg): the WaveShell AU's value and text reads are ONE WRITE BEHIND until the message loop
-            // runs - a native component, so ChainHost's staleDisplayReads gate (auComponentIsBridged) is off for it, and the immediate
-            // readback compares the PRE-write state: the existing anchored path reverts too (Ratio 8 -> "write did not stick"). The
-            // legs below therefore run with the stale-read setting (the write kept, "readback cannot be confirmed") and verify the panel
-            // after the AU settles; the in-host reading (stale off) is printed as a flag, not counted. Not this round's fix.
-            { auto rIn = one (*inst, map, "Analog", "off", false); pump (200);
-              std::printf ("  FLAG  in-host setting (stale reads off): Analog=off -> %s | panel after settle \"%s\" (the immediate readback was pre-write)\n", show (rIn).toRawUTF8(), ps[idx >= 0 ? idx : 0]->getCurrentValueAsText().trim().toRawUTF8()); ps[idx >= 0 ? idx : 0]->setValueNotifyingHost (0.5f); pump (200); }
-            auto r = one (*inst, map, "Analog", "off", true); pump (200); auto nowText = ps[idx >= 0 ? idx : 0]->getCurrentValueAsText().trim();
-            check (idx >= 0 && r.applied && flat (nowText) == "off" && r.normalized > 0.99f, "R1. \"off\" lands \"Off\" on the real Analog control (position 3 = norm 1.0 on this panel), panel text verified after the AU settled", show (r) + " | panel now \"" + nowText + "\"");
-            r = one (*inst, map, "Analog", 60, true); pump (200); nowText = ps[idx >= 0 ? idx : 0]->getCurrentValueAsText().trim();
-            check (idx >= 0 && r.applied && flat (nowText) == "60hz" && std::abs (r.normalized - 0.5f) < 0.01f, "R2. 60 lands \"60Hz\" on the real Analog control (position 2 = norm 0.5), panel text verified after the AU settled", show (r) + " | panel now \"" + nowText + "\"");
+            // 21 Sep 2026 ruling: the WaveShell AU's reads are ONE WRITE BEHIND until the message loop runs; verification of a landed
+            // value happens after a settle for EVERY plugin (one tick minimum, bounded 250 ms), on the shipping path - no test-only setting.
+            auto r = one (*inst, map, "Analog", "off"); pump (200); auto nowText = ps[idx >= 0 ? idx : 0]->getCurrentValueAsText().trim();
+            check (idx >= 0 && r.applied && ! r.readbackMismatch && flat (r.landedText) == "off" && flat (nowText) == "off" && r.normalized > 0.99f, "R1. \"off\" lands \"Off\" on the real Analog control with the SHIPPING setting (position 3 = norm 1.0 on this panel), verified after the settle, not reverted", show (r) + " | panel now \"" + nowText + "\"");
+            r = one (*inst, map, "Analog", 60); pump (200); nowText = ps[idx >= 0 ? idx : 0]->getCurrentValueAsText().trim();
+            check (idx >= 0 && r.applied && ! r.readbackMismatch && flat (r.landedText) == "60hz" && flat (nowText) == "60hz" && std::abs (r.normalized - 0.5f) < 0.01f, "R2. 60 lands \"60Hz\" on the real Analog control with the SHIPPING setting (position 2 = norm 0.5), verified after the settle, not reverted", show (r) + " | panel now \"" + nowText + "\"");
+            {   // A1: the EXISTING anchored path on the same plugin - Ratio 8 (the map's own anchors 20/12/8/4 at 0/.25/.5/.75)
+                auto* e = new juce::DynamicObject(); e->setProperty ("name", "Ratio"); e->setProperty ("index", 4); e->setProperty ("kind", "anchored"); e->setProperty ("trust", "setread");
+                juce::Array<juce::var> rg; rg.add (4.0); rg.add (20.0); e->setProperty ("range", rg);
+                juce::Array<juce::var> an; for (auto pr : { std::make_pair (20.0, 0.0), std::make_pair (12.0, 0.25), std::make_pair (8.0, 0.5), std::make_pair (4.0, 0.75) }) { juce::Array<juce::var> a; a.add (pr.first); a.add (pr.second); an.add (juce::var (a)); } e->setProperty ("anchors", an);
+                const auto rmap = mapOf ("CLA-76 (m)", { { "Ratio", juce::var (e) } });
+                ps[4]->setValueNotifyingHost (0.0f); pump (200);
+                auto ra = one (*inst, rmap, "Ratio", 8); pump (200);
+                check (ra.applied && ! ra.readbackMismatch && std::abs (ps[4]->getValue() - 0.5f) < 0.02f && flat (ps[4]->getCurrentValueAsText()) == "8", "A1. the anchored path on the real WaveShell AU: Ratio 8 lands (norm 0.5, panel \"8\") and is NOT reverted (RED as it stood: \"write did not stick\", value restored)", show (ra) + " | value " + juce::String (ps[4]->getValue(), 3) + " panel \"" + ps[4]->getCurrentValueAsText().trim() + "\"");
+            }
             inst.reset();
         }
     }

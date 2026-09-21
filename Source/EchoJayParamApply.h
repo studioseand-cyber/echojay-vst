@@ -63,6 +63,14 @@ struct ApplyResult
     juce::String landedText;
     bool         displayVerified  = false; // display text compared and matched
     bool         readbackMismatch = false; // landed wrong; value restored
+    // SETTLED READ-BACK (21 Sep 2026 ruling). A plugin whose reads are one write behind until the message loop runs (WaveShell)
+    // used to read as "did not stick" and be REVERTED on a correct write. Now an immediate mismatch marks the result pending:
+    // the write is kept, settleVerify() re-reads on a later message-loop tick (one tick minimum, bounded at 250 ms by the
+    // caller) and reverts only if the value still mismatches; the note then carries both reads.
+    bool         pendingSettle    = false;
+    float        settlePrevNorm   = 0.0f;  // what to restore if the settled read still mismatches
+    juce::String immediateText;            // the pre-settle read, for the note
+    std::function<bool (const juce::String& settledText, float settledNorm)> settleOk;   // the same test the immediate read failed
 
     /** THE MAP'S ANCHORS CAME FROM A DIFFERENT VERSION (26 Aug 2026).
 
@@ -607,6 +615,7 @@ inline juce::String normNameServerRule (const juce::String& raw)
 // NOT dialled at the guessed index: the caller logs "EJMap: unresolved <plugin> <control>" and declines. An entry with no name
 // at all (an old flat map) keeps its index, said in `how`.
 #define EJ_LAND_BY_NAME 1
+#define EJ_SETTLED_READBACK 1   // 21 Sep 2026 ruling: a landed value is verified AFTER a message-loop settle for every plugin; revert only if it still mismatches
 #define EJ_STEPPED_POSITIONS 1   // round (c), 21 Sep 2026: positions by panel text / number / index, snap to a detent, verify the text; anchored+steps snaps
 extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm (the log every harness and both plugins link)
 inline juce::String normalizeControlName (const juce::String& raw);   // defined below (the controls pass)
@@ -718,6 +727,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     }
 
     const auto kind = mapEntry.getProperty ("kind", "").toString();
+    juce::ignoreUnused (staleDisplayReads);   // 21 Sep 2026: the settled read-back replaced the bridged report-only rule for every plugin
 
     // Every write is read back before success is claimed. The pre-write
     // value is captured so a write that LANDS WRONG can be reverted: a knob
@@ -738,6 +748,13 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         param->endChangeGesture();
     };
     auto revert = [&writeNorm, prevNorm] () { writeNorm (prevNorm); };
+    // an immediate mismatch is DEFERRED, not reverted: the write stays, settleVerify() decides after the plugin has had a message-loop turn
+    auto defer = [&r, prevNorm] (const juce::String& why, std::function<bool (const juce::String&, float)> ok)
+    {
+        r.applied = true; r.pendingSettle = true; r.settlePrevNorm = prevNorm; r.immediateText = r.landedText; r.settleOk = std::move (ok);
+        r.note = "written; " + why + " on the immediate read - verifying after a message-loop settle";
+    };
+    juce::ignoreUnused (revert);
 
     float norm = 0.0f;
 
@@ -784,8 +801,13 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         {
             const bool textOk = flatText (r.landedText) == flatText (positions[p - 1]);
             if (normOk && textOk) { r.applied = true; r.normalized = norm; r.note = "position " + juce::String (p) + " of " + juce::String (steps) + " set, reads \"" + r.landedText.trim() + "\""; }
-            else if (staleDisplayReads) { r.applied = true; r.normalized = norm; r.staleDisplayKept = true; r.note = "position " + juce::String (p) + " of " + juce::String (steps) + " written; readback cannot be confirmed in-stack on this bridged plugin"; }
-            else { revert(); r.readbackMismatch = true; r.note = "asked position " + juce::String (p) + " (\"" + positions[p - 1] + "\"), plugin shows \"" + r.landedText.trim() + "\", value restored"; }
+            else
+            {
+                r.normalized = norm;
+                const auto want = positions[p - 1]; const float tol = 0.5f / (float) (steps - 1);
+                defer ("asked position " + juce::String (p) + " (\"" + want + "\"), plugin shows \"" + r.landedText.trim() + "\"",
+                       [want, norm, tol, flatText] (const juce::String& t, float v) { return flatText (t) == flatText (want) && std::abs (v - norm) <= tol; });
+            }
             return r;
         }
         // Positions carry no display expectation: norm round-trip proves
@@ -796,21 +818,11 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.normalized = norm;
             r.note = "position set (display unverifiable)";
         }
-        else if (staleDisplayReads)
-        {
-            // Same measured fact as the setread path: in-stack value reads
-            // are pre-write on the bridge.
-            r.applied = true;
-            r.normalized = norm;
-            r.staleDisplayKept = true;
-            r.note = "position written; readback cannot be confirmed in-stack "
-                     "on this bridged plugin";
-        }
         else
         {
-            revert();
-            r.readbackMismatch = true;
-            r.note = "position write did not stick, value restored";
+            r.normalized = norm;
+            const float tol = 0.5f / (float) (steps - 1);
+            defer ("position write did not round-trip", [norm, tol] (const juce::String&, float v) { return std::abs (v - norm) <= tol; });
         }
         return r;
     }
@@ -847,7 +859,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.displayVerified = true;
             r.note = "applied, reads \"" + r.landedText + "\"";
         }
-        else if (labelsAreForeign && ! staleDisplayReads)
+        else if (labelsAreForeign)
         {
             // BORROWED LABELS (29 Aug 2026). These label strings were measured
             // on a DIFFERENT binary - the sibling named by joined_from - and
@@ -891,34 +903,16 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             }
             else
             {
-                revert();
-                r.readbackMismatch = true;
-                r.note = "asked \"" + matched + "\", write did not stick, value restored";
+                r.normalized = labelNorm;
+                defer ("asked \"" + matched + "\", the norm did not round-trip", [labelNorm] (const juce::String&, float v) { return std::abs (v - labelNorm) <= 0.02f; });
             }
-        }
-        else if (staleDisplayReads)
-        {
-            // BRIDGED INSTANCE, report-only (10 Aug 2026, option a of
-            // DEFECT_BRIDGED_READBACK): every in-stack read is PRE-write on
-            // the bridge. The filing assumed the norm cache updates
-            // synchronously; MEASURED 10 Aug on API-2500 through this very
-            // path, it does not - getValue() right after the write returned
-            // the pre-write norm too. So nothing in this stack frame can
-            // verify OR falsify the write; reverting on a read that is
-            // stale by construction undoes correct work deterministically
-            // (the filing, 3 of 3). Keep the write, say what is known, and
-            // leave verification to the settle machinery downstream.
-            r.applied = true;
-            r.normalized = labelNorm;
-            r.staleDisplayKept = true;
-            r.note = "written \"" + matched + "\"; readback cannot be confirmed "
-                     "in-stack on this bridged plugin";
         }
         else
         {
-            revert();
-            r.readbackMismatch = true;
-            r.note = "asked \"" + matched + "\", plugin shows \"" + r.landedText + "\", value restored";
+            r.normalized = labelNorm;
+            defer ("asked \"" + matched + "\", plugin shows \"" + r.landedText + "\"",
+                   [matched, ciOk, labelNorm, labelsAreForeign] (const juce::String& t, float v)
+                   { const auto tt = t.trim(); return (tt == matched || (ciOk && tt.equalsIgnoreCase (matched))) || (labelsAreForeign && std::abs (v - labelNorm) <= 0.02f); });
         }
         return r;
     }
@@ -1014,29 +1008,9 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             r.applied = true;
             r.note = "applied (display unverifiable on this plugin)";
         }
-        else if (staleDisplayReads)
-        {
-            // The filing called setread entries immune ("the norm cache
-            // updates synchronously"); MEASURED 10 Aug on API-2500: the
-            // in-stack getValue() is pre-write on the bridge too. Same
-            // report-only rule as the display paths.
-            r.applied = true;
-            r.staleDisplayKept = true;
-            // The captured text is a PRE-WRITE read on this path, by the
-            // same measurement that keeps the write: carrying it forward
-            // printed landed "4.00" for writes of 0.000 and 1.000 (12 Aug,
-            // CLA-76) on a line already saying readback cannot be
-            // confirmed. There is no post-write reader in-stack, so the
-            // honest value is none.
-            r.landedText.clear();
-            r.note = "written; readback cannot be confirmed in-stack on this "
-                     "bridged plugin";
-        }
         else
         {
-            revert();
-            r.readbackMismatch = true;
-            r.note = "write did not stick (norm round-trip failed), value restored";
+            defer ("the norm did not round-trip", [norm] (const juce::String&, float v) { return std::abs (v - norm) <= 0.02f; });
         }
         return r;
     }
@@ -1061,29 +1035,43 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         r.applied = true;
         r.note = "applied (read-back unparseable: \"" + r.landedText.trim() + "\")";
     }
-    else if (staleDisplayReads)
-    {
-        // Same bridged report-only rule as the mode path above: every
-        // in-stack read (display AND norm, measured) is pre-write on the
-        // bridge, so a revert here can only undo correct work.
-        r.applied = true;
-        r.staleDisplayKept = true;
-        // Same rule as the setread branch: the text was read pre-write, so
-        // it must not travel as a landing.
-        r.landedText.clear();
-        r.note = "written; readback cannot be confirmed in-stack on this "
-                 "bridged plugin";
-    }
     else
     {
-        revert();
-        r.applied = false;
-        r.readbackMismatch = true;
-        r.note = "asked " + juce::String (expected, 2) + " "
-               + (unitOverride.isNotEmpty() ? unitOverride : semanticUnit (semantic))
-               + ", plugin shows \"" + r.landedText.trim() + "\", value restored";
+        const auto table = eff.table; const auto sem = semantic; const auto uo = unitOverride; const float exp = expected;
+        defer ("asked " + juce::String (expected, 2) + " " + (unitOverride.isNotEmpty() ? unitOverride : semanticUnit (semantic)) + ", plugin shows \"" + r.landedText.trim() + "\"",
+               [sem, exp, table, uo] (const juce::String& t, float) { return typedReadbackMatch (sem, exp, t, table, uo) > 0; });
     }
     return r;
+}
+
+// SETTLED READ-BACK (21 Sep 2026 ruling): re-read every pending result after the plugin has had a message-loop turn. The
+// caller (ChainHost) schedules this on a later tick - one tick minimum, bounded at 250 ms - and passes finalAttempt on the last
+// one; a harness pumps the run loop itself. Returns how many results are still pending.
+inline int settleVerify (juce::AudioPluginInstance& plugin, juce::Array<ApplyResult>& results, bool finalAttempt)
+{
+    int stillPending = 0;
+    auto& params = plugin.getParameters();
+    for (auto& r : results)
+    {
+        if (! r.pendingSettle) continue;
+        auto* param = (r.index >= 0 && r.index < params.size()) ? params[r.index] : nullptr;
+        if (param == nullptr) { r.pendingSettle = false; r.applied = false; r.readbackMismatch = true; r.note += "; parameter vanished before the settle"; continue; }
+        const auto text = param->getCurrentValueAsText(); const float v = param->getValue();
+        const bool ok = r.settleOk ? r.settleOk (text, v) : std::abs (v - r.normalized) <= 0.02f;
+        if (ok)
+        {
+            r.pendingSettle = false; r.applied = true; r.landedText = text; r.displayVerified = r.settleOk != nullptr;
+            r.note = "applied after settle, reads \"" + text.trim() + "\" (immediate read was \"" + r.immediateText.trim() + "\")";
+        }
+        else if (finalAttempt)
+        {
+            param->beginChangeGesture(); param->setValueNotifyingHost (r.settlePrevNorm); param->endChangeGesture();
+            r.pendingSettle = false; r.applied = false; r.readbackMismatch = true; r.landedText = text;
+            r.note = "write did not stick (immediate read \"" + r.immediateText.trim() + "\", settled read \"" + text.trim() + "\"), value restored";
+        }
+        else ++stillPending;
+    }
+    return stillPending;
 }
 
 // ---------------------------------------------------------------------------
@@ -1440,7 +1428,7 @@ inline juce::String normalizeControlName (const juce::String& raw)
 inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin,
                                                const juce::var& map,
                                                const juce::var& settings,
-                                               bool staleDisplayReads = false)
+                                               bool staleDisplayReads = false)   // 21 Sep 2026: DEPRECATED, ignored - every plugin gets the settled read-back
 {
     juce::Array<ApplyResult> results;
     // READ ONCE, HERE, because this is the only function that sees the whole
