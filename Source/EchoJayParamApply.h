@@ -600,6 +600,31 @@ inline juce::String normNameServerRule (const juce::String& raw)
 // both are facts about the SOURCE of this write that every result must carry,
 // and threading them as parameters keeps applyOne free of any lookup of its
 // own. Set once at the top so every early return carries it.
+// ---------------------------------------------------------------------------
+// LANDING BY NAME (21 Sep 2026 ruling, from the index-drift observation: Pro-Q 3 "Analyzer Tilt" is stored at 375, the real
+// AU has it at 351). A map entry's parameter is resolved by NAME on the live instance - exact, then normalised - and the stored
+// index is a HINT only (checked first, kept only when the name at that index matches). A named entry that does not resolve is
+// NOT dialled at the guessed index: the caller logs "EJMap: unresolved <plugin> <control>" and declines. An entry with no name
+// at all (an old flat map) keeps its index, said in `how`.
+#define EJ_LAND_BY_NAME 1
+extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm (the log every harness and both plugins link)
+inline juce::String normalizeControlName (const juce::String& raw);   // defined below (the controls pass)
+inline int resolveParamIndex (juce::AudioPluginInstance& plugin, const juce::var& entry, const juce::String& semantic, juce::String& how)
+{
+    auto& params = plugin.getParameters();
+    const int hint = (int) entry.getProperty ("index", -1);
+    const auto mapped = entry.getProperty ("name", juce::var()).toString();
+    const auto name = mapped.isNotEmpty() ? mapped : semantic;
+    if (name.isEmpty()) { how = "index (no name)"; return (hint >= 0 && hint < params.size()) ? hint : -1; }
+    if (hint >= 0 && hint < params.size() && params[hint] != nullptr && params[hint]->getName (kParamNameQueryLen) == name) { how = "hint"; return hint; }
+    for (int i = 0; i < params.size(); ++i) if (params[i] != nullptr && params[i]->getName (kParamNameQueryLen) == name) { how = "exact"; return i; }
+    const auto n = normalizeControlName (name);
+    if (n.isNotEmpty())
+        for (int i = 0; i < params.size(); ++i) if (params[i] != nullptr && normalizeControlName (params[i]->getName (kParamNameQueryLen)).equalsIgnoreCase (n)) { how = "normalised"; return i; }
+    if (mapped.isEmpty() && hint >= 0 && hint < params.size()) { how = "index (semantic key is not a parameter name)"; return hint; }
+    how = "unresolved"; return -1;
+}
+
 inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                              const juce::String& semantic,
                              const juce::var& mapEntry,
@@ -610,15 +635,20 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     ApplyResult r; r.semantic = semantic;
     r.anchorsUnverified = anchorsUnverified;
     r.requestedValue = value;
-    const int index = (int) mapEntry.getProperty ("index", -1);
+    juce::String how;
+    const int index = resolveParamIndex (plugin, mapEntry, semantic, how);   // 21 Sep 2026: by NAME; the stored index is a hint
     r.index = index;
 
     auto& params = plugin.getParameters();
     if (index < 0 || index >= params.size() || params[index] == nullptr)
     {
-        r.note = "param index not present on this instance";
+        const auto want = mapEntry.getProperty ("name", juce::var()).toString().isNotEmpty() ? mapEntry.getProperty ("name", juce::var()).toString() : semantic;
+        EchoJay_NSLog (("EJMap: unresolved " + plugin.getName() + " \"" + want + "\" (map index " + juce::String ((int) mapEntry.getProperty ("index", -1)) + ") - not dialled").toRawUTF8());
+        r.note = "unresolved: no parameter named \"" + want + "\" on this instance (map index " + juce::String ((int) mapEntry.getProperty ("index", -1)) + ") - not dialled, on the card";
         return r;
     }
+    if (how == "exact" || how == "normalised")
+        EchoJay_NSLog (("EJMap: " + plugin.getName() + " \"" + mapEntry.getProperty ("name", juce::var()).toString() + "\" landed by name at " + juce::String (index) + " (map index " + juce::String ((int) mapEntry.getProperty ("index", -1)) + ", " + how + ")").toRawUTF8());
     auto* param = params[index];
     // BEFORE, read once and before every write path below.
     r.beforeText = param->getCurrentValueAsText().trim();
@@ -1154,7 +1184,7 @@ inline bool readCurrentValue (juce::AudioPluginInstance& plugin, const juce::var
                               const juce::String& semantic, float& out)
 {
     auto& params = plugin.getParameters();
-    const int index = (int) entry.getProperty ("index", -1);
+    juce::String how; const int index = resolveParamIndex (plugin, entry, semantic, how);   // 21 Sep 2026: by name
     if (index < 0 || index >= params.size() || params[index] == nullptr) return false;
     bool negInf = false;
     if (! parseDisplayForUnit (params[index]->getCurrentValueAsText(), semanticUnit (semantic), out, negInf))
