@@ -298,6 +298,30 @@ int main()
         check (before == after && cwdAfter == cwdBefore && ! juce::File::getCurrentWorkingDirectory().getChildFile ("--list-params").exists(), "(l1) ...and touched NO state file: nothing under the isolated root's Library/EchoJay changed (mtimes: marker, plugin_disabled*.json, known_good.json), no \"--list-params\" marker in cwd (RED on the current probe: it creates a marker file named \"--list-params\")", "root files before " + juce::String (before.size()) + " after " + juce::String (after.size()) + ", cwd files " + juce::String (cwdBefore) + " -> " + juce::String (cwdAfter) + (before == after ? juce::String() : " CHANGED: " + [&] { juce::StringArray d; for (const auto& a : after) if (! before.contains (a)) d.add (a); return d.joinIntoString (", "); }()));
         juce::File::getCurrentWorkingDirectory().getChildFile ("--list-params").deleteFile();
         juce::StringPairArray env2 (env); env2.set ("EJ_PROBE_LIST_BOUND_MS", "0");   // the forced timeout: a 0 ms bound refuses before the create can complete
+        // ---- 21 Sep 2026, the three probe changes owed from the item-5 scan + round (c)'s step mode ----
+        for (const char* stray : { "--list-params", "--list-steps" }) juce::File::getCurrentWorkingDirectory().getChildFile (stray).deleteFile();   // an older probe read the mode word as a marker path
+        {
+            const juce::StringArray cla { "CLA-76 (m)", "AudioUnit:Effects/aufx,76CM,ksWV", "3d307263", "--list-params" };   // Waves (WaveShell), not PACE: its banner has no trailing newline
+            juce::String out4; const int rc4 = runProbe (cla, env, out4, 60000);
+            if (rc4 == 3) { check (false, "(l4) --list-params on a WaveShell AU (CLA-76 (m)) prints row 0 at the START of a line (the banner no longer glues to it)", "CLA-76 (m) refused: " + out4.substring (0, 80)); }
+            else check (rc4 == 0 && (out4.contains ("\n0\t") ), "(l4) --list-params on a WaveShell AU (CLA-76 (m)) prints row 0 at the START of a line (the banner no longer glues to it)", "rc " + juce::String (rc4) + ": " + out4.fromFirstOccurrenceOf ("eInit", false, false).substring (0, 60).replace ("\n", "\\n"));
+            const juce::StringArray steps { "CLA-76 (m)", "AudioUnit:Effects/aufx,76CM,ksWV", "3d307263", "--list-steps", "5" };
+            juce::String out5; const int rc5 = runProbe (steps, env, out5, 60000);
+            const int stepLines = juce::StringArray::fromLines (out5).size() - 0; int nStep = 0; juce::StringArray texts; for (const auto& l : juce::StringArray::fromLines (out5)) if (l.startsWith ("step\t")) { ++nStep; texts.add (l.fromLastOccurrenceOf ("\t", false, false)); }
+            check (rc5 == 0 && nStep == 3 && texts.contains ("50Hz") && texts.contains ("60Hz") && texts.contains ("Off"), "(l5) --list-steps 5 on CLA-76 (m) walks the Analog control's 3 detents and prints their panel texts (50Hz / 60Hz / Off)", "rc " + juce::String (rc5) + " steps " + juce::String (nStep) + " texts " + texts.joinIntoString ("|") + " (" + juce::String (stepLines) + " lines)");
+            check (! juce::File::getCurrentWorkingDirectory().getChildFile ("--list-steps").exists(), "(l5) ...and step mode writes no marker file", "");
+            juce::File vst3dir ("/Library/Audio/Plug-Ins/VST3"); juce::Array<juce::File> v3; vst3dir.findChildFiles (v3, juce::File::findDirectories, false, "*.vst3");
+            juce::File pick; for (const auto& f : v3) if (! echojay::isPaceWrapped (f)) { pick = f; break; }
+            if (pick == juce::File()) check (false, "(l6) a .vst3 path is probed as VST3 (the report line says format=VST3; the format used to be hard-coded AudioUnit)", "no non-PACE VST3 under /Library/Audio/Plug-Ins/VST3");
+            else
+            {
+                const juce::StringArray v { pick.getFileNameWithoutExtension(), pick.getFullPathName(), "0", "--list-params" };
+                juce::String out6; const int rc6 = runProbe (v, env, out6, 60000);
+                check ((rc6 == 0 || rc6 == 3) && out6.contains ("format=VST3"), "(l6) a .vst3 path is probed as VST3 (the report line says format=VST3; the format used to be hard-coded AudioUnit)", pick.getFileName() + " rc " + juce::String (rc6) + ": " + out6.substring (0, 120).replace ("\n", " | "));
+            }
+            const auto ent = juce::File::getCurrentWorkingDirectory().getChildFile ("tools/au_instantiate_probe/EchoJayProbe.entitlements").loadFileAsString();
+            check (ent.contains ("com.apple.security.cs.disable-library-validation") && ent.contains ("com.apple.security.cs.allow-unsigned-executable-memory"), "(l7) the probe's entitlements source in the repo carries disable-library-validation AND allow-unsigned-executable-memory (the PACE wrapper's in-memory code)", ent.isEmpty() ? "no tools/au_instantiate_probe/EchoJayProbe.entitlements" : "both keys");
+        }
         juce::String out2; const int rc2 = runProbe (delay, env2, out2, 40000);
         check (rc2 == 3 && out2.contains ("refused timeout"), "(l2) --list-params with the timeout FORCED (bound 0 ms) prints \"refused timeout ...\" and exits 3", "rc " + juce::String (rc2) + ": " + out2.substring (0, 80).replace ("\n", " | ") + " ... " + out2.getLastCharacters (60).replace ("\n", " | "));
 #ifdef EJ_PACE_CHECK
