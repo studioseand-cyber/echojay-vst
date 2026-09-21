@@ -7509,6 +7509,77 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                        "ri PIN7: key and state are inverses");
         }
 
+        // ri PIN26 -- oversCount ROUND TRIPS, AND ITS ABSENT VALUE IS NOT ZERO.
+        //
+        // Zero overs is a real measurement AND what an unfilled int holds, so
+        // this is the one meter field whose absent case collides with a true
+        // one (open list 198). An analysed reference DOES count them: the
+        // analyser runs MeterEngine::processBlock over every block and
+        // MeterEngine.cpp:1012 assigns the running total. So a restored entry
+        // that claims 0 without the file having been read has converted a
+        // measurement into a fabrication, and the third check below is the
+        // whole reason the field carries a sentinel at all.
+        {
+            auto entryJson = [] (const juce::String& metersExtra)
+            {
+                juce::String s =
+                  "{\"schema\":1,\"measurementEpoch\":2,\"entries\":[{"
+                  "\"id\":\"r_ov\",\"name\":\"M\",\"path\":\"/m/o.wav\","
+                  "\"measurementEpoch\":2,"
+                  "\"measurements\":{\"reduction\":\"wholeFileAverage\","
+                  "\"windowSeconds\":168.5,\"meters\":{\"integrated\":-9.4"
+                  + metersExtra + "},\"eqCurve\":[";
+                for (int i = 0; i < 64; ++i) s += (i ? "," : "") + juce::String (-50.0 - i);
+                s += "]},\"availability\":{\"state\":\"present\"}}]}";
+                return s;
+            };
+
+            // A COUNTED VALUE SURVIVES THE ROUND TRIP.
+            {
+                const auto ix = parseReferenceIndex (entryJson (",\"oversCount\":7"));
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.oversCount == 7,
+                       "ri PIN26: a counted overs value parses",
+                       juce::String (ix.entries.empty() ? -99 : ix.entries[0].measurements.oversCount));
+                const auto back = parseReferenceIndex (
+                    writeReferenceIndex (ix, "2026-09-21T00:00:00Z", "2.26.4"));
+                check (back.entries.size() == 1 && back.entries[0].measurements.oversCount == 7,
+                       "ri PIN26: and comes back as 7 after a rewrite");
+            }
+
+            // -1 SURVIVES AS -1. An unavailable count must not be written out
+            // as a number the next reader believes.
+            {
+                const auto ix = parseReferenceIndex (entryJson (",\"oversCount\":-1"));
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: -1 parses as -1, not as 0");
+                const auto out = writeReferenceIndex (ix, "2026-09-21T00:00:00Z", "2.26.4");
+                const auto back = parseReferenceIndex (out);
+                check (back.entries.size() == 1 && back.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: and is still -1 after a rewrite, never 0",
+                       juce::String (back.entries.empty() ? -99 : back.entries[0].measurements.oversCount));
+            }
+
+            // THE ONE THAT MATTERS. An entry written before this field existed
+            // has no key at all, and it must read as UNAVAILABLE. Reading it as
+            // 0 would tell the model there was no clipping when nobody counted.
+            {
+                const auto ix = parseReferenceIndex (entryJson (""));
+                check (ix.entries.size() == 1 && ix.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: an entry WITHOUT the key reads -1, not 0",
+                       juce::String (ix.entries.empty() ? -99 : ix.entries[0].measurements.oversCount));
+                // Null is the same silence as absent: rdI's default would not
+                // have caught this one, because a present-but-null key takes the
+                // var conversion and lands on 0.
+                const auto nul = parseReferenceIndex (entryJson (",\"oversCount\":null"));
+                check (nul.entries.size() == 1 && nul.entries[0].measurements.oversCount == -1,
+                       "ri PIN26: and a NULL value reads -1 too, not 0",
+                       juce::String (nul.entries.empty() ? -99 : nul.entries[0].measurements.oversCount));
+                // The default on a fresh struct is the sentinel, not a count.
+                check (RefMeasurements{}.oversCount == -1,
+                       "ri PIN26: and an unfilled RefMeasurements is unavailable by default");
+            }
+        }
+
         // =================================================================
         // RECONCILIATION (EJReferenceReconcile.h). WIRED TO NOTHING YET: the
         // function ships in this commit and the caller arrives in the next, so

@@ -146,6 +146,26 @@ struct RefMeasurements
 
     std::array<float, 6>  macroBandDb { -120, -120, -120, -120, -120, -120 };
     bool                  hasMacroBands = false;   // epoch 2 onwards
+
+    /** Inter-sample over EVENTS across the whole file, or -1 for UNAVAILABLE.
+
+        -1 RATHER THAN 0, AND THE SENTINEL IS NOT A NEW ONE. Zero overs is a
+        real measurement AND what an unfilled int holds, so the two collide and
+        nothing downstream can tell them apart (open list 198). An analysed
+        reference genuinely counts these: MeterEngine assigns
+        data.oversCount = oversEvents inside processBlock, and the analyser runs
+        processBlock over every block of the file. So an entry restored WITHOUT
+        this field must not claim zero, because that converts a real measurement
+        into a fabricated "no clipping" on the way back in.
+
+        -1 is the value the snapshot restore already writes for an absent key
+        (PluginProcessor.cpp:4372-4373) and CompareFig's own default
+        (EJCompareFigures.h:45). It survives untouched into CompareFig::overs
+        and is printed as "N/A" and omitted from the model's JSON, so an
+        unavailable count says so rather than reading as a number.
+
+        ABSENT, NULL AND ANY NEGATIVE VALUE ALL READ AS -1. */
+    int                   oversCount = -1;
 };
 
 struct RefWaveform
@@ -382,6 +402,17 @@ inline RefEntry refEntryFromVar (const juce::var& v)
         m.peakL         = rdF (tv, "peakL",         -100.0f);
         m.peakR         = rdF (tv, "peakR",         -100.0f);
 
+        // oversCount is read through rdV rather than rdI because rdI's default
+        // applies only to an ABSENT key: a key present and null would take the
+        // var conversion instead and land on 0, which is the one value this
+        // field must never invent. rdV returns a void var for absent and null
+        // alike, and any negative is normalised to the one sentinel.
+        {
+            const auto ov = rdV (tv, "oversCount");
+            const int  oc = ov.isVoid() ? -1 : (int) ov;
+            m.oversCount  = oc < 0 ? -1 : oc;
+        }
+
         if (auto* a = rdV (mv, "eqCurve").getArray())
         {
             const int n = juce::jmin (64, a->size());
@@ -500,6 +531,10 @@ inline juce::var refEntryToVar (const RefEntry& e)
     t->setProperty ("correlation", mm.correlation);     t->setProperty ("dcOffset",      mm.dcOffset);
     t->setProperty ("rmsL", mm.rmsL);                   t->setProperty ("rmsR",          mm.rmsR);
     t->setProperty ("peakL", mm.peakL);                 t->setProperty ("peakR",         mm.peakR);
+    // Written whether counted or not: -1 on disk says UNAVAILABLE in the same
+    // word the absent key says it, so a reader never has to guess which kind of
+    // silence it is looking at.
+    t->setProperty ("oversCount", mm.oversCount);
     m->setProperty ("meters", juce::var (t.get()));
 
     if (mm.hasEqCurve)
