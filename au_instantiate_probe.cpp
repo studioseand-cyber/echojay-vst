@@ -26,6 +26,11 @@ int main (int argc, char** argv)
     d.pluginFormatName = "AudioUnit";
     d.name             = (argc >= 2) ? juce::String::fromUTF8 (argv[1]) : juce::String();
     d.fileOrIdentifier = (argc >= 3) ? juce::String::fromUTF8 (argv[2]) : juce::String();
+    // 21 Sep 2026 (owed from the item-5 scan): the FORMAT comes from the file argument - a ".vst3" bundle path (or any path that is
+    // not an "AudioUnit:" identifier) is a VST3; the probe used to hard-code AudioUnit and refused every VST3 with
+    // "No compatible plug-in format exists for this plug-in".
+    if (d.fileOrIdentifier.endsWithIgnoreCase (".vst3") || (d.fileOrIdentifier.startsWithChar ('/') && ! d.fileOrIdentifier.startsWith ("AudioUnit:")))
+        d.pluginFormatName = "VST3";
     if (argc >= 4) d.uniqueId = d.deprecatedUid = (int) (juce::int64) juce::String (argv[3]).getHexValue64();
 
    #if defined(__x86_64__)
@@ -35,9 +40,9 @@ int main (int argc, char** argv)
    #else
     const char* probeArch = "unknown";
    #endif
-    std::printf ("probe: \"%s\" | %s | uid=%s | arch=%s\n",
+    std::printf ("probe: \"%s\" | %s | uid=%s | arch=%s | format=%s\n",
                  d.name.toRawUTF8(), d.fileOrIdentifier.toRawUTF8(),
-                 argc >= 4 ? argv[3] : "(none)", probeArch);
+                 argc >= 4 ? argv[3] : "(none)", probeArch, d.pluginFormatName.toRawUTF8());
     // 18 Sep 2026: argv[4] = a marker file the HOST polls. Touched the moment the instance exists, so a
     // crash or stall in the render check below (AMEK Mastering Compressor segfaults there, exit 139) can
     // never read as "hangs on load".
@@ -45,7 +50,12 @@ int main (int argc, char** argv)
     // "index<TAB>name<TAB>label<TAB>numSteps<TAB>isDiscrete", never creates an editor, never touches the marker or any
     // EchoJay state file; wall-clock bound 30 s (EJ_PROBE_LIST_BOUND_MS overrides, for the guard); exit 0 on success, exit 3
     // on refuse/timeout with one line "refused <reason>". The signed probe is the only process allowed to list a PACE-wrapped plugin.
-    const bool listMode = argc >= 5 && juce::String (argv[4]) == "--list-params";
+    // 21 Sep 2026 (round (c)): "--list-steps <index>" = STEP MODE - for one stepped parameter, walk its detents and print
+    // "step<TAB>i<TAB>norm<TAB>text" (the panel text read after the AU settled on the run loop), the map builder's source for
+    // `positions`. Same rules as list mode: no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>".
+    const bool listParams = argc >= 5 && juce::String (argv[4]) == "--list-params";
+    const bool listSteps  = argc >= 6 && juce::String (argv[4]) == "--list-steps";
+    const bool listMode = listParams || listSteps;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -70,10 +80,28 @@ int main (int argc, char** argv)
         if (! done)          { std::printf ("refused timeout after %d ms\n", boundMs); std::fflush (stdout); std::_Exit (3); }
         if (inst == nullptr) { std::printf ("refused %s\n", err.replace ("\n", " ").toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
         const auto& ps = inst->getParameters();
+        const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
+        std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
+        if (listSteps)
+        {
+            const int idx = atoi (argv[5]);
+            auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
+            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            const int n = q->getNumSteps();
+            if (! q->isDiscrete() || n < 2 || n > 64) { std::printf ("refused not a stepped control (numSteps %d, discrete %d)\n", n, q->isDiscrete() ? 1 : 0); std::fflush (stdout); std::_Exit (3); }
+            for (int i = 0; i < n; ++i)
+            {
+                const float norm = (float) i / (float) (n - 1);
+                q->setValueNotifyingHost (norm);
+                for (int k = 0; k < 8; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }   // the AU's text settles on the run loop
+                std::printf ("step\t%d\t%.6f\t%s\n", i + 1, norm, clean (q->getCurrentValueAsText().trim()).toRawUTF8());
+            }
+            std::fflush (stdout);
+            std::_Exit (0);
+        }
         for (int i = 0; i < ps.size(); ++i)
         {
             auto* q = ps[i]; if (q == nullptr) continue;
-            const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
             std::printf ("%d\t%s\t%s\t%d\t%d\n", i, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8(), q->getNumSteps(), q->isDiscrete() ? 1 : 0);
         }
         std::fflush (stdout);
