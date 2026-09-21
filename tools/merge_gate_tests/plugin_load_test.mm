@@ -17,6 +17,7 @@
 #undef Component
 #include <JuceHeader.h>
 #include "EJStateRoot.h"
+#include "EJPaceCheck.h"   // 21 Sep 2026: an unsigned harness never loads a PACE-wrapped bundle
 #include <cmath>
 #include <cstdio>
 
@@ -45,6 +46,7 @@ static int host (juce::AudioPluginFormatManager& fm, const juce::String& formatN
     juce::OwnedArray<juce::PluginDescription> found;
     for (auto* f : fm.getFormats()) if (f->getName() == formatName) f->findAllTypesForFile (found, ident);
     if (found.isEmpty()) { std::printf ("  %s: NOT FOUND by the %s format at %s\n", label, formatName.toRawUTF8(), ident.toRawUTF8()); return 1; }
+    { const auto why = echojay::refuseIfPaceWrapped (*found[0]); if (why.isNotEmpty()) { std::printf ("  %s: refused before load - %s\n", label, why.toRawUTF8()); return 1; } }
     juce::String err; auto inst = fm.createPluginInstance (*found[0], 48000.0, 512, err);
     if (inst == nullptr) { std::printf ("  %s: instance REFUSED: %s\n", label, err.toRawUTF8()); return 1; }
     inst->setPlayConfigDetails (2, 2, 48000.0, 512);

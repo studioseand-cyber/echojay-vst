@@ -20,6 +20,12 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include <cstdio>
+#include <cstdlib>
+#ifdef __has_include
+#if __has_include("EJPaceCheck.h")
+#include "EJPaceCheck.h"
+#endif
+#endif
 // (g) 18 Sep 2026 - the pre-flight LIVENESS leg runs the REAL build entry (EchoJayEditor::sendChainToLink) on a
 // real editor with a real engaged borrowed host; the three names resolve through the primary host's recommendable
 // list (the friend below puts them there, as buildRecommendable would from a scan).
@@ -255,6 +261,56 @@ int main()
             proc.borrowRelease (false);
         }
     }
+
+    std::printf ("== (l) 21 Sep 2026: the probe's --list-params mode; an unsigned harness refuses a PACE-wrapped bundle ==\n");
+    {
+        const juce::File probe (std::getenv ("EJ_PROBE_BIN") != nullptr ? juce::String (std::getenv ("EJ_PROBE_BIN")) : juce::File::getCurrentWorkingDirectory().getChildFile ("build-release/EchoJayProbe_artefacts/Release/EchoJayProbe").getFullPathName());
+        // the probe gets a state root of its OWN under the isolated root, seeded with the three files it must not touch: the guard's earlier
+        // legs keep an EchoJayProcessor whose pre-flight writes plugin_disabled*.json / known_good.json on its own clock (the scribble leg
+        // is slow enough for such a write to land inside the probe window - a sibling object's write, not the probe's; seen 21 Sep 2026)
+        const juce::File root = juce::File (std::getenv ("ECHOJAY_STATE_HOME")).getChildFile ("probe_list_root"); const juce::File stateDir = root.getChildFile ("Library/EchoJay");
+        stateDir.createDirectory();
+        for (const char* seed : { "plugin_disabled_reasons.json", "plugin_disabled.json", "known_good.json", "preflight_marker" }) stateDir.getChildFile (seed).replaceWithText ("{}");
+        // the files a harness must never touch: everything under Library/EchoJay of the isolated root (the pre-flight marker, plugin_disabled*.json, known_good.json ...)
+        auto stateSnapshot = [&] { juce::StringArray o; for (const auto& f : stateDir.findChildFiles (juce::File::findFiles, true)) o.add (f.getRelativePathFrom (root) + "@" + juce::String (f.getLastModificationTime().toMilliseconds())); o.sort (false); return o; };
+        auto runProbe = [&] (const juce::StringArray& args, const juce::StringPairArray& env, juce::String& out, int timeoutMs) -> int
+        {
+            // the exit status is OBSERVED through a shell echo ("__RC=n" as the last line): juce::ChildProcess::getExitCode reads 0 once
+            // isRunning() has reaped the child (21 Sep 2026: the forced-timeout leg saw "refused timeout" with rc 0 that way)
+            juce::StringArray cmd; cmd.add ("/bin/sh"); cmd.add ("-c"); cmd.add ("\"$0\" \"$@\"; echo \"__RC=$?\""); cmd.add ("/usr/bin/env"); for (const auto& k : env.getAllKeys()) cmd.add (k + "=" + env[k]); cmd.add (probe.getFullPathName()); cmd.addArray (args);
+            juce::ChildProcess cp; if (! cp.start (cmd)) return -1;
+            const double t0 = juce::Time::getMillisecondCounterHiRes(); while (cp.isRunning() && juce::Time::getMillisecondCounterHiRes() - t0 < timeoutMs) juce::Thread::sleep (20);
+            if (cp.isRunning()) { cp.kill(); return -2; }
+            out = cp.readAllProcessOutput(); const int at = out.lastIndexOf ("__RC="); if (at < 0) return -3;
+            const int rc = out.substring (at + 5).trim().getIntValue(); out = out.substring (0, at); return rc;
+        };
+        const juce::StringArray delay { "AUDelay", "AudioUnit:Effects/aufx,dely,appl", "64607a6d", "--list-params" };   // Apple's AUDelay: on every Mac, not PACE-wrapped
+        juce::StringPairArray env; env.set ("ECHOJAY_STATE_HOME", root.getFullPathName()); env.set ("HOME", root.getFullPathName());
+        juce::File::getCurrentWorkingDirectory().getChildFile ("--list-params").deleteFile();   // a stray marker from an earlier (RED) run must not decide this run
+        const auto before = stateSnapshot(); const auto cwdBefore = juce::File::getCurrentWorkingDirectory().findChildFiles (juce::File::findFiles, false).size();
+        juce::String out; const int rc = runProbe (delay, env, out, 40000);
+        int rows = 0; for (const auto& l : juce::StringArray::fromLines (out)) if (l.matchesWildcard ("*\t*\t*\t*\t*", true) && l.upToFirstOccurrenceOf ("\t", false, false).containsOnly ("0123456789")) ++rows;
+        const auto after = stateSnapshot(); const auto cwdAfter = juce::File::getCurrentWorkingDirectory().findChildFiles (juce::File::findFiles, false).size();
+        check (probe.existsAsFile(), "(l) the probe binary exists (EJ_PROBE_BIN or the build-release artefact)", probe.getFullPathName());
+        check (rc == 0 && rows >= 1, "(l1) --list-params on a non-PACE AU (AUDelay) prints >= 1 \"index<TAB>name<TAB>label<TAB>numSteps<TAB>isDiscrete\" line and exits 0 (RED on the current probe: no such mode)", "rc " + juce::String (rc) + ", rows " + juce::String (rows) + ", head: " + out.substring (0, 90).replace ("\n", " | "));
+        // earlier legs of this guard legitimately write plugin_disabled*.json under the isolated root; the probe must neither create nor modify
+        // them - the mtime snapshot covers both (a file the probe created shows up as a new entry, one it rewrote as a changed mtime)
+        check (before == after && cwdAfter == cwdBefore && ! juce::File::getCurrentWorkingDirectory().getChildFile ("--list-params").exists(), "(l1) ...and touched NO state file: nothing under the isolated root's Library/EchoJay changed (mtimes: marker, plugin_disabled*.json, known_good.json), no \"--list-params\" marker in cwd (RED on the current probe: it creates a marker file named \"--list-params\")", "root files before " + juce::String (before.size()) + " after " + juce::String (after.size()) + ", cwd files " + juce::String (cwdBefore) + " -> " + juce::String (cwdAfter) + (before == after ? juce::String() : " CHANGED: " + [&] { juce::StringArray d; for (const auto& a : after) if (! before.contains (a)) d.add (a); return d.joinIntoString (", "); }()));
+        juce::File::getCurrentWorkingDirectory().getChildFile ("--list-params").deleteFile();
+        juce::StringPairArray env2 (env); env2.set ("EJ_PROBE_LIST_BOUND_MS", "0");   // the forced timeout: a 0 ms bound refuses before the create can complete
+        juce::String out2; const int rc2 = runProbe (delay, env2, out2, 40000);
+        check (rc2 == 3 && out2.contains ("refused timeout"), "(l2) --list-params with the timeout FORCED (bound 0 ms) prints \"refused timeout ...\" and exits 3", "rc " + juce::String (rc2) + ": " + out2.substring (0, 80).replace ("\n", " | ") + " ... " + out2.getLastCharacters (60).replace ("\n", " | "));
+#ifdef EJ_PACE_CHECK
+        const juce::File decap ("/Library/Audio/Plug-Ins/Components/Decapitator.component"), audelay = echojay::bundleFor ([] { juce::PluginDescription d; d.pluginFormatName = "AudioUnit"; d.name = "AUDelay"; return d; }());
+        juce::PluginDescription dd; dd.pluginFormatName = "AudioUnit"; dd.name = "Decapitator"; dd.fileOrIdentifier = "AudioUnit:Effects/aufx,DCPT,SnAu";
+        check (decap.isDirectory() && echojay::isPaceWrapped (decap) && ! echojay::isPaceWrapped (audelay), "(l3) isPaceWrapped: Decapitator.component (an Eden bundle) true; AUDelay's component false", decap.getFullPathName() + " / " + audelay.getFullPathName());
+        check (echojay::refuseIfPaceWrapped (dd).startsWith ("PACE-wrapped: signed probe only"), "(l3) an unsigned harness REFUSES a PACE-wrapped description before load with \"PACE-wrapped: signed probe only\"", echojay::refuseIfPaceWrapped (dd));
+#else
+        check (false, "(l3) isPaceWrapped: Decapitator.component (an Eden bundle) true; AUDelay's component false", "no EJPaceCheck.h on this build (RED by name)");
+        check (false, "(l3) an unsigned harness REFUSES a PACE-wrapped description before load with \"PACE-wrapped: signed probe only\"", "no EJPaceCheck.h on this build (RED by name)");
+#endif
+    }
+
     std::printf ("\n==== preflight_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
