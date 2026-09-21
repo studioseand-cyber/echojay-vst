@@ -5225,9 +5225,11 @@ echojay::MatchSide EchoJayEditor::buildMatchSide(const CompareSlotState& slot) c
 
 EchoJayEditor::MatchSlotPair EchoJayEditor::matchSlots() const
 {
-    // The reference bar drives one slot; the OTHER one is the mix. Asking
-    // refBarIsTop() is reading the existing answer, not making a new one.
-    const bool refIsTop = refBarIsTop();
+    // THE ROLE WAS DECIDED ON ENTRY AND IS HELD, not derived here. This used to
+    // read refBarIsTop(), which answers "which slot holds a reference" and
+    // therefore MOVED when a pick landed in the other slot, flipping which side
+    // was the mix under the user.
+    const bool refIsTop = matchRefIsTop_;
     MatchSlotPair p;
     p.ref = refIsTop ? &compareTop_ : &compareBot_;
     p.mix = refIsTop ? &compareBot_ : &compareTop_;
@@ -6796,6 +6798,195 @@ void EchoJayEditor::applyReferenceToSlot (bool isTop, int refIndex)
     repaint();
 }
 
+// ---------------------------------------------------------------------------
+// THE MATCH PAGE'S MIX PICKER
+// ---------------------------------------------------------------------------
+//
+// ITS OWN MENU RATHER THAN openCompareSlotMenu, for two reasons that are both
+// structural. That menu's REFERENCES section is unconditional, and this picker
+// must never offer a reference: "cannot place a reference" is half of why the
+// two roles cannot swap. And it anchors on compareTopSlotBtn_/compareBotSlotBtn_,
+// which are not on screen here, so the popup would be positioned against a
+// hidden component.
+//
+// The id bands are the slot menu's own, so the two cannot drift about what an
+// id means: 1 Live, 100..199 session snapshots, 200..299 chat captures.
+void EchoJayEditor::openMatchMixPicker()
+{
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("YOUR MIX");
+    menu.addItem (1, "Live signal", true,
+                  matchSlots().mix->kind == CompareSlotState::Kind::Live);
+
+    const auto snaps = processorRef.getSnapshots();
+    if (! snaps.empty())
+    {
+        menu.addSeparator();
+        menu.addSectionHeader ("CAPTURES");
+        for (int i = 0; i < (int) snaps.size() && i < kCompareMenuBandSize - 1; ++i)
+            menu.addItem (100 + i, snaps[(size_t) i].name.substring (0, kCompareMenuRefNameLen));
+    }
+
+    // The chat captures, through the SAME ordered id list the slot menu builds,
+    // so the label the user picked and the review the slot binds cannot drift.
+    compareMenuReviewIds_.clear();
+    {
+        juce::PopupMenu chat;
+        for (auto& r : workspace.getReviews())
+        {
+            if ((int) compareMenuReviewIds_.size() >= kCompareMenuBandSize - 1) break;
+            chat.addItem (200 + (int) compareMenuReviewIds_.size(),
+                          compareReviewLabel (r).substring (0, kCompareMenuRefNameLen));
+            compareMenuReviewIds_.push_back (r.id);
+        }
+        if (compareMenuReviewIds_.size() > 0)
+        {
+            menu.addSeparator();
+            menu.addSubMenu ("Chat captures", chat);
+        }
+    }
+
+    auto safeThis = juce::Component::SafePointer<EchoJayEditor> (this);
+    menu.showMenuAsync (juce::PopupMenu::Options()
+                            .withTargetComponent (&matchPanel_)
+                            .withParentComponent (this),
+                        [safeThis] (int result)
+    {
+        if (safeThis == nullptr || result == 0) return;
+        CompareSlotState next;
+        if (result == 1)
+        {
+            next.kind = CompareSlotState::Kind::Live;
+            next.label = "Live signal";
+        }
+        else if (result >= 100 && result < 200)
+        {
+            const auto snaps = safeThis->processorRef.getSnapshots();
+            const int idx = result - 100;
+            if (idx < 0 || idx >= (int) snaps.size()) return;
+            next.kind = CompareSlotState::Kind::Snapshot;
+            next.index = idx;
+            next.label = snaps[(size_t) idx].name;
+        }
+        else if (result >= 200 && result < 300)
+        {
+            const int nth = result - 200;
+            if (nth < 0 || nth >= (int) safeThis->compareMenuReviewIds_.size()) return;
+            next.kind = CompareSlotState::Kind::WsCapture;
+            next.wsReviewId = safeThis->compareMenuReviewIds_[(size_t) nth];
+            for (auto& r : safeThis->workspace.getReviews())
+                if (r.id == next.wsReviewId) next.label = safeThis->compareReviewLabel (r);
+        }
+        else return;
+
+        safeThis->matchApplyMixSlot (next);
+    });
+}
+
+// THE ONE WRITER for the Match page's mix side. It writes into whichever slot
+// is NOT the reference side, so the roles decided on entry survive every pick.
+//
+// A DISPLACEMENT IS ANNOUNCED, not performed silently. Taking a slot ends codec
+// mode and restarts a stream, and both of those are visible on a page the user
+// is not looking at. setRefStatus is the surface that already exists for this,
+// and its text survives until Compare is next entered, so the message is
+// waiting there rather than having flashed past here.
+void EchoJayEditor::matchApplyMixSlot (const CompareSlotState& next)
+{
+    auto& slot = matchRefIsTop_ ? compareBot_ : compareTop_;
+    const int  slotIdx      = matchRefIsTop_ ? 1 : 0;
+    const bool endedCodec   = codecModeActive_;
+    const bool wasStreaming = (processorRef.cmpAudible.load() == slotIdx);
+
+    slot = next;
+    codecModeActive_ = false;
+
+    processorRef.stopCompareStream (slotIdx);
+    updateCompareSlotBtn (! matchRefIsTop_);
+    startCompareStream (slotIdx);
+    processorRef.cmpBothCaptures.store (bothSlotsAreCaptures());
+    updateComparePlayBtns();
+
+    if (endedCodec)
+        setRefStatus ("Match took the " + juce::String (matchRefIsTop_ ? "B" : "A")
+                          + " slot, so the codec A/B ended.", RefStatusKind::Info);
+    else if (wasStreaming)
+        setRefStatus ("Match changed the " + juce::String (matchRefIsTop_ ? "B" : "A")
+                          + " slot, so Compare's playback restarted.", RefStatusKind::Info);
+
+    matchPanel_.repaint();
+    repaint();
+}
+
+// The points a side's waveform draws. LIVE IS A ROLLING WINDOW and everything
+// else is a whole file, which is the difference the page must not hide.
+bool EchoJayEditor::matchWavePoints (const CompareSlotState& slot, std::vector<float>& outAbs,
+                                     bool& rolling, float& spanSeconds) const
+{
+    outAbs.clear();
+    rolling = false;
+    spanSeconds = 0.0f;
+
+    switch (slot.kind)
+    {
+        case CompareSlotState::Kind::Live:
+        {
+            rolling = true;
+            const MeterData md = processorRef.getMeterEngine().getMeterData();
+            if (md.waveformCount <= 0) return false;
+            const int n = md.waveformCount;
+            const int start = (md.waveformWritePos - n + MeterData::waveformSize)
+                                  % MeterData::waveformSize;
+            for (int i = 0; i < n; ++i)
+            {
+                const auto& wp = md.waveform[(size_t) ((start + i) % MeterData::waveformSize)];
+                outAbs.push_back (juce::jmax (std::abs (wp.minVal), std::abs (wp.maxVal)));
+            }
+            // One point per kWaveDownsample samples: the span is what the ring
+            // actually holds, not the ring's capacity.
+            const double sr = processorRef.getSampleRate() > 0 ? processorRef.getSampleRate() : 44100.0;
+            spanSeconds = (float) (n * 512 / sr);
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::Snapshot:
+        {
+            const auto snaps = processorRef.getSnapshots();
+            if (slot.index < 0 || slot.index >= (int) snaps.size()) return false;
+            for (auto v : snaps[(size_t) slot.index].waveformThumbnail) outAbs.push_back (std::abs (v));
+            spanSeconds = snaps[(size_t) slot.index].durationSeconds;
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::Reference:
+        {
+            const auto refs = processorRef.getReferenceAnalyser().getReferences();
+            if (slot.index < 0 || slot.index >= (int) refs.size()) return false;
+            for (auto v : refs[(size_t) slot.index].waveformThumbnail) outAbs.push_back (std::abs (v));
+            spanSeconds = refs[(size_t) slot.index].durationSeconds;
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::WsCapture:
+        {
+            for (auto& r : workspace.getReviews())
+                if (r.id == slot.wsReviewId && r.waveform.isArray())
+                {
+                    for (auto& v : *r.waveform.getArray()) outAbs.push_back (std::abs ((float) (double) v));
+                    spanSeconds = slotDurationSeconds (slot);
+                    return ! outAbs.empty();
+                }
+            return false;
+        }
+        case CompareSlotState::Kind::CodecFile:
+        {
+            for (auto v : slot.codecThumb) outAbs.push_back (std::abs (v));
+            spanSeconds = slotDurationSeconds (slot);
+            return ! outAbs.empty();
+        }
+        case CompareSlotState::Kind::Empty:
+        default:
+            return false;
+    }
+}
+
 // THE SUB-TAB SWITCH. One writer for refSubTab_, so the panel's visibility and
 // the row's highlight cannot disagree about which page is showing.
 void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
@@ -6849,6 +7040,13 @@ void EchoJayEditor::setRefSubTab (echojay::RefSubTab t)
         // so, which the 25 Jul rule forbids by any route.
         if (codecModeActive_) exitCodecMode();
         codecPanel_.setVisible(false);
+        // THE ROLES ARE DECIDED HERE, ONCE, FROM WHAT THE SLOTS HOLD, and then
+        // held for as long as the page is open. Deciding it per paint is what
+        // let a pick flip which side was the mix.
+        matchRefIsTop_ = (echojay::matchRefSideOnEntry (
+                              compareTop_.kind == CompareSlotState::Kind::Reference,
+                              compareBot_.kind == CompareSlotState::Kind::Reference)
+                          == echojay::MatchRefSide::Top);
         matchPanel_.setVisible(true);
         // Focus for the same reason as the Playback page: so Escape reaches
         // MatchPanel::keyPressed at all.
@@ -7571,13 +7769,40 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 
     // ---- the setup row: your capture, the link, the button, the reference ---
     {
-        g.setFont (juce::Font (juce::FontOptions (11.5f, juce::Font::bold)));
-        g.setColour (C::text);
-        g.drawFittedText (owner->slotDisplayName (*slots.mix), R.mixName,
-                          juce::Justification::centredLeft, 2);
-        g.setColour (C::text2);
-        g.drawFittedText (owner->slotDisplayName (*slots.ref), R.refName,
-                          juce::Justification::centredRight, 2);
+        // THE TWO PICKERS. Each says what its side is set to and opens on a
+        // press, so the row is the controls rather than two labels beside one
+        // control. Painted, like the button, and hit-tested in mouseUp.
+        auto picker = [&] (juce::Rectangle<int> r, const juce::String& text,
+                           bool isMix, bool hotHere)
+        {
+            if (r.getWidth() <= 0) return;
+            g.setColour (hotHere ? C::bg3 : C::bg2);
+            g.fillRoundedRectangle (r.toFloat(), 6.0f);
+            g.setColour (hotHere ? C::blue.withAlpha (0.55f) : C::border);
+            g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 6.0f, 1.0f);
+
+            // The chevron sits on the OUTER edge of each picker, so the two
+            // read as opening outward from the button rather than mirroring.
+            auto body = r.reduced (7, 0);
+            auto chev = isMix ? body.removeFromRight (10) : body.removeFromLeft (10);
+            g.setColour (C::text3);
+            {
+                const float cx = (float) chev.getCentreX(), cy = (float) chev.getCentreY();
+                juce::Path p;
+                p.startNewSubPath (cx - 3.0f, cy - 1.5f);
+                p.lineTo (cx,        cy + 2.0f);
+                p.lineTo (cx + 3.0f, cy - 1.5f);
+                g.strokePath (p, juce::PathStrokeType (1.2f));
+            }
+            g.setFont (juce::Font (juce::FontOptions (11.5f, juce::Font::bold)));
+            g.setColour (isMix ? C::text : C::text2);
+            g.drawFittedText (text, body,
+                              isMix ? juce::Justification::centredLeft
+                                    : juce::Justification::centredRight, 2);
+        };
+
+        picker (R.mixPick, owner->slotDisplayName (*slots.mix), true,  hotZone == 2);
+        picker (R.refPick, owner->slotDisplayName (*slots.ref), false, hotZone == 3);
 
         // THE CONNECTOR IS THE STRONGEST THING IN THIS ROW (20 Sep 2026): the
         // button REACHING OUT to both names, rather than two stubs beside it.
@@ -7653,6 +7878,98 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         // turning into "again": a control that renames itself is a second
         // control as far as the eye is concerned, and it is the same press.
         g.drawText ("AI MATCH", R.button, juce::Justification::centred);
+    }
+
+    // ---- a waveform under each picker, and the two are NOT the same span ----
+    //
+    // A LIVE SIDE IS A WINDOW ONTO SOMETHING STILL RUNNING; a capture or a
+    // reference is the WHOLE of a thing. Drawn identically they would say the
+    // two are comparable objects, which is the same lie section 3 refuses about
+    // the curves. Two things say otherwise, and neither is decoration:
+    //
+    //   THE SPAN IS WRITTEN UNDER EACH STRIP in words, "live, last 3.4 s"
+    //   against "whole file, 2:48", so the difference is stated in the units
+    //   the user thinks in rather than implied by a shape.
+    //
+    //   A ROLLING SIDE FADES OUT AT ITS LEFT EDGE, because the audio continues
+    //   before the window and the strip is a view onto it. A whole-file side
+    //   gets a hairline at both ends instead: it begins where it begins and
+    //   ends where it ends.
+    {
+        auto strip = [&] (juce::Rectangle<int> r, const CompareSlotState& slot,
+                          bool isRef, bool hotHere, bool audibleHere)
+        {
+            if (r.getWidth() <= 4 || r.getHeight() <= 6) return;
+
+            std::vector<float> pts;
+            bool  rolling = false;
+            float span    = 0.0f;
+            const bool have = owner->matchWavePoints (slot, pts, rolling, span);
+
+            auto lane = r.withTrimmedBottom (9);       // the caption takes the rest
+            g.setColour (audibleHere ? C::bg3 : C::bg2.withAlpha (0.7f));
+            g.fillRoundedRectangle (lane.toFloat(), 4.0f);
+            if (audibleHere || hotHere)
+            {
+                g.setColour ((audibleHere ? C::blue : C::border2).withAlpha (audibleHere ? 0.6f : 0.4f));
+                g.drawRoundedRectangle (lane.toFloat().reduced (0.5f), 4.0f, 1.0f);
+            }
+
+            if (have && lane.getWidth() > 2)
+            {
+                const float midY  = (float) lane.getCentreY();
+                const float halfH = (float) lane.getHeight() * 0.5f - 1.0f;
+                const int   cols  = lane.getWidth();
+                const auto  base  = isRef ? C::text2 : C::blue;
+                for (int x = 0; x < cols; ++x)
+                {
+                    // The whole of what we have, squeezed to the strip: a
+                    // capture is its own length whatever the panel is wide.
+                    const size_t i0 = (size_t) ((double) x       / cols * (double) pts.size());
+                    const size_t i1 = (size_t) ((double) (x + 1) / cols * (double) pts.size());
+                    float peak = 0.0f;
+                    for (size_t i = i0; i < juce::jmax (i0 + 1, juce::jmin (i1, pts.size())); ++i)
+                        peak = juce::jmax (peak, pts[i]);
+                    peak = juce::jlimit (0.0f, 1.0f, peak);
+
+                    // THE ROLLING FADE: oldest sample faintest, so the strip
+                    // reads as a window rather than a complete object.
+                    const float a = rolling ? juce::jmap ((float) x, 0.0f, (float) cols, 0.25f, 0.95f)
+                                            : 0.9f;
+                    g.setColour (base.withAlpha (a));
+                    const float h = juce::jmax (1.0f, peak * halfH);
+                    g.fillRect ((float) lane.getX() + (float) x, midY - h, 1.0f, h * 2.0f);
+                }
+                if (! rolling)
+                {
+                    // A whole file BEGINS and ENDS. Two hairlines say so.
+                    g.setColour (C::border2.withAlpha (0.8f));
+                    g.fillRect ((float) lane.getX(), (float) lane.getY() + 2.0f, 1.0f,
+                                (float) lane.getHeight() - 4.0f);
+                    g.fillRect ((float) lane.getRight() - 1.0f, (float) lane.getY() + 2.0f, 1.0f,
+                                (float) lane.getHeight() - 4.0f);
+                }
+            }
+            else
+            {
+                g.setColour (C::text3.withAlpha (0.6f));
+                g.setFont (juce::Font (juce::FontOptions (9.0f)));
+                g.drawText (rolling ? "waiting for signal" : "no waveform",
+                            lane, juce::Justification::centred, true);
+            }
+
+            g.setColour (C::text3);
+            g.setFont (juce::Font (juce::FontOptions (9.0f)));
+            g.drawText (echojay::matchWaveSpan (rolling, span),
+                        r.removeFromBottom (9),
+                        isRef ? juce::Justification::centredRight : juce::Justification::centredLeft,
+                        true);
+        };
+
+        const int audible = owner->processorRef.cmpAudible.load();
+        const bool refIsTop = owner->matchRefIsTop_;
+        strip (R.mixWave, *slots.mix, false, hotZone == 4, audible == (refIsTop ? 1 : 0));
+        strip (R.refWave, *slots.ref, true,  hotZone == 5, audible == (refIsTop ? 0 : 1));
     }
 
     // ---- the picture -------------------------------------------------------
@@ -7872,16 +8189,45 @@ void EchoJayEditor::MatchPanel::press()
     repaint();
 }
 
+// WHICH PAINTED REGION A POINT IS IN. One function, so the press and the hover
+// can never disagree about where a control is: they are the same rects from the
+// same pure layout.
+static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
+{
+    const auto R = echojay::matchPageLayout (bounds);
+    if (R.button .contains (p)) return 1;
+    if (R.mixPick.contains (p)) return 2;
+    if (R.refPick.contains (p)) return 3;
+    if (R.mixWave.contains (p)) return 4;
+    if (R.refWave.contains (p)) return 5;
+    return 0;
+}
+
 void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
 {
-    if (echojay::matchPageLayout (getLocalBounds()).button.contains (e.getPosition()))
-        press();
+    if (owner == nullptr) return;
+    switch (matchZoneAt (getLocalBounds(), e.getPosition()))
+    {
+        case 1: press(); break;
+        // THE MIX PICKER CANNOT PLACE A REFERENCE and the reference picker
+        // writes into the slot that is already the reference side, which is why
+        // no pick can swap the two roles.
+        case 2: owner->openMatchMixPicker(); break;
+        case 3: owner->openReferenceBrowser (owner->matchRefIsTop_); break;
+        // PLAYBACK IS THE COMPARE DUAL-STREAM, not the A/B path: both streams
+        // are already rolling and analysed, so swapping is click-free and
+        // sample-aligned. Pressing the audible side again mutes both, which is
+        // toggleCompareAudible's own -1.
+        case 4: owner->toggleCompareAudible (! owner->matchRefIsTop_); repaint(); break;
+        case 5: owner->toggleCompareAudible (  owner->matchRefIsTop_); repaint(); break;
+        default: break;
+    }
 }
 
 void EchoJayEditor::MatchPanel::mouseMove (const juce::MouseEvent& e)
 {
-    const bool hot = echojay::matchPageLayout (getLocalBounds()).button.contains (e.getPosition());
-    if (hot != buttonHot) { buttonHot = hot; repaint(); }
+    const int z = matchZoneAt (getLocalBounds(), e.getPosition());
+    if (z != hotZone) { hotZone = z; buttonHot = (z == 1); repaint(); }
 }
 
 // THE CLOCK RUNS ONLY WHILE THE PAGE IS ON SCREEN. An invisible page asking for

@@ -71,6 +71,63 @@ inline constexpr int kMatchButtonW       = 132;
 inline constexpr int kMatchLinkMinW = 28;
 inline constexpr int kMatchNameMaxW = 220;
 
+/** The waveform strip under each picker: one per side, full width of its
+    picker. 26 px is enough to read a shape and not enough to pretend this is
+    the picture, which is still the thing below. */
+inline constexpr int kMatchWaveH   = 26;
+inline constexpr int kMatchWaveGap = 4;
+
+// -----------------------------------------------------------------------------
+//  WHICH SLOT IS THE REFERENCE, DECIDED ONCE
+// -----------------------------------------------------------------------------
+//
+// ROLE IS DECIDED BY CONTENT AND THEN HELD. On entry to the page the slot
+// holding a Reference is the reference side and the other is the mix side;
+// with neither or both, the reference is the bottom slot and the mix the top.
+//
+// THEN IT IS STORED AND NOT RECOMPUTED. Deriving it per paint, which is what
+// refBarIsTop() did, means a pick can change which side is which underneath
+// the user: put a reference in the top slot and the two names, the two
+// waveforms and the direction of every move swap over with no gesture that
+// asked for it.
+//
+// THE REASON THIS IS STABLE, and it is what the pins hold: the mix picker
+// offers Live, snapshots and captures and CAN NEVER PLACE A REFERENCE, and the
+// reference picker writes into the slot that is already the reference side. So
+// no pick can move a role from one slot to the other, and the flip cannot
+// happen at all rather than being corrected after it does.
+enum class MatchRefSide { Top, Bottom };
+
+inline MatchRefSide matchRefSideOnEntry (bool topIsReference, bool botIsReference)
+{
+    // Top only is the one case that puts the reference at the top. Bottom only,
+    // neither and both all land on the bottom: with neither there is nothing to
+    // honour, and with both the bottom is the one the reference bar already
+    // drives, so the page agrees with the bar instead of contradicting it.
+    return (topIsReference && ! botIsReference) ? MatchRefSide::Top : MatchRefSide::Bottom;
+}
+
+/** What a side's waveform IS, in words, because the two sides are not the same
+    span of time and the drawing must not imply they are.
+
+    A live side is a WINDOW onto something still running; a capture or a
+    reference is the WHOLE of a thing. Saying "live, last 3.4 s" beside
+    "whole file, 2:48" is the honest version of two strips drawn the same
+    width. */
+inline juce::String matchWaveSpan (bool rolling, float seconds)
+{
+    if (seconds <= 0.0f)
+        return rolling ? juce::String ("live, waiting for signal")
+                       : juce::String ("length unknown");
+    if (rolling)
+        return "live, last " + juce::String (seconds, 1) + " s";
+
+    const int total = (int) (seconds + 0.5f);
+    const int mins  = total / 60, secs = total % 60;
+    return "whole file, " + juce::String (mins) + ":"
+         + (secs < 10 ? "0" : "") + juce::String (secs);
+}
+
 /** The plot's gutters inside the graph card. */
 inline constexpr int kMatchPlotLabelW = 30;
 inline constexpr int kMatchPlotAxisH  = 14;
@@ -85,8 +142,9 @@ struct MatchPageRects
 {
     juce::Rectangle<int> status;     ///< the one line, above the button
     juce::Rectangle<int> setup;      ///< the whole name-link-button row
-    juce::Rectangle<int> mixName, refName, button;
-    juce::Rectangle<int> linkLeft, linkRight;   ///< the two runs of the link
+    juce::Rectangle<int> mixPick, refPick, button;   ///< the two pickers and the press
+    juce::Rectangle<int> mixWave, refWave;           ///< a waveform under each picker
+    juce::Rectangle<int> linkLeft, linkRight;        ///< the two runs of the link
     juce::Rectangle<int> graph;
 };
 
@@ -99,6 +157,11 @@ inline MatchPageRects matchPageLayout (juce::Rectangle<int> page)
 
     r.status = a.removeFromTop (kMatchStatusH);
     r.setup  = a.removeFromTop (kMatchSetupH);
+    // The waveform strip rides UNDER the row rather than inside it: the pickers
+    // keep the height they had, so the row still reads as one line of controls
+    // and the shapes sit below the thing they belong to.
+    auto waveRow = a.removeFromTop (kMatchWaveH);
+    a.removeFromTop (kMatchWaveGap);
     a.removeFromTop (kMatchGap);
     r.graph  = a;
 
@@ -113,12 +176,17 @@ inline MatchPageRects matchPageLayout (juce::Rectangle<int> page)
     // The name is capped; the LINK takes everything else, and keeps its floor
     // until there is nothing left to keep it from.
     const int nameW = juce::jmax (0, juce::jmin (kMatchNameMaxW, side - kMatchLinkMinW));
-    r.mixName  = { row.getX(), row.getY(), nameW, row.getHeight() };
-    r.refName  = { row.getRight() - nameW, row.getY(), nameW, row.getHeight() };
-    r.linkLeft  = { r.mixName.getRight(), row.getY(),
-                    juce::jmax (0, r.button.getX() - r.mixName.getRight()), row.getHeight() };
+    r.mixPick  = { row.getX(), row.getY(), nameW, row.getHeight() };
+    r.refPick  = { row.getRight() - nameW, row.getY(), nameW, row.getHeight() };
+    r.linkLeft  = { r.mixPick.getRight(), row.getY(),
+                    juce::jmax (0, r.button.getX() - r.mixPick.getRight()), row.getHeight() };
     r.linkRight = { r.button.getRight(), row.getY(),
-                    juce::jmax (0, r.refName.getX() - r.button.getRight()), row.getHeight() };
+                    juce::jmax (0, r.refPick.getX() - r.button.getRight()), row.getHeight() };
+
+    // Each waveform sits under its own picker and is exactly as wide, so a
+    // strip can never be read as belonging to the other side.
+    r.mixWave = { r.mixPick.getX(), waveRow.getY(), r.mixPick.getWidth(), waveRow.getHeight() };
+    r.refWave = { r.refPick.getX(), waveRow.getY(), r.refPick.getWidth(), waveRow.getHeight() };
     return r;
 }
 

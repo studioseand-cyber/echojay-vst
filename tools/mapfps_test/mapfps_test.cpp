@@ -13344,20 +13344,129 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 const int rightGap = R.setup.getRight() - R.button.getRight();
                 if (std::abs (leftGap - rightGap) > 1)
                     rowBad << w << ": button off centre by " << std::abs (leftGap - rightGap) << "; ";
-                if (R.mixName.getRight() > R.button.getX() || R.refName.getX() < R.button.getRight())
-                    rowBad << w << ": a name overlaps the button; ";
+                if (R.mixPick.getRight() > R.button.getX() || R.refPick.getX() < R.button.getRight())
+                    rowBad << w << ": a picker overlaps the button; ";
+                // EACH WAVEFORM SITS UNDER ITS OWN PICKER, exactly as wide and
+                // never crossing the centre, so a strip cannot be read as
+                // belonging to the other side.
+                if (R.mixWave.getX() != R.mixPick.getX()
+                    || R.mixWave.getWidth() != R.mixPick.getWidth()
+                    || R.refWave.getX() != R.refPick.getX()
+                    || R.refWave.getWidth() != R.refPick.getWidth())
+                    rowBad << w << ": a waveform is not under its picker; ";
+                if (R.mixWave.getRight() > R.refWave.getX())
+                    rowBad << w << ": the two waveforms overlap; ";
                 if (R.linkLeft.getWidth() < echojay::kMatchLinkMinW
                     || R.linkRight.getWidth() < echojay::kMatchLinkMinW)
                     rowBad << w << ": link " << R.linkLeft.getWidth() << "/"
                            << R.linkRight.getWidth() << "; ";
-                if (w >= 1150 && (R.linkLeft.getWidth() <= R.mixName.getWidth()
+                if (w >= 1150 && (R.linkLeft.getWidth() <= R.mixPick.getWidth()
                                   || R.linkLeft.getWidth() <= R.button.getWidth()))
                     rowBad << w << ": the link is not the longest run; ";
             }
             check (rowBad.isEmpty(),
-                   "mr PIN16: the button stays centred between the two names at every width, the link "
-                   "keeps its floor at the narrowest page, and at a wide one it is the longest run in "
-                   "the row: the button reaching out, not two stubs beside it", rowBad);
+                   "mr PIN16: the button stays centred between the two pickers at every width, each "
+                   "waveform sits under its own picker, the link keeps its floor at the narrowest "
+                   "page, and at a wide one it is the longest run in the row", rowBad);
+
+            // THE ROLES ARE DECIDED BY CONTENT ON ENTRY AND THEN HELD, which
+            // replaces refBarIsTop() for this page. refBarIsTop() answers
+            // "which slot holds a reference", so it MOVED when a pick landed in
+            // the other slot: the two names, the two waveforms and the
+            // direction of every move swapped with no gesture asking for it.
+            using echojay::matchRefSideOnEntry;
+            using echojay::MatchRefSide;
+            check (matchRefSideOnEntry (true, false) == MatchRefSide::Top,
+                   "mr PIN16: a reference in the TOP slot makes the top the reference side, "
+                   "so the page never calls that reference the mix");
+            check (matchRefSideOnEntry (false, true) == MatchRefSide::Bottom,
+                   "mr PIN16: a reference in the BOTTOM slot mirrors it");
+            check (matchRefSideOnEntry (false, false) == MatchRefSide::Bottom,
+                   "mr PIN16: with no reference in either, the mix is the top and the reference "
+                   "the bottom");
+            check (matchRefSideOnEntry (true, true) == MatchRefSide::Bottom,
+                   "mr PIN16: with references in BOTH, the reference is the bottom, which is the "
+                   "slot the reference bar already drives");
+
+            // THE INVARIANT, and it is the one that has to survive a later
+            // edit: no pick can move a role from one slot to the other, because
+            // the mix picker cannot place a reference and the reference picker
+            // writes into the slot that is ALREADY the reference side. So the
+            // side decided on entry is the side after any sequence of picks.
+            // Stated as a test rather than a comment, because putting the
+            // assignment back in the paint path is exactly the edit that would
+            // pass review and start the sides swapping again.
+            {
+                // The page's two picks, as what they do to the SLOTS: the mix
+                // picker writes Live, a snapshot or a chat capture into the mix
+                // slot, so that slot stops being a reference if it ever was;
+                // the reference picker writes a reference into the reference
+                // slot. Nothing else on this page writes a slot.
+                struct Slots { bool topRef, botRef; };
+                auto mixPick = [] (Slots s, MatchRefSide role)
+                {   // into the slot that is NOT the reference side
+                    if (role == MatchRefSide::Top) s.botRef = false; else s.topRef = false;
+                    return s;
+                };
+                auto refPick = [] (Slots s, MatchRefSide role)
+                {   // into the slot that IS the reference side
+                    if (role == MatchRefSide::Top) s.topRef = true; else s.botRef = true;
+                    return s;
+                };
+
+                juce::String roleBad;
+                for (bool t0 : { false, true })
+                    for (bool b0 : { false, true })
+                    {
+                        const auto onEntry = matchRefSideOnEntry (t0, b0);
+                        Slots s { t0, b0 };
+                        // Alternate the two picks several times. The held role
+                        // is what drives each pick, and re-deriving it from the
+                        // slots afterwards must give the SAME answer every
+                        // time: that is what makes holding it safe, and it is
+                        // why a later edit that puts the derivation back in the
+                        // paint path still cannot make the sides swap.
+                        for (int i = 0; i < 4; ++i)
+                        {
+                            s = (i % 2 == 0) ? mixPick (s, onEntry) : refPick (s, onEntry);
+                            if (matchRefSideOnEntry (s.topRef, s.botRef) != onEntry)
+                                roleBad << "entry(" << (int) t0 << "," << (int) b0
+                                        << ") flipped after pick " << i << "; ";
+                        }
+                    }
+                check (roleBad.isEmpty(),
+                       "mr PIN16: after any sequence of picks from either picker, the slot that is "
+                       "the reference side is the same slot it was on entry", roleBad);
+
+                // THE NEGATIVE CONTROL, so the check above is not passing for
+                // want of anything to catch. If the MIX picker could place a
+                // reference, which is the design this replaced, entering with
+                // no reference and picking one on the left WOULD flip the role.
+                {
+                    const auto onEntry = matchRefSideOnEntry (false, false);   // Bottom
+                    const bool flipped = matchRefSideOnEntry (true, false) != onEntry;
+                    check (flipped,
+                           "mr PIN16: and the control holds: a mix picker that COULD place a "
+                           "reference would flip the role, which is the failure this prevents");
+                }
+
+                // THE TWO SIDES ARE DIFFERENT SPANS OF TIME AND SAY SO IN
+                // WORDS. A live side is a window onto something still running
+                // and a capture or reference is the whole of a thing; drawn the
+                // same width they would read as comparable objects, which is
+                // the lie section 3 of the contract refuses about the curves.
+                // The wording is pinned because the drawing cannot be.
+                {
+                    const auto live = echojay::matchWaveSpan (true,  3.4f);
+                    const auto file = echojay::matchWaveSpan (false, 168.5f);
+                    check (live.contains ("live") && live.contains ("last") && live.contains ("3.4"),
+                           "mr PIN16: a rolling side names itself live and says how much of it is "
+                           "on screen", live);
+                    check (file.contains ("whole file") && file.contains ("2:49"),
+                           "mr PIN16: and a whole-file side names its own length, so the two spans "
+                           "are stated rather than implied", file);
+                }
+            }
         }
 
         // mr PIN17 -- THE PICTURE'S DELTAS ARE THE PROPOSAL'S DELTAS.

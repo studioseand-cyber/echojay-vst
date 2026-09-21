@@ -1006,13 +1006,37 @@ private:
     echojay::MatchSide buildMatchSide(const CompareSlotState& slot) const;
 
     /** The two sides of the compare, named by role rather than by position.
-        WHICH SLOT IS THE REFERENCE IS refBarIsTop()'s ANSWER, not a fresh
-        decision: the reference bar already drives one slot, and asking twice
-        is how the two come to disagree. */
+        WHICH SLOT IS THE REFERENCE IS DECIDED ON ENTRY AND HELD in
+        matchRefIsTop_, not derived per call. See setRefSubTab's Match branch. */
     struct MatchSides { echojay::MatchSide mix, ref; };
     MatchSides buildMatchSides() const;
 
-    /** The two slots by ROLE, from refBarIsTop(). The page needs the slots
+    /** Which slot is the reference side, decided by CONTENT when the Match page
+        is entered (echojay::matchRefSideOnEntry) and then held for as long as
+        the page is open.
+
+        IT USED TO BE refBarIsTop(), RECOMPUTED EVERY CALL, and that made the
+        roles a function of where a reference happened to sit: a pick landing in
+        the top slot flipped which side was the mix, swapping the two names, the
+        two waveforms and the direction of every move with no gesture that asked
+        for it. Held, and with the mix picker unable to place a reference, no
+        pick can move a role from one slot to the other. */
+    bool matchRefIsTop_ = false;
+
+    /** The Match page's own pickers. The left one offers Live, the session
+        snapshots and the chat captures and NEVER a reference, which is half of
+        why the roles cannot flip; the right one opens the existing browser
+        against whichever slot is the reference side. */
+    void openMatchMixPicker();
+    void matchApplyMixSlot (const CompareSlotState& next);
+
+    /** The points a side's waveform draws, as absolute peaks, with what span
+        they cover and whether that span is a rolling window rather than a whole
+        file. Returns false when there is nothing to draw. */
+    bool matchWavePoints (const CompareSlotState& slot, std::vector<float>& outAbs,
+                          bool& rolling, float& spanSeconds) const;
+
+    /** The two slots by ROLE, from matchRefIsTop_. The page needs the slots
         themselves as well as their sides, because the curves come from each
         slot's spectral evidence and MatchSide carries only the six bands. One
         answer to "which one is the reference", read in both places. */
@@ -1197,6 +1221,11 @@ private:
         float linkPhase  = 0.0f;   ///< the link's travelling pulse, 0 to 1
         float refusedFor = 0.0f;   ///< seconds left on the press-refused line
         bool  buttonHot  = false;  ///< the pointer is over the button
+        /** Which painted region the pointer is over: 0 none, 1 the button,
+            2 the mix picker, 3 the reference picker, 4 the mix waveform,
+            5 the reference waveform. Painted controls carry no component of
+            their own, so the hover state has to live here. */
+        int   hotZone    = 0;
         juce::String refusedText;
     };
     MatchPanel matchPanel_;
