@@ -13,6 +13,8 @@
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 int main (int argc, char** argv)
 {
@@ -39,7 +41,12 @@ int main (int argc, char** argv)
     // 18 Sep 2026: argv[4] = a marker file the HOST polls. Touched the moment the instance exists, so a
     // crash or stall in the render check below (AMEK Mastering Compressor segfaults there, exit 139) can
     // never read as "hangs on load".
-    const juce::File marker = (argc >= 5) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
+    // 21 Sep 2026 (ruling): "--list-params" as the 4th argument = LIST MODE. Prints one line per parameter
+    // "index<TAB>name<TAB>label<TAB>numSteps<TAB>isDiscrete", never creates an editor, never touches the marker or any
+    // EchoJay state file; wall-clock bound 30 s (EJ_PROBE_LIST_BOUND_MS overrides, for the guard); exit 0 on success, exit 3
+    // on refuse/timeout with one line "refused <reason>". The signed probe is the only process allowed to list a PACE-wrapped plugin.
+    const bool listMode = argc >= 5 && juce::String (argv[4]) == "--list-params";
+    const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
     std::unique_ptr<juce::AudioPluginInstance> inst;
@@ -48,10 +55,29 @@ int main (int argc, char** argv)
     fm.createPluginInstanceAsync (d, 48000.0, 512,
         [&] (std::unique_ptr<juce::AudioPluginInstance> p, const juce::String& e)
         { inst = std::move (p); err = e; done = true; });
-    for (int i = 0; i < 600 && ! done; ++i)   // internal ~30s cap
+    // the wall-clock bound: 30 s; EJ_PROBE_LIST_BOUND_MS overrides in list mode (the guard forces it; 0 = refuse at once, the
+    // forced-timeout fixture). The run loop is pumped in slices no longer than the bound.
+    const int boundMs = listMode && std::getenv ("EJ_PROBE_LIST_BOUND_MS") != nullptr ? juce::jmax (0, atoi (std::getenv ("EJ_PROBE_LIST_BOUND_MS"))) : 30000;
+    const double tStart = juce::Time::getMillisecondCounterHiRes();
+    const double slice = juce::jlimit (0.001, 0.05, boundMs / 1000.0);
+    while (! done && boundMs > 0 && juce::Time::getMillisecondCounterHiRes() - tStart < (double) boundMs)
     {
         juce::Timer::callPendingTimersSynchronously();
-        CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.05, false);
+        CFRunLoopRunInMode (kCFRunLoopDefaultMode, slice, false);
+    }
+    if (listMode)
+    {
+        if (! done)          { std::printf ("refused timeout after %d ms\n", boundMs); std::fflush (stdout); std::_Exit (3); }
+        if (inst == nullptr) { std::printf ("refused %s\n", err.replace ("\n", " ").toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+        const auto& ps = inst->getParameters();
+        for (int i = 0; i < ps.size(); ++i)
+        {
+            auto* q = ps[i]; if (q == nullptr) continue;
+            const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
+            std::printf ("%d\t%s\t%s\t%d\t%d\n", i, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8(), q->getNumSteps(), q->isDiscrete() ? 1 : 0);
+        }
+        std::fflush (stdout);
+        std::_Exit (0);   // a third-party AU's teardown is not this mode's subject
     }
     if (! done)          { std::printf ("RESULT: TIMED OUT creating instance\n"); return 2; }
     if (inst == nullptr) { std::printf ("INSTANTIATE: FAIL (%s)\nRESULT: FAIL\n", err.toRawUTF8()); return 1; }
