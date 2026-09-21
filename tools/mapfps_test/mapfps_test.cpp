@@ -46,6 +46,7 @@
 #include "EJCaptureGuard.h"    // capture guard: the shipped substitution predicate
 #include "EJSpectralEvidence.h" // spectral provenance + the shipped band reduction
 #include "EJReferenceIndex.h"   // the reference library index: the shipped parser
+#include "EJReferenceReconcile.h" // the blob-to-index reconciliation: the shipped policy
 #include "EJReferenceRows.h"    // the reference browser's pane rule: the shipped rows
 #include "EJReferenceBar.h"     // the reference bar's geometry and stepping: the shipped rects
 #include "EJCodecPage.h"        // the Playback page's geometry: the shipped rects
@@ -7506,6 +7507,165 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                             RefAvailability::Unreadable })
                 check (refAvailabilityFromKey (refAvailabilityKey (a)) == a,
                        "ri PIN7: key and state are inverses");
+        }
+
+        // =================================================================
+        // RECONCILIATION (EJReferenceReconcile.h). WIRED TO NOTHING YET: the
+        // function ships in this commit and the caller arrives in the next, so
+        // these six pins are the only thing exercising it. They are here rather
+        // than in a new family because the subject is the same library.
+        //
+        // The clock, the id source and "does this path exist" are all
+        // parameters, so every case below is an exact value in and an exact
+        // value out, with no disk touched.
+        // =================================================================
+
+        // A deterministic id source. The real one is random by design, and an
+        // exact library cannot be asserted against a random id.
+        auto mintSeq = [] { int n = 0;
+                            return [n] () mutable { return juce::String ("r_m") + juce::String (++n); }; };
+        const juce::String kNow = "2026-09-20T21:00:00Z";
+
+        // ri PIN20 -- A BLOB PATH THE INDEX DOES NOT KNOW BECOMES AN ENTRY.
+        // This is how an existing user's references reach the library at all:
+        // their blob is the only record that survives today.
+        {
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;   // loaded and empty
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/a.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 1,
+                   "ri PIN20: an unknown blob path becomes ONE entry",
+                   juce::String ((int) r.library.entries.size()));
+            const auto& e = r.library.entries[0];
+            check (e.path == "/refs/a.wav" && e.name == "a" && e.id == "r_m1",
+                   "ri PIN20: with its path, its name from the filename, and a minted id",
+                   e.id + " " + e.name);
+            check (refIsUnmeasured (e) && e.measurementEpoch == kRefMeasurementEpoch
+                   && e.availability == RefAvailability::Present,
+                   "ri PIN20: unmeasured at the running epoch, and present");
+            check (r.toAnalyse.size() == 1 && r.toAnalyse[0] == "/refs/a.wav",
+                   "ri PIN20: and it is queued for analysis, because it has no numbers");
+        }
+
+        // ri PIN21 -- AN ENTRY WHOSE FILE IS GONE GOES MISSING AND KEEPS
+        // lastSeenAt. The date it last worked is the only fact the user can act
+        // on; stamping it with the moment we noticed would destroy it.
+        {
+            RefEntry have;
+            have.id = "r_keep"; have.path = "/refs/gone.wav"; have.name = "gone";
+            have.availability = RefAvailability::Present;
+            have.lastSeenAt = "2026-09-02T08:31:10Z";
+            have.measurements.valid = true;
+            have.measurementEpoch = kRefMeasurementEpoch;
+
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;
+            lr.index.entries.push_back (have);
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, {}, [] (const juce::String&) { return false; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 1
+                   && r.library.entries[0].availability == RefAvailability::Missing,
+                   "ri PIN21: a file that is gone makes the entry Missing, not absent");
+            check (r.library.entries[0].lastSeenAt == "2026-09-02T08:31:10Z",
+                   "ri PIN21: and lastSeenAt is KEPT, not overwritten with now",
+                   r.library.entries[0].lastSeenAt);
+            check (r.library.entries[0].checkedAt == kNow,
+                   "ri PIN21: while checkedAt says when we last looked");
+            check (r.toAnalyse.empty(),
+                   "ri PIN21: and nothing is queued, because there is no audio to read");
+        }
+
+        // ri PIN22 -- AN ENTRY THE BLOB NEVER HEARD OF IS IN THE LIBRARY. This
+        // is the whole point: the library stops being per project.
+        {
+            RefEntry mine;
+            mine.id = "r_other"; mine.path = "/refs/other.wav"; mine.name = "other";
+            mine.availability = RefAvailability::Present;
+            mine.measurements.valid = true;
+            mine.measurementEpoch = kRefMeasurementEpoch;
+
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;
+            lr.index.entries.push_back (mine);
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/fromblob.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 2,
+                   "ri PIN22: an entry the blob never knew survives beside the blob's own",
+                   juce::String ((int) r.library.entries.size()));
+            check (r.library.entries[0].id == "r_other"
+                   && r.library.entries[1].path == "/refs/fromblob.wav",
+                   "ri PIN22: the index comes first and the blob's unknowns follow it");
+            check (r.toAnalyse.size() == 1 && r.toAnalyse[0] == "/refs/fromblob.wav",
+                   "ri PIN22: and the one with numbers is NOT decoded again");
+        }
+
+        // ri PIN23 -- THE NEGATIVE CONTROL FOR PIN20, AND THE DEFECT THIS
+        // COMMIT EXISTS FOR. PluginProcessor.cpp:4470 drops a path failing
+        // existsAsFile out of the restore with no record anywhere, so the list
+        // comes back shorter than the user left it. It must be LISTED.
+        {
+            RefLoadResult lr; lr.state = RefLoadState::Loaded;
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/moved.wav" },
+                                         [] (const juce::String&) { return false; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 1,
+                   "ri PIN23: a blob path whose file is gone is LISTED, not dropped",
+                   juce::String ((int) r.library.entries.size()));
+            check (r.library.entries[0].availability == RefAvailability::Missing
+                   && r.library.entries[0].name == "moved",
+                   "ri PIN23: as a Missing entry that still carries its name");
+            check (r.toAnalyse.empty(),
+                   "ri PIN23: and nothing is queued for a file that is not there");
+        }
+
+        // ri PIN24 -- FIRST RUN. An ABSENT index plus a blob is exactly the
+        // library today's startup builds, in the blob's own order, so the first
+        // run after this lands costs what a first run costs today and no more.
+        {
+            RefLoadResult lr;                       // Absent: writable, silent
+            check (lr.state == RefLoadState::Absent,
+                   "ri PIN24: a default load result is Absent, which is the first run");
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/1.wav", "/refs/2.wav", "/refs/3.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.size() == 3
+                   && r.library.entries[0].path == "/refs/1.wav"
+                   && r.library.entries[2].path == "/refs/3.wav"
+                   && r.mayWrite,
+                   "ri PIN24: three entries in BLOB ORDER, and the index may be written");
+            check (r.toAnalyse.size() == 3,
+                   "ri PIN24: all three are analysed, which is today's cost exactly once",
+                   juce::String ((int) r.toAnalyse.size()));
+        }
+
+        // ri PIN25 -- AN UNREADABLE INDEX OPENS EMPTY AND DOES NOT FALL BACK TO
+        // THE BLOB.
+        //
+        // WHY EMPTY IS THE SAFE READING, and it is the opposite of the
+        // instinct: rebuilding from the blob would give this session a library
+        // missing every reference the blob never knew about, and the first
+        // commit would write THAT over the file that could not be read. A
+        // damaged library would become a permanently shorter one. Empty
+        // destroys nothing and the refusal to write is what protects the file.
+        {
+            RefLoadResult lr; lr.state = RefLoadState::Unreadable;
+            lr.message = "The reference library could not be read.";
+            auto mint = mintSeq();
+            const auto r = refReconcile (lr, { "/refs/a.wav", "/refs/b.wav" },
+                                         [] (const juce::String&) { return true; },
+                                         kNow, mint);
+            check (r.library.entries.empty(),
+                   "ri PIN25: an unreadable index opens EMPTY",
+                   juce::String ((int) r.library.entries.size()));
+            check (! r.mayWrite,
+                   "ri PIN25: and nothing may be written over the file that could not be read");
+            check (r.toAnalyse.empty(),
+                   "ri PIN25: and the blob's paths are NOT rebuilt into a shorter library");
         }
     }
 
