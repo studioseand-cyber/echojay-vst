@@ -1985,11 +1985,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                         && ! bh2->borrowSlotSeededWithState(i))
                         p3.borrowRemovedWithheld_.add(nm);
                 }
-                if (i < (int) org.size())
-                    org.erase(org.begin() + i);
-                auto& cid = p3.borrowCreatedIdentity_;
-                if (i < (int) cid.size())
-                    cid.erase(cid.begin() + i);
+                juce::ignoreUnused(org);   // 20 Sep 2026: origins / created identity follow the edit inside borrowPushStructuralEdit (one author)
                 juce::StringArray baseBefore; for (int k = 0; k < bh2->getNumSlots(); ++k) baseBefore.add(bh2->getSlotInfo(k).name);
                 const int countBefore = bh2->getNumSlots();
                 bh2->removeSlot(i);
@@ -2074,12 +2070,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             chainListPanel.noteSlotMoved(i, j2);
             juce::StringArray baseBefore; for (int k = 0; k < bh->getNumSlots(); ++k) baseBefore.add(bh->getSlotInfo(k).name);
             bh->moveSlot(i, dir);
-            auto& org = processorRef.borrowSlotOrigin_;
-            auto& cid = processorRef.borrowCreatedIdentity_;
-            if (i < (int) org.size() && j2 < (int) org.size())
-            { std::swap(org[(size_t) i], org[(size_t) j2]);
-              std::swap(cid[(size_t) i], cid[(size_t) j2]); }
-            processorRef.borrowPushStructuralEdit("move", i, j2, false, {}, baseBefore, bh->getNumSlots());   // 20 Sep 2026
+            processorRef.borrowPushStructuralEdit("move", i, j2, false, {}, baseBefore, bh->getNumSlots());   // 20 Sep 2026 (origins swap inside)
             int newSel = chainSelectedSlot_;
             if (chainSelectedSlot_ == i)       newSel = j2;
             else if (chainSelectedSlot_ == j2) newSel = i;
@@ -28610,16 +28601,7 @@ void EchoJayEditor::showChainPluginPicker()
                     // it may not have — the very trap the sendRackAdd
                     // comment below warns about. The substitute hosts here;
                     // the plan carries what the user picked.
-                    auto& p3 = safeThis->processorRef;
-                    p3.borrowSlotOrigin_.push_back(-1);
-                    p3.borrowCreatedIdentity_.push_back(
-                        LinkShm::StructureEdit::SlotIdentity{
-                            picked.name,
-                            // THE one uid idiom (ChainHost::descUid): some
-                            // AU descriptors carry theirs in deprecatedUid
-                            // with uniqueId 0 — an unguarded uniqueId sends
-                            // "0" and the Link resolves on name alone.
-                            juce::String(ChainHost::descUid(picked)), {} });
+                    auto& p3 = safeThis->processorRef;   // 20 Sep 2026: the CREATE bookkeeping (origin -1, picked identity) happens inside borrowPushStructuralEdit
                     {   // 20 Sep 2026: the add reaches the Link NOW (appended; the Link resolves the picked name in its own list)
                         juce::StringArray baseBefore; for (int k = 0; k < newSlot; ++k) baseBefore.add(bh2->getSlotInfo(k).name);
                         p3.borrowPushStructuralEdit("add", -1, -1, false, picked.name, baseBefore, newSlot);

@@ -2445,6 +2445,7 @@ void EchoJayProcessor::borrowRelease(bool keepEdits)
     borrowBaseIdentity_.clear();
     borrowRemovedWithheld_.clear();
     borrowRemovedNames_.clear();
+    borrowPendingPushes_.clear(); borrowPushInFlight_ = false;   // 20 Sep 2026: a session ending drops its queue
     borrowInContextOk_.store(false, std::memory_order_relaxed);
     borrowStructureCapable_ = false;
     // Ramp out first (the AMEK lesson): active drops both crossfade
@@ -2594,6 +2595,29 @@ int EchoJayProcessor::borrowPushStructuralEdit(const juce::String& op, int slot0
     if (! borrowActive()) return -1;
     auto* bh = borrowHost();
     const juce::String uid = borrowSession_.uid;
+    // the session's slot bookkeeping follows the edit HERE (one author; the editor handlers no longer touch it)
+    {
+        auto& org = borrowSlotOrigin_; auto& cid = borrowCreatedIdentity_;
+        if (op == "remove" && slot0 >= 0)
+        {
+            if (slot0 < (int) org.size()) org.erase(org.begin() + slot0);   // (the editor records the removed name / withheld state itself, before the edit)
+            if (slot0 < (int) cid.size()) cid.erase(cid.begin() + slot0);
+        }
+        else if (op == "move" && slot0 >= 0 && to0 >= 0)
+        {
+            if (slot0 < (int) org.size() && to0 < (int) org.size()) std::swap(org[(size_t) slot0], org[(size_t) to0]);
+            if (slot0 < (int) cid.size() && to0 < (int) cid.size()) std::swap(cid[(size_t) slot0], cid[(size_t) to0]);
+        }
+        else if (op == "add")
+        {
+            org.push_back(-1); cid.push_back(LinkShm::StructureEdit::SlotIdentity{ name, {}, {} });
+        }
+        else if (op == "replace" && slot0 >= 0)
+        {
+            if (slot0 < (int) org.size()) org[(size_t) slot0] = -1;
+            if (slot0 < (int) cid.size()) cid[(size_t) slot0] = LinkShm::StructureEdit::SlotIdentity{ name, {}, {} };
+        }
+    }
     auto* o = new juce::DynamicObject();
     o->setProperty("op", op);
     if (slot0 >= 0) o->setProperty("slot", slot0 + 1);            // the edit JSON is 1-based
@@ -2603,30 +2627,92 @@ int EchoJayProcessor::borrowPushStructuralEdit(const juce::String& op, int slot0
     if (name.isNotEmpty()) o->setProperty("name", name);
     juce::Array<juce::var> ops; ops.add(juce::var(o));
     juce::Array<juce::var> base; for (const auto& n : baseSlotsBefore) base.add(n);
-    const int seq = writeChainEditCommand(uid, juce::var(ops), juce::var(base), "EchoJay V2 borrowed rack edit", borrowSession_.leaseId);
+    BorrowPendingPush pp; pp.seq = LinkShm::nextCtrlSeq(); pp.id = uid + "-" + juce::String(pp.seq); pp.op = op; pp.editOps = juce::var(ops); pp.baseSlots = juce::var(base);
+    borrowPendingPushes_.push_back(pp);
     const int countAfter = bh ? bh->getNumSlots() : -1;
     EchoJay_NSLog(("EJLink: push " + op + " slot=" + juce::String(slot0 + 1) + (op == "move" ? " to=" + juce::String(to0 + 1) : juce::String())
                    + (op == "bypass" ? juce::String(on ? " on" : " off") : juce::String()) + (name.isNotEmpty() ? " name=\"" + name + "\"" : juce::String())
-                   + " count=" + juce::String(countBefore) + "->" + juce::String(countAfter) + " id=" + uid + " seq=" + juce::String(seq)
-                   + (seq < 0 ? " FAILED (no session / shared dir)" : "")).toRawUTF8());
-    if (seq > 0)
+                   + " count=" + juce::String(countBefore) + "->" + juce::String(countAfter) + " id=" + pp.id + " queued=" + juce::String((int) borrowPendingPushes_.size())).toRawUTF8());
+    borrowWriteHeadPush();
+    return pp.seq;
+}
+
+void EchoJayProcessor::borrowWriteHeadPush()
+{
+    if (borrowPushInFlight_ || borrowPendingPushes_.empty() || ! borrowActive()) return;
+    auto& head = borrowPendingPushes_.front();
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) { EchoJay_NSLog(("EJLink: push id=" + head.id + " NOT written (shared dir unavailable) - stays pending").toRawUTF8()); return; }
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v", 2); cmd->setProperty("seq", head.seq); cmd->setProperty("id", head.id);
+    cmd->setProperty("editOps", head.editOps); cmd->setProperty("baseSlots", head.baseSlots);
+    cmd->setProperty("sourceNote", "EchoJay V2 borrowed rack edit"); cmd->setProperty("leaseId", borrowSession_.leaseId);
+    juce::File(dir + "chain-ack-" + borrowSession_.uid + ".json").deleteFile();
+    if (! juce::File(dir + "chain-cmd-" + borrowSession_.uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
+    { EchoJay_NSLog(("EJLink: push id=" + head.id + " write FAILED - stays pending").toRawUTF8()); return; }
+    ++head.attempts; borrowPushInFlight_ = true;
+    EchoJay_NSLog(("EJLink: push id=" + head.id + " written (attempt " + juce::String(head.attempts) + ")").toRawUTF8());
+    borrowPollPushAck(head.seq, head.id);
+}
+
+void EchoJayProcessor::borrowPollPushAck(int seq, const juce::String& id)
+{
+    std::weak_ptr<bool> alive = borrowAliveToken_;
+    juce::Timer::callAfterDelay(250, [this, alive, seq, id]
     {
-        borrowRebaseAfterPush();
-        // the ack, read a beat later: "ok" is silence; anything else is said on the log (the rack stays as the Link has it)
-        std::weak_ptr<bool> alive = borrowAliveToken_;
-        juce::Timer::callAfterDelay(400, [this, alive, uid, seq]
+        if (alive.expired() || ! borrowActive() || borrowPendingPushes_.empty() || borrowPendingPushes_.front().id != id) { borrowPushInFlight_ = false; return; }
+        int e2 = 0; const juce::String d = LinkShm::resolveDir(e2);
+        juce::File ack(d + "chain-ack-" + borrowSession_.uid + ".json");
+        juce::String st;
+        if (ack.existsAsFile()) { auto v = juce::JSON::parse(ack.loadFileAsString()); if ((int) v.getProperty("seq", 0) == seq) st = v.getProperty("status", juce::var()).toString(); }
+        if (st == "ok")
+        {   // ACKED: the op is the Link's now - pop, rebase, write the next
+            borrowPendingPushes_.erase(borrowPendingPushes_.begin());
+            borrowPushInFlight_ = false;
+            borrowRebaseAfterPush();
+            EchoJay_NSLog(("EJLink: push id=" + id + " acked ok - rebased, " + juce::String((int) borrowPendingPushes_.size()) + " pending").toRawUTF8());
+            borrowWriteHeadPush();
+            return;
+        }
+        if (st.isNotEmpty())
+        {   // failed / stale / partial: stays pending (re-sent at deselect); said on the log once per attempt
+            borrowPushInFlight_ = false;
+            EchoJay_NSLog(("EJLink: push id=" + id + " ack=" + st + " - stays PENDING (re-sent at deselect)").toRawUTF8());
+            return;
+        }
+        borrowPollPushAck(seq, id);   // no ack yet: keep polling while the session is live
+    });
+}
+
+void EchoJayProcessor::borrowFlushPendingThen(std::function<void(bool)> then, int maxWaitMs)
+{
+    if (borrowPendingPushes_.empty()) { then(true); return; }
+    // synchronous, bounded: re-write the head (same id), wait for its ack, rebase, next
+    int err = 0; const juce::String dir = LinkShm::resolveDir(err);
+    const double deadline = juce::Time::getMillisecondCounterHiRes() + maxWaitMs;
+    while (! borrowPendingPushes_.empty() && juce::Time::getMillisecondCounterHiRes() < deadline)
+    {
+        auto head = borrowPendingPushes_.front();
+        auto* cmd = new juce::DynamicObject();
+        cmd->setProperty("v", 2); cmd->setProperty("seq", head.seq); cmd->setProperty("id", head.id);
+        cmd->setProperty("editOps", head.editOps); cmd->setProperty("baseSlots", head.baseSlots);
+        cmd->setProperty("sourceNote", "EchoJay V2 borrowed rack edit (re-sent at deselect)"); cmd->setProperty("leaseId", borrowSession_.leaseId);
+        juce::File(dir + "chain-ack-" + borrowSession_.uid + ".json").deleteFile();
+        juce::File(dir + "chain-cmd-" + borrowSession_.uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+        EchoJay_NSLog(("EJLink: deselect re-send id=" + head.id + " (" + head.op + ")").toRawUTF8());
+        juce::String st;
+        while (juce::Time::getMillisecondCounterHiRes() < deadline)
         {
-            if (alive.expired()) return;
-            int e2 = 0; const juce::String d = LinkShm::resolveDir(e2);
-            juce::File ack(d + "chain-ack-" + uid + ".json");
-            if (! ack.existsAsFile()) { EchoJay_NSLog(("EJLink: push seq=" + juce::String(seq) + " no ack yet id=" + uid).toRawUTF8()); return; }
-            auto v = juce::JSON::parse(ack.loadFileAsString());
-            const auto st = v.getProperty("status", juce::var()).toString();
-            if ((int) v.getProperty("seq", 0) == seq && st != "ok")
-                EchoJay_NSLog(("EJLink: push seq=" + juce::String(seq) + " ack=" + st + " id=" + uid + " - " + juce::JSON::toString(v.getProperty("perPluginResults", juce::var()), true).substring(0, 200)).toRawUTF8());
-        });
+            juce::Thread::sleep(100);
+            juce::File ack(dir + "chain-ack-" + borrowSession_.uid + ".json");
+            if (ack.existsAsFile()) { auto v = juce::JSON::parse(ack.loadFileAsString()); if ((int) v.getProperty("seq", 0) == head.seq) { st = v.getProperty("status", juce::var()).toString(); if (st.isNotEmpty()) break; } }
+        }
+        if (st != "ok") { EchoJay_NSLog(("EJLink: deselect re-send id=" + head.id + " -> " + (st.isEmpty() ? juce::String("NO ACK") : st)).toRawUTF8()); break; }
+        borrowPendingPushes_.erase(borrowPendingPushes_.begin()); borrowPushInFlight_ = false; borrowRebaseAfterPush();
+        EchoJay_NSLog(("EJLink: deselect re-send id=" + head.id + " acked ok - rebased").toRawUTF8());
     }
-    return seq;
+    then(borrowPendingPushes_.empty());
 }
 
 void EchoJayProcessor::borrowRebaseAfterPush()
@@ -2664,6 +2750,18 @@ void EchoJayProcessor::borrowRebaseAfterPush()
 void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
 {
     if (! borrowActive()) return;
+    if (! borrowPendingPushes_.empty())
+    {   // 20 Sep 2026 (rebase-on-ack): pending structural ops go first, in order, each acked - then the state commits
+        bool flushed = false;
+        borrowFlushPendingThen([&flushed](bool ok) { flushed = ok; });
+        if (! flushed)
+        {
+            borrowStickyBanner_ = "Your session is still live. " + juce::String((int) borrowPendingPushes_.size())
+                + " rack edit(s) have not reached " + resolveLinkDisplayName(borrowSession_.uid) + " yet - it may be paused or its shared folder unavailable. Deselect again to retry.";
+            if (releaseLockOnFail) borrowApplyFinish(false, "pending structural edits not acked", false);
+            return;
+        }
+    }
     if (borrowApplyInFlight_)
     {
         // A close arriving mid-flight upgrades the outcome policy: the

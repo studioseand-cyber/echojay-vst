@@ -67,9 +67,63 @@ int main (int argc, char** argv)
     // G2 bypass: slot 1 bypassed
     { auto base = names (*bh); bh->setSlotBypassed (0, true); push ("G2-bypass", "bypass", 0, -1, true, {}, base, 6, names (*bh), true); }
     // G5: my rack, still leased, no deselect
-    { auto* o = new juce::DynamicObject(); o->setProperty ("count", bh->getNumSlots()); juce::Array<juce::var> nn; for (const auto& s : names (*bh)) nn.add (s); o->setProperty ("names", nn); juce::File (H + "/v2_done.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
-    std::printf ("  V2 side final rack: %d slot(s) %s (no deselect; the plan at deselect would be empty of structure)\n", bh->getNumSlots(), names (*bh).joinIntoString ("|").toRawUTF8());
+    { auto* o = new juce::DynamicObject(); o->setProperty ("count", bh->getNumSlots()); juce::Array<juce::var> nn; for (const auto& s : names (*bh)) nn.add (s); o->setProperty ("names", nn); juce::File (H + "/v2_g5.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
+    std::printf ("  V2 side rack after G2: %d slot(s) %s (no deselect)\n", bh->getNumSlots(), names (*bh).joinIntoString ("|").toRawUTF8());
     check (bp.borrowActive(), "V2 side: still borrowing (no deselect happened)");
+    waitFile (H + "/link_g5.json", 15000);
+#ifdef EJ_V2_ACK_QUEUE
+    // ---- L2 (owed fix): the ack is LOST after the Link applied; the op stays pending; deselect re-sends it; the Link acks the
+    //      repeated id "ok" without re-applying; the session rebases and releases
+    juce::String l2id; int l2seq = 0; bool l2resent = false;
+    {
+        auto base = names (*bh); const int before = bh->getNumSlots(); bh->removeSlot (0);
+        l2seq = bp.borrowPushStructuralEdit ("remove", 0, -1, false, {}, base, before); l2id = uid + "-" + juce::String (l2seq);
+        auto* o = new juce::DynamicObject(); const juce::var ov (o);   // ONE owner (the 18 Sep double-wrap UAF shape)
+        o->setProperty ("seq", l2seq); o->setProperty ("id", l2id); o->setProperty ("op", "remove"); o->setProperty ("leg", "L2"); o->setProperty ("dropAck", true); o->setProperty ("expectCount", names (*bh).size());
+        juce::Array<juce::var> en; for (const auto& s : names (*bh)) en.add (s); o->setProperty ("expectNames", en); o->setProperty ("expectBypassed0", false);
+        juce::File (H + "/v2_step.json").replaceWithText (juce::JSON::toString (ov, true));
+        pumpMs (3000);   // the Link applies and acks; the link side drops the ack; my poll never sees "ok"
+        check (bp.borrowPendingCount() == 1, "L2: with the ack lost the op is still PENDING after 3 s", juce::String (bp.borrowPendingCount()) + " pending");
+        l2resent = bp.borrowPendingCount() == 1;
+        bp.borrowApplyAndRelease (true); pumpMs (1500);
+        check (! bp.borrowActive() && bp.borrowPendingCount() == 0, "L2: deselect re-sent the pending op, the Link acked the repeated id, the session rebased and released", "active=" + juce::String ((int) bp.borrowActive()) + " pending=" + juce::String (bp.borrowPendingCount()));
+        o->setProperty ("settled", true); juce::File (H + "/v2_step.json").replaceWithText (juce::JSON::toString (ov, true));
+        waitFile (H + "/link_step_" + juce::String (l2seq) + ".json", 15000);
+    }
+    // ---- L1 (owed fix): the Link is NOT polling during a borrowed delete; V2 deselects; the Link resumes -> the delete lands.
+    //      L1b: a SECOND delete while paused (the one-file transport lost it as it stood)
+    juce::String l1id, l1bid;
+    {
+        juce::StringArray linkNames; { auto sv = juce::JSON::parse (juce::File (H + "/link_step_" + juce::String (l2seq) + ".json").loadFileAsString()); if (auto* a = sv.getProperty ("names", juce::var()).getArray()) for (auto& e : *a) linkNames.add (e.toString()); }
+        std::printf ("  L1: link names %s\n", linkNames.joinIntoString ("|").toRawUTF8()); std::fflush (stdout);
+        bp.borrowEngageBegin (uid, "lease-guard-L1-" + juce::String (juce::Time::currentTimeMillis()), true, true); pumpMs (300);
+        std::printf ("  L1: engaged=%d\n", (int) bp.borrowActive()); std::fflush (stdout);
+        bh = bp.borrowHost(); check (bh != nullptr && bp.borrowUid() == uid, "L1: re-engaged a borrow session");
+        if (! bh) return 2;
+        for (const auto& n : linkNames) { const auto* d = BuiltinDeviceRegistry::instance().findByName (n); if (d) EchoJayBorrowHostTestAccess::loadBuiltin (*bh, BuiltinDeviceRegistry::descriptionFor (*d)); std::printf ("  L1: seeded %s (%d)\n", n.toRawUTF8(), bh->getNumSlots()); std::fflush (stdout); }
+        bp.borrowRebaseAfterPush(); std::printf ("  L1: rebased\n"); std::fflush (stdout);
+        check (names (*bh) == linkNames, "L1: the BorrowHost mirrors the Link's current rack", names (*bh).joinIntoString ("|"));
+        pumpMs (5500);   // the Link's lease gate floor
+        juce::File (H + "/v2_pause.json").replaceWithText ("{\"ms\":6000}"); pumpMs (400);
+        { auto base = names (*bh); const int before = bh->getNumSlots(); bh->removeSlot (0); const int s1 = bp.borrowPushStructuralEdit ("remove", 0, -1, false, {}, base, before); l1id = uid + "-" + juce::String (s1); }
+        { auto base = names (*bh); const int before = bh->getNumSlots(); bh->removeSlot (0); const int s2 = bp.borrowPushStructuralEdit ("remove", 0, -1, false, {}, base, before); l1bid = uid + "-" + juce::String (s2); }
+        pumpMs (2500);
+        check (bp.borrowPendingCount() == 2, "L1: both deletes pending while the Link is paused (queued, one in flight)", juce::String (bp.borrowPendingCount()) + " pending");
+        const juce::StringArray finalNames = names (*bh);
+        bp.borrowApplyAndRelease (true); pumpMs (1500);   // the flush waits (bounded 8 s) - the Link resumes at ~6 s and applies both
+        check (! bp.borrowActive() && bp.borrowPendingCount() == 0, "L1: deselect waited for the Link to resume, both deletes acked, session released", "active=" + juce::String ((int) bp.borrowActive()) + " pending=" + juce::String (bp.borrowPendingCount()));
+        auto* o = new juce::DynamicObject(); o->setProperty ("seq", 999999); o->setProperty ("id", l1bid); o->setProperty ("op", "remove"); o->setProperty ("leg", "L1"); o->setProperty ("settled", true); o->setProperty ("expectCount", finalNames.size());
+        juce::Array<juce::var> en; for (const auto& s : finalNames) en.add (s); o->setProperty ("expectNames", en); o->setProperty ("expectBypassed0", false);
+        juce::File (H + "/v2_step.json").replaceWithText (juce::JSON::toString (juce::var (o), true));
+        waitFile (H + "/link_step_999999.json", 15000);
+    }
+    { auto* o = new juce::DynamicObject(); o->setProperty ("l2id", l2id); o->setProperty ("l2seq", l2seq); o->setProperty ("l2resent", l2resent); o->setProperty ("l1id", l1id); o->setProperty ("l1bid", l1bid); juce::File (H + "/v2_done.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
+#else
+    for (const char* leg : { "L2: with the ack lost the op is still PENDING after 3 s", "L2: deselect re-sent the pending op, the Link acked the repeated id, the session rebased and released", "L1: both deletes pending while the Link is paused (queued, one in flight)", "L1: deselect waited for the Link to resume, both deletes acked, session released" })
+        check (false, leg, "no ack queue on this build (RED by name)");
+    waitFile (H + "/link_g5.json", 15000);
+    juce::File (H + "/v2_done.json").replaceWithText ("{}");
+#endif
     waitFile (H + "/link_done.json", 30000);
     std::printf ("\n==== link_state_guard (v2 side): %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

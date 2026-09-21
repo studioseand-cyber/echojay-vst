@@ -2546,6 +2546,15 @@ void LinkProcessor::pollChainCommand()
 
     int ver = (int)obj->getProperty("v");
     int seq = (int)obj->getProperty("seq");
+    // 20 Sep 2026 (idempotent): a command whose id was already applied is acked "ok" again and NOT re-applied
+    const juce::String cmdId = obj->getProperty("id").toString();
+    if (cmdId.isNotEmpty() && appliedChainIds_.contains(cmdId))
+    {
+        cmdFile.deleteFile();
+        EchoJay_NSLog(("EJLink: repeat id=" + cmdId + " seq=" + juce::String(seq) + " - already applied, acked ok again, NOT re-applied").toRawUTF8());
+        writeChainAck(seq, "ok", { "already applied (id " + cmdId + ")" }, {});
+        return;
+    }
     if ((ver != 1 && ver != 2) || seq == lastAppliedChainSeq_ || seq == 0)
         return;   // unknown version or already applied — leave for inspection
                   // (older Links reject v:2 the same way: forward-safe)
@@ -2591,13 +2600,15 @@ void LinkProcessor::pollChainCommand()
 
         if (onChainAboutToChange) onChainAboutToChange();   // editors close first
         auto self = this;   // processor outlives message-thread callbacks in-session
-        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq]() mutable
+        juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId]() mutable
         {
             const int countBefore = self->chainHost.getNumSlots();
             const juce::String opNames = [&ops] { juce::StringArray o; for (const auto& op : ops) o.add(op.op + (op.slot >= 0 ? "@" + juce::String(op.slot + 1) : juce::String())); return o.joinIntoString(","); }();
             self->chainHost.applyChainEdits(std::move(ops), -1, baseSlots,
-                [self, seq, countBefore, opNames](const juce::StringArray& results, int applied, bool aborted)
+                [self, seq, countBefore, opNames, cmdId](const juce::StringArray& results, int applied, bool aborted)
             {
+                if (! aborted && cmdId.isNotEmpty()) { self->appliedChainIds_.add(cmdId); while (self->appliedChainIds_.size() > 64) self->appliedChainIds_.remove(0); }
+                if (! aborted) ++self->chainCmdApplied_;
                 // 20 Sep 2026: under a rack lease the priors (what the release restores, what the MODEL and the SAVED chunk
                 // report) follow the edited rack - one rule, the same as engage: the intent of every slot as it stands now.
                 if (self->rackLeaseActive_)

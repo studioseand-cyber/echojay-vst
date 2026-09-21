@@ -574,6 +574,21 @@ public:
     // After a pushed edit is acked: the session's base becomes the live rack (created slots gain a record so their state edits
     // still commit at deselect). Public for the guard.
     void borrowRebaseAfterPush();
+    // 20 Sep 2026 (rebase-on-ack, the owed fix): a pushed structural edit is PENDING until the Link acks it "ok"; the session
+    // rebases in the ack callback, never on write success. The chain-cmd transport has ONE file per Link, so pushes are QUEUED
+    // and written one at a time (the next is written when the previous is acked); a missing or "failed" ack keeps the op at the
+    // head of the queue (polled while the session is live). Deselect/close re-sends every pending op, in order, waiting for each
+    // ack, BEFORE its state commits. Each command carries an id (<uid>-<seq>); the Link acks a repeated id "ok" without
+    // re-applying it, so a lost ack never applies a delete twice.
+#define EJ_V2_ACK_QUEUE 1   // 20 Sep 2026: the harness's RED-by-name key
+    struct BorrowPendingPush { int seq = 0; juce::String id, op; juce::var editOps, baseSlots; int attempts = 0; };
+    std::vector<BorrowPendingPush> borrowPendingPushes_;
+    bool  borrowPushInFlight_ = false;
+    int   borrowPendingCount() const { return (int) borrowPendingPushes_.size(); }
+    void  borrowWriteHeadPush();                                  // writes the head of the queue (if any) and starts its ack poll
+    void  borrowPollPushAck(int seq, const juce::String& id);     // 250 ms poll; ok -> pop + rebase + write the next
+    // deselect/close: re-send the pending ops synchronously (bounded), then continue with `then(allAcked)`
+    void  borrowFlushPendingThen(std::function<void(bool)> then, int maxWaitMs = 8000);
     void borrowEditorClosed();
     // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
     // session is LIVE its uid is authoritative — a chat activation may

@@ -370,6 +370,11 @@ private:
     // Polled at ~250ms on the message-thread timer; applied on seq change;
     // the command file is deleted on consume.
     int  lastAppliedChainSeq_ = 0;
+    // 20 Sep 2026 (idempotent chain commands): the ids this instance has APPLIED (bounded); a repeated id is acked "ok" again
+    // and never re-applied, so a lost ack cannot apply a delete twice. chainCmdApplied_ counts applies (the guard reads it).
+    juce::StringArray appliedChainIds_;
+    int  chainCmdApplied_ = 0;
+#define EJ_LINK_IDEMPOTENT_CMDS 1
     int  heartbeatDivider_ = 0;
     bool loggedInitState_ = false;   // item-1 diag: post-init log fired once
 
