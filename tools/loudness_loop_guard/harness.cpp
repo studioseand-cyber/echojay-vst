@@ -664,7 +664,9 @@ int main()
         calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain();
         { const auto b = bodyOf (r.proc, r.h); check (! r.h.hasActiveTrims() && ! b.contains ("unityChain"), "Q2. a populated rack BEFORE Listen: no trims yet, no field", b.substring (0, 100)); }
         r.runWindow();
-        { const auto b = bodyOf (r.proc, r.h); check (r.h.hasActiveTrims() && b.contains ("\"unityChain\":true"), "Q3. after Listen the +4 dB slot carries its trim -> the body carries \"unityChain\":true (both chat and chat-stream build through buildChatRequestBody)", b.fromFirstOccurrenceOf ("\"appVersion\"", false, false).substring (0, 80)); }
+        { const auto b = bodyOf (r.proc, r.h); juce::StringArray ul; for (const auto& l : r.logs) if (l.contains ("unity") || l.contains ("measured:")) ul.add (l.substring (0, 90));
+          check (r.h.hasActiveTrims() && b.contains ("\"unityChain\":true"), "Q3. after Listen the +4 dB slot carries its trim -> the body carries \"unityChain\":true (both chat and chat-stream build through buildChatRequestBody)",
+                 "trim " + f1 (r.h.getSlotTrimDb (1)) + " state " + juce::String ((int) r.loop.state()) + " bypassed " + juce::String ((int) r.h.getSlotInfo (1).bypassed) + " | " + ul.joinIntoString (" || ").substring (0, 300) + " | " + b.fromFirstOccurrenceOf ("\"appVersion\"", false, false).substring (0, 60)); }
         r.h.setSlotBypassed (1, true);
         { const auto b = bodyOf (r.proc, r.h); check (! r.h.hasActiveTrims() && ! b.contains ("unityChain"), "Q4. the trimmed slot bypassed -> no live trim, the field is absent again", b.substring (0, 60)); }
     }
