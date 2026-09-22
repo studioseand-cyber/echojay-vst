@@ -233,6 +233,7 @@ public:
         auto* lv = level (levelSlot);
         if (lv == nullptr) { log ("arm refused: slot " + juce::String (levelSlot) + " is not EchoJay Level"); return; }
         target_ = targetLufs; slot_ = levelSlot; limiterSlot_ = limiterSlot; round_ = 0; pendingTrim_ = 0.0f;
+        levelPtr_ = lv; limiterPtr_ = (limiterSlot >= 0 && limiterSlot < host_.getNumSlots()) ? host_.getSlotProcessor (limiterSlot) : nullptr;   // 21m item 1: identity, not index
         if (! haveUndo_) { preLoopGainDb_ = (float) lv->gainDb(); haveUndo_ = true; }
         const auto in = host_.getChainInLevels();
         buildInputLufs_ = in.known ? in.levelDb : std::numeric_limits<float>::quiet_NaN();
@@ -261,7 +262,7 @@ public:
     // after Done / Leave it (a fresh listen). Check is the same window after Go when the audio had stopped.
     bool listen()
     {
-        if (level (slot_) == nullptr) return false;
+        if (levelNow() == nullptr) return false;
         if (state_ == State::waitAudio || state_ == State::measuring || state_ == State::proposed) return false;
         quietMeasured_ = std::numeric_limits<float>::quiet_NaN(); continueAfterGo_ = false; proposals_ = 0; lastCommanded_ = 0.0f;   // a fresh listen is a fresh sequence
         startWindow();
@@ -272,7 +273,7 @@ public:
     bool check()
     {   // 18h (item 4): Check measures ONCE and reports with the result pills (no proposal) - from the after-verb hold, from the
         // "Tap Check" prompt, or from the watch; not while a window already runs or a proposal is open
-        if (level (slot_) == nullptr) return false;
+        if (levelNow() == nullptr) return false;
         if (state_ == State::waitAudio || state_ == State::measuring || state_ == State::proposed || state_ == State::armed) return false;
         reportOnly_ = ! continueAfterGo_; continueAfterGo_ = false;   // 21 Sep: after Go the Check continues the sequence (a proposal may follow); after any other verb it reports
         startWindow();
@@ -293,7 +294,7 @@ public:
     // ---- the verbs (all deterministic; PluginEditor::handleLoudnessVerb routes the words) ----
     bool go()                       // "go" / "apply": apply the proposed trim, then measure again and propose again
     {
-        if (state_ != State::proposed || level (slot_) == nullptr) return false;
+        if (state_ != State::proposed || levelNow() == nullptr) return false;
         if (pendingKind_ == PendingKind::backOff || pendingKind_ == PendingKind::push)
         {
             applyTrim (pendingTrim_, pendingKind_ == PendingKind::backOff ? "back-off applied" : "push applied");
@@ -318,7 +319,7 @@ public:
     }
     bool loudestPart()              // "this is the loudest part": proceed with the held measurement -> the normal proposal
     {
-        if (state_ != State::quietAsked || level (slot_) == nullptr || ! std::isfinite (quietMeasured_)) return false;
+        if (state_ != State::quietAsked || levelNow() == nullptr || ! std::isfinite (quietMeasured_)) return false;
         const float m = quietMeasured_; quietMeasured_ = std::numeric_limits<float>::quiet_NaN();
         log ("quiet window accepted as the loudest part: proceeding with " + fmt (m) + " LUFS");
         proposeFrom (m, host_.getChainOutLevels().truePeakDb);
@@ -331,7 +332,7 @@ public:
     }
     bool pushIt()                   // raise the Level by the shortfall, clamped, one pass, then measure
     {
-        auto* lv = level (slot_); if (lv == nullptr || ! std::isfinite (lastMeasured())) return false;
+        auto* lv = levelNow(); if (lv == nullptr || ! std::isfinite (lastMeasured())) return false;
         const float shortfall = target_ - lastMeasured();
         const float trim = juce::jlimit (-kPassClampDb, kPassClampDb, shortfall);
         applyTrim (trim, "push it"); applied_ = true;
@@ -347,10 +348,10 @@ public:
     }
     // 22 Sep 2026 (item 2, client half): a typed complaint the server classified loop_verb ("too squashed", "over limited", "distorted",
     // "pumping", "too loud") is the softer step TWICE - one move of -2 dB, one bubble
-    bool backOffComplaint() { if (level (slot_) == nullptr) return false; log ("complaint -> softer x2"); nudgeTarget (-2.0f); return true; }
+    bool backOffComplaint() { if (levelNow() == nullptr) return false; log ("complaint -> softer x2"); nudgeTarget (-2.0f); return true; }
     void nudgeTarget (float deltaDb)   // "a bit louder" / "a bit softer": target +-1 AND the Level moves by it now (one pass), then one check
     {
-        if (level (slot_) == nullptr) return;
+        if (levelNow() == nullptr) return;
         target_ += deltaDb;
         log ("target nudged " + fmtSigned (deltaDb) + " dB -> " + fmt (target_) + " LUFS");
         // 18g/18h: the nudge IS the move - the Level moves by +-1 now; 18h: no automatic check, the bubble asks how it sounds
@@ -359,7 +360,7 @@ public:
     }
     void recheck()                 // "check the level again" = Check (18h): one window, a report with the result pills
     {
-        if (level (slot_) == nullptr) return;
+        if (levelNow() == nullptr) return;
         if (state_ == State::waitAudio || state_ == State::measuring) return;
         round_ = 0; proposals_ = 0; lastCommanded_ = 0.0f; pendingTrim_ = 0.0f; pendingKind_ = PendingKind::none; continueAfterGo_ = false; reportOnly_ = true;
         startWindow();
@@ -368,7 +369,7 @@ public:
     }
     bool undo()
     {
-        auto* lv = level (slot_);
+        auto* lv = levelNow();
         if (lv == nullptr || ! haveUndo_) return false;
         const float delta = preLoopGainDb_ - (float) lv->gainDb();
         writeGainDb (preLoopGainDb_);
@@ -396,7 +397,7 @@ public:
     float lastMeasured() const noexcept { return lastMeasured_; }
     float lastInputWindow() const noexcept { return lastInputWindow_; }
     float buildInputLufs() const noexcept { return buildInputLufs_; }
-    float currentGainDb() const { auto* lv = level (slot_); return lv != nullptr ? (float) lv->gainDb() : 0.0f; }
+    float currentGainDb() const { auto* lv = levelNow(); return lv != nullptr ? (float) lv->gainDb() : 0.0f; }
     float countedSeconds() const { return host_.getChainOutLevels().heardAboveSeconds; }
     float grAvg() const noexcept { return grN_ > 0 ? grSum_ / (float) grN_ : 0.0f; }
     float grMax() const noexcept { return juce::jmax (0.0f, grMax_); }
@@ -412,7 +413,7 @@ public:
     float lastCommandedDb() const noexcept { return lastCommanded_; }
     float grEstimateDb() const noexcept { return estN_ > 0 ? estSum_ / (float) estN_ : std::numeric_limits<float>::quiet_NaN(); }   // Level OUT minus chain OUT (LUFS-S), mean over the window
     // 18h: the peak estimate - Level OUT true peak minus chain OUT true peak, both max-held over the window (the hits)
-    float grPeakEstimateDb() const { auto* lv = level (slot_); if (lv == nullptr) return std::numeric_limits<float>::quiet_NaN(); const float a = lv->outputLevels().truePeakDb, b = host_.getChainOutLevels().truePeakDb; return (a > -150.0f && b > -150.0f) ? a - b : std::numeric_limits<float>::quiet_NaN(); }
+    float grPeakEstimateDb() const { auto* lv = levelNow(); if (lv == nullptr) return std::numeric_limits<float>::quiet_NaN(); const float a = lv->outputLevels().truePeakDb, b = host_.getChainOutLevels().truePeakDb; return (a > -150.0f && b > -150.0f) ? a - b : std::numeric_limits<float>::quiet_NaN(); }
     static juce::StringArray pillsFor (float needed) { return needed > kCloseEnoughDb ? shortPills() : resultPills(); }   // 18h: Push it only when SHORT
     bool  grIsEstimated() const { return echoJayLimiter() == nullptr; }
     int   levelSlot() const noexcept { return slot_; }
@@ -421,8 +422,8 @@ public:
     // The tick. The plugin calls it from the timer; a harness calls it directly between audio blocks.
     void tickNow()
     {
-        auto* lv = level (slot_);
-        if (lv == nullptr) { if (state_ != State::idle && state_ != State::hold) { state_ = State::hold; stopTimer(); log ("stopped: the Level slot is no longer in the chain"); emit ("The Level slot is no longer in the chain - level loop stopped.", -1.0f, false, true, Bubble::Kind::info); } return; }
+        auto* lv = levelNow();
+        if (lv == nullptr) { if (state_ != State::idle && state_ != State::hold) { state_ = State::hold; stopTimer(); levelPtr_ = nullptr; log ("stopped: the Level slot is no longer in the chain"); emit ("The Level slot is no longer in the chain - level loop stopped.", -1.0f, false, true, Bubble::Kind::info); } return; }
         // the Level card's GR row: the EchoJay Limiter's real GR, else the estimate (18g item 4)
         if (auto* lim = echoJayLimiter()) lv->setDownstreamGrDb (-lim->gainReductionDb(), false);
         else if (estN_ > 0) lv->setDownstreamGrDb (grEstimateDb(), true);
@@ -480,7 +481,7 @@ public:
     // 18f: the decision after a measurement (also reached from loudestPart()) - proposal / on-target / stuck / at the limit
     void proposeFrom (float measured, float truePeakDb)
     {
-        auto* lv = level (slot_); if (lv == nullptr) return;
+        auto* lv = levelNow(); if (lv == nullptr) return;
         const float needed = target_ - measured;
         const float cur = (float) lv->gainDb();
         // 18g (item 2): from the second pass the step is scaled by achieved/commanded of the previous pass (clamped 0.5-2.0),
@@ -559,6 +560,20 @@ private:
         if (host_.getSlotInfo (slot).name != "EchoJay Level") return nullptr;
         return dynamic_cast<EedLevelProcessor*> (host_.getSlotProcessor (slot));
     }
+    // 21m item 1: the Level slot by identity - the index is looked up from the instance every time
+    int resolveLevelSlot() const
+    {
+        if (levelPtr_ == nullptr) return -1;
+        for (int i = 0; i < host_.getNumSlots(); ++i) if (host_.getSlotProcessor (i) == levelPtr_ && host_.getSlotInfo (i).name == "EchoJay Level") return i;
+        return -1;
+    }
+    int resolveLimiterSlot() const
+    {
+        if (limiterPtr_ == nullptr) return -1;
+        for (int i = 0; i < host_.getNumSlots(); ++i) if (host_.getSlotProcessor (i) == limiterPtr_) return i;
+        return -1;
+    }
+    EedLevelProcessor* levelNow() { slot_ = resolveLevelSlot(); if (limiterPtr_ != nullptr) limiterSlot_ = resolveLimiterSlot(); return levelNow(); }
     EedLimiterProcessor* echoJayLimiter() const
     {
         if (limiterSlot_ < 0 || limiterSlot_ >= host_.getNumSlots()) return nullptr;
@@ -584,7 +599,7 @@ private:
         host_.resetChainOutLevels();
         host_.resetChainOutShortTermMax(); host_.resetChainInShortTermMax();
         if (auto* lim = echoJayLimiter()) lim->resetOutputPeak();
-        if (auto* lv = level (slot_)) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
+        if (auto* lv = levelNow()) lv->resetMeters();   // 18h: the Level's IN/OUT meters (and their peak holds) describe THIS window
         lastCounted_ = 0.0f; waitingSaid_ = false; passStartMs_ = nowMs();
         grMin_ = std::numeric_limits<float>::max(); grMax_ = 0.0f; grSum_ = 0.0f; grN_ = 0;
         estSum_ = 0.0f; estN_ = 0; estMax_ = 0.0f;
@@ -597,7 +612,7 @@ private:
     }
     void applyTrim (float trim, const char* why)
     {
-        auto* lv = level (slot_); if (lv == nullptr) return;
+        auto* lv = levelNow(); if (lv == nullptr) return;
         lastCommanded_ = trim; prevMeasured_ = lastMeasured_;   // 18g (item 2): the next proposal scales its step by achieved/commanded
         const float newDb = juce::jlimit (-kLevelMaxDb, kLevelMaxDb, (float) lv->gainDb() + trim);
         appliedDelta_ = newDb - (float) lv->gainDb();   // 21 Sep: the delta the after-verb bubble reports
@@ -609,7 +624,7 @@ private:
         auto* p = new juce::DynamicObject(); p->setProperty ("gain_db", (double) db);
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (p));
         host_.setSlotStructuredSettings (slot_, juce::var (w));
-        if (auto* lv = level (slot_)) if (std::abs (lv->gainDb() - db) > 0.01) lv->setParamValue ("gain_db", db);
+        if (auto* lv = levelNow()) if (std::abs (lv->gainDb() - db) > 0.01) lv->setParamValue ("gain_db", db);
         host_.setSlotSettings (slot_, "Level " + fmtSigned (db) + " dB (set by the level loop toward the " + fmt (target_) + " LUFS target)");
     }
     void emit (const juce::String& text, float progress, bool replace, bool final, Bubble::Kind kind = Bubble::Kind::info, juce::StringArray pills = {})
@@ -626,6 +641,9 @@ private:
     ChainHost& host_;
     State state_ = State::idle;
     int   slot_ = -1, limiterSlot_ = -1, round_ = 0;
+    // 22 Sep 2026 (21m item 1): the loop tracks its Level slot and its limiter by IDENTITY (the processor instances), never by
+    // index - an insert/remove/reorder of OTHER slots moves the indices, the instances stay; the indices are re-resolved on every call
+    EedLevelProcessor* levelPtr_ = nullptr; juce::AudioProcessor* limiterPtr_ = nullptr;
     float target_ = -9.0f;
     juce::String armSource_, loudnessOption_;
     float ceilingDb_ = -0.1f;

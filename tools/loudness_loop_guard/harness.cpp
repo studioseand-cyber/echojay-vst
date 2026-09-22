@@ -553,6 +553,22 @@ int main()
         check (r.loop.backOffComplaint() && std::abs (r.levelGain() - (before - 2.0f)) < 0.05f && std::abs (r.loop.target() - (tBefore - 2.0f)) < 0.01f && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Applied -2.0 dB (Level now "),
                "L2 (item 2, client half). a complaint after the apply = the softer step twice: Level -2, target -2, ONE bubble \"Applied -2.0 dB (Level now ...)\"", r.last() + " | Level " + f1 (before) + " -> " + f1 (r.levelGain()));
     }
+    std::printf ("== N. 22 Sep 2026 (21m item 1): the loop tracks its Level slot by IDENTITY - an insert before it keeps the loop armed on the same Level; removing the Level stops it ==\n");
+    {
+        Rig r (false); r.setTarget (-9.0f, 0.0);
+        calibrate (r.proc, r.prog, -18.0f);
+        check (r.loop.armFromChain() && r.loop.levelSlot() == 0, "N0. armed on the Level at slot 0", juce::String (r.loop.levelSlot()));
+        auto* levelBefore = r.h.getSlotProcessor (0);
+        const auto* byp = BuiltinDeviceRegistry::instance().findByName ("EJ Test Bypass");
+        check (byp != nullptr && r.h.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*byp), 0).isEmpty() && r.h.getNumSlots() == 3 && r.h.getSlotInfo (1).name == "EchoJay Level", "N1. a slot inserted BEFORE the Level moves it to index 1", r.h.getSlotInfo (0).name + " | " + r.h.getSlotInfo (1).name);
+        r.loop.tickNow();
+        check (r.loop.state() != LoudnessLoop::State::hold && r.loop.levelSlot() == 1 && r.h.getSlotProcessor (1) == levelBefore && ! r.last().contains ("no longer in the chain"),
+               "N1. the loop stays ARMED on the SAME Level instance (now slot 1), no \"no longer in the chain\" (RED today: index 0 is the inserted slot, the loop stops)", "state " + juce::String ((int) r.loop.state()) + " slot " + juce::String (r.loop.levelSlot()) + " | " + r.last());
+        r.runWindow();
+        check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.go() && std::abs ((float) dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (1))->gainDb() - 6.0f) < 0.1f, "N1. ...and Go drives that same Level (slot 1 gained +6)", f1 ((float) dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (1))->gainDb()));
+        r.h.removeSlot (1); r.loop.tickNow();
+        check (r.loop.state() == LoudnessLoop::State::hold && r.last().contains ("The Level slot is no longer in the chain"), "N2. removing the Level itself stops the loop with the message", r.last());
+    }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
