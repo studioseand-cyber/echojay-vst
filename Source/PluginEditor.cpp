@@ -18172,6 +18172,10 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 auto set = so->getProperty("settings").toString().trim();
                                 if (set.isEmpty())
                                     set = so->getProperty("role").toString().trim();
+                                {   // 21m ruling 2: the slot's unity-gain trim, from the same atomic the tile shows
+                                    const auto tt = processorRef.getChainHost().trimTextForName(nm);
+                                    if (tt.isNotEmpty()) set = set.isEmpty() ? tt : set + juce::String::fromUTF8(" \xc2\xb7 ") + tt;
+                                }
                                 const juce::String head = juce::String(si + 1) + ". " + nm;
                                 const int headW = juce::jmin(bubbleW - 20,
                                     juce::GlyphArrangement::getStringWidthInt(

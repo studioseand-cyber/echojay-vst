@@ -1849,6 +1849,8 @@ private:
             bool bypassed = false;
             bool selected = false;
             bool popoutOnly = false;   // editor opens in a floating window
+            juce::String trimText;     // 21m ruling 2: "-2.3 dB match" / "level kept" (from the slot's trim atomic, via SlotInfo)
+            bool keepLevel = false;    // 21m ruling 2: the per-slot "keep this plugin's level" flag
 
             juce::TextButton bypassBtn { "B" };
             juce::TextButton removeBtn { "X" };
@@ -1861,6 +1863,7 @@ private:
             std::function<void()>      onRemove;
             std::function<void(int)>   onMove;
             std::function<void(float)> onWet;
+            std::function<void(bool)>  onKeepLevel;   // 21m ruling 2
 
             Block()
             {
@@ -1887,8 +1890,19 @@ private:
                 wetKnob.onChange = [this](float v) { if (onWet) onWet(v); };
             }
 
-            void mouseDown(const juce::MouseEvent&) override
-            { if (onSelect) onSelect(); }
+            void mouseDown(const juce::MouseEvent& e) override
+            {
+                if (e.mods.isPopupMenu())
+                {   // 21m ruling 2: the per-slot "keep this plugin's level" flag, the one the unity trim measure honours
+                    juce::PopupMenu m;
+                    m.addItem(1, "Keep this plugin's level", true, keepLevel);
+                    juce::Component::SafePointer<Block> sp(this);
+                    m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [sp](int r)
+                    { if (sp != nullptr && r == 1 && sp->onKeepLevel) sp->onKeepLevel(! sp->keepLevel); });
+                    return;
+                }
+                if (onSelect) onSelect();
+            }
 
             void paint(juce::Graphics& g) override
             {
@@ -1922,18 +1936,24 @@ private:
                     g.drawText(juce::String::fromUTF8("\xe2\x86\x97"),
                                getWidth() - 15, 2, 12, 11, juce::Justification::centred);
                 }
+                if (trimText.isNotEmpty() && ! bypassed)
+                {   // 21m ruling 2: the unity trim under the knob, the SAME text the card line shows
+                    g.setColour(Card::nameOn.withAlpha(0.8f));
+                    g.setFont(juce::Font(juce::FontOptions(7.0f)));
+                    g.drawText(trimText, 2, 39, getWidth() - 4, 8, juce::Justification::centred, true);
+                }
             }
 
             void resized() override
             {
-                int bw = 18, bh = 15, m = 4;
+                int bw = 18, bh = 14, m = 3;   // 21m: one row shorter so the trim text fits between knob and buttons
                 int by = getHeight() - bh - m;
                 bypassBtn.setBounds(m, by, bw, bh);
                 removeBtn.setBounds(m + bw + 2, by, bw, bh);
                 nextBtn.setBounds(getWidth() - m - bw, by, bw, bh);
                 prevBtn.setBounds(getWidth() - m - bw * 2 - 2, by, bw, bh);
                 // Wet/dry knob — centred between name row and button row
-                wetKnob.setBounds((getWidth() - 22) / 2, 20, 22, 22);
+                wetKnob.setBounds((getWidth() - 22) / 2, 17, 22, 22);
             }
         };
 
@@ -2196,6 +2216,7 @@ private:
         std::function<void(int, int)>   onMoveSlot;
         std::function<void()>           onAddClick;
         std::function<void(int, float)> onSlotWet;    // slot idx, wet 0..1
+        std::function<void(int, bool)>  onSlotKeepLevel;   // 21m ruling 2: slot idx, keep flag
         std::function<void(float)>      onMasterWet;  // wet 0..1
         std::function<void(float)>      onPreGain;    // pre-gain, ABSOLUTE dB (owner routes local vs remote)
         std::function<void()>           onPreGainReset;   // double-click = reset to auto
@@ -2826,6 +2847,9 @@ private:
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
                 bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
+                bl->trimText  = slotInfos[(size_t)i].trimText;    // 21m ruling 2
+                bl->keepLevel = slotInfos[(size_t)i].keepLevel;
+                bl->onKeepLevel = [this, ci](bool k) { if (onSlotKeepLevel) onSlotKeepLevel(ci, k); };
                 // STAGE 1 SCOPE, stated per control rather than by hiding a
                 // whole row: wet and move have no op over the command
                 // protocol, so on a remote rack they are disabled and their

@@ -11,10 +11,12 @@
 #include "EedLimiterProcessor.h"   // force-link the built-in's registrar
 #include "EedDeviceRegistry.h"
 #include <cstdio>
+#include <memory>
 #include <cmath>
 #include <deque>
 #ifdef EJ_LOUDNESSLOOP_V2
 #include "EedLevelProcessor.h"
+#include "EedGainProcessor.h"   // 21m ruling 2: the +4 dB stand-in
 #endif
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }
     static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }
@@ -66,6 +68,7 @@ struct IndependentMeter
 };
 
 struct Programme { juce::Random rng { 4242 }; float amp = 0.1f; bool peaky = false; int blockCount = 0; float burst = 5.0f; int spikeAtBlock = -1; float spike = 20.0f; int spikeEvery = 0; };   // spikeEvery: a rare transient once every N blocks (0 = off)   // spike: ONE block's hit at spike x (a single ~+26 dB transient)   // burst: the hit's gain over the bed (5x = +14 dB); K1 uses 12x
+void pumpMs (double ms) { const double t0 = juce::Time::getMillisecondCounterHiRes(); while (juce::Time::getMillisecondCounterHiRes() - t0 < ms) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); } }
 void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, LoudnessLoop* loop, IndependentMeter* ind, float gainDb = 0.0f)
 {
     juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi;
@@ -144,15 +147,22 @@ struct Rig
     int levelSlot = -1, limSlot = -1;
     // 18g: ceilingReadBack = the third-party limiter's dial readback confirms its ceiling (a mapped limiter after a build);
     // false = no readback (no map), which the safety net substitutes. limiterName picks the stand-in.
-    Rig (bool thirdPartyLast, bool ceilingReadBack = true, const char* limiterName = "EJ Test Limiter") : h (proc.getChainHost()), loop (proc.loudnessLoop())
+    // 21m ruling 2: gainSlot = an "EchoJay Gain" between the Level and the limiter (the +4 dB stand-in for a plugin that adds level)
+    Rig (bool thirdPartyLast, bool ceilingReadBack = true, const char* limiterName = "EJ Test Limiter", bool gainSlot = false) : h (proc.getChainHost()), loop (proc.loudnessLoop())
     {
         proc.prepareToPlay (48000.0, 512);
         const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
         const auto* lm = BuiltinDeviceRegistry::instance().findByName (thirdPartyLast ? limiterName : "EchoJay Limiter");
         check (lv != nullptr && lm != nullptr, "precondition: EchoJay Level and the limiter are registered");
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lv));
+        if (gainSlot)
+        {
+            const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+            check (gn != nullptr, "precondition: EchoJay Gain is registered"); if (gn == nullptr) return;
+            EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
+        }
         EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*lm));
-        levelSlot = 0; limSlot = 1;
+        levelSlot = 0; limSlot = gainSlot ? 2 : 1;
 #ifdef EJ_LOUDNESSLOOP_MANNERS
         if (thirdPartyLast && ceilingReadBack) EchoJayBorrowHostTestAccess::markCeilingApplied (h, limSlot);
 #else
@@ -171,6 +181,8 @@ struct Rig
           auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (limSlot, juce::var (w)); }
     }
     float levelGain() const { return (float) dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (levelSlot))->gainDb(); }
+    void setGainDb (float db)   // the Gain stand-in (slot 1 when the Rig has one), through the schema path
+    { auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", (double) db); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); h.setSlotStructuredSettings (1, juce::var (w)); }
     double limiterInput() const { auto* l = dynamic_cast<EedLimiterProcessor*> (h.getSlotProcessor (limSlot)); return l ? l->inputDb() : 0.0; }
     juce::String last() const { return bubbles.isEmpty() ? juce::String() : bubbles[bubbles.size() - 1]; }
     // feed until the loop leaves waitAudio/measuring (a proposal, a hold or a rejection), bounded
@@ -187,6 +199,7 @@ struct Rig
 
 int main()
 {
+    (void) EedGainProcessor::schema();   // the static archive links the Gain registrar only when referenced (as level_slot_guard)
     std::setvbuf (stdout, nullptr, _IONBF, 0); juce::ScopedJuceInitialiser_GUI gui;
     auto tmp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ej_loudloop_" + juce::String (juce::Time::getMillisecondCounter()));
     std::printf ("loudness_loop_guard v2 (18e): the Level slot, max short-term, ask-before-apply, the verbs, tracking\n");
@@ -592,6 +605,53 @@ int main()
         const auto hm = r.loop.hitsMeasure(); const auto prop = r.last();
         std::printf ("  O2 measure: typical %.1f dB, worst %.1f dB over %d blocks | %s\n", hm.typicalDb, hm.worstDb, hm.blocks, prop.toRawUTF8());
         check (prop.contains ("is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?") && r.loop.lastPills().joinIntoString ("|").startsWith ("Push it anyway|Leave it"), "O2. hits typically above the cap -> capped with the capped-proposal wording", prop);
+    }
+    std::printf ("== P. 22 Sep 2026 (21m ruling 2): gain staging - each slot's unity trim, measured at Listen, applied inside its blend node ==\n");
+    {
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        check (r.h.getNumSlots() == 3 && r.h.getSlotInfo (1).name == "EchoJay Gain" && std::abs (r.h.getSlotTrimDb (1)) < 0.01f && r.h.slotTrimText (1).isEmpty(),
+               "P0. the +4 dB Gain sits between the Level and the limiter with no trim before Listen", r.h.slotTrimText (1));
+        const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.6f, "P0. programme calibrated at the chain input to -18 LUFS", f1 (cal));
+        { feed (r.proc, r.prog, 400, false, nullptr, nullptr); const auto lv0 = r.h.getSlotLevels (1);
+          check (lv0.measured && std::abs ((lv0.out.shortTermDb - lv0.in.shortTermDb) - 4.0f) < 0.3f, "P0. before Listen the slot adds +4 dB (out - in, short-term)", f1 (lv0.out.shortTermDb - lv0.in.shortTermDb)); }
+        check (r.loop.armFromChain() && r.loop.levelSlot() == 0 && r.loop.limiterSlot() == 2, "P0. armed: Level slot 0, limiter slot 2", r.loop.armSource());
+        r.runWindow();
+        const float trim = r.h.getSlotTrimDb (1);
+        check (std::abs (trim + 4.0f) < 0.3f, "P1. after Listen the +4 dB slot carries a -4.0 (+-0.3) dB unity trim", f1 (trim));
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr);   // the tallies settle on the trimmed output
+        const auto lv = r.h.getSlotLevels (1);
+        check (lv.measured && std::abs (lv.out.shortTermDb - lv.in.shortTermDb) < 0.3f, "P1. ...and the slot ends +0.0 +-0.3 dB (out - in over the short-term window)", f1 (lv.out.shortTermDb - lv.in.shortTermDb));
+        check (r.h.slotTrimText (1).endsWith (" dB match") && r.h.slotTrimText (1).startsWith ("-") && r.h.getSlotInfo (1).trimText == r.h.slotTrimText (1),
+               "P1. the tile and the card line read \"-X.X dB match\" from the same atomic", r.h.slotTrimText (1));
+        check (std::abs (r.h.getSlotTrimDb (0)) < 0.01f && std::abs (r.h.getSlotTrimDb (2)) < 0.01f && r.h.slotTrimText (0).isEmpty() && r.h.slotTrimText (2).isEmpty(),
+               "P2. the Level slot and the last limiter are exempt (no trim, no text)", f1 (r.h.getSlotTrimDb (0)) + " / " + f1 (r.h.getSlotTrimDb (2)));
+        check (r.logs.joinIntoString ("\n").contains ("unity trim: slot 1 EchoJay Gain: out-in ") && r.logs.joinIntoString ("\n").contains ("unity trims changed: 1"), "P2. the EJLoudness log carries the trim line", r.logs.joinIntoString (" | ").fromFirstOccurrenceOf ("unity", false, false).substring (0, 160));
+        // the loop's opening gain assumes a unity chain: after Go the output lands on the target even though the window measured the un-trimmed chain
+        {   // the window measured the UN-trimmed chain (-14 = -18 programme + 4 dB); the proposal must be computed from the unity chain (-18): needed +9, not +5
+            juce::String ml; for (const auto& l : r.logs) if (l.contains ("measured: max short-term")) ml = l;
+            check (ml.contains ("measured: max short-term -18.0 LUFS") && ml.contains ("needed +9.0 dB"), "P5. the proposal is computed from the UNITY chain: measured -18.0 (the -14.0 window plus the -4 dB trim), needed +9.0 (RED as it stood: -14.0 / +5.0)", ml.substring (0, 140));
+            juce::String gc; for (const auto& l : r.logs) if (l.contains ("GR cap")) gc = l; std::printf ("  P5 cap line: %s\n", gc.substring (0, 200).toRawUTF8());
+        }
+        check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.go(), "P5. the proposal is offered and Go applies it", juce::String ((int) r.loop.state()));
+        check (r.levelGain() > 5.5f, "P5. ...and the Level moves by more than the +5 the un-trimmed window would have asked (the +9 unity ask, or its GR-capped value)", f1 (r.levelGain()));
+        feed (r.proc, r.prog, 600, false, nullptr, nullptr);
+        { const auto co = r.h.getChainOutLevels(); std::printf ("  P5 chain out after Go: %.2f LUFS-S (Level %+.2f dB)\n", co.shortTermDb, r.levelGain()); }
+        // persistence: the trim rides the saved chain like the pre-gain
+        const auto slots = r.h.buildChainSlotsVar(); const auto state = r.h.getCachedSlotStatesVar (ChainHost::kApiStateMaxSlotBytes, ChainHost::kApiStateMaxTotalBytes, "guard");
+        { auto p2Heap = std::make_unique<EchoJayProcessor>(); auto& p2 = *p2Heap; p2.prepareToPlay (48000.0, 512); auto& h2 = p2.getChainHost(); h2.restoreSavedChain (slots, state); pumpMs (150);   // heap, not main's stack
+          check (h2.getNumSlots() == 3 && std::abs (h2.getSlotTrimDb (1) - trim) < 0.01f && ! h2.getSlotKeepLevel (1) && h2.slotTrimText (1) == r.h.slotTrimText (1),
+                 "P4. the trim persists across save/reopen (buildChainSlotsVar -> restoreSavedChain)", juce::String (h2.getNumSlots()) + " slots, trim " + f1 (h2.getSlotTrimDb (1))); }
+    }
+    {   // the keep flag holds
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f); r.h.setSlotKeepLevel (1, true);
+        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain(); r.runWindow();
+        check (std::abs (r.h.getSlotTrimDb (1)) < 0.01f && r.h.slotTrimText (1) == "level kept" && r.h.getSlotInfo (1).keepLevel, "P3. the keep flag holds: no trim, the text reads \"level kept\"", r.h.slotTrimText (1));
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr); const auto lv = r.h.getSlotLevels (1);
+        check (lv.measured && std::abs ((lv.out.shortTermDb - lv.in.shortTermDb) - 4.0f) < 0.3f, "P3. ...and the slot still adds its +4 dB", f1 (lv.out.shortTermDb - lv.in.shortTermDb));
+        check (r.logs.joinIntoString ("\n").contains ("EchoJay Gain: kept ("), "P3. the log says the slot was kept", r.logs.joinIntoString (" | ").fromFirstOccurrenceOf ("unity", false, false).substring (0, 120));
+        const auto slots = r.h.buildChainSlotsVar(); const auto state = r.h.getCachedSlotStatesVar (ChainHost::kApiStateMaxSlotBytes, ChainHost::kApiStateMaxTotalBytes, "guard");
+        { auto p2Heap = std::make_unique<EchoJayProcessor>(); auto& p2 = *p2Heap; p2.prepareToPlay (48000.0, 512); auto& h2 = p2.getChainHost(); h2.restoreSavedChain (slots, state); pumpMs (150);   // heap, not main's stack
+          check (h2.getNumSlots() == 3 && h2.getSlotKeepLevel (1) && h2.slotTrimText (1) == "level kept", "P4. the keep flag persists across save/reopen", h2.slotTrimText (1)); }
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

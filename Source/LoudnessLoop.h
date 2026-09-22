@@ -505,7 +505,16 @@ public:
             emit ("This is quieter than the section the chain was built on (" + fmt (lastInputWindow_) + " now vs " + fmt (buildInputLufs_) + " at build). Is this the loudest part of the song?", -1.0f, false, false, Bubble::Kind::quiet, quietPills());
             return;
         }
-        proposeFrom (measured, out.truePeakDb);
+        {   // 21m ruling 2 (gain staging): at every Listen/Check window close, each slot except the Level and the last limiter is trimmed to
+            // unity (-(out - in) short-term, +-12 dB, kept slots untouched) BEFORE the proposal - the loop then works on a unity chain
+            auto sumTrims = [this] { float t = 0.0f; for (int i = 0; i < host_.getNumSlots(); ++i) t += host_.getSlotTrimDb (i); return t; };
+            const float trimsBefore = sumTrims();
+            juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl);
+            for (const auto& l : tl) log ("unity trim: " + l);
+            trimDeltaDb_ = sumTrims() - trimsBefore;   // what the chain output moved by, after this window measured it
+            if (changed > 0) log ("unity trims changed: " + juce::String (changed) + " (chain output moves " + juce::String (trimDeltaDb_, 1) + " dB)"); }
+        // the loop's opening gain assumes a UNITY chain: the window measured the un-trimmed chain, so the figures it proposes from carry the trims just applied
+        proposeFrom (measured + trimDeltaDb_, out.truePeakDb + trimDeltaDb_);
     }
     // 18f: the decision after a measurement (also reached from loudestPart()) - proposal / on-target / stuck / at the limit
     void proposeFrom (float measured, float truePeakDb)
@@ -679,6 +688,7 @@ private:
     static juce::String fmtSigned (float v) { return (v >= 0.0f ? "+" : "") + fmt (v); }
 
     ChainHost& host_;
+    float trimDeltaDb_ = 0.0f;   // 21m ruling 2: the sum of unity-trim changes at the last window close
     State state_ = State::idle;
     mutable int slot_ = -1, limiterSlot_ = -1; int round_ = 0;   // slot_/limiterSlot_ are caches re-resolved from the instances (21m item 1), hence mutable
     // 22 Sep 2026 (21m item 1): the loop tracks its Level slot and its limiter by IDENTITY (the processor instances), never by

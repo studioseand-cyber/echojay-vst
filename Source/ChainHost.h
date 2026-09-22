@@ -56,6 +56,9 @@ public:
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
+        float trimDb = 0.0f;    // 21m ruling 2: the unity trim (dB) applied inside the blend node
+        bool  keepLevel = false;   // 21m ruling 2: "keep this plugin's level" (the trim measure skips it)
+        juce::String trimText;  // "-2.3 dB match" / "level kept" / "" (ChainHost::slotTrimText)
         juce::String manufacturer;  // catalogue identity — editorPlacement's
                                     // float-by-identity rule keys on it
         // THE MODEL'S COPY of the same slot's settings text, and the reason
@@ -1907,6 +1910,12 @@ private:
         // Both created lazily in rebuildGraph(), removed in removeSlot().
         float                                    wet = 1.0f;
         std::shared_ptr<std::atomic<float>>      wetShared;
+        // 21m ruling 2 (22 Sep 2026): per-slot UNITY-GAIN trim - applied inside this slot's SlotWetBlend to the plugin's output,
+        // BEFORE the out tally and before the blend; measured at Listen/Check as -(out - in) short-term, clamped +-12 dB, unless
+        // the user keeps this plugin's level. Persisted with the session like the pre-gain (a shared chain does not carry it).
+        float                                    trimDb = 0.0f;
+        bool                                     keepLevel = false;
+        std::shared_ptr<std::atomic<float>>      trimShared;
         juce::AudioProcessorGraph::Node::Ptr     blendNode;
         // Auto-parameter-mapping state
         juce::var                            structuredSettings;        // settings_structured from the chain reply
@@ -2315,7 +2324,7 @@ private:
     // slot with nothing in it is a slot whose settings we did not save,
     // which the user is told about. False on every pre-existing session,
     // where there is nothing to have lost and a note would be pure noise.
-    struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f;
+    struct RestoreItem { juce::PluginDescription desc; bool bypassed; float wet = 1.0f; float trimDb = 0.0f; bool keepLevel = false;
                          juce::String stateBase64; bool expectState = false;
                          /** Set by restoreSavedChain when the chunk must NOT be
                              pushed. The session-XML path leaves it false: there the

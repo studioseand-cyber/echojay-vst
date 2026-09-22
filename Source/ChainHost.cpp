@@ -674,17 +674,19 @@ juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& plugi
 class SlotWetBlend : public juce::AudioProcessor
 {
 public:
-    explicit SlotWetBlend(std::shared_ptr<std::atomic<float>> wet)
+    explicit SlotWetBlend(std::shared_ptr<std::atomic<float>> wet, std::shared_ptr<std::atomic<float>> trimDb = nullptr)
         : juce::AudioProcessor(BusesProperties()
               .withInput("Wet", juce::AudioChannelSet::stereo(), true)
               .withInput("Dry", juce::AudioChannelSet::stereo(), true)
               .withOutput("Out", juce::AudioChannelSet::stereo(), true)),
-          wet_(std::move(wet)) {}
+          wet_(std::move(wet)), trimDb_(std::move(trimDb)) {}
 
     void prepareToPlay(double sampleRate, int) override
     {
         smooth_.reset(sampleRate, 0.05);
         smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
+        trimSmooth_.reset(sampleRate, 0.05);
+        trimSmooth_.setCurrentAndTargetValue(trimDb_ ? juce::Decibels::decibelsToGain(trimDb_->load(std::memory_order_relaxed)) : 1.0f);
         // The tallies clear ONLY on a sample-rate change (a new source, or a
         // re-prepare that changes what a sample means). Hosts re-prepare on
         // buffer-size changes and transport events too, and a tally that
@@ -714,6 +716,17 @@ public:
         smooth_.setTargetValue(target);
 
         const int n = buffer.getNumSamples();
+        {   // 21m ruling 2: the per-slot unity-gain trim on the plugin's OUTPUT (inputs 0/1), before the out tally and before
+            // the blend - so the out tally, the wet blend and every downstream slot see the trimmed level
+            const float tdb = trimDb_ ? trimDb_->load(std::memory_order_relaxed) : 0.0f;
+            if (std::abs(tdb) > 0.001f)
+            {
+                trimSmooth_.setTargetValue(juce::Decibels::decibelsToGain(tdb));
+                const int nch = buffer.getNumChannels();
+                for (int i = 0; i < n; ++i) { const float g = trimSmooth_.getNextValue(); for (int ch = 0; ch < juce::jmin(2, nch); ++ch) buffer.getWritePointer(ch)[i] *= g; }
+            }
+            else trimSmooth_.setCurrentAndTargetValue(1.0f);
+        }
         {
             const int nch = buffer.getNumChannels();
             if (nch >= 1)
@@ -756,6 +769,8 @@ public:
 
 private:
     std::shared_ptr<std::atomic<float>> wet_;
+    std::shared_ptr<std::atomic<float>> trimDb_;   // 21m ruling 2
+    juce::SmoothedValue<float> trimSmooth_ { 1.0f };
     juce::SmoothedValue<float>          smooth_;
     // Plain (dBFS RMS) on the slot legs: a threshold is set in the units the
     // detector sees, and out minus in cancels any weighting anyway.
@@ -1492,6 +1507,9 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.settings         = s.settings;
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
+    info.trimDb           = s.trimDb;            // 21m ruling 2
+    info.keepLevel        = s.keepLevel;
+    info.trimText         = slotTrimText(i);
     info.manufacturer     = s.desc.manufacturerName;   // remote, 27 Aug
     info.settingsForModel = modelSettingsForSlot(i);   // local, 24 Aug
     info.hasLiveReads     = slotHasLiveReads(i);       // local, 24 Aug
@@ -5931,7 +5949,10 @@ void ChainHost::rebuildGraph()
             if (!s.wetShared)
                 s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
             if (!s.blendNode)
-                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared));
+            // 21m ruling 2: ONE trim atomic per slot for the slot's life. It is created here at most once;
+            // a fresh atomic on every rebuild would leave the blend node reading the OLD one.
+            if (s.trimShared == nullptr) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);
+                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.trimShared));
             active.push_back({ s.node->nodeID, s.blendNode->nodeID });
         }
 
@@ -9252,6 +9273,8 @@ juce::var ChainHost::buildChainSlotsVar() const
         // keys and drops this one until it learns it.
         o->setProperty("wet",          (double) s.wet);
         // The AI's prose dial-in guidance is the closest thing this rack has
+        o->setProperty("trimDb",       (double) s.trimDb);     // 21m ruling 2: the unity-gain trim
+        o->setProperty("keepLevel",    s.keepLevel);
         // to a role, and it is display text rather than a short label, so it
         // is NOT sent as one. An absent role is honest; an invented one would
         // put words in the model's mouth. Slot settings ride in `state`.
@@ -9378,6 +9401,8 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
                              ? juce::jlimit(0.0f, 1.0f, (float)(double) o->getProperty("wet"))
                              : 1.0f;
         item.expectState = (statesObj != nullptr);
+        item.trimDb      = o->hasProperty("trimDb") ? juce::jlimit(-12.0f, 12.0f, (float)(double) o->getProperty("trimDb")) : 0.0f;   // 21m ruling 2
+        item.keepLevel   = o->hasProperty("keepLevel") && (bool) o->getProperty("keepLevel");
         if (statesObj != nullptr)
         {
             const juce::String key (n);
