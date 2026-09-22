@@ -2191,6 +2191,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         linkPendingFor(u, tv.pending, tv.timedOut, tv.target);
         tv.connected = tv.has && en.info.connected;
         tv.active    = tv.has && en.info.active;
+        tv.audio     = tv.has && en.info.audioFlowing;   // 21m ruling 1
         return tv;
     };
     chainListPanel.msLamps.onTick = [this](const juce::String& u)
@@ -2207,13 +2208,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         if (! findLinkEntryByAddr(u, en)) return juce::String();
         bool pending = false, timedOut = false, target = false;
         linkPendingFor(u, pending, timedOut, target);
-        if (!en.info.connected || timedOut)
-            return linkActiveLabel(en.info.connected, pending, timedOut);
+        // 21m ruling 1 (22 Sep 2026): the words follow the Link's ACTIVE flag alone; the ring is a separate clause
+        if (timedOut) return linkActiveLabel(en.info.connected, pending, timedOut);
+        const juce::String audio = en.info.audioFlowing ? juce::String(" - audio flowing") : en.info.connected ? juce::String(" - ring bound, no audio yet") : juce::String(" - no audio yet");
         if (pending)
             return juce::String("Active...")
-                   + (target ? " (turning on)" : " (turning off)");
-        return en.info.active ? juce::String("Active (click to turn off)")
-                              : juce::String("Inactive (click to turn on)");
+                   + (target ? " (turning on)" : " (turning off)") + audio;
+        return (en.info.active ? juce::String("Active (click to turn off)")
+                               : juce::String("Inactive (click to turn on)")) + audio;
     };
     chainListPanel.onRemoteEditorRequest = [this](int slotIdx)
     {
@@ -6254,6 +6256,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     api.setNextChatTurnType("version_compare");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
+    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -9950,7 +9953,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         // the rack row draws through the same call. (GREEN stays Active's
         // accent; selection keeps cyan; the two never share a colour.)
         drawActiveTick(g, sg.tick, getLookAndFeel(),
-                       connected, active, pending, timedOut, target);
+                       connected, active, pending, timedOut, target,
+                       entry != nullptr && entry->info.audioFlowing);   // 21m ruling 1
 
         // The wide-mode words ("Active"/"Offline"/"no resp") retired 27
         // Aug 2026 (hands-on ruling): the tick already carries the state
@@ -26959,6 +26963,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     nextClassifyAnswers_.clear();
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
                         sysPrompt, channelName, genreName, userContent, msg,
                         rolesSnap, contentsSnap]
@@ -27586,6 +27591,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
@@ -27637,6 +27643,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     EchoJay_NSLog("EJStream: reroute -> re-sending the turn to /api/chat (rendered as a chat reply, quiet line appended)");
     setStageStatus(juce::String::fromUTF8("Answering as a chat\xe2\x80\xa6"));
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -29220,24 +29227,18 @@ void EchoJayEditor::sendLinkMuteSoloCommand(const juce::String& uid,
 void EchoJayEditor::drawActiveTick(juce::Graphics& g, juce::Rectangle<int> boxI,
                                    juce::LookAndFeel& lnf, bool connected,
                                    bool active, bool pending, bool timedOut,
-                                   bool target)
+                                   bool target, bool audio)
 {
+    // 21m ruling 1 (22 Sep 2026): the TICK is the Link's active flag alone - never active && ring-bound. Whether audio is
+    // flowing (ring bound and frames arriving) is a separate small lamp in the box's corner; the offline cross is gone.
     const auto coral = juce::Colour(0xffff6d5a);
     const auto amber = juce::Colour(0xfff59e0b);
     const auto box = boxI.toFloat();
-    g.setColour(!connected || timedOut ? coral : LinkConsole::caption);
+    g.setColour(timedOut ? coral : LinkConsole::caption);
     g.drawRoundedRectangle(box, 4.0f, 1.0f);
-    if (!connected)
+    juce::ignoreUnused(connected);
     {
-        // Cross: offline is a SHAPE, not just a colour
-        auto c = box.reduced(4.5f);
-        g.setColour(coral);
-        g.drawLine(c.getX(), c.getY(), c.getRight(), c.getBottom(), 1.6f);
-        g.drawLine(c.getX(), c.getBottom(), c.getRight(), c.getY(), 1.6f);
-    }
-    else
-    {
-        const bool showTick = pending ? target : (!timedOut && active);
+        const bool showTick = pending ? target : active;
         if (showTick)
         {
             g.setColour(pending ? amber.withAlpha(0.6f) : C::green);
@@ -29245,6 +29246,11 @@ void EchoJayEditor::drawActiveTick(juce::Graphics& g, juce::Rectangle<int> boxI,
             g.fillPath(tick, tick.getTransformToScaleToFit(
                                  box.reduced(3.0f, 3.0f), false));
         }
+    }
+    {   // the audio lamp: a small dot in the box's bottom-right corner - lit while frames arrive on the ring
+        const auto lamp = juce::Rectangle<float>(box.getRight() - 5.0f, box.getBottom() - 5.0f, 4.0f, 4.0f);
+        g.setColour(audio ? C::green : LinkConsole::caption.withAlpha(0.35f));
+        g.fillEllipse(lamp);
     }
 }
 
@@ -29324,6 +29330,7 @@ juce::String EchoJayEditor::soloLimitLineText() const
 
 void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool active)
 {
+    lastLinkActiveCmd_ = { linkAddr, active, lastLinkActiveCmd_.count + 1 };   // 21m ruling 1: the guard reads what the click sent
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty() || linkAddr.isEmpty()) return;
@@ -32770,6 +32777,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
+    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis2, captureChatId](const juce::String& reply, bool success) {
             if (safeThis2 == nullptr)

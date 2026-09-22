@@ -1788,7 +1788,8 @@ private:
     // watches ChainHost::isScanning go false and rebuilds the feed THEN,
     // and tells the user "rescanned, N plugins" where they can see it.
     bool prevChainScanning_      = false;
-    bool pickerLoweredPopout_    = false;   // 22 Sep 2026 (item 7): the hosted editor pop-out is lowered while the picker is open
+    bool pickerLoweredPopout_    = false;
+    friend struct EchoJayRosterTestAccess;   // 21m ruling 1: the links-tick guard   // 22 Sep 2026 (item 7): the hosted editor pop-out is lowered while the picker is open
 
     // Holder for the currently-selected slot's editor
     // Pop-out window for hosted plugin editors at native size
@@ -2051,7 +2052,8 @@ private:
             // via these callbacks into the editor's one implementation).
             struct TickView { bool has = false, connected = false,
                               active = false, pending = false,
-                              timedOut = false, target = false; };
+                              timedOut = false, target = false,
+                              audio = false; };   // 21m ruling 1: the audio-flowing lamp beside the tick
             std::function<TickView(const juce::String&)> tickFor;
             std::function<void(const juce::String&)> onTick;
             std::function<juce::String(const juce::String&)> tickTipFor;
@@ -2088,7 +2090,7 @@ private:
                     const auto tv = tickFor(uid);
                     EchoJayEditor::drawActiveTick(g, tickR, getLookAndFeel(),
                         tv.connected, tv.active, tv.pending, tv.timedOut,
-                        tv.target);
+                        tv.target, tv.audio);
                 }
                 EchoJayEditor::drawMsLamp(g, mR, false, m, cap);
                 EchoJayEditor::drawMsLamp(g, sR, true,  s, cap, sPending);
@@ -4608,7 +4610,9 @@ private:
     static void drawActiveTick(juce::Graphics& g, juce::Rectangle<int> box,
                                juce::LookAndFeel& lnf, bool connected,
                                bool active, bool pending, bool timedOut,
-                               bool target);
+                               bool target, bool audio = false);   // 21m ruling 1: tick = active alone; audio = the lamp
+    struct LastLinkActiveCmd { juce::String addr; bool active = false; int count = 0; };
+    LastLinkActiveCmd lastLinkActiveCmd_;   // 21m ruling 1: what the last click sent (the guard reads it)
     juce::String muteSoloStripTip(const juce::String& uid, bool isSolo) const;
     void sendLinkMuteSoloCommand(const juce::String& uid, bool isSolo, bool on);
     juce::String soloLimitLineText() const;

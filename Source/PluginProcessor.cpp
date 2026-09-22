@@ -581,6 +581,7 @@ void EchoJayProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     waveformRecorder.prepare(sampleRate, samplesPerBlock);
     hostSampleRate_      = sampleRate;
     hostSamplesPerBlock_ = samplesPerBlock;
+    chainHost.setHostChannelWidth(getTotalNumInputChannels());   // 21m item 2: the rack's width, for the mono-variant rule
     chainHost.prepare(sampleRate, samplesPerBlock);
     // Solo crossfades, BOTH a real 30ms ramp (the busGainSmoothed_ idiom
     // above). editSoloMix_ had never been given one — Stage 1's "~30ms"
@@ -5301,6 +5302,10 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.uid        = snap.instanceUid;
         info.connected  = connected;
         info.active     = snap.active;
+        // 21m ruling 1 (22 Sep 2026): "audio flowing" = the ring is bound and frames advanced since the last poll - a lamp of its
+        // own; the roster TICK is painted from the Link's active flag alone (never active && ring-bound)
+        info.audioFlowing = connected && activeLinkSlots[i].lastPollFrames >= 0 && frames > activeLinkSlots[i].lastPollFrames;
+        activeLinkSlots[i].lastPollFrames = frames;
         info.sampleRate = snap.sampleRate;
         info.framesRead = frames;
         info.regIdx     = i;    // frame lookup key for readLinkMeterFrame

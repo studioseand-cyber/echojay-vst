@@ -19,6 +19,8 @@
 #include "NotDialableText.h"    // hurdle 1 item 3
 #endif
 #include <cstdio>
+struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v) { p.linkSlotInfos = std::move (v); } };   // 21m ruling 1: the roster's Link rows
+struct EchoJayRosterTestAccess { static EchoJayEditor::LastLinkActiveCmd last (EchoJayEditor& e) { return e.lastLinkActiveCmd_; } };
 struct EchoJayTabStripTestAccess
 {
     static void toChat (EchoJayEditor& e)   { e.switchToTab (EchoJayEditor::Tab::Chat, true); }
@@ -359,6 +361,25 @@ int main()
         pumpMs (60);
         check (lv != nullptr && std::abs ((float) lv->gainDb() - (gBefore - 2.0f)) < 0.05f && std::abs (loop.target() - (tBefore - 2.0f)) < 0.01f, "(2c) the Level moved -2 dB and the target -2 (the softer step twice)", "Level " + juce::String (gBefore, 2) + " -> " + juce::String (lv ? lv->gainDb() : 0.0, 2));
         check (M.size() >= nBefore + 2 && M.back().content.startsWith ("Applied -2.0 dB (Level now "), "(2c) one after-verb bubble \"Applied -2.0 dB (Level now ...)\" (plus the local user bubble)", M.back().content.substring (0, 60));
+    }
+    std::printf ("== (8) 22 Sep 2026 (21m ruling 1): the roster tick is the Link's ACTIVE flag alone; a separate lamp says audio is flowing; the click sends the inverse of the flag it paints ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); pumpMs (60);
+        std::vector<EchoJayProcessor::LinkSlotInfo> links;
+        for (int i = 0; i < 5; ++i) { EchoJayProcessor::LinkSlotInfo li; li.name = "BV " + juce::String (i + 1); li.uid = "lnk_0" + juce::String (i + 1); li.active = true; li.connected = false; li.audioFlowing = false; li.regIdx = i; links.push_back (li); }
+        EchoJayAlignTestAccess::setLinks (proc, links); pumpMs (60);
+        auto& panel = A::panel (*ed);
+        bool allOn = true, allLampsOff = true; for (int i = 0; i < 5; ++i) { const auto tv = panel.msLamps.tickFor ("lnk_0" + juce::String (i + 1)); allOn = allOn && tv.has && tv.active; allLampsOff = allLampsOff && ! tv.audio; }
+        check (allOn && allLampsOff, "(8) five ACTIVE Links with UNBOUND rings paint ON (tick from the active flag alone), audio lamps OFF  (RED as it stood: the tick needed the ring)", "on=" + juce::String ((int) allOn) + " lampsOff=" + juce::String ((int) allLampsOff));
+        panel.msLamps.onTick ("lnk_03"); pumpMs (20);
+        const auto sent = EchoJayRosterTestAccess::last (*ed);
+        check (sent.count == 1 && sent.addr == "lnk_03" && sent.active == false, "(8) a click on an ACTIVE Link sends set-active(false) - the inverse of the flag it paints, never a turn-on of a Link already on", sent.addr + " active=" + juce::String ((int) sent.active) + " count=" + juce::String (sent.count));
+        { const auto tv = panel.msLamps.tickFor ("lnk_03"); check (tv.pending && ! tv.target, "(8) ...and the tick shows the pending target OFF until the Link answers", "pending=" + juce::String ((int) tv.pending) + " target=" + juce::String ((int) tv.target)); }
+        links[0].connected = true; links[0].audioFlowing = true; EchoJayAlignTestAccess::setLinks (proc, links); pumpMs (20);
+        { const auto tv = panel.msLamps.tickFor ("lnk_01"); check (tv.active && tv.audio, "(8) the ring binds later and frames arrive -> the lamp comes ON, the tick unchanged (still active)", "active=" + juce::String ((int) tv.active) + " audio=" + juce::String ((int) tv.audio)); }
     }
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

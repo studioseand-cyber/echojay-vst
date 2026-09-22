@@ -1368,6 +1368,7 @@ public:
         juce::String uid;                 // per-instance address ("" from old Links)
         bool         connected  = false;
         bool         active     = true;   // Link's capture/meter role (its Active toggle)
+        bool         audioFlowing = false; // 21m ruling 1 (22 Sep 2026): the ring is bound AND frames arrived since the last poll
         float        sampleRate = 0.f;
         int64_t      framesRead = 0;
         int          regIdx     = -1;     // registry slot index (meter frame lookup)
@@ -1500,6 +1501,7 @@ private:
         LinkShm::FileIdentity boundId; // dev+inode of the mapped ring; a path
                                        // now pointing elsewhere = stale ring
         std::atomic<int64_t> framesRead { 0 };
+        int64_t              lastPollFrames = -1;   // 21m ruling 1: frames seen at the previous poll (message thread)
         // Non-copyable due to SpinLock — managed in-place via std::array
     };
     std::array<ActiveLinkSlot, kMaxLinkSlots> activeLinkSlots;
