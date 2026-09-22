@@ -28,6 +28,8 @@
 // The tick is a public function (tickNow) so a harness drives it against its own audio; the plugin drives it from
 // a 250 ms juce::Timer.
 #include <JuceHeader.h>
+#include <vector>
+#include <algorithm>
 #include "ChainHost.h"
 #include "EedLimiterProcessor.h"
 #include "EedLevelProcessor.h"
@@ -72,12 +74,17 @@ public:
     static constexpr float kOverTargetDb     = 1.0f;     // tracking: > 1 dB over the target proposes a back-off
     static constexpr float kCloseEnoughDb    = 1.0f;     // 18g: on target = within +-1.0 dB (was 0.5)
     // 22 Sep 2026 (item 5): every proposal is bounded by the limiter's GR on the hits, per loudness option
+    // 21m item 3 (22 Sep 2026): the cap is on the TYPICAL reduction on the hits (mean over the top 20 % of 100 ms blocks in the
+    // loudest 3 s), not the single worst peak. Calibration (22 Sep, Sean's Mix Bus, Pushed): the worst-peak cap of 6 stopped at
+    // -10.8 with the worst hit at 4.8 dB (+1.1 offered); Sean pushed +2..+3 by hand and judged it right - a worst peak of ~8-9 dB
+    // at his setting. The typical figure was not logged by 21l, so these are the ruled starting points: Pushed 8 sits above his
+    // setting, Commercial 6 at or just below it; the first 21m log carries both figures for the re-calibration.
     static float grCapDb (const juce::String& option) noexcept
     {
-        if (option == "pushed")  return 6.0f;
-        if (option == "dynamic") return 2.0f;
+        if (option == "pushed")  return 8.0f;
+        if (option == "dynamic") return 3.0f;
         if (option == "keep")    return 1.0f;
-        return 4.0f;   // commercial (and the default)
+        return 6.0f;   // commercial (and the default)
     }
     static constexpr float kOpeningHeadroomDb = 3.0f;
     static constexpr float kOpeningFloorDb    = -6.0f;   // ruling 5b (22 Sep 2026): the opening gain never goes below -6.0 dB   // 22 Sep 2026 (item 5): peaks into the limiter never open more than 3 dB over the ceiling
@@ -414,6 +421,28 @@ public:
     float grEstimateDb() const noexcept { return estN_ > 0 ? estSum_ / (float) estN_ : std::numeric_limits<float>::quiet_NaN(); }   // Level OUT minus chain OUT (LUFS-S), mean over the window
     // 18h: the peak estimate - Level OUT true peak minus chain OUT true peak, both max-held over the window (the hits)
     float grPeakEstimateDb() const { auto* lv = levelNow(); if (lv == nullptr) return std::numeric_limits<float>::quiet_NaN(); const float a = lv->outputLevels().truePeakDb, b = host_.getChainOutLevels().truePeakDb; return (a > -150.0f && b > -150.0f) ? a - b : std::numeric_limits<float>::quiet_NaN(); }
+    // 21m item 3: the hits, block by block. typical = mean reduction (Level OUT TP - chain OUT TP) over the top 20 % of the last
+    // 30 hops ranked by Level OUT true peak (the hits); worst = the largest single-block reduction; typicalLvTp = the mean Level
+    // OUT true peak of those top blocks (what the cap projects the trim onto). NaN until both tallies carry hops.
+    struct HitsMeasure { float typicalDb = std::numeric_limits<float>::quiet_NaN(), worstDb = std::numeric_limits<float>::quiet_NaN(), typicalLvTpDb = std::numeric_limits<float>::quiet_NaN(); int blocks = 0; };
+    HitsMeasure hitsMeasure() const
+    {
+        HitsMeasure m; auto* lv = levelNow(); if (lv == nullptr) return m;
+        const auto a = lv->outputLevels(), b = host_.getChainOutLevels();
+        const int n = juce::jmin (a.hopTruePeakCount, b.hopTruePeakCount); if (n <= 0) return m;
+        std::vector<int> order; for (int k = 0; k < n; ++k) order.push_back (k);
+        const int offA = a.hopTruePeakCount - n, offB = b.hopTruePeakCount - n;   // newest-aligned
+        std::sort (order.begin(), order.end(), [&] (int x, int y) { return a.hopTruePeakDb[(size_t) (offA + x)] > a.hopTruePeakDb[(size_t) (offA + y)]; });
+        const int top = juce::jmax (1, (int) std::lround (n * 0.2));
+        // the single loudest block is the transient the worst figure reports; it is left OUT of the typical mean whenever the top
+        // share has three or more blocks, so one hit cannot drag "typical" (and the cap's projection) up to itself
+        const int first = top >= 3 ? 1 : 0, used = top - first;
+        double sumRed = 0.0, sumTp = 0.0; float worst = -1.0e9f;
+        for (int k = 0; k < n; ++k) { const float red = a.hopTruePeakDb[(size_t) (offA + k)] - b.hopTruePeakDb[(size_t) (offB + k)]; if (red > worst) worst = red; }
+        for (int i = first; i < top; ++i) { const int k = order[(size_t) i]; sumRed += a.hopTruePeakDb[(size_t) (offA + k)] - b.hopTruePeakDb[(size_t) (offB + k)]; sumTp += a.hopTruePeakDb[(size_t) (offA + k)]; }
+        m.typicalDb = juce::jmax (0.0f, (float) (sumRed / used)); m.worstDb = juce::jmax (0.0f, worst); m.typicalLvTpDb = (float) (sumTp / used); m.blocks = n;
+        return m;
+    }
     static juce::StringArray pillsFor (float needed) { return needed > kCloseEnoughDb ? shortPills() : resultPills(); }   // 18h: Push it only when SHORT
     bool  grIsEstimated() const { return echoJayLimiter() == nullptr; }
     int   levelSlot() const noexcept { return slot_; }
@@ -499,11 +528,17 @@ public:
         // working <=4 dB. Push to -8 anyway?") with [Push it anyway] [Leave it].
         // predicted GR on the hits after the trim = (Level OUT true peak, max-held) + trim - the limiter's ceiling: the peaks
         // above the ceiling are what the limiter takes; a trim that keeps the peaks under the ceiling costs no GR at all
-        bool capped = false; const float cap = grCapDb (loudnessOption_); const float lvTP = lv->outputLevels().truePeakDb;
+        // 21m item 3: the cap projects the trim onto the TYPICAL hit level (the mean Level OUT true peak of the top 20 % of blocks),
+        // not the single worst peak; the worst peak is measured and logged beside it
+        bool capped = false; const float cap = grCapDb (loudnessOption_); const auto hm = hitsMeasure(); const float worstTP = lv->outputLevels().truePeakDb;
+        const float lvTP = std::isfinite (hm.typicalLvTpDb) ? hm.typicalLvTpDb : worstTP;
+        // the base the trim is projected onto: the MEASURED typical reduction when the hits are already being limited (a clipper's
+        // intersample overshoot makes "true peak - ceiling" read high), else the typical hit's distance to the ceiling
+        const float base = (std::isfinite (hm.typicalDb) && hm.typicalDb > 0.5f) ? hm.typicalDb : (lvTP - ceilingDb_);
         if (trim > 0.0f && lvTP > -150.0f && std::isfinite (ceilingDb_))
         {
-            const float predictedHits = juce::jmax (0.0f, lvTP + trim - ceilingDb_);
-            if (predictedHits > cap + 0.05f) { const float capTrim = juce::jmax (0.0f, cap + ceilingDb_ - lvTP); log ("GR cap: Level OUT true peak " + fmt (lvTP) + " dBTP + trim " + fmtSigned (trim) + " - ceiling " + fmt (ceilingDb_) + " = " + fmt (predictedHits) + " dB on the hits > cap " + fmt (cap) + " (" + loudnessOption_ + ") -> trim " + fmtSigned (capTrim)); trim = capTrim; capped = true; }
+            const float predictedHits = juce::jmax (0.0f, base + trim);
+            if (predictedHits > cap + 0.05f) { const float capTrim = juce::jmax (0.0f, cap - base); log ("GR cap: typical hit true peak " + fmt (lvTP) + " dBTP (top 20 % of " + juce::String (hm.blocks) + " blocks; worst peak " + fmt (worstTP) + " dBTP, worst reduction " + fmt (hm.worstDb) + " dB) + trim " + fmtSigned (trim) + " - ceiling " + fmt (ceilingDb_) + " = " + fmt (predictedHits) + " dB typical on the hits > cap " + fmt (cap) + " (" + loudnessOption_ + ") -> trim " + fmtSigned (capTrim)); trim = capTrim; capped = true; }
         }
         bool atCeiling = false;
         if (cur + trim > kLevelMaxDb) { trim = kLevelMaxDb - cur; atCeiling = true; }
@@ -511,6 +546,7 @@ public:
         log ("measured: max short-term " + fmt (measured) + " LUFS (input window " + fmt (lastInputWindow_) + "), target " + fmt (target_) + ", needed " + fmtSigned (needed) + " dB, Level " + fmtSigned (cur) + " dB, trim " + fmtSigned (trim) + (atCeiling ? " (Level ceiling)" : "") + ", limiter GR avg " + fmt (grAvg()) + " max " + fmt (grMax()) + " dB, round " + juce::String (round_));
         const juce::String grText = grText_();
         // 22 Sep 2026 (ruling 4): the true-peak values THEMSELVES, not only their difference
+        { const auto hm2 = hitsMeasure(); log ("hits: typical " + fmt (hm2.typicalDb) + " dB over the top 20 % of " + juce::String (hm2.blocks) + " blocks, worst " + fmt (hm2.worstDb) + " dB"); }   // 21m item 3: both figures, for the re-calibration
         log ("true peak: Level OUT TP " + fmt (lv->outputLevels().truePeakDb) + " dBTP, chain OUT TP " + fmt (host_.getChainOutLevels().truePeakDb) + " dBTP, hits " + fmt (juce::jmax (0.0f, grPeakEstimateDb())) + " dB" + (grIsEstimated() ? " (third-party limiter: the hits figure is the report)" : " (EchoJay Limiter: its own GR reading " + fmt (grMax()) + " dB is the report)"));
         if (capped)
         {
@@ -573,7 +609,7 @@ private:
         for (int i = 0; i < host_.getNumSlots(); ++i) if (host_.getSlotProcessor (i) == limiterPtr_) return i;
         return -1;
     }
-    EedLevelProcessor* levelNow() { slot_ = resolveLevelSlot(); if (limiterPtr_ != nullptr) limiterSlot_ = resolveLimiterSlot(); return levelNow(); }
+    EedLevelProcessor* levelNow() const { slot_ = resolveLevelSlot(); if (limiterPtr_ != nullptr) limiterSlot_ = resolveLimiterSlot(); return level (slot_); }
     EedLimiterProcessor* echoJayLimiter() const
     {
         if (limiterSlot_ < 0 || limiterSlot_ >= host_.getNumSlots()) return nullptr;
@@ -588,9 +624,13 @@ private:
             // 22 Sep 2026 (ruling 4): the short-term-loudness "average" is dropped - the loop reports the hits only, the
             // max-held true-peak difference (Level OUT - chain OUT); with the EchoJay Limiter present its own GR reading replaces it
             if (estN_ == 0) return "limiter GR not measured yet.";
+            const auto hm = hitsMeasure();
+            if (std::isfinite (hm.typicalDb)) return "limiter working ~" + fmt (hm.typicalDb) + " dB on the hits (worst peak " + fmt (hm.worstDb) + ").";   // 21m item 3
             const float pk = grPeakEstimateDb();
             return std::isfinite (pk) ? "limiter catching up to ~" + fmt (juce::jmax (0.0f, pk)) + " dB on the hits." : "limiter GR not measured yet.";
         }
+        {   const auto hm = hitsMeasure();   // 21m item 3: the same block measure; the EchoJay Limiter's own max GR is the worst peak
+            if (std::isfinite (hm.typicalDb)) return "limiter working " + fmt (hm.typicalDb) + " dB on the hits (worst peak " + fmt (juce::jmax (hm.worstDb, grMax())) + ")."; }
         return "limiter catching up to " + fmt (grMax()) + " dB on the hits.";
     }
     void startWindow()
@@ -640,7 +680,7 @@ private:
 
     ChainHost& host_;
     State state_ = State::idle;
-    int   slot_ = -1, limiterSlot_ = -1, round_ = 0;
+    mutable int slot_ = -1, limiterSlot_ = -1; int round_ = 0;   // slot_/limiterSlot_ are caches re-resolved from the instances (21m item 1), hence mutable
     // 22 Sep 2026 (21m item 1): the loop tracks its Level slot and its limiter by IDENTITY (the processor instances), never by
     // index - an insert/remove/reorder of OTHER slots moves the indices, the instances stay; the indices are re-resolved on every call
     EedLevelProcessor* levelPtr_ = nullptr; juce::AudioProcessor* limiterPtr_ = nullptr;

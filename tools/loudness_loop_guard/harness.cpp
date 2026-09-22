@@ -65,7 +65,7 @@ struct IndependentMeter
     float truePeakDb() const { return tpMax > 0 ? 20 * std::log10 (tpMax) : -200; }
 };
 
-struct Programme { juce::Random rng { 4242 }; float amp = 0.1f; bool peaky = false; int blockCount = 0; float burst = 5.0f; };   // burst: the hit's gain over the bed (5x = +14 dB); K1 uses 12x
+struct Programme { juce::Random rng { 4242 }; float amp = 0.1f; bool peaky = false; int blockCount = 0; float burst = 5.0f; int spikeAtBlock = -1; float spike = 20.0f; int spikeEvery = 0; };   // spikeEvery: a rare transient once every N blocks (0 = off)   // spike: ONE block's hit at spike x (a single ~+26 dB transient)   // burst: the hit's gain over the bed (5x = +14 dB); K1 uses 12x
 void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, LoudnessLoop* loop, IndependentMeter* ind, float gainDb = 0.0f)
 {
     juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi;
@@ -73,7 +73,7 @@ void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, Loudne
     for (int b = 0; b < blocks; ++b)
     {
         const bool burst = prog.peaky && (prog.blockCount % 12) == 0;   // a drum hit every ~128 ms: 3 ms of noise at +14 dB
-        for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = silent ? 0.0f : (prog.rng.nextFloat() * 2.0f - 1.0f) * prog.amp * g * ((burst && i < 144) ? prog.burst : 1.0f); }
+        for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = silent ? 0.0f : (prog.rng.nextFloat() * 2.0f - 1.0f) * prog.amp * g * ((burst && i < 144) ? ((prog.blockCount == prog.spikeAtBlock || (prog.spikeEvery > 0 && prog.blockCount % prog.spikeEvery == 0)) ? prog.spike : prog.burst) : 1.0f); }
         ++prog.blockCount;
         p.processBlock (buf, midi);
         if (ind != nullptr) ind->push (buf.getReadPointer (0), buf.getReadPointer (1), 512);
@@ -297,7 +297,7 @@ int main()
         r.runWindow(); r.loop.go(); r.loop.check(); r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::tracking || (r.loop.state() == LoudnessLoop::State::proposed && std::abs (numberAfter (r.last(), "Push ")) < 1.0f), "D. third-party limiter last: the target is reached through the Level slot", r.last() + " | Level " + f1 (r.levelGain()));
 #ifdef EJ_LOUDNESSLOOP_MANNERS
-        check (r.last().contains ("limiter catching up to ~") && r.last().contains ("dB on the hits") && ! r.last().contains ("not an EchoJay device") && ! r.last().contains ("average"), "18g (4) third-party limiter: the GR reads \"limiter catching up to ~X dB on the hits\" (ruling 4: no average), never \"not an EchoJay device\"", r.last());
+        check (r.last().contains ("limiter working ~") && r.last().contains ("dB on the hits (worst peak ") && ! r.last().contains ("not an EchoJay device") && ! r.last().contains ("average"), "18g (4) third-party limiter: the GR reads \"limiter working ~X dB on the hits (worst peak Y)\" (21m: typical + worst, no average), never \"not an EchoJay device\"", r.last());
 #else
         check (false, "18g (4) third-party limiter: the GR reads \"limiter working ~X dB (estimated)\", never \"not an EchoJay device\"", "no 18g on this build: " + r.last());
 #endif
@@ -354,13 +354,14 @@ int main()
         r.loop.armFromChain(); r.runWindow();
         // 22 Sep 2026 (item 5): on a peaky programme the first proposal is CAPPED (the limiter would work > 4 dB) - driving into the
         // limiter is now the user's [Push it anyway]; then Check runs the window and the GR text reads as before
-        check (r.last().contains ("is as loud as this goes with the limiter working <=4 dB"), "F. (22 Sep) the peaky programme's first proposal is capped", r.last());
-        r.loop.pushIt(); r.loop.check();
+        // 21m: the cap is on the TYPICAL hits, so this programme may or may not cap - either way drive into the limiter (Push it anyway / Go)
+        if (r.last().contains ("is as loud as this goes")) r.loop.pushIt(); else r.loop.go();
+        r.loop.check();
         IndependentMeter ind; r.runWindow (0.0f, &ind);
         const auto last = r.last();
-        check (last.contains ("limiter catching up to ") && last.contains (" dB on the hits") && ! last.contains ("average"), "F. GR text (ruling 4): \"limiter catching up to Y dB on the hits\" - the EchoJay Limiter's own reading, no average", last);
-        const float up = numberAfter (last, "limiter catching up to ");
-        check (std::isfinite (up) && up > 0.5f && std::abs (up - r.loop.grMax()) < 0.05f, "...the hits figure IS the EchoJay Limiter's max GR (> 0.5 dB)", f1 (up) + " vs grMax " + f1 (r.loop.grMax()));
+        check (last.contains ("limiter working ") && last.contains (" dB on the hits (worst peak ") && ! last.contains ("average"), "F. GR text (21m): \"limiter working X dB on the hits (worst peak Y)\" - typical + worst, no average", last);
+        const float worst = numberAfter (last, "worst peak ");
+        check (std::isfinite (worst) && worst > 0.5f && worst >= r.loop.grMax() - 0.05f, "...the worst-peak figure carries the EchoJay Limiter's own max GR (> 0.5 dB)", f1 (worst) + " vs grMax " + f1 (r.loop.grMax()));
         check (ind.truePeakDb() <= -0.1f + 0.05f, "H. peaky programme: output true peak <= -0.1 dBTP by the independent meter", f1 (ind.truePeakDb()) + " dBTP");
     }
     std::printf ("== G. 18d: arm AFTER the exact built-in apply (the live order) - on the Level slot ==\n");
@@ -435,7 +436,7 @@ int main()
         check (r.loop.state() == LoudnessLoop::State::tracking && std::abs (lastNeeded) <= 1.0f, "J3. the 0.6x fixture lands within +-1.0 dB of the target", "needed " + f1 (lastNeeded) + " state " + juce::String ((int) r.loop.state()));
         check (proposals <= 2, "J3. ...in at most 2 proposals (step scaled by achieved/commanded; RED as it stood: 3 shrinking passes)", juce::String (proposals) + " proposal(s)");
         check (r.logs.joinIntoString ("\n").contains ("step scaling: commanded") && r.logs.joinIntoString ("\n").contains ("ratio 0.6"), "J3. the scaling is logged (ratio 0.6x)", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("step scaling", true, false).substring (0, 120));
-        check (r.last().contains ("limiter catching up to ~"), "J3. the GR line on this third-party fixture is the estimate (the ~ mark)", r.last());
+        check (r.last().contains ("limiter working ~"), "J3. the GR line on this third-party fixture is the estimate (the ~ mark)", r.last());
         // J4: Done ends the watch - a louder section afterwards proposes nothing
         const int nb = r.loop.bubbleCount();
         check (r.loop.done() && r.loop.state() == LoudnessLoop::State::hold && r.loop.bubbleCount() == nb + 1 && r.last().startsWith ("Done - Level "), "J4. Done: one bubble, the loop holds", r.last());
@@ -464,16 +465,17 @@ int main()
         // and the estimate window is measured after that push with fresh tallies and fresh independent meters
         r.loop.armFromChain(); r.loop.listen(); r.runWindow(); r.loop.pushIt(); r.loop.check(); IndependentMeter ind; r.runWindow (0.0f, &ind);
         b.loop.armFromChain(); b.loop.listen(); b.runWindow(); b.loop.pushIt(); b.loop.check(); IndependentMeter indB; b.runWindow (0.0f, &indB);
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr, 0.0f); feed (b.proc, b.prog, 400, false, nullptr, nullptr, 0.0f);   // 21m: a full 3 s window on both tallies after the loop's own window (its tracking reset empties the chain-out ring)
         const float g = r.levelGain();
         const auto in = r.h.getChainInLevels(), out = r.h.getChainOutLevels();
-        const float truthLoud = (in.maxShortTermDb + g) - out.maxShortTermDb;
+        const float truthLoud = (in.shortTermDb + g) - out.shortTermDb;   // the latest full 3 s window on both tallies (the max hold restarts when the loop starts tracking - 21m)
         const float truthPeak = indB.truePeakDb() - ind.truePeakDb();
         const float estLoud = r.loop.grEstimateDb(), estPeak = r.loop.grPeakEstimateDb();
         std::printf ("  K5 inputs: amp %.3f / %.3f, gain %+.2f / %+.2f dB | chain in maxST %.2f, chain out maxST %.2f | Level OUT TP %.2f, chain OUT TP %.2f (tallies) | independent TP clipper %.2f, bypass %.2f\n", r.prog.amp, b.prog.amp, g, b.levelGain(), in.maxShortTermDb, out.maxShortTermDb, dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot))->outputLevels().truePeakDb, out.truePeakDb, ind.truePeakDb(), indB.truePeakDb());
         check (std::abs (r.prog.amp - b.prog.amp) < 1e-4f && std::abs (g - b.levelGain()) < 0.01f, "K5. the two rigs ran the same programme at the same gain (the bypass rig is the pre-limiter truth)", juce::String (r.prog.amp, 4) + " / " + juce::String (b.prog.amp, 4));
         check (std::isfinite (estLoud) && truthLoud > 0.3f && std::abs (estLoud - truthLoud) <= 1.0f, "K5. third-party limiter: the loudness GR estimate is within 1 dB of the truth (chain in + gain - chain out), and the clipper is working", "estimate " + f1 (estLoud) + " vs truth " + f1 (truthLoud) + " dB");
         check (std::isfinite (estPeak) && truthPeak > 0.5f && std::abs (estPeak - truthPeak) <= 1.0f, "K5. ...and the PEAK GR estimate (Level OUT true peak - chain OUT true peak) is within 1 dB of the independent pre/post true-peak difference", "estimate " + f1 (estPeak) + " vs truth " + f1 (truthPeak) + " dB");
-        check (r.last().contains ("limiter catching up to ~") && r.last().contains ("dB on the hits") && ! r.last().contains ("average"), "K5. the bubble reads \"limiter catching up to ~Y dB on the hits\" (ruling 4)", r.last());
+        check (r.last().contains ("limiter working ~") && r.last().contains ("dB on the hits (worst peak ") && ! r.last().contains ("average"), "K5. the bubble reads \"limiter working ~X dB on the hits (worst peak Y)\" (21m)", r.last());
         check (r.logs.joinIntoString ("\n").contains ("true peak: Level OUT TP ") && r.logs.joinIntoString ("\n").contains (" dBTP, chain OUT TP "), "K5. the EJLoudness log carries the true-peak VALUES (Level OUT TP, chain OUT TP), not only their difference", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("true peak:", true, false).substring (0, 120));
     }
 #else
@@ -509,19 +511,19 @@ int main()
 #endif
     std::printf ("== K. 22 Sep 2026 (item 5): the GR cap per loudness option, the capped proposal, the opening-gain clamp, the estimated-GR line ==\n");
     {
-        Rig r (true); r.setTarget (-8.0f, 0.0); r.prog.peaky = true; r.prog.burst = 12.0f;   // third-party limiter (hard clip -0.5 dBTP), Commercial (option 0) -> cap 4 dB; hits ~+1.6 dBTP so +6 would cost ~8 dB on the hits
+        Rig r (true); r.setTarget (-8.0f, 0.0); r.prog.peaky = true; r.prog.burst = 30.0f;   // third-party limiter (hard clip -0.5 dBTP), Commercial (option 0) -> cap 6 dB (21m); hits typically ~+7 dBTP so the typical reduction is over the cap
         const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.8f, "K. peaky programme calibrated to -18 LUFS", f1 (cal));
         check (r.loop.armFromChain(), "K. armed (third-party limiter last, Commercial)", r.logs.joinIntoString (" | ").substring (0, 200));
         r.runWindow();
         const auto prop = r.last(); const auto logAll = r.logs.joinIntoString ("\n");
-        check (r.loop.state() == LoudnessLoop::State::proposed && prop.contains ("is as loud as this goes with the limiter working <=4 dB. Push to -8.0 anyway?"),
-               "K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 4 dB): \"<level> is as loud as this goes with the limiter working <=4 dB. Push to -8.0 anyway?\"", prop);
+        check (r.loop.state() == LoudnessLoop::State::proposed && prop.contains ("is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?"),
+               "K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 6 dB, 21m): \"<level> is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?\"", prop);
         check (r.loop.lastPills().joinIntoString ("|") == "Push it anyway|Leave it", "K2. the capped proposal carries [Push it anyway] [Leave it]", r.loop.lastPills().joinIntoString ("|"));
-        check (logAll.contains ("GR cap: Level OUT true peak") && logAll.contains ("> cap 4.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (Level OUT true peak + trim - ceiling > cap -> trim)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
+        check (logAll.contains ("GR cap: typical hit true peak") && logAll.contains ("> cap 6.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (typical hit true peak + trim - ceiling > cap -> trim; 21m: the top-20 % block measure)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
         check (logAll.contains ("true peak: Level OUT TP ") && logAll.contains ("(third-party limiter: the hits figure is the report)"),
                "K4 (ruling 4): with a third-party limiter the measured line is followed by the true-peak line (Level OUT TP, chain OUT TP, hits) and the hits figure is the report", logAll.fromLastOccurrenceOf ("true peak:", true, false).substring (0, 140));
         const float cappedGain = numberAfter (prop, "(loudest 3 s). ") - r.loop.lastMeasured();   // the capped level minus the measured = the capped trim
-        check (cappedGain > 0.3f && cappedGain < 4.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 4 dB)", f1 (cappedGain));
+        check (cappedGain > 0.3f && cappedGain < 6.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 6 dB)", f1 (cappedGain));
         check (r.loop.pushIt() && r.levelGain() > cappedGain + 0.5f, "K2. Push it anyway applies the UNCAPPED step (the pass clamp, +6)", f1 (r.levelGain()));
     }
     {
@@ -566,8 +568,30 @@ int main()
                "N1. the loop stays ARMED on the SAME Level instance (now slot 1), no \"no longer in the chain\" (RED today: index 0 is the inserted slot, the loop stops)", "state " + juce::String ((int) r.loop.state()) + " slot " + juce::String (r.loop.levelSlot()) + " | " + r.last());
         r.runWindow();
         check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.go() && std::abs ((float) dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (1))->gainDb() - 6.0f) < 0.1f, "N1. ...and Go drives that same Level (slot 1 gained +6)", f1 ((float) dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (1))->gainDb()));
+        r.loop.check();   // a window is running (after Go the loop holds by design and says nothing until Check)
         r.h.removeSlot (1); r.loop.tickNow();
         check (r.loop.state() == LoudnessLoop::State::hold && r.last().contains ("The Level slot is no longer in the chain"), "N2. removing the Level itself stops the loop with the message", r.last());
+    }
+    std::printf ("== O. 22 Sep 2026 (21m item 3): the cap is on the TYPICAL reduction (top 20 %% of 100 ms blocks), the worst peak is shown beside it ==\n");
+    {   // one 9 dB transient among hits typically ~4 dB over the ceiling -> NOT capped under Commercial (6)
+        Rig r (true); r.setTarget (-10.5f, 0.0); r.prog.peaky = true;   // target ~1.5 dB above the measured level: a small trim, so the projected typical stays under the cap
+        calibrate (r.proc, r.prog, -18.0f); r.prog.burst = 18.0f;   // the hits AFTER calibration: typically ~3-4 dB over the -0.5 dBTP clip
+        r.loop.armFromChain(); r.prog.spikeEvery = 300; r.prog.spike = 45.0f;   // ONE hit at 45x (~+8 dB over the others) about once per 3 s window
+        r.runWindow();
+        const auto hm = r.loop.hitsMeasure(); const auto prop = r.last();
+        std::printf ("  O1 measure: typical %.1f dB, worst %.1f dB over %d blocks | %s\n", hm.typicalDb, hm.worstDb, hm.blocks, prop.toRawUTF8());
+        check (hm.blocks >= 20 && std::isfinite (hm.typicalDb) && hm.worstDb >= hm.typicalDb + 3.0f, "O1. the measure separates the single transient (worst) from the typical hits (worst >= typical + 3 dB)", f1 (hm.typicalDb) + " / " + f1 (hm.worstDb));
+        check (prop.contains ("limiter working ~") && prop.contains (" dB on the hits (worst peak ") && ! prop.contains ("average"), "O1. the bubble reads \"limiter working ~X dB on the hits (worst peak Y)\"", prop);
+        check (! prop.contains ("is as loud as this goes"), "O1. with the hits typically under the Commercial cap the proposal is NOT capped (the single 9 dB transient no longer caps it)", prop);
+        check (r.logs.joinIntoString ("\n").contains ("hits: typical ") && r.logs.joinIntoString ("\n").contains ("blocks, worst "), "O1. the EJLoudness log carries both figures (for the re-calibration)", r.logs.joinIntoString (" | ").fromLastOccurrenceOf ("hits: typical", true, false).substring (0, 90));
+    }
+    {   // hits typically ABOVE the Commercial cap -> capped, with the capped-proposal wording
+        Rig r (true); r.setTarget (-8.0f, 0.0); r.prog.peaky = true;
+        calibrate (r.proc, r.prog, -18.0f); r.prog.burst = 30.0f;   // the hits AFTER calibration
+        r.loop.armFromChain(); r.runWindow();
+        const auto hm = r.loop.hitsMeasure(); const auto prop = r.last();
+        std::printf ("  O2 measure: typical %.1f dB, worst %.1f dB over %d blocks | %s\n", hm.typicalDb, hm.worstDb, hm.blocks, prop.toRawUTF8());
+        check (prop.contains ("is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?") && r.loop.lastPills().joinIntoString ("|").startsWith ("Push it anyway|Leave it"), "O2. hits typically above the cap -> capped with the capped-proposal wording", prop);
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

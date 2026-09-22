@@ -102,6 +102,11 @@ public:
         // (NaN until 30 hops have closed since that reset). Independent of the integrated stats and of reset().
         float shortTermDb    = std::numeric_limits<float>::quiet_NaN();
         float maxShortTermDb = std::numeric_limits<float>::quiet_NaN();
+        // 21m item 3 (22 Sep 2026): the TRUE PEAK of each of the last 30 hops (100 ms blocks), oldest first, dBTP; hopTruePeakCount
+        // = how many are valid (< 30 until the window has filled since the last resetShortTermMax). The loop's "typical on the
+        // hits" = the mean reduction over the top 20 % of these blocks; the single worst block is still reported beside it.
+        std::array<float, 30> hopTruePeakDb {};
+        int hopTruePeakCount = 0;
         float windowSeconds = 0.0f;   // how much of it the estimate describes
         // Everything below is NaN while !known. Read known first.
         float levelDb = std::numeric_limits<float>::quiet_NaN();   // gated: LUFS (K) or dBFS RMS (Plain)
@@ -264,6 +269,8 @@ private:
     // 18e: the 3 s short-term ring (30 hops) and its max hold
     static constexpr int kStHops = 30;
     std::array<double, kStHops> stRing_ {};
+    std::array<float, kStHops>  tpRing_ {};   // 21m item 3
+    float  hopTp_ = 0.0f;
     int    stPos_ = 0, stFill_ = 0;
     double stLastDb_ = std::numeric_limits<double>::quiet_NaN(), stMaxDb_ = std::numeric_limits<double>::quiet_NaN();
     std::atomic<bool> stResetRequested_ { false };
@@ -281,6 +288,7 @@ private:
     {
         const float a = std::max (tpL_.maxAbs4 (l), tpR_.maxAbs4 (r));
         if (a > tpMax_) tpMax_ = a;
+        if (a > hopTp_) hopTp_ = a;   // 21m item 3: this hop's true peak
     }
     std::atomic<float> countFloorLufs_ { std::numeric_limits<float>::quiet_NaN() };
     double plainPow_ = 0.0, plainW_ = 0.0;   // decayed plain-power sum and its weight (gated hops)
@@ -322,7 +330,8 @@ private:
             if (std::isfinite (cf) && hopK > 0.0 && offsetDb() + 10.0 * std::log10 (hopK) > (double) cf) heardAboveHops_ += 1.0;
         }
         {   // 18e: short-term (3 s) window, K-weighted, ungated; the max hold restarts on resetShortTermMax()
-            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; }
+            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; tpRing_.fill (0.0f); hopTp_ = 0.0f; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; }
+            tpRing_[(size_t) stPos_] = hopTp_; hopTp_ = 0.0f;   // 21m item 3: the hop's true peak rides the same ring index
             stRing_[(size_t) stPos_] = hopK; stPos_ = (stPos_ + 1) % kStHops; if (stFill_ < kStHops) ++stFill_;
             if (stFill_ == kStHops)
             {
@@ -379,6 +388,10 @@ private:
         s.truePeakDb = (float) (tpMax_ > 0.0f ? 20.0 * std::log10 (tpMax_) : -200.0);
         s.shortTermDb    = (float) stLastDb_;     // 18e
         s.maxShortTermDb = (float) stMaxDb_;
+        {   // 21m item 3: the per-hop true peaks, oldest first
+            const int n = stFill_; s.hopTruePeakCount = n;
+            for (int k = 0; k < n; ++k) { const int idx = ((stPos_ - n + k) % kStHops + kStHops) % kStHops; const float v = tpRing_[(size_t) idx]; s.hopTruePeakDb[(size_t) k] = v > 0.0f ? (float) (20.0 * std::log10 (v)) : -200.0f; }
+        }
         s.windowSeconds = (float) juce::jmin ((double) s.heardSeconds, kEffectiveWindowSeconds);
         s.known = s.heardSeconds >= kHeardFloorSeconds;
         if (! s.known) return s;   // every number stays NaN
