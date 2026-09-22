@@ -47,6 +47,10 @@ public:
 
     // Link state (accessed by editor on message thread)
     juce::String      linkName;
+    // 21n item 2 (22 Sep 2026): the DISPLAY ALIAS V2 pushes over the ctrl-cmd transport ("alias": "..."; "" clears =
+    // V2's "Reset name"). Display only: shown in this Link's window and saved in its state; effectiveDisplayName() -
+    // the registry row, the identity every surface keys on - never reads it. Message thread.
+    juce::String      displayAlias;
     // DEFAULT Active (27 Jul): a freshly inserted Link contributes its
     // meters/ring immediately instead of needing a hand-tick on every
     // channel. DEFAULT ONLY — setStateInformation applies a persisted

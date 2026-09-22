@@ -83,6 +83,13 @@ LinkEditor::LinkEditor(LinkProcessor& p)
         repaint();
     };
     addAndMakeVisible(nameField);
+    // 21n item 2: the display alias V2 pushed (display only; the identity stays the name field / track name)
+    aliasLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
+    aliasLabel.setColour(juce::Label::textColourId, kCyan.withAlpha(0.9f));
+    aliasLabel.setJustificationType(juce::Justification::centredLeft);
+    aliasLabel.setTooltip("The name EchoJay gave this Link (set from EchoJay's roster). The track name below is unchanged.");
+    addAndMakeVisible(aliasLabel);
+    syncAlias();
 
     // Toggle. onClick, NOT onStateChange: onStateChange also fires on
     // hover/press, so a toggle whose VISIBLE state had gone stale (state
@@ -150,6 +157,7 @@ LinkEditor::LinkEditor(LinkProcessor& p)
         if (safe == nullptr) return;
         safe->toggleBtn.setToggleState(safe->proc.linkOn.load(), juce::dontSendNotification);
         safe->nameField.setText(safe->proc.linkName, juce::dontSendNotification);
+        safe->syncAlias();   // 21n item 2
         // FULL MUST REPORT TO THE USER (6 Sep 2026 ruling): the name field turns red
         // with a tooltip when this Link found no registry slot.
         safe->nameField.setColour(juce::TextEditor::outlineColourId, safe->proc.diag.regFull ? juce::Colours::red : juce::Colour());
@@ -217,9 +225,20 @@ LinkEditor::~LinkEditor()
     chainPanel.closeAllEditors();
 }
 
+void LinkEditor::syncAlias()
+{
+    const auto a = proc.displayAlias.trim();
+    if (a == lastAlias_ && aliasLabel.getText() == (a.isEmpty() ? juce::String() : "aka " + a)) return;
+    lastAlias_ = a;
+    aliasLabel.setText(a.isEmpty() ? juce::String() : "aka " + a, juce::dontSendNotification);
+    aliasLabel.setVisible(a.isNotEmpty());
+    resized();
+}
+
 void LinkEditor::timerCallback()
 {
     chainPanel.syncPreGain();   // keep the Link's own pre-gain knob live
+    syncAlias();                // 21n item 2: follows a ctrl-cmd alias applied off the editor's own path
     // Repaint only when the mono fold-down note appears/disappears/changes, so
     // steady-state playback never triggers a repaint (which could flicker the
     // hosted native editor). Both status lines (mini in paint(), full in the
@@ -428,7 +447,13 @@ void LinkEditor::resized()
     // group into the gain cluster.
     int clusterW = 12 + toggleW + lightGap + (int)lightD + groupGap + placeCluster + 10;
     int fieldW = juce::jlimit(80, 260, gainCapX - clusterW - fieldX - 8);
+    // 21n item 2: with an alias the field yields ~96 px to the "aka <alias>" label beside it
+    const bool hasAlias = proc.displayAlias.trim().isNotEmpty();
+    const int aliasW = hasAlias ? juce::jmin(96, juce::jmax(0, fieldW - 80)) : 0;
+    fieldW -= aliasW;
     nameField.setBounds(fieldX, (kHeaderH - 26) / 2, fieldW, 26);
+    aliasLabel.setBounds(fieldX + fieldW + 2, (kHeaderH - 26) / 2, aliasW, 26);
+    fieldW += aliasW;   // the cluster after the field keeps its place
 
     // Active checkbox + label + status dot form ONE group.
     const int toggleX = fieldX + fieldW + 12;

@@ -830,6 +830,15 @@ void LinkProcessor::pollControlCommand()
     if (obj->hasProperty("placement"))
         setPlacement((int)obj->getProperty("placement"));
 
+    if (obj->hasProperty("alias"))   // 21n item 2: display-only alias from V2; "" clears
+    {
+        const auto a = obj->getProperty("alias").toString().trim();
+        EchoJay_NSLog(("EJLinkState: remote alias \"" + a + "\" (seq " + juce::String(seq) + ") - display only, identity \""
+                       + effectiveDisplayName() + "\" unchanged").toRawUTF8());
+        displayAlias = a;
+        if (onLinkStateChanged) onLinkStateChanged();
+    }
+
     // Remote pre-chain gain (18 Aug 2026, from the mixer's Pre mode). A fader
     // move is a HAND set: userSet true so the next model build will not
     // overwrite it. Additive field; an old Link never sees it. updateShmState
@@ -1064,6 +1073,7 @@ void LinkProcessor::pollControlCommand()
     ack->setProperty("active",    linkOn.load());
     ack->setProperty("gainDb",    (double)gainDb_.load(std::memory_order_relaxed));
     ack->setProperty("placement", placement_.load(std::memory_order_relaxed));
+    ack->setProperty("alias",     displayAlias);   // 21n item 2: echoed so V2 can read back what the Link shows
     // CROSS-VERSION: this key is what tells an "opened" apart from a Link too
     // old to know the field at all. An older build ignores openSlot and still
     // writes a perfectly normal ack, so its ABSENCE is the version signal.
@@ -2740,6 +2750,7 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
 #endif
     juce::DynamicObject* obj = new juce::DynamicObject();
     obj->setProperty("linkName", linkName);
+    obj->setProperty("alias",    displayAlias);   // 21n item 2
     obj->setProperty("linkOn",   (bool)linkOn.load());
     obj->setProperty("gainDb",   (double)gainDb_.load(std::memory_order_relaxed));
     obj->setProperty("placement", placement_.load(std::memory_order_relaxed));
@@ -2806,6 +2817,7 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             else if (linkName.isEmpty())     linkName = n;                                  // ours: fill only
         }
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
+        if (obj->hasProperty("alias"))    displayAlias = obj->getProperty("alias").toString().trim();   // 21n item 2
         if (obj->hasProperty("gainDb"))
             gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
                                        (float)(double)obj->getProperty("gainDb")),

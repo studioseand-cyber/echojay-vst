@@ -1435,6 +1435,9 @@ public:
     // 21m rename alias (22 Sep 2026): a V2-SESSION alias for a Link (by uid), shown everywhere V2 names the Link (this list is
     // the one source); the Link's own name is untouched; "Reset name" clears it. Persisted with the session state.
     void setLinkAlias(const juce::String& uid, const juce::String& alias);
+    // 21n item 2: the alias is MIRRORED to the Link over the ctrl-cmd transport ("alias" field, "" on Reset name) as
+    // display-only; the Link keeps reporting its track name as identity. Public for the guard.
+    void writeLinkAliasCommand(const juce::String& uid, const juce::String& alias);
     juce::String linkAlias(const juce::String& uid) const;
     std::map<juce::String, juce::String> linkAliases_;
     // ONE accessor for a Link channel's display name (Phase N precedence via

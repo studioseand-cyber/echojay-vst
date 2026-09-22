@@ -27,6 +27,9 @@ public:
     // when the note text changes, so idle playback never flickers the hosted
     // native editor.
     void timerCallback() override;
+    // 21n item 2: the alias line's text ("" when no alias) - the guard reads what the window shows
+    juce::String aliasText() const { return aliasLabel.getText(); }
+    void syncAlias();
     juce::String lastMonoNote_;
 
     // Shared tooltip window — makes the chain strip / card button tooltips
@@ -1066,6 +1069,8 @@ private:
     static constexpr int kHeaderH = 40;
 
     juce::TextEditor   nameField;
+    juce::Label        aliasLabel;           // 21n item 2: "aka <alias>" beside the name field, from proc.displayAlias
+    juce::String       lastAlias_;
     juce::String lastPlaceholderHostName_;   // Phase N placeholder change detection
     // Rounds the name field's corners to match the main plugin's Project name
     // box (same shared radius). Applied to nameField only; colours/fill/size

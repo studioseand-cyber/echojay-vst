@@ -5189,6 +5189,22 @@ void EchoJayProcessor::setLinkAlias(const juce::String& uid, const juce::String&
     if (a.isEmpty()) linkAliases_.erase(uid); else linkAliases_[uid] = a;
     EchoJay_NSLog(("EJAlias: " + uid + " -> \"" + a + "\"").toRawUTF8());
     markStateDirty();
+    writeLinkAliasCommand(uid, a);   // 21n item 2: mirrored to the Link's own window and state
+}
+
+void EchoJayProcessor::writeLinkAliasCommand(const juce::String& uid, const juce::String& alias)
+{
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return;
+    // the same one-file ctrl-cmd the mixer's Active / gain commands use; additive field, older Links ignore it
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",     1);
+    cmd->setProperty("seq",   LinkShm::nextCtrlSeq());
+    cmd->setProperty("alias", alias);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    EchoJay_NSLog(("EJAlias: ctrl-cmd alias \"" + alias + "\" -> " + uid).toRawUTF8());
 }
 juce::String EchoJayProcessor::linkAlias(const juce::String& uid) const
 {
