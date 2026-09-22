@@ -77,6 +77,41 @@ public:
     
     // Clear all references
     void clearAll();
+
+    /** SEED THE LIBRARY FROM STORED MEASUREMENTS, WITHOUT DECODING ANYTHING.
+
+        The entries arrive already built, so this class stays free of the index
+        types and the conversion can live where both are visible. All this does
+        is put them in, under the SAME refMutex getReferences, getReference,
+        getReferenceCount, removeReference and clearAll take.
+
+        CALL IT BEFORE ANYTHING IS QUEUED. The worker takes refMutex for its one
+        push_back, so seeding after queueing would race the worker's appends and
+        decide positions by arrival order. EJReferenceRows.h:148 already records
+        that getReferenceCount() - 1 is not a safe way to name an entry.
+
+        IT APPENDS RATHER THAN REPLACING, and asserts nothing about what is
+        already there: the caller has reconciled, and reconciliation is the one
+        place that decides what the library is. */
+    void seedFromStored (const std::vector<ReferenceResult>& seeds);
+
+    /** THE LIBRARY CHANGED. Set by the processor; called on the MESSAGE THREAD
+        with NO LOCK HELD, so the handler is free to take refMutex itself
+        (getReferences does) without deadlocking.
+
+        `removed` distinguishes the two cases, because they are not symmetrical
+        in the index: an add is a union and a removal needs a tombstone, since
+        mergeReferenceIndex cannot express a deletion (its own comment says so).
+
+        IT IS NOT FIRED BY seedFromStored, deliberately. Seeding is the index
+        being read INTO the analyser; firing there would write back what was
+        just read, on every project open, for no change.
+
+        IT IS NOT FIRED BY clearAll EITHER. clearAll empties the vector at
+        teardown and reset, and a commit built from an empty library would be a
+        union with nothing: harmless to the file, but a removal storm if it ever
+        grew tombstones. The one writer of a real removal is removeReference. */
+    std::function<void (const juce::String& path, bool removed)> onLibraryChanged;
     
     // Get a specific reference
     ReferenceResult getReference(int index) const;

@@ -7697,11 +7697,100 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             }
         }
 
+        // ri PIN27 -- THE CALLER, AND THAT C1 WRITES NOTHING.
+        //
+        // ri PIN20 to PIN25 pin refReconcile itself; NOTHING pinned that the
+        // shipping caller uses it, or that C1 is inert. Both are text
+        // assertions over PluginProcessor.cpp because the gate links harnesses
+        // and never the processor (open list 158), so this is the only form
+        // available. Its limit: it reads the TEXT of the wiring, so it catches
+        // the call being removed or a commit being added, and would not catch
+        // a caller that passed the wrong arguments.
+        //
+        // THE INERTNESS CHECK IS THE ONE THAT MATTERS. C1 is the read path:
+        // if a commitReferenceIndex call appears, the commit is no longer
+        // inert and a user's library file is being written by a build that was
+        // only supposed to read it.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pp = codeOnly (juce::String (sp.str()));
+
+            // THE CONTROL FIRST: without it every "does not contain" below
+            // passes on a file that failed to open, which is exactly how this
+            // session's cg PIN7 reported green while reading nothing.
+            check (pp.length() > 10000 && pp.contains ("EchoJayProcessor::setStateInformation"),
+                   "ri PIN27: PluginProcessor.cpp was read, so this sweep is reading something",
+                   "len=" + juce::String (pp.length()));
+
+            // THE LOAD SITE MOVED, 22 Sep, AND THIS MOVED WITH IT. It read:
+            //
+            //   check (pp.contains ("echojay::loadReferenceIndex (indexDir)"),
+            //          "ri PIN27: the shipping caller LOADS the index");
+            //
+            // which passed while the load sat inside setStateInformation, a
+            // function a host calls ONLY when restoring saved state. A freshly
+            // inserted plugin has no state, so the library was never read on
+            // the one path that matters, and this pin said green throughout.
+            // IT WAS PINNING THAT A CALL EXISTED, NOT THAT IT WAS REACHABLE.
+            check (pp.contains ("echojay::loadReferenceIndex (referenceIndexDir())"),
+                   "ri PIN27: the library LOADS, through the one directory helper");
+            check (pp.contains ("void EchoJayProcessor::ensureReferenceLibraryLoaded()")
+                   && pp.contains ("if (refLibraryLoaded_) return;"),
+                   "ri PIN27: behind a once flag, so whichever path arrives first pays for the "
+                   "parse and the second finds it done");
+            // THE TWO ARRIVALS, and the reason this is three checks and not one:
+            // a scan instantiates every plugin, so the load must be on NEITHER
+            // the constructor nor any audio path, and must be on BOTH of these.
+            check (pp.contains ("EchoJayProcessor::createEditor()")
+                   && pp.contains ("    ensureReferenceLibraryLoaded();\n    return new EchoJayEditor"),
+                   "ri PIN27: createEditor loads it, which is the fresh-insert path that had "
+                   "no library at all before");
+            check (pp.contains ("            ensureReferenceLibraryLoaded();\n            const auto rec"),
+                   "ri PIN27: and setStateInformation RECONCILES against it rather than loading");
+            check (pp.contains ("echojay::refReconcile ("),
+                   "ri PIN27: reconciling, rather than restoring the blob's paths directly");
+            check (pp.contains ("refAnalyser.seedFromStored (seeds)"),
+                   "ri PIN27: and seeds the analyser from stored measurements");
+            check (pp.contains ("for (const auto& p : rec.toAnalyse)"),
+                   "ri PIN27: and queues ONLY what reconciliation returned, not the blob's paths");
+            // INVERTED FOR C2, NOT DELETED. It read:
+            //
+            //   check (! pp.contains ("commitReferenceIndex"),
+            //          "ri PIN27: AND WRITES NOTHING. C1 is the read path; a
+            //           commit call here means a read-only commit has started
+            //           writing the user's library");
+            //
+            // That was the proof C1 was inert. C2 is the write path, so the
+            // same line inverted is now the proof it writes, and the three
+            // below pin WHERE, because "it writes somewhere" is the assertion
+            // that would pass on a commit fired from a timer.
+            check (pp.contains ("echojay::commitReferenceIndex (referenceIndexDir(), refLibrary_,"),
+                   "ri PIN27: C2 WRITES, through the existing commit and the one directory helper");
+            check (pp.contains ("refAnalyser.onLibraryChanged = [this]"),
+                   "ri PIN27: driven by the analyser's change hook, so the write follows the "
+                   "library rather than a timer or a block");
+            check (pp.contains ("if (! refIndexMayWrite_) return;"),
+                   "ri PIN27: and an index that could not be read is never written over");
+            // A REMOVAL IS A TOMBSTONE. mergeReferenceIndex cannot express a
+            // deletion, so a removal written as a plain union would vanish for
+            // the session and come back on the next launch.
+            check (pp.contains ("refLibrary_.tombstones.push_back (t)"),
+                   "ri PIN27: a removal emits a TOMBSTONE rather than a shorter union, which "
+                   "a union would resurrect");
+            // AND LOADING STILL DOES NOT WRITE. The commit must be reachable
+            // only from the change hook: a commit on the load path would
+            // rewrite the file on every project open, and on an unreadable
+            // index would write an empty library over a real one.
+            check (! pp.contains ("commitReferenceLibrary (path, removed);\n            refAnalyser.seedFromStored"),
+                   "ri PIN27: and the load path itself still commits nothing");
+        }
+
         // =================================================================
-        // RECONCILIATION (EJReferenceReconcile.h). WIRED TO NOTHING YET: the
-        // function ships in this commit and the caller arrives in the next, so
-        // these six pins are the only thing exercising it. They are here rather
-        // than in a new family because the subject is the same library.
+        // RECONCILIATION (EJReferenceReconcile.h). THE CALLER ARRIVED IN C1:
+        // PluginProcessor.cpp now loads, reconciles and seeds from these, and
+        // ri PIN27 above pins that it does. These six still exercise the
+        // function directly, which is where its behaviour is decided.
         //
         // The clock, the id source and "does this path exist" are all
         // parameters, so every case below is an exact value in and an exact

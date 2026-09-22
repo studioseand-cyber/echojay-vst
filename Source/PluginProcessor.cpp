@@ -1,4 +1,9 @@
 #include "PluginProcessor.h"
+// THE READ PATH FOR THE REFERENCE LIBRARY (commit C1). This is the FIRST
+// shipping translation unit to include either header: until now both were
+// linked only by tools/mapfps_test, which is what open list 162 records as
+// "the header wired to nothing".
+#include "EJReferenceReconcile.h"   // refReconcile, and EJReferenceIndex.h through it
 #include "EJSpectralEvidence.h"   // spectral provenance + the moved band reduction
 #include "EJCompareFigures.h"     // CompareFig + computeCompareFig, moved out of this file
 #include "PluginEditor.h"
@@ -263,6 +268,13 @@ EchoJayProcessor::EchoJayProcessor()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    // THE ONE SUBSCRIBER. ReferenceAnalyser fires this on the message thread
+    // with refMutex released; commitReferenceLibrary takes it again through
+    // getReferences, which is why the notify is outside the lock.
+    refAnalyser.onLibraryChanged = [this] (const juce::String& path, bool removed)
+    {
+        commitReferenceLibrary (path, removed);
+    };
     // Session C: join the PROCESS-WIDE poller. Registered here rather than
     // from the editor, so the poll exists for the whole life of this instance
     // and does not depend on a window ever being opened, and so an editor
@@ -3982,6 +3994,159 @@ void EchoJayProcessor::fadeOutCompareStreams()
     cmpStream[1].stopAtZero.store(true);
 }
 
+// ===========================================================================
+// THE INDEX IS WRITTEN WHEN THE LIBRARY CHANGES (commit C2)
+// ===========================================================================
+//
+// ON CHANGE, NOT ON A TIMER AND NOT PER BLOCK. ReferenceAnalyser fires
+// onLibraryChanged once per completed analysis and once per removal, on the
+// message thread with refMutex already released, which is the only moment the
+// library is both settled and safe to read.
+//
+// ADD AND REMOVE ARE NOT SYMMETRICAL, and mergeReferenceIndex's own comment is
+// why: "IT CANNOT EXPRESS A DELETION ... a removal merged against a peer's copy
+// would be resurrected." A union has no way to say "I deleted this". So an add
+// is an entry and a REMOVAL IS A TOMBSTONE, which the merge already honours and
+// ri PIN17 already pins: "the tombstoned entry is GONE from entries", "its id is
+// recorded at the document level", "the deletion SURVIVES a stale peer's commit,
+// no resurrection". Writing a removal WITHOUT one would be worse than not
+// writing at all: the entry would vanish for the session and come back on the
+// next launch, which is a defect that looks like the bug this work is fixing.
+void EchoJayProcessor::ensureReferenceLibraryLoaded()
+{
+    if (refLibraryLoaded_) return;
+    refLibraryLoaded_ = true;          // set FIRST: one attempt, even on failure
+
+    refLoaded_        = echojay::loadReferenceIndex (referenceIndexDir());
+    refLibrary_       = refLoaded_.index;
+    refIndexMayWrite_ = echojay::refMayCommit (refLoaded_);
+
+    // SEED FROM STORED MEASUREMENTS, WITHOUT DECODING. An entry with no
+    // measurements is left for reconciliation to queue; seeding it would put a
+    // row in the library carrying nothing.
+    std::vector<ReferenceResult> seeds;
+    for (const auto& e : refLibrary_.entries)
+    {
+        if (! e.measurements.valid) continue;
+        ReferenceResult r;
+        r.name            = e.name;
+        r.path            = e.path;
+        r.durationSeconds = e.source.durationSeconds;
+        r.eqCurve         = e.measurements.eqCurve;
+        r.waveformThumbnail.assign (e.waveform.points.begin(), e.waveform.points.end());
+        r.macroBandAccum    = e.measurements.macroBandDb;
+        r.hasMacroBandAccum = e.measurements.hasMacroBands;
+        r.macroAccumSeconds = e.measurements.windowSeconds;
+        // psr and plr are NOT in the index and stay at their sentinels: psr
+        // then reads unavailable, which open list 206 says it should, and plr
+        // is recomputed by computeCompareFig from tp and integrated.
+        r.data.integrated    = e.measurements.integrated;
+        r.data.loudnessRange = e.measurements.loudnessRange;
+        r.data.truePeakL     = e.measurements.truePeakL;
+        r.data.truePeakR     = e.measurements.truePeakR;
+        r.data.crestFactor   = e.measurements.crestFactor;
+        r.data.width         = e.measurements.width;
+        r.data.correlation   = e.measurements.correlation;
+        r.data.dcOffset      = e.measurements.dcOffset;
+        r.data.rmsL          = e.measurements.rmsL;
+        r.data.rmsR          = e.measurements.rmsR;
+        r.data.peakL         = e.measurements.peakL;
+        r.data.peakR         = e.measurements.peakR;
+        r.data.oversCount    = e.measurements.oversCount;
+        seeds.push_back (std::move (r));
+    }
+    refAnalyser.seedFromStored (seeds);
+    EchoJay_NSLog (("EJRefIndex: library loaded, " + juce::String ((int) refLibrary_.entries.size())
+                    + " entr(ies), " + juce::String ((int) seeds.size()) + " seeded").toRawUTF8());
+}
+
+void EchoJayProcessor::commitReferenceLibrary (const juce::String& path, bool removed)
+{
+    // THE UNREADABLE REFUSAL, carried from the load. refMayCommit gates the
+    // write inside commitReferenceIndex too, but this is the session-level
+    // decision: an index that could not be read is not written over by this
+    // instance at all, for the whole run.
+    if (! refIndexMayWrite_) return;
+
+    const auto nowIso = juce::Time::getCurrentTime().toISO8601 (true);
+
+    if (removed)
+    {
+        const int at = echojay::refFindByPath (refLibrary_, path);
+        if (at < 0) return;                       // already gone: nothing to say
+        echojay::RefTombstone t;
+        t.id = refLibrary_.entries[(size_t) at].id;
+        t.at = nowIso;
+        if (t.id.isNotEmpty()) refLibrary_.tombstones.push_back (t);
+        refLibrary_.entries.erase (refLibrary_.entries.begin() + at);
+    }
+    else
+    {
+        // THE NUMBERS COME FROM THE ANALYSER, which has just finished measuring
+        // them; the id, addedAt and any unknown keys come from the entry we
+        // already hold, so a re-analysis updates measurements without minting a
+        // second identity for the same file.
+        const auto refs = refAnalyser.getReferences();
+        const ReferenceResult* src = nullptr;
+        for (const auto& r : refs)
+            if (echojay::refPathKey (r.path) == echojay::refPathKey (path)) { src = &r; break; }
+        if (src == nullptr) return;
+
+        int at = echojay::refFindByPath (refLibrary_, path);
+        if (at < 0)
+        {
+            echojay::RefEntry fresh;
+            fresh.id      = echojay::newReferenceId();
+            fresh.addedAt = nowIso;
+            refLibrary_.entries.push_back (fresh);
+            at = (int) refLibrary_.entries.size() - 1;
+        }
+
+        auto& e = refLibrary_.entries[(size_t) at];
+        e.name             = src->name;
+        e.path             = src->path;
+        e.analysedAt       = nowIso;
+        e.measurementEpoch = echojay::kRefMeasurementEpoch;
+        e.availability     = echojay::RefAvailability::Present;
+        e.checkedAt        = nowIso;
+        e.lastSeenAt       = nowIso;
+        e.source.durationSeconds = src->durationSeconds;
+
+        auto& m = e.measurements;
+        m.valid         = true;
+        m.reduction     = "wholeFileAverage";
+        m.windowSeconds = src->macroAccumSeconds;
+        m.integrated    = src->data.integrated;
+        m.loudnessRange = src->data.loudnessRange;
+        m.truePeakL     = src->data.truePeakL;
+        m.truePeakR     = src->data.truePeakR;
+        m.crestFactor   = src->data.crestFactor;
+        m.width         = src->data.width;
+        m.correlation   = src->data.correlation;
+        m.dcOffset      = src->data.dcOffset;
+        m.rmsL          = src->data.rmsL;
+        m.rmsR          = src->data.rmsR;
+        m.peakL         = src->data.peakL;
+        m.peakR         = src->data.peakR;
+        m.oversCount    = src->data.oversCount;
+        m.eqCurve       = src->eqCurve;
+        m.hasEqCurve    = true;
+        m.macroBandDb   = src->macroBandAccum;
+        m.hasMacroBands = src->hasMacroBandAccum;
+
+        e.waveform.points.assign (src->waveformThumbnail.begin(), src->waveformThumbnail.end());
+    }
+
+    // ONE WRITER, THE EXISTING ONE. commitReferenceIndex takes the process and
+    // file locks, RE-READS what is on disk, merges this instance's copy into it
+    // and writes atomically, so a peer's concurrent addition is not lost. No new
+    // serialisation is introduced here; this builds entries and hands them over.
+    const auto res = echojay::commitReferenceIndex (referenceIndexDir(), refLibrary_,
+                                                    nowIso, JucePlugin_VersionString);
+    if (! res.ok)
+        EchoJay_NSLog (("EJRefIndex: commit refused: " + res.message).toRawUTF8());
+}
+
 void EchoJayProcessor::stopCompareStream(int slot)
 {
     if (slot < 0 || slot > 1) return;
@@ -4511,18 +4676,74 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                 chatContents.add(c.toString());
         }
         
-        // Restore reference tracks — re-analyse from saved file paths
-        if (auto* refsArr = obj->getProperty("referencePaths").getArray())
+        // ---- THE LIBRARY, RECONCILED (commit C1: the READ path only) -------
+        //
+        // C1 IS INERT BY CONSTRUCTION AND THAT IS THE POINT. Nothing in this
+        // build writes reference_index.json, so loadReferenceIndex returns
+        // Absent on every machine, refReconcile's Absent case puts every blob
+        // path into toAnalyse in blob order, and the two lines that matter
+        // below do exactly what the old block did. ri PIN24 is the assertion
+        // of that, not this comment.
+        //
+        // THE DIRECTORY IS PASSED IN, NEVER RESOLVED IN THE HEADER.
+        // EJReferenceIndex.h:644-652 states why: a function resolving its own
+        // path would make every behavioural pin write to the user's real
+        // library. When EJStateRoot lands on the merge, ONE line here changes
+        // and nothing in the header does.
         {
+            std::vector<juce::String> blobPaths;
+            if (auto* refsArr = obj->getProperty("referencePaths").getArray())
+                for (auto& rp : *refsArr)
+                    blobPaths.push_back (rp.toString());
+
+            // IT NO LONGER LOADS HERE, AND THAT WAS THE DEFECT.
+            //
+            // A host calls setStateInformation ONLY when restoring saved state.
+            // A freshly inserted plugin has no state, so loading here meant the
+            // library was never read on the one path that matters: insert the
+            // plugin, open the UI, see nothing. The load moved to
+            // ensureReferenceLibraryLoaded, which createEditor also calls.
+            //
+            // THIS NOW RECONCILES AGAINST A LIBRARY THAT IS ALREADY THERE. The
+            // call below is idempotent, so whichever of the two paths arrives
+            // first pays for the parse and the second finds it done.
+            ensureReferenceLibraryLoaded();
+            const auto rec    = echojay::refReconcile (
+                                    refLoaded_, blobPaths,
+                                    [] (const juce::String& p) { return juce::File(p).existsAsFile(); },
+                                    juce::Time::getCurrentTime().toISO8601 (true),
+                                    [] { return echojay::newReferenceId(); });
+
+            // NO SEEDING HERE. ensureReferenceLibraryLoaded already did it,
+            // exactly once, from the index's own entries. Seeding again from
+            // rec.library would append a second copy of every stored entry,
+            // because seedFromStored appends and does not dedupe.
+            //
+            // THE LIBRARY TAKES THE RECONCILED VERSION, which is the index's
+            // entries PLUS any blob path the index had never seen. The new ones
+            // carry no measurements and go to toAnalyse below; ri PIN22 pins
+            // that an entry the blob never knew survives beside the blob's own.
+            refLibrary_       = rec.library;
+            refIndexMayWrite_ = rec.mayWrite;
+
+            // QUEUE ONLY WHAT RECONCILIATION RETURNED. Queueing the blob's own
+            // paths, as this used to, would keep today's cost and add the
+            // index for nothing.
             std::vector<juce::File> refFiles;
-            for (auto& rp : *refsArr)
+            for (const auto& p : rec.toAnalyse)
             {
-                juce::File f(rp.toString());
+                juce::File f (p);
                 if (f.existsAsFile())
-                    refFiles.push_back(f);
+                    refFiles.push_back (f);
             }
             if (!refFiles.empty())
                 refAnalyser.analyseFiles(refFiles, [](bool, const juce::String&) {});
+
+            // THE WRITE HAPPENS ON CHANGE, NOT HERE. Loading must not write:
+            // committing what was just read would rewrite the file on every
+            // project open for no change, and on an unreadable index it would
+            // write an empty library over the user's real one.
+            // See commitReferenceLibrary.
         }
         
         // Restore folders and the scope. ABSENT IS NOT EMPTY on the scope: a
@@ -4647,7 +4868,14 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
     } catch (...) {}
 }
 
-juce::AudioProcessorEditor* EchoJayProcessor::createEditor() { return new EchoJayEditor(*this); }
+juce::AudioProcessorEditor* EchoJayProcessor::createEditor()
+{
+    // THE OTHER ARRIVAL. A freshly inserted plugin never gets
+    // setStateInformation, so without this the first time anyone opens the UI
+    // the library would be empty on a machine that has one on disk.
+    ensureReferenceLibraryLoaded();
+    return new EchoJayEditor(*this);
+}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new EchoJayProcessor(); }
 
 // =============================================================================

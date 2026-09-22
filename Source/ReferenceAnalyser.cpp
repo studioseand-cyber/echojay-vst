@@ -66,14 +66,20 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
     auto* progressFlag = &progress;
     auto* refMutexPtr = &refMutex;
     auto* refsPtr = &references;
+    // The change hook travels in the same way as the other members the
+    // worker touches: by pointer, because AnalyseThread is a local struct
+    // with no `this` of the analyser.
+    auto* onLibraryChangedPtr = &onLibraryChanged;
     
     struct AnalyseThread : public juce::Thread
     {
         AnalyseThread(juce::File f, std::shared_ptr<std::function<void(bool, const juce::String&)>> callback,
                       std::shared_ptr<std::atomic<bool>> af, std::atomic<bool>* analysing_,
-                      std::atomic<float>* progress_, std::mutex* mutex_, std::vector<ReferenceResult>* refs_)
+                      std::atomic<float>* progress_, std::mutex* mutex_, std::vector<ReferenceResult>* refs_,
+                      std::function<void (const juce::String&, bool)>* changed_)
             : juce::Thread("EchoJay Ref Analysis"), fileCopy(f), cb(callback), aliveFlag(af),
-              analysingPtr(analysing_), progressPtr(progress_), refMutexPtr(mutex_), refsPtr(refs_) {}
+              analysingPtr(analysing_), progressPtr(progress_), refMutexPtr(mutex_), refsPtr(refs_),
+              onLibraryChangedPtr(changed_) {}
         
         void run() override
         {
@@ -291,10 +297,18 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         
         auto callback = cb;
         auto af = aliveFlag;
-        juce::MessageManager::callAsync([callback, af]() {
+        auto* changed = onLibraryChangedPtr;
+        auto addedPath = ref.path;
+        juce::MessageManager::callAsync([callback, af, changed, addedPath]() {
             ejTeardownLog("[callAsync] RefAnalyser success firing");
             if (!af->load()) { ejTeardownLog("[callAsync] RefAnalyser success: alive=false, bailing"); return; }
             (*callback)(true, "");
+            // THE LIBRARY GAINED AN ENTRY. Here rather than in the caller's
+            // completion lambda because there are three of those in two files,
+            // one of them in PluginEditor.cpp, and the index write must not
+            // depend on which of them ran. Message thread, push_back already
+            // done and refMutex already released above.
+            if (changed != nullptr && *changed) (*changed) (addedPath, false);
             ejTeardownLog("[callAsync] RefAnalyser success done");
         });
     }
@@ -306,9 +320,11 @@ void ReferenceAnalyser::analyseFile(const juce::File& file,
         std::atomic<float>* progressPtr;
         std::mutex* refMutexPtr;
         std::vector<ReferenceResult>* refsPtr;
+        std::function<void (const juce::String&, bool)>* onLibraryChangedPtr;
     };
     
-    analyseThread = std::make_unique<AnalyseThread>(fileCopy, cb, aliveFlag, analysingFlag, progressFlag, refMutexPtr, refsPtr);
+    analyseThread = std::make_unique<AnalyseThread>(fileCopy, cb, aliveFlag, analysingFlag, progressFlag, refMutexPtr, refsPtr,
+                                                    onLibraryChangedPtr);
     analyseThread->startThread();
 }
 
@@ -334,9 +350,27 @@ ReferenceResult ReferenceAnalyser::getReference(int index) const
 
 void ReferenceAnalyser::removeReference(int index)
 {
-    std::lock_guard<std::mutex> lock(refMutex);
-    if (index >= 0 && index < (int)references.size())
+    juce::String goneePath;
+    {
+        std::lock_guard<std::mutex> lock(refMutex);
+        if (index < 0 || index >= (int)references.size()) return;
+        goneePath = references[(size_t)index].path;
         references.erase(references.begin() + index);
+    }
+    // FIRED AFTER THE LOCK IS RELEASED, and that is not a style choice. The
+    // handler builds the index from getReferences(), which takes this same
+    // refMutex, and std::mutex is not recursive: notifying from inside the
+    // scope above would deadlock the message thread on the user's click.
+    if (onLibraryChanged) onLibraryChanged (goneePath, true);
+}
+
+void ReferenceAnalyser::seedFromStored (const std::vector<ReferenceResult>& seeds)
+{
+    if (seeds.empty()) return;
+    // ONE LOCK, THE SAME ONE EVERY OTHER READER TAKES. No decode, no worker, no
+    // queue: these entries already carry their numbers.
+    std::lock_guard<std::mutex> lock(refMutex);
+    references.insert (references.end(), seeds.begin(), seeds.end());
 }
 
 void ReferenceAnalyser::clearAll()

@@ -13,6 +13,7 @@
 #include "LinkShm.h"
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EedKeyWorker.h"
+#include "EJReferenceReconcile.h"  // ReferenceIndex, held as refLibrary_
 #include "EJCaptureGuard.h"  // output substitution: the shipped predicate + record field
 #include "EJSpectralEvidence.h" // spectral provenance: reduction, window, the band reduction
 #include "EJPlaybackSim.h"    // the inline monitoring stage, below the meter tap
@@ -1152,6 +1153,54 @@ public:
     void loadCompareFile(int slot, const juce::String& wavPath);
     void fadeOutCompareStreams();   // ramp monitor gain to 0, streams self-stop (click-free)
     void stopCompareStream(int slot);
+
+    /** THE REFERENCE LIBRARY AS THIS INSTANCE HOLDS IT (commit C2).
+
+        KEPT RATHER THAN REBUILT FROM THE ANALYSER, because ReferenceResult has
+        no id and no addedAt. Rebuilding would mint a fresh id on every commit;
+        mergeReferenceIndex would then dedupe by path and keep the earlier
+        addedAt, so nothing would break, but every write would churn ids for no
+        reason. Holding the reconciled index preserves them, and is what makes
+        a tombstone possible at all.
+
+        refIndexMayWrite_ is rec.mayWrite from the load. FALSE ONLY when the
+        file existed and could not be read, in which case this session writes
+        nothing: the file that could not be read is the user's library. */
+    echojay::ReferenceIndex refLibrary_;
+    bool                    refIndexMayWrite_ = true;
+
+    /** The load result itself, kept because refReconcile takes one and because
+        Absent, Loaded and Unreadable are three different things that must not
+        collapse into a bool. */
+    echojay::RefLoadResult  refLoaded_;
+    bool                    refLibraryLoaded_ = false;
+
+    /** LOAD AND SEED ONCE, ON WHICHEVER PATH ARRIVES FIRST.
+
+        NOT IN THE CONSTRUCTOR, and that is the whole point of this being a
+        function. A host SCAN instantiates every plugin it finds, so a parse in
+        the constructor is a 473 KB JSON read on every scan of every plugin,
+        for a scan that never looks at a reference. setStateInformation and
+        createEditor are the two paths that actually need the library, and a
+        scan calls neither.
+
+        IT USED TO LIVE INSIDE setStateInformation, which a host calls ONLY
+        when restoring saved state. A freshly inserted plugin has no state, so
+        the load never ran and the library was never there: the exact case the
+        work exists to fix. */
+    void ensureReferenceLibraryLoaded();
+
+    /** Where the index lives. ONE definition, because EJReferenceIndex.h
+        forbids the header resolving it and two call sites computing it
+        separately is how they drift. */
+    static juce::File referenceIndexDir()
+    {
+        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                   .getChildFile ("EchoJay");
+    }
+
+    /** Write the library, merged, after a change. Message thread, no lock. */
+    void commitReferenceLibrary (const juce::String& path, bool removed);
     void stopAllCompare();
 
 private:
