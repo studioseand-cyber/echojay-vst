@@ -75,6 +75,54 @@ inline bool compareStreamSubstituting (const OutputSubstitutionState& s) noexcep
     return s.cmpLoaded[(size_t) a] && s.cmpPlaying[(size_t) a] && ! s.cmpStopAtZero[(size_t) a];
 }
 
+// ===========================================================================
+// MAY THE TRANSPORT SYNC START A COMPARE STREAM? (22 Sep 2026, open list 215)
+// ===========================================================================
+//
+// IT LIVES IN THIS FILE, AND THAT IS A CHOICE WORTH STATING. This header is
+// already the one place that flattens compare-stream atomics into plain bools
+// so tools/mapfps_test can drive the SHIPPED predicate rather than a copy of
+// its reasoning, and it already carries cmpLoaded and cmpPlaying. A second
+// header for one four-input predicate would split the compare-stream
+// predicates across two files and guarantee that only one of them gets found
+// next time. The same design note at the top of this file applies verbatim:
+// the gate cannot construct an EchoJayProcessor, so the decision travels as
+// arguments.
+//
+// THE ASYMMETRY IS THE WHOLE FIX, and it is the thing most likely to be
+// "tidied" away by someone who sees two near-identical branches:
+//
+//   STARTING consults this. A host that begins rolling must not resurrect a
+//   stream a person paused, which is exactly what it did before: pause left
+//   cmpAudible latched on the slot, the sync set playing true again, the ramp
+//   target (rolling && sl == audible && !stopAtZero) passed, and the
+//   reference came back audible with no gesture behind it.
+//
+//   STOPPING consults NOTHING, deliberately. A host that stops should stop
+//   the reference whatever the user pressed earlier, because stopping is what
+//   they just asked for. There is no cmpSyncMayStop and there must not be
+//   one; cg PIN7 asserts the stop branch stays free of this predicate.
+//
+// WHAT THIS CLOSES AND WHAT IT DOES NOT. It closes open list 215, the missing
+// single source of truth for whether the user wants a slot rolling. It does
+// NOT close 214: playbackPos, sampleCount and monGain remain plain non-atomic
+// members written from both the audio and message threads, and that race is
+// still live and still invisible to reading the code.
+
+/** True when the transport sync is allowed to START this slot.
+
+    FOUR CONDITIONS, ALL LOAD-BEARING:
+      syncOn            the user has not disengaged transport sync
+      !bothCaptures     two captures run in lockstep on their own rule, not
+                        on the host's
+      loaded            a slot with no buffer behind it cannot play
+      userWantsRolling  a person pressed play on it and has not paused it */
+inline bool cmpSyncMayStart (bool syncOn, bool bothCaptures, bool loaded,
+                             bool userWantsRolling) noexcept
+{
+    return syncOn && ! bothCaptures && loaded && userWantsRolling;
+}
+
 /** Which substitution is active, most specific first.
 
     PRECEDENCE FOLLOWS THE AUDIO PATH, not a preference. A/B assigns into the

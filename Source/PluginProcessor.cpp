@@ -667,11 +667,33 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 for (int sl = 0; sl < 2; ++sl)
                 {
-                    if (!cmpStream[sl].loaded.load()) continue;
+                    // STOPPING IS FREE, STARTING IS NOT (open list 215).
+                    // The loaded test moved INTO cmpSyncMayStart so the
+                    // start decision is in one place and the stop branch
+                    // keeps running for a slot that is not loaded, which is
+                    // a harmless store and one fewer condition to get wrong.
+                    //
+                    // A host that stops should stop the reference: that is
+                    // what the user just asked for, whatever they pressed
+                    // earlier, so the false branch consults nothing.
+                    //
+                    // A host that STARTS may only start a slot the user
+                    // actually wants rolling. Before this, a paused slot was
+                    // set playing again on the next transport start with no
+                    // gesture behind it, and because pause leaves cmpAudible
+                    // latched on the slot the ramp target passed and the
+                    // reference came back audible. That is the reported
+                    // "stuck hearing the reference".
                     if (playing)
-                        cmpStream[sl].playing.store(true);
+                    {
+                        if (echojay::cmpSyncMayStart (cmpSyncToTransport.load(),
+                                                      cmpBothCaptures.load(),
+                                                      cmpStream[sl].loaded.load(),
+                                                      cmpStream[sl].userWantsRolling.load()))
+                            cmpStream[sl].playing.store(true);
+                    }
                     else
-                        cmpStream[sl].playing.store(false);
+                        cmpStream[sl].playing.store(false);   // consults nothing: cg PIN7
                 }
             }
 
@@ -696,7 +718,24 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
                         const double refSec = juce::jlimit(0.0, lenSec, *tSec + off);
                         st.playbackPos = juce::jmin((int)(refSec * st.sampleRate),
                                                     st.sampleCount - 1);
-                        if (!st.playing.load()) st.playing.store(true);
+                        // THE SECOND RESURRECTION, AND THE WORSE OF THE TWO.
+                        // This runs EVERY BLOCK while the host rolls, not
+                        // only on a transition, so a slot the user paused was
+                        // restarted within one buffer and would not stay
+                        // paused long enough to look like a bug in the
+                        // button. Same rule as the transition block above:
+                        // the sync may not start what a person stopped.
+                        //
+                        // THE POSITION ABOVE IS STILL FOLLOWED either way. A
+                        // paused reference that tracks the playhead silently
+                        // is correct: when the user presses play it is where
+                        // the host is, rather than where it was abandoned.
+                        if (! st.playing.load()
+                            && echojay::cmpSyncMayStart (cmpSyncToTransport.load(),
+                                                         cmpBothCaptures.load(),
+                                                         st.loaded.load(),
+                                                         st.userWantsRolling.load()))
+                            st.playing.store(true);
                     }
                 }
             }
@@ -841,6 +880,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             {
                 s.playing.store(false);
                 s.stopAtZero.store(false);
+                // AND THE INTENT GOES WITH IT. A fade-to-stop is a
+                // deliberate stop (codec disengage, editor close), so the
+                // slot must not keep permission for the transport sync to
+                // start it again on the next host roll.
+                s.userWantsRolling.store(false);
             }
         }
 
@@ -3920,6 +3964,8 @@ void EchoJayProcessor::loadCompareFile(int slot, const juce::String& wavPath)
     }
     cmpStream[slot].loaded.store(true);
     cmpStream[slot].playing.store(false);  // don't auto-play; wait for user or transport
+    // New content inherits no intent from whatever was in the slot before.
+    cmpStream[slot].userWantsRolling.store(false);
     cmpMeter[slot].reset();
     EchoJay_NSLog(("EJCmp: loaded slot=" + juce::String(slot)
                    + " samples=" + juce::String(cmpStream[slot].sampleCount)
@@ -3941,6 +3987,10 @@ void EchoJayProcessor::stopCompareStream(int slot)
     if (slot < 0 || slot > 1) return;
     cmpStream[slot].loaded.store(false);
     cmpStream[slot].playing.store(false);
+    // THE INTENT CLEARS WITH THE STREAM. Without this a stopped slot keeps
+    // permission and the transport sync starts it again on the next host
+    // roll, which is open list 215 reached by a different door.
+    cmpStream[slot].userWantsRolling.store(false);
     cmpStream[slot].playbackPos = 0;
     if (cmpAudible.load() == slot)
         cmpAudible.store(-1);
@@ -3952,6 +4002,7 @@ void EchoJayProcessor::stopAllCompare()
     {
         cmpStream[i].loaded.store(false);
         cmpStream[i].playing.store(false);
+        cmpStream[i].userWantsRolling.store(false);   // see stopCompareStream
         cmpStream[i].playbackPos = 0;
     }
     cmpAudible.store(-1);

@@ -1094,6 +1094,37 @@ public:
         int sampleCount = 0;
         double sampleRate = 44100.0;
         juce::String filePath;
+
+        /** DOES THE USER WANT THIS SLOT ROLLING? Open list 215's missing
+            piece: one source of truth, so "should this be playing" stops
+            being answered independently by the button, the host transport
+            and the sync toggle with the loudest writer winning.
+
+            WRITTEN BY toggleComparePlay AND BY NOTHING ELSE: true on play,
+            false on pause. `playing` remains what the audio thread reads to
+            advance; this is what the transport sync must consult BEFORE it
+            may set `playing` true.
+
+            THE ASYMMETRY IS THE POINT. The sync may stop a stream freely,
+            because a host stopping should stop the reference. It may START
+            one only where this is true, so a host rolling cannot resurrect
+            something a person paused.
+
+            APPENDED AT THE END OF THE STRUCT, NOT INSERTED. Open list 207 is
+            what that rule is for: the gate links the PREVIOUS build's
+            archive, so a field added mid-struct gives compiled code one
+            offset table and the test TU another, silently, with plausible
+            wrong answers. Every later field keeps its offset this way.
+
+            THIS CLOSES 215 AND NOT 214. playbackPos, sampleCount and monGain
+            above are still plain non-atomic members written from both
+            threads. That race is still live, still intermittent, and still
+            invisible to reading the code. It is deliberately NOT touched
+            here: the parallel branch is already solving the same class of
+            defect on the A/B path with an atomic load bound, and that shape
+            should be copied after the merge rather than a second one
+            invented now. */
+        std::atomic<bool> userWantsRolling { false };
     };
     CmpStream cmpStream[2];
     std::atomic<uint32_t> audioBlocksProcessed_ { 0 };

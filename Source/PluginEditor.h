@@ -154,6 +154,18 @@ private:
     
     void showCompareView();
     void hideCompareView();
+
+    /** STOP BOTH COMPARE STREAMS ON THE WAY OUT OF ANY SURFACE THAT CAN PLAY
+        THEM. Editor side, and it calls the processor's existing
+        stopCompareStream rather than adding a second stop.
+
+        THIS IS A SYMPTOM FIX AND MUST NOT BE READ AS THE FIX. See open list
+        215: there is still no single source of truth for whether the USER
+        wants a stream playing, and the transport sync still drives `playing`
+        from the host without consulting anyone. This closes the "left audible
+        with no visible control" route only. Open list 214, the data race on
+        playbackPos, is untouched and unrelated to this. */
+    void silenceCompareStreams (const char* why);
     void loadReferenceFile();
 
     /** What a status line IS, so its colour follows its register rather than
@@ -1371,6 +1383,53 @@ private:
         std::array<float, MeterEngine::kVisBins> mixVis {}, refVis {};
         bool mixVisOk = false, refVisOk = false;
 
+        /** THE REFERENCE'S STORED CURVE, EXPANDED ONTO THE LIVE GRID.
+
+            A reference knows its own spectrum without playing: eqCurve, the
+            arithmetic mean of every analysis block of the file, 64 log bins,
+            computed by ReferenceAnalyser and carried on SpectralEvidence as
+            `bins`. Before this the reference side of the picture existed only
+            while its stream rolled, because matchFastEngine and
+            matchFastFrame both require loaded && playing.
+
+            RESAMPLED BY THE SHIPPED CONVERTER, expandLog64Spectrum, which the
+            Compare page already uses for exactly this case (a static stored
+            capture drawn on the live grid). That is why there is no second
+            log-to-linear mapping here: the 64 bins are LOG spaced and the
+            trail's sampler reads a LINEAR grid, and writing that conversion
+            again is how two curves end up half an octave apart.
+
+            Rebuilt once per hop, never per frame, and only when the stream
+            is not rolling. */
+        std::array<float, MeterEngine::kVisBins> refStatic {};
+        bool refStaticOk = false;
+
+        /** THE SMOOTHED SPECTRUM ROW PER SIDE, one value per pixel column, in
+            dB relative to that frame's own mean.
+
+            THIS IS WHAT MAKES SPECTRUM BEHAVE LIKE DYNAMICS. Dynamics stacks
+            into a sheet because its five figures are one-poled, so consecutive
+            frames land close together. A raw FFT frame moves everywhere at
+            once, so the same trail stacked noise. These rows carry BOTH
+            smoothings: a sixth of an octave across frequency, then a one-pole
+            in time advanced once per hop.
+
+            THE TRAIL AND THE FILAMENT READ THE SAME ARRAY, not the same
+            function applied twice, so the thread cannot sit near the newest
+            stroke: it is drawn from the numbers that stroke was drawn from.
+
+            visRowHop holds THIS hop's reading before the one-pole folds it in,
+            and visRowScratch is the moving average's working space. They are
+            separate buffers on purpose: letting the persistent row double as
+            working space would overwrite the previous values the one-pole is
+            about to read, which is an aliasing bug that looks like a much
+            faster time constant. Both are kept here so that no frame
+            allocates, sized with the trail images and reset by the same
+            trigger. */
+        std::vector<float> visRowMix, visRowRef, visRowHop, visRowScratch;
+        int  visRowCols    = 0;
+        bool visRowMixInit = false, visRowRefInit = false;
+
         /** One tick's figures into a side's ring. NOT in the three painters:
             mr PIN24 pins that those read no capture-only field, and these read
             the band crests on purpose. */
@@ -1385,6 +1444,11 @@ private:
                            float lo, float hi);
 
         juce::String refusedText;
+        /** The two or fewer words the BUTTON wears while refusedText is
+            showing, in place of "AI MATCH". Set at the same two sites that
+            set refusedText and cleared by the same countdown, so the badge
+            and the sentence can never describe different presses. */
+        juce::String refusedBadge;
     };
     MatchPanel matchPanel_;
 

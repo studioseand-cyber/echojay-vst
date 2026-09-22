@@ -6596,6 +6596,123 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "cg PIN6: and BOTH exit paths clear it, including the destructor's fade",
                    "clears=" + juce::String (clears));
         }
+
+        // cg PIN7 -- MAY THE TRANSPORT SYNC START A COMPARE STREAM?
+        // (open list 215). Before this, a host beginning to roll set playing
+        // true on a slot a person had paused; pause leaves cmpAudible latched
+        // on the slot, so the ramp target passed and the reference came back
+        // audible with no gesture behind it.
+        //
+        // EXHAUSTIVE, NOT REPRESENTATIVE. Four booleans is sixteen rows, which
+        // is small enough to enumerate completely, so the pin cannot be
+        // accidentally weak by sampling the combinations someone thought of.
+        {
+            int agreed = 0, trueRows = 0;
+            juce::String bad;
+            for (int m = 0; m < 16; ++m)
+            {
+                const bool syncOn   = (m & 1) != 0;
+                const bool bothCaps = (m & 2) != 0;
+                const bool loaded   = (m & 4) != 0;
+                const bool wants    = (m & 8) != 0;
+
+                // The expectation is written out INDEPENDENTLY of the shipped
+                // expression, so this is a second statement of the rule and
+                // not the same one compared with itself.
+                const bool expected = syncOn && ! bothCaps && loaded && wants;
+                const bool got = echojay::cmpSyncMayStart (syncOn, bothCaps, loaded, wants);
+                if (got == expected) ++agreed; else
+                    bad << "sync=" << (int) syncOn << " both=" << (int) bothCaps
+                        << " loaded=" << (int) loaded << " wants=" << (int) wants
+                        << " got=" << (int) got << " want=" << (int) expected << "; ";
+                if (expected) ++trueRows;
+            }
+            check (agreed == 16 && bad.isEmpty(),
+                   "cg PIN7: all sixteen combinations of the four inputs agree, exhaustively",
+                   bad);
+            // THE CONTROL: exactly one row may say yes. Without this the table
+            // would pass just as happily against a function that always
+            // returned false, which is the shape a weak pin takes here.
+            check (trueRows == 1,
+                   "cg PIN7: and exactly ONE of the sixteen is a yes, so the table is not "
+                   "passing against a predicate that refuses everything",
+                   "trueRows=" + juce::String (trueRows));
+            check (echojay::cmpSyncMayStart (true, false, true, true),
+                   "cg PIN7: the one yes is sync on, not both captures, loaded, user wants it");
+            check (! echojay::cmpSyncMayStart (true, false, true, false),
+                   "cg PIN7: and a PAUSED slot is refused with everything else identical, "
+                   "which is the defect this closes");
+
+            // cg PIN7, TEXT -- STOPPING CONSULTS NOTHING.
+            //
+            // The truth table cannot carry this: it says what the predicate
+            // answers, not which branch asks it. The asymmetry IS the fix, so
+            // it is asserted over the source of the sync block itself, the way
+            // mr PIN24 reads painter bodies.
+            //
+            // WHAT IT CAN AND CANNOT SEE, stated so nobody reads it as more
+            // than it is: it checks the TEXT of the stop branch, so it catches
+            // someone adding a condition there, and it would NOT catch a
+            // condition added inside a helper the stop branch called. Today it
+            // calls none.
+            {
+                std::ifstream fp ("Source/PluginProcessor.cpp");
+                std::stringstream sp; sp << fp.rdbuf();
+                const auto pc = codeOnly (juce::String (sp.str()));
+
+                // ANCHORED ON CODE, NOT ON A COMMENT.
+                //
+                // THIS PIN CAUGHT ITSELF ON ITS FIRST RUN, and that is the most
+                // useful thing about it. It first anchored on the sentence
+                // "Sync compare streams to DAW transport", which lives inside a
+                // // comment, and codeOnly() strips comments BEFORE the search:
+                // the anchor could never be found, the sweep read an empty
+                // string, and three checks went red.
+                //
+                // THE ONE THAT DID NOT GO RED IS THE LESSON. "the STOP branch
+                // consults NOTHING" PASSED on the empty string, because nothing
+                // contains nothing. A pin that reports green while reading no
+                // source at all is worse than no pin, so the non-empty
+                // assertion below is now part of the check rather than an
+                // assumption sitting behind it.
+                //
+                // `playing != wasTransportPlaying` is the transition guard
+                // itself: real code, it survives comment stripping, and it
+                // occurs exactly ONCE in the file, which was verified before
+                // it was used rather than after it failed.
+                const int blockAt = pc.indexOf ("playing != wasTransportPlaying");
+                check (blockAt >= 0,
+                       "cg PIN7: the sync block was found by a CODE anchor, so this sweep is "
+                       "reading something");
+
+                const auto block  = pc.substring (blockAt, blockAt + 1400);
+                const int  elseAt = juce::jmax (0, block.indexOf ("else"));
+                check (elseAt > 0, "cg PIN7: and it has a stop branch");
+
+                const auto startBranch = block.substring (0, elseAt);
+                const auto stopBranch  = block.substring (elseAt,
+                                                          juce::jmin (elseAt + 220,
+                                                                      block.length()));
+
+                // THE TWO CONTROLS, BOTH LOAD-BEARING. Without the first, the
+                // does-not-contain check below passes on an empty extraction,
+                // which is exactly what it did.
+                check (stopBranch.length() > 20 && stopBranch.contains ("playing.store(false)"),
+                       "cg PIN7: the stop branch is NON-EMPTY and really is the stop, so the "
+                       "does-not-contain check below cannot pass vacuously",
+                       "len=" + juce::String (stopBranch.length()));
+                check (startBranch.contains ("cmpSyncMayStart"),
+                       "cg PIN7: the START branch consults cmpSyncMayStart");
+                check (! stopBranch.contains ("cmpSyncMayStart")
+                       && ! stopBranch.contains ("userWantsRolling"),
+                       "cg PIN7: and the STOP branch consults NOTHING, so a host that stops "
+                       "always stops the reference whatever the user pressed earlier",
+                       stopBranch.substring (0, 120));
+                check (! pc.contains ("cmpSyncMayStop"),
+                       "cg PIN7: and no cmpSyncMayStop was invented to make the two branches "
+                       "look alike");
+            }
+        }
     }
 
 
@@ -8399,12 +8516,36 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (r.tab[0].getX() == row.getX(),
                        "rf PIN8: and left aligned to the row",
                        "w=" + juce::String (w));
-                // Left aligned and FIXED width, not the top strip's
-                // divide-the-window rule: tabs stretched across 1800px would
-                // read as a header rather than as a choice.
+                // EQUAL COLUMNS SPANNING THE ROW, 22 Sep, replacing "fixed
+                // width, whatever the window does". The row now reads as one
+                // family with the Match page's axis row, and this pin is
+                // rewritten to hold the NEW rule rather than deleted with the
+                // old one: a sub-tab row that silently went back to three
+                // small buttons at the left would otherwise pass.
+                //
+                // IT IS A STRONGER CHECK THAN THE ONE IT REPLACES. Fixed width
+                // asserted one number; this asserts that the cells are equal
+                // to within the integer remainder AND that they reach the
+                // row's right edge exactly, which is the property that makes
+                // the row look deliberate at every width.
+                for (int i = 0; i + 1 < kRefSubTabCount; ++i)
+                    check (std::abs (r.tab[i].getWidth() - r.tab[i + 1].getWidth()) <= 1,
+                           "rf PIN8: the sub-tabs are equal columns, not fixed width",
+                           "w=" + juce::String (w) + " tabs " + juce::String (i)
+                           + "/" + juce::String (i + 1) + " = "
+                           + juce::String (r.tab[i].getWidth()) + "/"
+                           + juce::String (r.tab[i + 1].getWidth()));
+                check (r.tab[kRefSubTabCount - 1].getRight() == row.getRight(),
+                       "rf PIN8: and the last one reaches the row's right edge, so the "
+                       "remainder lands in a cell rather than in a drifting gap",
+                       "w=" + juce::String (w));
+                // THE ONE RULE, NOT A COPY OF IT. If the axis row and this row
+                // ever stop sharing ejEvenCell, this is what notices.
                 for (int i = 0; i < kRefSubTabCount; ++i)
-                    check (r.tab[i].getWidth() == kRefSubTabW,
-                           "rf PIN8: fixed width, whatever the window does",
+                    check (r.tab[i].getX() == ejEvenCell (row, i, kRefSubTabCount).getX()
+                           && r.tab[i].getWidth() == ejEvenCell (row, i, kRefSubTabCount).getWidth(),
+                           "rf PIN8: and the layout IS ejEvenCell, the same function the "
+                           "Match axis row is built from",
                            "w=" + juce::String (w) + " tab " + juce::String (i));
                 for (int i = 0; i + 1 < kRefSubTabCount; ++i)
                 {
@@ -8560,19 +8701,41 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 for (int i = 0; i < kRefSubTabCount; ++i)
                     check (refSubTabRowHit (r, r.tab[i].getCentre()),
                            "rs PIN9: a press on " + juce::String (refSubTabName (i)) + " is on the row");
+                // REWRITTEN 22 Sep, NOT DELETED, the same treatment rf PIN8
+                // got. Two checks here described the OLD left-aligned
+                // fixed-width row and are false BY CONSTRUCTION now that the
+                // three tabs span the row as equal columns:
+                //
+                //   "and so is the row's empty width past the last tab"
+                //       there is no empty width: the last tab's right edge IS
+                //       the row's right edge, so a point past it is off the
+                //       row entirely. The new check asserts that identity,
+                //       which is the stronger statement.
+                //
+                //   "a tab past a narrow row's edge is still on the row"
+                //       no tab pokes out any more at any width, because the
+                //       tabs DIVIDE the row rather than being laid along it.
+                //       The new check asserts the containment directly.
                 const auto& lastTab = r.tab[kRefSubTabCount - 1];
-                check (refSubTabRowHit (r, { lastTab.getRight() + 40, lastTab.getCentreY() }),
-                       "rs PIN9: and so is the row's empty width past the last tab");
+                check (lastTab.getRight() == r.row.getRight()
+                       && ! refSubTabRowHit (r, { lastTab.getRight() + 40, lastTab.getCentreY() }),
+                       "rs PIN9: the tabs now FILL the row, so there is no empty width past the "
+                       "last one and a press beyond it is off the row");
                 check (! refSubTabRowHit (r, { 500, 70 - 1 })
                        && ! refSubTabRowHit (r, { 500, 70 + kRefSubTabH })
                        && ! refSubTabRowHit (r, { 9, 80 }),
                        "rs PIN9: but not the pixel above it, the pixel below it, or left of it");
-                // A row narrower than its tabs: the last tab pokes out past
-                // the row's right edge, and is still the row.
+                // A NARROW ROW: every tab stays inside it, because the tabs
+                // divide the row rather than running along it from the left.
                 const auto narrow = refSubTabLayout ({ 10, 70, kRefSubTabW + 10, kRefSubTabH });
-                const auto& poke = narrow.tab[kRefSubTabCount - 1];
-                check (! narrow.row.contains (poke.getCentre()) && refSubTabRowHit (narrow, poke.getCentre()),
-                       "rs PIN9: a tab past a narrow row's edge is still on the row");
+                bool allInside = true;
+                for (int i = 0; i < kRefSubTabCount; ++i)
+                    allInside = allInside
+                             && narrow.row.contains (narrow.tab[i].getCentre())
+                             && refSubTabRowHit (narrow, narrow.tab[i].getCentre());
+                check (allInside,
+                       "rs PIN9: and at a row too narrow for the old fixed widths, every tab is "
+                       "still inside the row and still hits it");
             }
         }
 
@@ -13303,7 +13466,14 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 const juce::Rectangle<int> page { 0, 0, p.w, p.h };
                 const auto R = echojay::matchPageLayout (page);
                 const auto plot = echojay::matchGraphPlot (R.graph);
-                if (R.status.getHeight() != echojay::kMatchStatusH
+                // THE STATUS ROW TAKES NO HEIGHT, 22 Sep. This read
+                // "R.status.getHeight() != echojay::kMatchStatusH", asserting
+                // the banner kept its 16 px on every page. The banner is gone
+                // and the picture took the height, so the assertion is
+                // INVERTED rather than deleted: a row that quietly came back
+                // at 16 px would otherwise pass unnoticed, and the whole
+                // point of the removal was those pixels.
+                if (R.status.getHeight() != 0
                     || R.setup.getHeight() != echojay::kMatchSetupH)
                     bad << p.name << ": rows " << R.status.getHeight() << "/"
                         << R.setup.getHeight() << "; ";
@@ -13600,18 +13770,28 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             using echojay::matchAxisState;
             using echojay::MatchAxis;
 
+            // REWRITTEN 22 Sep, NOT DELETED. It read: "the spectrum tile
+            // needs six bands on BOTH sides and names the side that has
+            // none", asserting `! drawable` for a missing REFERENCE. The rule
+            // changed: the mix decides whether there is a picture, the
+            // reference decides only whether there are two sides in it. The
+            // pin is inverted so that a page which goes back to refusing
+            // without a reference fails here rather than passing quietly.
             check (matchAxisState (MatchAxis::Spectrum, full, full).drawable
                    && ! matchAxisState (MatchAxis::Spectrum, noBands, full).drawable
-                   && matchAxisState (MatchAxis::Spectrum, noBands, full).why.containsIgnoreCase ("your mix")
-                   && matchAxisState (MatchAxis::Spectrum, full, noBands).why.containsIgnoreCase ("reference"),
-                   "mr PIN23: the spectrum tile needs six bands on BOTH sides and names the side "
-                   "that has none",
+                   && matchAxisState (MatchAxis::Spectrum, noBands, full).why.containsIgnoreCase ("your mix"),
+                   "mr PIN23: the spectrum tile refuses a MIX with no six-band measurement, "
+                   "and names it",
                    matchAxisState (MatchAxis::Spectrum, noBands, full).why);
+            check (matchAxisState (MatchAxis::Spectrum, full, noBands).drawable,
+                   "mr PIN23: and DRAWS with no reference at all, because one fan of real audio "
+                   "is a picture and a blank rect is not");
 
             check (! matchAxisState (MatchAxis::Loudness, noLoud, full).drawable
-                   && matchAxisState (MatchAxis::Loudness, full, full).drawable,
-                   "mr PIN23: the loudness tile refuses a side with no integrated loudness rather "
-                   "than drawing -100 as a level");
+                   && matchAxisState (MatchAxis::Loudness, full, full).drawable
+                   && matchAxisState (MatchAxis::Loudness, full, noLoud).drawable,
+                   "mr PIN23: the loudness tile refuses a MIX with no integrated loudness rather "
+                   "than drawing -100 as a level, and draws with no reference");
 
             // THE DYNAMICS TILE DRAWS FOR A LIVE SIDE. It used to refuse
             // whenever either lra was 0, which for a Live side it always is, so
@@ -13624,9 +13804,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "measured live and means something live");
             check (! matchAxisState (MatchAxis::Dynamics, noCrest, full).drawable
                    && matchAxisState (MatchAxis::Dynamics, noCrest, full).why.containsIgnoreCase ("your mix")
-                   && ! matchAxisState (MatchAxis::Dynamics, full, noCrest).drawable,
-                   "mr PIN23: and it refuses only a MISSING CREST, naming the side that has none",
+                   && matchAxisState (MatchAxis::Dynamics, full, noCrest).drawable,
+                   "mr PIN23: and it refuses only a MISSING MIX CREST, naming it; a reference "
+                   "with no crest costs the picture nothing",
                    matchAxisState (MatchAxis::Dynamics, noCrest, full).why);
+
+            // THE CONTROL FOR THE WHOLE REWRITE: an EMPTY reference, every
+            // figure at its sentinel, still draws on all four axes. This is
+            // the state the page is in the moment it opens with a live signal
+            // and nothing picked, which is what it could not draw before.
+            {
+                const echojay::MatchSide none {};
+                check (matchAxisState (MatchAxis::Spectrum, full, none).drawable
+                       && matchAxisState (MatchAxis::Loudness, full, none).drawable
+                       && matchAxisState (MatchAxis::Dynamics, full, none).drawable
+                       && matchAxisState (MatchAxis::Stereo,   full, none).drawable,
+                       "mr PIN23: a default-constructed reference, every figure absent, draws on "
+                       "all four axes");
+            }
 
             // AND THE MISSING DIMENSION IS STATED, NOT DRAWN. A side with no
             // loudness range keeps its crest height and takes a fixed width,

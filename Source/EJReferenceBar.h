@@ -309,21 +309,58 @@ struct RefSubTabRects
     juce::Rectangle<int> tab[kRefSubTabCount];
 };
 
-/** Left-aligned fixed-width tabs, NOT the top strip's divide-the-width rule.
+// ---------------------------------------------------------------------------
+// ONE CELL RULE, SHARED BY EVERY ROW OF EQUAL CELLS
+// ---------------------------------------------------------------------------
+//
+// THIS LIVES HERE BECAUSE THIS IS THE LOWEST HEADER THAT NEEDS IT. The Match
+// page's axis row reads the same two constants and calls the same function
+// (EJMatchPage.h includes this file for them), so the sub-tab row and the axis
+// row cannot drift apart: change the gap here and both rows change together.
+// The alternative was two literals in two files that happened to agree today.
+inline constexpr int   kEjCellGap    = 6;
+inline constexpr float kEjCellRadius = 6.0f;
 
-    computeTabRects splits the window between eight tabs because the strip owns
-    the full width. This row does not: it sits above content and two tabs
-    stretched across 1380px would read as a header, not as a choice. Fixed
-    width, left aligned, and the row keeps its full width so the band height is
-    the same whatever is in it.
-*/
+/** One cell of `count`, evenly across the row with kEjCellGap between them.
+    Integer division leaves the remainder on the LAST cell rather than in a gap
+    that drifts, so the row always reaches its right edge exactly. */
+inline juce::Rectangle<int> ejEvenCell (juce::Rectangle<int> row, int i, int count,
+                                        int gap = kEjCellGap)
+{
+    if (i < 0 || i >= count || count <= 0 || row.getWidth() <= 0) return {};
+    const int gaps  = gap * (count - 1);
+    const int cellW = juce::jmax (0, (row.getWidth() - gaps) / count);
+    const int x     = row.getX() + i * (cellW + gap);
+    const int w     = (i == count - 1) ? juce::jmax (0, row.getRight() - x) : cellW;
+    return { x, row.getY(), w, row.getHeight() };
+}
+
+/** THE THREE SUB-TABS, SPANNING THE ROW AS EQUAL COLUMNS.
+
+    THIS REVERSES A DELETED DECISION AND THE OLD REASONING IS KEPT SO THE
+    REVERSAL IS VISIBLE. It used to read: left aligned and FIXED at
+    kRefSubTabW, "NOT the top strip's divide-the-width rule", because "two tabs
+    stretched across 1380px would read as a header, not as a choice".
+
+    WHAT CHANGED IS THAT THE ROW GAINED A FAMILY. When that was written the row
+    was three small buttons above a page with nothing like them. The Match
+    page's axis row is now four equal cells spanning its card with the same gap
+    and the same corner, and the sub-tab row sitting as three narrow buttons at
+    the left read as a different kind of control rather than the same kind one
+    level up. Sharing ejEvenCell makes them one family.
+
+    THE OLD WORRY IS REAL AND IS NOT DISMISSED: at a very wide window three
+    cells across the whole card do read more like a header. It is accepted
+    because the axis row already does exactly that and is the look being
+    matched, and because the row's own selected fill still marks it as a
+    choice. If it turns out wrong at 1800px the fix is a maximum cell width
+    here, in one place, for both rows. */
 inline RefSubTabRects refSubTabLayout (juce::Rectangle<int> row)
 {
     RefSubTabRects r;
     r.row = row;
     for (int i = 0; i < kRefSubTabCount; ++i)
-        r.tab[i] = { row.getX() + i * (kRefSubTabW + kRefSubTabGap), row.getY(),
-                     kRefSubTabW, kRefSubTabH };
+        r.tab[i] = ejEvenCell (row, i, kRefSubTabCount).withHeight (kRefSubTabH);
     return r;
 }
 
