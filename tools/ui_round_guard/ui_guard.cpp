@@ -34,6 +34,7 @@ struct EchoJayTabStripTestAccess
     static bool verb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t); }
     static auto& panel (EchoJayEditor& e) { return e.chainListPanel; }        // 22 Sep 2026 (item 7)
     static void picker (EchoJayEditor& e) { e.showChainPluginPicker(); }     // 22 Sep 2026 (item 7)
+    static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
@@ -339,6 +340,25 @@ int main()
             check (panel.popout != nullptr && panel.popout->isAlwaysOnTop(), "(7) when the picker goes (dismissed) the pop-out is raised again (always-on-top back on)", panel.popout ? "always-on-top=" + juce::String ((int) panel.popout->isAlwaysOnTop()) : "pop-out gone");
         }
         panel.closeAllEditors(); pumpMs (60); ed->removeFromDesktop();
+    }
+    std::printf ("== (2c) 22 Sep 2026: a complaint the server classified loop_verb (forced) backs off - the softer step twice - never a chat ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); A::toChat (*ed); pumpMs (60);
+        auto& loop = proc.loudnessLoop();
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\",\"settings_structured\":{\"params\":{\"gain_db\":0,\"target_lufs\":-9,\"loudness_option\":0}}},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\",\"settings_structured\":{\"params\":{\"ceiling_db\":-0.1,\"true_peak\":1}}}]}");
+        pumpMs (2500); A::toChat (*ed); pumpMs (100);
+        loop.listen(); { juce::Random rng (7); juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi; int b = 0;
+          while (loop.state() != LoudnessLoop::State::proposed && b < 6000) { for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = (rng.nextFloat() * 2.0f - 1.0f) * 0.1f; } proc.processBlock (buf, midi); if ((++b % 23) == 22) loop.tickNow(); } }
+        check (loop.state() == LoudnessLoop::State::proposed && loop.go(), "(2c) precondition: a proposal, then Go (the apply bubble)");
+        const auto& M = A::msgs (*ed); const size_t nBefore = M.size();
+        auto* lv = dynamic_cast<EedLevelProcessor*> (proc.getChainHost().getSlotProcessor (loop.levelSlot())); const float gBefore = lv ? (float) lv->gainDb() : 0.0f; const float tBefore = loop.target();
+        check (A::forcedVerb (*ed, "too squashed now"), "(2c) the forced verb is CONSUMED locally (never sent as a chat)");
+        pumpMs (60);
+        check (lv != nullptr && std::abs ((float) lv->gainDb() - (gBefore - 2.0f)) < 0.05f && std::abs (loop.target() - (tBefore - 2.0f)) < 0.01f, "(2c) the Level moved -2 dB and the target -2 (the softer step twice)", "Level " + juce::String (gBefore, 2) + " -> " + juce::String (lv ? lv->gainDb() : 0.0, 2));
+        check (M.size() >= nBefore + 2 && M.back().content.startsWith ("Applied -2.0 dB (Level now "), "(2c) one after-verb bubble \"Applied -2.0 dB (Level now ...)\" (plus the local user bubble)", M.back().content.substring (0, 60));
     }
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

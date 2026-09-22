@@ -22449,6 +22449,10 @@ bool EchoJayEditor::handleLoudnessVerb(const juce::String& msg, bool forced)
     else if (again)  loop.recheck();
     else if (leave)  loop.leaveIt();
     else if (undo)   { if (! loop.undo()) appendLocalResultBubble("Nothing to undo - the level loop has not changed the Level slot."); }
+    else if (forced && (t.contains ("squash") || t.contains ("over limit") || t.contains ("over-limit") || t.contains ("overlimit") || t.contains ("distort") || t.contains ("pumping") || t.contains ("too loud") || t.contains ("too hot") || t.contains ("crushed") || t.contains ("clipping") || t.contains ("smashed")))
+    {   // 22 Sep 2026 (item 2, client half): the server's loop_verb for a complaint after an apply = back off, the softer step twice
+        if (! loop.backOffComplaint()) appendLocalResultBubble ("Nothing to back off - the level loop has no Level slot.");
+    }
     else appendLocalResultBubble("Say listen, go, check, push it, a bit louder or softer, undo, leave it, or done.");
     resized(); repaint();
     return true;
