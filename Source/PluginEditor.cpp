@@ -7551,6 +7551,9 @@ EchoJayEditor::ChainRackView EchoJayEditor::chainRackView() const
 void EchoJayEditor::refreshChainPanelForView(bool force)
 {
     const auto v = chainRackView();
+    // 21m ruling 3: the keep-level toggle is available on the LOCAL rack only (no transport op yet); elsewhere it is
+    // greyed with the note, never a silent no-op
+    chainListPanel.keepLevelAvailable = chainViewUid().isEmpty();
     {   // 21m undo/redo: the buttons follow the rack the panel shows (a held remote rack answers from its own stack, so stay enabled)
         const juce::String uid = chainViewUid();
         ChainHost* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);

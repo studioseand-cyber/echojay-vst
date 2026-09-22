@@ -1851,6 +1851,12 @@ private:
             bool popoutOnly = false;   // editor opens in a floating window
             juce::String trimText;     // 21m ruling 2: "-2.3 dB match" / "level kept" (from the slot's trim atomic, via SlotInfo)
             bool keepLevel = false;    // 21m ruling 2: the per-slot "keep this plugin's level" flag
+            // 21m ruling 3: on a borrowed or held remote rack the toggle is GREYED with a note, never a silent no-op
+            // (the transport op is owed). The pure menu state, so the guard reads what the popup would show.
+            bool keepAvailable = true;
+            static constexpr const char* kKeepNote = "available on this rack only for now";
+            struct KeepMenu { bool enabled; juce::String note; };
+            KeepMenu keepMenu() const { return { keepAvailable, keepAvailable ? juce::String() : juce::String(kKeepNote) }; }
 
             juce::TextButton bypassBtn { "B" };
             juce::TextButton removeBtn { "X" };
@@ -1895,7 +1901,9 @@ private:
                 if (e.mods.isPopupMenu())
                 {   // 21m ruling 2: the per-slot "keep this plugin's level" flag, the one the unity trim measure honours
                     juce::PopupMenu m;
-                    m.addItem(1, "Keep this plugin's level", true, keepLevel);
+                    const auto km = keepMenu();
+                    m.addItem(1, "Keep this plugin's level", km.enabled, keepLevel);
+                    if (! km.enabled) m.addItem(2, km.note, false, false);
                     juce::Component::SafePointer<Block> sp(this);
                     m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this), [sp](int r)
                     { if (sp != nullptr && r == 1 && sp->onKeepLevel) sp->onKeepLevel(! sp->keepLevel); });
@@ -2217,6 +2225,7 @@ private:
         std::function<void()>           onAddClick;
         std::function<void(int, float)> onSlotWet;    // slot idx, wet 0..1
         std::function<void(int, bool)>  onSlotKeepLevel;   // 21m ruling 2: slot idx, keep flag
+        bool keepLevelAvailable = true;   // 21m ruling 3: false on a borrowed / held remote rack (set by refreshChainPanelForView)
         std::function<void(float)>      onMasterWet;  // wet 0..1
         std::function<void(float)>      onPreGain;    // pre-gain, ABSOLUTE dB (owner routes local vs remote)
         std::function<void()>           onPreGainReset;   // double-click = reset to auto
@@ -2849,6 +2858,7 @@ private:
                 bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
                 bl->trimText  = slotInfos[(size_t)i].trimText;    // 21m ruling 2
                 bl->keepLevel = slotInfos[(size_t)i].keepLevel;
+                bl->keepAvailable = keepLevelAvailable;   // 21m ruling 3
                 bl->onKeepLevel = [this, ci](bool k) { if (onSlotKeepLevel) onSlotKeepLevel(ci, k); };
                 // STAGE 1 SCOPE, stated per control rather than by hiding a
                 // whole row: wet and move have no op over the command

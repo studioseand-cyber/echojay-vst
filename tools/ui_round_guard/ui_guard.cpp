@@ -38,6 +38,8 @@ struct EchoJayTabStripTestAccess
     static void picker (EchoJayEditor& e) { e.showChainPluginPicker(); }     // 22 Sep 2026 (item 7)
     static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
+    static void refreshPanel (EchoJayEditor& e) { e.refreshChainPanelForView (true); }   // 21m ruling 3 (keep-level grey-out)
+    using Block = EchoJayEditor::ChainListPanel::Block;   // the friend names the private nested type (as Msg)
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
     // 18h (1): the chip layout at a given width, the row count, the on-screen chip buttons
@@ -380,6 +382,17 @@ int main()
         { const auto tv = panel.msLamps.tickFor ("lnk_03"); check (tv.pending && ! tv.target, "(8) ...and the tick shows the pending target OFF until the Link answers", "pending=" + juce::String ((int) tv.pending) + " target=" + juce::String ((int) tv.target)); }
         links[0].connected = true; links[0].audioFlowing = true; EchoJayAlignTestAccess::setLinks (proc, links); pumpMs (20);
         { const auto tv = panel.msLamps.tickFor ("lnk_01"); check (tv.active && tv.audio, "(8) the ring binds later and frames arrive -> the lamp comes ON, the tick unchanged (still active)", "active=" + juce::String ((int) tv.active) + " audio=" + juce::String ((int) tv.audio)); }
+        // ---- (10) 21m ruling 3, on THIS editor (a third editor in the process aborted in setSize: "mutex lock failed", so the leg shares (8)'s) ----
+        std::printf ("== (10) 22 Sep 2026 (21m ruling 3): the keep-level toggle on a borrowed or held remote rack is GREYED with \"available on this rack only for now\", never a silent no-op ==\n");
+        { A::Block b; b.keepAvailable = false; const auto km = b.keepMenu();
+          check (! km.enabled && km.note == "available on this rack only for now", "(10) a block with keepAvailable=false reports the item DISABLED with the note", km.note);
+          b.keepAvailable = true; check (b.keepMenu().enabled && b.keepMenu().note.isEmpty(), "(10) ...and enabled with no note when available"); }
+        proc.pendingChannelUid = {}; A::refreshPanel (*ed);
+        check (panel.keepLevelAvailable, "(10) the LOCAL rack view: keep-level available", juce::String ((int) panel.keepLevelAvailable));
+        proc.pendingChannelUid = "lnk_01"; A::refreshPanel (*ed);   // the chain view = that Link's rack (held remote, no borrow)
+        check (! panel.keepLevelAvailable, "(10) a Link's rack in view (chainViewUid non-empty): keep-level GREYED (RED as it stood: the flag did not exist - compile refusal)", juce::String ((int) panel.keepLevelAvailable));
+        proc.pendingChannelUid = {}; A::refreshPanel (*ed);
+        check (panel.keepLevelAvailable, "(10) back on the local rack: available again");
     }
     std::printf ("== (9) 22 Sep 2026 (21m): rename alias - a V2-session alias for a Link, shown by getLinkDisplayList (the one source), Reset name clears it, persisted with the session state ==\n");
     {
