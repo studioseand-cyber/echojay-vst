@@ -2583,7 +2583,19 @@ int EchoJayProcessor::writeChainEditCommand(const juce::String& linkUid, const j
     cmd->setProperty("editOps",    editOps);
     cmd->setProperty("baseSlots",  baseSlots);
     cmd->setProperty("sourceNote", sourceNote);
-    if (leaseId.isNotEmpty()) cmd->setProperty("leaseId", leaseId);   // 20 Sep 2026: the lease holder's own structural edit
+    // 21n ruling 1a (22 Sep 2026): ONE sender. The lease id is resolved HERE from whichever session holds this Link's
+    // lease - the borrow session (a borrowed rack) or the edit session (one slot's hosted editor) - so no caller can
+    // omit it. The chat-card apply (sendChainEditToLink) passed "" and the Link refused the lease holder's own edit
+    // ("this rack is being edited from the main plugin"). An explicit id from a caller still wins.
+    juce::String lease = leaseId;
+    if (lease.isEmpty())
+    {
+        if (borrowSession_.active.load(std::memory_order_relaxed) && borrowSession_.uid == linkUid) lease = borrowSession_.leaseId;
+        else if (editSession_.slot0 >= 0 && editSession_.uid == linkUid)                              lease = editSession_.leaseId;
+    }
+    if (lease.isNotEmpty()) cmd->setProperty("leaseId", lease);   // 20 Sep 2026: the lease holder's own structural edit
+    EchoJay_NSLog(("EJLink: chain-cmd v2 -> " + linkUid + " seq=" + juce::String(seq) + " source=\"" + sourceNote + "\" lease="
+                   + (lease.isNotEmpty() ? (lease == leaseId ? "explicit" : "resolved") : "none")).toRawUTF8());
     juce::File(dir + "chain-ack-" + linkUid + ".json").deleteFile();   // stale ack
     if (! juce::File(dir + "chain-cmd-" + linkUid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true)))
         return -1;
