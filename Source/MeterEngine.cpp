@@ -491,6 +491,10 @@ void MeterEngine::computeSpectrum(const float* left, const float* right, int num
         std::lock_guard<std::mutex> lock(dataMutex);
         visMagDb = mags;
         visReady = true;
+        // ONE PER PUBLISHED FFT. A UI that wants to draw once per NEW spectrum
+        // watches this instead of its own timer. Relaxed: it is a change
+        // detector, and a reader that misses an increment draws next frame.
+        visHopSeq_.fetch_add (1, std::memory_order_relaxed);
     }
    #else
     juce::ignoreUnused(kVisHopSamples);
@@ -1012,6 +1016,10 @@ void MeterEngine::processBlock(const float* left, const float* right, int numSam
         data.oversCount = oversEvents;
         data.width = width;
         data.correlation = corr;
+        // The unsmoothed pair, beside the smoothed one. Display only: see
+        // MeterData's own note and mr PIN31.
+        data.instWidth = instWidth;
+        data.instCorr  = instCorr;
         data.sideToMidRatio = displaySideToMid;
         data.corrSub = displayCorrSub;
         data.corrMid = displayCorrMid;

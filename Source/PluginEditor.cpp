@@ -2,6 +2,8 @@
 #include "EJCaptureChannels.h"
 #include "PluginEditor.h"
 #include <algorithm>   // std::remove / std::remove_if, folder membership
+#include <chrono>      // the Match paint timer's clock
+#include <iostream>   // [MATCHPAINT] goes to the console
 #include "DashboardWeb.h"        // stage 2: the lazy webview Dashboard surface
 #include "ChainPluginPicker.h"   // P13: the searchable "+" picker (shared with the Link)
 #include "EJStreamBlockParser.h" // incremental block parser (spec step 3/4)
@@ -6918,6 +6920,155 @@ void EchoJayEditor::matchApplyMixSlot (const CompareSlotState& next)
     repaint();
 }
 
+// ONE SEEK, TWO PAGES. Extracted from mouseDown's click-to-seek so the Match
+// page's strips perform the SAME GESTURE rather than a second implementation of
+// it: seek, play and make audible, together, because that is what a click on a
+// waveform has meant on Compare since it shipped.
+//
+// The caller decides WHERE the click landed; this decides what a seek is. Note
+// the fraction is a fraction OF THE FILE, not a pixel: the two panels are
+// different widths and a position in samples cannot come from one of them.
+void EchoJayEditor::seekCompareStream (int slotIdx, float fraction)
+{
+    if (slotIdx < 0 || slotIdx > 1) return;
+    fraction = juce::jlimit (0.0f, 1.0f, fraction);
+
+    auto& s = processorRef.cmpStream[slotIdx];
+    if (! s.loaded.load())
+        startCompareStream (slotIdx);
+    if (s.loaded.load() && s.sampleCount > 0)
+    {
+        std::lock_guard<std::mutex> lock (processorRef.cmpMutex);
+        s.playbackPos = (int) (fraction * s.sampleCount);
+        // Click-seek on a reference during SYNC: capture the host->reference
+        // offset at this moment and keep it (lining a drop up against a
+        // different arrangement)
+        if (processorRef.cmpSyncToTransport.load()
+            && processorRef.cmpSlotIsRef[slotIdx].load()
+            && s.sampleRate > 0)
+        {
+            const double host = processorRef.cmpLastHostTimeSec.load();
+            if (host >= 0.0)
+            {
+                const double refSec = (double) s.playbackPos / s.sampleRate;
+                processorRef.cmpSyncOffsetSec.store (refSec - host);
+                EchoJay_NSLog (("EJCmp: sync offset captured "
+                                + juce::String (refSec - host, 2) + "s"
+                                + " (host " + juce::String (host, 1)
+                                + "s -> ref " + juce::String (refSec, 1) + "s)").toRawUTF8());
+            }
+        }
+        // Start playing + make audible on seek
+        s.playing.store (true);
+        processorRef.cmpAudible.store (slotIdx);
+        // SYNC: mirror seek position to the other capture slot
+        if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
+        {
+            int otherIdx = 1 - slotIdx;
+            auto& other = processorRef.cmpStream[otherIdx];
+            if (! other.loaded.load())
+                startCompareStream (otherIdx);
+            if (other.loaded.load() && other.sampleCount > 0)
+            {
+                other.playbackPos = (int) (fraction * other.sampleCount);
+                other.playing.store (true);
+            }
+        }
+        updateComparePlayBtns();
+    }
+}
+
+/** Where a slot's stream has got to, 0 to 1, or -1 when it has no position.
+
+    THE STREAM'S OWN POSITION AND NOT A SECOND COUNT. playbackPos is advanced on
+    the audio thread and is the only place that knows where playback is; a timer
+    counting elapsed seconds beside it would drift the moment the stream looped,
+    was seeked or was stopped, and would then be a confident wrong playhead. */
+float EchoJayEditor::compareStreamFrac (int slotIdx) const
+{
+    if (slotIdx < 0 || slotIdx > 1) return -1.0f;
+    const auto& s = processorRef.cmpStream[slotIdx];
+    if (! s.loaded.load() || s.sampleCount <= 0) return -1.0f;
+    return juce::jlimit (0.0f, 1.0f, (float) s.playbackPos / (float) s.sampleCount);
+}
+
+
+// ---------------------------------------------------------------------------
+// THE CLOUD IS THE FAST READING. THE FILAMENT IS THE FIGURE BEING COMPARED.
+// ---------------------------------------------------------------------------
+//
+// WHY THAT IS NOT THE FAULT IT LOOKS LIKE. Drawing a momentary reading against
+// a whole-file average is the ballistic-versus-accumulated mistake this
+// contract keeps naming: data.macroBandDb against an accumulation, a 3 s PSR
+// against a whole track. It is avoided here because THE TWO ARE DRAWN AS
+// DIFFERENT THINGS AND ONE OF THEM IS NEVER COMPARED.
+//
+//   THE CLOUD is context: where this side has been over the last few seconds,
+//   smoked into the trail image, fading. No number is read off it, no ribbon
+//   thickness applies to it, and nothing in the proposal touches it.
+//
+//   THE FILAMENT is the measurement: the slow figure the reference is compared
+//   against and the one every move is computed from. Every number in the text,
+//   every gap, every band move comes from there.
+//
+// A READER MUST NOT BE ABLE TO MISTAKE THE CLOUD FOR THE MEASUREMENT, which is
+// why the cloud is dim, wide and edgeless and the filament is thin, bright and
+// in front, and why a side with NO FAST SOURCE gets no cloud at all rather
+// than a trail faked from one stored number.
+//
+// DYNAMICS IS THE AXIS WHERE THE TWO SIT CLOSEST TOGETHER, and that is said
+// plainly rather than hidden: MeterEngine has no whole-file crest to hold a
+// filament at, only peak-over-RMS of a 0.5 s RMS and a 3 s peak decay. So a
+// CAPTURE or a REFERENCE holds its stored whole-file crest, which is genuinely
+// accumulated, while a LIVE side's filament is its own rolling crest and the
+// picture says "rolling" beside it. On that axis the filament is a slower
+// reading of the same thing rather than a different kind of figure.
+
+/** Where a side's fast frames come from, if it has any.
+
+      A LIVE MIX SIDE     the main meter engine, as the waveform strip reads it.
+      A PLAYING STREAM    that slot's own cmpMeter, which the dual stream fills
+                          every block for BOTH slots, so a reference that is
+                          PLAYING has a live spectrum and smokes too.
+      A STILL SIDE        nothing. Its stored whole-file curve is drawn as one
+                          quiet line and left still, because nothing is
+                          happening to it.
+
+    Returns false for a still side. EVERY GHOST IS A REAL FRAME FROM A REAL
+    MOMENT. */
+/** The ENGINE behind a side's fast frame, for the 2048-bin visual spectrum
+    that only the engine can hand out. Same rule as matchFastFrame: the main
+    engine for Live, that slot's own cmpMeter when its stream is playing, and
+    nullptr for a still side. */
+MeterEngine* EchoJayEditor::matchFastEngine (const CompareSlotState& slot, int slotIdx) const
+{
+    if (slot.kind == CompareSlotState::Kind::Live)
+        return &processorRef.getMeterEngine();
+    if (slotIdx >= 0 && slotIdx <= 1
+        && processorRef.cmpStream[slotIdx].loaded.load()
+        && processorRef.cmpStream[slotIdx].playing.load())
+        return &processorRef.getCompareMeter (slotIdx);
+    return nullptr;
+}
+
+bool EchoJayEditor::matchFastFrame (const CompareSlotState& slot, int slotIdx,
+                                    MeterData& out) const
+{
+    if (slot.kind == CompareSlotState::Kind::Live)
+    {
+        out = processorRef.getMeterEngine().getMeterData();
+        return true;
+    }
+    if (slotIdx >= 0 && slotIdx <= 1
+        && processorRef.cmpStream[slotIdx].loaded.load()
+        && processorRef.cmpStream[slotIdx].playing.load())
+    {
+        out = processorRef.getCompareMeter (slotIdx).getMeterData();
+        return true;
+    }
+    return false;
+}
+
 // The points a side's waveform draws. LIVE IS A ROLLING WINDOW and everything
 // else is a whole file, which is the difference the page must not hide.
 bool EchoJayEditor::matchWavePoints (const CompareSlotState& slot, std::vector<float>& outAbs,
@@ -7725,10 +7876,190 @@ bool EchoJayEditor::CodecPanel::keyPressed(const juce::KeyPress& k)
 // EVERY RECT AND EVERY SENTENCE COMES FROM EJMatchPage.h, so the suite pins the
 // same geometry and the same words the user reads; this paint computes none of
 // its own beyond the anchors, which come from the bins it is about to draw.
+
+// ===========================================================================
+// THE MATCH PAGE'S FILE-SCOPE DRAWING CODE
+// ===========================================================================
+//
+// THESE FUNCTIONS ARE OUTSIDE THE EDITOR CLASS, so nothing the class brought
+// into scope is in scope here: not its C alias, and not echojay. Two names are
+// used often enough in the ribbon code that qualifying every occurrence would
+// bury the arithmetic, so they are named ONCE here as using-declarations.
+// Everything else in this block stays explicitly echojay:: qualified, because a
+// reader has to be able to tell at a glance which names come from the pinned
+// header and which are local to this file.
+//
+// THIS IS NOT A STYLE NOTE. It is where eight compile errors came from: the
+// using-declarations sat BELOW the first function that used them, so
+// matchFastRow saw neither. Declared here, above everything that needs them.
+using echojay::kMatchRibbonCols;
+using echojay::MatchRibbonRow;
+
+/** The Match curves' frame lerp, the same rate paintSpectrumCurve uses for the
+    other three surfaces (kSpectrumVisLerp). Named here because this page smooths
+    the 64 STORED bins rather than the expanded curve.
+
+    FED ONCE PER HOP, NOT ONCE PER TICK, since the trail moved onto the hop
+    counter. 0.5 per hop at 43 Hz is a 16 ms time constant against 0.5 per tick
+    at 30 Hz's 23 ms: slightly quicker, which is right for a filament whose job
+    is to be current, and it is the constant the other three surfaces use
+    unchanged rather than a number invented for this page. */
+static constexpr float kMatchBinLerp = 0.5f;
+
+// DEFINED HERE RATHER THAN FORWARD DECLARED, and the reason is a pin. A text
+// pin finds a body with functionBody, which takes the FIRST match of a
+// signature and reads to the next brace in column one; with a declaration
+// above the definition it would read the span between them and report on a
+// function it never saw. Caught by dry-running mr PIN31 before claiming it.
+
+
+/** THE SCALE BOTH LAYERS SHARE. The trail and the ribbons must be mapped
+    through the SAME range or the cloud would sit beside the filament rather
+    than around it, and a picture whose two layers disagree about what a decibel
+    is would be the fault this page's shared dB range exists to prevent. */
+static std::pair<float, float> matchAxisRange (echojay::MatchAxis a,
+                                               const echojay::MatchSide& mix,
+                                               const echojay::MatchSide& ref,
+                                               const std::array<float, 64>& mixBins,
+                                               const std::array<float, 64>& refBins,
+                                               bool haveBins)
+{
+    switch (a)
+    {
+        case echojay::MatchAxis::Spectrum:
+        {
+            if (! haveBins) return { -18.0f, 18.0f };
+            auto meanOf = [] (const std::array<float, 64>& b)
+            {
+                double s = 0.0; int n = 0;
+                for (float v : b) if (v > -120.0f) { s += v; ++n; }
+                return n > 0 ? (float) (s / n) : 0.0f;
+            };
+            const float mM = meanOf (mixBins), rM = meanOf (refBins);
+            float lo = -18.0f, hi = 18.0f;
+            for (int i = 0; i < 64; ++i)
+            {
+                lo = juce::jmin (lo, juce::jmin (mixBins[(size_t) i] - mM,
+                                                 refBins[(size_t) i] - rM) - 3.0f);
+                hi = juce::jmax (hi, juce::jmax (mixBins[(size_t) i] - mM,
+                                                 refBins[(size_t) i] - rM) + 3.0f);
+            }
+            return { lo, hi };
+        }
+        case echojay::MatchAxis::Loudness:
+            return { juce::jmin (mix.integrated, ref.integrated) - 7.0f,
+                     juce::jmax (mix.integrated, ref.integrated) + 7.0f };
+        case echojay::MatchAxis::Dynamics: return { -22.0f, 22.0f };
+        case echojay::MatchAxis::Stereo:   return { -20.0f, 20.0f };
+    }
+    return { -20.0f, 20.0f };
+}
+
+
+/** THE FAST ROW: the same shape as the axis's filament, built from a LIVE
+    FRAME instead of the slow figure. This is what is smoked into the trail.
+
+    Each axis reads the fastest honest source MeterData carries:
+      SPECTRUM   the frame's own 64 bins, level-normalised like the filament.
+      LOUDNESS   momentary, a 400 ms window with a 20 dB/s release.
+      DYNAMICS   crestFactor, peak over RMS of a 0.5 s RMS and a 3 s peak
+                 decay, which is the fastest crest the engine has.
+      STEREO     instWidth and instCorr, the PER BLOCK pair, published for this
+                 and nothing else. DISPLAY ONLY: see mr PIN31. */
+static void matchFastRow (echojay::MatchAxis a, const MeterData& md,
+                          const echojay::MatchSide& slow, float sign,
+                          MatchRibbonRow& out)
+{
+    switch (a)
+    {
+        case echojay::MatchAxis::Spectrum:
+        {
+            double sum = 0.0; int n = 0;
+            for (float v : md.spectrum) if (v > -120.0f) { sum += v; ++n; }
+            const float mean = n > 0 ? (float) (sum / n) : 0.0f;
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+            {
+                const float u  = (float) i / (float) (kMatchRibbonCols - 1);
+                const float fb = u * 63.0f;
+                const int   b0 = juce::jlimit (0, 63, (int) fb);
+                const int   b1 = juce::jlimit (0, 63, b0 + 1);
+                out[(size_t) i] = juce::jmap (fb - (float) b0,
+                                              md.spectrum[(size_t) b0],
+                                              md.spectrum[(size_t) b1]) - mean;
+            }
+            break;
+        }
+        case echojay::MatchAxis::Loudness:
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+                out[(size_t) i] = md.momentary;
+            break;
+
+        case echojay::MatchAxis::Dynamics:
+        {
+            const float amp = juce::jlimit (0.5f, 9.0f, md.crestFactor * 0.55f);
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+            {
+                const float u = (float) i / (float) (kMatchRibbonCols - 1);
+                out[(size_t) i] = sign * 6.0f
+                                + std::sin (u * juce::MathConstants<float>::twoPi * 2.2f + sign * 6.0f) * amp;
+            }
+            break;
+        }
+        case echojay::MatchAxis::Stereo:
+        {
+            const float wNorm = juce::jlimit (0.0f, 1.0f, md.instWidth / 100.0f);
+            const float tight = 1.0f - 0.45f * juce::jlimit (0.0f, 1.0f, md.instCorr);
+            const float bow   = wNorm * 16.0f * tight;
+            for (int i = 0; i < kMatchRibbonCols; ++i)
+            {
+                const float u = (float) i / (float) (kMatchRibbonCols - 1);
+                out[(size_t) i] = sign * bow * std::sin (u * juce::MathConstants<float>::pi);
+            }
+            break;
+        }
+    }
+    juce::ignoreUnused (slow);
+}
+
+/** THE PICTURE, ALL FOUR AXES. Defined further down this file, beside the
+    ribbon renderer they all share, because they are one family and read as one. */
+void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
+                     juce::Rectangle<int> readout, echojay::MatchAxis a,
+                     const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                     const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
+                     bool haveBins, const std::array<float, 6>& moves, float morph, float phase);
+
 void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 {
+    // THE INSTRUMENT. Started before anything is drawn, stopped at every
+    // return, so a short-circuited paint is measured as the short paint it is
+    // rather than being left out of the mean.
+    const auto paintT0 = std::chrono::high_resolution_clock::now();
+    struct PaintTimer
+    {
+        MatchPanel& p;
+        std::chrono::high_resolution_clock::time_point t0;
+        ~PaintTimer()
+        {
+            const double ms = std::chrono::duration<double, std::milli> (
+                                  std::chrono::high_resolution_clock::now() - t0).count();
+            p.paintSumMs += ms;                                  // the addition
+            if (ms > p.paintMaxMs) p.paintMaxMs = ms;            // the comparison
+            if (++p.paintCount >= 100)
+            {
+                std::cout << "[MATCHPAINT] n=" << p.paintCount
+                          << " mean=" << juce::String (p.paintSumMs / p.paintCount, 1)
+                          << "ms max=" << juce::String (p.paintMaxMs, 1)
+                          << "ms interval=" << juce::String (1000.0 / 60.0, 1) << "ms"
+                          << std::endl;
+                p.paintSumMs = 0.0; p.paintMaxMs = 0.0; p.paintCount = 0;
+            }
+        }
+    } paintTimer { *this, paintT0 };
+
     if (owner == nullptr) return;
     const auto area = getLocalBounds();
+
 
     // THE PAGE FADES IN rather than cutting. 250 ms, through one transparency
     // layer so the whole screen arrives together instead of in pieces.
@@ -7744,7 +8075,12 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
 
     // ---- the data ----------------------------------------------------------
     const auto slots = owner->matchSlots();
-    const auto sides = owner->buildMatchSides();
+    // ONE BUILD PER TICK, read here rather than repeated. Between ticks this is
+    // up to 33 ms old, which is shorter than the frame it is being drawn into;
+    // the first paint of an opening has no tick behind it yet and builds its
+    // own, because a default-constructed pair would draw -100 LUFS and no bands
+    // as though they were measurements.
+    const auto sides = tickSidesValid ? tickSides : owner->buildMatchSides();
     const auto evMix = owner->getSlotSpectralEvidence (*slots.mix);
     const auto evRef = owner->getSlotSpectralEvidence (*slots.ref);
     const auto prop  = echojay::computeMatchProposal (sides.mix, sides.ref);
@@ -7861,7 +8197,11 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         // whether the line above it is the cheerful one: a capture with no
         // known length keeps its ceiling move and keeps its lit button, while
         // the line leads with the length.
-        const bool live = ready.playable;
+        // ALSO FALSE ON AN AXIS THAT CANNOT BE PROPOSED, so the button does not
+        // read as ready to play something the proposal never carried. It stays
+        // PRESSABLE: the press then says why, rather than the control being
+        // dead with no reason on screen.
+        const bool live = ready.playable && echojay::matchAxisCanPropose (axis);
         const auto bg   = buttonHot && live ? C::bg3.brighter (0.25f) : C::bg3;
         g.setColour (bg);
         g.fillRoundedRectangle (R.button.toFloat(), 8.0f);
@@ -7907,6 +8247,16 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
             const bool have = owner->matchWavePoints (slot, pts, rolling, span);
 
             auto lane = r.withTrimmedBottom (9);       // the caption takes the rest
+            // THE TRANSPORT GUTTER, on the outer edge so the two sides' controls
+            // sit either side of the page rather than facing each other across
+            // the middle. echojay::matchWaveLane is the shared answer, so the
+            // press and the paint cannot disagree about where the wave is.
+            const auto slotIdxHere = isRef ? (owner->matchRefIsTop_ ? 0 : 1)
+                                           : (owner->matchRefIsTop_ ? 1 : 0);
+            const bool liveHere    = (slot.kind == CompareSlotState::Kind::Live);
+            const auto tBtn = echojay::matchWaveTransport (lane, isRef);
+            lane = echojay::matchWaveLane (lane, isRef);
+
             g.setColour (audibleHere ? C::bg3 : C::bg2.withAlpha (0.7f));
             g.fillRoundedRectangle (lane.toFloat(), 4.0f);
             if (audibleHere || hotHere)
@@ -7958,6 +8308,53 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
                             lane, juce::Justification::centred, true);
             }
 
+            // THE PLAYHEAD, from the STREAM'S OWN POSITION. A timer counting
+            // seconds beside it would drift the moment the stream looped, was
+            // seeked or was stopped, and would then be a confident wrong line.
+            const float frac = owner->compareStreamFrac (slotIdxHere);
+            if (frac >= 0.0f && lane.getWidth() > 2)
+            {
+                const float x = (float) lane.getX() + frac * (float) lane.getWidth();
+                g.setColour (C::blue2.withAlpha (0.9f));
+                g.fillRect (x - 0.5f, (float) lane.getY(), 1.5f, (float) lane.getHeight());
+            }
+
+            // A PLAY AND STOP PER SIDE, showing which state it is in rather
+            // than being a control whose effect you learn by pressing it.
+            //
+            // A LIVE MIX SIDE HAS NO TRANSPORT AT ALL, and says so instead of
+            // showing a dead button: toggleComparePlay excludes a Live slot for
+            // the reason in its own comment, that live is host passthrough with
+            // no stored stream to toggle. Same rule as the two axes that cannot
+            // be proposed: nothing looks pressable unless it does something.
+            if (tBtn.getWidth() >= 8 && tBtn.getHeight() >= 8)
+            {
+                if (liveHere)
+                {
+                    g.setColour (C::text3.withAlpha (0.8f));
+                    g.setFont (juce::Font (juce::FontOptions (8.0f)));
+                    g.drawFittedText ("host", tBtn, juce::Justification::centred, 1);
+                }
+                else
+                {
+                    const bool rollingNow = owner->processorRef.cmpStream[slotIdxHere].playing.load();
+                    g.setColour ((hotHere ? C::blue : C::text2).withAlpha (0.9f));
+                    const auto b = tBtn.toFloat().reduced (3.0f);
+                    if (rollingNow)
+                    {
+                        // STOP: a square, which is what it will do next.
+                        g.fillRect (b.reduced (b.getWidth() * 0.18f, b.getHeight() * 0.18f));
+                    }
+                    else
+                    {
+                        juce::Path p;
+                        p.addTriangle (b.getX(), b.getY(), b.getX(), b.getBottom(),
+                                       b.getRight(), b.getCentreY());
+                        g.fillPath (p);
+                    }
+                }
+            }
+
             g.setColour (C::text3);
             g.setFont (juce::Font (juce::FontOptions (9.0f)));
             g.drawText (echojay::matchWaveSpan (rolling, span),
@@ -7972,173 +8369,177 @@ void EchoJayEditor::MatchPanel::paint (juce::Graphics& g)
         strip (R.refWave, *slots.ref, true,  hotZone == 5, audible == (refIsTop ? 0 : 1));
     }
 
+    // ---- the axis row: four tiles, one selected ----------------------------
+    //
+    // SELECTING A TILE CHANGES THE PICTURE BELOW AND NOTHING ELSE. Nothing is
+    // sent, applied or written by a press here, which is why these controls are
+    // in step one although section 10 excluded the ask.
+    {
+        g.setFont (juce::Font (juce::FontOptions (9.5f, juce::Font::bold)));
+        for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+        {
+            const auto a    = (echojay::MatchAxis) i;
+            const auto tile = echojay::matchAxisTile (R.axisRow, i);
+            if (tile.getWidth() <= 0) continue;
+
+            const bool sel = (a == axis);
+            const bool hot = (hotZone == 10 + i);
+            g.setColour (sel ? C::blue.withAlpha (0.16f) : (hot ? C::bg3 : C::bg2.withAlpha (0.6f)));
+            g.fillRoundedRectangle (tile.toFloat(), 6.0f);
+            g.setColour (sel ? C::blue.withAlpha (0.7f) : C::border);
+            g.drawRoundedRectangle (tile.toFloat().reduced (0.5f), 6.0f, sel ? 1.4f : 1.0f);
+
+            // AN AXIS THAT CANNOT BE PROPOSED SAYS SO ON ITS OWN TILE, quietly,
+            // so the press is not the first place the user learns it.
+            const bool proposable = echojay::matchAxisCanPropose (a);
+            g.setColour (sel ? C::text : (proposable ? C::text2 : C::text3));
+            g.drawFittedText (echojay::matchAxisName (a), tile.reduced (4, 0),
+                              juce::Justification::centred, 1);
+        }
+    }
+
     // ---- the picture -------------------------------------------------------
-    g.setColour (C::bg3);
+    //
+    // THE GROUND IS NEAR BLACK. The reference image is strands on black and
+    // that contrast is most of the effect: on C::bg3's navy the same ink read
+    // as a smear because the strands had nothing to be bright against. The
+    // card keeps its thin border, which is chrome around the picture rather
+    // than anything inside it.
+    g.setColour (juce::Colour (0xff02040a));
     g.fillRoundedRectangle (R.graph.toFloat(), 10.0f);
-    g.setColour (C::border);
-    g.drawRoundedRectangle (R.graph.toFloat().reduced (0.5f), 10.0f, 1.0f);
+    {
+        // SCOPED, BECAUSE C::border IS WHITE AT FIVE PERCENT ALPHA.
+        //
+        // Graphics::setColour replaces the whole FillType, so the fill's
+        // opacity becomes THE NEW COLOUR'S OWN ALPHA: it does not reset to 1.
+        // A translucent token therefore leaves the context at 0.05 for every
+        // later call that takes its opacity from the fill rather than setting
+        // its own colour, and drawImageAt is exactly that. THE TRAIL WAS BEING
+        // COMPOSITED AT FIVE PERCENT because of this one outline.
+        //
+        // ScopedSaveState rather than a setOpacity afterwards: the next person
+        // to add a translucent colour here should not have to know this.
+        juce::Graphics::ScopedSaveState ss (g);
+        g.setColour (C::border);
+        g.drawRoundedRectangle (R.graph.toFloat().reduced (0.5f), 10.0f, 1.0f);
+    }
 
     const auto plot = echojay::matchGraphPlot (R.graph);
     const double visBinHz = 44100.0 / (double) MeterEngine::kVisFftSize;
 
-    if (evMix.valid && evRef.valid && plot.getWidth() > 8 && plot.getHeight() > 8)
-    {
-        const auto measured = expandLog64Spectrum (evMix.bins, visBinHz);
-        const auto refBins  = expandLog64Spectrum (evRef.bins, visBinHz);
-
-        // THE MORPH IS THE MEASURED CURVE WITH THE PROPOSAL'S GAINS ON IT, at
-        // the position the panel owns. A bin takes its OWN band's move, with no
-        // blending across a boundary: blending would smooth the step back into
-        // the curve, which is the one thing the contract forbids.
-        const float t = echojay::matchMorphEase (morphPos);
-        auto mixBins = measured;
-        if (t > 0.0f)
-            for (int k = 0; k < MeterEngine::kVisBins; ++k)
-                mixBins[(size_t) k] = echojay::matchMorphedDb (measured[(size_t) k],
-                                                               (double) k * visBinHz, moves, t);
-
-        // ONE SHARED dB RANGE over BOTH sides AND the morph's end state, so the
-        // picture does not re-scale under the animation: a curve that moves
-        // because the axis moved would be the most dishonest frame here.
-        const int binLo = juce::jmax (1, (int) (echojay::kMatchPlotLoHz / visBinHz));
-        const int binHi = juce::jmin (MeterEngine::kVisBins - 1,
-                                      (int) (echojay::kMatchPlotHiHz / visBinHz));
-        float peak = -200.0f;
-        for (int k = binLo; k <= binHi; ++k)
-        {
-            const double f = (double) k * visBinHz;
-            peak = juce::jmax (peak, spectrumTiltedDb (measured[(size_t) k], f));
-            peak = juce::jmax (peak, spectrumTiltedDb (refBins[(size_t) k], f));
-            peak = juce::jmax (peak, spectrumTiltedDb (
-                       echojay::matchMorphedDb (measured[(size_t) k], f, moves, 1.0f), f));
-        }
-        const float dbMax = std::max (-20.0f, peak + 3.0f);
-        const float dbMin = dbMax - echojay::kMatchPlotSpanDb;
-
-        // DEPTH: the reference is BEHIND and dimmer, an outline with no fill,
-        // and it never moves (plan 8A.2). The mix is in front with its heat
-        // fill falling away toward the floor, so one curve is the subject and
-        // the other is the target rather than two lights competing.
-        SpectrumCurveStyle refStyle;
-        refStyle.cyanHeat   = false;
-        refStyle.lineOnly   = true;
-        refStyle.lineAlpha  = 0.42f;
-        refStyle.wideGlow   = true;
-        refStyle.hasDbRange = true;
-        refStyle.dbMin = dbMin; refStyle.dbMax = dbMax;
-        owner->paintSpectrumCurve (g, plot.getX(), plot.getY(), plot.getWidth(), plot.getHeight(),
-                                   refBins, visBinHz, refStyle);
-
-        SpectrumCurveStyle mixStyle;
-        mixStyle.cyanHeat   = true;
-        mixStyle.wideGlow   = true;
-        mixStyle.hasDbRange = true;
-        mixStyle.dbMin = dbMin; mixStyle.dbMax = dbMax;
-        owner->paintSpectrumCurve (g, plot.getX(), plot.getY(), plot.getWidth(), plot.getHeight(),
-                                   mixBins, visBinHz, mixStyle);
-
-        // THE BLOCKS ARRIVE WITH THE PRESS, not with the page: before it there
-        // are two measured spectra and nothing drawn over them. They fade in
-        // over the first third of the morph, so the eye sees what is about to
-        // move before it moves.
-        const float blockAlpha = juce::jlimit (0.0f, 1.0f, morphPos * 3.0f);
-        const juce::String noCurve = echojay::matchNoCurveText (prop, haveDeltas);
-
-        if (blockAlpha > 0.01f && noCurve.isEmpty())
-        {
-            for (int b = 0; b < 6; ++b)
-            {
-                const auto span = echojay::matchBandSpanX (plot, b);
-                const double loHz = echojay::kMacroBandLoHz[(size_t) b];
-                const double hiHz = (b == 5) ? echojay::kMatchPlotHiHz
-                                             : echojay::kMacroBandLoHz[(size_t) b + 1];
-                const int kLo = juce::jlimit (1, MeterEngine::kVisBins - 1, (int) (loHz / visBinHz));
-                const int kHi = juce::jlimit (kLo, MeterEngine::kVisBins - 1, (int) (hiHz / visBinHz));
-                double sum = 0.0; int n = 0;
-                for (int k = kLo; k <= kHi; ++k)
-                {
-                    sum += (double) spectrumTiltedDb (measured[(size_t) k], (double) k * visBinHz);
-                    ++n;
-                }
-                const float anchor = n > 0 ? (float) (sum / (double) n) : dbMin;
-                const auto blk = echojay::matchBandBlock (b, anchor, deltas[(size_t) b]);
-
-                const float xL = span.getStart() + 1.5f, xR = span.getEnd() - 1.5f;
-                if (xR <= xL) continue;
-                const float yAnchor   = echojay::matchDbToY (plot, blk.anchorDb,   dbMin, dbMax);
-                const float yProposed = echojay::matchDbToY (plot, blk.proposedDb, dbMin, dbMax);
-                const float yMatched  = echojay::matchDbToY (plot, blk.matchedDb,  dbMin, dbMax);
-
-                // THE GAP THAT REMAINS: proposed to where this band would sit
-                // if it matched. It is the OUTPUT, not a shortfall, so it
-                // settles and STAYS rather than fading with the animation.
-                if (blk.hasGap)
-                {
-                    juce::Rectangle<float> gap (xL, juce::jmin (yProposed, yMatched),
-                                                xR - xL, std::abs (yMatched - yProposed));
-                    g.setColour (C::text3.withAlpha (0.16f * blockAlpha));
-                    g.fillRect (gap);
-                    g.setColour (C::text3.withAlpha (0.40f * blockAlpha));
-                    const float dash[2] = { 2.0f, 3.0f };
-                    g.drawDashedLine ({ xL, yMatched, xR, yMatched }, dash, 2, 1.0f);
-                }
-
-                // THE MOVE, AS A STEP: flat across the band, hard edges at the
-                // boundaries, never a slope.
-                if (blk.hasMove)
-                {
-                    const auto tone = blk.moveDb >= 0.0f ? C::blue : juce::Colour (0xffFF6B9D);
-                    juce::Rectangle<float> step (xL, juce::jmin (yAnchor, yProposed),
-                                                 xR - xL, std::abs (yProposed - yAnchor));
-                    g.setColour (tone.withAlpha (0.22f * blockAlpha));
-                    g.fillRect (step);
-                    g.setColour (tone.withAlpha (0.85f * blockAlpha));
-                    g.drawLine (xL, yProposed, xR, yProposed, 1.8f);
-                    g.setColour (tone.withAlpha (0.25f * blockAlpha));
-                    g.drawLine (xL, yProposed, xL, yAnchor, 1.0f);
-                    g.drawLine (xR, yProposed, xR, yAnchor, 1.0f);
-
-                    // A CAP LOOKS CAPPED: the block stops at 3 dB and an amber
-                    // mark sits where the gap actually went.
-                    if (blk.capped)
-                    {
-                        const float dash[2] = { 3.0f, 3.0f };
-                        g.setColour (C::amber.withAlpha (0.9f * blockAlpha));
-                        g.drawDashedLine ({ xL, yMatched, xR, yMatched }, dash, 2, 1.4f);
-                        g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-                        g.drawText ("capped", juce::Rectangle<float> (xL, yMatched - 12.0f,
-                                                                      xR - xL, 11.0f).toNearestInt(),
-                                    juce::Justification::centred);
-                    }
-                }
-            }
-        }
-        else if (! noCurve.isEmpty() && morphPos > 0.0f)
-        {
-            g.setColour (C::amber);
-            g.setFont (juce::Font (juce::FontOptions (11.0f)));
-            g.drawFittedText (noCurve, plot.reduced (8, 0), juce::Justification::centred, 2);
-        }
-
-        // Band boundaries, faint, so the steps read as bands and not as shapes.
-        g.setColour (C::border.withAlpha (0.5f));
-        for (int b = 1; b < 6; ++b)
-        {
-            const float bx = echojay::matchFreqToX (plot, echojay::kMacroBandLoHz[(size_t) b]);
-            g.drawLine (bx, (float) plot.getY(), bx, (float) plot.getBottom(), 0.5f);
-        }
-    }
-    else
+    // A TILE WITH A FIELD MISSING ON ONE SIDE SAYS SO RATHER THAN DRAWING A
+    // DEFAULT. Every sentinel in MatchSide renders happily as a measurement:
+    // -100 LUFS is a position, 0 LU is a width, -1 overs is a number.
+    const auto axisState = echojay::matchAxisState (axis, sides.mix, sides.ref);
+    if (! axisState.drawable)
     {
         g.setColour (C::text3);
         g.setFont (juce::Font (juce::FontOptions (11.0f)));
-        g.drawFittedText ("No spectrum to draw for one of the two sides.",
-                          plot, juce::Justification::centred, 2);
+        g.drawFittedText (axisState.why, plot, juce::Justification::centred, 2);
+    }
+    else
+    {
+        // ONE CALL FOR ALL FOUR AXES. The picture is the same structure
+        // everywhere, two ribbons and the light between them, so the branch
+        // that used to choose between a spectrum block and three painters is
+        // now a dispatch inside matchPaintAxis.
+        //
+        // THE BINS ARE THE SPECTRUM'S OWN DATA: 64 measurements per side, not
+        // the six bands, which is why a smooth curve is honest there. THE SIX
+        // BANDS ARE STILL WHAT THE PROPOSAL MOVES, passed here as the morph's
+        // moves and stepped at the band edges by matchMorphedDb.
+        const bool haveBins = evMix.valid && evRef.valid;
+
+        // ONCE PER NEW FFT, NOT ONCE PER FRAME.
+        //
+        // WHICH ENGINE DRIVES IT, because the two sides are NOT in step: each
+        // side reads its own MeterEngine (the main one for Live, that slot's
+        // cmpMeter when its stream is playing), and those publish hops on
+        // their own audio blocks. THE MIX SIDE'S ENGINE DRIVES THE ADVANCE
+        // when it has one, the reference's otherwise. A side whose engine
+        // happens to publish between advances simply has its newest spectrum
+        // read on the next one; nothing is dropped, because at 60 Hz against
+        // 43 Hz there is at most one new hop per frame.
+        auto* hopEngine = owner->matchFastEngine (*slots.mix, owner->matchRefIsTop_ ? 1 : 0);
+        if (hopEngine == nullptr)
+            hopEngine = owner->matchFastEngine (*slots.ref, owner->matchRefIsTop_ ? 0 : 1);
+        const uint32_t hopNow = hopEngine != nullptr ? hopEngine->visHopCount() : 0;
+        const bool newHop = hopEngine != nullptr && (! trailHopInit || hopNow != trailHop);
+
+        // Guarded on the HOP for the reason it used to be guarded on the tick:
+        // an extra repaint, a hover or a resize, must not advance history.
+        // THE CURVES SMOOTH FRAME TO FRAME, one state per side, the way the
+        // other three spectrum surfaces already do. Fed once per TICK for the
+        // trail's reason: a repaint is not a frame of data.
+        if (haveBins && newHop)
+        {
+            mixBinLerp.feed (evMix.bins, kMatchBinLerp);
+            refBinLerp.feed (evRef.bins, kMatchBinLerp);
+        }
+        const auto& mixSmooth = mixBinLerp.init ? mixBinLerp.v : evMix.bins;
+        const auto& refSmooth = refBinLerp.init ? refBinLerp.v : evRef.bins;
+
+        // ---- THE CLOUD: this tick's FAST frame, smoked into the trail ------
+        //
+        // The cloud is CONTEXT and is never compared; the filament below is the
+        // measurement. A side with no fast source gets no cloud at all.
+        MeterData mixMd, refMd;
+        const bool mixFastOk = owner->matchFastFrame (*slots.mix, owner->matchRefIsTop_ ? 1 : 0, mixMd);
+        const bool refFastOk = owner->matchFastFrame (*slots.ref, owner->matchRefIsTop_ ? 0 : 1, refMd);
+
+        echojay::MatchRibbonRow mixFast {}, refFast {};
+        if (mixFastOk) matchFastRow (axis, mixMd, sides.mix, -1.0f, mixFast);
+        if (refFastOk) matchFastRow (axis, refMd, sides.ref,  1.0f, refFast);
+
+        if (newHop)
+        {
+            trailHop = hopNow;
+            trailHopInit = true;
+            mixVisOk = refVisOk = false;
+            if (mixFastOk)
+            {
+                pushTrace (mixTrace, axis, mixMd);
+                double hz = 0.0;
+                if (auto* e = owner->matchFastEngine (*slots.mix, owner->matchRefIsTop_ ? 1 : 0))
+                    mixVisOk = e->getVisualSpectrum (mixVis, hz);
+            }
+            if (refFastOk)
+            {
+                pushTrace (refTrace, axis, refMd);
+                double hz = 0.0;
+                if (auto* e = owner->matchFastEngine (*slots.ref, owner->matchRefIsTop_ ? 0 : 1))
+                    refVisOk = e->getVisualSpectrum (refVis, hz);
+            }
+        }
+
+        const auto range = matchAxisRange (axis, sides.mix, sides.ref,
+                                           mixSmooth, refSmooth, haveBins);
+        advanceTrail (plot, mixFastOk ? &mixFast : nullptr, refFastOk ? &refFast : nullptr,
+                      range.first, range.second);
+        // THE IMAGE JUST COMPOSED, NOT THE ONE BEFORE IT. advanceTrail picks
+        // dst as (trailUseA ? trailB : trailA) and then FLIPS trailUseA, so
+        // after it returns the flag selects the OTHER image. Reading it the
+        // same way here showed the previous frame, one hop stale, every frame.
+        const bool  blitGuard = (trailPlot == plot);
+        const auto& shownImg  = trailUseA ? trailA : trailB;
+
+        if (blitGuard && ! shownImg.isNull())
+            g.drawImageAt (shownImg, plot.getX(), plot.getY());
+
+        matchPaintAxis (g, plot, R.readout, axis, sides.mix, sides.ref,
+                        mixSmooth, refSmooth, haveBins,
+                        echojay::matchBandMoves (prop),
+                        juce::jlimit (0.0f, 1.0f, morphPos), linkPhase);
     }
 
     // THE PROVENANCE, ON THE PICTURE (contract §3): a whole-file average
     // against a ballistic tail is not a like-for-like curve, and prose
     // elsewhere is not the picture saying so.
+    //
+    // SPECTRUM ONLY. It describes the two SPECTRA's reductions, so under the
+    // loudness, dynamics or stereo picture it would be a caption about
+    // something not on screen.
+    if (axis == echojay::MatchAxis::Spectrum)
     {
         const auto prov = echojay::matchProvenanceText (evMix, evRef);
         if (prov.isNotEmpty())
@@ -8165,6 +8566,23 @@ void EchoJayEditor::MatchPanel::press()
     const auto sides = owner->buildMatchSides();
     const auto ready = echojay::matchReadiness (echojay::computeMatchProposal (sides.mix, sides.ref));
 
+    // TWO OF THE FOUR AXES CANNOT BE MATCHED, AND THE PRESS SAYS SO. The
+    // proposal emits Gain, Ceiling and Band moves and nothing else, so dynamics
+    // and stereo image have no move to play whatever the two sides hold.
+    //
+    // NOT A DISABLED BUTTON. A control that looks dead with no reason given is
+    // what the headline rework removed, so this answers in the same words and
+    // through the same refused-for-a-moment machinery the gain floor uses.
+    if (! echojay::matchAxisCanPropose (axis))
+    {
+        refusedText = echojay::matchAxisPressText (axis);
+        refusedFor  = 2.5f;
+        morphing = false; morphDone = false; morphPos = 0.0f;
+        startTimerHz (60);
+        repaint();
+        return;
+    }
+
     // PLAYABLE, NOT POSSIBLE. The press asks whether the proposal carries a
     // move, which is what this test has always meant; `possible` now answers
     // the narrower question of whether the LINE is the optimistic one, and
@@ -8176,7 +8594,7 @@ void EchoJayEditor::MatchPanel::press()
         refusedText = echojay::matchPressRefusedText (ready);
         refusedFor  = 2.5f;
         morphing = false; morphDone = false; morphPos = 0.0f;
-        startTimerHz (30);
+        startTimerHz (60);
         repaint();
         return;
     }
@@ -8185,8 +8603,815 @@ void EchoJayEditor::MatchPanel::press()
     morphing  = true;
     morphDone = false;
     refusedFor = 0.0f;
-    startTimerHz (30);
+    startTimerHz (60);
     repaint();
+}
+
+// ===========================================================================
+// THE THREE PICTURES THAT ARE NOT THE SPECTRUM
+// ===========================================================================
+//
+// ONE GRAMMAR, FOUR VOCABULARIES. Every one of these shows your mix, the
+// reference, and THE GAP BETWEEN THEM with the gap the brightest thing in the
+// rect. What differs is the terms, because a level, a dynamic range and a
+// stereo image are not the same kind of quantity and drawing them alike would
+// say they were.
+//
+// ONLY FIELDS THAT ARE WHOLE FILE ON BOTH SIDES (contract §2B). No PSR, which
+// is two sliding windows on both sides and describes a reference's last three
+// seconds; and no capture-only field, because a figure one side cannot have
+// would be drawn against the other side's default and read as a difference.
+//
+// EVERY NUMBER HERE COMES OFF MatchSide, which is the one place the Live rules
+// have already been applied.
+// The same colour tokens the rest of this page uses. These painters are
+// file-local functions rather than members, so the editor's own alias is not in
+// scope and is named once here.
+//
+// AT FILE SCOPE AND NOT IN AN ANONYMOUS NAMESPACE, deliberately: mr PIN24 reads
+// these bodies with functionBody, which ends a body at the first brace in
+// column one. Indented inside a namespace, each "body" would run to the end of
+// the block and the pin would be reading three painters while claiming to read
+// one.
+using MatchC = EchoJayLookAndFeel::Colours;
+
+// ===========================================================================
+// TWO LUMINOUS RIBBONS AND THE LIGHT BETWEEN THEM
+// ===========================================================================
+//
+// ONE STRUCTURE ON ALL FOUR AXES, and only the ribbons' SHAPE differs. The
+// reference is a soft ribbon, your mix a brighter filament in front, and the
+// gap is the light between them: invisible where they touch and brightest
+// where they are furthest apart.
+//
+// THICKNESS MEANS TOLERANCE AND NOTHING ELSE. The reference ribbon's
+// half-thickness IS the proposal's floor, echojay::matchAxisZoneDb, so inside
+// the ribbon means no move would be proposed. ON THE TWO AXES WITH NO FLOOR IT
+// IS A FILAMENT, not a thin ribbon: a glow with any thickness at all would
+// claim a tolerance that does not exist for dynamics or stereo image.
+//
+// NO FURNITURE. No rectangle, no rail, no divider, no gridline, no band label,
+// no box outline and no step block: frequency and level are read from the
+// numbers in the text line. Nothing here has an edge.
+
+/** THE READOUT ROW, DRAWN IN THE MAIN METER STRIP'S LANGUAGE: cells separated
+    by thin vertical dividers, label above in small muted uppercase, value
+    below. No rounded boxes, no card.
+
+    THE COLOURS ARE READ FROM THE SAME TWO CONSTANTS THE TRAILS ARE STROKED
+    WITH, MatchC::blue and MatchC::text2, not copies of their values. If the
+    trail's colours are ever changed this row follows them, because a key that
+    can drift from the picture it explains is worse than no key. */
+static void matchPaintReadout (juce::Graphics& g, juce::Rectangle<int> row,
+                               const std::vector<echojay::MatchReadoutCell>& cells,
+                               const juce::String& note)
+{
+    if (row.getHeight() < 16 || cells.empty()) return;
+
+    // 2d: the axis's sentence, if it has one, on ONE muted line directly above
+    // the row. An axis with none leaves no gap behind: the line is only taken
+    // out of the row when there is something to put in it.
+    if (note.isNotEmpty())
+    {
+        auto noteRow = row.removeFromTop (12);
+        g.setColour (MatchC::text3);
+        g.setFont (juce::Font (juce::FontOptions (9.0f)));
+        g.drawText (note, noteRow, juce::Justification::centred, true);
+    }
+
+    const int n = (int) cells.size();
+    for (int i = 0; i < n; ++i)
+    {
+        auto cell = echojay::matchReadoutCellRect (row, i, n);
+        if (cell.getWidth() <= 0) continue;
+
+        // The divider BETWEEN cells, thin and quiet, never on the outer edges.
+        if (i > 0)
+        {
+            g.setColour (MatchC::border.withAlpha (0.55f));
+            g.fillRect ((float) cell.getX(), (float) cell.getY() + 2.0f,
+                        1.0f, (float) cell.getHeight() - 4.0f);
+        }
+
+        auto label = cell.removeFromTop (echojay::kMatchReadoutLabelH);
+        g.setColour (MatchC::text3);
+        g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+        g.drawText (cells[(size_t) i].label.toUpperCase(), label,
+                    juce::Justification::centred, true);
+
+        // THE VALUE LINE CARRIES BOTH SIDES, each in its own trail's colour,
+        // with a thin divider between them: this is the key the filament used
+        // to be.
+        auto value = cell.reduced (4, 0);
+        const int half = value.getWidth() / 2;
+        auto mixHalf = value.removeFromLeft (half);
+        auto refHalf = value.withTrimmedLeft (1);
+
+        g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
+        g.setColour (MatchC::blue);
+        g.drawText (cells[(size_t) i].mixText, mixHalf, juce::Justification::centredRight, true);
+        g.setColour (MatchC::border.withAlpha (0.55f));
+        g.fillRect ((float) mixHalf.getRight() + 1.0f, (float) mixHalf.getY() + 2.0f,
+                    1.0f, (float) mixHalf.getHeight() - 4.0f);
+        g.setColour (MatchC::text2);
+        g.drawText (cells[(size_t) i].refText, refHalf, juce::Justification::centredLeft, true);
+    }
+}
+
+
+/** The whole picture, once the two rows of values exist. */
+static void matchPaintRibbonPair (juce::Graphics& g, juce::Rectangle<int> plot,
+                                  const MatchRibbonRow& mixV, const MatchRibbonRow& refV,
+                                  float lo, float hi, float zoneUnits, float phase)
+{
+    // ONE THIN BRIGHT FILAMENT PER SIDE, AND NOTHING ELSE IN THE PLOT.
+    //
+    // WHAT THIS GIVES UP, RECORDED HERE RATHER THAN LOST QUIETLY:
+    //
+    //   THE REFERENCE'S RIBBON THICKNESS WAS THE PROPOSAL'S FLOOR. A band of
+    //   exactly kMatchBandFloorDb said "inside here, nothing would be moved",
+    //   which is the most honest thing this picture has ever drawn.
+    //
+    //   THE GAP LIGHT WAS THE THING BEING COMPARED, drawn as the brightest
+    //   object on the page, which is what the contract asks a match screen to
+    //   put first.
+    //
+    // BOTH WERE HONEST AND BOTH ARE REMOVED BECAUSE THEY BURY THE TRAIL. The
+    // comparison still reads, from the two filaments and the distance between
+    // them, and every number, move and refusal is unchanged. THIS IS A DEBT
+    // AND NOT AN OVERSIGHT: the floor and the gap want to come back in some
+    // quieter form once the look is settled, and matchAxisZoneDb and
+    // matchInsideBandZone are left in place for when they do.
+    //
+    // zoneUnits and phase are kept in the signature for the same reason: the
+    // thickness and the breath are what comes back first.
+    juce::ignoreUnused (zoneUnits, phase);
+
+    // CURVED, NOT CORNERED. 96 points across a thousand-odd pixels is one
+    // point every dozen, and straight lineTo segments make every one of them a
+    // visible corner: that is the jaggedness, and it is SPATIAL rather than
+    // temporal. Averaging across frames would have fixed the look by
+    // destroying the strands, which is exactly what the trail must not have.
+    //
+    // THE SAME CATMULL-ROM paintSpectrumCurve uses: endpoints duplicated so
+    // the end tangents stay flat and never overshoot, control points at a
+    // sixth of the span between the neighbours, and CONTROL-POINT Y CLAMPED
+    // INTO THE PLOT so a single outlying bin cannot overshoot into a needle.
+    auto filament = [&] (const MatchRibbonRow& row, juce::Colour c, float alpha)
+    {
+        const float dx = (float) plot.getWidth() / (float) (kMatchRibbonCols - 1);
+        auto clampY = [&] (float v)
+        { return juce::jlimit ((float) plot.getY(), (float) plot.getBottom(), v); };
+        auto ptAt = [&] (int i)
+        {
+            const int j = juce::jlimit (0, kMatchRibbonCols - 1, i);
+            const float y = (float) plot.getY()
+                          + juce::jlimit (0.0f, 1.0f, (hi - row[(size_t) j])
+                                                          / juce::jmax (0.0001f, hi - lo))
+                                * (float) plot.getHeight();
+            return juce::Point<float> ((float) plot.getX() + dx * (float) j, y);
+        };
+
+        juce::Path p;
+        p.startNewSubPath (ptAt (0));
+        for (int i = 0; i < kMatchRibbonCols - 1; ++i)
+        {
+            const auto p0 = ptAt (i - 1), p1 = ptAt (i), p2 = ptAt (i + 1), p3 = ptAt (i + 2);
+            const juce::Point<float> c1 (p1.x + (p2.x - p0.x) / 6.0f,
+                                         clampY (p1.y + (p2.y - p0.y) / 6.0f));
+            const juce::Point<float> c2 (p2.x - (p3.x - p1.x) / 6.0f,
+                                         clampY (p2.y - (p3.y - p1.y) / 6.0f));
+            p.cubicTo (c1, c2, p2);
+        }
+        // ONE PASS, 1.0 px, at a twentieth of the alpha it carried. A FAINT
+        // THREAD LAID OVER THE TRAILS, not the main line: the trail is the
+        // picture and this is the mark that says where the measurement is.
+        g.setColour (c.withAlpha (alpha));
+        g.strokePath (p, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded));
+    };
+
+    // THE EMPHASIS IS INVERTED: THE TRAIL IS THE PICTURE and the filament is a
+    // quiet reference mark through it, almost dissolved into the cloud. It is
+    // still the thing being compared and still the only thing any number is
+    // read from; it simply stops shouting over the history behind it.
+    // THE FILAMENT IS NO LONGER DRAWN. The ghost trail is the whole picture,
+    // and a thread laid over it competed for the same attention without adding
+    // a reading: every number is in the row along the bottom now.
+    //
+    // THE LAMBDA IS LEFT DEFINED AND UNCALLED, the same treatment as
+    // matchInsideBandZone, matchAxisHasZone, matchBandBlock, kMatchPlotSpanDb,
+    // matchAxisZoneDb and tickSeq. What it draws may come back, and deleting
+    // it is a decision for whoever decides that, not a side effect of a look.
+    juce::ignoreUnused (filament);
+}
+
+// ---------------------------------------------------------------------------
+// WHAT DIFFERS PER AXIS IS ONLY THE RIBBONS' SHAPE
+// ---------------------------------------------------------------------------
+
+/** SPECTRUM: FROM THE 64 BIN CURVE, NOT THE SIX BANDS.
+
+    §3 FORBIDS A SMOOTH LINE THROUGH SIX NUMBERS AND THIS DOES NOT BREAK IT.
+    The rule exists because six band figures assert nothing between their
+    centres, so a curve drawn through them invents shape the arithmetic never
+    had. These bins are SIXTY FOUR MEASUREMENTS, a real continuous reading on
+    both sides that the page already holds through getSlotSpectralEvidence, so
+    a smooth curve is what they are. THE SIX BANDS REMAIN WHAT THE PROPOSAL
+    MOVES and what the morph steps; they are simply no longer drawn as blocks.
+
+    BOTH CURVES ARE LEVEL-NORMALISED, each by its own mean, and that is what
+    makes the ribbon's thickness meaningful: the floor is a threshold on band
+    RELATIVES, so a ribbon of +/- 2 dB around an absolute curve would claim a
+    tolerance in the wrong units and would move with the gain difference the
+    level axis handles on its own. */
+static void matchSpectrumRows (const std::array<float, 64>& mixBins,
+                               const std::array<float, 64>& refBins,
+                               const std::array<float, 6>& moves, float morph,
+                               MatchRibbonRow& mixV, MatchRibbonRow& refV)
+{
+    auto meanOf = [] (const std::array<float, 64>& b)
+    {
+        double s = 0.0; int n = 0;
+        for (float v : b) if (v > -120.0f) { s += v; ++n; }
+        return n > 0 ? (float) (s / n) : 0.0f;
+    };
+    const float mMean = meanOf (mixBins), rMean = meanOf (refBins);
+
+    for (int i = 0; i < kMatchRibbonCols; ++i)
+    {
+        const float u = (float) i / (float) (kMatchRibbonCols - 1);
+        const float fb = u * 63.0f;
+        const int   b0 = juce::jlimit (0, 63, (int) fb);
+        const int   b1 = juce::jlimit (0, 63, b0 + 1);
+        const float fr = fb - (float) b0;
+
+        const float m = juce::jmap (fr, mixBins[(size_t) b0], mixBins[(size_t) b1]) - mMean;
+        const float r = juce::jmap (fr, refBins[(size_t) b0], refBins[(size_t) b1]) - rMean;
+
+        // The morph walks the mix curve by ITS OWN BAND'S move, stepped at the
+        // band edges exactly as the proposal steps: matchMorphedDb is the same
+        // arithmetic the blocks used.
+        const double lof = std::log2 (echojay::kMatchPlotLoHz), hif = std::log2 (echojay::kMatchPlotHiHz);
+        const double hz  = std::pow (2.0, lof + (double) u * (hif - lof));
+        mixV[(size_t) i] = echojay::matchMorphedDb (m, hz, moves, morph);
+        refV[(size_t) i] = r;
+    }
+
+}
+
+static void matchPaintLoudness (juce::Graphics& g, juce::Rectangle<int> plot,
+                         juce::Rectangle<int> readout,
+                         const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                         float phase)
+{
+    // NEAR FLAT RIBBONS at each side's integrated level. A whisper of drift
+    // along the length, so they are alive rather than ruled.
+    MatchRibbonRow mixV {}, refV {};
+    for (int i = 0; i < kMatchRibbonCols; ++i)
+    {
+        const float u = (float) i / (float) (kMatchRibbonCols - 1);
+        const float w = std::sin (u * juce::MathConstants<float>::twoPi * 0.6f) * 0.18f;
+        mixV[(size_t) i] = mix.integrated + w;
+        refV[(size_t) i] = ref.integrated - w * 0.6f;
+    }
+    // THE SHARED SCALE, so the cloud sits AROUND the filament rather than
+    // beside it: one range for both layers on every axis.
+    const std::array<float, 64> noBins {};
+    const auto range = matchAxisRange (echojay::MatchAxis::Loudness, mix, ref, noBins, noBins, false);
+    matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second,
+                          echojay::matchAxisZoneDb (echojay::MatchAxis::Loudness), phase);
+
+    // THE NUMBERS GO IN THE READOUT ROW, in the order they appeared in the
+    // sentence this replaces. Built HERE, from this axis's own fields, rather
+    // than in a shared table: the values must come from the same reads the
+    // shape came from, and mr PIN24 pins that this painter is the thing that
+    // touches them.
+    std::vector<echojay::MatchReadoutCell> cells;
+    cells.push_back ({ "INT",
+                       echojay::matchReadoutValue (mix.integrated > -99.0f, mix.integrated, 1, "LUFS"),
+                       echojay::matchReadoutValue (ref.integrated > -99.0f, ref.integrated, 1, "LUFS") });
+    cells.push_back ({ "TRUE PEAK",
+                       echojay::matchReadoutValue (mix.truePeak > -99.0f, mix.truePeak, 1, "dBTP"),
+                       echojay::matchReadoutValue (ref.truePeak > -99.0f, ref.truePeak, 1, "dBTP") });
+    matchPaintReadout (g, readout, cells, {});
+}
+
+static void matchPaintDynamics (juce::Graphics& g, juce::Rectangle<int> plot,
+                         juce::Rectangle<int> readout,
+                         const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                         float phase)
+{
+    // RIBBONS THAT RIPPLE, AMPLITUDE FROM CREST, so a more dynamic track
+    // visibly ripples more. THE LOUDNESS RANGE VARIES THE RIPPLE ALONG THE
+    // LENGTH: a wide range swells and settles, a narrow one is even.
+    // THE FILAMENT IS THE SLOW FIGURE WHERE THERE IS ONE. A capture or a
+    // reference holds its STORED whole-file crest, which is genuinely
+    // accumulated. A LIVE side has no whole-file crest to hold: MeterEngine
+    // computes crest as peak over RMS of a 0.5 s RMS and a 3 s peak decay, so
+    // its filament IS a rolling figure and the line below says "rolling".
+    // DYNAMICS IS THEREFORE THE AXIS WHERE THE CLOUD AND THE FILAMENT SIT
+    // CLOSEST TOGETHER: a slower reading of the same thing rather than a
+    // different kind of figure. Said, not hidden.
+    auto row = [] (const echojay::MatchSide& s, MatchRibbonRow& out, float bias)
+    {
+        const float amp = juce::jlimit (0.5f, 9.0f, s.crest * 0.55f);
+        const bool  even = s.lra <= 0.0f;
+        for (int i = 0; i < kMatchRibbonCols; ++i)
+        {
+            const float u = (float) i / (float) (kMatchRibbonCols - 1);
+            // A side with no range RIPPLES EVENLY, and says so in words below:
+            // varying it with a zero would draw an absent figure as a flat one.
+            const float env = even ? 1.0f
+                                   : 0.55f + 0.45f * std::sin (u * juce::MathConstants<float>::twoPi
+                                                               * juce::jlimit (0.6f, 3.0f, s.lra * 0.25f));
+            out[(size_t) i] = bias + std::sin (u * juce::MathConstants<float>::twoPi * 2.2f
+                                               + bias) * amp * env;
+        }
+    };
+    MatchRibbonRow mixV {}, refV {};
+    row (mix, mixV, -6.0f);
+    row (ref, refV,  6.0f);
+    const std::array<float, 64> noBins {};
+    const auto range = matchAxisRange (echojay::MatchAxis::Dynamics, mix, ref, noBins, noBins, false);
+    matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second, 0.0f, phase);
+
+    // CELLS FOR THE NUMBERS, in the order the old sentence carried them, and
+    // the SENTENCES on one muted line above the row (2d). The overs count
+    // keeps its own rule: -1 is a dash, not a zero.
+    std::vector<echojay::MatchReadoutCell> cells;
+    cells.push_back ({ "CREST",
+                       echojay::matchReadoutValue (mix.crest > 0.0f, mix.crest, 1, "dB"),
+                       echojay::matchReadoutValue (ref.crest > 0.0f, ref.crest, 1, "dB") });
+    cells.push_back ({ "RANGE",
+                       echojay::matchReadoutValue (mix.lra > 0.0f, mix.lra, 1, "LU"),
+                       echojay::matchReadoutValue (ref.lra > 0.0f, ref.lra, 1, "LU") });
+    cells.push_back ({ "OVERS",
+                       echojay::matchReadoutCount (mix.overs),
+                       echojay::matchReadoutCount (ref.overs) });
+
+    juce::String note;
+    if (mix.durationSeconds <= 0.0f || ref.durationSeconds <= 0.0f)
+        note = juce::String (mix.durationSeconds <= 0.0f ? "your mix" : "the reference")
+             + "'s crest is a rolling figure, not a whole track";
+    if (mix.lra <= 0.0f || ref.lra <= 0.0f)
+        note += (note.isEmpty() ? juce::String() : "    ")
+              + juce::String (mix.lra <= 0.0f ? "your mix" : "the reference")
+              + " has no loudness range, so its ripple is even";
+    matchPaintReadout (g, readout, cells, note);
+}
+
+static void matchPaintStereo (juce::Graphics& g, juce::Rectangle<int> plot,
+                       juce::Rectangle<int> readout,
+                       const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                         float phase)
+{
+    // RIBBONS THAT BOW OUTWARD WITH WIDTH: a wide image is a fat lens and a
+    // mono one is nearly straight. CORRELATION TIGHTENS OR LOOSENS THE BOW,
+    // so two images that measure alike close into one shape.
+    auto row = [] (const echojay::MatchSide& s, MatchRibbonRow& out, float sign)
+    {
+        const float wNorm = juce::jlimit (0.0f, 1.0f, s.width / 100.0f);
+        const float tight = 1.0f - 0.45f * juce::jlimit (0.0f, 1.0f, s.correlation);
+        const float bow   = wNorm * 16.0f * tight;
+        for (int i = 0; i < kMatchRibbonCols; ++i)
+        {
+            const float u = (float) i / (float) (kMatchRibbonCols - 1);
+            out[(size_t) i] = sign * bow * std::sin (u * juce::MathConstants<float>::pi);
+        }
+    };
+    MatchRibbonRow mixV {}, refV {};
+    row (mix, mixV, -1.0f);
+    row (ref, refV,  1.0f);
+    const std::array<float, 64> noBins {};
+    const auto range = matchAxisRange (echojay::MatchAxis::Stereo, mix, ref, noBins, noBins, false);
+    matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second, 0.0f, phase);
+
+    // WIDTH TO ONE DECIMAL, NOT ZERO, and correlation to two: 2b's rule, and
+    // it corrects the old row, which printed width with no decimals at all.
+    std::vector<echojay::MatchReadoutCell> cells;
+    cells.push_back ({ "WIDTH",
+                       echojay::matchReadoutValue (true, mix.width, 1, "%"),
+                       echojay::matchReadoutValue (true, ref.width, 1, "%") });
+    cells.push_back ({ "CORR",
+                       echojay::matchReadoutValue (true, mix.correlation, 2, {}),
+                       echojay::matchReadoutValue (true, ref.correlation, 2, {}) });
+    matchPaintReadout (g, readout, cells, {});
+}
+
+void matchPaintAxis (juce::Graphics& g, juce::Rectangle<int> plot,
+                     juce::Rectangle<int> readout,
+                     echojay::MatchAxis a,
+                     const echojay::MatchSide& mix, const echojay::MatchSide& ref,
+                     const std::array<float, 64>& mixBins, const std::array<float, 64>& refBins,
+                     bool haveBins, const std::array<float, 6>& moves, float morph, float phase)
+{
+    if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
+    switch (a)
+    {
+        case echojay::MatchAxis::Spectrum:
+        {
+            if (! haveBins)
+            {
+                g.setColour (MatchC::text3);
+                g.setFont (juce::Font (juce::FontOptions (11.0f)));
+                g.drawFittedText ("No spectrum to draw for one of the two sides.",
+                                  plot, juce::Justification::centred, 2);
+                return;
+            }
+            MatchRibbonRow mixV {}, refV {};
+            matchSpectrumRows (mixBins, refBins, moves, morph, mixV, refV);
+            const auto range = matchAxisRange (echojay::MatchAxis::Spectrum, mix, ref,
+                                               mixBins, refBins, true);
+            matchPaintRibbonPair (g, plot, mixV, refV, range.first, range.second,
+                                  echojay::matchAxisZoneDb (echojay::MatchAxis::Spectrum), phase);
+
+            // THE SPECTRUM'S OWN NUMBERS: the six band relatives are the thing
+            // the proposal moves, so the row carries the two that a reader
+            // most needs, the overall tilt and the largest single gap, taken
+            // from the SAME relatives the ribbons were built from.
+            {
+                std::array<float, 6> mRel {}, rRel {};
+                std::vector<echojay::MatchReadoutCell> cells;
+                if (echojay::matchBandRelatives (mix.macro, mRel)
+                    && echojay::matchBandRelatives (ref.macro, rRel))
+                {
+                    int worst = 0;
+                    for (int b = 1; b < 6; ++b)
+                        if (std::abs (rRel[(size_t) b] - mRel[(size_t) b])
+                            > std::abs (rRel[(size_t) worst] - mRel[(size_t) worst])) worst = b;
+                    cells.push_back ({ juce::String (echojay::macroBandName (worst)),
+                                       echojay::matchReadoutValue (true, mRel[(size_t) worst], 1, "dB"),
+                                       echojay::matchReadoutValue (true, rRel[(size_t) worst], 1, "dB") });
+                    const float mTilt = mRel[5] - mRel[0], rTilt = rRel[5] - rRel[0];
+                    cells.push_back ({ "TILT",
+                                       echojay::matchReadoutValue (true, mTilt, 1, "dB"),
+                                       echojay::matchReadoutValue (true, rTilt, 1, "dB") });
+                }
+                else
+                {
+                    cells.push_back ({ "BANDS",
+                                       echojay::matchReadoutValue (false, 0.0f, 1, {}),
+                                       echojay::matchReadoutValue (false, 0.0f, 1, {}) });
+                }
+                matchPaintReadout (g, readout, cells, {});
+            }
+            break;
+        }
+        case echojay::MatchAxis::Loudness: matchPaintLoudness (g, plot, readout, mix, ref, phase); break;
+        case echojay::MatchAxis::Dynamics: matchPaintDynamics (g, plot, readout, mix, ref, phase); break;
+        case echojay::MatchAxis::Stereo:   matchPaintStereo   (g, plot, readout, mix, ref, phase); break;
+    }
+}
+
+/** ONE TICK'S FIGURES INTO A SIDE'S RING. What each axis traces:
+
+      LOUDNESS   momentary (400 ms), short term (3 s), and peak. Three
+                 different time constants, so three different speeds, which is
+                 what makes the lines cross instead of stacking.
+      DYNAMICS   crest, plus the three BAND crests.
+      STEREO     correlation, the three BANDED correlations, and width.
+
+    THE BAND CRESTS AND BANDED CORRELATIONS ARE CAPTURE-ONLY AS COMPARISONS and
+    are read here anyway, deliberately. The rule this page holds is that THE
+    CLOUD IS CONTEXT AND IS NEVER COMPARED: they have no reference equivalent to
+    be compared against, which is why mr PIN24 keeps them off the tiles, but as
+    a live trace of the side producing them they are a real measurement of that
+    side. NOT IN THE THREE PAINTERS, for exactly that reason.
+
+    A figure that is unavailable sets have[] false for its line rather than
+    writing a sentinel into the ring: -1 band crest is "not measured", and a
+    line drawn at -1 would be a measurement of something. */
+void EchoJayEditor::MatchPanel::pushTrace (Trace& t, echojay::MatchAxis a, const MeterData& md)
+{
+    std::array<float, (size_t) kTraceLines> v {};
+    std::array<bool,  (size_t) kTraceLines> ok {};
+
+    switch (a)
+    {
+        case echojay::MatchAxis::Loudness:
+            v[0] = md.momentary;  ok[0] = md.momentary > -99.0f;
+            v[1] = md.shortTerm;  ok[1] = md.shortTerm > -99.0f;
+            v[2] = juce::jmax (md.peakL, md.peakR);
+            ok[2] = v[2] > -99.0f;
+            break;
+
+        case echojay::MatchAxis::Dynamics:
+            v[0] = md.crestFactor;  ok[0] = md.crestFactor > 0.0f;
+            v[1] = md.bandCrestSub; ok[1] = md.bandCrestSub >= 0.0f;
+            v[2] = md.bandCrestMid; ok[2] = md.bandCrestMid >= 0.0f;
+            v[3] = md.bandCrestTop; ok[3] = md.bandCrestTop >= 0.0f;
+            break;
+
+        case echojay::MatchAxis::Stereo:
+            v[0] = md.correlation; ok[0] = true;
+            v[1] = md.corrSub;     ok[1] = true;
+            v[2] = md.corrMid;     ok[2] = true;
+            v[3] = md.corrTop;     ok[3] = true;
+            v[4] = md.width / 100.0f * 2.0f - 1.0f;   // onto the correlation scale
+            ok[4] = true;
+            break;
+
+        case echojay::MatchAxis::Spectrum:
+            return;                                   // the spectrum has its own shape
+    }
+
+    // THE TERRACING, AND IT IS FIXED HERE RATHER THAN WHERE THE TRACE IS DRAWN.
+    //
+    // THE CAUSE, from the engine and not from the look: several of these
+    // figures only CHANGE every 100 ms, because they are derived from
+    // 100 ms LUFS blocks. MeterEngine accumulates samplesPerBlock100ms, pushes
+    // one LufsBlock, and shortTerm is then the mean over the last 30 of them
+    // (MeterEngine.cpp:705-731). integrated and loudnessRange move on the same
+    // boundary. THIS RING SAMPLES AT THE PAGE'S 30 Hz, so a figure that
+    // changes at 10 Hz writes THE SAME VALUE THREE TIMES and draws a stair:
+    // three samples flat, then a vertical, then three flat again.
+    //
+    // A ONE-POLE AS IT IS WRITTEN turns that step into a ramp. RECOUNTED FOR
+    // THE HOP RATE: this ring is now written once per FFT hop, so the 100 ms
+    // stair repeats over 4.3 hops rather than 3 ticks. k = 0.35 is 35 percent
+    // closed after one hop, 73 after three and 82 after four, so the stair
+    // still becomes a continuous rise over exactly the interval it repeats on,
+    // and anything genuinely fast still lands within a hop or two. It smooths
+    // ALONG THE LINE'S OWN HISTORY, which is a different thing from averaging
+    // the spectrum across frames: no strand is destroyed because each line is
+    // one figure, not a shape.
+    constexpr float kTraceSmooth = 0.35f;
+    const int prev = (t.write - 1 + kTraceLen) % kTraceLen;
+
+    for (int i = 0; i < kTraceLines; ++i)
+    {
+        const float target = v[(size_t) i];
+        const float last   = t.filled > 0 ? t.v[(size_t) i][(size_t) prev] : target;
+        t.v[(size_t) i][(size_t) t.write] = last + (target - last) * kTraceSmooth;
+        if (ok[(size_t) i]) t.have[(size_t) i] = true;
+    }
+    t.write  = (t.write + 1) % kTraceLen;
+    t.filled = juce::jmin (kTraceLen, t.filled + 1);
+}
+
+/** The scale a traced axis is drawn on. Fixed per axis rather than fitted to
+    the data: a scale that rescaled itself would turn every change in the
+    figures into a change in the picture's own geometry, and the eye would
+    read the axis moving as the signal moving. */
+static std::pair<float, float> matchTraceRange (echojay::MatchAxis a)
+{
+    switch (a)
+    {
+        case echojay::MatchAxis::Loudness: return { -60.0f,  0.0f };   // dB
+        case echojay::MatchAxis::Dynamics: return {   0.0f, 30.0f };   // dB crest
+        case echojay::MatchAxis::Stereo:   return {  -1.0f,  1.0f };   // correlation
+        case echojay::MatchAxis::Spectrum: break;
+    }
+    return { -1.0f, 1.0f };
+}
+
+/** THE TRAIL IMAGE: many past frames still on screen and fading, so the shape
+    AND HOW MUCH IT MOVES are visible at once.
+
+    ONE STROKE PER SIDE PER FRAME, NEVER ONE PER GHOST. Two images ping-ponged,
+    following the spectroImg precedent rather than inventing a second way to
+    keep a picture between frames: the old one is blitted into the new at
+    reduced opacity, then the CURRENT curve is stroked in once. The fade is
+    that opacity and nothing else.
+
+    RESIZE AND FIRST FRAME ARE EXPLICIT: a plot of a different size, or a
+    different axis, starts a new pair rather than stretching a history that was
+    drawn to another shape. */
+void EchoJayEditor::MatchPanel::advanceTrail (juce::Rectangle<int> plot,
+                                              const MatchRibbonRow* mixFast,
+                                              const MatchRibbonRow* refFast,
+                                              float lo, float hi)
+{
+    // THE TWO CONSTANTS, AND THEY ARE NOT INDEPENDENT. Read this before
+    // changing either.
+    //
+    // THE ADVANCE RATE IS THE FFT HOP RATE, not the timer's. MeterEngine
+    // publishes one visual spectrum per kVisHopSamples (1024), so 43.07 Hz at
+    // 44.1 kHz and 46.88 Hz at 48 kHz, and this advances exactly once per
+    // published hop. The timer runs at 60 Hz so that no hop is ever missed;
+    // frames with no new hop blit the image again and change nothing.
+    //
+    // THE FADE IS THREE SECONDS TO FIVE PERCENT AT WHATEVER THE HOP RATE IS,
+    // computed below rather than written down, so a 48 kHz session and a
+    // 44.1 kHz session show the same three seconds of history.
+    //
+    // THE INK, which is why a slower fade alone would have smeared. Each
+    // frame's curve used to be stroked at FULL strength onto a barely faded
+    // image, so with a slow fade everything the curve had ever touched went
+    // white and the ghosts merged into a cloud. Stroked faint instead, so a
+    // single frame is just visible and BRIGHTNESS ACCUMULATES ONLY WHERE MANY
+    // FRAMES AGREE, which is what makes the lines distinct rather than a haze.
+    //
+    // THE SATURATION ARITHMETIC, which ties the two together: a pixel the
+    // curve sits on EVERY frame settles at
+    //     alpha / (1 - fade)
+    // because it gains alpha per tick and loses (1 - fade) of what it holds.
+    // AND THE MODEL EVERY EARLIER VERSION OF THIS COMMENT USED WAS WRONG.
+    // alpha / (1 - fade) is the ADDITIVE steady state. JUCE composites
+    // SOURCE-OVER, so a stroke does not add its alpha, it covers what is
+    // there:
+    //     a_next = ink + (a_prev * fade) * (1 - ink)
+    // whose fixed point is
+    //     a = ink / (1 - fade * (1 - ink))
+    // At the old 0.090 that is 0.75 for the mix and 0.70 for the reference,
+    // NOT the 2.73 the additive model predicted, and NOTHING EVER CLIPPED:
+    // source-over approaches 1 asymptotically and only reaches it at ink 1.
+    // That is why raising the ink did brighten the trail when the arithmetic
+    // said it could not.
+    //
+    // THE NUMBER THAT MATTERS IS THE SINGLE STROKE, NOT THE STEADY STATE. A
+    // ghost is made of pixels the curve visited ONCE and then left; the steady
+    // state only describes the few it never leaves. So the ink is set by what
+    // one visit is worth:
+    //     one stroke, mix, weight 1.00:  0.380 = 97 of 255
+    //     one stroke, ref, weight 0.80:  0.304 = 78 of 255
+    // THE DWELLING CORE WILL SATURATE, and that is intended: the envelope a
+    // signal holds goes white while everything it merely passed through stays
+    // a clear, separately visible ghost.
+    // RAISE THE FADE WITHOUT LOWERING THE INK AND EVERYTHING SATURATES TO
+    // WHITE; lower the fade without raising the ink and the trail vanishes.
+    // THE FADE IS DERIVED FROM THE HOP RATE, not from a fixed number, because
+    // the trail now advances once per published FFT and that rate follows the
+    // sample rate:
+    //     hopRate = sampleRate / kVisHopSamples      43.07 Hz at 44.1k
+    //                                                46.88 Hz at 48k
+    //     fade    = exp (-ln (20) / (3 * hopRate))   three seconds to 5%
+    //             = 0.9772 at 44.1 kHz, 0.9790 at 48 kHz
+    const double sr      = owner != nullptr && owner->processorRef.getSampleRate() > 0.0
+                             ? owner->processorRef.getSampleRate() : 44100.0;
+    const double hopRate = sr / (double) MeterEngine::kVisHopSamples;
+    const float  kTrailFade = (float) std::exp (-std::log (20.0) / (3.0 * hopRate));
+    // BOTH 1.0 BECAUSE THE APPROVED PICTURE IS THE OPAQUE ONE. Until now the
+    // ordering below discarded these values and every stroke landed at alpha
+    // 1.0 regardless; that is what is on screen and what was approved. The
+    // ordering is fixed, so THE KNOBS NOW WORK: lower kTrailRefW to pull the
+    // reference back behind the mix, lower kTrailInk for a fainter cloud.
+    constexpr float kTrailInk  = 1.0f;
+    constexpr float kTrailRefW = 1.0f;
+    // HOW FAR TOWARD WHITE, AND WHY IT CAME BACK DOWN. At 0.78 the two clouds
+    // were nearly the same near-white, which was fine while the filament
+    // carried the colour key. THE FILAMENT IS GONE, so the clouds are the ONLY
+    // thing saying which fan is which, and ON EVERY AXIS THE TWO SIDES OCCUPY
+    // THE SAME REGION OF THE PLOT: strokeVis maps both through one tLo/tHi
+    // over the whole rect, traceOf maps both rings through one
+    // matchTraceRange over the whole rect. Nothing separates them by position.
+    // At 0.35 each keeps its own hue while still reading as light:
+    //     mix  #5dd0e3   (C::blue  toward white)
+    //     ref  #c1c1d1   (C::text2 toward white)
+    constexpr float kTrailWhite = 0.35f;     // each side KEEPS ITS HUE: see below
+
+    if (plot.getWidth() <= 8 || plot.getHeight() <= 8) return;
+    if (trailPlot != plot || trailAxis != axis || trailA.isNull() || trailB.isNull())
+    {
+        trailA = juce::Image (juce::Image::ARGB, plot.getWidth(), plot.getHeight(), true);
+        trailB = juce::Image (juce::Image::ARGB, plot.getWidth(), plot.getHeight(), true);
+        trailPlot = plot;
+        trailAxis = axis;
+        trailUseA = true;
+        trailTick = -1;
+    }
+    // The caller has already established that this is a NEW HOP; this guard
+    // keeps advanceTrail honest if it is ever called twice for one.
+    if (trailTick == (int) trailHop) return;
+    trailTick = (int) trailHop;
+
+    auto& src = trailUseA ? trailA : trailB;
+    auto& dst = trailUseA ? trailB : trailA;
+    trailUseA = ! trailUseA;
+
+    dst.clear (dst.getBounds());
+    juce::Graphics ig (dst);
+    ig.setOpacity (kTrailFade);
+    ig.drawImageAt (src, 0, 0);
+
+
+    // THE TRAIL GETS A WIDER SPAN THAN THE FILAMENT, and this is the third
+    // reason it read as a smear. The filament's range is fitted to the two
+    // stored curves, which is right for a comparison and squeezes the live
+    // variation into a band a few pixels tall. THE TRAIL IS NOT A COMPARISON,
+    // so it gets a fixed +/- 36 dB around each frame's own mean: the same
+    // fan the reference image has at the low end, with somewhere for the
+    // variation to go. THE FILAMENT'S OWN SCALE IS UNTOUCHED: this lo/hi is
+    // local to the image and nothing read off the picture uses it.
+    constexpr float kTrailSpanDb = 36.0f;
+    const float tLo = -kTrailSpanDb, tHi = kTrailSpanDb;
+
+    // AND FROM THE FINEST SPECTRUM A LIVE FRAME CARRIES. getVisualSpectrum
+    // hands back kVisBins = 2048 magnitudes against MeterData::spectrum's 64:
+    // thirty-two times the detail, so every frame wiggles in thirty-two times
+    // as many places, which is thirty-two times as many strands.
+    auto strokeVis = [&] (const std::array<float, MeterEngine::kVisBins>& bins,
+                          juce::Colour c, float weight)
+    {
+        double sum = 0.0; int n = 0;
+        for (float v : bins) if (v > -120.0f) { sum += v; ++n; }
+        const float mean = n > 0 ? (float) (sum / n) : 0.0f;
+
+        juce::Path p;
+        const int cols = juce::jmax (2, plot.getWidth());
+        for (int x = 0; x < cols; ++x)
+        {
+            // Log axis, so the low end fans out the way the reference does.
+            const double t  = (double) x / (double) (cols - 1);
+            const double hz = 20.0 * std::pow (1000.0, t);          // 20 Hz .. 20 kHz
+            const int    b  = juce::jlimit (0, MeterEngine::kVisBins - 1,
+                                            (int) (hz / (24000.0 / MeterEngine::kVisBins)));
+            const float  y  = juce::jlimit (0.0f, 1.0f,
+                                  (tHi - (bins[(size_t) b] - mean))
+                                      / juce::jmax (0.0001f, tHi - tLo))
+                            * (float) plot.getHeight();
+            if (x == 0) p.startNewSubPath (0.0f, y);
+            else        p.lineTo ((float) x, y);
+        }
+        // SETCOLOUR FIRST, SETOPACITY SECOND. The other order discarded the
+        // ink: setColour replaces the whole fill, including the alpha the
+        // line before had just set, so every stroke landed at 1.0.
+        ig.setColour (c.interpolatedWith (juce::Colours::white, kTrailWhite));
+        ig.setOpacity (kTrailInk * weight);
+        // 1.8 px, NOT 1.0. At 1.0 or less a sloped path spreads one stroke
+        // across two pixel rows at about half coverage each, which is half the
+        // brightness the ink above is asking for.
+        ig.strokePath (p, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+    };
+
+    auto stroke = [&] (const MatchRibbonRow& row, juce::Colour c, float weight)
+    {
+        juce::Path p;
+        const float dx = (float) plot.getWidth() / (float) (kMatchRibbonCols - 1);
+        for (int i = 0; i < kMatchRibbonCols; ++i)
+        {
+            const float y = juce::jlimit (0.0f, 1.0f, (hi - row[(size_t) i])
+                                                          / juce::jmax (0.0001f, hi - lo))
+                          * (float) plot.getHeight();
+            if (i == 0) p.startNewSubPath (0.0f, y);
+            else        p.lineTo (dx * (float) i, y);
+        }
+        // FAINT AND THIN: 1 px, at the ink, so one frame is a trace and only
+        // agreement between frames builds a line.
+        // SETCOLOUR FIRST, SETOPACITY SECOND. The other order discarded the
+        // ink: setColour replaces the whole fill, including the alpha the
+        // line before had just set, so every stroke landed at 1.0.
+        ig.setColour (c.interpolatedWith (juce::Colours::white, kTrailWhite));
+        ig.setOpacity (kTrailInk * weight);
+        // 1.8 px, NOT 1.0. At 1.0 or less a sloped path spreads one stroke
+        // across two pixel rows at about half coverage each, which is half the
+        // brightness the ink above is asking for.
+        ig.strokePath (p, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+    };
+
+    // ---- THE TRACED AXES: THE FIGURE OVER TIME --------------------------
+    //
+    // The last six seconds of several figures, scrolling right to left, one
+    // line each. They run at different time constants, so they cross and
+    // separate where a single invented shape stacked on itself.
+    if (axis != echojay::MatchAxis::Spectrum)
+    {
+        const auto tr = matchTraceRange (axis);
+        auto traceOf = [&] (const Trace& t, juce::Colour c, float weight)
+        {
+            if (t.filled < 2) return;
+            const int n = t.filled;
+            for (int line = 0; line < kTraceLines; ++line)
+            {
+                if (! t.have[(size_t) line]) continue;
+                juce::Path p;
+                for (int k = 0; k < n; ++k)
+                {
+                    // Oldest at the left, newest at the right.
+                    const int idx = (t.write - n + k + kTraceLen * 2) % kTraceLen;
+                    const float x = (float) plot.getWidth() * (float) k / (float) (n - 1);
+                    const float y = juce::jlimit (0.0f, 1.0f,
+                                        (tr.second - t.v[(size_t) line][(size_t) idx])
+                                            / juce::jmax (0.0001f, tr.second - tr.first))
+                                  * (float) plot.getHeight();
+                    if (k == 0) p.startNewSubPath (x, y);
+                    else        p.lineTo (x, y);
+                }
+                // setColour FIRST: see strokeVis.
+                ig.setColour (c.interpolatedWith (juce::Colours::white, kTrailWhite));
+                ig.setOpacity (kTrailInk * weight);
+                ig.strokePath (p, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved,
+                                                        juce::PathStrokeType::rounded));
+            }
+        };
+        traceOf (refTrace, C::text2, kTrailRefW);
+        traceOf (mixTrace, C::blue,  1.0f);
+        return;                      // the ribbon rows are the spectrum's alone
+    }
+
+    // A SIDE WITH NO FAST SOURCE GETS NO GHOST. Not a faked trail from one
+    // stored number: nothing is happening to a still capture.
+    //
+    // The two sides differ by WEIGHT rather than by a second alpha on the
+    // colour: one place decides how dark a frame is, so the saturation
+    // arithmetic above holds for both.
+    if      (refVisOk)          strokeVis (refVis, C::text2, kTrailRefW);
+    else if (refFast != nullptr) stroke (*refFast, C::text2, kTrailRefW);
+    if      (mixVisOk)          strokeVis (mixVis, C::blue,  1.0f);
+    else if (mixFast != nullptr) stroke (*mixFast, C::blue,  1.0f);
 }
 
 // WHICH PAINTED REGION A POINT IS IN. One function, so the press and the hover
@@ -8200,13 +9425,17 @@ static int matchZoneAt (juce::Rectangle<int> bounds, juce::Point<int> p)
     if (R.refPick.contains (p)) return 3;
     if (R.mixWave.contains (p)) return 4;
     if (R.refWave.contains (p)) return 5;
+    // 10..13 are the four axis tiles, in the enum's own order.
+    for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+        if (echojay::matchAxisTile (R.axisRow, i).contains (p)) return 10 + i;
     return 0;
 }
 
 void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
 {
     if (owner == nullptr) return;
-    switch (matchZoneAt (getLocalBounds(), e.getPosition()))
+    const int z = matchZoneAt (getLocalBounds(), e.getPosition());
+    switch (z)
     {
         case 1: press(); break;
         // THE MIX PICKER CANNOT PLACE A REFERENCE and the reference picker
@@ -8216,11 +9445,59 @@ void EchoJayEditor::MatchPanel::mouseUp (const juce::MouseEvent& e)
         case 3: owner->openReferenceBrowser (owner->matchRefIsTop_); break;
         // PLAYBACK IS THE COMPARE DUAL-STREAM, not the A/B path: both streams
         // are already rolling and analysed, so swapping is click-free and
-        // sample-aligned. Pressing the audible side again mutes both, which is
-        // toggleCompareAudible's own -1.
-        case 4: owner->toggleCompareAudible (! owner->matchRefIsTop_); repaint(); break;
-        case 5: owner->toggleCompareAudible (  owner->matchRefIsTop_); repaint(); break;
-        default: break;
+        // sample-aligned.
+        //
+        // A CLICK ON THE WAVE IS A SEEK, THE SAME GESTURE COMPARE HAS. It seeks,
+        // plays and makes that side audible in one move, through the one
+        // seekCompareStream both pages call. THIS REPLACES the plain
+        // toggle-audible this strip had: the Compare gesture does both at once
+        // and a click that only changed which side you heard, while the other
+        // page's identical click also moved the playhead, would be two meanings
+        // for one action.
+        case 4:
+        case 5:
+        {
+            const bool isRef   = (z == 5);
+            const int  slotIdx = isRef ? (owner->matchRefIsTop_ ? 0 : 1)
+                                       : (owner->matchRefIsTop_ ? 1 : 0);
+            const auto R    = echojay::matchPageLayout (getLocalBounds());
+            auto       lane = (isRef ? R.refWave : R.mixWave).withTrimmedBottom (9);
+            const auto btn  = echojay::matchWaveTransport (lane, isRef);
+            const auto wave = echojay::matchWaveLane (lane, isRef);
+            const auto& s   = isRef ? *owner->matchSlots().ref : *owner->matchSlots().mix;
+
+            // A LIVE SIDE HAS NO STORED STREAM, so neither gesture means
+            // anything on it: toggleComparePlay says so in its own comment and
+            // the strip draws "host" rather than a dead button.
+            if (s.kind == CompareSlotState::Kind::Live) break;
+
+            if (btn.contains (e.getPosition()))
+                owner->toggleComparePlay (slotIdx == 0);
+            else if (wave.contains (e.getPosition()))
+                owner->seekCompareStream (slotIdx,
+                                          echojay::matchWaveSeekFraction (wave, e.getPosition().x));
+            repaint();
+            break;
+        }
+        default:
+            // THE AXIS TILES. Selecting one changes the picture below and
+            // NOTHING else: nothing is sent, applied or written. A morph in
+            // flight is dropped rather than carried onto a picture it was not
+            // computed for.
+            if (z >= 10 && z < 10 + echojay::kMatchAxisCount)
+            {
+                const auto next = (echojay::MatchAxis) (z - 10);
+                if (next != axis)
+                {
+                    axis = next;
+                    morphing = false;
+                    morphPos = 0.0f;
+                    morphDone = false;
+                    refusedFor = 0.0f;
+                    repaint();
+                }
+            }
+            break;
     }
 }
 
@@ -8240,7 +9517,11 @@ void EchoJayEditor::MatchPanel::visibilityChanged()
         openFade = 0.0f;       // the page fades in every time it opens
         morphPos = 0.0f; morphing = false; morphDone = false;
         refusedFor = 0.0f; buttonHot = false;
-        startTimerHz (30);
+        // The slots may have changed while this page was away, so the pair
+        // stored by the last opening is not this opening's: the first paint
+        // builds its own again rather than drawing what was true before.
+        tickSidesValid = false;
+        startTimerHz (60);
     }
     else
     {
@@ -8250,8 +9531,24 @@ void EchoJayEditor::MatchPanel::visibilityChanged()
 
 void EchoJayEditor::MatchPanel::timerCallback()
 {
-    constexpr float dt = 1.0f / 30.0f;
+    // 60 Hz SINCE THE TRAIL WENT ON THE HOP COUNTER. This dt drives the page
+    // fade, the link pulse, the morph and the refusal countdown, so leaving it
+    // at 1/30 with a 60 Hz timer would have played all four at DOUBLE speed.
+    constexpr float dt = 1.0f / 60.0f;
     bool busy = false;
+
+    // THE CLOUDS STEP EVERY TICK, which is what makes a LIVE side come alive
+    // for free: its measurements change, so its targets move, so its points
+    // chase them. Nothing here smooths that into stillness.
+    if (owner != nullptr && isVisible())
+    {
+        // THE ONE BUILD OF THE TICK. paint reads what this stores.
+        tickSides      = owner->buildMatchSides();
+        tickSidesValid = true;
+        // The trail advances once per TICK, never once per repaint: a hover
+        // must not run the history faster than time.
+        ++tickSeq;
+    }
 
     if (openFade < 1.0f) { openFade = juce::jmin (1.0f, openFade + dt * 4.0f); busy = true; }
 
@@ -36225,56 +37522,17 @@ void EchoJayEditor::mouseDown(const juce::MouseEvent& e)
             return;
         }
 
-        // Click-to-seek on static compare waveform panels
+        // Click-to-seek on static compare waveform panels. THE BODY MOVED to
+        // seekCompareStream so the Match page's strips can perform the same
+        // gesture rather than a copy of it; this site decides WHERE the click
+        // landed and that one decides what a seek is.
         for (auto& sa : cmpWaveSeekAreas_)
         {
             if (sa.slotIdx >= 0 && sa.inner.contains(pos))
             {
-                float fraction = juce::jlimit(0.0f, 1.0f,
+                const float fraction = juce::jlimit(0.0f, 1.0f,
                     (float)(pos.x - sa.inner.getX()) / (float)sa.inner.getWidth());
-                auto& s = processorRef.cmpStream[sa.slotIdx];
-                if (!s.loaded.load())
-                    startCompareStream(sa.slotIdx);
-                if (s.loaded.load() && s.sampleCount > 0)
-                {
-                    std::lock_guard<std::mutex> lock(processorRef.cmpMutex);
-                    s.playbackPos = (int)(fraction * s.sampleCount);
-                    // Click-seek on a reference during SYNC: capture the
-                    // host->reference offset at this moment and keep it
-                    // (lining a drop up against a different arrangement)
-                    if (processorRef.cmpSyncToTransport.load()
-                        && processorRef.cmpSlotIsRef[sa.slotIdx].load()
-                        && s.sampleRate > 0)
-                    {
-                        const double host = processorRef.cmpLastHostTimeSec.load();
-                        if (host >= 0.0)
-                        {
-                            const double refSec = (double) s.playbackPos / s.sampleRate;
-                            processorRef.cmpSyncOffsetSec.store(refSec - host);
-                            EchoJay_NSLog(("EJCmp: sync offset captured "
-                                           + juce::String(refSec - host, 2) + "s"
-                                           + " (host " + juce::String(host, 1)
-                                           + "s -> ref " + juce::String(refSec, 1) + "s)").toRawUTF8());
-                        }
-                    }
-                    // Start playing + make audible on seek
-                    s.playing.store(true);
-                    processorRef.cmpAudible.store(sa.slotIdx);
-                    // SYNC: mirror seek position to the other capture slot
-                    if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
-                    {
-                        int otherIdx = 1 - sa.slotIdx;
-                        auto& other = processorRef.cmpStream[otherIdx];
-                        if (!other.loaded.load())
-                            startCompareStream(otherIdx);
-                        if (other.loaded.load() && other.sampleCount > 0)
-                        {
-                            other.playbackPos = (int)(fraction * other.sampleCount);
-                            other.playing.store(true);
-                        }
-                    }
-                    updateComparePlayBtns();
-                }
+                seekCompareStream (sa.slotIdx, fraction);
                 repaint();
                 return;
             }

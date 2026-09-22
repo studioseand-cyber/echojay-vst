@@ -7,6 +7,7 @@
 #include "EJReferenceRows.h"   // the browser's pane rule: header-inline, pinned
 #include "EJReferenceBar.h"    // the reference bar's geometry and stepping: pinned
 #include "EJCodecPage.h"       // the Playback page's geometry: pinned
+#include "EJMatchPage.h"       // the Match page's rows, its axes and their words: pinned
 #include "EJCompareFigures.h"  // CompareFig, computeCompareFig, matchSideFrom: the Match sides
 #include "ChainHost.h"
 #include "EJMisdialReport.h"
@@ -509,6 +510,12 @@ private:
 
     SpectrumCurveState spectrumCurveState_;                            // main panel
     SpectrumCurveState compareTopCurveState_, compareBotCurveState_;   // Compare live slots
+    // THE MATCH PAGE'S SMOOTHING IS NOT ONE OF THESE, and the reason is the
+    // size. SpectrumCurveState holds kVisBins (2048) because paintSpectrumCurve
+    // smooths the EXPANDED curve; the Match ribbons are built from the 64
+    // STORED bins, so their state is 64 wide and lives on MatchPanel as
+    // BinLerp. Same idea, same lerp constant, per surface for the same reason:
+    // a shared state would smooth two different curves into each other.
     std::array<float, MeterEngine::kVisBins> visPeakHold{};            // main panel only
     bool visPeakHoldInit = false;
 
@@ -1030,6 +1037,25 @@ private:
     void openMatchMixPicker();
     void matchApplyMixSlot (const CompareSlotState& next);
 
+    /** THE ONE SEEK, called by Compare's click-to-seek and by the Match page's
+        strips. Seek, play and make audible together, because that is what a
+        click on a waveform has meant on Compare since it shipped. The fraction
+        is of the FILE, not of a panel. */
+    void seekCompareStream (int slotIdx, float fraction);
+
+    /** A slot stream's position, 0 to 1, or -1 when it has none. The stream's
+        own playbackPos rather than a second count kept beside it. */
+    float compareStreamFrac (int slotIdx) const;
+
+    /** A side's FAST frame, for the trail image only: the main engine for a
+        Live slot, that slot's own cmpMeter when its stream is playing, and
+        nothing at all for a still side. False means no cloud. */
+    bool matchFastFrame (const CompareSlotState& slot, int slotIdx, MeterData& out) const;
+
+    /** The engine behind that frame, for the 2048-bin visual spectrum only the
+        engine can hand out. nullptr for a still side. */
+    MeterEngine* matchFastEngine (const CompareSlotState& slot, int slotIdx) const;
+
     /** The points a side's waveform draws, as absolute peaks, with what span
         they cover and whether that span is a rolling window rather than a whole
         file. Returns false when there is nothing to draw. */
@@ -1226,6 +1252,138 @@ private:
             5 the reference waveform. Painted controls carry no component of
             their own, so the hover state has to live here. */
         int   hotZone    = 0;
+        /** Which of the four axes the picture is drawing. SPECTRUM IS THE
+            DEFAULT and keeps exactly the picture that existed before the row
+            arrived. Selecting another changes the picture and nothing else. */
+        echojay::MatchAxis axis = echojay::MatchAxis::Spectrum;
+
+        /** THE TICK'S SIDES, BUILT ONCE AND READ TWICE. buildMatchSides walks
+            both slots, reads each one's meter data and spectral evidence and
+            runs the Live rules over them; doing that in the timer AND again in
+            paint was the same work twice every frame.
+
+            A REPAINT THAT ARRIVES BETWEEN TICKS DRAWS SIDES UP TO 33 ms OLD,
+            and that is stated here rather than left to be wondered about: 33 ms
+            is shorter than the frame it is being drawn into at 30 Hz, and these
+            are whole-file measurements or a rolling meter, neither of which
+            says anything different one frame apart.
+
+            `tickSidesValid` is false until the first tick has stored a pair,
+            and paint builds its own in that case rather than drawing a
+            default-constructed one, which would be a picture of -100 LUFS and
+            no bands. THE PATH THAT HITS IT is the first paint of every opening:
+            setRefSubTab makes the panel visible, visibilityChanged starts the
+            timer, and JUCE paints on becoming visible while the first tick is
+            at least 33 ms away. */
+        MatchSides tickSides;
+        bool       tickSidesValid = false;
+
+        // ---- the trail image ----------------------------------------------
+        //
+        // THE LOOK COMES FROM HISTORY: many past frames still on screen and
+        // fading, so the shape and HOW MUCH IT MOVES are visible at once. Two
+        // images ping-ponged, following the spectroImg precedent rather than
+        // inventing a second way to keep a picture between frames: each tick
+        // the old one is blitted into the new at reduced opacity and the
+        // CURRENT curve is stroked in once. One stroke per side per frame,
+        // never one per ghost.
+        juce::Image trailA, trailB;
+        bool trailUseA = true;
+        juce::Rectangle<int> trailPlot;              ///< what it was made for
+        echojay::MatchAxis   trailAxis = echojay::MatchAxis::Spectrum;
+
+        /** The tick this panel is on, and the tick the trail last advanced on.
+            A repaint that is not a tick (a hover, a resize) BLITS WITHOUT
+            ADVANCING: otherwise moving the mouse would run the history faster
+            than time. */
+        int tickSeq   = 0;
+        int trailTick = -1;
+
+        /** THE HOP THE TRAIL LAST ADVANCED ON. The trail is driven by NEW
+            SPECTRA, not by the timer: MeterEngine publishes one visual FFT per
+            kVisHopSamples (43.07 Hz at 44.1 kHz, 46.88 at 48), and the page
+            now advances exactly once per published hop. At 60 Hz against 43 Hz
+            there is at most one new hop per frame, so no hop is ever dropped
+            and no frame ever redraws identical data. */
+        uint32_t trailHop = 0;
+        bool     trailHopInit = false;
+
+        /** THE PAINT TIMER. 60 Hz halves the budget per frame from 33.3 ms to
+            16.7 ms and nobody has measured what a Match paint costs, so it
+            measures itself: every 100 paints one line to the console, then
+            reset. The work outside the measured region is one addition and one
+            comparison. */
+        double paintSumMs = 0.0, paintMaxMs = 0.0;
+        int    paintCount = 0;
+
+
+        /** FRAME TO FRAME SMOOTHING FOR THE MATCH CURVES, one per side, which
+            is what the other three spectrum surfaces already have and this page
+            did not: it read straight from the bins, so it moved without ever
+            being smooth. 64 wide because the ribbons are built from the stored
+            bins, not the expanded ones. */
+        struct BinLerp
+        {
+            std::array<float, 64> v {};
+            bool init = false;
+            void feed (const std::array<float, 64>& in, float k)
+            {
+                if (! init) { v = in; init = true; return; }
+                for (size_t i = 0; i < v.size(); ++i) v[i] += (in[i] - v[i]) * k;
+            }
+        };
+        BinLerp mixBinLerp, refBinLerp;
+
+        // ---- the traces -----------------------------------------------------
+        //
+        // SPECTRUM HAS A REAL SHAPE AND THE OTHER THREE DID NOT. 64 numbers
+        // moving independently make consecutive frames differ, so ghosts
+        // accumulate; a flat line, a sine and a lens draw the SAME shape every
+        // frame, every ghost lands on the last one and nothing builds.
+        //
+        // So the other three become THE FIGURE OVER TIME: the last six seconds
+        // of several fast figures, scrolling, one line each. They move at
+        // different rates, so they cross and separate instead of stacking.
+        //
+        // CAPTURE-ONLY AND BALLISTIC FIELDS ARE ALLOWED HERE, and this is the
+        // rule that permits them: THE CLOUD IS CONTEXT AND IS NEVER COMPARED.
+        // Band crests and banded correlations have no reference equivalent as a
+        // COMPARISON, which is why mr PIN24 keeps them off the tiles; as a live
+        // trace of whichever side is producing them they are a real measurement
+        // of that side. When only one side is playing, only that side has
+        // traces, exactly as the trails already behave.
+        // COUNTED IN HOPS, NOT TICKS, since the trail went on the hop counter:
+        // 280 hops is 6.5 s at 44.1 kHz and 6.0 s at 48 kHz.
+        static constexpr int kTraceLen   = 280;
+        static constexpr int kTraceLines = 5;     // the most any axis uses
+        struct Trace
+        {
+            std::array<std::array<float, (size_t) kTraceLen>, (size_t) kTraceLines> v {};
+            std::array<bool, (size_t) kTraceLines> have {};
+            int write = 0;
+            int filled = 0;
+        };
+        Trace mixTrace, refTrace;
+
+        /** The finest spectrum a live frame carries, 2048 bins from
+            getVisualSpectrum, one array per side. Members so no frame
+            allocates. */
+        std::array<float, MeterEngine::kVisBins> mixVis {}, refVis {};
+        bool mixVisOk = false, refVisOk = false;
+
+        /** One tick's figures into a side's ring. NOT in the three painters:
+            mr PIN24 pins that those read no capture-only field, and these read
+            the band crests on purpose. */
+        void pushTrace (Trace& t, echojay::MatchAxis a, const MeterData& md);
+
+        /** Fade the history, stroke this tick's FAST rows into it, and leave it
+            ready to blit. A null row is a side with no fast source, which gets
+            no ghost at all. */
+        void advanceTrail (juce::Rectangle<int> plot,
+                           const echojay::MatchRibbonRow* mixFast,
+                           const echojay::MatchRibbonRow* refFast,
+                           float lo, float hi);
+
         juce::String refusedText;
     };
     MatchPanel matchPanel_;

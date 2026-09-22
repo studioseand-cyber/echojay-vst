@@ -13469,6 +13469,535 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             }
         }
 
+        // mr PIN21 -- THE AXIS ROW: FOUR TILES, AND THE PICTURE STILL TAKES THE
+        // PAGE. The row sits between the setup and the graph, because it names
+        // what the picture below is about; under the graph it would be a legend
+        // for something already drawn.
+        {
+            juce::String bad;
+            for (const auto& p : { std::make_pair (565, 373), std::make_pair (565, 405),
+                                   std::make_pair (741, 553), std::make_pair (1360, 1025),
+                                   std::make_pair (1780, 1025) })
+            {
+                const juce::Rectangle<int> page { 0, 0, p.first, p.second };
+                const auto R = echojay::matchPageLayout (page);
+                const auto tag = juce::String (p.first) + "x" + juce::String (p.second) + ": ";
+
+                if (R.axisRow.getHeight() != echojay::kMatchAxisH || ! page.contains (R.axisRow))
+                    bad << tag << "row " << R.axisRow.toString() << "; ";
+                // BETWEEN the setup row and the picture, in that order.
+                if (R.axisRow.getY() < R.setup.getBottom() || R.axisRow.getBottom() > R.graph.getY())
+                    bad << tag << "row is not between the setup and the graph; ";
+                // THE PICTURE IS STILL THE BIGGEST THING ON THE PAGE. The row
+                // costs 36 px including its gap, and this is what says that was
+                // affordable at the smallest window the product makes.
+                if (R.graph.getHeight() < p.second / 2)
+                    bad << tag << "graph " << R.graph.getHeight() << " of " << p.second << "; ";
+
+                int prevRight = R.axisRow.getX();
+                for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+                {
+                    const auto t = echojay::matchAxisTile (R.axisRow, i);
+                    if (! R.axisRow.contains (t) || t.getWidth() <= 0)
+                        bad << tag << "tile " << i << " " << t.toString() << "; ";
+                    if (t.getX() < prevRight)
+                        bad << tag << "tile " << i << " overlaps the one before it; ";
+                    if (t.getHeight() != R.axisRow.getHeight())
+                        bad << tag << "tile " << i << " is not the row's height; ";
+                    prevRight = t.getRight() + echojay::kMatchAxisGap;
+                }
+                // The four together fill the row: the last one takes the
+                // remainder rather than leaving a gap that drifts with width.
+                if (echojay::matchAxisTile (R.axisRow, echojay::kMatchAxisCount - 1).getRight()
+                        != R.axisRow.getRight())
+                    bad << tag << "the tiles do not reach the end of the row; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN21: on every page the product can produce, four axis tiles fill the row "
+                   "between the setup and the picture, and the picture still takes more than half "
+                   "the page", bad);
+        }
+
+        // mr PIN22 -- SELECTING AN AXIS CHANGES THE PICTURE AND NOTHING ELSE.
+        //
+        // The geometry does not take the axis as an input at all, which is the
+        // strongest form of "nothing else moves": there is no parameter through
+        // which a selection could reach a rect. What the axis DOES decide is
+        // which of the four vocabularies is drawn, and whether the press has
+        // anything to play.
+        {
+            // Two sides with a real difference on every axis, so a picture that
+            // wrongly read another axis's fields would still have something to
+            // draw and could not pass by drawing nothing.
+            MatchSide mix, ref;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.macro = { -12.0f, -10.0f, -8.0f, -10.0f, -12.0f, -14.0f };
+            ref.macro = { -8.0f,  -10.0f, -8.0f, -12.5f, -12.0f, -18.0f };
+            mix.durationSeconds = ref.durationSeconds = 180.0f;
+            mix.integrated = -14.2f;  ref.integrated = -9.4f;
+            mix.truePeak   = -1.1f;   ref.truePeak   = -0.3f;
+            mix.lra = 7.5f;           ref.lra = 4.1f;
+            mix.crest = 11.0f;        ref.crest = 8.9f;
+            mix.width = 42.0f;        ref.width = 62.0f;
+            mix.correlation = 0.71f;  ref.correlation = 0.41f;
+            mix.overs = 0;            ref.overs = 3;
+
+            const auto before = echojay::computeMatchProposal (mix, ref);
+            const auto R = echojay::matchPageLayout ({ 0, 0, 741, 553 });
+
+            juce::String bad;
+            for (int i = 0; i < echojay::kMatchAxisCount; ++i)
+            {
+                const auto a = (echojay::MatchAxis) i;
+                // The proposal is a function of the two sides. No axis is an
+                // input to it, so selecting one cannot change a move.
+                const auto after = echojay::computeMatchProposal (mix, ref);
+                if (after.moves.size() != before.moves.size())
+                    bad << echojay::matchAxisName (a) << ": the moves changed; ";
+                // Nor can it change the page's rects.
+                const auto R2 = echojay::matchPageLayout ({ 0, 0, 741, 553 });
+                if (R2.graph != R.graph || R2.axisRow != R.axisRow || R2.setup != R.setup)
+                    bad << echojay::matchAxisName (a) << ": a rect moved; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN22: selecting an axis changes neither the proposal nor any rect on the "
+                   "page: the picture is the only thing it decides", bad);
+
+            check (echojay::matchAxisCanPropose (echojay::MatchAxis::Spectrum)
+                   && echojay::matchAxisCanPropose (echojay::MatchAxis::Loudness)
+                   && ! echojay::matchAxisCanPropose (echojay::MatchAxis::Dynamics)
+                   && ! echojay::matchAxisCanPropose (echojay::MatchAxis::Stereo),
+                   "mr PIN22: the spectrum and the level can be proposed and the other two cannot, "
+                   "which is a fact about the proposal's move kinds and not a choice about the "
+                   "screen");
+        }
+
+        // mr PIN23 -- A TILE READS ONLY WHAT BOTH SIDES HAVE, AND SAYS SO WHEN
+        // ONE OF THEM DOES NOT. Every sentinel in MatchSide renders happily as
+        // a measurement: -100 LUFS is a position on a rail, 0 LU is a width,
+        // -1 overs is a number. Drawn without this gate they are all pictures
+        // of something nobody measured.
+        {
+            MatchSide full;                       // everything present
+            // A LENGTH IS PART OF "EVERYTHING PRESENT". A side with no duration
+            // is a LIVE side as far as this page is concerned, so a fixture
+            // that leaves it at 0 while calling itself a whole-file measurement
+            // is describing something else. That is what made the note check
+            // below fail, and the fixture was wrong rather than the function.
+            full.durationSeconds = 180.0f;
+            full.hasMacro = true;
+            full.macroReduction = SpectralReduction::WholeFileAverage;
+            full.macro = { -12, -10, -8, -10, -12, -14 };
+            full.integrated = -10.0f; full.truePeak = -1.0f;
+            full.lra = 6.0f; full.crest = 9.0f;
+            full.width = 50.0f; full.correlation = 0.5f;
+
+            MatchSide noBands = full;  noBands.hasMacro = false;
+            MatchSide noLoud  = full;  noLoud.integrated = -100.0f;
+            MatchSide live    = full;  live.lra = 0.0f; live.durationSeconds = 0.0f;
+
+            using echojay::matchAxisState;
+            using echojay::MatchAxis;
+
+            check (matchAxisState (MatchAxis::Spectrum, full, full).drawable
+                   && ! matchAxisState (MatchAxis::Spectrum, noBands, full).drawable
+                   && matchAxisState (MatchAxis::Spectrum, noBands, full).why.containsIgnoreCase ("your mix")
+                   && matchAxisState (MatchAxis::Spectrum, full, noBands).why.containsIgnoreCase ("reference"),
+                   "mr PIN23: the spectrum tile needs six bands on BOTH sides and names the side "
+                   "that has none",
+                   matchAxisState (MatchAxis::Spectrum, noBands, full).why);
+
+            check (! matchAxisState (MatchAxis::Loudness, noLoud, full).drawable
+                   && matchAxisState (MatchAxis::Loudness, full, full).drawable,
+                   "mr PIN23: the loudness tile refuses a side with no integrated loudness rather "
+                   "than drawing -100 as a level");
+
+            // THE DYNAMICS TILE DRAWS FOR A LIVE SIDE. It used to refuse
+            // whenever either lra was 0, which for a Live side it always is, so
+            // a live mix could never see its own dynamics: that refused a whole
+            // picture because half of one shape was missing. CREST IS THE TILE
+            // and the loudness range is one of its two dimensions.
+            MatchSide noCrest = full; noCrest.crest = 0.0f;
+            check (matchAxisState (MatchAxis::Dynamics, live, full).drawable,
+                   "mr PIN23: the dynamics tile DRAWS for a live side, because a crest is "
+                   "measured live and means something live");
+            check (! matchAxisState (MatchAxis::Dynamics, noCrest, full).drawable
+                   && matchAxisState (MatchAxis::Dynamics, noCrest, full).why.containsIgnoreCase ("your mix")
+                   && ! matchAxisState (MatchAxis::Dynamics, full, noCrest).drawable,
+                   "mr PIN23: and it refuses only a MISSING CREST, naming the side that has none",
+                   matchAxisState (MatchAxis::Dynamics, noCrest, full).why);
+
+            // AND THE MISSING DIMENSION IS STATED, NOT DRAWN. A side with no
+            // loudness range keeps its crest height and takes a fixed width,
+            // because a narrow shape reads as low variance, which is a
+            // measurement nobody took.
+            check (echojay::matchDynamicsSideNote (live).containsIgnoreCase ("no loudness range"),
+                   "mr PIN23: a side with no loudness range SAYS SO beside its shape rather than "
+                   "being drawn narrow", echojay::matchDynamicsSideNote (live));
+            check (echojay::matchDynamicsSideNote (live).containsIgnoreCase ("rolling window"),
+                   "mr PIN23: and a LIVE side's crest carries its window, so a rolling reading and "
+                   "a whole track never sit side by side unlabelled",
+                   echojay::matchDynamicsSideNote (live));
+            check (echojay::matchDynamicsSideNote (full).isEmpty(),
+                   "mr PIN23: while a side with both figures over a whole file says nothing extra",
+                   echojay::matchDynamicsSideNote (full));
+
+            check (matchAxisState (MatchAxis::Stereo, live, full).drawable,
+                   "mr PIN23: and the stereo tile draws for a live side, because width and "
+                   "correlation ARE measured on every side");
+        }
+
+        // mr PIN24 (text pin) -- NO TILE READS A FIELD THE OTHER SIDE CANNOT
+        // HAVE. PSR is two sliding windows on BOTH sides and describes a
+        // reference's last three seconds (open list 206); peakSpectrum,
+        // avgSpectrum, sideToMidRatio, corrSub/Mid/Top, the gonio arrays and
+        // the band crests exist for a capture and have no reference equivalent,
+        // so on a comparison tile they would be drawn against a default and
+        // read as a difference.
+        //
+        // A TEXT PIN because the drawing itself cannot be exercised here: the
+        // gate never links the editor. It reads the three painters' own bodies.
+        {
+            std::ifstream fed ("Source/PluginEditor.cpp");
+            std::stringstream sed_; sed_ << fed.rdbuf();
+            const auto src = codeOnly (juce::String (sed_.str()));
+            const auto loud   = functionBody (src, "void matchPaintLoudness");
+            const auto dyn    = functionBody (src, "void matchPaintDynamics");
+            const auto stereo = functionBody (src, "void matchPaintStereo");
+
+            check (loud.isNotEmpty() && dyn.isNotEmpty() && stereo.isNotEmpty(),
+                   "mr PIN24: the three axis painters' bodies were found",
+                   juce::String (loud.length()) + "/" + juce::String (dyn.length())
+                       + "/" + juce::String (stereo.length()));
+
+            juce::String bad;
+            for (const auto* banned : { "psr", "plr", "peakSpectrum", "avgSpectrum",
+                                        "sideToMidRatio", "corrSub", "corrMid", "corrTop",
+                                        "gonio", "bandCrest" })
+                for (const auto& body : { loud, dyn, stereo })
+                    if (body.contains (banned)) bad << banned << " ";
+            check (bad.isEmpty(),
+                   "mr PIN24: no axis painter reads PSR, PLR or any capture-only field", bad);
+
+            // THE NEGATIVE CONTROL, so the sweep above is not passing because
+            // it is looking at empty strings: the fields these tiles DO draw
+            // are present, and they are the ones section 2B lists.
+            check (loud.contains ("integrated") && loud.contains ("truePeak")
+                   && dyn.contains ("crest") && dyn.contains ("lra") && dyn.contains ("overs")
+                   && stereo.contains ("width") && stereo.contains ("correlation"),
+                   "mr PIN24: and the control holds: each painter DOES read the whole-file fields "
+                   "its tile is for");
+        }
+
+        // mr PIN25 -- THE PRESS ON AN AXIS WITH NO MOVES IS REFUSED WITH A
+        // REASON, not silently dead. A control that looks dead with nothing
+        // saying why is what the headline rework removed from this screen.
+        {
+            using echojay::MatchAxis;
+            const auto dyn = echojay::matchAxisPressText (MatchAxis::Dynamics);
+            const auto ste = echojay::matchAxisPressText (MatchAxis::Stereo);
+
+            check (echojay::matchAxisPressText (MatchAxis::Spectrum).isEmpty()
+                   && echojay::matchAxisPressText (MatchAxis::Loudness).isEmpty(),
+                   "mr PIN25: an axis that CAN be proposed refuses nothing");
+            check (dyn.isNotEmpty() && ste.isNotEmpty(),
+                   "mr PIN25: dynamics and stereo image both answer the press");
+            check (dyn.containsIgnoreCase ("shown") && dyn.containsIgnoreCase ("not proposed")
+                   && ste.containsIgnoreCase ("shown") && ste.containsIgnoreCase ("not proposed"),
+                   "mr PIN25: and each says the difference is SHOWN and NOT PROPOSED, which is the "
+                   "distinction, rather than reading as a failure", dyn);
+            check (dyn.containsIgnoreCase ("Dynamics") && ste.containsIgnoreCase ("Stereo image"),
+                   "mr PIN25: and each names its own axis, so the answer belongs to the tile the "
+                   "user pressed");
+        }
+
+        // mr PIN26 -- THE WAVE STRIP'S TWO REGIONS, ON EVERY PAGE. A click on
+        // the wave is a SEEK and a click on the button is play or stop, so the
+        // two have to agree to the pixel: the paint and the press read the same
+        // two functions rather than each computing an edge.
+        {
+            juce::String bad;
+            for (const auto& p : { std::make_pair (565, 373), std::make_pair (565, 405),
+                                   std::make_pair (741, 553), std::make_pair (1360, 1025),
+                                   std::make_pair (1780, 1025) })
+            {
+                const auto R = echojay::matchPageLayout ({ 0, 0, p.first, p.second });
+                const auto tag = juce::String (p.first) + "x" + juce::String (p.second) + ": ";
+
+                for (int side = 0; side < 2; ++side)
+                {
+                    const bool isRef = (side == 1);
+                    const auto lane  = (isRef ? R.refWave : R.mixWave).withTrimmedBottom (9);
+                    const auto btn   = echojay::matchWaveTransport (lane, isRef);
+                    const auto wave  = echojay::matchWaveLane (lane, isRef);
+
+                    if (! lane.contains (wave) || wave.getWidth() <= 0)
+                        bad << tag << "wave " << wave.toString() << "; ";
+                    if (btn.getWidth() > 0)
+                    {
+                        if (! lane.contains (btn))     bad << tag << "button outside the lane; ";
+                        if (btn.intersects (wave))     bad << tag << "button overlaps the wave; ";
+                        // The button takes the OUTER edge, so the two sides'
+                        // controls sit at the page's edges rather than facing
+                        // each other across the middle.
+                        const bool outer = isRef ? (btn.getRight() == lane.getRight())
+                                                 : (btn.getX() == lane.getX());
+                        if (! outer) bad << tag << "button is not on the outer edge; ";
+                        if (btn.getWidth() + wave.getWidth() != lane.getWidth())
+                            bad << tag << "the two regions do not fill the lane; ";
+                    }
+                }
+            }
+            check (bad.isEmpty(),
+                   "mr PIN26: on every page, each wave strip splits into a transport button on its "
+                   "outer edge and a wave that fills the rest, with no overlap", bad);
+        }
+
+        // mr PIN27 -- A CLICK MAPS TO A FRACTION OF THE FILE, NOT TO A PIXEL.
+        // The two strips are different widths at most window sizes and a
+        // position in samples cannot come from one of them: the same click,
+        // proportionally, must mean the same place in the track on either side.
+        {
+            const juce::Rectangle<int> narrow { 100, 0, 80, 20 };
+            const juce::Rectangle<int> wide   { 400, 0, 320, 20 };
+
+            juce::String bad;
+            for (float f : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+            {
+                const int xn = narrow.getX() + (int) (f * narrow.getWidth());
+                const int xw = wide  .getX() + (int) (f * wide  .getWidth());
+                const float fn = echojay::matchWaveSeekFraction (narrow, xn);
+                const float fw = echojay::matchWaveSeekFraction (wide,   xw);
+                if (std::abs (fn - f) > 0.02f || std::abs (fw - f) > 0.02f)
+                    bad << f << ": " << fn << "/" << fw << "; ";
+            }
+            // Off both ends clamps rather than running past the file.
+            if (echojay::matchWaveSeekFraction (wide, wide.getX() - 50) != 0.0f
+                || echojay::matchWaveSeekFraction (wide, wide.getRight() + 50) != 1.0f)
+                bad << "the ends do not clamp; ";
+            check (bad.isEmpty(),
+                   "mr PIN27: the same proportional click gives the same fraction on a narrow strip "
+                   "and a wide one, and past either end it clamps", bad);
+        }
+
+        // mr PIN28 (text pin) -- THE PLAYHEAD IS THE STREAM'S OWN POSITION, and
+        // a LIVE MIX SIDE HAS NO TRANSPORT.
+        //
+        // A second count beside playbackPos would drift the moment the stream
+        // looped, was seeked or was stopped, and PluginProcessor.cpp's modulo
+        // means it loops rather than ending. A text pin because neither the
+        // paint nor the stream can be exercised here: the gate never links the
+        // editor.
+        {
+            std::ifstream fed2 ("Source/PluginEditor.cpp");
+            std::stringstream sed2_; sed2_ << fed2.rdbuf();
+            const auto src2 = codeOnly (juce::String (sed2_.str()));
+            const auto frac = functionBody (src2, "float EchoJayEditor::compareStreamFrac");
+            const auto seek = functionBody (src2, "void EchoJayEditor::seekCompareStream");
+
+            check (frac.isNotEmpty() && seek.isNotEmpty(),
+                   "mr PIN28: the playhead and the seek both have bodies to read");
+            check (frac.contains ("playbackPos") && frac.contains ("sampleCount"),
+                   "mr PIN28: the playhead is playbackPos over sampleCount, the stream's own "
+                   "position rather than a count kept beside it");
+            check (! frac.contains ("Time::") && ! frac.contains ("getMillisecond")
+                   && ! frac.contains ("elapsed"),
+                   "mr PIN28: and it consults no clock, so it cannot drift from the audio");
+            check (seek.contains ("cmpMutex") && seek.contains ("playing.store")
+                   && seek.contains ("cmpAudible.store"),
+                   "mr PIN28: and a seek sets the position, plays and makes that side audible "
+                   "under the mutex, which is Compare's own gesture and not a second one");
+        }
+
+        // mr PIN29 -- A LIVE MIX SIDE YIELDS NO TRANSPORT AND SAYS WHY. Same
+        // rule as the two axes that cannot be proposed: nothing looks pressable
+        // unless it does something. toggleComparePlay returns early on a Live
+        // slot because live is host passthrough with no stored stream.
+        {
+            MatchSide live, file;
+            live.durationSeconds = 0.0f;            // a live side has no length
+            // A WHOLE-FILE SIDE HAS BOTH FIGURES, and this fixture had only
+            // one: with a length but no loudness range the note correctly read
+            // "no loudness range", so the check that it says NOTHING failed on
+            // a second absence rather than on the one it is about.
+            file.durationSeconds = 180.0f;
+            file.lra   = 5.0f;
+            file.crest = 9.0f;
+            check (echojay::matchWaveSpan (true, 3.4f).containsIgnoreCase ("live"),
+                   "mr PIN29: a rolling side names itself live in its own span text");
+            check (echojay::matchDynamicsSideNote (live).containsIgnoreCase ("rolling window")
+                   && echojay::matchDynamicsSideNote (file).isEmpty(),
+                   "mr PIN29: and the same fact, no length, is what marks a live side everywhere "
+                   "on this page rather than each surface deciding for itself");
+        }
+
+        // mr PIN30 -- THE BAND IS THE FLOOR, AND THE PICTURE CANNOT DISAGREE
+        // WITH THE PROPOSAL DRAWN OVER IT.
+        //
+        // The number never landed on another subject: the particle field this
+        // replaces was rejected before it was committed, so PIN30 is free and
+        // holds the band instead.
+        //
+        // THE TARGET IS A ZONE WITH A WIDTH, NOT A LINE, and the width is the
+        // threshold below which no move is emitted. If the two ever drifted
+        // apart the screen would tell a user they were inside the target while
+        // a move was waiting for them, which is the one failure a picture of a
+        // tolerance can have.
+        {
+            using echojay::MatchAxis;
+
+            // THE HALF-HEIGHT IS THE CONSTANT ITSELF, not a copy of its value.
+            check (echojay::matchAxisZoneDb (MatchAxis::Spectrum) == kMatchBandFloorDb,
+                   "mr PIN30: the spectrum band's half-height IS kMatchBandFloorDb",
+                   juce::String (echojay::matchAxisZoneDb (MatchAxis::Spectrum)));
+            check (echojay::matchAxisZoneDb (MatchAxis::Loudness) == kMatchGainFloorDb,
+                   "mr PIN30: and the level rail's half-width IS kMatchGainFloorDb",
+                   juce::String (echojay::matchAxisZoneDb (MatchAxis::Loudness)));
+
+            // A ZONE ON EXACTLY THE TWO AXES THAT HAVE A FLOOR. A zone claims a
+            // tolerance, and there is only a tolerance where the proposal has
+            // one: dynamics and stereo image carry no move, so a band there
+            // would invent a threshold nobody set.
+            check (echojay::matchAxisHasZone (MatchAxis::Spectrum)
+                   && echojay::matchAxisHasZone (MatchAxis::Loudness)
+                   && ! echojay::matchAxisHasZone (MatchAxis::Dynamics)
+                   && ! echojay::matchAxisHasZone (MatchAxis::Stereo),
+                   "mr PIN30: a zone on exactly the two axes that have a floor, and markers on "
+                   "the two that do not");
+            check (echojay::matchAxisHasZone (MatchAxis::Spectrum)
+                       == echojay::matchAxisCanPropose (MatchAxis::Spectrum)
+                   && echojay::matchAxisHasZone (MatchAxis::Dynamics)
+                       == echojay::matchAxisCanPropose (MatchAxis::Dynamics)
+                   && echojay::matchAxisHasZone (MatchAxis::Loudness)
+                       == echojay::matchAxisCanPropose (MatchAxis::Loudness)
+                   && echojay::matchAxisHasZone (MatchAxis::Stereo)
+                       == echojay::matchAxisCanPropose (MatchAxis::Stereo),
+                   "mr PIN30: and the axes that draw a zone are the same axes the press can play, "
+                   "so a tolerance is never drawn where nothing can be proposed");
+
+            // INSIDE THE BAND MEANS NO MOVE; OUTSIDE MEANS ONE. Checked against
+            // computeMatchProposal itself, band by band, on a fixture that
+            // straddles the floor: 1.5 dB inside on three bands and 2.5 dB
+            // outside on the other three.
+            MatchSide mix, ref;
+            mix.durationSeconds = ref.durationSeconds = 180.0f;
+            mix.hasMacro = ref.hasMacro = true;
+            mix.macroReduction = ref.macroReduction = SpectralReduction::WholeFileAverage;
+            mix.integrated = ref.integrated = -10.0f;     // no gain move in the way
+            mix.macro = { -10.0f, -10.0f, -10.0f, -10.0f, -10.0f, -10.0f };
+            // Relatives are taken from each side's own six-band mean, so the
+            // deltas below are what survives that normalisation.
+            ref.macro = { -8.5f, -11.5f, -10.0f, -7.5f, -12.5f, -10.0f };
+
+            std::array<float, 6> mixRel {}, refRel {};
+            const bool rel = echojay::matchBandRelatives (mix.macro, mixRel)
+                          && echojay::matchBandRelatives (ref.macro, refRel);
+            check (rel, "mr PIN30: the fixture's band relatives are available");
+
+            const auto prop  = echojay::computeMatchProposal (mix, ref);
+            const auto moves = echojay::matchBandMoves (prop);
+
+            juce::String bad;
+            for (int b = 0; b < 6; ++b)
+            {
+                const bool inside = echojay::matchInsideBandZone (mixRel[(std::size_t) b],
+                                                                  refRel[(std::size_t) b]);
+                const bool moved  = moves[(std::size_t) b] != 0.0f;
+                if (inside == moved)
+                    bad << b << ": inside=" << (int) inside << " moved=" << (int) moved
+                        << " delta=" << (refRel[(std::size_t) b] - mixRel[(std::size_t) b]) << "; ";
+            }
+            check (bad.isEmpty(),
+                   "mr PIN30: band by band, INSIDE the band is exactly no move and OUTSIDE it is "
+                   "exactly a move, checked against computeMatchProposal so the shaded excursion "
+                   "is what the proposal would act on", bad);
+
+            // AND THE CONTROL: at least one band of each kind, so the check
+            // above cannot pass on a fixture where every band agrees.
+            int insideN = 0, outsideN = 0;
+            for (int b = 0; b < 6; ++b)
+                (echojay::matchInsideBandZone (mixRel[(std::size_t) b], refRel[(std::size_t) b])
+                     ? insideN : outsideN)++;
+            check (insideN > 0 && outsideN > 0,
+                   "mr PIN30: and the fixture straddles the floor, so both halves of that claim "
+                   "were exercised",
+                   juce::String (insideN) + " inside, " + juce::String (outsideN) + " outside");
+        }
+
+        // mr PIN31 (text pin) -- THE INSTANTANEOUS STEREO PAIR IS DISPLAY ONLY.
+        //
+        // MeterEngine has always computed instWidth and instCorr per block and
+        // published only the 1.5 s EMA. They are published now so the Match
+        // page's trail has a genuinely fast source to smoke from, and THAT IS
+        // THE ONLY THING THEY MAY FEED.
+        //
+        // WHY THIS NEEDS A PIN RATHER THAN A COMMENT: an unsmoothed per-block
+        // figure that reached a comparison, a capture or the model's JSON would
+        // be a ballistic reading set beside whole-file ones as though they were
+        // alike, which is the fault this project has now recorded three times
+        // (data.macroBandDb, data.spectrum, PSR). `width` and `correlation`
+        // remain the only stereo figures anything compares, stores or sends.
+        {
+            auto readAll = [] (const char* path)
+            {
+                std::ifstream f (path);
+                std::stringstream ss; ss << f.rdbuf();
+                return codeOnly (juce::String (ss.str()));
+            };
+            const auto edSrc  = readAll ("Source/PluginEditor.cpp");
+            const auto prSrc  = readAll ("Source/PluginProcessor.cpp");
+            const auto figSrc = readAll ("Source/EJCompareFigures.h");
+            const auto refSrc = readAll ("Source/ReferenceAnalyser.cpp");
+            const auto engSrc = readAll ("Source/MeterEngine.cpp");
+
+            check (edSrc.isNotEmpty() && prSrc.isNotEmpty() && figSrc.isNotEmpty()
+                   && refSrc.isNotEmpty() && engSrc.isNotEmpty(),
+                   "mr PIN31: every file this sweep reads was found");
+
+            // THE ONE PLACE THEY MAY APPEAR, besides the engine that makes
+            // them: the Match page's fast row, which feeds the trail image.
+            const auto fastRow = functionBody (edSrc, "static void matchFastRow");
+            check (fastRow.contains ("instWidth") && fastRow.contains ("instCorr"),
+                   "mr PIN31: the trail's fast row DOES read the instantaneous pair, so this "
+                   "sweep is not passing for want of anything to find");
+
+            // AND NOWHERE ELSE. computeCompareFig is every comparison's source;
+            // buildCompareContext is what reaches the model; the snapshot save
+            // and restore are what a capture stores; the analyser is what a
+            // reference stores.
+            juce::String bad;
+            auto mustNotHave = [&bad] (const juce::String& body, const char* where)
+            {
+                if (body.isEmpty()) { bad << where << " (body not found) "; return; }
+                if (body.contains ("instWidth") || body.contains ("instCorr")) bad << where << " ";
+            };
+            mustNotHave (functionBody (figSrc, "inline CompareFig computeCompareFig (const MeterData& m)"),
+                         "computeCompareFig");
+            mustNotHave (functionBody (figSrc, "inline MatchSide matchSideFrom"), "matchSideFrom");
+            for (const char* sig : { "juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& capture",
+                                     "juce::String EchoJayProcessor::buildCompareContext(const CaptureSnapshot& a",
+                                     "juce::String EchoJayProcessor::buildCompareContext(const MeterData& da",
+                                     "juce::String EchoJayProcessor::buildCompareContext(const ReferenceResult& a",
+                                     "void EchoJayProcessor::getStateInformation",
+                                     "void EchoJayProcessor::setStateInformation" })
+                mustNotHave (functionBody (prSrc, sig), sig);
+            if (refSrc.contains ("instWidth") || refSrc.contains ("instCorr"))
+                bad << "ReferenceAnalyser ";
+            check (bad.isEmpty(),
+                   "mr PIN31: and they appear in NO comparison, NO capture, NO stored measurement "
+                   "and NO path to the model", bad);
+
+            // The smoothed pair is still the one those paths use, so the sweep
+            // above is not passing because stereo left them altogether.
+            check (functionBody (figSrc, "inline CompareFig computeCompareFig (const MeterData& m)")
+                       .contains ("m.width")
+                   && functionBody (figSrc, "inline CompareFig computeCompareFig (const MeterData& m)")
+                       .contains ("m.correlation"),
+                   "mr PIN31: while width and correlation, the smoothed pair, are still what every "
+                   "comparison reads");
+        }
+
         // mr PIN17 -- THE PICTURE'S DELTAS ARE THE PROPOSAL'S DELTAS.
         //
         // matchBandDeltas is a second expression of refRel - mixRel, written

@@ -128,6 +128,255 @@ inline juce::String matchWaveSpan (bool rolling, float seconds)
          + (secs < 10 ? "0" : "") + juce::String (secs);
 }
 
+// -----------------------------------------------------------------------------
+//  THE AXIS ROW: FOUR TILES, ONE SELECTED
+// -----------------------------------------------------------------------------
+//
+// ONE GRAMMAR, FOUR VOCABULARIES. Every picture shows the same three things,
+// your mix, the reference and THE GAP BETWEEN THEM, with the gap the brightest
+// thing on the page. What changes per axis is the terms it is drawn in, because
+// a spectrum, a level, a dynamic range and a stereo image are not the same kind
+// of quantity and drawing them the same way would say they were.
+//
+// SELECTING A TILE CHANGES THE PICTURE AND NOTHING ELSE. It sends nothing,
+// applies nothing and writes nothing, which is why these controls belong in
+// step one although section 10 excluded the ASK: the rule was that a control
+// which cannot send is dead, and these do something without sending.
+inline constexpr int kMatchAxisH   = 30;
+inline constexpr int kMatchAxisGap = 6;
+inline constexpr int kMatchAxisCount = 4;
+
+enum class MatchAxis { Spectrum = 0, Loudness, Dynamics, Stereo };
+
+inline const char* matchAxisName (MatchAxis a)
+{
+    switch (a)
+    {
+        case MatchAxis::Spectrum: return "SPECTRUM";
+        case MatchAxis::Loudness: return "LOUDNESS";
+        case MatchAxis::Dynamics: return "DYNAMICS";
+        case MatchAxis::Stereo:   return "STEREO IMAGE";
+    }
+    return "SPECTRUM";
+}
+
+/** TWO OF THE FOUR CAN BE PROPOSED AND TWO CANNOT, and that is a fact about the
+    proposal rather than a choice about the screen: computeMatchProposal emits
+    Gain, Ceiling and Band moves and nothing else, so dynamics and stereo image
+    have no move to play whatever the two sides say. */
+inline bool matchAxisCanPropose (MatchAxis a)
+{
+    return a == MatchAxis::Spectrum || a == MatchAxis::Loudness;
+}
+
+/** What the press says on an axis that carries no moves.
+
+    NOT A DISABLED BUTTON. A control that looks dead with no reason given is
+    exactly what the headline rework removed, so the press answers instead, in
+    the same words and through the same refused-for-a-moment machinery the gain
+    floor already uses. */
+inline juce::String matchAxisPressText (MatchAxis a)
+{
+    if (matchAxisCanPropose (a)) return {};
+    return juce::String (a == MatchAxis::Dynamics ? "Dynamics" : "Stereo image")
+         + " is shown, not proposed: a match moves level and the spectrum, "
+           "and this difference is here to be read.";
+}
+
+/** Whether a tile can draw at all, and if not, WHICH SIDE is missing what.
+
+    A TILE WITH A FIELD MISSING ON ONE SIDE SAYS SO RATHER THAN DRAWING A
+    DEFAULT. Every sentinel in MatchSide is a value a picture would happily
+    render: -100 LUFS is a position on a rail, 0 LU is a width, -1 overs is a
+    number. Drawn without this gate they are all measurements of something that
+    was never measured. */
+struct MatchAxisState
+{
+    bool         drawable = true;
+    juce::String why;          ///< empty when drawable
+};
+
+inline MatchAxisState matchAxisState (MatchAxis a, const MatchSide& mix, const MatchSide& ref)
+{
+    auto no = [] (const juce::String& s) { return MatchAxisState { false, s }; };
+
+    switch (a)
+    {
+        case MatchAxis::Spectrum:
+            if (! mix.hasMacro && ! ref.hasMacro) return no ("Neither side has a six-band measurement.");
+            if (! mix.hasMacro)                   return no ("Your mix has no six-band measurement.");
+            if (! ref.hasMacro)                   return no ("The reference has no six-band measurement.");
+            return {};
+
+        case MatchAxis::Loudness:
+            if (mix.integrated <= -99.0f && ref.integrated <= -99.0f)
+                return no ("Neither side has an integrated loudness.");
+            if (mix.integrated <= -99.0f) return no ("Your mix has no integrated loudness.");
+            if (ref.integrated <= -99.0f) return no ("The reference has no integrated loudness.");
+            return {};
+
+        case MatchAxis::Dynamics:
+            // THE CREST IS THE TILE; THE LOUDNESS RANGE IS ONE OF ITS TWO
+            // DIMENSIONS. This used to refuse whenever either side's lra was
+            // 0, which for a Live side it always is, so a live mix could never
+            // see its own dynamics. That was refusing a whole picture because
+            // half of one shape was missing. Crest IS measured live and does
+            // mean something live; lra is not, and matchSideFrom suppresses it
+            // deliberately, because a session loudness range is spread across
+            // whatever was played and is inter-song variance wearing the label.
+            //
+            // So: refuse only when a CREST is missing, and let the picture say
+            // what the missing range is rather than drawing around it.
+            if (mix.crest <= 0.0f && ref.crest <= 0.0f)
+                return no ("Neither side has a crest this can compare.");
+            if (mix.crest <= 0.0f) return no ("Your mix has no crest measurement.");
+            if (ref.crest <= 0.0f) return no ("The reference has no crest measurement.");
+            return {};
+
+        case MatchAxis::Stereo:
+            // width and correlation are measured on every side, live included.
+            return {};
+    }
+    return {};
+}
+
+// -----------------------------------------------------------------------------
+//  THE WAVE STRIP'S TWO PARTS: A TRANSPORT BUTTON AND THE WAVE ITSELF
+// -----------------------------------------------------------------------------
+//
+// ONE ANSWER, READ BY THE PAINT AND BY THE PRESS. A click on the wave is a
+// SEEK and a click on the button is play or stop, so the two regions have to
+// agree to the pixel; computing them twice is how they come to disagree.
+//
+// THE BUTTON IS ON THE OUTER EDGE of each strip, so the two sides' controls sit
+// at the two edges of the page rather than facing each other across the middle.
+inline constexpr int kMatchWaveBtnW = 16;
+
+inline juce::Rectangle<int> matchWaveTransport (juce::Rectangle<int> lane, bool isRef)
+{
+    if (lane.getWidth() <= kMatchWaveBtnW * 2) return {};
+    return isRef ? lane.removeFromRight (kMatchWaveBtnW)
+                 : lane.removeFromLeft  (kMatchWaveBtnW);
+}
+
+/** What is left for the waveform once the button has taken its edge. THE SEEK
+    FRACTION IS OF THIS RECT, and therefore of the FILE, not of the panel: the
+    two strips are different widths and a position in samples cannot come from
+    one of them. */
+inline juce::Rectangle<int> matchWaveLane (juce::Rectangle<int> lane, bool isRef)
+{
+    auto l = lane;
+    if (l.getWidth() > kMatchWaveBtnW * 2)
+    {
+        if (isRef) l.removeFromRight (kMatchWaveBtnW);
+        else       l.removeFromLeft  (kMatchWaveBtnW);
+    }
+    return l;
+}
+
+/** Where in the file a click at x lands, 0 to 1. */
+inline float matchWaveSeekFraction (juce::Rectangle<int> waveLane, int x)
+{
+    if (waveLane.getWidth() <= 0) return 0.0f;
+    return juce::jlimit (0.0f, 1.0f,
+                         (float) (x - waveLane.getX()) / (float) waveLane.getWidth());
+}
+
+/** What the dynamics tile must SAY about one side, beside its shape.
+
+    TWO THINGS A SHAPE CANNOT CARRY ON ITS OWN. A side with no loudness range
+    would otherwise get a narrow shape, and narrow means LOW VARIANCE, which is
+    a measurement nobody took. And a LIVE side's crest is a rolling reading of
+    whatever is playing now, not a figure over a whole track, so a window and a
+    whole track would sit side by side with nothing saying which was which.
+
+    The same spirit as the spectrum picture's provenance caption and the
+    waveform strip's span: where two figures are not like for like, the picture
+    says so rather than the prose elsewhere. */
+inline juce::String matchDynamicsSideNote (const MatchSide& s)
+{
+    // A live side has no length: matchSideFrom writes 0 for a Live slot, which
+    // is the same fact the waveform strip reads to call itself rolling.
+    const bool rolling = s.durationSeconds <= 0.0f;
+    const bool noRange = s.lra <= 0.0f;
+
+    if (rolling && noRange) return "rolling window, no loudness range";
+    if (rolling)            return "rolling window";
+    if (noRange)            return "no loudness range";
+    return {};
+}
+
+/** The width a shape takes when its side has no loudness range: a fixed width,
+    so the shape keeps its crest height and says nothing it does not know. */
+inline constexpr float kMatchDynNoRangeW = 0.18f;   ///< fraction of the lane
+
+// -----------------------------------------------------------------------------
+//  THE TARGET IS A ZONE WITH A WIDTH, NOT A LINE
+// -----------------------------------------------------------------------------
+//
+// The idea the whole picture turns on, taken from the reference Kathy sent:
+// YOU SEE WHETHER YOU ARE INSIDE THE TARGET rather than subtracting two curves
+// in your head. A line says "be exactly here", which is a thing no proposal
+// asks for; a band says "anywhere in here is fine", which is what the
+// arithmetic actually means.
+//
+// AND THE WIDTH IS NOT A DESIGN CHOICE. IT IS THE PROPOSAL'S OWN FLOOR, the
+// threshold below which no move is emitted: kMatchBandFloorDb for the spectrum
+// and kMatchGainFloorDb for the level. INSIDE THE BAND MEANS NOTHING WOULD BE
+// MOVED. That is why these functions read the constants rather than carrying
+// numbers of their own: a later edit that tuned the picture's band without
+// tuning the floor would draw a tolerance the proposal does not have, and the
+// user would be told they were fine while a move was waiting for them.
+//
+// TWO AXES HAVE A ZONE AND TWO DO NOT, and the reason is the same one:
+// A ZONE CLAIMS A TOLERANCE, and we only have a tolerance where the proposal
+// has a floor. computeMatchProposal emits Gain, Ceiling and Band moves, so
+// dynamics and stereo image get markers and no band. Drawing one there would
+// invent a threshold nobody set and imply a move that cannot be made.
+inline float matchAxisZoneDb (MatchAxis a) noexcept
+{
+    switch (a)
+    {
+        case MatchAxis::Spectrum: return kMatchBandFloorDb;   // the band move's floor
+        case MatchAxis::Loudness: return kMatchGainFloorDb;   // the gain move's floor
+        case MatchAxis::Dynamics:
+        case MatchAxis::Stereo:   return 0.0f;                // no move, so no tolerance
+    }
+    return 0.0f;
+}
+
+inline bool matchAxisHasZone (MatchAxis a) noexcept { return matchAxisZoneDb (a) > 0.0f; }
+
+/** Is this band's difference inside the zone, meaning nothing would be moved?
+
+    WRITTEN AS THE PROPOSAL WRITES IT, negated: matchBandMove emits nothing when
+    `! (mag >= kMatchBandFloorDb)`, so inside is exactly that test and the
+    picture cannot disagree with the moves drawn over it. */
+inline bool matchInsideBandZone (float mixRelDb, float refRelDb) noexcept
+{
+    const float mag = std::abs (refRelDb - mixRelDb);
+    return ! (mag >= kMatchBandFloorDb);
+}
+
+/** THE PICTURE'S SAMPLING: how many columns a ribbon is built from. Here
+    rather than in the editor because the panel's own trail method takes a row,
+    so the type has to be visible to both. */
+inline constexpr int kMatchRibbonCols = 96;
+using MatchRibbonRow = std::array<float, (std::size_t) kMatchRibbonCols>;
+
+/** The tiles, evenly across the row with a gap between them. Integer division
+    leaves the remainder on the last tile rather than a gap that drifts. */
+inline juce::Rectangle<int> matchAxisTile (juce::Rectangle<int> row, int i)
+{
+    if (i < 0 || i >= kMatchAxisCount || row.getWidth() <= 0) return {};
+    const int gaps  = kMatchAxisGap * (kMatchAxisCount - 1);
+    const int tileW = juce::jmax (0, (row.getWidth() - gaps) / kMatchAxisCount);
+    const int x     = row.getX() + i * (tileW + kMatchAxisGap);
+    const int w     = (i == kMatchAxisCount - 1) ? juce::jmax (0, row.getRight() - x) : tileW;
+    return { x, row.getY(), w, row.getHeight() };
+}
+
+
 /** The plot's gutters inside the graph card. */
 inline constexpr int kMatchPlotLabelW = 30;
 inline constexpr int kMatchPlotAxisH  = 14;
@@ -145,8 +394,85 @@ struct MatchPageRects
     juce::Rectangle<int> mixPick, refPick, button;   ///< the two pickers and the press
     juce::Rectangle<int> mixWave, refWave;           ///< a waveform under each picker
     juce::Rectangle<int> linkLeft, linkRight;        ///< the two runs of the link
+    juce::Rectangle<int> axisRow;                    ///< the four tiles
     juce::Rectangle<int> graph;
+    /** THE READOUT ROW, along the bottom of the graph card. APPENDED, for the
+        reason open list 207 records: the suite links across this struct. */
+    juce::Rectangle<int> readout;
 };
+
+// -----------------------------------------------------------------------------
+//  THE READOUT ROW: THE NUMBERS, IN THE METER STRIP'S LANGUAGE
+// -----------------------------------------------------------------------------
+//
+// SAME FAMILY AS THE MAIN METER STRIP at the top of the plugin: one row of
+// cells, thin vertical dividers between them, label above in small muted
+// uppercase, value below. Not rounded boxes.
+//
+// EACH CELL CARRIES BOTH SIDES. With the filament gone the two trail colours
+// are the only key to which fan is which, so the mix value is drawn in the mix
+// trail's colour and the reference value in the reference trail's, with a thin
+// divider between them. THIS ROW IS CARRYING THE KEY.
+inline constexpr int kMatchReadoutH     = 34;   // label line + value line
+inline constexpr int kMatchReadoutLabelH = 11;
+inline constexpr int kMatchReadoutMaxW  = 190;  // a cell never grows past this
+
+/** One cell: a short label and the two sides' already-formatted values.
+    NOTHING IS RECOMPUTED HERE. The caller passes what it already drew from,
+    because two sources for one number is how they drift apart. */
+struct MatchReadoutCell
+{
+    juce::String label;      ///< short name only, no unit
+    juce::String mixText;    ///< already formatted, unit included
+    juce::String refText;
+};
+
+/** A figure formatted to this page's precision rules, or a DASH when the side
+    does not have it.
+
+    A MISSING FIGURE AND A ZERO ARE NOT THE SAME THING and the row must not
+    make them look alike, so an unavailable value is "-" rather than "0.0". */
+inline juce::String matchReadoutValue (bool have, float v, int decimals,
+                                       const juce::String& unit)
+{
+    if (! have) return "-";
+
+    // ZERO DECIMALS IS NOT ZERO DECIMALS IN JUCE, and this guard is here
+    // because the old stereo line shipped reading "width 46.3896 / 32.5188 %"
+    // from a call whose argument said 0. juce_String.cpp's writeDouble only
+    // sets std::fixed and a precision WHEN numDecPlaces > 0:
+    //
+    //     if (numDecPlaces > 0) { o.setf (std::ios_base::fixed);
+    //                             o.precision ((std::streamsize) numDecPlaces); }
+    //     o << n;
+    //
+    // so 0 or less skips the formatting entirely and the value goes out at the
+    // stream's DEFAULT SIX SIGNIFICANT FIGURES. A whole number therefore needs
+    // the INTEGER constructor, not a rounded float one.
+    const juce::String num = decimals > 0 ? juce::String (v, decimals)
+                                          : juce::String (juce::roundToInt (v));
+    return num + (unit.isEmpty() ? juce::String() : " " + unit);
+}
+
+/** The same for a count, which takes no decimals. */
+inline juce::String matchReadoutCount (int n)
+{
+    return n < 0 ? juce::String ("-") : juce::String (n);
+}
+
+/** One cell's rect. Cells divide the row evenly, capped at
+    kMatchReadoutMaxW so a two-cell axis does not stretch two figures across a
+    1700 px window; the capped row stays centred. */
+inline juce::Rectangle<int> matchReadoutCellRect (juce::Rectangle<int> row, int i, int count)
+{
+    if (count <= 0 || i < 0 || i >= count || row.getWidth() <= 0) return {};
+    const int even  = row.getWidth() / count;
+    const int cellW = juce::jmin (kMatchReadoutMaxW, even);
+    const int total = cellW * count;
+    const int x0    = row.getX() + (row.getWidth() - total) / 2;
+    return { x0 + i * cellW, row.getY(), cellW, row.getHeight() };
+}
+
 
 inline MatchPageRects matchPageLayout (juce::Rectangle<int> page)
 {
@@ -162,8 +488,18 @@ inline MatchPageRects matchPageLayout (juce::Rectangle<int> page)
     // and the shapes sit below the thing they belong to.
     auto waveRow = a.removeFromTop (kMatchWaveH);
     a.removeFromTop (kMatchWaveGap);
+    // THE AXIS ROW SITS BETWEEN THE SETUP AND THE PICTURE, because it names
+    // what the picture below is about: put it under the graph and it would be a
+    // legend for something already drawn.
+    r.axisRow = a.removeFromTop (kMatchAxisH);
+    a.removeFromTop (kMatchAxisGap);
     a.removeFromTop (kMatchGap);
     r.graph  = a;
+    // The row sits inside the card, below the plot and above the card's own
+    // bottom gutter, so both are derived from graph and cannot disagree.
+    r.readout = r.graph.reduced (8, 8).withTrimmedLeft (kMatchPlotLabelW)
+                        .removeFromBottom (kMatchPlotAxisH + kMatchReadoutH)
+                        .withTrimmedBottom (kMatchPlotAxisH);
 
     // THE BUTTON IS THE MIDDLE OF THE ROW, the two names its ends, and the
     // link runs between each name and the button. The names take what the
@@ -196,6 +532,10 @@ inline juce::Rectangle<int> matchGraphPlot (juce::Rectangle<int> graph)
     auto p = graph.reduced (8, 8);
     p.removeFromLeft (kMatchPlotLabelW);
     p.removeFromBottom (kMatchPlotAxisH);
+    // THE ROW COMES OUT OF THE PLOT, NOT OUT OF THE CARD, so R.graph is
+    // unchanged and every pin that measures the card still measures the same
+    // rect. Only the picture gets shorter.
+    p.removeFromBottom (kMatchReadoutH);
     return p;
 }
 

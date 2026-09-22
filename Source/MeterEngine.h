@@ -132,6 +132,42 @@ struct MeterData {
     // is audible RIGHT NOW, which is also true of a track that played and
     // stopped, and that track's measurements are real.
     int heardFrames = 0;
+
+    /** THE INSTANTANEOUS STEREO PAIR: per block, ungated and unsmoothed, where
+        `width` and `correlation` are the 1.5 s EMA held through silence.
+
+        DISPLAY ONLY, AND THAT IS A RULE RATHER THAN A PREFERENCE. These two
+        must never reach a comparison, a capture, a stored measurement or the
+        model's JSON: they exist so the Match page's trail image has a genuinely
+        fast source to smoke from, and nothing else reads them. `width` and
+        `correlation` remain the only stereo figures anything compares, stores
+        or sends, so a figure that moves every block can never be set beside a
+        whole-file one as though the two were alike. `mr PIN31` holds that by
+        sweeping the paths they must not appear in.
+
+        AND THEY SIT HERE, AT THE END, RATHER THAN BESIDE width AND correlation
+        WHERE THEY BELONG BY SUBJECT. They were put there first and it cost a
+        red suite the same day.
+
+        THIS PROJECT'S SUITE LINKS A PRE-EXISTING ARCHIVE:
+        tools/mapfps_test/build_and_run.sh links
+        build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a, and
+        meterDataToJSON is compiled INTO that archive rather than being header
+        inline. So a field inserted in the MIDDLE of this struct moves every
+        later field, the test TU builds a MeterData at the new offsets, and the
+        archive's older meterDataToJSON reads them at the old ones. It does not
+        fail to link. It reads heardFrames from the wrong place, gets zero, and
+        the heard gate silently closes over psr, plr and oversCount.
+
+        ps PIN3 IS WHAT CAUGHT IT, and it was the only one of five that could:
+        the other four assert those keys are ABSENT, which an empty answer
+        satisfies. Open list 164 owns the stale archive in general and the row
+        beside it owns this shape.
+
+        SO: A NEW FIELD GOES AT THE END. Append only, for any struct the suite
+        links across. */
+    float instWidth = 0.0f;
+    float instCorr  = 0.0f;
 };
 
 class MeterEngine
@@ -325,6 +361,18 @@ public:
     // width in Hz. Returns false until the first hop has been transformed
     // (dest is still valid: all floor).
     bool getVisualSpectrum(std::array<float, kVisBins>& dest, double& binHzOut) const;
+
+    /** HOW MANY VISUAL FFTs HAVE BEEN PUBLISHED, for a UI that wants to draw
+        once per NEW spectrum rather than once per timer tick. Incremented
+        where visMagDb is written, read relaxed: it is a change detector, not a
+        lock, and a reader that misses an increment simply draws next frame.
+
+        AT THE END OF THE PUBLIC SECTION ON PURPOSE, and the counter itself at
+        the end of the members: open list 207. A field inserted mid-struct
+        moves every later one, and this project's suite links a pre-existing
+        archive, so the older code reads them at the old offsets and gives
+        wrong answers rather than failing to link. Append only. */
+    uint32_t visHopCount() const noexcept { return visHopSeq_.load (std::memory_order_relaxed); }
 
 private:
     double currentSampleRate = 44100.0;
@@ -567,5 +615,10 @@ private:
     std::atomic<int> silentSampleCount {0};
     int silenceTimeoutSamples = 24000; // overwritten in prepare()
     static constexpr float kSilenceThreshold = 0.0001f; // ~-80dBFS
+
+
+    /** Bumped once per published visual FFT. See visHopCount(). At the END of
+        the member list, append only, for open list 207's reason. */
+    std::atomic<uint32_t> visHopSeq_ { 0 };
 
 };
