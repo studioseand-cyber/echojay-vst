@@ -113,10 +113,12 @@ public:
     // box passes that check. Fits: the box (~470x540 with chrome) is inside
     // both editors' 900x580 minimum. Never pass nullptr here again.
     static void show(juce::Component& target, juce::Component& parent,
-                     juce::Array<juce::PluginDescription> items, PickFn onPick)
+                     juce::Array<juce::PluginDescription> items, PickFn onPick,
+                     std::function<void()> onGone = {})   // 22 Sep 2026 (item 7): fires from the destructor on EVERY death path
     {
         auto picker = std::make_unique<ChainPluginPicker>(std::move(items), std::move(onPick));
         auto* raw = picker.get();
+        raw->onGone_ = std::move(onGone);
         auto& box = juce::CallOutBox::launchAsynchronously(
             std::move(picker),
             parent.getLocalArea(&target, target.getLocalBounds()),
@@ -222,7 +224,7 @@ private:
         fn(d);
     }
 public:
-    ~ChainPluginPicker() override { EchoJay_NSLog("EJPicker: destroyed"); }
+    ~ChainPluginPicker() override { EchoJay_NSLog("EJPicker: destroyed"); if (onGone_) { auto f = std::move(onGone_); f(); } }
 private:
     void dismiss()
     {
@@ -237,6 +239,7 @@ private:
     juce::ListBox list_;
     juce::Rectangle<int> hint_;
     juce::CallOutBox* box_ = nullptr;
+    std::function<void()> onGone_;   // 22 Sep 2026 (item 7)
     bool focused_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainPluginPicker)

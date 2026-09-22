@@ -32,6 +32,8 @@ struct EchoJayTabStripTestAccess
     static std::vector<EchoJayEditor::ChatMsg>& msgs (EchoJayEditor& e) { return e.chatMessages; }
     static juce::TextEditor& input (EchoJayEditor& e) { return e.chatInput; }
     static bool verb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t); }
+    static auto& panel (EchoJayEditor& e) { return e.chainListPanel; }        // 22 Sep 2026 (item 7)
+    static void picker (EchoJayEditor& e) { e.showChainPluginPicker(); }     // 22 Sep 2026 (item 7)
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
@@ -314,6 +316,30 @@ int main()
 #endif
 
 
+    std::printf ("== (7) 22 Sep 2026: the add-plugin picker is IN FRONT of a hosted editor pop-out (the pop-out is lowered while the picker is open, raised again when it goes) ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); ed->setVisible (true); ed->addToDesktop (0); pumpMs (60);
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay Level\",\"role\":\"level\",\"settings\":\"\"},{\"name\":\"EchoJay Limiter\",\"role\":\"limiter\",\"settings\":\"\"}]}");
+        pumpMs (400);
+        auto& panel = A::panel (*ed);
+        panel.selectedIdx = 0; panel.openPopoutForSelected(); pumpMs (100);
+        const bool havePopout = panel.popout != nullptr;
+        check (havePopout && panel.popout->isAlwaysOnTop(), "(7) precondition: a hosted-editor pop-out window is open and always-on-top", havePopout ? "always-on-top=" + juce::String ((int) panel.popout->isAlwaysOnTop()) : "no pop-out (" + panel.statusText + ")");
+        if (havePopout)
+        {
+            A::picker (*ed); pumpMs (100);
+            juce::CallOutBox* box = nullptr; for (auto* c : ed->getChildren()) if (auto* b = dynamic_cast<juce::CallOutBox*> (c)) box = b;
+            check (box != nullptr, "(7) the picker's call-out is open, embedded in the editor");
+            check (! panel.popout->isAlwaysOnTop(), "(7) WHILE the picker is open the pop-out is LOWERED (always-on-top off) so the picker is in front", "always-on-top=" + juce::String ((int) panel.popout->isAlwaysOnTop()));
+            if (box != nullptr) box->dismiss();
+            pumpMs (200);
+            check (panel.popout != nullptr && panel.popout->isAlwaysOnTop(), "(7) when the picker goes (dismissed) the pop-out is raised again (always-on-top back on)", panel.popout ? "always-on-top=" + juce::String ((int) panel.popout->isAlwaysOnTop()) : "pop-out gone");
+        }
+        panel.closeAllEditors(); pumpMs (60); ed->removeFromDesktop();
+    }
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

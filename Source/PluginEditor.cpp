@@ -28550,6 +28550,16 @@ void EchoJayEditor::showChainPluginPicker()
     // P13 (17 Aug 2026): the searchable picker (ChainPluginPicker.h) in
     // place of a 1400-row PopupMenu; type to filter, keyboard first.
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+    // 22 Sep 2026 (item 7): the picker is EMBEDDED in this editor, a hosted editor pop-out is a top-level always-on-top
+    // window - so the pop-out is LOWERED while the picker is open (always-on-top off, sent back) and raised again on
+    // every picker death path (onGone fires from the destructor). pickerLoweredPopout_ remembers what to restore.
+    if (chainListPanel.popout != nullptr)
+    {
+        chainListPanel.popout->setAlwaysOnTop(false);
+        chainListPanel.popout->toBack();
+        pickerLoweredPopout_ = true;
+        EchoJay_NSLog("EJPicker: hosted editor pop-out lowered while the picker is open");
+    }
     ChainPluginPicker::show(chainListPanel.addBlock, *this, plugins,
         [safeThis](const juce::PluginDescription& picked)
         {
@@ -28663,6 +28673,13 @@ void EchoJayEditor::showChainPluginPicker()
                 safeThis->resized();
                 safeThis->repaint();
             });
+        },
+        [safeThis]
+        {   // item 7: raise the pop-out again (the picker is gone)
+            if (safeThis == nullptr || ! safeThis->pickerLoweredPopout_) return;
+            safeThis->pickerLoweredPopout_ = false;
+            if (safeThis->chainListPanel.popout != nullptr) { safeThis->chainListPanel.popout->setAlwaysOnTop(true); safeThis->chainListPanel.popout->toFront(false); }
+            EchoJay_NSLog("EJPicker: hosted editor pop-out raised again");
         });
 }
 

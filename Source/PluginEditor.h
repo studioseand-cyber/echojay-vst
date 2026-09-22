@@ -1788,6 +1788,7 @@ private:
     // watches ChainHost::isScanning go false and rebuilds the feed THEN,
     // and tells the user "rescanned, N plugins" where they can see it.
     bool prevChainScanning_      = false;
+    bool pickerLoweredPopout_    = false;   // 22 Sep 2026 (item 7): the hosted editor pop-out is lowered while the picker is open
 
     // Holder for the currently-selected slot's editor
     // Pop-out window for hosted plugin editors at native size
