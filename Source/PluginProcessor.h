@@ -1450,12 +1450,31 @@ public:
     std::vector<LinkDisplayEntry> getLinkDisplayList() const;
     // 21m rename alias (22 Sep 2026): a V2-SESSION alias for a Link (by uid), shown everywhere V2 names the Link (this list is
     // the one source); the Link's own name is untouched; "Reset name" clears it. Persisted with the session state.
+    // ===== 21n item 4 (22 Sep 2026): LINK GROUPS, client half (CONTRACT_GROUPS_2026-09-22.md) =====
+    // A group = a name + member Link instanceIds (display order) + an optional bus Link. Persisted in the V2 session state
+    // ("linkGroups"). Every chat / chat-stream / classify body carries groups[] {id, name, members, bus} beside links[]
+    // {instanceId, name, gainDb} whenever at least one group exists (omitting them = today's behaviour, per the contract).
+    struct LinkGroup { juce::String id, name, bus; juce::StringArray members; };
+    const std::vector<LinkGroup>& linkGroups() const { return linkGroups_; }
+    juce::String createLinkGroup(const juce::String& name, const juce::StringArray& members, const juce::String& bus = {});   // returns the id
+    void removeLinkGroup(const juce::String& id);
+    void setLinkGroupBus(const juce::String& id, const juce::String& busUid);
+    void setLinkGroupMembers(const juce::String& id, const juce::StringArray& members);
+    void renameLinkGroup(const juce::String& id, const juce::String& name);
+    const LinkGroup* linkGroupById(const juce::String& id) const;
+    juce::var groupsBodyVar() const;    // groups[] as the contract shapes it (void when there are no groups)
+    juce::var linksBodyVar() const;     // links[] {instanceId, name, gainDb} for a groups-aware body (void when no groups)
+    // the group's level offset: each present member's trim moves by the largest |delta| in the requested direction that
+    // keeps every member inside -24..+12 (the bus alone when set); returns the applied delta and names the limiting member
+    struct GroupMove { float requested = 0, applied = 0; juce::String limitingMember; juce::StringArray commands; };
+    GroupMove moveLinkGroup(const juce::String& id, float deltaDb, bool sendCommands = true);
     void setLinkAlias(const juce::String& uid, const juce::String& alias);
     // 21n item 2: the alias is MIRRORED to the Link over the ctrl-cmd transport ("alias" field, "" on Reset name) as
     // display-only; the Link keeps reporting its track name as identity. Public for the guard.
     void writeLinkAliasCommand(const juce::String& uid, const juce::String& alias);
     juce::String linkAlias(const juce::String& uid) const;
     std::map<juce::String, juce::String> linkAliases_;
+    std::vector<LinkGroup> linkGroups_;   // 21n item 4
     // ONE accessor for a Link channel's display name (Phase N precedence via
     // getLinkDisplayList) — banner, dropdown, monitor, capture composition
     // and injections all resolve through THIS, keyed by the stable uid, so

@@ -372,6 +372,9 @@ public:
     // ABSENT otherwise (an empty rack, no trims). The server then stops the Level slot compensating for make-up that
     // the chain already matched. The editor syncs it beside channelWidth from ChainHost::hasActiveTrims().
     void setUnityChain(bool on) { unityChain_ = on; }
+    // 21n item 4: groups[] + links[] (contract §2) on every chat / chat-stream / classify body while the user has groups
+    void setGroupsContext(juce::var links, juce::var groups) { groupsLinks_ = links; groupsVar_ = groups; }
+    juce::var groupsLinks_, groupsVar_;
     bool unityChain() const { return unityChain_; }
     bool unityChain_ = false;
     void stageCapturePayload(const juce::String& metersBlob, int busCount)

@@ -277,13 +277,6 @@ EchoJayProcessor::EchoJayProcessor()
     loudnessLoop_.onGainWritten = [this](float before, float after)
     { echojay::UndoEntry e; e.kind = "loop"; e.label = "level loop " + juce::String(after - before >= 0 ? "+" : "") + juce::String(after - before, 1) + " dB"; e.before = (double) before; e.after = (double) after; undoHistory_.push(std::move(e)); };
     gestureTimer_ = std::make_unique<GestureTimer>(*this);
-    // 21n item 3: the plugin-wide undo history - dispatcher, status line, the local rack's hooks, the loop's writes
-    undoHistory_.apply  = [this](echojay::UndoEntry& e, bool toBefore) { return applyUndoEntry(e, toBefore); };
-    undoHistory_.status = [this](const juce::String& s) { lastUndoStatus_ = s; EchoJay_NSLog(("EJUndo: " + s).toRawUTF8()); };
-    wireUndoHooks(chainHost, {});
-    loudnessLoop_.onGainWritten = [this](float before, float after)
-    { echojay::UndoEntry e; e.kind = "loop"; e.label = "level loop " + juce::String(after - before >= 0 ? "+" : "") + juce::String(after - before, 1) + " dB"; e.before = (double) before; e.after = (double) after; undoHistory_.push(std::move(e)); };
-    gestureTimer_ = std::make_unique<GestureTimer>(*this);
 
     // Session C: join the PROCESS-WIDE poller. Registered here rather than
     // from the editor, so the poll exists for the whole life of this instance
@@ -2149,7 +2142,6 @@ void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
         borrowSoloMix_.skip(buffer.getNumSamples());
 }
 
-        wireUndoHooks(*borrowHost_, "@borrow");   // 21n item 3: entries target the borrowed rack (resolved to its uid at apply)
 ChainHost* EchoJayProcessor::borrowHost()
 {
     if (borrowHost_ == nullptr)
@@ -4617,6 +4609,15 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
         for (const auto& [u, a] : linkAliases_) if (a.isNotEmpty()) al->setProperty(u, a);
         state->setProperty("linkAliases", juce::var(al));
     }
+    {   // 21n item 4: link groups, session state
+        juce::Array<juce::var> ga;
+        for (const auto& g : linkGroups_)
+        {
+            auto* o = new juce::DynamicObject(); o->setProperty("id", g.id); o->setProperty("name", g.name); o->setProperty("bus", g.bus);
+            juce::Array<juce::var> m; for (const auto& u : g.members) m.add(u); o->setProperty("members", m); ga.add(juce::var(o));
+        }
+        state->setProperty("linkGroups", juce::var(ga));
+    }
     state->setProperty("passCounter", passCounter);
     state->setProperty("projectName", projectName);
     state->setProperty("captureVersion", captureVersion);
@@ -4810,8 +4811,8 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
 
 void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
-    try {
     echojay::UndoHistory::ScopedSuppress noUndo(undoHistory_);   // 21n item 3: a session load records nothing
+    try {
     juce::String json = juce::String::fromUTF8(static_cast<const char*>(data), sizeInBytes);
     auto parsed = juce::JSON::parse(json);
     
@@ -4820,7 +4821,6 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
     {
         auto* obj = parsed.getDynamicObject();
         if (obj)
-    echojay::UndoHistory::ScopedSuppress noUndo(undoHistory_);   // 21n item 3: a session load records nothing
         {
             genre = obj->getProperty("genre").toString();
             if (genre.isEmpty()) genre = "hip-hop";
@@ -4844,6 +4844,17 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // Restore dismissed — if field exists use it, otherwise derive from channel type
             if (obj->hasProperty("channelTypePromptDismissed"))
                 channelTypePromptDismissed = (bool)obj->getProperty("channelTypePromptDismissed");
+            if (auto* ga = obj->getProperty("linkGroups").getArray())   // 21n item 4
+            {
+                linkGroups_.clear();
+                for (const auto& gv : *ga)
+                    if (auto* o = gv.getDynamicObject())
+                    {
+                        LinkGroup g; g.id = o->getProperty("id").toString(); g.name = o->getProperty("name").toString(); g.bus = o->getProperty("bus").toString();
+                        if (auto* m = o->getProperty("members").getArray()) for (const auto& u : *m) g.members.addIfNotAlreadyThere(u.toString());
+                        if (g.id.isNotEmpty() && ! g.members.isEmpty()) linkGroups_.push_back(g);
+                    }
+            }
             if (auto* al = obj->getProperty("linkAliases").getDynamicObject())   // 21m rename alias
             {
                 linkAliases_.clear();
@@ -5216,25 +5227,14 @@ void EchoJayProcessor::setLinkAlias(const juce::String& uid, const juce::String&
 {
     if (uid.isEmpty()) return;
     const auto a = alias.trim();
+    { echojay::UndoEntry e; e.kind = "alias"; e.target = uid; e.label = a.isEmpty() ? "reset name" : "rename to " + a;   // 21n item 3
+      e.before = linkAlias(uid); e.after = a; undoHistory_.push(std::move(e)); }
     if (a.isEmpty()) linkAliases_.erase(uid); else linkAliases_[uid] = a;
     EchoJay_NSLog(("EJAlias: " + uid + " -> \"" + a + "\"").toRawUTF8());
     markStateDirty();
     writeLinkAliasCommand(uid, a);   // 21n item 2: mirrored to the Link's own window and state
 }
 
-void EchoJayProcessor::writeLinkAliasCommand(const juce::String& uid, const juce::String& alias)
-{
-    int err = 0;
-    const juce::String dir = LinkShm::resolveDir(err);
-    if (dir.isEmpty() || uid.isEmpty()) return;
-    { echojay::UndoEntry e; e.kind = "alias"; e.target = uid; e.label = a.isEmpty() ? "reset name" : "rename to " + a;   // 21n item 3
-      e.before = linkAlias(uid); e.after = a; undoHistory_.push(std::move(e)); }
-    // the same one-file ctrl-cmd the mixer's Active / gain commands use; additive field, older Links ignore it
-    auto* cmd = new juce::DynamicObject();
-    cmd->setProperty("v",     1);
-    cmd->setProperty("seq",   LinkShm::nextCtrlSeq());
-    cmd->setProperty("alias", alias);
-    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
 // ===== 21n item 3: the plugin-wide undo - hooks, dispatcher, Link command entries, hosted gestures =====
 void EchoJayProcessor::wireUndoHooks(ChainHost& h, const juce::String& rackUid)
 {
@@ -5338,11 +5338,107 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
     return false;
 }
 
+// ===== 21n item 4: link groups =====
+juce::String EchoJayProcessor::createLinkGroup(const juce::String& name, const juce::StringArray& members, const juce::String& bus)
+{
+    if (members.isEmpty()) return {};
+    LinkGroup g; g.id = "grp_" + juce::String::toHexString((int) (juce::Time::currentTimeMillis() & 0x7fffffff)) + juce::String(linkGroups_.size());
+    g.name = name.trim().isNotEmpty() ? name.trim() : "Group " + juce::String((int) linkGroups_.size() + 1);
+    for (const auto& u : members) if (u.isNotEmpty()) g.members.addIfNotAlreadyThere(u);
+    g.bus = bus;
+    if ((int) linkGroups_.size() >= 12) { EchoJay_NSLog("EJGroup: 12 groups already (the contract's cap) - not created"); return {}; }
+    while (g.members.size() > 16) g.members.remove(g.members.size() - 1);   // the contract's member cap
+    linkGroups_.push_back(g);
+    EchoJay_NSLog(("EJGroup: created \"" + g.name + "\" id=" + g.id + " members=" + g.members.joinIntoString(",") + (g.bus.isNotEmpty() ? " bus=" + g.bus : juce::String())).toRawUTF8());
+    markStateDirty();
+    return g.id;
+}
+void EchoJayProcessor::removeLinkGroup(const juce::String& id)
+{ linkGroups_.erase(std::remove_if(linkGroups_.begin(), linkGroups_.end(), [&](const LinkGroup& g) { return g.id == id; }), linkGroups_.end()); markStateDirty(); }
+void EchoJayProcessor::setLinkGroupBus(const juce::String& id, const juce::String& busUid)
+{ for (auto& g : linkGroups_) if (g.id == id) { g.bus = busUid; markStateDirty(); } }
+void EchoJayProcessor::setLinkGroupMembers(const juce::String& id, const juce::StringArray& members)
+{ for (auto& g : linkGroups_) if (g.id == id) { g.members.clear(); for (const auto& u : members) if (u.isNotEmpty()) g.members.addIfNotAlreadyThere(u); markStateDirty(); } }
+void EchoJayProcessor::renameLinkGroup(const juce::String& id, const juce::String& name)
+{ for (auto& g : linkGroups_) if (g.id == id && name.trim().isNotEmpty()) { g.name = name.trim(); markStateDirty(); } }
+const EchoJayProcessor::LinkGroup* EchoJayProcessor::linkGroupById(const juce::String& id) const
+{ for (const auto& g : linkGroups_) if (g.id == id) return &g; return nullptr; }
+juce::var EchoJayProcessor::groupsBodyVar() const
+{
+    if (linkGroups_.empty()) return {};
+    juce::Array<juce::var> ga;
+    for (const auto& g : linkGroups_)
+    {
+        auto* o = new juce::DynamicObject(); o->setProperty("id", g.id); o->setProperty("name", g.name);
+        juce::Array<juce::var> m; for (const auto& u : g.members) m.add(u); o->setProperty("members", m);
+        o->setProperty("bus", g.bus.isNotEmpty() ? juce::var(g.bus) : juce::var());
+        ga.add(juce::var(o));
+    }
+    return juce::var(ga);
+}
+juce::var EchoJayProcessor::linksBodyVar() const
+{
+    if (linkGroups_.empty()) return {};
+    juce::Array<juce::var> la;
+    for (const auto& e : getLinkDisplayList())
+    {
+        if (e.info.uid.isEmpty()) continue;   // a Link without an instanceId can be a member of nothing (the contract)
+        auto* o = new juce::DynamicObject(); o->setProperty("instanceId", e.info.uid); o->setProperty("name", e.displayName);
+        o->setProperty("gainDb", (double) e.info.gainDb);
+        la.add(juce::var(o));
+    }
+    return juce::var(la);
+}
+EchoJayProcessor::GroupMove EchoJayProcessor::moveLinkGroup(const juce::String& id, float deltaDb, bool sendCommands)
+{
+    GroupMove r; r.requested = deltaDb;
+    const auto* g = linkGroupById(id); if (g == nullptr || std::abs(deltaDb) < 0.05f) return r;
+    const float lo = -24.0f, hi = 12.0f;
+    auto gainOf = [this](const juce::String& uid, bool& present) { present = false; for (const auto& li : getLinkSlotInfos()) if (li.uid == uid) { present = true; return li.gainDb; } return 0.0f; };
+    if (g->bus.isNotEmpty())
+    {   // the bus alone
+        bool present = false; const float cur = gainOf(g->bus, present);
+        if (! present) return r;
+        const float target = juce::jlimit(lo, hi, cur + deltaDb); r.applied = target - cur;
+        if (std::abs(r.applied - deltaDb) > 0.01f) r.limitingMember = resolveLinkDisplayName(g->bus);
+        if (sendCommands && std::abs(r.applied) >= 0.05f) writeLinkCtrlCommand(g->bus, "gainDb", (double) target);
+        r.commands.add(g->bus + "=" + juce::String(target, 1));
+        return r;
+    }
+    // no bus: the largest |delta| in the requested direction such that NO present member leaves -24..+12
+    float applied = deltaDb;
+    for (const auto& u : g->members)
+    {
+        bool present = false; const float cur = gainOf(u, present); if (! present) continue;
+        const float room = deltaDb > 0 ? hi - cur : lo - cur;   // signed room in the requested direction
+        if (std::abs(room) < std::abs(applied)) { applied = room; r.limitingMember = resolveLinkDisplayName(u); }
+    }
+    r.applied = applied;
+    if (std::abs(applied) < 0.05f) return r;
+    for (const auto& u : g->members)
+    {
+        bool present = false; const float cur = gainOf(u, present); if (! present) continue;
+        const float target = juce::jlimit(lo, hi, cur + applied);
+        if (sendCommands) writeLinkCtrlCommand(u, "gainDb", (double) target);
+        r.commands.add(u + "=" + juce::String(target, 1));
+    }
+    return r;
+}
+
+void EchoJayProcessor::writeLinkAliasCommand(const juce::String& uid, const juce::String& alias)
+{
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return;
+    // the same one-file ctrl-cmd the mixer's Active / gain commands use; additive field, older Links ignore it
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",     1);
+    cmd->setProperty("seq",   LinkShm::nextCtrlSeq());
+    cmd->setProperty("alias", alias);
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
     juce::File(dir + "ctrl-cmd-" + uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true));
     EchoJay_NSLog(("EJAlias: ctrl-cmd alias \"" + alias + "\" -> " + uid).toRawUTF8());
 }
-    { echojay::UndoEntry e; e.kind = "alias"; e.target = uid; e.label = a.isEmpty() ? "reset name" : "rename to " + a;   // 21n item 3
-      e.before = linkAlias(uid); e.after = a; undoHistory_.push(std::move(e)); }
 juce::String EchoJayProcessor::linkAlias(const juce::String& uid) const
 {
     auto it = linkAliases_.find(uid); return it == linkAliases_.end() ? juce::String() : it->second;

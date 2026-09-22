@@ -3870,8 +3870,10 @@ private:
     // =====================================================================
     struct StripGeom
     {
-        juce::String addr;              // Link uid; EMPTY on the Mix Bus strip
+        juce::String addr;              // Link uid; EMPTY on the Mix Bus strip; "grp:<id>" on a group row (21n item 4)
         bool isBus = false;
+        bool isGroup = false;           // 21n item 4: a GROUP row - its fader is the group's level OFFSET control
+        juce::String groupId;
         // TWO COORDINATE SPACES, stated because mixing them is a hit-test
         // bug waiting to happen: for a Link strip every rect below is in
         // linkMixerView_ LOCAL coords (it scrolls); for the Mix Bus strip
@@ -4714,6 +4716,16 @@ private:
     // 21n ruling 1b (22 Sep 2026): channelWidth per TARGET - on a turn targeting a Link it is THAT Link's channel width
     // (its registry row), never V2's own; 0 (unknown) leaves the field off the body. Local rack: V2's bus width.
     int  chatTargetChannelWidth() const;
+    // 21n item 4: groups client half - build on a group's target Links; the last build's uids / card line for the guard
+    int  buildChainOnTargets(const juce::StringArray& uids, const juce::String& chainJson, bool each);
+    juce::StringArray lastGroupBuildUids_; juce::String lastGroupBuildLine_;
+    std::set<juce::String> linkSelection_;          // Cmd-click multi-select on the roster (the "Group..." source)
+    juce::ModifierKeys lastStripClickMods_;         // the click's modifiers, for linkStripMouseDown
+    std::vector<juce::String> rosterAddresses() const;   // 21n item 4: the roster's rows (Links, then "grp:<id>" per group)
+    void paintGroupStrip(juce::Graphics& g, const StripGeom& sg);
+    void showGroupMenu(const juce::String& groupId);
+    void promptGroupName(const juce::StringArray& members);
+    juce::String lastGroupMoveStatus_;              // "the BVs moved by 1.0 dB (BV 2 is at -24 dB)" - the guard reads it
     // AI-driven level match: compute the absolute gain that lands this Link's
     // integrated loudness at targetLufs (from its freshest frame + current
     // gain), then send it. Returns the dB that WOULD be applied for the

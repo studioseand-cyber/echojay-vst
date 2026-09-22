@@ -1218,8 +1218,14 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // turnType is staged per send ("" = plain "chat"); capture payloads only
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
-    if (channelWidth_ > 0) body += ",\"channelWidth\":" + juce::String(channelWidth_);   // 21m item 2
+    // 21m item 2 / 21n: CONTRACT_GROUPS "Channel width" - the wire form is the STRING "mono" | "stereo" (a number was sent until 21n)
+    if (channelWidth_ > 0) body += juce::String(",\"channelWidth\":\"") + (channelWidth_ == 1 ? "mono" : "stereo") + "\"";
     if (unityChain_) body += ",\"unityChain\":true";   // 21m ruling: present only while the rack carries active per-slot trims
+    if (groupsVar_.isArray())   // 21n item 4: groups-aware body (omitted entirely when the user has no groups = today's behaviour)
+    {
+        body += ",\"groups\":" + juce::JSON::toString(groupsVar_, true);
+        if (groupsLinks_.isArray()) body += ",\"links\":" + juce::JSON::toString(groupsLinks_, true);
+    }
     // Auto-dial mode rides EVERY chat turn when on; the server only acts on
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
@@ -2148,10 +2154,15 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     if (req.channel.isNotEmpty())        body->setProperty("channel", req.channel);
     if (req.genre.isNotEmpty())          body->setProperty("genre", req.genre);
     if (req.priorAssistant.isNotEmpty()) body->setProperty("priorAssistant", req.priorAssistant);
-    if (channelWidth_ > 0) body->setProperty("channelWidth", channelWidth_);   // 21m item 2
+    if (channelWidth_ > 0) body->setProperty("channelWidth", juce::String(channelWidth_ == 1 ? "mono" : "stereo"));   // 21m item 2 / 21n: the contract's string form
     if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
     if (req.answers.isNotEmpty())        body->setProperty("answers", req.answers);
-    if (auto* linkArr = req.links.getArray())
+    if (groupsVar_.isArray())   // 21n item 4: classify carries the SAME links / groups shapes (objects with instanceId)
+    {
+        body->setProperty("groups", groupsVar_);
+        if (groupsLinks_.isArray()) body->setProperty("links", groupsLinks_);
+    }
+    else if (auto* linkArr = req.links.getArray())
         if (! linkArr->isEmpty()) body->setProperty("links", req.links);
     // Client version — telemetry and the existing chat-side gates. sendChat has
     // always sent this; classify never did.

@@ -2520,6 +2520,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         chainBuildBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
         chainBuildBtns[(size_t)i].setVisible(false);
         chainBuildBtns[(size_t)i].onClick = [this, i]() {
+            // 21n item 4 (contract §10): a block with a top-level "target" builds on the group - {bus} on that Link,
+            // {each} the same chain on every listed member; without one, the channel this chat is open on, as today
+            { auto tv = juce::JSON::parse(chainBuildJsons[(size_t)i]).getProperty("target", juce::var());
+              if (auto* to = tv.getDynamicObject())
+              {
+                  const juce::String mode = to->getProperty("mode").toString();
+                  juce::StringArray uids;
+                  if (mode == "bus") uids.add(to->getProperty("linkId").toString());
+                  else if (mode == "each") { if (auto* la = to->getProperty("linkIds").getArray()) for (const auto& u : *la) uids.add(u.toString()); }
+                  if (! uids.isEmpty()) { buildChainOnTargets(uids, chainBuildJsons[(size_t)i], mode == "each"); return; }
+              } }
             // Router rule: the destination is NEVER ambiguous — a channel
             // chat builds on ITS channel, a main chat builds on the local
             // rack. The old target menu (which pre-ticked "Build here"
@@ -6274,6 +6285,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -6729,6 +6741,7 @@ void EchoJayEditor::layOutStrips(juce::Rectangle<int> band, int stripW,
         StripGeom sg;
         sg.addr  = addrs[i];
         sg.isBus = false;
+        if (sg.addr.startsWith("grp:")) { sg.isGroup = true; sg.groupId = sg.addr.fromFirstOccurrenceOf("grp:", false, false); }   // 21n item 4
         layOutOne(sg, { (int)i * (stripW + kStripGap), 0,
                         stripW, band.getHeight() });
         linkOut.push_back(sg);
@@ -6813,9 +6826,7 @@ void EchoJayEditor::measureLinkStrips()
     // Canonical display list: the SAME order and "Untitled N" numbering the
     // whole product uses, so an instance keeps one label everywhere. The addr
     // derivation is linkAddrForSlot, the one place it lives.
-    std::vector<juce::String> addrs;
-    for (const auto& entry : processorRef.getLinkDisplayList())
-        addrs.push_back(linkAddrForSlot(entry.info));
+    const std::vector<juce::String> addrs = rosterAddresses();
 
     // NO EQ INPUT any more: every strip gets the box, so the geometry no
     // longer depends on the rack cache. That also retires the re-measure
@@ -8641,6 +8652,78 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     sendRackEdit(en.info.uid, slotIdx, isRemove);
 }
 
+// 21n item 4: build ONE chain block on a group's target Links (contract §10). Present, held members only; each refusal
+// is stated per Link; the card line for {each} reads "built on each of the N Links".
+int EchoJayEditor::buildChainOnTargets(const juce::StringArray& uids, const juce::String& chainJson, bool each)
+{
+    int built = 0; juce::StringArray skipped; lastGroupBuildUids_.clear();
+    for (const auto& uid : uids)
+    {
+        if (uid.isEmpty()) continue;
+        if (! linkUidLive(uid)) { skipped.add("\"" + channelDisplayLabel(uid) + "\" is offline"); continue; }
+        if (chainEditGateRefusesFor(uid)) { skipped.add("\"" + channelDisplayLabel(uid) + "\": " + chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr)); continue; }
+        sendChainToLink(uid, chainJson); ++built; lastGroupBuildUids_.add(uid);
+    }
+    juce::String line = each ? "Built on each of the " + juce::String(built) + " Links." : (built > 0 ? "Built on " + channelDisplayLabel(uids[0]) + "." : juce::String());
+    if (! skipped.isEmpty()) line += " Not built: " + skipped.joinIntoString("; ") + ".";
+    lastGroupBuildLine_ = line;
+    if (line.isNotEmpty()) appendLocalResultBubble(line);
+    return built;
+}
+
+// 21n item 4: THE roster's row list - the live Links (linkAddrForSlot), then one "grp:<id>" row per group. One source:
+// measureLinkStrips lays these out and nothing else decides which rows exist.
+std::vector<juce::String> EchoJayEditor::rosterAddresses() const
+{
+    std::vector<juce::String> addrs;
+    for (const auto& entry : processorRef.getLinkDisplayList())
+        addrs.push_back(linkAddrForSlot(entry.info));
+    for (const auto& gr : processorRef.linkGroups())
+        addrs.push_back("grp:" + gr.id);
+    return addrs;
+}
+
+// 21n item 4: the group's menu (right-click / name / badge on the group row)
+void EchoJayEditor::showGroupMenu(const juce::String& groupId)
+{
+    const auto* gr = processorRef.linkGroupById(groupId); if (gr == nullptr) return;
+    juce::PopupMenu m, bus;
+    m.addItem(1, juce::String::fromUTF8("Rename group\xe2\x80\xa6"));
+    bus.addItem(100, "None (move every member)", true, gr->bus.isEmpty());
+    int k = 0; for (const auto& u : gr->members) { bus.addItem(101 + k, processorRef.resolveLinkDisplayName(u), true, gr->bus == u); ++k; }
+    m.addSubMenu("Bus Link", bus);
+    m.addSeparator();
+    m.addItem(2, "Ungroup");
+    juce::Component::SafePointer<EchoJayEditor> safeThis(this);
+    m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this), [safeThis, groupId](int r)
+    {
+        if (safeThis == nullptr || r == 0) return;
+        auto& p = safeThis->processorRef; const auto* g2 = p.linkGroupById(groupId); if (g2 == nullptr) return;
+        if (r == 2) { p.removeLinkGroup(groupId); safeThis->measureLinkStrips(); safeThis->repaint(); return; }
+        if (r == 100) { p.setLinkGroupBus(groupId, {}); safeThis->repaint(); return; }
+        if (r >= 101 && r - 101 < g2->members.size()) { p.setLinkGroupBus(groupId, g2->members[r - 101]); safeThis->repaint(); return; }
+        if (r == 1)
+        {
+            auto* w = new juce::AlertWindow("Rename group", "Name", juce::MessageBoxIconType::NoIcon);
+            w->addTextEditor("name", g2->name); w->addButton("OK", 1); w->addButton("Cancel", 0);
+            w->enterModalState(true, juce::ModalCallbackFunction::create([safeThis, groupId, w](int res)
+            { if (safeThis != nullptr && res == 1) { safeThis->processorRef.renameLinkGroup(groupId, w->getTextEditorContents("name")); safeThis->repaint(); } }), true);
+        }
+    });
+}
+void EchoJayEditor::promptGroupName(const juce::StringArray& members)
+{
+    juce::Component::SafePointer<EchoJayEditor> safeThis(this);
+    auto* w = new juce::AlertWindow("Group these Links", juce::String(members.size()) + " Links. Name the group:", juce::MessageBoxIconType::NoIcon);
+    w->addTextEditor("name", "Group " + juce::String((int) processorRef.linkGroups().size() + 1)); w->addButton("Group", 1); w->addButton("Cancel", 0);
+    w->enterModalState(true, juce::ModalCallbackFunction::create([safeThis, members, w](int res)
+    {
+        if (safeThis == nullptr || res != 1) return;
+        safeThis->processorRef.createLinkGroup(w->getTextEditorContents("name"), members);
+        safeThis->linkSelection_.clear(); safeThis->measureLinkStrips(); safeThis->repaint();
+    }), true);
+}
+
 // 21n ruling 1b: the channel the turn is about
 int EchoJayEditor::chatTargetChannelWidth() const
 {
@@ -9929,9 +10012,49 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     }
 }
 
+// 21n item 4: a GROUP row in the roster - name, "GROUP" badge (bus named when set), member count, and the level
+// offset fader (drag = offset from 0; on release each member's trim moves by the applied delta, the bus alone when set)
+void EchoJayEditor::paintGroupStrip(juce::Graphics& g, const StripGeom& sg)
+{
+    const auto* gr = processorRef.linkGroupById(sg.groupId);
+    if (gr == nullptr) return;
+    const auto cyan = juce::Colour(0xff22d3ee);
+    g.setColour(LinkConsole::strip.brighter(0.06f));
+    g.fillRoundedRectangle(sg.full.toFloat(), 4.0f);
+    g.setColour(cyan.withAlpha(0.55f));
+    g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 4.0f, 1.0f);
+    g.setColour(LinkConsole::value);
+    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+    g.drawFittedText(gr->name, sg.name, juce::Justification::centredLeft, 1);
+    g.setColour(cyan);
+    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+    g.drawText(gr->bus.isNotEmpty() ? "GROUP \xc2\xb7 bus " + processorRef.resolveLinkDisplayName(gr->bus) : juce::String("GROUP"), sg.badge, juce::Justification::centredLeft, true);
+    g.setColour(LinkConsole::label);
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    juce::StringArray names; for (const auto& u : gr->members) names.add(processorRef.resolveLinkDisplayName(u));
+    g.drawFittedText(juce::String(gr->members.size()) + " Links: " + names.joinIntoString(", "), sg.data.reduced(4), juce::Justification::topLeft, 4);
+    const bool dragging = (linkMixerView_.dragAddr == sg.addr);
+    const float off = dragging ? linkMixerView_.dragValue : 0.0f;
+    g.setColour(LinkConsole::structure);
+    g.fillRect(sg.fader.getCentreX() - 1, sg.fader.getY(), 2, sg.fader.getHeight());
+    const int cy = yFromGainRanged(off, sg.faderImg, -24.0f, 12.0f);
+    g.setColour(dragging ? cyan : LinkConsole::value);
+    g.fillRoundedRectangle(juce::Rectangle<int>(sg.fader.getCentreX() - 10, cy - 5, 20, 10).toFloat(), 2.0f);
+    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.drawText((off >= 0 ? "+" : "") + juce::String(off, 1) + " dB", sg.fader.getX(), sg.fader.getBottom() - 14, sg.fader.getWidth(), 14, juce::Justification::centred);
+    if (lastGroupMoveStatus_.isNotEmpty() && lastGroupMoveStatus_.startsWith(gr->name))
+    { g.setColour(LinkConsole::label); g.setFont(juce::Font(juce::FontOptions(9.0f))); g.drawFittedText(lastGroupMoveStatus_, sg.data.reduced(4).withTrimmedTop(46), juce::Justification::bottomLeft, 2); }
+}
+
 void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                    const EchoJayProcessor::LinkDisplayEntry* entry)
 {
+    if (sg.isGroup) { paintGroupStrip(g, sg); return; }   // 21n item 4
+    if (! sg.isBus && linkSelection_.count(sg.addr) > 0)
+    {   // 21n item 4: Cmd-click multi-select (the "Group..." source) - a cyan frame
+        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.9f));
+        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 4.0f, 2.0f);
+    }
     // Consumes stored rects only. Data lookups are the caller's (entry) or
     // addr-keyed (pending state); geometry is measureLinkStrips' alone.
     const bool isBus = sg.isBus;
@@ -10698,6 +10821,20 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.full.contains(p))
         {
+            owner->lastStripClickMods_ = e.mods;
+            // 21n item 4: a group row - right-click / name / badge open the group menu; the fader is the offset drag
+            if (sg.isGroup)
+            {
+                if (e.mods.isPopupMenu() || sg.name.contains(p) || sg.badge.contains(p)) { owner->showGroupMenu(sg.groupId); return; }
+                if (sg.fader.contains(p)) { dragAddr = sg.addr; dragValue = 0.0f; lastDragY = p.y; repaint(); }
+                return;
+            }
+            // 21n item 4: Cmd-click toggles a Link's multi-selection (the "Group..." source)
+            if (e.mods.isCommandDown() && ! sg.isBus && ! e.mods.isPopupMenu())
+            {
+                if (owner->linkSelection_.count(sg.addr)) owner->linkSelection_.erase(sg.addr); else owner->linkSelection_.insert(sg.addr);
+                repaint(); return;
+            }
             // 21m rename alias: a right-click on a Link strip opens the placement menu (Rename... / Reset name live there)
             if (e.mods.isPopupMenu() && ! sg.isBus) { owner->showLinkPlacementMenu(sg.addr); return; }
             owner->linkStripMouseDown(sg, p, e.getNumberOfClicks());
@@ -10762,6 +10899,18 @@ void EchoJayEditor::LinkMixerView::mouseDrag(const juce::MouseEvent& e)
 void EchoJayEditor::LinkMixerView::mouseUp(const juce::MouseEvent&)
 {
     if (owner == nullptr || dragAddr.isEmpty()) return;
+    if (dragAddr.startsWith("grp:"))
+    {   // 21n item 4: the group's level offset - each member's trim moves by the applied delta (the bus alone when set)
+        const juce::String gid = dragAddr.fromFirstOccurrenceOf("grp:", false, false);
+        const auto* gr = owner->processorRef.linkGroupById(gid);
+        const auto r = owner->processorRef.moveLinkGroup(gid, dragValue, true);
+        if (gr != nullptr)
+            owner->lastGroupMoveStatus_ = gr->name + (std::abs(r.applied) < 0.05f
+                ? (r.limitingMember.isNotEmpty() ? " did not move: " + r.limitingMember + " is already at the limit" : juce::String(" did not move"))
+                : " moved by " + juce::String(r.applied, 1) + " dB" + (r.limitingMember.isNotEmpty() ? " (" + r.limitingMember + " is at the limit, asked " + juce::String(dragValue, 1) + ")" : juce::String()));
+        dragAddr = {}; dragValue = 0.0f; repaint(); owner->repaint();
+        return;
+    }
     // Always send the FINAL value on release (the throttle may have skipped
     // it); the pending entry then holds the fader at the target until the
     // Link acks.
@@ -27094,6 +27243,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
                         sysPrompt, channelName, genreName, userContent, msg,
                         rolesSnap, contentsSnap]
@@ -27723,6 +27873,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
@@ -27776,6 +27927,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -30456,12 +30608,18 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     m.addSeparator();
     m.addItem(10, juce::String::fromUTF8("Rename\xe2\x80\xa6"));
     m.addItem(11, "Reset name", processorRef.linkAlias(linkAddr).isNotEmpty());
+    {   // 21n item 4: "Group..." over the Cmd-click selection (this Link joins it)
+        juce::StringArray sel; for (const auto& u : linkSelection_) sel.add(u); sel.addIfNotAlreadyThere(linkAddr);
+        m.addSeparator();
+        m.addItem(12, juce::String::fromUTF8("Group\xe2\x80\xa6") + " (" + juce::String(sel.size()) + " Links)", sel.size() >= 2);
+    }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
         [safeThis, linkAddr, name](int r)
         {
             if (safeThis == nullptr || r == 0) return;
             if (r == 11) { safeThis->processorRef.setLinkAlias(linkAddr, {}); safeThis->repaint(); return; }
+            if (r == 12) { juce::StringArray sel; for (const auto& u : safeThis->linkSelection_) sel.add(u); sel.addIfNotAlreadyThere(linkAddr); safeThis->promptGroupName(sel); return; }   // 21n item 4
             if (r == 10)
             {
                 auto* aw = new juce::AlertWindow("Rename this Link in EchoJay", "The name EchoJay uses for this Link in this session. The Link's own name is not changed.", juce::MessageBoxIconType::NoIcon, safeThis.getComponent());
@@ -32932,6 +33090,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     juce::String captureChatId = chatId;
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis2, captureChatId](const juce::String& reply, bool success) {
             if (safeThis2 == nullptr)
