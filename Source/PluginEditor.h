@@ -2001,6 +2001,16 @@ private:
         EditGateOverlay  editGate;
         StripContent     stripContent;
         juce::TextButton addBlock { "+" };
+        // 21m per-rack undo/redo (22 Sep 2026): the buttons beside the add block; Cmd-Z / Cmd-Shift-Z
+        // reach the same callbacks from the editor's keyPressed. Enabled from the rack's own stack.
+        juce::TextButton undoBtn { juce::String::fromUTF8("\xe2\x86\xb6") }, redoBtn { juce::String::fromUTF8("\xe2\x86\xb7") };
+        std::function<void()> onUndo, onRedo;
+        void setUndoState(bool canUndo, bool canRedo, const juce::String& undoWhat, const juce::String& redoWhat)
+        {
+            undoBtn.setEnabled(canUndo); redoBtn.setEnabled(canRedo);
+            undoBtn.setTooltip(canUndo ? "Undo " + undoWhat + " (Cmd-Z)" : juce::String("Nothing to undo on this rack"));
+            redoBtn.setTooltip(canRedo ? "Redo " + redoWhat + " (Cmd-Shift-Z)" : juce::String("Nothing to redo on this rack"));
+        }
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
         PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (local + remote)
         std::vector<std::unique_ptr<Block>> blocks;
@@ -2021,16 +2031,6 @@ private:
 
         // Inline hosted editor — at most ONE alive at any moment
         std::unique_ptr<juce::AudioProcessorEditor> inlineEditor;
-        // 21m per-rack undo/redo (22 Sep 2026): the buttons beside the add block; Cmd-Z / Cmd-Shift-Z
-        // reach the same callbacks from the editor's keyPressed. Enabled from the rack's own stack.
-        juce::TextButton undoBtn { juce::String::fromUTF8("\xe2\x86\xb6") }, redoBtn { juce::String::fromUTF8("\xe2\x86\xb7") };
-        std::function<void()> onUndo, onRedo;
-        void setUndoState(bool canUndo, bool canRedo, const juce::String& undoWhat, const juce::String& redoWhat)
-        {
-            undoBtn.setEnabled(canUndo); redoBtn.setEnabled(canRedo);
-            undoBtn.setTooltip(canUndo ? "Undo " + undoWhat + " (Cmd-Z)" : juce::String("Nothing to undo on this rack"));
-            redoBtn.setTooltip(canRedo ? "Redo " + redoWhat + " (Cmd-Shift-Z)" : juce::String("Nothing to redo on this rack"));
-        }
         int  inlineSlot  = -1;
         int  realW = 0, realH = 0;  // actual native NSView size (JUCE sizes lie)
         int  framePolls  = 0;
@@ -2289,6 +2289,10 @@ private:
             addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             addBlock.onClick = [this] { if (onAddClick) onAddClick(); };
             stripContent.addAndMakeVisible(addBlock);
+            stripContent.addAndMakeVisible(undoBtn); stripContent.addAndMakeVisible(redoBtn);   // 21m undo/redo
+            undoBtn.onClick = [this] { if (onUndo) onUndo(); };
+            redoBtn.onClick = [this] { if (onRedo) onRedo(); };
+            setUndoState(false, false, {}, {});
 
             // Master chain wet/dry — fixed at the right edge of the strip
             // (outside the scrolling viewport, always visible)
@@ -2310,10 +2314,6 @@ private:
             popBtn.setTooltip("Open in floating window at native size");
             popBtn.onClick = [this] { openPopoutForSelected(); };
             addChildComponent(popBtn);
-            stripContent.addAndMakeVisible(undoBtn); stripContent.addAndMakeVisible(redoBtn);   // 21m undo/redo
-            undoBtn.onClick = [this] { if (onUndo) onUndo(); };
-            redoBtn.onClick = [this] { if (onRedo) onRedo(); };
-            setUndoState(false, false, {}, {});
 
             // Card header B / X — same actions as the strip blocks
             auto cardStyle = [](juce::TextButton& b, juce::Colour fg) {
@@ -2947,6 +2947,9 @@ private:
                 addBlock.setBounds(x, y + (kBlockH - kAddW) / 2, kAddW, kAddW);
                 x += kAddW + 12;
             }
+            undoBtn.setBounds(x, y + kBlockH / 2 - 21, 24, 20);   // 21m undo/redo, stacked after the add block
+            redoBtn.setBounds(x, y + kBlockH / 2 + 1,  24, 20);
+            x += 24 + 12;
             stripContent.lineY    = y + kBlockH / 2;
             stripContent.lineEndX = blocks.empty() ? 0 : x - 12;
             stripContent.setSize(juce::jmax(x, stripView.getWidth()), contentH);
@@ -2971,9 +2974,6 @@ private:
                 int shown = juce::jmin(kNoteMaxRow, stateNotes.size());
                 for (int i = 0; i < shown; ++i)
                 {
-            undoBtn.setBounds(x, y + kBlockH / 2 - 21, 24, 20);   // 21m undo/redo, stacked after the add block
-            redoBtn.setBounds(x, y + kBlockH / 2 + 1,  24, 20);
-            x += 24 + 12;
                     juce::String line = stateNotes[i];
                     if (i == kNoteMaxRow - 1 && stateNotes.size() > kNoteMaxRow)
                         line = line + "   (+" + juce::String(stateNotes.size() - kNoteMaxRow)
@@ -4693,6 +4693,10 @@ private:
     // Remote placement declaration (0 unset, 1 bus, 2 insert) via ctrl-cmd.
     void sendLinkPlacementCommand(const juce::String& linkAddr, int placement);
     void showLinkPlacementMenu(const juce::String& linkAddr);
+    // 21m per-rack undo/redo: local rack = its ChainHost stack; borrowed rack = the local copy's stack plus
+    // the same op through the transport; held remote rack = the op through the transport alone.
+    void rackUndoRedo(bool redo);
+    void sendRackUndo(const juce::String& uid, bool redo);
     // AI-driven level match: compute the absolute gain that lands this Link's
     // integrated loudness at targetLufs (from its freshest frame + current
     // gain), then send it. Returns the dB that WOULD be applied for the
@@ -4717,10 +4721,6 @@ private:
         feedRowsWithSessionExclusions(std::vector<ScannedPlugin> rows) const;
     // Link build results with load_failed entries: one dialog, per-plugin
     // "don't suggest again" toggle rows (no modal chain).
-    // 21m per-rack undo/redo: local rack = its ChainHost stack; borrowed rack = the local copy's stack plus
-    // the same op through the transport; held remote rack = the op through the transport alone.
-    void rackUndoRedo(bool redo);
-    void sendRackUndo(const juce::String& uid, bool redo);
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session
 
     juce::String currentlyPlayingChatWav;

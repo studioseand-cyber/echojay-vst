@@ -1152,9 +1152,6 @@ public:
     // then quietly not work. A missing source is now a BUILD error.
     void  setSlotWet(int i, float wet01, WetSource src);
     float getSlotWet(int i) const;
-    // COMMIT 3 (17 Sep 2026): the identity a remote slotWet verb is keyed on —
-    // hex of descUid (the 25 Aug idiom, so a deprecatedUid-only AU still has
-    // one). The main sends its borrowed slot's; the Link compares its own
     // 21m ruling 2: the per-slot unity-gain trim
     void  setSlotTrimDb(int i, float db);
     float getSlotTrimDb(int i) const;
@@ -1190,6 +1187,9 @@ public:
     void beginUndoBatch(const juce::String& label);   // one undo step for a whole sequence (applyChainEdits)
     void endUndoBatch();
     UndoSnapshot captureUndoSnapshot(const juce::String& label) const;
+    // COMMIT 3 (17 Sep 2026): the identity a remote slotWet verb is keyed on —
+    // hex of descUid (the 25 Aug idiom, so a deprecatedUid-only AU still has
+    // one). The main sends its borrowed slot's; the Link compares its own
     // slot's; both come from THIS function, so they can only differ when the
     // slots differ. Empty out of range.
     juce::String slotIdentityHex(int i) const;
@@ -2097,6 +2097,12 @@ private:
     juce::Array<juce::PluginDescription> entries_;
     juce::KnownPluginList                knownPlugins_;
     int                                  hostChannelWidth_ = 2;   // 21m item 2: the rack's channel width (from the host bus)
+    // 21m undo/redo state (see the public block above)
+    std::deque<UndoSnapshot> undoStack_, redoStack_;
+    int  undoBatchDepth_ = 0;      // > 0: mutations inside a batch push nothing (the batch pushed once)
+    bool undoSuppressed_ = false;  // true while undo/redo itself removes and restores
+    juce::String lastUndoKey_; juce::int64 lastUndoPushMs_ = 0;
+    void applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled);
     juce::StringArray                    blacklist_;
     std::map<juce::String, int>          stateOversize_;   // path -> default-state bytes; see WithholdReason::SettingsTooLarge
     void reloadStateOversizeFromDisk();                    // pluginsMutex_ taken inside
@@ -2106,12 +2112,6 @@ private:
     // plugin on the next scan without a host restart.
     void reloadBlacklistFromDisk();
     // path -> "reason<TAB>ISO date", written into chain_blacklist.txt after
-    // 21m undo/redo state (see the public block above)
-    std::deque<UndoSnapshot> undoStack_, redoStack_;
-    int  undoBatchDepth_ = 0;      // > 0: mutations inside a batch push nothing (the batch pushed once)
-    bool undoSuppressed_ = false;  // true while undo/redo itself removes and restores
-    juce::String lastUndoKey_; juce::int64 lastUndoPushMs_ = 0;
-    void applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled);
     // the path. Absent for entries that predate the tabbed format; the
     // reader tolerates bare paths and the writer keeps them bare. NOT a
     // fourth exclusion store: the blacklist is still blacklist_, this only

@@ -1764,6 +1764,19 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
     auto abort = [&onDone](const juce::String& why)
     { if (onDone) onDone(juce::StringArray{ why }, 0, true); };
 
+    // 21m undo THROUGH THE TRANSPORT: a single undo/redo op is answered by this rack's own
+    // stack, before the base-slot guards (the sender's base is the rack BEFORE the undo,
+    // which is what it is looking at; the stack, not the base, says what comes back).
+    if (ops.size() == 1 && (ops[0].op == "undo" || ops[0].op == "redo"))
+    {
+        const bool isUndo = ops[0].op == "undo";
+        const juce::String was = isUndo ? undoLabel() : redoLabel();
+        const bool ok = isUndo ? undo() : redo();
+        if (onDone) onDone(juce::StringArray{ ok ? (juce::String(isUndo ? "undo: " : "redo: ") + was)
+                                                 : juce::String("nothing to " + ops[0].op) }, ok ? 1 : 0, ! ok);
+        return;
+    }
+
     // ---- Pre-flight guard 1: revision (same-session staleness) ----
     // EACH guard names what it actually compared, in the log AND in the
     // user-visible message (15 Aug 2026). The three used to share one
@@ -1782,19 +1795,6 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                        + juce::String(getChainRevision())).toRawUTF8());
         return abort("the rack was modified after this edit was proposed"
                      " - ask again");
-    // 21m undo THROUGH THE TRANSPORT: a single undo/redo op is answered by this rack's own
-    // stack, before the base-slot guards (the sender's base is the rack BEFORE the undo,
-    // which is what it is looking at; the stack, not the base, says what comes back).
-    if (ops.size() == 1 && (ops[0].op == "undo" || ops[0].op == "redo"))
-    {
-        const bool isUndo = ops[0].op == "undo";
-        const juce::String was = isUndo ? undoLabel() : redoLabel();
-        const bool ok = isUndo ? undo() : redo();
-        if (onDone) onDone(juce::StringArray{ ok ? (juce::String(isUndo ? "undo: " : "redo: ") + was)
-                                                 : juce::String("nothing to " + ops[0].op) }, ok ? 1 : 0, ! ok);
-        return;
-    }
-
     }
 
     // ---- Pre-flight guard 2: baseSlots vs live rack ----
@@ -2347,24 +2347,6 @@ void ChainHost::setMasterWet(float wet01)
     bumpChainRevision();
 }
 
-void ChainHost::setSlotWet(int i, float wet01, WetSource src)
-{
-    if (i < 0 || i >= (int)slots_.size()) return;
-    // ===== DO NOT DIAL (5 Sep 2026) =====
-    // Not a plugin parameter, but it CHANGES THE SOUND, and the mode means
-    // EchoJay does not change the sound. Guarded here rather than at the ops
-    // that reach it (set_wet, and wet_pct riding an add or replace) so a
-    // fourth caller cannot arrive without it.
-    //
-    // ONLY EchoJay's OWN writes. The user dragging the wet knob reaches this
-    // same function, and blocking that would lock the user out of the hand
-    // control the mode exists to hand back to them. A Restore is the session's
-    // saved value and is not a change either.
-    if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;
-    auto& s = slots_[(size_t)i];
-    s.wet = juce::jlimit(0.0f, 1.0f, wet01);
-    bumpChainRevision();
-    if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
 void ChainHost::setSlotTrimDb(int i, float db)
 {
     if (i < 0 || i >= (int) slots_.size()) return;
@@ -2462,9 +2444,30 @@ bool ChainHost::redo(std::function<void()> onSlotSettled)
     return true;
 }
 
+void ChainHost::setSlotWet(int i, float wet01, WetSource src)
+{
+    if (i < 0 || i >= (int)slots_.size()) return;
+    // ===== DO NOT DIAL (5 Sep 2026) =====
+    // Not a plugin parameter, but it CHANGES THE SOUND, and the mode means
+    // EchoJay does not change the sound. Guarded here rather than at the ops
+    // that reach it (set_wet, and wet_pct riding an add or replace) so a
+    // fourth caller cannot arrive without it.
+    //
+    // ONLY EchoJay's OWN writes. The user dragging the wet knob reaches this
+    // same function, and blocking that would lock the user out of the hand
+    // control the mode exists to hand back to them. A Restore is the session's
+    // saved value and is not a change either.
+    if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;
+    auto& s = slots_[(size_t)i];
+    if (src != WetSource::Restore && std::abs(s.wet - juce::jlimit(0.0f, 1.0f, wet01)) > 1e-4f)
+        pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
+    s.wet = juce::jlimit(0.0f, 1.0f, wet01);
+    bumpChainRevision();
+    if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
         s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
     else
         s.wetShared->store(s.wet, std::memory_order_relaxed);
+    if (!s.trimShared) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);   // 21m ruling 2
 }
 
 float ChainHost::getSlotWet(int i) const
@@ -2477,8 +2480,6 @@ juce::String ChainHost::slotIdentityHex(int i) const
 {
     if (i < 0 || i >= (int)slots_.size()) return {};
     return juce::String::toHexString(descUid(slots_[(size_t)i].desc));
-    if (src != WetSource::Restore && std::abs(s.wet - juce::jlimit(0.0f, 1.0f, wet01)) > 1e-4f)
-        pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
 }
 
 ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
@@ -2774,6 +2775,7 @@ void ChainHost::removeSlot(int i)
 {
     GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
+    pushUndo("remove " + slots_[(size_t)i].desc.name);   // 21m undo
     // MOVE LOG: what left. Recorded before the slot goes, while its name is
     // still in hand.
     recordStructural(MoveLogEntry::Kind::Remove, i, juce::String(),
@@ -2793,7 +2795,6 @@ void ChainHost::removeSlot(int i)
         // instances are parked in the graveyard for the session instead.
         graveyard_.push_back(slots_[i].node);
         graph_->removeNode(slots_[i].node->nodeID);
-    pushUndo("remove " + slots_[(size_t)i].desc.name);   // 21m undo
     }
     // The wet-blend node is OURS (no third-party UI timers) — destroy for real
     if (slots_[i].blendNode)
@@ -2828,6 +2829,7 @@ void ChainHost::moveSlot(int i, int direction)
     GraphMutation graphMutation(*this);   // v9 change B
     int j = i + direction;
     if (i < 0 || i >= (int)slots_.size()) return;
+    if (j >= 0 && j < (int)slots_.size()) pushUndo("move " + slots_[(size_t)i].desc.name);   // 21m undo
     if (j < 0 || j >= (int)slots_.size()) return;
     std::swap(slots_[i], slots_[j]);
     bumpChainRevision();
@@ -2847,7 +2849,6 @@ juce::String ChainHost::insertBuiltinAt(const juce::PluginDescription& desc, int
     if (index >= 0 && index < last) moveSlotTo(last, index);
     return {};
 }
-    if (j >= 0 && j < (int)slots_.size()) pushUndo("move " + slots_[(size_t)i].desc.name);   // 21m undo
 bool ChainHost::moveSlotTo(int from, int to)
 {
     GraphMutation graphMutation(*this);
@@ -2869,6 +2870,7 @@ void ChainHost::setSlotBypassed(int i, bool bypassed)
 {
     GraphMutation graphMutation(*this);   // v9 change B
     if (i < 0 || i >= (int)slots_.size()) return;
+    if (slots_[(size_t)i].bypassed != bypassed) pushUndo(juce::String(bypassed ? "bypass " : "un-bypass ") + slots_[(size_t)i].desc.name);   // 21m undo
     // v9: this is the USER's / plan's request. While a rack lease holds the
     // rack dry (attachBypassed_), the effective state stays bypassed and only
     // the intent is recorded; the lease's release applies the intent.
@@ -2888,7 +2890,6 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
     if (i < 0 || i >= (int)slots_.size()) return nullptr;
     if (!slots_[i].node) return nullptr;
     try
-    if (slots_[(size_t)i].bypassed != bypassed) pushUndo(juce::String(bypassed ? "bypass " : "un-bypass ") + slots_[(size_t)i].desc.name);   // 21m undo
     {
         auto* proc = slots_[i].node->getProcessor();
         if (proc == nullptr) return nullptr;
@@ -5783,6 +5784,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                                 LoadOrigin origin,
                                 std::function<void(const juce::String& error)> callback)
 {
+    if (origin != LoadOrigin::Restore) pushUndo("add " + desc.name);   // 21m undo (inside an edit batch this is a no-op)
     // Built-in device: constructed directly, no format manager, no scan.
     // The callback fires synchronously — every existing caller either just
     // updates UI or re-enters its sequencer through Timer::callAfterDelay,
@@ -5802,7 +5804,6 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 
     // Borrowed mode: the pool first, same rule as the builtin branch inside
     // loadBuiltinNow. The key is the resolved description's identity, which
-    if (origin != LoadOrigin::Restore) pushUndo("add " + desc.name);   // 21m undo (inside an edit batch this is a no-op)
     // arrives through the same resolution path on every borrow.
     if (mode_ == Mode::Borrowed && borrowTryReuseInto(desc))
     {
@@ -5948,10 +5949,10 @@ void ChainHost::rebuildGraph()
         {
             if (!s.wetShared)
                 s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
-            if (!s.blendNode)
             // 21m ruling 2: ONE trim atomic per slot for the slot's life. It is created here at most once;
             // a fresh atomic on every rebuild would leave the blend node reading the OLD one.
             if (s.trimShared == nullptr) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);
+            if (!s.blendNode)
                 s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.trimShared));
             active.push_back({ s.node->nodeID, s.blendNode->nodeID });
         }
@@ -9272,9 +9273,9 @@ juce::var ChainHost::buildChainSlotsVar() const
         // NOTE the server's slot normaliser (lib/dash/chains.js) whitelists
         // keys and drops this one until it learns it.
         o->setProperty("wet",          (double) s.wet);
-        // The AI's prose dial-in guidance is the closest thing this rack has
         o->setProperty("trimDb",       (double) s.trimDb);     // 21m ruling 2: the unity-gain trim
         o->setProperty("keepLevel",    s.keepLevel);
+        // The AI's prose dial-in guidance is the closest thing this rack has
         // to a role, and it is display text rather than a short label, so it
         // is NOT sent as one. An absent role is honest; an invented one would
         // put words in the model's mouth. Slot settings ride in `state`.
@@ -9400,9 +9401,9 @@ void ChainHost::restoreSavedChain(const juce::var& slotsArr, const juce::var& st
         item.wet         = o->hasProperty("wet")
                              ? juce::jlimit(0.0f, 1.0f, (float)(double) o->getProperty("wet"))
                              : 1.0f;
-        item.expectState = (statesObj != nullptr);
         item.trimDb      = o->hasProperty("trimDb") ? juce::jlimit(-12.0f, 12.0f, (float)(double) o->getProperty("trimDb")) : 0.0f;   // 21m ruling 2
         item.keepLevel   = o->hasProperty("keepLevel") && (bool) o->getProperty("keepLevel");
+        item.expectState = (statesObj != nullptr);
         if (statesObj != nullptr)
         {
             const juce::String key (n);

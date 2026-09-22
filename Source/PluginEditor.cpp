@@ -18172,12 +18172,12 @@ void EchoJayEditor::paint(juce::Graphics& g)
                                 if (so == nullptr) { ly += 16; continue; }
                                 const auto nm = so->getProperty("name").toString().trim();
                                 auto set = so->getProperty("settings").toString().trim();
-                                if (set.isEmpty())
-                                    set = so->getProperty("role").toString().trim();
                                 {   // 21m ruling 2: the slot's unity-gain trim, from the same atomic the tile shows
                                     const auto tt = processorRef.getChainHost().trimTextForName(nm);
                                     if (tt.isNotEmpty()) set = set.isEmpty() ? tt : set + juce::String::fromUTF8(" \xc2\xb7 ") + tt;
                                 }
+                                if (set.isEmpty())
+                                    set = so->getProperty("role").toString().trim();
                                 const juce::String head = juce::String(si + 1) + ". " + nm;
                                 const int headW = juce::jmin(bubbleW - 20,
                                     juce::GlyphArrangement::getStringWidthInt(
@@ -33610,6 +33610,14 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         reviewSearchBox.hasKeyboardFocus(false))
         return false;
 
+    // 21m per-rack Undo/Redo: Cmd-Z / Cmd-Shift-Z on the Chain tab (the loop's own Undo pill is unchanged)
+    if (currentTab == Tab::Chain && key.getModifiers().isCommandDown()
+        && juce::CharacterFunctions::toUpperCase((juce::juce_wchar) key.getKeyCode()) == 'Z')
+    {
+        rackUndoRedo(key.getModifiers().isShiftDown());
+        return true;
+    }
+
 
     // Spacebar — stop capture or toggle AB playback
     if (key == juce::KeyPress::spaceKey && currentScreen == Screen::Main
@@ -33632,14 +33640,6 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         {
             processorRef.stopCapture();
             return true;
-    // 21m per-rack Undo/Redo: Cmd-Z / Cmd-Shift-Z on the Chain tab (the loop's own Undo pill is unchanged)
-    if (currentTab == Tab::Chain && key.getModifiers().isCommandDown()
-        && juce::CharacterFunctions::toUpperCase((juce::juce_wchar) key.getKeyCode()) == 'Z')
-    {
-        rackUndoRedo(key.getModifiers().isShiftDown());
-        return true;
-    }
-
         }
         
         // Toggle AB playback with spacebar
