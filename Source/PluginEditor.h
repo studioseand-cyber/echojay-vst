@@ -559,6 +559,9 @@ private:
     
     // Top bar — left group
     juce::TextButton captureBtn { "Capture" };
+    // 21n item 3: the plugin-wide Undo / Redo in the header (Cmd-Z / Shift-Cmd-Z anywhere outside a text field)
+    juce::TextButton undoHdrBtn { juce::String::fromUTF8("\xe2\x86\xb6") }, redoHdrBtn { juce::String::fromUTF8("\xe2\x86\xb7") };
+    void refreshUndoButtons();
     juce::TextButton resetBtn { "Reset" };
     juce::TextButton compareBtn { "Compare" };
     juce::TextButton settingsBtn { "Settings" };

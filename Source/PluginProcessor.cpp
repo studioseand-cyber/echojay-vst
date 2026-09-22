@@ -270,6 +270,20 @@ EchoJayProcessor::EchoJayProcessor()
     // own audio is recognisable by this instance's own consumers. Must match
     // publishKeyFeed's publisherId stamp.
     chainHost.setKeyFeedOwnerId ((uint64_t) (uintptr_t) this);
+    // 21n item 3: the plugin-wide undo history - dispatcher, status line, the local rack's hooks, the loop's writes
+    undoHistory_.apply  = [this](echojay::UndoEntry& e, bool toBefore) { return applyUndoEntry(e, toBefore); };
+    undoHistory_.status = [this](const juce::String& s) { lastUndoStatus_ = s; EchoJay_NSLog(("EJUndo: " + s).toRawUTF8()); };
+    wireUndoHooks(chainHost, {});
+    loudnessLoop_.onGainWritten = [this](float before, float after)
+    { echojay::UndoEntry e; e.kind = "loop"; e.label = "level loop " + juce::String(after - before >= 0 ? "+" : "") + juce::String(after - before, 1) + " dB"; e.before = (double) before; e.after = (double) after; undoHistory_.push(std::move(e)); };
+    gestureTimer_ = std::make_unique<GestureTimer>(*this);
+    // 21n item 3: the plugin-wide undo history - dispatcher, status line, the local rack's hooks, the loop's writes
+    undoHistory_.apply  = [this](echojay::UndoEntry& e, bool toBefore) { return applyUndoEntry(e, toBefore); };
+    undoHistory_.status = [this](const juce::String& s) { lastUndoStatus_ = s; EchoJay_NSLog(("EJUndo: " + s).toRawUTF8()); };
+    wireUndoHooks(chainHost, {});
+    loudnessLoop_.onGainWritten = [this](float before, float after)
+    { echojay::UndoEntry e; e.kind = "loop"; e.label = "level loop " + juce::String(after - before >= 0 ? "+" : "") + juce::String(after - before, 1) + " dB"; e.before = (double) before; e.after = (double) after; undoHistory_.push(std::move(e)); };
+    gestureTimer_ = std::make_unique<GestureTimer>(*this);
 
     // Session C: join the PROCESS-WIDE poller. Registered here rather than
     // from the editor, so the poll exists for the whole life of this instance
@@ -2135,6 +2149,7 @@ void EchoJayProcessor::applyBorrowSoloMixOn(juce::AudioBuffer<float>& buffer,
         borrowSoloMix_.skip(buffer.getNumSamples());
 }
 
+        wireUndoHooks(*borrowHost_, "@borrow");   // 21n item 3: entries target the borrowed rack (resolved to its uid at apply)
 ChainHost* EchoJayProcessor::borrowHost()
 {
     if (borrowHost_ == nullptr)
@@ -2142,6 +2157,7 @@ ChainHost* EchoJayProcessor::borrowHost()
         borrowHost_ = std::make_unique<ChainHost>(ChainHost::Mode::Borrowed);
         borrowHost_->prepare(hostSampleRate_ > 0 ? hostSampleRate_ : 44100.0,
                              hostSamplesPerBlock_ > 0 ? hostSamplesPerBlock_ : 512);
+        wireUndoHooks(*borrowHost_, "@borrow");   // 21n item 3: entries target the borrowed rack (resolved to its uid at apply)
         // §8: the borrowed chain's latency feeds the pad math (INTERNAL use
         // — the hard block on its host REPORT stands). A chain that grows
         // past the budget mid-session drops to solo, with the named line,
@@ -4795,6 +4811,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
 void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     try {
+    echojay::UndoHistory::ScopedSuppress noUndo(undoHistory_);   // 21n item 3: a session load records nothing
     juce::String json = juce::String::fromUTF8(static_cast<const char*>(data), sizeInBytes);
     auto parsed = juce::JSON::parse(json);
     
@@ -4803,6 +4820,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
     {
         auto* obj = parsed.getDynamicObject();
         if (obj)
+    echojay::UndoHistory::ScopedSuppress noUndo(undoHistory_);   // 21n item 3: a session load records nothing
         {
             genre = obj->getProperty("genre").toString();
             if (genre.isEmpty()) genre = "hip-hop";
@@ -5209,15 +5227,122 @@ void EchoJayProcessor::writeLinkAliasCommand(const juce::String& uid, const juce
     int err = 0;
     const juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty() || uid.isEmpty()) return;
+    { echojay::UndoEntry e; e.kind = "alias"; e.target = uid; e.label = a.isEmpty() ? "reset name" : "rename to " + a;   // 21n item 3
+      e.before = linkAlias(uid); e.after = a; undoHistory_.push(std::move(e)); }
     // the same one-file ctrl-cmd the mixer's Active / gain commands use; additive field, older Links ignore it
     auto* cmd = new juce::DynamicObject();
     cmd->setProperty("v",     1);
     cmd->setProperty("seq",   LinkShm::nextCtrlSeq());
     cmd->setProperty("alias", alias);
     juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+// ===== 21n item 3: the plugin-wide undo - hooks, dispatcher, Link command entries, hosted gestures =====
+void EchoJayProcessor::wireUndoHooks(ChainHost& h, const juce::String& rackUid)
+{
+    h.onUndoPush = [this, rackUid, hp = &h](const ChainHost::UndoSnapshot& before, const juce::String& label, const juce::String& key)
+    {
+        echojay::UndoEntry e; e.kind = "chain"; e.target = rackUid == "@borrow" ? borrowSession_.uid : rackUid; e.label = label; e.coalesceKey = key.isNotEmpty() ? "chain:" + key : juce::String();
+        auto* o = new juce::DynamicObject(); o->setProperty("slots", before.slots); o->setProperty("state", before.state); o->setProperty("params", before.params);
+        e.before = juce::var(o); juce::ignoreUnused(hp); undoHistory_.push(std::move(e));
+    };
+    h.onScalarUndo = [this, rackUid, hp = &h](const juce::String& kind, int slot, juce::var before, juce::var after, const juce::String& label, const juce::String& key)
+    {
+        echojay::UndoEntry e; e.kind = kind; e.target = (rackUid == "@borrow" ? borrowSession_.uid : rackUid) + "#" + hp->slotUndoTarget(slot) + "#" + juce::String(slot);
+        e.label = label; e.before = before; e.after = after; e.coalesceKey = key.isNotEmpty() ? kind + ":" + key : juce::String(); undoHistory_.push(std::move(e));
+    };
+    h.onDialUndo = [this, rackUid, hp = &h](int slot, juce::var before, juce::var after, const juce::String& label)
+    {
+        echojay::UndoEntry e; e.kind = "dial"; e.target = (rackUid == "@borrow" ? borrowSession_.uid : rackUid) + "#" + hp->slotUndoTarget(slot) + "#" + juce::String(slot);
+        e.label = label; e.before = before; e.after = after; undoHistory_.push(std::move(e));
+    };
+}
+
+void EchoJayProcessor::drainHostedGestures()
+{
+    auto drain = [this](ChainHost& h, const juce::String& rackUid)
+    {
+        h.drainHostedParamEvents([this, &h, rackUid](int slot, int index, float value, juce::int64 ms)
+        {
+            const float before = h.cachedHostedParam(slot, index);
+            const juce::String key = "gesture:" + rackUid + "#" + h.slotUndoTarget(slot) + "#" + juce::String(index);
+            const auto* top = undoHistory_.top();
+            const bool extends = top != nullptr && top->coalesceKey == key && ms - top->timeMs <= echojay::UndoHistory::kCoalesceMs;
+            echojay::UndoEntry e; e.kind = "gesture"; e.target = rackUid + "#" + h.slotUndoTarget(slot) + "#" + juce::String(slot); e.coalesceKey = key; e.timeMs = ms;
+            juce::String pname; if (auto* p = h.getSlotProcessor(slot)) { const auto& ps = p->getParameters(); if (index >= 0 && index < ps.size()) pname = ps[index]->getName(24); }
+            e.label = h.getSlotInfo(slot).name + " " + pname;
+            auto mk = [index](float v) { auto* o = new juce::DynamicObject(); o->setProperty("index", index); o->setProperty("value", (double) v); return juce::var(o); };
+            e.before = mk(extends ? (float)(double) top->before.getProperty("value", juce::var()) : (before >= 0.0f ? before : value));
+            e.after  = mk(value);
+            h.setCachedHostedParam(slot, index, value);
+            undoHistory_.push(std::move(e));
+        });
+    };
+    drain(chainHost, {});
+    if (borrowHost_ != nullptr && borrowActive()) drain(*borrowHost_, borrowSession_.uid);
+}
+
+void EchoJayProcessor::recordLinkActiveUndo(const juce::String& uid, bool before, bool after)
+{ if (before == after) return; echojay::UndoEntry e; e.kind = "linkActive"; e.target = uid; e.label = juce::String(after ? "Link on: " : "Link off: ") + resolveLinkDisplayName(uid); e.before = before; e.after = after; undoHistory_.push(std::move(e)); }
+void EchoJayProcessor::recordLinkGainUndo(const juce::String& uid, float before, float after)
+{ if (std::abs(before - after) < 0.05f) return; echojay::UndoEntry e; e.kind = "linkGain"; e.target = uid; e.label = "Link trim " + resolveLinkDisplayName(uid); e.before = (double) before; e.after = (double) after; e.coalesceKey = "linkGain:" + uid; undoHistory_.push(std::move(e)); }
+void EchoJayProcessor::writeLinkCtrlCommand(const juce::String& uid, const juce::String& field, const juce::var& value)
+{
+    int err = 0; const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty() || uid.isEmpty()) return;
+    auto* cmd = new juce::DynamicObject(); cmd->setProperty("v", 1); cmd->setProperty("seq", LinkShm::nextCtrlSeq()); cmd->setProperty(juce::Identifier(field), value);
+    if (field == "gainDb") { bool active = true; for (const auto& li : getLinkSlotInfos()) if (li.uid == uid) active = li.active; cmd->setProperty("active", active); }   // the gain command's contract carries active
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+}
+
+bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
+{
+    const juce::var& v = toBefore ? e.before : e.after;
+    auto rackFor = [this](const juce::String& uid) -> ChainHost* { if (uid.isEmpty()) return &chainHost; return borrowHostIfActiveFor(uid); };
+    auto splitSlot = [](const juce::String& t, juce::String& rack, juce::String& slotId, int& hint)
+    { rack = t.upToFirstOccurrenceOf("#", false, false); const auto rest = t.fromFirstOccurrenceOf("#", false, false); slotId = rest.upToLastOccurrenceOf("#", false, false); hint = rest.fromLastOccurrenceOf("#", false, false).getIntValue(); };
+    if (e.kind == "chain")
+    {
+        ChainHost* h = rackFor(e.target); if (h == nullptr) return false;
+        // the snapshot pair: going back restores `before`; the state at this moment becomes the other side
+        ChainHost::UndoSnapshot now = h->captureUndoSnapshot(e.label);
+        auto* o = new juce::DynamicObject(); o->setProperty("slots", now.slots); o->setProperty("state", now.state); o->setProperty("params", now.params);
+        ChainHost::UndoSnapshot target; target.label = e.label;
+        target.slots = v.getProperty("slots", juce::var()); target.state = v.getProperty("state", juce::var()); target.params = v.getProperty("params", juce::var());
+        (toBefore ? e.after : e.before) = juce::var(o);
+        h->applyUndoSnapshot(target, {});
+        if (e.target.isNotEmpty()) { juce::StringArray base; for (int k = 0; k < h->getNumSlots(); ++k) base.add(h->getSlotInfo(k).name); borrowPushStructuralEdit(toBefore ? "undo" : "redo", -1, -1, false, {}, base, h->getNumSlots()); }
+        return true;
+    }
+    if (e.kind == "wet" || e.kind == "trim" || e.kind == "keep" || e.kind == "dial" || e.kind == "gesture")
+    {
+        juce::String rack, slotId; int hint = -1; splitSlot(e.target, rack, slotId, hint);
+        ChainHost* h = rackFor(rack); if (h == nullptr) return false;
+        const int i = h->slotForUndoTarget(slotId, hint); if (i < 0) return false;
+        if (e.kind == "wet")  h->setSlotWet(i, (float)(double) v, ChainHost::WetSource::User);
+        if (e.kind == "trim") h->setSlotTrimDb(i, (float)(double) v);
+        if (e.kind == "keep") h->setSlotKeepLevel(i, (bool) v);
+        if (e.kind == "dial") h->applySlotParamSnapshot(i, v);
+        if (e.kind == "gesture") { auto* o = new juce::DynamicObject(); o->setProperty(juce::Identifier(juce::String((int) v.getProperty("index", juce::var()))), v.getProperty("value", juce::var())); h->applySlotParamSnapshot(i, juce::var(o)); }
+        return true;
+    }
+    if (e.kind == "linkActive" || e.kind == "linkGain")
+    {
+        bool present = false; for (const auto& li : getLinkSlotInfos()) if (li.uid == e.target) present = true;
+        if (! present) return false;
+        writeLinkCtrlCommand(e.target, e.kind == "linkActive" ? "active" : "gainDb", v);
+        return true;
+    }
+    if (e.kind == "alias") { setLinkAlias(e.target, v.toString()); return true; }
+    if (e.kind == "loop")  { if (loudnessLoop_.levelSlot() < 0) return false; loudnessLoop_.writeGainDb((float)(double) v); return true; }
+    if (e.kind == "group") { return false; }   // item 4 fills this in
+    return false;
+}
+
     juce::File(dir + "ctrl-cmd-" + uid + ".json").replaceWithText(juce::JSON::toString(juce::var(cmd), true));
     EchoJay_NSLog(("EJAlias: ctrl-cmd alias \"" + alias + "\" -> " + uid).toRawUTF8());
 }
+    { echojay::UndoEntry e; e.kind = "alias"; e.target = uid; e.label = a.isEmpty() ? "reset name" : "rename to " + a;   // 21n item 3
+      e.before = linkAlias(uid); e.after = a; undoHistory_.push(std::move(e)); }
 juce::String EchoJayProcessor::linkAlias(const juce::String& uid) const
 {
     auto it = linkAliases_.find(uid); return it == linkAliases_.end() ? juce::String() : it->second;

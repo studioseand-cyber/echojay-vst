@@ -100,6 +100,7 @@ public:
     std::function<void (const Bubble&)> onBubble;                          // message thread
     std::function<void (const juce::String&)> logLine;                      // "EJLoudness: ..." (item 5); the editor wires EchoJay_NSLog
     std::function<bool()>               isPlaying  { [] { return true; } };
+    std::function<void (float beforeDb, float afterDb)> onGainWritten;      // 21n item 3: every loop write of the Level gain (an undo entry)
     std::function<bool()>               knobGestureOpen { [] { return echojay::knobGestureOpen(); } };
     std::function<juce::int64()>        nowMs      { [] { return juce::Time::currentTimeMillis(); } };
 
@@ -668,8 +669,11 @@ private:
         log (juce::String (why) + ": Level " + fmtSigned ((float) lv->gainDb()) + " -> " + fmtSigned (newDb) + " dB (trim " + fmtSigned (trim) + ")");
         writeGainDb (newDb);
     }
-    void writeGainDb (float db)
+public:
+    void writeGainDb (float db)   // 21n item 3: public - the undo dispatcher restores a loop entry through the same write
     {   // through the host so the card and the dial info follow
+        const float before = currentGainDb();
+        if (onGainWritten && std::abs (before - db) > 0.01f) onGainWritten (before, db);
         auto* p = new juce::DynamicObject(); p->setProperty ("gain_db", (double) db);
         auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (p));
         host_.setSlotStructuredSettings (slot_, juce::var (w));

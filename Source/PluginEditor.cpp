@@ -2100,8 +2100,14 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         processorRef.getChainHost().setSlotKeepLevel(i, keep);
         refreshChainPanelForView(true);
     };
-    chainListPanel.onUndo = [this] { rackUndoRedo(false); };   // 21m per-rack undo/redo
+    chainListPanel.onUndo = [this] { rackUndoRedo(false); };   // 21m per-rack undo/redo -> 21n: the plugin-wide history
     chainListPanel.onRedo = [this] { rackUndoRedo(true); };
+    // 21n item 3: the header Undo / Redo
+    addAndMakeVisible(undoHdrBtn); addAndMakeVisible(redoHdrBtn);
+    undoHdrBtn.onClick = [this] { rackUndoRedo(false); };
+    redoHdrBtn.onClick = [this] { rackUndoRedo(true); };
+    processorRef.undoHistory().onChanged = [safe = juce::Component::SafePointer<EchoJayEditor>(this)] { if (safe != nullptr) safe->refreshUndoButtons(); };
+    refreshUndoButtons();
     chainListPanel.onAddClick = [this] { if (chainEditGateRefuses()) return; showChainPluginPicker(); };   // COMMIT 2
     // Wet/dry: pure value writes into ChainHost (atomic, smoothed on the
     // audio thread) — no rebuild, safe at knob-drag rate. Persisted via the
@@ -7554,12 +7560,12 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // 21m ruling 3: the keep-level toggle is available on the LOCAL rack only (no transport op yet); elsewhere it is
     // greyed with the note, never a silent no-op
     chainListPanel.keepLevelAvailable = chainViewUid().isEmpty();
-    {   // 21m undo/redo: the buttons follow the rack the panel shows (a held remote rack answers from its own stack, so stay enabled)
+    {   // 21m undo/redo -> 21n: the chain-panel buttons follow the plugin-wide history (a held remote rack answers from its own stack, so stay enabled)
         const juce::String uid = chainViewUid();
-        ChainHost* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
-        const bool remote = uid.isNotEmpty() && h == nullptr;
-        chainListPanel.setUndoState(remote || (h != nullptr && h->canUndo()), remote || (h != nullptr && h->canRedo()),
-                                    h != nullptr ? h->undoLabel() : juce::String("on the Link"), h != nullptr ? h->redoLabel() : juce::String("on the Link"));
+        const bool remote = uid.isNotEmpty() && processorRef.borrowHostIfActiveFor(uid) == nullptr;
+        auto& hist = processorRef.undoHistory();
+        chainListPanel.setUndoState(remote || hist.canUndo(), remote || hist.canRedo(),
+                                    remote ? juce::String("on the Link") : hist.undoLabel(), remote ? juce::String("on the Link") : hist.redoLabel());
     }
     // A cheap signature so a 20Hz tick does not rebuild the panel (and tear
     // down its child components) sixty times a second for nothing. Revision
@@ -8654,44 +8660,46 @@ bool EchoJayEditor::viewRackHasTrims()
 }
 
 // ===== 21m per-rack undo/redo (22 Sep 2026) =====
+// 21n item 3: ONE history. A held remote rack (no borrow) still sends the op through the transport, as 21m; everything
+// else - the local rack, the borrowed copy (which also pushes the op through the transport from the dispatcher), dials,
+// wet / trim / keep, Link on/off and trims, renames, loop applies, hosted-window gestures - is the plugin-wide history.
 void EchoJayEditor::rackUndoRedo(bool redo)
 {
-    if (chainEditGateRefuses()) return;
     const juce::String uid = chainViewUid();
-    if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
-    {   // borrowed rack: the local copy undoes on its own stack, and the SAME op goes through the transport so the Link's stack follows
-        juce::StringArray baseBefore; for (int k = 0; k < bh->getNumSlots(); ++k) baseBefore.add(bh->getSlotInfo(k).name);
-        if (! (redo ? bh->canRedo() : bh->canUndo())) return;
-        chainListPanel.closeAllEditors();
-        const bool ok = redo ? bh->redo() : bh->undo();
-        if (! ok) return;
-        processorRef.borrowPushStructuralEdit(redo ? "redo" : "undo", -1, -1, false, {}, baseBefore, bh->getNumSlots());
-        if (chainSelectedSlot_ >= bh->getNumSlots()) chainSelectedSlot_ = bh->getNumSlots() - 1;
-        refreshChainPanelForView(true); repaint();
-        return;
+    if (uid.isNotEmpty() && processorRef.borrowHostIfActiveFor(uid) == nullptr)
+    {   // a held remote rack: the Link's own stack answers the op
+        if (chainEditGateRefuses()) return;
+        sendRackUndo(uid, redo); return;
     }
-    if (uid.isNotEmpty()) { sendRackUndo(uid, redo); return; }
-    auto& ch = processorRef.getChainHost();
-    if (! (redo ? ch.canRedo() : ch.canUndo())) return;
-    // the recall discipline: close hosted editors first, restore a runloop turn later
-    chainListPanel.closeAllEditors();
+    auto& hist = processorRef.undoHistory();
+    if (! (redo ? hist.canRedo() : hist.canUndo())) return;
+    const auto* top = redo ? nullptr : hist.top();
+    const bool chainEntry = top != nullptr && top->kind == "chain";
+    if (chainEntry) chainListPanel.closeAllEditors();   // the recall discipline: hosted editors close first, restore a runloop turn later
     juce::Component::SafePointer<EchoJayEditor> safeThis(this);
-    juce::Timer::callAfterDelay(80, [safeThis, redo]
+    auto run = [safeThis, redo]
     {
         if (safeThis == nullptr) return;
-        auto refresh = [safeThis]
-        {
-            if (safeThis == nullptr) return;
-            auto& c = safeThis->processorRef.getChainHost();
-            if (safeThis->chainSelectedSlot_ >= c.getNumSlots()) safeThis->chainSelectedSlot_ = c.getNumSlots() - 1;
-            safeThis->refreshChainPanelForView(true);
-            safeThis->chainListPanel.setStateNotes(c.getStateNotes());
-            safeThis->repaint();
-        };
-        auto& ch2 = safeThis->processorRef.getChainHost();
-        if (redo) ch2.redo(refresh); else ch2.undo(refresh);
-        refresh();
-    });
+        auto& hist2 = safeThis->processorRef.undoHistory();
+        if (redo) hist2.redo(); else hist2.undo();
+        auto& c = safeThis->processorRef.getChainHost();
+        if (safeThis->chainSelectedSlot_ >= c.getNumSlots()) safeThis->chainSelectedSlot_ = c.getNumSlots() - 1;
+        safeThis->refreshChainPanelForView(true);
+        safeThis->chainListPanel.setStateNotes(c.getStateNotes());
+        const auto st = safeThis->processorRef.lastUndoStatus();
+        if (st.isNotEmpty()) safeThis->setChainSaveStatus(st);
+        safeThis->refreshUndoButtons();
+        safeThis->repaint();
+    };
+    if (chainEntry) juce::Timer::callAfterDelay(80, run); else run();
+}
+
+void EchoJayEditor::refreshUndoButtons()
+{
+    auto& h = processorRef.undoHistory();
+    undoHdrBtn.setEnabled(h.canUndo()); redoHdrBtn.setEnabled(h.canRedo());
+    undoHdrBtn.setTooltip(h.canUndo() ? "Undo " + h.undoLabel() + " (Cmd-Z)" : juce::String("Nothing to undo"));
+    redoHdrBtn.setTooltip(h.canRedo() ? "Redo " + h.redoLabel() + " (Shift-Cmd-Z)" : juce::String("Nothing to redo"));
 }
 
 void EchoJayEditor::sendRackUndo(const juce::String& uid, bool redo)
@@ -19089,6 +19097,8 @@ void EchoJayEditor::resized()
         }
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
+        undoHdrBtn.setBounds(tx, ty, 30, bh); tx += 32;   // 21n item 3
+        redoHdrBtn.setBounds(tx, ty, 30, bh); tx += 36;
         // Item 2b: target indicator takes the room up to the detected label,
         // truncating (it is the variable-width element now).
         const int detLabW = 140;
@@ -29453,6 +29463,8 @@ juce::String EchoJayEditor::soloLimitLineText() const
 void EchoJayEditor::sendLinkActiveCommand(const juce::String& linkAddr, bool active)
 {
     lastLinkActiveCmd_ = { linkAddr, active, lastLinkActiveCmd_.count + 1 };   // 21m ruling 1: the guard reads what the click sent
+    { bool before = ! active; for (const auto& li : processorRef.getLinkSlotInfos()) if (li.uid == linkAddr) before = li.active;
+      processorRef.recordLinkActiveUndo(linkAddr, before, active); }   // 21n item 3
     int err = 0;
     juce::String dir = LinkShm::resolveDir(err);
     if (dir.isEmpty() || linkAddr.isEmpty()) return;
@@ -29625,6 +29637,9 @@ void EchoJayEditor::sendLinkGainCommand(const juce::String& linkAddr, float gain
     const juce::String& id = linkAddr;
 
     gainDb = juce::jlimit(-24.0f, 12.0f, gainDb);
+    { float before = gainDb; for (const auto& li : processorRef.getLinkSlotInfos()) if (li.uid == linkAddr) before = li.gainDb;
+      for (const auto& p : linkCtrlPending_) if (p.addr == linkAddr && p.isGain && ! p.timedOut) before = p.gainDb;   // a drag: the last sent value
+      processorRef.recordLinkGainUndo(linkAddr, before, gainDb); }   // 21n item 3 (coalesced per Link, 300 ms)
 
     // Freshest intended active: a pending Active toggle wins over the slot,
     // so a gain nudge moments after a toggle doesn't revert it.
@@ -33636,8 +33651,8 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         reviewSearchBox.hasKeyboardFocus(false))
         return false;
 
-    // 21m per-rack Undo/Redo: Cmd-Z / Cmd-Shift-Z on the Chain tab (the loop's own Undo pill is unchanged)
-    if (currentTab == Tab::Chain && key.getModifiers().isCommandDown()
+    // 21m per-rack Undo/Redo -> 21n item 3: Cmd-Z / Shift-Cmd-Z ANYWHERE outside a text field drive the plugin-wide history
+    if (key.getModifiers().isCommandDown()
         && juce::CharacterFunctions::toUpperCase((juce::juce_wchar) key.getKeyCode()) == 'Z')
     {
         rackUndoRedo(key.getModifiers().isShiftDown());

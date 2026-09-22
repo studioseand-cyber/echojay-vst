@@ -2350,7 +2350,10 @@ void ChainHost::setMasterWet(float wet01)
 void ChainHost::setSlotTrimDb(int i, float db)
 {
     if (i < 0 || i >= (int) slots_.size()) return;
-    auto& s = slots_[(size_t) i]; s.trimDb = juce::jlimit(-12.0f, 12.0f, db);
+    auto& s = slots_[(size_t) i];
+    if (! undoSuppressed_ && onScalarUndo && std::abs(s.trimDb - juce::jlimit(-12.0f, 12.0f, db)) >= 0.05f)
+        onScalarUndo("trim", i, (double) s.trimDb, (double) juce::jlimit(-12.0f, 12.0f, db), "trim " + s.desc.name, "trim" + juce::String(i));   // 21n item 3
+    s.trimDb = juce::jlimit(-12.0f, 12.0f, db);
     if (s.trimShared) s.trimShared->store(s.trimDb, std::memory_order_relaxed);
     bumpChainRevision();
 }
@@ -2361,7 +2364,7 @@ bool ChainHost::hasActiveTrims() const
     return false;
 }
 float ChainHost::getSlotTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].trimDb : 0.0f; }
-void ChainHost::setSlotKeepLevel(int i, bool keep) { if (i >= 0 && i < (int) slots_.size()) { if (slots_[(size_t) i].keepLevel != keep) pushUndo(juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name); slots_[(size_t) i].keepLevel = keep; bumpChainRevision(); } }
+void ChainHost::setSlotKeepLevel(int i, bool keep) { if (i >= 0 && i < (int) slots_.size()) { if (slots_[(size_t) i].keepLevel != keep) { if (onScalarUndo && ! undoSuppressed_) onScalarUndo("keep", i, slots_[(size_t) i].keepLevel, keep, juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name, {}); else pushUndo(juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name); } slots_[(size_t) i].keepLevel = keep; bumpChainRevision(); } }
 bool ChainHost::getSlotKeepLevel(int i) const { return i >= 0 && i < (int) slots_.size() && slots_[(size_t) i].keepLevel; }
 juce::String ChainHost::slotTrimText(int i) const
 {
@@ -2410,6 +2413,7 @@ void ChainHost::pushUndo(const juce::String& label, const juce::String& coalesce
 {
     if (undoSuppressed_ || undoBatchDepth_ > 0) return;
     const auto now = juce::Time::currentTimeMillis();
+    if (onUndoPush) { onUndoPush(captureUndoSnapshot(label), label, coalesceKey); return; }   // 21n item 3: the plugin-wide history
     if (coalesceKey.isNotEmpty() && coalesceKey == lastUndoKey_ && now - lastUndoPushMs_ < 1500) { lastUndoPushMs_ = now; return; }
     lastUndoKey_ = coalesceKey; lastUndoPushMs_ = now;
     undoStack_.push_back(captureUndoSnapshot(label));
@@ -2429,6 +2433,85 @@ void ChainHost::applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> o
     if (arr != nullptr && ! arr->isEmpty()) restoreSavedChain(u.slots, u.state, std::move(onSlotSettled), {}, u.params);
     else if (onSlotSettled) onSlotSettled();
 }
+// 21n item 3: slot identity for the plugin-wide history, the parameter snapshot pair, the hosted-event queue
+juce::String ChainHost::slotUndoTarget(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return {};
+    return slotIdentityHex(i) + "|" + slots_[(size_t) i].desc.name;
+}
+int ChainHost::slotForUndoTarget(const juce::String& target, int hintIndex) const
+{
+    if (hintIndex >= 0 && hintIndex < (int) slots_.size() && slotUndoTarget(hintIndex) == target) return hintIndex;
+    for (int i = 0; i < (int) slots_.size(); ++i) if (slotUndoTarget(i) == target) return i;
+    return -1;
+}
+juce::var ChainHost::slotParamSnapshot(int i) const
+{
+    // TWO VOCABULARIES, one snapshot. A hosted plugin's controls ARE its juce::AudioProcessorParameters (keys are the
+    // index, values normalised). An EchoJay BUILT-IN's controls live in its ParamSchema and are read/written by id, with
+    // no JUCE parameter behind them - so a built-in's snapshot keys are "p:<id>" and its values are the real units.
+    // A dial entry that only knew the JUCE half recorded nothing for a built-in (the 21n item 3 guard's leg 4).
+    auto* o = new juce::DynamicObject();
+    if (auto* p = getSlotProcessor(i))
+    {
+        if (auto* dev = dynamic_cast<EedDeviceProcessor*>(p))
+        {
+            for (const auto& spec : dev->paramSchema().params())
+                o->setProperty(juce::Identifier("p:" + juce::String(spec.id)), dev->getParamValue(juce::String(spec.id)));
+        }
+        else
+        {
+            const auto& params = p->getParameters();
+            for (int k = 0; k < params.size(); ++k) o->setProperty(juce::Identifier(juce::String(k)), (double) params[k]->getValue());
+        }
+    }
+    return juce::var(o);
+}
+void ChainHost::applySlotParamSnapshot(int i, const juce::var& snap)
+{
+    auto* p = getSlotProcessor(i); auto* o = snap.getDynamicObject();
+    if (p == nullptr || o == nullptr) return;
+    muteHostedParamEvents(true);
+    auto* dev = dynamic_cast<EedDeviceProcessor*>(p);
+    const auto& params = p->getParameters();
+    for (const auto& kv : o->getProperties())
+    {
+        const juce::String key = kv.name.toString();
+        if (key.startsWith("p:"))
+        {
+            if (dev != nullptr) dev->setParamValue(key.fromFirstOccurrenceOf("p:", false, false), (double) kv.value);
+            continue;
+        }
+        const int k = key.getIntValue();
+        if (k < 0 || k >= params.size()) continue;
+        const float v = (float)(double) kv.value;
+        if (std::abs(params[k]->getValue() - v) < 1e-6f) continue;
+        params[k]->beginChangeGesture(); params[k]->setValueNotifyingHost(v); params[k]->endChangeGesture();
+        setCachedHostedParam(i, k, v);
+    }
+    muteHostedParamEvents(false);
+    noteHostedChange();
+}
+void ChainHost::drainHostedParamEvents(std::function<void(int, int, float, juce::int64)> fn)
+{
+    int r = hostedEventRead_.load(std::memory_order_relaxed);
+    const int w = hostedEventWrite_.load(std::memory_order_acquire);
+    while (r != w)
+    {
+        const auto e = hostedEvents_[r]; r = (r + 1) % kHostedEventRing;
+        int slot = -1;
+        for (int i = 0; i < (int) slots_.size(); ++i) if (slots_[(size_t) i].node && slots_[(size_t) i].node->getProcessor() == e.proc) { slot = i; break; }
+        if (slot >= 0 && fn) fn(slot, e.index, e.value, e.ms);
+    }
+    hostedEventRead_.store(r, std::memory_order_release);
+}
+float ChainHost::cachedHostedParam(int slot, int index) const
+{
+    auto it = hostedParamCache_.find(slotUndoTarget(slot)); if (it == hostedParamCache_.end()) return -1.0f;
+    auto jt = it->second.find(index); return jt == it->second.end() ? -1.0f : jt->second;
+}
+void ChainHost::setCachedHostedParam(int slot, int index, float v) { hostedParamCache_[slotUndoTarget(slot)][index] = v; }
+
 bool ChainHost::undo(std::function<void()> onSlotSettled)
 {
     if (undoStack_.empty()) return false;
@@ -2465,8 +2548,11 @@ void ChainHost::setSlotWet(int i, float wet01, WetSource src)
     // saved value and is not a change either.
     if (src == WetSource::Assistant && echojay::dialWritesBlocked()) return;
     auto& s = slots_[(size_t)i];
-    if (src != WetSource::Restore && std::abs(s.wet - juce::jlimit(0.0f, 1.0f, wet01)) > 1e-4f)
-        pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
+    if (src != WetSource::Restore && ! undoSuppressed_ && std::abs(s.wet - juce::jlimit(0.0f, 1.0f, wet01)) > 1e-4f)
+    {
+        if (onScalarUndo) onScalarUndo("wet", i, (double) s.wet, (double) juce::jlimit(0.0f, 1.0f, wet01), "wet " + s.desc.name, "wet" + juce::String(i));   // 21n: a scalar entry
+        else pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
+    }
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);
     bumpChainRevision();
     if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
@@ -4325,6 +4411,25 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                          "  appVersion=" + juce::String(JucePlugin_VersionString))
                           .toRawUTF8());
         return;
+    }
+    // 21n item 3: an assistant dial is ONE undo entry per slot - the hosted parameters before, then after the apply has
+    // settled (the apply may verify on timers); the gesture queue is muted meanwhile so the writes are not double-counted
+    if (onDialUndo && ! undoSuppressed_)
+    {
+        const juce::var before = slotParamSnapshot(slotIndex);
+        const juce::String target = slotUndoTarget(slotIndex), name = s.desc.name;
+        muteHostedParamEvents(true);
+        std::weak_ptr<int> alive = life_;
+        juce::Timer::callAfterDelay(450, [this, alive, before, target, slotIndex, name]
+        {
+            if (alive.expired()) return;
+            muteHostedParamEvents(false);
+            const int i = slotForUndoTarget(target, slotIndex); if (i < 0) return;
+            const juce::var after = slotParamSnapshot(i);
+            if (juce::JSON::toString(before) == juce::JSON::toString(after)) return;   // nothing landed: no entry
+            if (auto* p = getSlotProcessor(i)) { const auto& ps = p->getParameters(); for (int k = 0; k < ps.size(); ++k) setCachedHostedParam(i, k, ps[k]->getValue()); }
+            if (onDialUndo) onDialUndo(i, before, after, "dial " + name);
+        });
     }
 
     // ---- Built-in devices: the exact path --------------------------------
@@ -9024,6 +9129,9 @@ void ChainHost::attachHostedListener(int i)
     {
         p->removeListener(this);   // never double-register
         p->addListener(this);
+        // 21n item 3: the value cache the gesture entries take their "before" from
+        const auto& params = p->getParameters();
+        for (int k = 0; k < params.size(); ++k) setCachedHostedParam(i, k, params[k]->getValue());
     }
 }
 

@@ -1178,6 +1178,28 @@ public:
     // the receiving rack's own stack (applyChainEdits, before the base-slot guards).
     static constexpr int kUndoDepth = 20;
     struct UndoSnapshot { juce::var slots, state, params; juce::String label; };
+    // ===== 21n item 3 (22 Sep 2026): the plugin-wide history takes over on V2 =====
+    // When onUndoPush is set (V2's own ChainHost and the borrowed copy), a rack mutation is recorded as a CHAIN entry in
+    // EchoJayProcessor's UndoHistory instead of this stack; the per-rack stack stays for a Link (the transport's
+    // {"op":"undo"} is answered by the Link's own stack, as 21m built). Scalars (wet / trim / keep) and assistant dials
+    // record their own entry kinds through onScalarUndo / onDialUndo; the user's own gestures in a hosted window come out
+    // of the hosted-parameter event queue (drainHostedParamEvents). applyUndoSnapshot / captureUndoSnapshot are public for
+    // the dispatcher.
+    std::function<void(const UndoSnapshot& before, const juce::String& label, const juce::String& coalesceKey)> onUndoPush;
+    std::function<void(const juce::String& kind, int slot, juce::var before, juce::var after, const juce::String& label, const juce::String& coalesceKey)> onScalarUndo;
+    std::function<void(int slot, juce::var beforeParams, juce::var afterParams, const juce::String& label)> onDialUndo;
+    void applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled);
+    juce::String slotUndoTarget(int i) const;                       // "uidHex|name" - the identity an entry keys on
+    int  slotForUndoTarget(const juce::String& target, int hintIndex = -1) const;   // -1 = absent
+    juce::var slotParamSnapshot(int i) const;                       // {"<index>": normalised, ...} of the hosted instance
+    void applySlotParamSnapshot(int i, const juce::var& snap);      // writes the values back (muted for the gesture queue)
+    struct HostedParamEvent { juce::AudioProcessor* proc; int index; float value; juce::int64 ms; };
+    // message thread: hands each queued hosted-parameter change (slot, index, value, ms) to `fn`; events raised while the
+    // queue is muted (an assistant dial, an undo apply) were dropped at the source
+    void drainHostedParamEvents(std::function<void(int slot, int index, float value, juce::int64 ms)> fn);
+    void muteHostedParamEvents(bool on) { hostedEventsMuted_.store(on, std::memory_order_relaxed); }
+    float cachedHostedParam(int slot, int index) const;             // the value before the current gesture (-1 = unknown)
+    void  setCachedHostedParam(int slot, int index, float v);
     void pushUndo(const juce::String& label, const juce::String& coalesceKey = {});
     bool canUndo() const { return ! undoStack_.empty(); }
     bool canRedo() const { return ! redoStack_.empty(); }
@@ -2105,7 +2127,12 @@ private:
     int  undoBatchDepth_ = 0;      // > 0: mutations inside a batch push nothing (the batch pushed once)
     bool undoSuppressed_ = false;  // true while undo/redo itself removes and restores
     juce::String lastUndoKey_; juce::int64 lastUndoPushMs_ = 0;
-    void applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled);
+    // 21n item 3: hosted-parameter events from the audio thread (fixed ring, atomics only) + the per-slot value cache
+    static constexpr int kHostedEventRing = 256;
+    HostedParamEvent hostedEvents_[kHostedEventRing];
+    std::atomic<int> hostedEventWrite_ { 0 }, hostedEventRead_ { 0 };
+    std::atomic<bool> hostedEventsMuted_ { false };
+    std::map<juce::String, std::map<int, float>> hostedParamCache_;   // slot target -> index -> value
     juce::StringArray                    blacklist_;
     std::map<juce::String, int>          stateOversize_;   // path -> default-state bytes; see WithholdReason::SettingsTooLarge
     void reloadStateOversizeFromDisk();                    // pluginsMutex_ taken inside
@@ -2438,8 +2465,17 @@ private:
     // HANDOVER/measurements/slot_wet_null_test: residual -3 dB, comb to
     // -12 dB, cured by a rebuild). Only latencyChanged schedules it; a
     // parameter move never does.
-    void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override
-        { noteHostedChange(); }
+    void audioProcessorParameterChanged (juce::AudioProcessor* p, int index, float value) override
+    {
+        noteHostedChange();
+        // 21n item 3: queue the change for the undo history (atomics + a fixed ring, nothing else on this thread)
+        if (hostedEventsMuted_.load(std::memory_order_relaxed)) return;
+        const int w = hostedEventWrite_.load(std::memory_order_relaxed);
+        const int next = (w + 1) % kHostedEventRing;
+        if (next == hostedEventRead_.load(std::memory_order_acquire)) return;   // full: drop (a gesture's later events still land)
+        hostedEvents_[w] = { p, index, value, juce::Time::currentTimeMillis() };
+        hostedEventWrite_.store(next, std::memory_order_release);
+    }
     void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& d) override
         { noteHostedChange(); if (d.latencyChanged) onHostedLatencyChanged(); }
     // Message-thread, coalesced: triggerAsyncUpdate from any thread, an 80 ms

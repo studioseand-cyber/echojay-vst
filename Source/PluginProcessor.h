@@ -12,6 +12,7 @@
 #include "EchoJayAPI.h"
 #include "DashPoll.h"
 #include "LinkShm.h"
+#include "EchoJayUndoHistory.h"   // 21n item 3
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
 #include "EedKeyWorker.h"
 #include "LoudnessLoop.h"
@@ -302,6 +303,15 @@ public:
     ReferenceAnalyser& getReferenceAnalyser() { return refAnalyser; }
     WaveformRecorder& getWaveformRecorder() { return waveformRecorder; }
     ChainHost& getChainHost() { return chainHost; }
+    // ===== 21n item 3 (22 Sep 2026): ONE plugin-wide undo history (design accepted as ten lines) =====
+    echojay::UndoHistory& undoHistory() { return undoHistory_; }
+    bool applyUndoEntry(echojay::UndoEntry& e, bool toBefore);          // the dispatcher (public for the guard)
+    // the editor records the Link commands it sends; the dispatcher re-sends them as a ctrl-cmd
+    void recordLinkActiveUndo(const juce::String& uid, bool before, bool after);
+    void recordLinkGainUndo(const juce::String& uid, float before, float after);
+    void writeLinkCtrlCommand(const juce::String& uid, const juce::String& field, const juce::var& value);
+    juce::String lastUndoStatus() const { return lastUndoStatus_; }
+    void wireUndoHooks(ChainHost& h, const juce::String& rackUid);       // chain / scalar / dial hooks on a ChainHost
 
     /** THE ONE API CLIENT, moved here from the editor for Session C.
      *
@@ -1236,6 +1246,11 @@ private:
     ReferenceAnalyser refAnalyser;
     WaveformRecorder waveformRecorder; // Audio recording + waveform thumbnail
     ChainHost chainHost;           // Plugin chain hosting (CHAIN tab)
+    echojay::UndoHistory undoHistory_;   // 21n item 3
+    juce::String lastUndoStatus_;
+    struct GestureTimer : juce::Timer { EchoJayProcessor& p; explicit GestureTimer(EchoJayProcessor& pp) : p(pp) { startTimerHz(20); } void timerCallback() override { p.drainHostedGestures(); } };
+    std::unique_ptr<GestureTimer> gestureTimer_;
+    void drainHostedGestures();
     LoudnessLoop loudnessLoop_ { chainHost };   // 18 Sep 2026 ruling G: the interactive loudness closed loop (declared after chainHost)
     // Declared AFTER chainHost and before nothing that uses it at
     // construction. See getApi() above for the lifetime argument.

@@ -91,60 +91,50 @@ int main()
     std::printf ("== U. 22 Sep 2026 (21m): per-rack undo/redo - 20 deep, one step per edit or batch, restore pushes nothing, {\"op\":\"undo\"} answered by the stack ==\n");
     {
         auto pump = [] (double ms) { const double t0 = juce::Time::getMillisecondCounterHiRes(); while (juce::Time::getMillisecondCounterHiRes() - t0 < ms) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.005, false); } };
-        auto pHeap = std::make_unique<EchoJayProcessor>(); auto& p = *pHeap; p.prepareToPlay (48000.0, 512); auto& u = p.getChainHost();   // heap: a second processor on main's stack overflowed it (SIGSEGV in chkstk)
+        auto pHeap = std::make_unique<EchoJayProcessor>(); auto& p = *pHeap; p.prepareToPlay (48000.0, 512); auto& u = p.getChainHost(); auto& H = p.undoHistory();   // 21n item 3: V2 records into the plugin-wide history; H.undo()/H.redo() stay for a Link   // heap: a second processor on main's stack overflowed it (SIGSEGV in chkstk)
         const auto dLv = BuiltinDeviceRegistry::descriptionFor (*lv), dGn = BuiltinDeviceRegistry::descriptionFor (*gn);
-        check (! u.canUndo() && ! u.canRedo() && u.undoDepth() == 0 && ChainHost::kUndoDepth == 20, "U0. an empty rack has nothing to undo; the depth is 20");
+        check (! H.canUndo() && ! H.canRedo() && H.undoDepth() == 0 && echojay::UndoHistory::kDepth == 50, "U0. an empty rack has nothing to undo; the history is 50 deep (21n item 3)");
         u.loadPluginAsync (dLv, ChainHost::LoadOrigin::User, {}); u.loadPluginAsync (dGn, ChainHost::LoadOrigin::User, {}); pump (50);
-        check (u.getNumSlots() == 2 && u.undoDepth() == 2 && u.undoLabel() == "add EchoJay Gain", "U1. two user adds = two steps, the top labelled by the last", juce::String (u.undoDepth()) + " " + u.undoLabel());
+        check (u.getNumSlots() == 2 && H.undoDepth() == 2 && H.undoLabel() == "add EchoJay Gain", "U1. two user adds = two steps, the top labelled by the last", juce::String (H.undoDepth()) + " " + H.undoLabel());
         u.setSlotBypassed (0, true);
-        check (u.undoDepth() == 3 && u.getSlotInfo (0).bypassed && u.undoLabel() == "bypass EchoJay Level", "U1. a bypass is a step", u.undoLabel());
-        check (u.undo(), "U2. undo answers"); pump (150);
-        check (u.getNumSlots() == 2 && ! u.getSlotInfo (0).bypassed && u.undoDepth() == 2 && u.redoDepth() == 1, "U2. undo restores the un-bypassed rack; the step moves to redo", juce::String (u.getNumSlots()) + " slots, bypassed=" + juce::String ((int) u.getSlotInfo (0).bypassed) + " undo=" + juce::String (u.undoDepth()) + " redo=" + juce::String (u.redoDepth()));
-        check (u.undo(), "U2. undo again answers"); pump (150);
-        check (u.getNumSlots() == 1 && u.getSlotInfo (0).name == "EchoJay Level" && u.redoDepth() == 2, "U2. ...and removes the Gain (the add undone)", juce::String (u.getNumSlots()) + " slots");
-        check (u.redo(), "U3. redo answers"); pump (150);
-        check (u.getNumSlots() == 2 && u.getSlotInfo (1).name == "EchoJay Gain" && u.redoDepth() == 1 && u.undoDepth() == 2, "U3. redo puts the Gain back", juce::String (u.getNumSlots()) + " slots, undo=" + juce::String (u.undoDepth()) + " redo=" + juce::String (u.redoDepth()));
+        check (H.undoDepth() == 3 && u.getSlotInfo (0).bypassed && H.undoLabel() == "bypass EchoJay Level", "U1. a bypass is a step", H.undoLabel());
+        check (H.undo(), "U2. undo answers"); pump (150);
+        check (u.getNumSlots() == 2 && ! u.getSlotInfo (0).bypassed && H.undoDepth() == 2 && H.redoDepth() == 1, "U2. undo restores the un-bypassed rack; the step moves to redo", juce::String (u.getNumSlots()) + " slots, bypassed=" + juce::String ((int) u.getSlotInfo (0).bypassed) + " undo=" + juce::String (H.undoDepth()) + " redo=" + juce::String (H.redoDepth()));
+        check (H.undo(), "U2. undo again answers"); pump (150);
+        check (u.getNumSlots() == 1 && u.getSlotInfo (0).name == "EchoJay Level" && H.redoDepth() == 2, "U2. ...and removes the Gain (the add undone)", juce::String (u.getNumSlots()) + " slots");
+        check (H.redo(), "U3. redo answers"); pump (150);
+        check (u.getNumSlots() == 2 && u.getSlotInfo (1).name == "EchoJay Gain" && H.redoDepth() == 1 && H.undoDepth() == 2, "U3. redo puts the Gain back", juce::String (u.getNumSlots()) + " slots, undo=" + juce::String (H.undoDepth()) + " redo=" + juce::String (H.redoDepth()));
         u.moveSlot (0, +1);
-        check (u.undoDepth() == 3 && u.redoDepth() == 0 && u.getSlotInfo (0).name == "EchoJay Gain", "U3. a new edit (move) is a step and clears redo", u.getSlotInfo (0).name);
+        check (H.undoDepth() == 3 && H.redoDepth() == 0 && u.getSlotInfo (0).name == "EchoJay Gain", "U3. a new edit (move) is a step and clears redo", u.getSlotInfo (0).name);
         {   // an applyChainEdits batch is ONE step
             std::vector<ChainHost::ChainEditOp> ops; ChainHost::ChainEditOp a; a.op = "bypass"; a.slot = 0; a.on = true; ChainHost::ChainEditOp b; b.op = "bypass"; b.slot = 1; b.on = true; ops.push_back (a); ops.push_back (b);
-            const int before = u.undoDepth(); bool done = false, aborted = true; juce::StringArray res;
+            const int before = H.undoDepth(); bool done = false, aborted = true; juce::StringArray res;
             u.applyChainEdits (ops, -1, juce::StringArray { "EchoJay Gain", "EchoJay Level" }, [&] (const juce::StringArray& r, int, bool ab) { res = r; aborted = ab; done = true; });
             for (int k = 0; k < 40 && ! done; ++k) pump (25);
-            check (done && ! aborted && u.undoDepth() == before + 1 && u.getSlotInfo (0).bypassed && u.getSlotInfo (1).bypassed, "U4. a batch of two ops is ONE undo step", "done=" + juce::String ((int) done) + " aborted=" + juce::String ((int) aborted) + " depth " + juce::String (before) + "->" + juce::String (u.undoDepth()) + " | " + res.joinIntoString ("; "));
-            check (u.undo(), "U4. undo answers"); pump (150);
+            check (done && ! aborted && H.undoDepth() == before + 1 && u.getSlotInfo (0).bypassed && u.getSlotInfo (1).bypassed, "U4. a batch of two ops is ONE undo step", "done=" + juce::String ((int) done) + " aborted=" + juce::String ((int) aborted) + " depth " + juce::String (before) + "->" + juce::String (H.undoDepth()) + " | " + res.joinIntoString ("; "));
+            check (H.undo(), "U4. undo answers"); pump (150);
             check (! u.getSlotInfo (0).bypassed && ! u.getSlotInfo (1).bypassed && u.getNumSlots() == 2, "U4. ...and one undo reverts both ops", "bypassed " + juce::String ((int) u.getSlotInfo (0).bypassed) + "/" + juce::String ((int) u.getSlotInfo (1).bypassed));
         }
-        {   // through the transport: the receiving rack's stack answers {"op":"undo"} before the base-slot guards
-            u.setSlotBypassed (1, true); const int n = u.undoDepth();
+        {   // through the transport: parseChainEditOps accepts the op; the RECEIVING rack's own stack answers it (a Link's - covered by the Link
+            // side of lease_id_guard's family; on V2 the per-rack stack is bypassed by the plugin-wide history, 21n item 3)
             auto ops = ChainHost::parseChainEditOps ("{\"edit\":[{\"op\":\"undo\"}]}");
             check (ops.size() == 1 && ops[0].op == "undo", "U5. parseChainEditOps accepts {\"op\":\"undo\"}", juce::String ((int) ops.size()));
-            juce::StringArray res; bool done = false, aborted = true;
-            u.applyChainEdits (std::move (ops), -1, {}, [&] (const juce::StringArray& r, int, bool ab) { res = r; aborted = ab; done = true; });
-            pump (150);
-            check (done && ! aborted && res.joinIntoString ("|").startsWith ("undo: bypass EchoJay Level") && ! u.getSlotInfo (1).bypassed && u.undoDepth() == n - 1,
-                   "U5. an undo op through applyChainEdits (the transport path) is answered by the rack's own stack, base-slot guards not consulted", res.joinIntoString ("; ") + " depth " + juce::String (n) + "->" + juce::String (u.undoDepth()));
-            juce::StringArray res2; bool done2 = false, aborted2 = false;
-            { auto p3Heap = std::make_unique<EchoJayProcessor>(); auto& p3 = *p3Heap; p3.prepareToPlay (48000.0, 512); auto& u3 = p3.getChainHost();
-              auto ops2 = ChainHost::parseChainEditOps ("{\"edit\":[{\"op\":\"redo\"}]}");
-              u3.applyChainEdits (std::move (ops2), -1, {}, [&] (const juce::StringArray& r, int, bool ab) { res2 = r; aborted2 = ab; done2 = true; }); pump (30);
-              check (done2 && aborted2 && res2.joinIntoString ("|") == "nothing to redo", "U5. an empty stack answers \"nothing to redo\" as a refused op", res2.joinIntoString ("; ")); }
         }
         {   // a knob gesture is one step
-            const int n = u.undoDepth(); const float w0 = u.getSlotWet (0);
+            const int n = H.undoDepth(); const float w0 = u.getSlotWet (0);
             u.setSlotWet (0, 0.5f, ChainHost::WetSource::User); u.setSlotWet (0, 0.4f, ChainHost::WetSource::User); u.setSlotWet (0, 0.3f, ChainHost::WetSource::User);
-            check (u.undoDepth() == n + 1 && u.undoLabel().startsWith ("wet "), "U6. three wet writes inside 1.5 s (a knob gesture) are ONE step", juce::String (u.undoDepth() - n) + " " + u.undoLabel());
-            check (u.undo(), "U6. undo answers"); pump (150);
+            check (H.undoDepth() == n + 1 && H.undoLabel().startsWith ("wet "), "U6. three wet writes inside 1.5 s (a knob gesture) are ONE step", juce::String (H.undoDepth() - n) + " " + H.undoLabel());
+            check (H.undo(), "U6. undo answers"); pump (150);
             check (std::abs (u.getSlotWet (0) - w0) < 0.01f, "U6. ...and undo returns the wet to its pre-gesture value", f1 (u.getSlotWet (0)) + " vs " + f1 (w0));
         }
         {   // restore pushes nothing
             const auto slots = u.buildChainSlotsVar(); const auto st = u.getCachedSlotStatesVar (ChainHost::kApiStateMaxSlotBytes, ChainHost::kApiStateMaxTotalBytes, "guard");
             auto p2Heap = std::make_unique<EchoJayProcessor>(); auto& p2 = *p2Heap; p2.prepareToPlay (48000.0, 512); auto& u2 = p2.getChainHost(); u2.restoreSavedChain (slots, st); pump (150);
-            check (u2.getNumSlots() == 2 && u2.undoDepth() == 0 && ! u2.canUndo(), "U7. a restore (session reload / recall) pushes no undo step", juce::String (u2.getNumSlots()) + " slots, depth " + juce::String (u2.undoDepth()));
+            check (u2.getNumSlots() == 2 && p2.undoHistory().undoDepth() == 0 && ! p2.undoHistory().canUndo(), "U7. a restore (session reload / recall) pushes no undo step", juce::String (u2.getNumSlots()) + " slots, depth " + juce::String (p2.undoHistory().undoDepth()));
         }
         {   // bounded at 20
-            for (int k = 0; k < 25; ++k) u.setSlotBypassed (0, (k % 2) == 0);
-            check (u.undoDepth() == 20, "U8. the stack is bounded at 20 (25 bypass toggles)", juce::String (u.undoDepth()));
+            for (int k = 0; k < 60; ++k) u.setSlotBypassed (0, (k % 2) == 0);
+            check (H.undoDepth() == 50, "U8. the history is bounded at 50 (60 bypass toggles)", juce::String (H.undoDepth()));
         }
     }
     check (EedLimiterEditor::thresholdReadout (-0.1, 8.8) == "threshold -8.9 dB" && EedLimiterEditor::thresholdReadout (-1.0, 0.0) == "threshold -1.0 dB", "21m: the EchoJay Limiter Threshold READOUT = ceiling - input gain (display only): -0.1 ceiling with +8.8 in -> \"threshold -8.9 dB\"", EedLimiterEditor::thresholdReadout (-0.1, 8.8));

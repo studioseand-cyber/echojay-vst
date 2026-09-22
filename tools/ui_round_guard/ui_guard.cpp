@@ -19,7 +19,11 @@
 #include "NotDialableText.h"    // hurdle 1 item 3
 #endif
 #include <cstdio>
-struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v) { p.linkSlotInfos = std::move (v); } };   // 21m ruling 1: the roster's Link rows
+struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v)
+    {   // 22 Sep 2026: STOP the processor's 1 Hz timer first - refreshLinkRegistry() rebuilds linkSlotInfos from the real
+        // registry (empty under the isolated home) and would wipe the injected rows the moment it fires (a longer run is
+        // all it takes). The guard owns this input; the product path is untouched.
+        static_cast<juce::Timer&> (p).stopTimer(); p.linkSlotInfos = std::move (v); } };   // 21m ruling 1: the roster's Link rows
 struct EchoJayRosterTestAccess { static EchoJayEditor::LastLinkActiveCmd last (EchoJayEditor& e) { return e.lastLinkActiveCmd_; } };
 struct EchoJayTabStripTestAccess
 {
