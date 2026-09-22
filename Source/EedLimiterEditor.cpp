@@ -192,7 +192,8 @@ void EedLimiterEditor::refreshExtras()
         auto fmt = [] (const echojay::LevelTally::Snapshot& s) {
             return (std::isfinite (s.shortTermDb) ? juce::String (s.shortTermDb, 1) : juce::String ("--")) + " LUFS-S "
                  + (s.truePeakDb > -150.0f ? juce::String (s.truePeakDb, 1) : juce::String ("--")) + " dBTP"; };
-        const juce::String io = "in " + fmt (limiter_.inputLevels()) + "   out " + fmt (limiter_.outputLevels());
+        const juce::String io = "in " + fmt (limiter_.inputLevels()) + "   out " + fmt (limiter_.outputLevels())
+                              + "   " + thresholdReadout ((double) ceiling, limiter_.inputDb());   // 21m: the threshold readout (ceiling - input gain)
         if (inOutLabel_.getText() != io) inOutLabel_.setText (io, juce::dontSendNotification);
     }
 }

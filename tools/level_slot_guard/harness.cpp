@@ -10,6 +10,7 @@
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
 #include "EedLevelEditor.h"   // 22 Sep 2026 (item 8): the card's readout tags
+#include "EedLimiterEditor.h"  // 21m (22 Sep 2026): the limiter threshold readout
 #include <cstdio>
 #include <memory>
 #include <cmath>
@@ -146,6 +147,7 @@ int main()
             check (u.undoDepth() == 20, "U8. the stack is bounded at 20 (25 bypass toggles)", juce::String (u.undoDepth()));
         }
     }
+    check (EedLimiterEditor::thresholdReadout (-0.1, 8.8) == "threshold -8.9 dB" && EedLimiterEditor::thresholdReadout (-1.0, 0.0) == "threshold -1.0 dB", "21m: the EchoJay Limiter Threshold READOUT = ceiling - input gain (display only): -0.1 ceiling with +8.8 in -> \"threshold -8.9 dB\"", EedLimiterEditor::thresholdReadout (-0.1, 8.8));
     std::printf ("\n==== level_slot_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

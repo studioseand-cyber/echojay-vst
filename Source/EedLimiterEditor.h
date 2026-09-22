@@ -34,6 +34,8 @@
 class EedLimiterEditor : public EedDynamicsFaceEditor
 {
 public:
+    // 21m (22 Sep 2026): Threshold READOUT = ceiling - input gain (display only; the DSP clamps at the ceiling, the input gain pushes into it)
+    static juce::String thresholdReadout (double ceilingDb, double inputDb) { return "threshold " + juce::String (ceilingDb - inputDb, 1) + " dB"; }
     explicit EedLimiterEditor (EedLimiterProcessor& p);
 
 protected:
