@@ -166,6 +166,15 @@ private:
         with no visible control" route only. Open list 214, the data race on
         playbackPos, is untouched and unrelated to this. */
     void silenceCompareStreams (const char* why);
+
+    /** THE SLOT IDENTITY, ACROSS A WINDOW CLOSE. TWO CALL SITES ONLY, which
+        is why this shape was chosen over moving the members to the processor:
+        compareTop_ and compareBot_ are mentioned 63 times in this file with 25
+        writes, and this file is where the unmerged parallel work is heaviest.
+        Saving at teardown and restoring at construction touches two lines
+        instead of sixty-three. */
+    void saveCompareSlotsToProcessor();
+    void restoreCompareSlotsFromProcessor();
     void loadReferenceFile();
 
     /** What a status line IS, so its colour follows its register rather than

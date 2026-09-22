@@ -2743,6 +2743,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // processor's chainHost and kept processing. The fix is THE SAME
     // function a tab click runs, forced once here: one population path, no
     // second "initial draw" routine to drift.
+    // THE SLOTS COME BACK BEFORE ANYTHING DRAWS THEM. Restored here rather
+    // than earlier because refBrowserEntries() needs the analyser seeded, and
+    // ensureReferenceLibraryLoaded runs in createEditor before this
+    // constructor body. THE WINDOW HALF: the processor kept these across the
+    // close. The project half arrived in setStateInformation.
+    restoreCompareSlotsFromProcessor();
+
     if (currentScreen == Screen::Main)
         switchToTab(currentTab, /*force*/ true);
 
@@ -2810,6 +2817,13 @@ EchoJayEditor::~EchoJayEditor() {
     // stopCompareStream on an already-stopped slot is a no-op.
     if (! codecModeActive_)
         silenceCompareStreams ("the editor closing");
+
+    // AND THE SLOT IDENTITY, WHICHEVER MODE WE ARE IN. Unconditional: the
+    // codec branch above fades rather than silencing, but both destroy this
+    // editor and both must leave the slots behind. This is the WINDOW half;
+    // getStateInformation carries the same data into the blob for the PROJECT
+    // half.
+    saveCompareSlotsToProcessor();
 
     if (codecModeActive_)
     {
@@ -5117,14 +5131,94 @@ void EchoJayEditor::showCompareView()
     resized(); repaint();
 }
 
+void EchoJayEditor::saveCompareSlotsToProcessor()
+{
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto& src = (i == 0) ? compareTop_ : compareBot_;
+        auto& d = processorRef.compareSlotPersist_[i];
+        d = {};
+        d.kind  = (int) src.kind;
+        d.label = src.label;
+        switch (src.kind)
+        {
+            case CompareSlotState::Kind::Reference:
+            {
+                // BY PATH, NEVER BY POSITION. The index the editor holds is a
+                // position in the browser list and is wrong the moment the
+                // library reorders or a reference is re-analysed.
+                const auto entries = refBrowserEntries();
+                if (src.index >= 0 && src.index < (int) entries.size())
+                    d.refPath = entries[(size_t) src.index].path;
+                break;
+            }
+            case CompareSlotState::Kind::Snapshot:
+                // THE ONE CASE WITH NOTHING STABLE TO STORE. See
+                // EJReferenceRows.h: snapshots are addressed by position
+                // everywhere and there is no id to use instead.
+                d.snapshotIndex = src.index;
+                break;
+            case CompareSlotState::Kind::WsCapture: d.wsReviewId = src.wsReviewId; break;
+            case CompareSlotState::Kind::CodecFile: d.codecPath  = src.codecPath;  break;
+            case CompareSlotState::Kind::Live:
+            case CompareSlotState::Kind::Empty:
+            default: break;
+        }
+    }
+}
+
+void EchoJayEditor::restoreCompareSlotsFromProcessor()
+{
+    const auto entries = refBrowserEntries();
+    for (int i = 0; i < 2; ++i)
+    {
+        const auto& d = processorRef.compareSlotPersist_[i];
+        auto& dst = (i == 0) ? compareTop_ : compareBot_;
+        dst = {};
+        if (d.kind == (int) CompareSlotState::Kind::Empty) continue;
+
+        dst.kind  = (CompareSlotState::Kind) d.kind;
+        dst.label = d.label;
+        switch (dst.kind)
+        {
+            case CompareSlotState::Kind::Reference:
+            {
+                // A REFERENCE THAT IS NO LONGER THERE EMPTIES THE SLOT rather
+                // than pointing somewhere. refSlotResolveIndex returns -1 and
+                // that is the answer, not a fallback to position 0.
+                const int at = echojay::refSlotResolveIndex (d, entries);
+                if (at < 0) { dst = {}; continue; }
+                dst.index = at;
+                break;
+            }
+            case CompareSlotState::Kind::Snapshot:
+            {
+                const int n = (int) processorRef.getSnapshots().size();
+                if (d.snapshotIndex < 0 || d.snapshotIndex >= n) { dst = {}; continue; }
+                dst.index = d.snapshotIndex;
+                break;
+            }
+            case CompareSlotState::Kind::WsCapture: dst.wsReviewId = d.wsReviewId; break;
+            case CompareSlotState::Kind::CodecFile:
+                // A CODEC RENDER IS A TEMP FILE AND MAY BE GONE. No file, no
+                // slot, rather than a slot naming a path nothing can play.
+                if (! juce::File (d.codecPath).existsAsFile()) { dst = {}; continue; }
+                dst.codecPath = d.codecPath;
+                break;
+            case CompareSlotState::Kind::Live:
+            case CompareSlotState::Kind::Empty:
+            default: break;
+        }
+    }
+}
+
 void EchoJayEditor::silenceCompareStreams (const char* why)
 {
-    // BOTH SLOTS, THROUGH THE EXISTING STOP. stopCompareStream clears loaded,
-    // playing and playbackPos, and clears cmpAudible when it is pointing at
-    // the slot it is stopping, so calling it for both leaves cmpAudible at -1
-    // whichever side was audible. -1 is already this codebase's "nothing
-    // audible" (PluginProcessor.h:1108, EJCaptureGuard.h:50); nothing new is
-    // invented here.
+    // BOTH SLOTS, THROUGH silenceCompareStream. It clears playing and the
+    // user's intent and leaves cmpAudible at -1 for whichever side was
+    // audible, and it does NOT touch `loaded`, the buffer or the position.
+    // -1 is already this codebase's "nothing audible"
+    // (PluginProcessor.h, EJCaptureGuard.h:50); nothing new is invented here.
     //
     // WHAT THIS DOES NOT FIX, and nobody should read it as fixing:
     //
@@ -5141,8 +5235,13 @@ void EchoJayEditor::silenceCompareStreams (const char* why)
     // THE PROCESSOR IS NOT TOUCHED. The transport sync is inside unmerged work
     // and is off limits; this is editor side only, which is why it can land
     // now rather than after the merge.
-    processorRef.stopCompareStream (0);
-    processorRef.stopCompareStream (1);
+    // SILENCE, NOT STOP. This called stopCompareStream, which CLEARS `loaded`
+    // and zeroes playbackPos: a window close freed the buffer and emptied the
+    // slot, so reopening found nothing loaded. A closed window is not a
+    // removed reference. Removal still goes through stopCompareStream, which
+    // is unchanged.
+    processorRef.silenceCompareStream (0);
+    processorRef.silenceCompareStream (1);
     EchoJay_NSLog ((juce::String ("EJCmp: streams stopped on ") + why).toRawUTF8());
 }
 
@@ -6587,11 +6686,10 @@ void EchoJayEditor::setReferenceScope (const echojay::RefScope& s)
 void EchoJayEditor::assignReferenceToFolder (const juce::String& path,
                                              const juce::String& folder)
 {
-    for (auto& f : processorRef.referenceFolders)
-        f.paths.erase (std::remove (f.paths.begin(), f.paths.end(), path), f.paths.end());
-    if (folder.isNotEmpty())
-        for (auto& f : processorRef.referenceFolders)
-            if (f.name == folder) { f.paths.push_back (path); break; }
+    // THE INDEX IS THE STORE OF RECORD (C3b). This writes folderId on the
+    // entry and rebuilds referenceFolders from the index, so every read below
+    // and everywhere else in this file is unchanged.
+    processorRef.folderAssign (path, folder);
     // MEMBERSHIP IS THE SCOPE'S COUNT. Moving the last reference out of the
     // folder you are looking at empties it, and this is the one mutator that
     // does NOT route through setReferenceScope, so it needs its own call.
@@ -6605,10 +6703,7 @@ void EchoJayEditor::deleteFolder (const juce::String& folder)
     // DELETING A FOLDER NEVER DELETES REFERENCES. Its members become unfiled,
     // which is what dropping the folder record does by itself: membership
     // lives here, not on the reference.
-    auto& fs = processorRef.referenceFolders;
-    fs.erase (std::remove_if (fs.begin(), fs.end(),
-                              [&] (const echojay::RefFolder& f) { return f.name == folder; }),
-              fs.end());
+    processorRef.folderDelete (folder);   // tombstoned in the index, members unfiled
     // If it was the selected scope, refScopeOrAll drops us back to ALL rather
     // than leaving an empty pane nobody can account for.
     setReferenceScope (processorRef.referenceScope);
@@ -6637,12 +6732,13 @@ void EchoJayEditor::commitFolderName (const juce::String& oldName, const juce::S
 
     if (oldName.isEmpty())
     {
-        processorRef.referenceFolders.push_back ({ name, {} });
+        processorRef.folderCreate (name);
     }
     else
     {
-        for (auto& f : processorRef.referenceFolders)
-            if (f.name == oldName) { f.name = name; break; }
+        // RENAMED BY ID IN THE INDEX, so every member follows without being
+        // touched (schema 4A.3). A delete-and-create would strand them.
+        processorRef.folderRename (oldName, name);
         // The selected scope names a folder by name, so a rename has to carry
         // it or the scope falls back to ALL the moment the user renames the
         // folder they are looking at.

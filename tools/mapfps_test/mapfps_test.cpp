@@ -7786,6 +7786,435 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "ri PIN27: and the load path itself still commits nothing");
         }
 
+        // ri PIN28 -- FOLDERS IN THE SCHEMA (section 4A). FORMAT ONLY:
+        // nothing creates a folder, nothing reads one, and the plugin behaves
+        // identically. Parse, write and merge honour them now so the format is
+        // settled before the first real folder exists, which is the discipline
+        // the entry tombstones took.
+        {
+            using namespace echojay;
+            const juce::String now = "2026-09-22T21:00:00Z";
+
+            auto mkFolder = [] (const juce::String& id, const juce::String& nm, int ord)
+            {
+                RefFolderEntry f; f.id = id; f.name = nm; f.order = ord; return f;
+            };
+            auto mkEntry = [&] (const juce::String& id, const juce::String& path,
+                                const juce::String& fid)
+            {
+                RefEntry e; e.id = id; e.path = path; e.name = path; e.addedAt = now;
+                e.folderId = fid; e.availability = RefAvailability::Present;
+                return e;
+            };
+
+            // --- THE CONTROL, FIRST. If the folder code were removed entirely
+            // this whole block would still be compilable only if these names
+            // exist, and a round trip of an index WITH folders would come back
+            // empty. Today an absence check passed on an empty string (cg
+            // PIN7) and a presence check passed on a call that never ran
+            // (ri PIN27), so this asserts the positive before anything asserts
+            // an absence.
+            {
+                ReferenceIndex ix;
+                ix.folders.push_back (mkFolder (newFolderId(), "Loud masters", 0));
+                ix.entries.push_back (mkEntry ("r_1", "/a.wav", ix.folders[0].id));
+                const auto back = parseReferenceIndex (writeReferenceIndex (ix, now, "test"));
+                check (back.folders.size() == 1 && back.entries.size() == 1
+                       && back.folders[0].name == "Loud masters"
+                       && back.entries[0].folderId == ix.folders[0].id,
+                       "ri PIN28: CONTROL, a folder and its member survive a round trip, so "
+                       "every absence check below is checking an absence and not a missing feature",
+                       "folders=" + juce::String ((int) back.folders.size()));
+            }
+
+            // --- 1. ROUND TRIP, including order and an unknown key ---------
+            {
+                ReferenceIndex ix;
+                ix.folders.push_back (mkFolder ("f_aaaaaaaaaaaaaaaa", "Client refs", 3));
+                ix.folders.push_back (mkFolder ("f_bbbbbbbbbbbbbbbb", "Loud masters", 1));
+                ix.folderTombstones.push_back ({ "f_cccccccccccccccc", now });
+                ix.entries.push_back (mkEntry ("r_1", "/a.wav", "f_bbbbbbbbbbbbbbbb"));
+                const auto back = parseReferenceIndex (writeReferenceIndex (ix, now, "test"));
+                check (back.folders.size() == 2, "ri PIN28: both folders parse back",
+                       juce::String ((int) back.folders.size()));
+                check (back.folders[0].order == 3 && back.folders[1].order == 1,
+                       "ri PIN28: and order is carried as a FIELD, unsorted by the writer");
+                check (back.folderTombstones.size() == 1
+                       && back.folderTombstones[0].id == "f_cccccccccccccccc",
+                       "ri PIN28: folderTombstones round trip too");
+                check (back.entries[0].folderId == "f_bbbbbbbbbbbbbbbb",
+                       "ri PIN28: and an entry keeps its folderId through parse and write");
+            }
+
+            // --- 2. AN OLD INDEX, NO FOLDER KEYS AT ALL --------------------
+            // Every document written before today has neither key and no
+            // folderId on any entry. It must LOAD, at schema 1, not be refused.
+            {
+                const juce::String old =
+                    "{\"schema\":1,\"measurementEpoch\":2,\"written\":\"" + now + "\","
+                    "\"writtenBy\":\"2.26.4\",\"entries\":[{\"id\":\"r_9\","
+                    "\"name\":\"old.wav\",\"path\":\"/old.wav\",\"addedAt\":\"" + now + "\"}]}";
+                const auto back = parseReferenceIndex (old);
+                check (back.diskSchema == 1 && ! back.readOnly,
+                       "ri PIN28: an index with no folder keys loads at schema 1, not read only");
+                check (back.entries.size() == 1 && back.entries[0].folderId.isEmpty(),
+                       "ri PIN28: its entry is UNFILED, which is a state and not a fault");
+                check (back.folders.empty() && back.folderTombstones.empty(),
+                       "ri PIN28: and an absent array is no folders rather than an error");
+                check (refEntryFolderId (back, back.entries[0]).isEmpty(),
+                       "ri PIN28: the read rule agrees: unfiled");
+            }
+
+            // --- 3. UNION BY id, AND ORDER SURVIVES A REORDERED ARRAY ------
+            {
+                ReferenceIndex disk;
+                disk.folders.push_back (mkFolder ("f_1111111111111111", "First", 0));
+                disk.folders.push_back (mkFolder ("f_2222222222222222", "Second", 1));
+
+                ReferenceIndex mine;                      // array order REVERSED
+                mine.folders.push_back (mkFolder ("f_2222222222222222", "Second renamed", 1));
+                mine.folders.push_back (mkFolder ("f_3333333333333333", "Third", 2));
+
+                mergeReferenceIndex (disk, mine);
+                check (disk.folders.size() == 3, "ri PIN28: union by id keeps all three",
+                       juce::String ((int) disk.folders.size()));
+                check (disk.folders[0].name == "First"
+                       && disk.folders[1].name == "Second renamed"
+                       && disk.folders[2].name == "Third",
+                       "ri PIN28: ORDER SURVIVES a merge that reordered the array, because it "
+                       "is a field and not a position",
+                       disk.folders[0].name + "/" + disk.folders[1].name + "/" + disk.folders[2].name);
+                check (disk.folders[1].id == "f_2222222222222222",
+                       "ri PIN28: and a RENAME is the same folder, because the id held still");
+            }
+
+            // --- 4. A TOMBSTONED FOLDER STAYS DEAD ACROSS A MERGE ----------
+            {
+                ReferenceIndex disk;
+                disk.folders.push_back (mkFolder ("f_dead000000000000", "Deleted", 0));
+                disk.folders.push_back (mkFolder ("f_live000000000000", "Kept", 1));
+                disk.entries.push_back (mkEntry ("r_1", "/a.wav", "f_dead000000000000"));
+
+                ReferenceIndex mine;                      // a stale peer, still holding it
+                mine.folderTombstones.push_back ({ "f_dead000000000000", now });
+                mergeReferenceIndex (disk, mine);
+                check (disk.folders.size() == 1 && disk.folders[0].id == "f_live000000000000",
+                       "ri PIN28: a tombstoned folder is GONE from folders");
+
+                ReferenceIndex stale;                     // the peer writes it back
+                stale.folders.push_back (mkFolder ("f_dead000000000000", "Deleted", 0));
+                mergeReferenceIndex (disk, stale);
+                check (disk.folders.size() == 1,
+                       "ri PIN28: and STAYS dead when a stale peer unions it back in, which is "
+                       "the whole reason the tombstone exists",
+                       juce::String ((int) disk.folders.size()));
+
+                // --- 5. AND ITS MEMBER IS UNFILED, NOT DELETED ------------
+                check (disk.entries.size() == 1,
+                       "ri PIN28: deleting a folder deletes NO reference");
+                check (disk.entries[0].folderId == "f_dead000000000000",
+                       "ri PIN28: the entry KEEPS its folderId through the merge, unswept");
+                check (refEntryFolderId (disk, disk.entries[0]).isEmpty(),
+                       "ri PIN28: and an unknown folderId READS as unfiled, so membership heals "
+                       "itself without a second write");
+            }
+
+            // --- 6. A LIVE MEMBERSHIP STILL READS ------------------------
+            // The negative control for 5: refEntryFolderId must not simply always
+            // return empty.
+            {
+                ReferenceIndex ix;
+                ix.folders.push_back (mkFolder ("f_live111111111111", "Kept", 0));
+                ix.entries.push_back (mkEntry ("r_1", "/a.wav", "f_live111111111111"));
+                check (refEntryFolderId (ix, ix.entries[0]) == "f_live111111111111",
+                       "ri PIN28: a live membership reads as that folder, so the unfiled checks "
+                       "above are not passing against a function that always says unfiled");
+            }
+
+            // --- 7. THE ID SHAPE -----------------------------------------
+            {
+                const auto a = newFolderId(), b = newFolderId();
+                check (a.startsWith ("f_") && a.length() == 18,
+                       "ri PIN28: a folder id is \"f_\" plus 16 hex, the entry rule with its own "
+                       "prefix", a);
+                check (a != b, "ri PIN28: and two mints differ");
+                check (newReferenceId().startsWith ("r_"),
+                       "ri PIN28: while entry ids keep theirs, so an id says what it points at");
+            }
+        }
+
+        // ri PIN31 -- A COMPARE SLOT THAT OUTLIVES THE EDITOR.
+        //
+        // THE PURE HALF ONLY, and section 4 of the report says plainly what
+        // that leaves uncovered. refSlotResolveIndex is the decision that
+        // matters: a slot is addressed BY PATH, so it survives the library
+        // being reordered or a reference being re-analysed, and a reference
+        // that has gone resolves to -1 rather than to somewhere.
+        {
+            using namespace echojay;
+            std::vector<RefBrowserEntry> refs {
+                { "a.wav", "/refs/a.wav" },
+                { "b.wav", "/refs/b.wav" },
+                { "c.wav", "/refs/c.wav" }
+            };
+
+            CompareSlotPersist slot;
+            slot.kind    = kCompareSlotKindReference;
+            slot.refPath = "/refs/b.wav";
+            check (refSlotResolveIndex (slot, refs) == 1,
+                   "ri PIN31: a reference slot resolves by path to its current position",
+                   juce::String (refSlotResolveIndex (slot, refs)));
+
+            // THE WHOLE POINT: REORDER THE LIBRARY AND THE SLOT STILL POINTS
+            // AT THE SAME FILE. A stored position would now be wrong.
+            std::vector<RefBrowserEntry> reordered {
+                { "c.wav", "/refs/c.wav" },
+                { "a.wav", "/refs/a.wav" },
+                { "b.wav", "/refs/b.wav" }
+            };
+            check (refSlotResolveIndex (slot, reordered) == 2,
+                   "ri PIN31: and FOLLOWS the file when the library is reordered, which is what "
+                   "a stored index could not do",
+                   juce::String (refSlotResolveIndex (slot, reordered)));
+
+            // A REFERENCE THAT IS GONE EMPTIES THE SLOT.
+            std::vector<RefBrowserEntry> without { { "a.wav", "/refs/a.wav" } };
+            check (refSlotResolveIndex (slot, without) == -1,
+                   "ri PIN31: a reference that is no longer in the library resolves to -1, so the "
+                   "slot empties rather than pointing somewhere");
+            check (refSlotResolveIndex (slot, {}) == -1,
+                   "ri PIN31: and an empty library resolves to -1 too");
+
+            // NON-REFERENCE KINDS ARE NOT RESOLVED BY PATH. A snapshot slot
+            // carrying a stale refPath must not silently become a reference.
+            CompareSlotPersist snap;
+            snap.kind = kCompareSlotKindSnapshot;
+            snap.refPath = "/refs/b.wav";          // deliberately populated
+            check (refSlotResolveIndex (snap, refs) == -1,
+                   "ri PIN31: a SNAPSHOT slot is not resolved by path, whatever refPath holds, "
+                   "so a kind cannot change under the user");
+
+            // THE CONTROL. Without it every -1 above passes against a function
+            // that always returns -1, which is the shape cg PIN7 took when it
+            // read an empty string and reported green.
+            CompareSlotPersist live;
+            live.kind = kCompareSlotKindReference;
+            live.refPath = "/refs/a.wav";
+            check (refSlotResolveIndex (live, refs) == 0,
+                   "ri PIN31: CONTROL, a resolvable slot returns a real index, so the -1 checks "
+                   "above are checking an absence and not a function that always refuses");
+
+            // THE KIND CONSTANTS MUST TRACK CompareSlotState::Kind. They are
+            // written out here because the enum lives on the editor and the
+            // gate never links it; if the enum is reordered this is the only
+            // thing that would notice.
+            check (kCompareSlotKindSnapshot == 2 && kCompareSlotKindReference == 4,
+                   "ri PIN31: the kind constants still match CompareSlotState::Kind's order "
+                   "(Empty, Live, Snapshot, WsCapture, Reference, CodecFile)");
+        }
+
+        // ri PIN29 -- THE FOUR FOLDER OPERATIONS AND THE MIGRATION (C3b).
+        //
+        // THE OPERATIONS ARE PINNED AS PURE INDEX TRANSFORMS, not through the
+        // processor, because the gate links harnesses and never the processor
+        // (open list 158). Each block below performs the SAME transform the
+        // shipping method performs, and ri PIN30 pins by text that the
+        // shipping method is the thing the editor calls.
+        //
+        // THE MIGRATION MATTERS MOST. It runs ONCE, on real user data, and
+        // there is no second chance at it.
+        {
+            using namespace echojay;
+            const juce::String now = "2026-09-22T22:00:00Z";
+            auto entry = [&] (const juce::String& id, const juce::String& path)
+            {
+                RefEntry e; e.id = id; e.path = path; e.name = path; e.addedAt = now;
+                e.availability = RefAvailability::Present; return e;
+            };
+
+            // --- CREATE ---------------------------------------------------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = newFolderId(); f.name = "Masters"; f.order = 0;
+                ix.folders.push_back (f);
+                check (ix.folders.size() == 1 && ix.folders[0].name == "Masters"
+                       && ix.folders[0].id.startsWith ("f_"),
+                       "ri PIN29: create puts one folder in, with a minted id");
+            }
+
+            // --- RENAME KEEPS THE ID, AND EVERY MEMBER FOLLOWS ------------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = "f_1111111111111111"; f.name = "Old"; f.order = 0;
+                ix.folders.push_back (f);
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                ix.entries[0].folderId = f.id;
+
+                for (auto& g : ix.folders) if (g.name == "Old") g.name = "New";
+                check (ix.folders[0].id == "f_1111111111111111" && ix.folders[0].name == "New",
+                       "ri PIN29: rename changes the name and HOLDS the id");
+                check (refEntryFolderId (ix, ix.entries[0]) == "f_1111111111111111",
+                       "ri PIN29: and the member follows without being touched, which a "
+                       "delete-and-create would have stranded");
+            }
+
+            // --- DELETE TOMBSTONES, AND MEMBERS GO UNFILED NOT AWAY -------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = "f_2222222222222222"; f.name = "Doomed"; f.order = 0;
+                ix.folders.push_back (f);
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                ix.entries[0].folderId = f.id;
+
+                ix.folderTombstones.push_back ({ f.id, now });
+                ix.folders.clear();
+                check (ix.entries.size() == 1,
+                       "ri PIN29: deleting a folder deletes NO reference");
+                check (ix.entries[0].folderId == "f_2222222222222222",
+                       "ri PIN29: the member keeps its folderId, unswept");
+                check (refEntryFolderId (ix, ix.entries[0]).isEmpty(),
+                       "ri PIN29: and reads as unfiled, so membership heals itself");
+
+                ReferenceIndex peer;                 // a stale peer writes it back
+                peer.folders.push_back (f);
+                mergeReferenceIndex (ix, peer);
+                check (ix.folders.empty(),
+                       "ri PIN29: and the tombstone keeps it dead through a peer's merge",
+                       juce::String ((int) ix.folders.size()));
+            }
+
+            // --- ASSIGN, AND UNFILE ---------------------------------------
+            {
+                ReferenceIndex ix;
+                RefFolderEntry f; f.id = "f_3333333333333333"; f.name = "Refs"; f.order = 0;
+                ix.folders.push_back (f);
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+
+                ix.entries[0].folderId = f.id;
+                check (refEntryFolderId (ix, ix.entries[0]) == f.id,
+                       "ri PIN29: assign files the entry");
+                ix.entries[0].folderId = {};
+                check (refEntryFolderId (ix, ix.entries[0]).isEmpty(),
+                       "ri PIN29: and an empty name unfiles it rather than deleting anything");
+                check (ix.entries.size() == 1, "ri PIN29: the entry survives being unfiled");
+            }
+
+            // --- THE MIGRATION: blob folders into an index with none ------
+            // Schema 4A.5: "each referenceFolders entry -> a folder object, id
+            // minted now, name kept, order taken from its position in the
+            // array; each path in its paths list -> that entry's folderId,
+            // first match winning".
+            {
+                ReferenceIndex ix;
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                ix.entries.push_back (entry ("r_2", "/b.wav"));
+                ix.entries.push_back (entry ("r_3", "/c.wav"));
+
+                struct BlobFolder { juce::String name; std::vector<juce::String> paths; };
+                std::vector<BlobFolder> blob {
+                    { "Masters", { "/a.wav", "/b.wav" } },
+                    { "Client",  { "/c.wav", "/gone.wav" } }
+                };
+
+                for (size_t i = 0; i < blob.size(); ++i)
+                {
+                    juce::String id;
+                    for (const auto& g : ix.folders) if (g.name == blob[i].name) { id = g.id; break; }
+                    if (id.isEmpty())
+                    {
+                        RefFolderEntry f; f.id = newFolderId(); f.name = blob[i].name;
+                        f.order = (int) i; id = f.id; ix.folders.push_back (f);
+                    }
+                    for (const auto& path : blob[i].paths)
+                    {
+                        const int at = refFindByPath (ix, path);
+                        if (at < 0) continue;
+                        if (ix.entries[(size_t) at].folderId.isNotEmpty()) continue;
+                        ix.entries[(size_t) at].folderId = id;
+                    }
+                }
+
+                check (ix.folders.size() == 2,
+                       "ri PIN29: MIGRATION mints one folder per blob folder",
+                       juce::String ((int) ix.folders.size()));
+                check (ix.folders[0].order == 0 && ix.folders[1].order == 1,
+                       "ri PIN29: order comes from the blob's array position (4A.5)");
+                check (refEntryFolderId (ix, ix.entries[0]) == ix.folders[0].id
+                       && refEntryFolderId (ix, ix.entries[1]) == ix.folders[0].id
+                       && refEntryFolderId (ix, ix.entries[2]) == ix.folders[1].id,
+                       "ri PIN29: and every path that matches an entry carries over");
+                check (ix.entries.size() == 3,
+                       "ri PIN29: a blob path matching NO entry is skipped, not invented: it was "
+                       "already dangling before today");
+            }
+
+            // --- THE MIGRATION IS IDEMPOTENT ------------------------------
+            // The once flag is the real guard and is pinned by text in
+            // ri PIN30; this pins the TRANSFORM, so that even without the flag
+            // a second pass mints nothing new. Two projects each carrying a
+            // "Masters" folder must converge on ONE, which is open list 204
+            // self-inflicted if they do not.
+            {
+                ReferenceIndex ix;
+                ix.entries.push_back (entry ("r_1", "/a.wav"));
+                std::vector<juce::String> names { "Masters", "Masters" };
+                for (size_t i = 0; i < names.size(); ++i)
+                {
+                    juce::String id;
+                    for (const auto& g : ix.folders) if (g.name == names[i]) { id = g.id; break; }
+                    if (id.isEmpty())
+                    {
+                        RefFolderEntry f; f.id = newFolderId(); f.name = names[i];
+                        f.order = (int) i; id = f.id; ix.folders.push_back (f);
+                    }
+                }
+                check (ix.folders.size() == 1,
+                       "ri PIN29: a second pass over the same folder name mints NOTHING new, so "
+                       "two projects converge on one folder rather than duplicating it",
+                       juce::String ((int) ix.folders.size()));
+            }
+        }
+
+        // ri PIN30 -- THE FOLDER WIRING, BY TEXT. The transforms above are
+        // pinned in the abstract; these pin that the SHIPPING code does them,
+        // and that the migration cannot run twice.
+        {
+            std::ifstream fp ("Source/PluginProcessor.cpp");
+            std::stringstream sp; sp << fp.rdbuf();
+            const auto pp = codeOnly (juce::String (sp.str()));
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto pe = codeOnly (juce::String (se.str()));
+
+            check (pp.length() > 10000 && pe.length() > 10000,
+                   "ri PIN30: both files were read, so the checks below are reading something",
+                   "pp=" + juce::String (pp.length()) + " pe=" + juce::String (pe.length()));
+
+            // THE ONCE FLAG IS THE WHOLE GUARANTEE, and it must be set BEFORE
+            // any work, or a throw or an early return leaves it unset and the
+            // migration runs again on the next open.
+            check (pp.contains ("if (refFoldersMigrated_) return;\n    refFoldersMigrated_ = true;"),
+                   "ri PIN30: the migration's once flag is set BEFORE it does anything, so a "
+                   "failure is one attempt rather than a retry on every open");
+
+            check (pp.contains ("void EchoJayProcessor::folderCreate")
+                   && pp.contains ("void EchoJayProcessor::folderRename")
+                   && pp.contains ("void EchoJayProcessor::folderDelete")
+                   && pp.contains ("void EchoJayProcessor::folderAssign"),
+                   "ri PIN30: all four operations live on the processor");
+            check (pp.contains ("refLibrary_.folderTombstones.push_back (t)"),
+                   "ri PIN30: and delete emits a TOMBSTONE, which a union cannot express");
+
+            // THE EDITOR CALLS THEM AND DOES NOT MUTATE referenceFolders.
+            check (pe.contains ("processorRef.folderCreate (name)")
+                   && pe.contains ("processorRef.folderRename (oldName, name)")
+                   && pe.contains ("processorRef.folderDelete (folder)")
+                   && pe.contains ("processorRef.folderAssign (path, folder)"),
+                   "ri PIN30: the editor's four folder functions call them");
+            check (! pe.contains ("processorRef.referenceFolders.push_back"),
+                   "ri PIN30: and the editor no longer creates a folder behind the index's back");
+        }
+
         // =================================================================
         // RECONCILIATION (EJReferenceReconcile.h). THE CALLER ARRIVED IN C1:
         // PluginProcessor.cpp now loads, reconciles and seeds from these, and

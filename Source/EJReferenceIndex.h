@@ -24,6 +24,7 @@
 // ===========================================================================
 
 #include <JuceHeader.h>
+#include <algorithm>   // std::stable_sort, for the folder order rule
 #include <array>
 #include <mutex>
 #include <chrono>
@@ -194,6 +195,22 @@ struct RefEntry
     /** The entry as it was parsed, so unknown keys written by a newer build
         survive a rewrite by this one. Empty for entries built in memory. */
     juce::var raw;
+
+    /** WHICH FOLDER THIS IS IN, "" FOR UNFILED (schema 4A.2).
+
+        APPENDED AT THE END OF THE STRUCT, not inserted. Open list 207 records
+        what a mid-struct field costs: the gate links the PREVIOUS build's
+        archive, so compiled code gets one offset table and the test TU another,
+        silently, with plausible wrong answers.
+
+        EMPTY MEANS UNFILED, WHICH IS A STATE AND NOT A MISSING VALUE, and an
+        ABSENT KEY READS THE SAME WAY, so an entry written by an older build is
+        unfiled rather than broken. An UNKNOWN id reads as unfiled too, by the
+        same rule RefAvailability uses for an unrecognised state: 4A.2, "the
+        safe reading is the one that loses a grouping, not the one that invents
+        a folder." That is also what makes membership self-healing after a
+        folder is deleted, which 4A.4 relies on. */
+    juce::String folderId;
 };
 
 /** A DELETION, RECORDED AT THE DOCUMENT LEVEL RATHER THAN ON THE ENTRY.
@@ -220,6 +237,29 @@ struct RefTombstone
 {
     juce::String id;
     juce::String at;          // ISO 8601 UTC
+};
+
+// ===========================================================================
+// FOLDERS (schema section 4A, decided 20 Sep; the format only, wired to
+// nothing). Section 4A.2 is the shape and this implements it rather than
+// deciding it.
+//
+// ONE FOLDER PER REFERENCE, NOT TAGS. 4A.1: "a reference in three folders
+// makes 'which folder am I browsing' a filter rather than a place, and every
+// count on screen stops adding up to the size of the library."
+//
+// `order` IS A FIELD AND NOT ARRAY POSITION, and this is the rule that looks
+// arbitrary until you read why. 4A.2: "mergeReferenceIndex matches by id and
+// pushes unknown ids onto the end, so the order two instances see depends on
+// who wrote last. An integer, ascending, ties broken by name, is the only
+// ordering that means the same thing on both machines."
+// ===========================================================================
+struct RefFolderEntry
+{
+    juce::String id;          // "f_" + 16 hex, minted once, never recomputed
+    juce::String name;
+    int          order = 0;
+    juce::var    raw;         // unknown keys from a newer build survive a rewrite
 };
 
 /** Collected at 90 days, or at 500 oldest-first. BOTH bounds, because each alone
@@ -255,6 +295,20 @@ struct ReferenceIndex
     int diskSchema = kRefIndexSchema;
 
     juce::var raw;                    // document-level unknown keys
+
+    /** FOLDERS AND THEIR DELETIONS (schema 4A). APPENDED, for the same reason
+        as RefEntry::folderId: open list 207, the gate links the previous
+        build's archive and a mid-struct field gives compiled code one offset
+        table and the test TU another.
+
+        WIRED TO NOTHING. Parse reads them, write emits them and merge honours
+        them as of this commit; nothing creates a folder, nothing reads one and
+        the plugin behaves identically. That is the discipline the entry
+        tombstones took, whose own comment states it: the format is "settled and
+        exercised before the first real deletion exists. That is the difference
+        between a format change and a behaviour change." */
+    std::vector<RefFolderEntry> folders;
+    std::vector<RefTombstone>   folderTombstones;
 };
 
 // ---------------------------------------------------------------------------
@@ -273,6 +327,16 @@ inline juce::String newReferenceId()
     const juce::uint64 lo = (juce::uint64) (juce::uint32) rng.nextInt();
     return "r_" + juce::String::toHexString ((juce::int64) ((hi << 32) ^ lo))
                       .paddedLeft ('0', 16);
+}
+
+/** A folder id. THE SAME RULE WITH A DIFFERENT PREFIX, and section 4A.2 says
+    why the prefix is there at all: "so that an id in a log or a blob says what
+    kind of thing it points at." It delegates to newReferenceId rather than
+    repeating the random draw, because two minters is two places for the width
+    or the padding to drift. */
+inline juce::String newFolderId()
+{
+    return "f_" + newReferenceId().substring (2);
 }
 
 /** The dedupe key: the normalised absolute path. Two locations are two entries,
@@ -328,6 +392,37 @@ inline bool refIsStale (const RefEntry& e, int runningEpoch = kRefMeasurementEpo
 
 /** Distinct from stale: no numbers at all, at the current epoch. What a path
     that resolved to nothing becomes on first open of an old project. */
+/** THE FOLDER AN ENTRY IS ACTUALLY IN, or "" for unfiled.
+
+    NOT CALLED refFolderOf, AND THE NAME MATTERS. echojay::refFolderOf already
+    exists in EJReferenceRows.h, taking (std::vector<RefFolder>, path) and
+    returning a folder NAME from the blob's per-instance folders. Adding an
+    overload would have put two different concepts, keyed on different things
+    and returning different kinds of string, behind one name in one namespace:
+    a call that compiled either way and meant something else depending on the
+    argument types. The blob's folders and the index's folders are not the same
+    thing yet, and will not be until they are migrated.
+
+    THE READ RULE FROM 4A.2, IN ONE PLACE. Three different things all read as
+    unfiled and a consumer must not have to remember which: an EMPTY folderId,
+    an ABSENT key (which parses to empty), and an id naming NO LIVE FOLDER.
+    That last one is the rule that looks arbitrary without the document: "AN
+    UNKNOWN folderId READS AS UNFILED TOO. It is the same rule as
+    RefAvailability, where an unrecognised state reads as Missing rather than
+    Present: the safe reading is the one that loses a grouping, not the one
+    that invents a folder."
+
+    IT IS ALSO WHAT MAKES A DELETION SELF-HEALING (4A.4). An entry returning
+    from a peer still carrying a dead folderId is unfiled by this function,
+    "without a sweep and without a second write." */
+inline juce::String refEntryFolderId (const ReferenceIndex& ix, const RefEntry& e)
+{
+    if (e.folderId.isEmpty()) return {};
+    for (const auto& f : ix.folders)
+        if (f.id == e.folderId) return f.id;
+    return {};                     // names no live folder: unfiled
+}
+
 inline bool refIsUnmeasured (const RefEntry& e)
 {
     return ! e.measurements.valid;
@@ -373,6 +468,9 @@ inline RefEntry refEntryFromVar (const juce::var& v)
     e.analysedAt = rdS (v, "analysedAt");
     e.analysedBy = rdS (v, "analysedBy");
     e.measurementEpoch = rdI (v, "measurementEpoch", 0);
+    // ABSENT READS "" WHICH IS UNFILED, NOT BROKEN. Every index written
+    // before this commit has no folderId on any entry (schema 4A.2).
+    e.folderId   = rdS (v, "folderId");
 
     const auto sv = rdV (v, "source");
     e.source.bytes           = (juce::int64) rdD (sv, "bytes", 0.0);
@@ -473,6 +571,29 @@ inline ReferenceIndex parseReferenceIndex (const juce::String& json)
             t.at = detail::rdS (tv, "at");
             if (t.id.isNotEmpty()) ix.tombstones.push_back (t);
         }
+
+    // FOLDERS. AN ABSENT ARRAY IS NO FOLDERS, NOT A FAULT: every document
+    // written before this commit has neither key, and both must load clean at
+    // schema 1 rather than being refused (4A.2).
+    if (auto* arr = detail::rdV (root, "folders").getArray())
+        for (auto& fv : *arr)
+        {
+            RefFolderEntry f;
+            f.id    = detail::rdS (fv, "id");
+            f.name  = detail::rdS (fv, "name");
+            f.order = detail::rdI (fv, "order", 0);
+            f.raw   = fv;                       // unknown keys survive a rewrite
+            if (f.id.isNotEmpty()) ix.folders.push_back (f);
+        }
+
+    if (auto* arr = detail::rdV (root, "folderTombstones").getArray())
+        for (auto& tv : *arr)
+        {
+            RefTombstone t;
+            t.id = detail::rdS (tv, "id");
+            t.at = detail::rdS (tv, "at");
+            if (t.id.isNotEmpty()) ix.folderTombstones.push_back (t);
+        }
     return ix;
 }
 
@@ -511,6 +632,10 @@ inline juce::var refEntryToVar (const RefEntry& e)
     o->setProperty ("analysedAt", e.analysedAt);
     o->setProperty ("analysedBy", e.analysedBy);
     o->setProperty ("measurementEpoch", e.measurementEpoch);
+    // OMITTED WHEN UNFILED rather than written as "". An absent key and an
+    // empty one read identically (4A.2), so the shorter document is the
+    // honest one and an older build sees nothing it must ignore.
+    if (e.folderId.isNotEmpty()) o->setProperty ("folderId", e.folderId);
 
     juce::DynamicObject::Ptr s (new juce::DynamicObject());
     s->setProperty ("bytes",           (double) e.source.bytes);
@@ -603,6 +728,33 @@ inline juce::String writeReferenceIndex (const ReferenceIndex& ix,
         ts.add (juce::var (d.get()));
     }
     o->setProperty ("tombstones", ts);
+
+    // FOLDERS, ALWAYS EMITTED, EMPTY ARRAYS INCLUDED. The same shape as
+    // `tombstones` above, which is also written when empty: a key that appears
+    // only sometimes makes "absent" mean two things, and 4A.2 needs absent to
+    // mean exactly one.
+    juce::Array<juce::var> fs;
+    for (const auto& f : ix.folders)
+    {
+        juce::DynamicObject::Ptr d (f.raw.getDynamicObject() != nullptr
+                                      ? f.raw.getDynamicObject()->clone().get()
+                                      : new juce::DynamicObject());
+        d->setProperty ("id",    f.id);
+        d->setProperty ("name",  f.name);
+        d->setProperty ("order", f.order);
+        fs.add (juce::var (d.get()));
+    }
+    o->setProperty ("folders", fs);
+
+    juce::Array<juce::var> fts;
+    for (const auto& t : ix.folderTombstones)
+    {
+        juce::DynamicObject::Ptr d (new juce::DynamicObject());
+        d->setProperty ("id", t.id);
+        d->setProperty ("at", t.at);
+        fts.add (juce::var (d.get()));
+    }
+    o->setProperty ("folderTombstones", fts);
 
     return juce::JSON::toString (juce::var (o.get()), false);
 }
@@ -754,6 +906,62 @@ inline void mergeReferenceIndex (ReferenceIndex& onDisk, const ReferenceIndex& m
         }
         onDisk.entries = std::move (live);
     }
+
+    // ---- FOLDERS: UNION BY id, THEN THE TOMBSTONES, THEN ORDER ----------
+    //
+    // THE SAME THREE STEPS THE ENTRIES TAKE ABOVE, and for the same reasons.
+    // 4A.3: "A merged document cannot key on a name ... a rename is one
+    // instance changing a folder's `name` while its `id` holds still, and
+    // every entry pointing at it follows without being touched."
+    for (const auto& m : mine.folders)
+    {
+        int at = -1;
+        for (size_t i = 0; i < onDisk.folders.size(); ++i)
+            if (onDisk.folders[i].id == m.id) { at = (int) i; break; }
+        if (at >= 0) onDisk.folders[(size_t) at] = m;   // mine is the later intent
+        else         onDisk.folders.push_back (m);
+    }
+
+    for (const auto& t : mine.folderTombstones)
+    {
+        bool have = false;
+        for (const auto& e : onDisk.folderTombstones) if (e.id == t.id) { have = true; break; }
+        if (! have) onDisk.folderTombstones.push_back (t);
+    }
+
+    if (! onDisk.folderTombstones.empty())
+    {
+        // 4A.4: the tombstone is required because "the instance that still
+        // holds the folder writes it back and the folder returns, named as it
+        // was, after the user deleted it."
+        std::vector<RefFolderEntry> liveFolders;
+        for (const auto& f : onDisk.folders)
+        {
+            bool dead = false;
+            for (const auto& t : onDisk.folderTombstones) if (t.id == f.id) { dead = true; break; }
+            if (! dead) liveFolders.push_back (f);
+        }
+        onDisk.folders = std::move (liveFolders);
+    }
+
+    // ORDER IS A FIELD, SO SORT BY IT RATHER THAN TRUSTING THE ARRAY. The
+    // union above pushed unknown ids onto the end, which is exactly the
+    // position-dependence 4A.2 rules out: "the order two instances see depends
+    // on who wrote last. An integer, ascending, ties broken by name, is the
+    // only ordering that means the same thing on both machines."
+    std::stable_sort (onDisk.folders.begin(), onDisk.folders.end(),
+                      [] (const RefFolderEntry& a, const RefFolderEntry& b)
+                      {
+                          if (a.order != b.order) return a.order < b.order;
+                          return a.name.compare (b.name) < 0;
+                      });
+
+    // MEMBERSHIP HEALS ITSELF AND IS NOT SWEPT. An entry whose folderId names
+    // no live folder is UNFILED by the read rule (4A.2), so nothing here has to
+    // chase members after a deletion: 4A.4, "The tombstone stops the FOLDER
+    // reappearing; the membership pointer heals itself." Clearing the ids here
+    // would be a second write and would lose the grouping if the folder came
+    // back from a peer that had not yet seen the deletion.
 
     std::vector<RefEntry> kept;
     for (const auto& e : onDisk.entries)

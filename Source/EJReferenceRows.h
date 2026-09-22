@@ -167,6 +167,58 @@ inline int refIndexOfPath (const std::vector<RefBrowserEntry>& refs,
     return -1;
 }
 
+// ===========================================================================
+// A COMPARE SLOT THAT OUTLIVES THE EDITOR
+// ===========================================================================
+//
+// WHAT WAS LOST AND WHY. CompareSlotState lives on the editor
+// (PluginEditor.h:961) and nothing persisted it, so closing the plugin WINDOW
+// destroyed which reference was in which slot. The streams stayed loaded after
+// the silence fix and the slots were still empty, because the identity was
+// never anywhere else.
+//
+// AN IDENTIFIER, NOT A POSITION. CompareSlotState::index is "Snapshot or
+// Reference index", a POSITION IN A LIST, and a slot pointing at "the third
+// one" is wrong the moment the library reorders or a reference is re-analysed.
+// A reference is addressed here by PATH, which is what the index already
+// dedupes on and what the editor's own rule already says: "BY PATH, NEVER BY
+// POSITION. See refIndexOfPath."
+//
+// PURE, so the resolve can be pinned without an editor: the gate links
+// harnesses and never the editor (open list 158).
+struct CompareSlotPersist
+{
+    int          kind = 0;         // mirrors CompareSlotState::Kind, 0 = Empty
+    juce::String refPath;          // Reference: the stable identifier
+    juce::String wsReviewId;       // WsCapture: already stable
+    juce::String codecPath;        // CodecFile: the rendered temp wav
+    juce::String label;            // what the button said
+    int          snapshotIndex = -1;  // Snapshot ONLY, see below
+};
+
+/** THE SNAPSHOT EXCEPTION, STATED RATHER THAN HIDDEN. Snapshots have no stable
+    identifier of any kind: they are addressed by position everywhere and there
+    is nothing else to store. So a snapshot slot keeps a position and is the one
+    case that can still point at the wrong thing after a reorder. It is not made
+    worse by persisting it, and it is recorded here so nobody reads
+    snapshotIndex as an oversight. */
+inline constexpr int kCompareSlotKindSnapshot = 2;   // CompareSlotState::Kind::Snapshot
+inline constexpr int kCompareSlotKindReference = 4;  // ...::Reference
+
+/** Resolve a persisted REFERENCE slot against the library as it is now.
+
+    RETURNS -1 WHEN THE REFERENCE IS NO LONGER THERE, and the caller empties the
+    slot rather than guessing. That is the same answer refIndexOfPath gives for
+    a path nobody has, and the same rule refScopeOrAll applies to a folder that
+    has gone: fall back to nothing rather than to the wrong thing. */
+inline int refSlotResolveIndex (const CompareSlotPersist& s,
+                                const std::vector<RefBrowserEntry>& refs)
+{
+    if (s.kind != kCompareSlotKindReference) return -1;
+    return refIndexOfPath (refs, s.refPath);
+}
+
+
 /** WHERE A HELD INDEX GOES WHEN ONE REFERENCE IS REMOVED.
 
     Every piece of state that remembers a reference by POSITION is wrong the

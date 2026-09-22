@@ -1154,6 +1154,33 @@ public:
     void fadeOutCompareStreams();   // ramp monitor gain to 0, streams self-stop (click-free)
     void stopCompareStream(int slot);
 
+    /** SILENCE A SLOT WITHOUT UNLOADING IT.
+
+        A CLOSED WINDOW IS NOT A REMOVED REFERENCE. Teardown wants the audio to
+        stop; it does not want the buffer freed, the position reset or the slot
+        emptied. stopCompareStream does all of that, because it is the REMOVAL
+        path and should keep doing it.
+
+        WHAT IT DOES NOT TOUCH, and each one is a way to lose something the
+        user still has: `loaded`, the sample buffer, `playbackPos`, `filePath`
+        and `sampleCount`. Reopening the window finds the stream exactly where
+        it was.
+
+        A FUNCTION RATHER THAN A FLAG ON stopCompareStream, so that neither
+        caller can be read as the other by mistake: the two are opposite
+        intentions that happen to share four lines. */
+    void silenceCompareStream(int slot);
+
+    /** WHAT THE TWO COMPARE SLOTS HELD, OUTLIVING THE EDITOR.
+
+        TWO LIFETIMES, TWO MECHANISMS, and they are separate on purpose:
+          the PROCESSOR copy survives a WINDOW close, because the processor is
+            not destroyed when the editor is;
+          the BLOB copy survives a PROJECT reload, because the processor is.
+
+        [0] is the top slot and [1] the bottom, matching cmpStream. */
+    echojay::CompareSlotPersist compareSlotPersist_[2];
+
     /** THE REFERENCE LIBRARY AS THIS INSTANCE HOLDS IT (commit C2).
 
         KEPT RATHER THAN REBUILT FROM THE ANALYSER, because ReferenceResult has
@@ -1201,6 +1228,30 @@ public:
 
     /** Write the library, merged, after a change. Message thread, no lock. */
     void commitReferenceLibrary (const juce::String& path, bool removed);
+
+    // ---- FOLDERS (C3b). THE INDEX IS THE STORE OF RECORD -----------------
+    //
+    // referenceFolders BECOMES A DERIVED VIEW. The browser, the scope and the
+    // menus all read it by NAME and there are dozens of those reads in
+    // PluginEditor.cpp, which is where the unmerged parallel work is heaviest.
+    // Rebuilding it from the index after every change means none of them move:
+    // the editor's four folder functions each gain ONE line and nothing else
+    // in that file changes.
+    void refreshFolderView();
+
+    /** THE FOUR OPERATIONS, each addressed the way the editor already has it
+        (by name) and translated to ids here, because 4A.3 requires the index to
+        key on id and the editor does not have one. */
+    void folderCreate (const juce::String& name);
+    void folderRename (const juce::String& oldName, const juce::String& newName);
+    void folderDelete (const juce::String& name);
+    void folderAssign (const juce::String& path, const juce::String& folderName);
+
+    /** THE ONE TIME MIGRATION (schema 4A.5). Blob folders become index folders,
+        ids minted now, order from array position, each path becoming that
+        entry's folderId with the first match winning. */
+    void migrateBlobFoldersOnce();
+    bool refFoldersMigrated_ = false;
     void stopAllCompare();
 
 private:

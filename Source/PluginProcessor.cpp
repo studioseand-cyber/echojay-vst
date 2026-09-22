@@ -4056,8 +4056,167 @@ void EchoJayProcessor::ensureReferenceLibraryLoaded()
         seeds.push_back (std::move (r));
     }
     refAnalyser.seedFromStored (seeds);
+    // AND THE FOLDER VIEW, or a fresh insert would list every reference with
+    // none of its folders: the index has them and referenceFolders is empty
+    // until something rebuilds it.
+    refreshFolderView();
     EchoJay_NSLog (("EJRefIndex: library loaded, " + juce::String ((int) refLibrary_.entries.size())
                     + " entr(ies), " + juce::String ((int) seeds.size()) + " seeded").toRawUTF8());
+}
+
+// ===========================================================================
+// FOLDERS: THE INDEX IS THE STORE OF RECORD (C3b, schema section 4A)
+// ===========================================================================
+
+void EchoJayProcessor::refreshFolderView()
+{
+    // THE VIEW THE EDITOR ALREADY READS, REBUILT FROM THE INDEX. Nothing in
+    // PluginEditor.cpp has to learn about ids: it keeps reading names and
+    // paths out of referenceFolders exactly as before.
+    referenceFolders.clear();
+    for (const auto& f : refLibrary_.folders)
+    {
+        echojay::RefFolder v;
+        v.name = f.name;
+        for (const auto& e : refLibrary_.entries)
+            if (e.folderId == f.id) v.paths.push_back (e.path);
+        referenceFolders.push_back (std::move (v));
+    }
+}
+
+void EchoJayProcessor::folderCreate (const juce::String& name)
+{
+    if (name.isEmpty()) return;
+    for (const auto& f : refLibrary_.folders) if (f.name == name) return;  // the editor already refused
+
+    echojay::RefFolderEntry f;
+    f.id    = echojay::newFolderId();
+    f.name  = name;
+    f.order = (int) refLibrary_.folders.size();
+    refLibrary_.folders.push_back (f);
+    commitReferenceLibrary ({}, false);
+    refreshFolderView();
+}
+
+void EchoJayProcessor::folderRename (const juce::String& oldName, const juce::String& newName)
+{
+    if (oldName.isEmpty() || newName.isEmpty()) return;
+    for (auto& f : refLibrary_.folders)
+        if (f.name == oldName)
+        {
+            // THE ID HOLDS STILL AND ONLY THE NAME MOVES. 4A.3: "a rename is
+            // one instance changing a folder's `name` while its `id` holds
+            // still, and every entry pointing at it follows without being
+            // touched." A delete-and-create would strand every member.
+            f.name = newName;
+            commitReferenceLibrary ({}, false);
+            refreshFolderView();
+            return;
+        }
+}
+
+void EchoJayProcessor::folderDelete (const juce::String& name)
+{
+    for (size_t i = 0; i < refLibrary_.folders.size(); ++i)
+    {
+        if (refLibrary_.folders[i].name != name) continue;
+
+        // A TOMBSTONE, FOR THE REASON A REMOVED REFERENCE NEEDS ONE.
+        // mergeReferenceIndex unions by id and cannot express a deletion, so
+        // without this "the instance that still holds the folder writes it
+        // back and the folder returns, named as it was, after the user deleted
+        // it" (4A.4).
+        echojay::RefTombstone t;
+        t.id = refLibrary_.folders[i].id;
+        t.at = juce::Time::getCurrentTime().toISO8601 (true);
+        refLibrary_.folderTombstones.push_back (t);
+        refLibrary_.folders.erase (refLibrary_.folders.begin() + (long) i);
+
+        // MEMBERS ARE NOT SWEPT AND NOT DELETED. Their folderId now names no
+        // live folder, which refEntryFolderId reads as unfiled: 4A.4, "The
+        // tombstone stops the FOLDER reappearing; the membership pointer heals
+        // itself." Clearing them would be a second write and would lose the
+        // grouping if the folder came back from a peer.
+        commitReferenceLibrary ({}, false);
+        refreshFolderView();
+        return;
+    }
+}
+
+void EchoJayProcessor::folderAssign (const juce::String& path, const juce::String& folderName)
+{
+    const int at = echojay::refFindByPath (refLibrary_, path);
+    if (at < 0) return;
+
+    juce::String id;                       // empty folderName means UNFILE
+    if (folderName.isNotEmpty())
+        for (const auto& f : refLibrary_.folders)
+            if (f.name == folderName) { id = f.id; break; }
+
+    refLibrary_.entries[(size_t) at].folderId = id;
+    commitReferenceLibrary ({}, false);
+    refreshFolderView();
+}
+
+void EchoJayProcessor::migrateBlobFoldersOnce()
+{
+    // ONCE, AND THE FLAG IS THE WHOLE GUARANTEE. This runs on real user data
+    // with no second chance: a second run against a library that already has
+    // the folders would mint a second id for every one of them, which is open
+    // list 204 self-inflicted.
+    if (refFoldersMigrated_) return;
+    refFoldersMigrated_ = true;
+
+    if (referenceFolders.empty()) return;            // nothing to carry over
+
+    bool changed = false;
+    for (size_t i = 0; i < referenceFolders.size(); ++i)
+    {
+        const auto& blobFolder = referenceFolders[i];
+        if (blobFolder.name.isEmpty()) continue;
+
+        // MATCHED BY NAME, NOT MINTED BLIND. Two projects each carrying a
+        // "Masters" folder must converge on ONE index folder; minting per
+        // project is exactly the duplicate open list 204 describes. Matching
+        // here cannot undo a deliberate rename, because at this point no
+        // rename has happened: the index has no folders until the first
+        // migration puts them there.
+        juce::String id;
+        for (const auto& f : refLibrary_.folders)
+            if (f.name == blobFolder.name) { id = f.id; break; }
+
+        if (id.isEmpty())
+        {
+            echojay::RefFolderEntry f;
+            f.id    = echojay::newFolderId();
+            f.name  = blobFolder.name;
+            f.order = (int) i;                       // 4A.5: order from position
+            id      = f.id;
+            refLibrary_.folders.push_back (f);
+            changed = true;
+        }
+
+        // FIRST MATCH WINS, which is what refFolderOf already does, so a path
+        // listed in two blob folders lands where the old code would have put
+        // it rather than somewhere new.
+        for (const auto& path : blobFolder.paths)
+        {
+            const int at = echojay::refFindByPath (refLibrary_, path);
+            if (at < 0) continue;                    // already dangling before today
+            auto& e = refLibrary_.entries[(size_t) at];
+            if (e.folderId.isNotEmpty()) continue;   // first match wins
+            e.folderId = id;
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        commitReferenceLibrary ({}, false);
+        EchoJay_NSLog (("EJRefIndex: migrated " + juce::String ((int) refLibrary_.folders.size())
+                        + " blob folder(s) into the index").toRawUTF8());
+    }
+    refreshFolderView();
 }
 
 void EchoJayProcessor::commitReferenceLibrary (const juce::String& path, bool removed)
@@ -4069,6 +4228,20 @@ void EchoJayProcessor::commitReferenceLibrary (const juce::String& path, bool re
     if (! refIndexMayWrite_) return;
 
     const auto nowIso = juce::Time::getCurrentTime().toISO8601 (true);
+
+    // AN EMPTY PATH IS A DOCUMENT-LEVEL CHANGE, not a missing argument. The
+    // folder operations change `folders`, `folderTombstones` or an entry's
+    // folderId and have no entry to rebuild from the analyser; without this
+    // they fell through to the lookup below, found nothing and returned
+    // WITHOUT WRITING, so every folder change was silently discarded.
+    if (path.isEmpty())
+    {
+        const auto folderRes = echojay::commitReferenceIndex (referenceIndexDir(), refLibrary_,
+                                                              nowIso, JucePlugin_VersionString);
+        if (! folderRes.ok)
+            EchoJay_NSLog (("EJRefIndex: commit refused: " + folderRes.message).toRawUTF8());
+        return;
+    }
 
     if (removed)
     {
@@ -4157,6 +4330,18 @@ void EchoJayProcessor::stopCompareStream(int slot)
     // roll, which is open list 215 reached by a different door.
     cmpStream[slot].userWantsRolling.store(false);
     cmpStream[slot].playbackPos = 0;
+    if (cmpAudible.load() == slot)
+        cmpAudible.store(-1);
+}
+
+void EchoJayProcessor::silenceCompareStream(int slot)
+{
+    if (slot < 0 || slot > 1) return;
+    // STOP, AND WITHDRAW THE INTENT, so the transport sync cannot start it
+    // again behind a closed window (open list 215). Nothing else: `loaded`,
+    // the buffer, playbackPos and the slot's identity all survive.
+    cmpStream[slot].playing.store(false);
+    cmpStream[slot].userWantsRolling.store(false);
     if (cmpAudible.load() == slot)
         cmpAudible.store(-1);
 }
@@ -4379,6 +4564,30 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     for (auto& ref : refs)
         refsArr.add(ref.path);
     state->setProperty("referencePaths", refsArr);
+
+    // THE COMPARE SLOTS, SO A PROJECT RELOAD RESTORES THEM. THIS LINE IS THE
+    // PROJECT HALF; the processor member itself is the WINDOW half and needs
+    // no blob at all, because the processor outlives the editor.
+    //
+    // ADDRESSED BY PATH, NOT BY POSITION. A slot saying "reference 3" is wrong
+    // the moment the library reorders; a path is what refIndexOfPath already
+    // resolves and what the index dedupes on.
+    {
+        juce::Array<juce::var> slotsArr;
+        for (int i = 0; i < 2; ++i)
+        {
+            const auto& sp = compareSlotPersist_[i];
+            juce::DynamicObject::Ptr d (new juce::DynamicObject());
+            d->setProperty("kind",  sp.kind);
+            d->setProperty("label", sp.label);
+            if (sp.refPath.isNotEmpty())    d->setProperty("refPath",    sp.refPath);
+            if (sp.wsReviewId.isNotEmpty()) d->setProperty("wsReviewId", sp.wsReviewId);
+            if (sp.codecPath.isNotEmpty())  d->setProperty("codecPath",  sp.codecPath);
+            if (sp.snapshotIndex >= 0)      d->setProperty("snapshotIndex", sp.snapshotIndex);
+            slotsArr.add(juce::var(d.get()));
+        }
+        state->setProperty("compareSlots", slotsArr);
+    }
 
     // FOLDERS AND THE SELECTED SCOPE, beside the paths they key on. Written
     // whether or not any exist, so a blob that has had folders and lost them
@@ -4774,6 +4983,30 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // ALL, which is the same rule the rows function applies.
             referenceScope = echojay::refScopeOrAll(referenceScope, referenceFolders);
         }
+
+        // THE ONE TIME MIGRATION, HERE BECAUSE THIS IS WHERE THE BLOB'S
+        // FOLDERS EXIST. ensureReferenceLibraryLoaded ran earlier in this
+        // function and rebuilt referenceFolders from the index; the block
+        // above has just overwritten it with the blob's. Migration folds
+        // those into the index and ends by rebuilding the view again, so
+        // whichever had folders, the editor ends up reading the index.
+        migrateBlobFoldersOnce();
+
+        // THE COMPARE SLOTS BACK OUT OF THE BLOB. ABSENT IS EMPTY, not a
+        // fault: every project saved before today has no such key.
+        if (auto* slotsArr = obj->getProperty("compareSlots").getArray())
+            for (int i = 0; i < juce::jmin(2, slotsArr->size()); ++i)
+                if (auto* d = (*slotsArr)[i].getDynamicObject())
+                {
+                    auto& sp = compareSlotPersist_[i];
+                    sp.kind          = (int) d->getProperty("kind");
+                    sp.label         = d->getProperty("label").toString();
+                    sp.refPath       = d->getProperty("refPath").toString();
+                    sp.wsReviewId    = d->getProperty("wsReviewId").toString();
+                    sp.codecPath     = d->getProperty("codecPath").toString();
+                    sp.snapshotIndex = d->hasProperty("snapshotIndex")
+                                         ? (int) d->getProperty("snapshotIndex") : -1;
+                }
 
         // Restore visual mode state
         if (obj->hasProperty("visualPreset"))
