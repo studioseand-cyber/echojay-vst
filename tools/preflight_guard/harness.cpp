@@ -311,14 +311,33 @@ int main()
             check (rc5 == 0 && nStep == 3 && texts.contains ("50Hz") && texts.contains ("60Hz") && texts.contains ("Off"), "(l5) --list-steps 5 on CLA-76 (m) walks the Analog control's 3 detents and prints their panel texts (50Hz / 60Hz / Off)", "rc " + juce::String (rc5) + " steps " + juce::String (nStep) + " texts " + texts.joinIntoString ("|") + " (" + juce::String (stepLines) + " lines)");
             check (! juce::File::getCurrentWorkingDirectory().getChildFile ("--list-steps").exists(), "(l5) ...and step mode writes no marker file", "");
             juce::File vst3dir ("/Library/Audio/Plug-Ins/VST3"); juce::Array<juce::File> v3; vst3dir.findChildFiles (v3, juce::File::findDirectories, false, "*.vst3");
-            juce::File pick; for (const auto& f : v3) if (! echojay::isPaceWrapped (f)) { pick = f; break; }
-            if (pick == juce::File()) check (false, "(l6) a .vst3 path is probed as VST3 (the report line says format=VST3; the format used to be hard-coded AudioUnit)", "no non-PACE VST3 under /Library/Audio/Plug-Ins/VST3");
-            else
+            // 22 Sep 2026 (ruling 5): the bundle must LOAD, so the candidate is the first non-PACE VST3 whose binary carries the probe's
+            // architecture (an x86_64-only bundle cannot be opened by the arm64 probe - that is the dyld "incompatible architecture" refusal)
+            // 22 Sep 2026 (ruling 5): the leg is about the PROBE's ability to load a VST3, not about one particular bundle: it tries the
+            // non-PACE bundles of the probe's architecture in order (up to six) and passes when one loads with a parameter row
+            juce::Array<juce::File> cands;
+            for (const auto& f : v3)
+            {
+                if (echojay::isPaceWrapped (f)) continue;
+                const auto bin = f.getChildFile ("Contents/MacOS").getChildFile (f.getFileNameWithoutExtension());
+                if (! bin.existsAsFile()) continue;
+                juce::ChildProcess lp; juce::String archs; if (lp.start (juce::StringArray { "/usr/bin/lipo", "-archs", bin.getFullPathName() })) archs = lp.readAllProcessOutput();
+               #if defined(__arm64__) || defined(__aarch64__)
+                if (! archs.contains ("arm64")) continue;
+               #else
+                if (! archs.contains ("x86_64")) continue;
+               #endif
+                cands.add (f); if (cands.size() >= 6) break;
+            }
+            juce::String tried; bool loaded = false; juce::String loadedName;
+            for (const auto& pick : cands)
             {
                 const juce::StringArray v { pick.getFileNameWithoutExtension(), pick.getFullPathName(), "0", "--list-params" };
                 juce::String out6; const int rc6 = runProbe (v, env, out6, 60000);
-                check ((rc6 == 0 || rc6 == 3) && out6.contains ("format=VST3"), "(l6) a .vst3 path is probed as VST3 (the report line says format=VST3; the format used to be hard-coded AudioUnit)", pick.getFileName() + " rc " + juce::String (rc6) + ": " + out6.substring (0, 120).replace ("\n", " | "));
+                tried += pick.getFileNameWithoutExtension() + " rc " + juce::String (rc6) + (out6.contains ("vst3 class:") ? " (" + out6.fromFirstOccurrenceOf ("vst3 class:", false, false).upToFirstOccurrenceOf ("\n", false, false).trim() + ")" : juce::String()) + "; ";
+                if (rc6 == 0 && out6.contains ("format=VST3") && out6.contains ("vst3 class:") && out6.contains ("\n0\t")) { loaded = true; loadedName = pick.getFileNameWithoutExtension(); break; }
             }
+            check (loaded, "(l6) a .vst3 path is probed as VST3 AND LOADS (rc 0, a parameter row; 22 Sep 2026: rc 3 \"Unable to load VST-3 plug-in file\" no longer passes - the class is resolved through findAllTypesForFile)", (loaded ? "loaded " + loadedName + " | " : juce::String ("none of: ")) + tried);
             const auto ent = juce::File::getCurrentWorkingDirectory().getChildFile ("tools/au_instantiate_probe/EchoJayProbe.entitlements").loadFileAsString();
             check (ent.contains ("com.apple.security.cs.disable-library-validation") && ent.contains ("com.apple.security.cs.allow-unsigned-executable-memory"), "(l7) the probe's entitlements source in the repo carries disable-library-validation AND allow-unsigned-executable-memory (the PACE wrapper's in-memory code)", ent.isEmpty() ? "no tools/au_instantiate_probe/EchoJayProbe.entitlements" : "both keys");
         }

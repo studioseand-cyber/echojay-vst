@@ -59,6 +59,20 @@ int main (int argc, char** argv)
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
+    // 22 Sep 2026 (ruling 5): a VST3 is created from the description the FORMAT finds in the bundle (findAllTypesForFile), not
+    // from the bare name + uid 0 the entries list carries - JUCE matches the class by name/uid and answered "Unable to load
+    // VST-3 plug-in file" for every VST3 (0 of 66 scanned) while the leg l6 only checked the format decision.
+    if (d.pluginFormatName == "VST3")
+    {
+        juce::OwnedArray<juce::PluginDescription> found;
+        for (auto* f : fm.getFormats()) if (f->getName() == "VST3") f->findAllTypesForFile (found, d.fileOrIdentifier);
+        const juce::PluginDescription* pick = nullptr;
+        for (auto* c : found) if (c->name.trim().equalsIgnoreCase (d.name.trim())) { pick = c; break; }
+        if (pick == nullptr && found.size() > 0) pick = found[0];
+        if (pick != nullptr) { const auto keepName = d.name; d = *pick; std::printf ("vst3 class: \"%s\" (asked \"%s\", %d class(es) in the bundle)\n", d.name.toRawUTF8(), keepName.toRawUTF8(), found.size()); }
+        else std::printf ("vst3 class: none found in the bundle\n");
+        std::fflush (stdout);
+    }
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;
     bool done = false;
