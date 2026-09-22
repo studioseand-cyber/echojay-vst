@@ -4697,6 +4697,7 @@ private:
     // the same op through the transport; held remote rack = the op through the transport alone.
     void rackUndoRedo(bool redo);
     void sendRackUndo(const juce::String& uid, bool redo);
+    bool viewRackHasTrims();   // 21m ruling: the unityChain capability flag's source
     // AI-driven level match: compute the absolute gain that lands this Link's
     // integrated loudness at targetLufs (from its freshest frame + current
     // gain), then send it. Returns the dB that WOULD be applied for the

@@ -1219,6 +1219,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
     if (channelWidth_ > 0) body += ",\"channelWidth\":" + juce::String(channelWidth_);   // 21m item 2
+    if (unityChain_) body += ",\"unityChain\":true";   // 21m ruling: present only while the rack carries active per-slot trims
     // Auto-dial mode rides EVERY chat turn when on; the server only acts on
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)

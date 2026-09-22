@@ -6267,6 +6267,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -8629,6 +8630,14 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     EchoJayProcessor::LinkDisplayEntry en;
     if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
     sendRackEdit(en.info.uid, slotIdx, isRemove);
+}
+
+// 21m ruling (unityChain): the rack the turn is about - the local ChainHost, or the borrowed copy of a Link's rack
+bool EchoJayEditor::viewRackHasTrims()
+{
+    const juce::String uid = chainViewUid();
+    ChainHost* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
+    return h != nullptr && h->hasActiveTrims();
 }
 
 // ===== 21m per-rack undo/redo (22 Sep 2026) =====
@@ -27061,6 +27070,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
                         sysPrompt, channelName, genreName, userContent, msg,
                         rolesSnap, contentsSnap]
@@ -27689,6 +27699,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
@@ -27741,6 +27752,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     setStageStatus(juce::String::fromUTF8("Answering as a chat\xe2\x80\xa6"));
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -32891,6 +32903,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
     api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis2, captureChatId](const juce::String& reply, bool success) {
             if (safeThis2 == nullptr)

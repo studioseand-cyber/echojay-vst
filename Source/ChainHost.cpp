@@ -2354,6 +2354,12 @@ void ChainHost::setSlotTrimDb(int i, float db)
     if (s.trimShared) s.trimShared->store(s.trimDb, std::memory_order_relaxed);
     bumpChainRevision();
 }
+bool ChainHost::hasActiveTrims() const
+{
+    for (const auto& s : slots_)
+        if (! s.bypassed && std::abs(s.trimDb) >= 0.05f) return true;
+    return false;
+}
 float ChainHost::getSlotTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].trimDb : 0.0f; }
 void ChainHost::setSlotKeepLevel(int i, bool keep) { if (i >= 0 && i < (int) slots_.size()) { if (slots_[(size_t) i].keepLevel != keep) pushUndo(juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name); slots_[(size_t) i].keepLevel = keep; bumpChainRevision(); } }
 bool ChainHost::getSlotKeepLevel(int i) const { return i >= 0 && i < (int) slots_.size() && slots_[(size_t) i].keepLevel; }

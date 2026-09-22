@@ -367,6 +367,13 @@ public:
     void setChannelWidth(int channels) { channelWidth_ = juce::jlimit(0, 2, channels); }
     int  channelWidth() const { return channelWidth_; }
     int  channelWidth_ = 0;
+    // 21m ruling (22 Sep 2026, CONTRACT_GROUPS "Capabilities"): "unityChain": true rides EVERY chat and chat-stream body
+    // (both build through buildChatRequestBody) whenever the per-slot trim is active on the rack the turn is about;
+    // ABSENT otherwise (an empty rack, no trims). The server then stops the Level slot compensating for make-up that
+    // the chain already matched. The editor syncs it beside channelWidth from ChainHost::hasActiveTrims().
+    void setUnityChain(bool on) { unityChain_ = on; }
+    bool unityChain() const { return unityChain_; }
+    bool unityChain_ = false;
     void stageCapturePayload(const juce::String& metersBlob, int busCount)
     {
         nextChatMeters_   = metersBlob;

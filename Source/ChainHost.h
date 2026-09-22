@@ -1162,6 +1162,9 @@ public:
     // Measure every measured slot except the Level slot and the last limiter: trim = -(out - in) short-term, clamped +-12,
     // skipping kept slots. Returns how many trims changed; one log line per slot into `lines` when given.
     int   measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines = nullptr);
+    // 21m ruling (unityChain capability): true when any live (non-bypassed) slot carries a non-zero trim - the rack
+    // sits at unity because the trims made it so. False on an empty rack or before the first Listen.
+    bool  hasActiveTrims() const;
 
     // ===== 21m PER-RACK UNDO/REDO (22 Sep 2026) =====
     // 20 deep. A snapshot is the SAME pair a session save writes (buildChainSlotsVar +

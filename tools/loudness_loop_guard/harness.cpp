@@ -18,6 +18,7 @@
 #include "EedLevelProcessor.h"
 #include "EedGainProcessor.h"   // 21m ruling 2: the +4 dB stand-in
 #endif
+struct EchoJayAPIRequestPin { static juce::String body (EchoJayAPI& a, const juce::StringArray& r, const juce::StringArray& c, const juce::String& sys, const juce::String& mb) { return a.buildChatRequestBody (r, c, sys, mb); } };   // 21m unityChain leg
 struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost& h, const juce::PluginDescription& d) { return h.loadBuiltinNow (d); }
     static void applyExact (ChainHost& h, int i) { h.applyStructuredIfReady (i, ChainHost::DialTrigger::settingsAttached); }
 #ifdef EJ_LOUDNESSLOOP_MANNERS
@@ -652,6 +653,20 @@ int main()
         const auto slots = r.h.buildChainSlotsVar(); const auto state = r.h.getCachedSlotStatesVar (ChainHost::kApiStateMaxSlotBytes, ChainHost::kApiStateMaxTotalBytes, "guard");
         { auto p2Heap = std::make_unique<EchoJayProcessor>(); auto& p2 = *p2Heap; p2.prepareToPlay (48000.0, 512); auto& h2 = p2.getChainHost(); h2.restoreSavedChain (slots, state); pumpMs (150);   // heap, not main's stack
           check (h2.getNumSlots() == 3 && h2.getSlotKeepLevel (1) && h2.slotTrimText (1) == "level kept", "P4. the keep flag persists across save/reopen", h2.slotTrimText (1)); }
+    }
+    std::printf ("== Q. 22 Sep 2026 (21m ruling 1, unityChain): the chat / chat-stream body carries \"unityChain\": true while the rack's per-slot trims are active; absent on an empty rack ==\n");
+    {
+        auto bodyOf = [] (EchoJayProcessor& p, ChainHost& h) { p.getApi().setUnityChain (h.hasActiveTrims()); return EchoJayAPIRequestPin::body (p.getApi(), juce::StringArray { "user" }, juce::StringArray { "make it brighter" }, "You're EchoJay.", {}); };
+        { auto pe = std::make_unique<EchoJayProcessor>(); pe->prepareToPlay (48000.0, 512); auto& he = pe->getChainHost();
+          const auto b = bodyOf (*pe, he);
+          check (he.getNumSlots() == 0 && ! he.hasActiveTrims() && ! b.contains ("unityChain") && b.contains ("\"appVersion\""), "Q1. an EMPTY rack: no trims, the body has NO unityChain field (RED as it stood: the field did not exist either way - compile refusal)", b.substring (0, 120)); }
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain();
+        { const auto b = bodyOf (r.proc, r.h); check (! r.h.hasActiveTrims() && ! b.contains ("unityChain"), "Q2. a populated rack BEFORE Listen: no trims yet, no field", b.substring (0, 100)); }
+        r.runWindow();
+        { const auto b = bodyOf (r.proc, r.h); check (r.h.hasActiveTrims() && b.contains ("\"unityChain\":true"), "Q3. after Listen the +4 dB slot carries its trim -> the body carries \"unityChain\":true (both chat and chat-stream build through buildChatRequestBody)", b.fromFirstOccurrenceOf ("\"appVersion\"", false, false).substring (0, 80)); }
+        r.h.setSlotBypassed (1, true);
+        { const auto b = bodyOf (r.proc, r.h); check (! r.h.hasActiveTrims() && ! b.contains ("unityChain"), "Q4. the trimmed slot bypassed -> no live trim, the field is absent again", b.substring (0, 60)); }
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
