@@ -4708,6 +4708,9 @@ private:
     void rackUndoRedo(bool redo);
     void sendRackUndo(const juce::String& uid, bool redo);
     bool viewRackHasTrims();   // 21m ruling: the unityChain capability flag's source
+    // 21n ruling 1b (22 Sep 2026): channelWidth per TARGET - on a turn targeting a Link it is THAT Link's channel width
+    // (its registry row), never V2's own; 0 (unknown) leaves the field off the body. Local rack: V2's bus width.
+    int  chatTargetChannelWidth() const;
     // AI-driven level match: compute the absolute gain that lands this Link's
     // integrated loudness at targetLufs (from its freshest frame + current
     // gain), then send it. Returns the dB that WOULD be applied for the

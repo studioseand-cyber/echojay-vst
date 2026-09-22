@@ -5365,6 +5365,7 @@ void EchoJayProcessor::refreshLinkRegistry()
         info.audioFlowing = connected && activeLinkSlots[i].lastPollFrames >= 0 && frames > activeLinkSlots[i].lastPollFrames;
         activeLinkSlots[i].lastPollFrames = frames;
         info.sampleRate = snap.sampleRate;
+        info.channels   = (int) snap.numChannels;   // 21n ruling 1b
         info.framesRead = frames;
         info.regIdx     = i;    // frame lookup key for readLinkMeterFrame
         info.gainDb     = snap.gainDb;   // Link's built-in gain (0 from old Links)

@@ -39,6 +39,7 @@ struct EchoJayTabStripTestAccess
     static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void refreshPanel (EchoJayEditor& e) { e.refreshChainPanelForView (true); }   // 21m ruling 3 (keep-level grey-out)
+    static int  targetWidth (EchoJayEditor& e) { return e.chatTargetChannelWidth(); }   // 21n ruling 1b
     using Block = EchoJayEditor::ChainListPanel::Block;   // the friend names the private nested type (as Msg)
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
     static juce::StringArray chips (EchoJayEditor& e, const Msg& m) { juce::StringArray out; for (const auto& c : e.resultChipList (m)) out.add (c.label + "#" + juce::String (c.kind)); return out; }
@@ -393,6 +394,16 @@ int main()
         check (! panel.keepLevelAvailable, "(10) a Link's rack in view (chainViewUid non-empty): keep-level GREYED (RED as it stood: the flag did not exist - compile refusal)", juce::String ((int) panel.keepLevelAvailable));
         proc.pendingChannelUid = {}; A::refreshPanel (*ed);
         check (panel.keepLevelAvailable, "(10) back on the local rack: available again");
+        // ---- (11) 21n ruling 1b: channelWidth per TARGET, on this editor ----
+        std::printf ("== (11) 22 Sep 2026 (21n ruling 1b): channelWidth follows the TARGET - a Link's registry width on a Link turn, never V2's own ==\n");
+        check (A::targetWidth (*ed) == 2 && proc.getTotalNumInputChannels() == 2, "(11) local rack: V2's own bus width (stereo -> 2)", juce::String (A::targetWidth (*ed)));
+        links[0].channels = 1; EchoJayAlignTestAccess::setLinks (proc, links); proc.pendingChannelUid = "lnk_01";
+        check (A::targetWidth (*ed) == 1, "(11) V2 stereo, the target Link MONO -> the body carries channelWidth 1 (RED as it stood: 2, V2's own)", juce::String (A::targetWidth (*ed)));
+        links[0].channels = 2; EchoJayAlignTestAccess::setLinks (proc, links);
+        check (A::targetWidth (*ed) == 2, "(11) the target Link STEREO -> 2", juce::String (A::targetWidth (*ed)));
+        links[0].channels = 0; EchoJayAlignTestAccess::setLinks (proc, links);
+        check (A::targetWidth (*ed) == 0, "(11) an old Link (no width in its row) -> 0 = the field stays off the body", juce::String (A::targetWidth (*ed)));
+        proc.pendingChannelUid = {};
     }
     std::printf ("== (9) 22 Sep 2026 (21m): rename alias - a V2-session alias for a Link, shown by getLinkDisplayList (the one source), Reset name clears it, persisted with the session state ==\n");
     {

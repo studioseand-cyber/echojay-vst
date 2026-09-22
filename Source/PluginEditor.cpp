@@ -6266,7 +6266,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     api.setNextChatTurnType("version_compare");
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
-    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
@@ -8633,6 +8633,16 @@ void EchoJayEditor::sendBlockEdit(const StripGeom& sg, int slotIdx, bool isRemov
     EchoJayProcessor::LinkDisplayEntry en;
     if (!findLinkEntryByAddr(sg.addr, en) || en.info.uid.isEmpty()) return;
     sendRackEdit(en.info.uid, slotIdx, isRemove);
+}
+
+// 21n ruling 1b: the channel the turn is about
+int EchoJayEditor::chatTargetChannelWidth() const
+{
+    const juce::String uid = effectiveChannelUid();
+    if (uid.isEmpty()) return processorRef.getTotalNumInputChannels();
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) return juce::jlimit(0, 2, e.info.channels);
+    return 0;   // the Link is not in the registry right now: unknown, the field stays off
 }
 
 // 21m ruling (unityChain): the rack the turn is about - the local ChainHost, or the borrowed copy of a Link's rack
@@ -27072,7 +27082,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     nextClassifyAnswers_.clear();
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
                         sysPrompt, channelName, genreName, userContent, msg,
@@ -27701,7 +27711,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
@@ -27754,7 +27764,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     EchoJay_NSLog("EJStream: reroute -> re-sending the turn to /api/chat (rendered as a chat reply, quiet line appended)");
     setStageStatus(juce::String::fromUTF8("Answering as a chat\xe2\x80\xa6"));
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
@@ -32905,7 +32915,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
 
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
-    api.setChannelWidth(processorRef.getTotalNumInputChannels());   // 21m item 2: channelWidth on every turn
+    api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis2, captureChatId](const juce::String& reply, bool success) {

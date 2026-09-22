@@ -1371,6 +1371,7 @@ public:
         bool         active     = true;   // Link's capture/meter role (its Active toggle)
         bool         audioFlowing = false; // 21m ruling 1 (22 Sep 2026): the ring is bound AND frames arrived since the last poll
         float        sampleRate = 0.f;
+        int          channels   = 0;      // 21n ruling 1b (22 Sep 2026): the Link's channel width from its registry row (0 = unknown / old Link)
         int64_t      framesRead = 0;
         int          regIdx     = -1;     // registry slot index (meter frame lookup)
         float        gainDb     = 0.0f;   // Link's built-in gain stage (0 = old Links)
