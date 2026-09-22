@@ -79,7 +79,8 @@ public:
         if (option == "keep")    return 1.0f;
         return 4.0f;   // commercial (and the default)
     }
-    static constexpr float kOpeningHeadroomDb = 3.0f;   // 22 Sep 2026 (item 5): peaks into the limiter never open more than 3 dB over the ceiling
+    static constexpr float kOpeningHeadroomDb = 3.0f;
+    static constexpr float kOpeningFloorDb    = -6.0f;   // ruling 5b (22 Sep 2026): the opening gain never goes below -6.0 dB   // 22 Sep 2026 (item 5): peaks into the limiter never open more than 3 dB over the ceiling
     static constexpr int   kMaxProposals     = 3;        // 18g: at most 3 proposals, then the result bubble (was 4 rounds)
     static constexpr float kRatioMin         = 0.5f, kRatioMax = 2.0f;   // 18g: achieved/commanded clamp for the step scaling
     static constexpr float kGrOfferDb        = 6.0f;
@@ -239,12 +240,14 @@ public:
         // section), so peaks into the limiter never open more than 3 dB over the ceiling.
         if (in.known && in.truePeakDb > -150.0f && std::isfinite (ceilingDb_))
         {
-            const float maxOpen = ceilingDb_ + kOpeningHeadroomDb - in.truePeakDb;
+            const float maxOpen = juce::jmax (kOpeningFloorDb, ceilingDb_ + kOpeningHeadroomDb - in.truePeakDb);   // ruling 5b: floored at -6.0
             if ((float) lv->gainDb() > maxOpen)
             {
                 const float was = (float) lv->gainDb();
                 writeGainDb (juce::jlimit (-kLevelMaxDb, kLevelMaxDb, maxOpen));
-                log ("opening gain capped: " + fmtSigned (was) + " -> " + fmtSigned ((float) lv->gainDb()) + " dB (ceiling " + fmt (ceilingDb_) + " + 3 - build-time true peak " + fmt (in.truePeakDb) + " dBTP)");
+                log ("opening gain capped: " + fmtSigned (was) + " -> " + fmtSigned ((float) lv->gainDb()) + " dB (ceiling " + fmt (ceilingDb_) + " + 3 - build-time true peak " + fmt (in.truePeakDb) + " dBTP" + (maxOpen <= kOpeningFloorDb + 0.001f ? ", floored at -6.0" : "") + ")");
+                if ((float) lv->gainDb() < 0.0f)   // ruling 5b: the chain card says why the Level opened below zero
+                    host_.setSlotSettings (slot_, "Level " + fmtSigned ((float) lv->gainDb()) + " dB: the mix already peaks above the ceiling");
             }
         }
         log ("armed: target " + fmt (target_) + " LUFS (" + armSource_ + (loudnessOption_.isNotEmpty() ? ", " + loudnessOption_ : juce::String()) + "), Level slot " + juce::String (slot_)
@@ -342,6 +345,9 @@ public:
         state_ = State::hold; stopTimer();
         emit ("Applied " + fmtSigned (deltaDb) + " dB (Level now " + fmtSigned (currentGainDb()) + "). How's it sounding?", -1.0f, false, false, Bubble::Kind::info, afterVerbPills());
     }
+    // 22 Sep 2026 (item 2, client half): a typed complaint the server classified loop_verb ("too squashed", "over limited", "distorted",
+    // "pumping", "too loud") is the softer step TWICE - one move of -2 dB, one bubble
+    bool backOffComplaint() { if (level (slot_) == nullptr) return false; log ("complaint -> softer x2"); nudgeTarget (-2.0f); return true; }
     void nudgeTarget (float deltaDb)   // "a bit louder" / "a bit softer": target +-1 AND the Level moves by it now (one pass), then one check
     {
         if (level (slot_) == nullptr) return;
@@ -503,7 +509,8 @@ public:
         if (cur + trim < -kLevelMaxDb) { trim = -kLevelMaxDb - cur; atCeiling = true; }
         log ("measured: max short-term " + fmt (measured) + " LUFS (input window " + fmt (lastInputWindow_) + "), target " + fmt (target_) + ", needed " + fmtSigned (needed) + " dB, Level " + fmtSigned (cur) + " dB, trim " + fmtSigned (trim) + (atCeiling ? " (Level ceiling)" : "") + ", limiter GR avg " + fmt (grAvg()) + " max " + fmt (grMax()) + " dB, round " + juce::String (round_));
         const juce::String grText = grText_();
-        if (grIsEstimated()) log ("limiter GR (estimated, third-party limiter): mean Level OUT - chain OUT " + fmt (juce::jmax (0.0f, grEstimateDb())) + " dB (LUFS-S), on the hits " + fmt (juce::jmax (0.0f, grPeakEstimateDb())) + " dB (true peak, max-held) - the measured avg/max above are the EchoJay Limiter's and read 0.0 when it is not in the chain");   // 22 Sep 2026 (observation 4)
+        // 22 Sep 2026 (ruling 4): the true-peak values THEMSELVES, not only their difference
+        log ("true peak: Level OUT TP " + fmt (lv->outputLevels().truePeakDb) + " dBTP, chain OUT TP " + fmt (host_.getChainOutLevels().truePeakDb) + " dBTP, hits " + fmt (juce::jmax (0.0f, grPeakEstimateDb())) + " dB" + (grIsEstimated() ? " (third-party limiter: the hits figure is the report)" : " (EchoJay Limiter: its own GR reading " + fmt (grMax()) + " dB is the report)"));
         if (capped)
         {
             state_ = State::proposed; pendingTrim_ = trim; pendingKind_ = PendingKind::propose; ++proposals_;
@@ -563,11 +570,13 @@ private:
         if (echoJayLimiter() == nullptr)   // 18g (item 4): the estimate, never "not an EchoJay device"
         {   // 18h (item 5): the loudness difference misses a limiter that gives the level back (auto make-up / level matching) or works
             // only on the hits; the PEAK difference (Level OUT true peak - chain OUT true peak, both max-held over the window) shows them
+            // 22 Sep 2026 (ruling 4): the short-term-loudness "average" is dropped - the loop reports the hits only, the
+            // max-held true-peak difference (Level OUT - chain OUT); with the EchoJay Limiter present its own GR reading replaces it
             if (estN_ == 0) return "limiter GR not measured yet.";
             const float pk = grPeakEstimateDb();
-            return "limiter working ~" + fmt (juce::jmax (0.0f, grEstimateDb())) + " dB (estimated)" + (std::isfinite (pk) ? ", up to ~" + fmt (juce::jmax (0.0f, pk)) + " dB on the hits." : ".");
+            return std::isfinite (pk) ? "limiter catching up to ~" + fmt (juce::jmax (0.0f, pk)) + " dB on the hits." : "limiter GR not measured yet.";
         }
-        return "limiter working " + fmt (grAvg()) + " dB average, up to " + fmt (grMax()) + " dB on the hits.";
+        return "limiter catching up to " + fmt (grMax()) + " dB on the hits.";
     }
     void startWindow()
     {
