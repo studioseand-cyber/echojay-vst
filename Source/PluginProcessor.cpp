@@ -4584,6 +4584,11 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("keyShowRelative", echojay::KeyDisplayPrefs::showRelative().load());   // COMMIT 4
     state->setProperty("capableLinkSeen", capableLinkSeen_.load(std::memory_order_relaxed));   // hurdle 1 item 4
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
+    {   // 21m rename alias: uid -> alias, session state
+        auto* al = new juce::DynamicObject();
+        for (const auto& [u, a] : linkAliases_) if (a.isNotEmpty()) al->setProperty(u, a);
+        state->setProperty("linkAliases", juce::var(al));
+    }
     state->setProperty("passCounter", passCounter);
     state->setProperty("projectName", projectName);
     state->setProperty("captureVersion", captureVersion);
@@ -4809,6 +4814,11 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // Restore dismissed — if field exists use it, otherwise derive from channel type
             if (obj->hasProperty("channelTypePromptDismissed"))
                 channelTypePromptDismissed = (bool)obj->getProperty("channelTypePromptDismissed");
+            if (auto* al = obj->getProperty("linkAliases").getDynamicObject())   // 21m rename alias
+            {
+                linkAliases_.clear();
+                for (const auto& kv : al->getProperties()) if (kv.value.toString().isNotEmpty()) linkAliases_[kv.name.toString()] = kv.value.toString();
+            }
             else
                 channelTypePromptDismissed = (channelType != ChannelType::FullMix);
             // Genre flag: saves made before it existed derive from the channel
@@ -5172,6 +5182,18 @@ void EchoJayProcessor::connectLinkAudioSlot(int i, const juce::String& audioFile
     juce::ignoreUnused(sr); // stored per-slot in linkSlotInfos for UI
 }
 
+void EchoJayProcessor::setLinkAlias(const juce::String& uid, const juce::String& alias)
+{
+    if (uid.isEmpty()) return;
+    const auto a = alias.trim();
+    if (a.isEmpty()) linkAliases_.erase(uid); else linkAliases_[uid] = a;
+    EchoJay_NSLog(("EJAlias: " + uid + " -> \"" + a + "\"").toRawUTF8());
+    markStateDirty();
+}
+juce::String EchoJayProcessor::linkAlias(const juce::String& uid) const
+{
+    auto it = linkAliases_.find(uid); return it == linkAliases_.end() ? juce::String() : it->second;
+}
 juce::String EchoJayProcessor::resolveLinkDisplayName(const juce::String& uid) const
 {
     if (uid.isEmpty()) return {};
@@ -5547,6 +5569,7 @@ EchoJayProcessor::getLinkDisplayList() const
     for (auto& s : sorted)
     {
         juce::String display = s.name;
+        if (auto it = linkAliases_.find(s.uid); it != linkAliases_.end() && it->second.isNotEmpty()) display = it->second;   // 21m: the session alias wins
         if (display.isEmpty())
             display = ++untitledCount > 1 ? "Untitled " + juce::String(untitledCount)
                                           : juce::String("Untitled");

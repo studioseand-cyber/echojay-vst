@@ -10668,6 +10668,8 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.full.contains(p))
         {
+            // 21m rename alias: a right-click on a Link strip opens the placement menu (Rename... / Reset name live there)
+            if (e.mods.isPopupMenu() && ! sg.isBus) { owner->showLinkPlacementMenu(sg.addr); return; }
             owner->linkStripMouseDown(sg, p, e.getNumberOfClicks());
             return;
         }
@@ -30410,14 +30412,30 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
     m.addItem(1, "Bus",     true, cur == 1);
     m.addItem(2, "Channel", true, cur == 2);
     m.addItem(3, "Send",    true, cur == 3);
+    // 21m rename alias (22 Sep 2026): a V2-session alias, shown everywhere V2 names the Link; "Reset name" clears it
+    m.addSeparator();
+    m.addItem(10, juce::String::fromUTF8("Rename\xe2\x80\xa6"));
+    m.addItem(11, "Reset name", processorRef.linkAlias(linkAddr).isNotEmpty());
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
-        [safeThis, linkAddr](int r)
+        [safeThis, linkAddr, name](int r)
         {
             if (safeThis == nullptr || r == 0) return;
-            // The menu id IS the placement value (1 bus, 2 channel, 3
-            // send). The old "r == 1 ? 1 : 2" would have folded Send into
-            // Channel the moment a third item existed.
+            if (r == 11) { safeThis->processorRef.setLinkAlias(linkAddr, {}); safeThis->repaint(); return; }
+            if (r == 10)
+            {
+                auto* aw = new juce::AlertWindow("Rename this Link in EchoJay", "The name EchoJay uses for this Link in this session. The Link's own name is not changed.", juce::MessageBoxIconType::NoIcon, safeThis.getComponent());
+                aw->addTextEditor("alias", name, "Name");
+                aw->addButton("Rename", 1); aw->addButton("Cancel", 0);
+                aw->enterModalState(true, juce::ModalCallbackFunction::create([safeThis, linkAddr, aw](int res)
+                {
+                    std::unique_ptr<juce::AlertWindow> owner(aw);
+                    if (safeThis == nullptr || res != 1) return;
+                    safeThis->processorRef.setLinkAlias(linkAddr, aw->getTextEditorContents("alias"));
+                    safeThis->repaint();
+                }), false);
+                return;
+            }
             safeThis->sendLinkPlacementCommand(linkAddr, r);
         });
 }

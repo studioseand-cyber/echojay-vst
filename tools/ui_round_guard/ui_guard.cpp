@@ -381,6 +381,22 @@ int main()
         links[0].connected = true; links[0].audioFlowing = true; EchoJayAlignTestAccess::setLinks (proc, links); pumpMs (20);
         { const auto tv = panel.msLamps.tickFor ("lnk_01"); check (tv.active && tv.audio, "(8) the ring binds later and frames arrive -> the lamp comes ON, the tick unchanged (still active)", "active=" + juce::String ((int) tv.active) + " audio=" + juce::String ((int) tv.audio)); }
     }
+    std::printf ("== (9) 22 Sep 2026 (21m): rename alias - a V2-session alias for a Link, shown by getLinkDisplayList (the one source), Reset name clears it, persisted with the session state ==\n");
+    {
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::vector<EchoJayProcessor::LinkSlotInfo> links;
+        for (int i = 0; i < 2; ++i) { EchoJayProcessor::LinkSlotInfo li; li.name = "BV " + juce::String (i + 1); li.uid = "lnk_0" + juce::String (i + 1); li.active = true; li.connected = true; links.push_back (li); }
+        EchoJayAlignTestAccess::setLinks (proc, links);
+        auto nameOf = [] (EchoJayProcessor& p, const juce::String& uid) { for (const auto& e : p.getLinkDisplayList()) if (e.info.uid == uid) return e.displayName; return juce::String ("<absent>"); };
+        check (nameOf (proc, "lnk_01") == "BV 1", "(9) before: the Link's own name", nameOf (proc, "lnk_01"));
+        proc.setLinkAlias ("lnk_01", "Lead Vox");
+        check (nameOf (proc, "lnk_01") == "Lead Vox" && nameOf (proc, "lnk_02") == "BV 2" && proc.linkAlias ("lnk_01") == "Lead Vox", "(9) the alias shows everywhere V2 names the Link (getLinkDisplayList is the one source); the other Link untouched", nameOf (proc, "lnk_01") + " / " + nameOf (proc, "lnk_02"));
+        juce::MemoryBlock mb; proc.getStateInformation (mb);
+        { EchoJayProcessor p2; p2.prepareToPlay (48000.0, 512); p2.setStateInformation (mb.getData(), (int) mb.getSize()); EchoJayAlignTestAccess::setLinks (p2, links);
+          check (p2.linkAlias ("lnk_01") == "Lead Vox" && nameOf (p2, "lnk_01") == "Lead Vox", "(9) the alias persists in the V2 session state", p2.linkAlias ("lnk_01")); }
+        proc.setLinkAlias ("lnk_01", {});
+        check (nameOf (proc, "lnk_01") == "BV 1" && proc.linkAlias ("lnk_01").isEmpty(), "(9) Reset name clears it", nameOf (proc, "lnk_01"));
+    }
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

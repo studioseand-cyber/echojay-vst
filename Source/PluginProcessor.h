@@ -1,5 +1,6 @@
 #pragma once
 #include <JuceHeader.h>
+#include <map>
 #include <thread>
 #include <atomic>
 #include "MeterEngine.h"
@@ -1431,6 +1432,11 @@ public:
     /// is assigned over the FULL set so a given instance keeps the same label
     /// in the Monitor, the send-target menu and the AI context alike.
     std::vector<LinkDisplayEntry> getLinkDisplayList() const;
+    // 21m rename alias (22 Sep 2026): a V2-SESSION alias for a Link (by uid), shown everywhere V2 names the Link (this list is
+    // the one source); the Link's own name is untouched; "Reset name" clears it. Persisted with the session state.
+    void setLinkAlias(const juce::String& uid, const juce::String& alias);
+    juce::String linkAlias(const juce::String& uid) const;
+    std::map<juce::String, juce::String> linkAliases_;
     // ONE accessor for a Link channel's display name (Phase N precedence via
     // getLinkDisplayList) — banner, dropdown, monitor, capture composition
     // and injections all resolve through THIS, keyed by the stable uid, so
