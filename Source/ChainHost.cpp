@@ -7056,6 +7056,41 @@ void ChainHost::buildRecommendable(const std::vector<ScannedPlugin>& allPlugins,
                           : juce::String())).toRawUTF8());
 
     // Cache result (message thread only — no mutex)
+    // ===== 21n ruling 1c (22 Sep 2026): THE FEED CARRIES REGISTRATION NAMES, WITH THEIR VARIANT SUFFIXES =====
+    // Until now a family collapsed onto a bare stem ("PuigChild 660" for the one registration "PuigChild 660 (m)";
+    // "CLA-76" for "(m)" + "(s)"). The bare stem has NO registration, and the server's resolver now reads a bare stem
+    // as a sibling of the variant it stands for - so the model asked for "PuigChild 660", the client sent that name's
+    // fingerprint (the (m)'s), and the server declined the map as a mono sibling on a stereo channel (Sean, 18:46).
+    // Now: every entry whose registration carries a channel-variant suffix is offered under the REGISTRATION name, and
+    // every OTHER loadable registration of the same product (the sibling variants) gets its own row. mapFps and
+    // productIds key on displayName, so they carry the same names. Dedup by displayName; registry order kept.
+    {
+        int renamed = 0, siblings = 0;
+        std::set<juce::String> present;
+        for (auto& e : resolved)
+        {
+            if (echojay::channelVariantSuffix(e.desc.name).isNotEmpty() && e.displayName != e.desc.name)
+            { EchoJay_NSLog(("EJScan: [feed-variant] \"" + e.displayName + "\" -> \"" + e.desc.name + "\"").toRawUTF8()); e.displayName = e.desc.name; ++renamed; }
+            present.insert(e.displayName);
+        }
+        std::set<juce::String> offeredProducts;
+        for (const auto& e : resolved)
+            if (echojay::channelVariantSuffix(e.desc.name).isNotEmpty()) offeredProducts.insert(echojay::wavesProductKey(e.desc.name));
+        std::vector<RecommendableEntry> extra;
+        for (const auto& d : loadable)
+        {
+            if (echojay::channelVariantSuffix(d.name).isEmpty()) continue;
+            if (offeredProducts.count(echojay::wavesProductKey(d.name)) == 0) continue;   // a product the feed does not offer stays out
+            if (present.count(d.name)) continue;
+            bool unticked = false;
+            for (const auto& u : untickedRegistrations) if (u.name == d.name && u.pluginFormatName == d.pluginFormatName) { unticked = true; break; }
+            if (unticked) continue;
+            present.insert(d.name); extra.push_back({ d.name, d }); ++siblings;
+        }
+        for (auto& x : extra) resolved.push_back(std::move(x));
+        EchoJay_NSLog(("EJScan: [feed-variant] " + juce::String(renamed) + " row(s) renamed to their registration name, "
+                       + juce::String(siblings) + " sibling variant row(s) added, feed=" + juce::String((int) resolved.size())).toRawUTF8());
+    }
     recommendable_          = std::move(resolved);
     recommendableEnabledIn_ = enabledCount;
     recommendableFormat_    = formatFilter;

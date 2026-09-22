@@ -12,7 +12,10 @@
 #include "EedLimiterProcessor.h"
 #include "BuiltinIntentTranslate.h"   // referenced so the static lib links the TU whose registrar adds "EchoJay Compressor"
 #include <cstdio>
-struct EchoJayBorrowHostTestAccess { static juce::AudioProcessor* proc (ChainHost& h, int i) { return h.getSlotProcessor (i); } };
+struct EchoJayBorrowHostTestAccess { static juce::AudioProcessor* proc (ChainHost& h, int i) { return h.getSlotProcessor (i); }
+    // 21n ruling 1c: seed the scanned entries (buildRecommendable's source) as a real scan would
+    static void addEntry (ChainHost& h, const juce::PluginDescription& d) { std::lock_guard<std::mutex> lk (h.pluginsMutex_); h.entries_.add (d); } };
+#include "PluginScanner.h"
 namespace { int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
 juce::var settings() { auto* p = new juce::DynamicObject(); p->setProperty ("threshold_db", -18.0); p->setProperty ("ratio", 4.0); auto* o = new juce::DynamicObject(); o->setProperty ("params", juce::var (p)); return juce::var (o); }
 juce::var emptyMiss (const juce::String& body) { return guardprobe::missRow (body, {}); }
@@ -123,6 +126,36 @@ int main()
         check (st.name == "PuigChild 660 (s)" && why.isEmpty(), "V3. a stereo variant is untouched", st.name);
         h.setHostChannelWidth (1); const auto m1 = h.variantForRack (mk ("PuigChild 660 (m)"), &why);
         check (m1.name == "PuigChild 660 (m)" && why.isEmpty(), "V4. on a MONO rack the mono variant loads as asked", m1.name);
+    }
+    std::printf ("== F. 22 Sep 2026 (21n ruling 1c): the [AVAILABLE PLUGINS] feed carries REGISTRATION names with their variant suffixes; a family is never collapsed onto a bare stem ==\n");
+    {
+        auto waves = [] (const char* name, const char* code) { juce::PluginDescription d; d.name = name; d.pluginFormatName = "AudioUnit"; d.manufacturerName = "Waves";
+            d.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,") + code + ",ksWV"; d.uniqueId = d.deprecatedUid = juce::String (code).hashCode(); d.version = "15.0.70"; return d; };
+        ScannedPlugin sp; sp.name = "PuigChild 660"; sp.manufacturer = "Waves"; sp.format = "AU"; sp.enabled = true; sp.uid = "waves-660";
+        {   // only the (m) registered (this Mac): the feed must say "PuigChild 660 (m)"
+            ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512);
+            EchoJayBorrowHostTestAccess::addEntry (h, waves ("PuigChild 660 (m)", "FCHM"));
+            h.buildRecommendable (std::vector<ScannedPlugin> { sp }, {});
+            const auto names = h.getRecommendableNames();
+            check (names.contains ("PuigChild 660 (m)") && ! names.contains ("PuigChild 660"), "F1. a scan with only \"(m)\" registered -> the feed carries \"PuigChild 660 (m)\", not the bare stem (RED as it stood: \"PuigChild 660\")", names.joinIntoString ("|"));
+            check (h.buildMapFpsJson (200).contains ("PuigChild 660 (m)") || ! h.buildMapFpsJson (200).contains ("PuigChild 660"), "F1. mapFps keys on the same registration name (no fingerprint -> no entry, but never the bare stem)", h.buildMapFpsJson (200).substring (0, 80));
+        }
+        {   // both variants registered: BOTH are offered, each under its own registration name
+            ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512);
+            EchoJayBorrowHostTestAccess::addEntry (h, waves ("CLA-76 (m)", "C76M")); EchoJayBorrowHostTestAccess::addEntry (h, waves ("CLA-76 (s)", "C76S"));
+            ScannedPlugin c; c.name = "CLA-76"; c.manufacturer = "Waves"; c.format = "AU"; c.enabled = true; c.uid = "waves-cla76";
+            h.buildRecommendable (std::vector<ScannedPlugin> { c }, {});
+            const auto names = h.getRecommendableNames();
+            check (names.contains ("CLA-76 (m)") && names.contains ("CLA-76 (s)") && ! names.contains ("CLA-76"), "F2. (m) + (s) registered -> both rows, no bare stem", names.joinIntoString ("|"));
+        }
+        {   // an unsuffixed registration is unchanged
+            ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512);
+            juce::PluginDescription d; d.name = "Pro-Q 3"; d.pluginFormatName = "AudioUnit"; d.manufacturerName = "FabFilter"; d.fileOrIdentifier = "AudioUnit:Effects/aufx,FQ3p,FabF"; d.uniqueId = d.deprecatedUid = 4242;
+            EchoJayBorrowHostTestAccess::addEntry (h, d);
+            ScannedPlugin q; q.name = "Pro-Q 3"; q.manufacturer = "FabFilter"; q.format = "AU"; q.enabled = true; q.uid = "ff-q3";
+            h.buildRecommendable (std::vector<ScannedPlugin> { q }, {});
+            check (h.getRecommendableNames().contains ("Pro-Q 3") && h.getRecommendableNames().size() == 1, "F3. an unsuffixed registration is offered exactly as before", h.getRecommendableNames().joinIntoString ("|"));
+        }
     }
     std::printf ("\n==== substitute_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
