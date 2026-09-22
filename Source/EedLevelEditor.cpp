@@ -31,15 +31,15 @@ void EedLevelEditor::timerCallback()
     {   const juce::ScopedValueSetter<bool> g (suppressCallbacks_, true);
         const double v = proc_.getParamValue (EedLevelProcessor::kGainDb);
         if (std::abs (gainKnob_.getRealValue() - v) > 0.005) gainKnob_.setRealValue (v); }
-    auto fmt = [] (const echojay::LevelTally::Snapshot& s, const char* tag)
+    auto fmt = [] (const echojay::LevelTally::Snapshot& s, const juce::String& tag)
     {
         juce::String t (tag);
         t += std::isfinite (s.shortTermDb) ? juce::String (s.shortTermDb, 1) + " LUFS-S" : juce::String ("-- LUFS-S");
         t += "  " + (s.truePeakDb > -150.0f ? juce::String (s.truePeakDb, 1) + " dBTP" : juce::String ("-- dBTP"));
         return t;
     };
-    inLabel_.setText (fmt (proc_.inputLevels(), "IN  "), juce::dontSendNotification);
-    outLabel_.setText (fmt (proc_.outputLevels(), juce::String::fromUTF8 ("OUT \xe2\x86\x92 limiter  ").toRawUTF8()), juce::dontSendNotification);   // 18f: the output feeds the limiter; +9.5 dBTP here is intended
+    inLabel_.setText (fmt (proc_.inputLevels(), inTag()), juce::dontSendNotification);
+    outLabel_.setText (fmt (proc_.outputLevels(), outTag()), juce::dontSendNotification);   // 18f: the output feeds the limiter; +9.5 dBTP here is intended
     const float gr = proc_.downstreamGrDb();
     grLabel_.setText (std::isfinite (gr) ? "limiter GR " + juce::String (proc_.downstreamGrEstimated() ? "~" : "") + juce::String (juce::jmax (0.0f, gr), 1) + " dB" + (proc_.downstreamGrEstimated() ? " (est.)" : "") : juce::String ("limiter GR --"), juce::dontSendNotification);   // 18g: a third-party limiter's GR is the loop's estimate
     targetLabel_.setText ("target " + juce::String (proc_.targetLufs(), 1) + " LUFS (" + juce::String (EedLevelProcessor::optionName (proc_.loudnessOption())) + ")", juce::dontSendNotification);

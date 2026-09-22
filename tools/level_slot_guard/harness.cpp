@@ -9,6 +9,7 @@
 #include "EedLimiterProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
+#include "EedLevelEditor.h"   // 22 Sep 2026 (item 8): the card's readout tags
 #include <cstdio>
 #include <cmath>
 #ifdef EJ_LOUDNESSLOOP_V2
@@ -80,6 +81,11 @@ int main()
         check (! line.contains ("Object 0x") && line.contains ("gain_db=2.5") && line.contains ("target_lufs=-9"), "structuredSummary prints params as key=value, never Object 0x", line);
     }
 #endif
+    {   // 22 Sep 2026 (item 8): the Level card's "OUT -> limiter" tag is built through the UTF-8-safe constructor: the arrow is U+2192, never "â"
+        const auto tag = EedLevelEditor::outTag();
+        check (tag.containsChar ((juce::juce_wchar) 0x2192) && ! tag.containsChar ((juce::juce_wchar) 0x00E2) && tag.startsWith ("OUT ") && tag.contains ("limiter") && EedLevelEditor::inTag() == "IN  ",
+               "item 8: the Level card's OUT tag reads \"OUT \xe2\x86\x92 limiter\" (U+2192 through fromUTF8), never the mis-decoded \"OUT \xc3\xa2 limiter\"", tag);
+    }
     std::printf ("\n==== level_slot_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
