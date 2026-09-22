@@ -33,6 +33,8 @@ struct MockStepped final : juce::AudioPluginInstance
         addHostedParameter (std::make_unique<StepParam> ("Analog", juce::StringArray { "Off", "50Hz", "60Hz" }, lie));
         juce::StringArray th; for (int i = 0; i < 23; ++i) th.add (juce::String (-23 + i) + " dB");
         addHostedParameter (std::make_unique<StepParam> ("Thresh", th));
+        juce::StringArray gn; for (int i = 0; i < 16; ++i) gn.add ("+" + juce::String (i) + " dB");   // 22 Sep 2026 (ruling 3): a 16-step gain knob, the Manley shape
+        addHostedParameter (std::make_unique<StepParam> ("Gain", gn));
     }
     const juce::String getName() const override { return "MockStepped"; }
     void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = getName(); }
@@ -102,6 +104,20 @@ int main()
         const auto map = mapOf ("MockStepped", { { "Analog", positionEntry ("Analog", 0, analog) } });
         const auto r = one (liar, map, "Analog", 60);
         check (! r.applied && r.readbackMismatch && std::abs (ps[0]->getValue()) < 0.001f && r.note.containsIgnoreCase ("restored"), "P6. a landed text that does not match the position's panel text (the plugin shows \"Off\") reverts to the pre-write value", show (r));
+    }
+    std::printf ("== M. 22 Sep 2026 (ruling 3, the Manley interim): a DISCRETE parameter with an ANCHORED map (no steps declared) snaps an off-rung ask to the nearest detent ==\n");
+    {
+        MockStepped plug; auto& ps = plug.getParameters();
+        auto* e = new juce::DynamicObject(); e->setProperty ("name", "Gain"); e->setProperty ("index", 2); e->setProperty ("kind", "anchored"); e->setProperty ("unit", "db"); e->setProperty ("trust", "setread");
+        juce::Array<juce::var> anc; for (int i = 0; i < 16; ++i) { juce::Array<juce::var> a; a.add ((double) i); a.add ((double) i / 15.0); anc.add (juce::var (a)); } e->setProperty ("anchors", anc);
+        juce::Array<juce::var> rg; rg.add (0.0); rg.add (15.0); e->setProperty ("range", rg);
+        const auto map = mapOf ("MockStepped", { { "Gain", juce::var (e) } });
+        const auto r = one (plug, map, "Gain", 2.3);
+        check (r.applied && ! r.readbackMismatch && std::abs (ps[2]->getValue() - 2.0f / 15.0f) < 0.002f && flat (r.landedText) == "+2db", "M1. asked +2.3 on a 16-step discrete gain (anchored map, no steps): lands the +2 detent, verified, NOT reverted", show (r));
+        check (r.note.contains ("nearest step to 2.3") && r.note.startsWith ("+2 dB"), "M1. the note reads \"<landed> (nearest step to <asked>)\"", r.note);
+        check (! r.note.containsIgnoreCase ("hand") && ! r.note.containsIgnoreCase ("ladder") && ! r.note.containsIgnoreCase ("reachable"), "M1. never \"need hand-dialing\" / the ladder refusal for a discrete control that has anchors", r.note);
+        const auto r2 = one (plug, map, "Gain", 7.0);
+        check (r2.applied && flat (r2.landedText) == "+7db" && ! r2.note.contains ("nearest step"), "M2. an ask ON a detent (+7) lands it with no snap note", show (r2));
     }
     std::printf ("== R. the real CLA-76 (m) AudioUnit: Analog is a 3-step control (Off / 50Hz / 60Hz on the panel; mapped today as anchored 50..60 Hz) ==\n");
     {

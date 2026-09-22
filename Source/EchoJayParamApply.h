@@ -965,7 +965,18 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     // against a wrong write that reports success.
     const auto ladderVerdict = checkStepLadder (eff.table, target);
     const int stepsDeclared = (int) mapEntry.getProperty ("steps", 0);   // round (c): a declared detent count SNAPS instead of refusing an off-rung value
-    if (ladderVerdict.isLadder && ! ladderVerdict.onRung && stepsDeclared < 2)
+    // 22 Sep 2026 (ruling 3, the Manley interim): when the PLUGIN reports the parameter discrete with N steps and the map kind is
+    // anchored, an off-rung ask SNAPS to the nearest detent (the nearest anchor value) BEFORE the write and the settled verify - the
+    // card and the dial note read "<landed> (nearest step to <asked>)". Never "need hand-dialing" for a discrete control that has anchors.
+    const int liveSteps = param->isDiscrete() ? param->getNumSteps() : 0;
+    float snappedFrom = std::numeric_limits<float>::quiet_NaN();
+    if (ladderVerdict.isLadder && ! ladderVerdict.onRung && (stepsDeclared >= 2 || liveSteps >= 2))
+    {
+        float best = eff.table.getFirst()[0]; float bestD = std::abs (best - target);
+        for (auto& a : eff.table) { const float dd = std::abs (a[0] - target); if (dd < bestD) { bestD = dd; best = a[0]; } }
+        snappedFrom = target; target = best;
+    }
+    else if (ladderVerdict.isLadder && ! ladderVerdict.onRung && stepsDeclared < 2)
     {
         r.note = ladderVerdict.note;
         return r;
@@ -985,6 +996,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     writeNorm (norm);
     r.normalized = norm;
     r.landedText = param->getCurrentValueAsText();
+    const juce::String nearestNote = std::isfinite (snappedFrom) ? " (nearest step to " + juce::String (snappedFrom, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + ")" : juce::String();   // ruling 3
 
     // The ONE verification switch. Params entries carry method; controls
     // entries carry trust ("setread" = anchors captured set-then-read
@@ -1006,7 +1018,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         if (std::abs (param->getValue() - norm) <= 0.02f)
         {
             r.applied = true;
-            r.note = "applied (display unverifiable on this plugin)";
+            r.note = (nearestNote.isNotEmpty() ? r.landedText.trim() + nearestNote + "; " : juce::String()) + "applied (display unverifiable on this plugin)";   // ruling 3: the landed detent first
         }
         else
         {
@@ -1024,7 +1036,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                                             unitOverride);
     if (verdict > 0)
     {
-        r.applied = true;
+        r.applied = true; if (nearestNote.isNotEmpty()) r.note = r.landedText.trim() + nearestNote;
         r.displayVerified = true;
         r.note = "applied, reads \"" + r.landedText.trim() + "\"";
     }
@@ -1032,7 +1044,7 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
     {
         // Unparseable display: cannot verify either way. Applied with the
         // caveat carried, same presentation class as setread.
-        r.applied = true;
+        r.applied = true; if (nearestNote.isNotEmpty()) r.note = r.landedText.trim() + nearestNote;
         r.note = "applied (read-back unparseable: \"" + r.landedText.trim() + "\")";
     }
     else
