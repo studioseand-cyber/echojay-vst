@@ -2613,6 +2613,14 @@ int EchoJayProcessor::borrowPushStructuralEdit(const juce::String& op, int slot0
         {
             org.push_back(-1); cid.push_back(LinkShm::StructureEdit::SlotIdentity{ name, {}, {} });
         }
+        else if (op == "undo" || op == "redo")
+        {   // 21m: the borrowed copy already undid on its own stack; the bookkeeping follows the new slot count
+            const int n = bh ? bh->getNumSlots() : (int) org.size();
+            while ((int) org.size() > n) org.pop_back();
+            while ((int) cid.size() > n) cid.pop_back();
+            while ((int) org.size() < n) org.push_back(-1);
+            while ((int) cid.size() < n) cid.push_back(LinkShm::StructureEdit::SlotIdentity{ bh ? bh->getSlotInfo((int) cid.size()).name : juce::String(), {}, {} });
+        }
         else if (op == "replace" && slot0 >= 0)
         {
             if (slot0 < (int) org.size()) org[(size_t) slot0] = -1;

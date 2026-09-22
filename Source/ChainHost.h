@@ -8,6 +8,7 @@
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
 #include <atomic>
 #include <map>
+#include <deque>
 #include <set>
 #include "LinkShm.h"   // StructureEdit plan/journal types (phase 2)
 #include <mutex>
@@ -1151,6 +1152,41 @@ public:
     // COMMIT 3 (17 Sep 2026): the identity a remote slotWet verb is keyed on —
     // hex of descUid (the 25 Aug idiom, so a deprecatedUid-only AU still has
     // one). The main sends its borrowed slot's; the Link compares its own
+    // 21m ruling 2: the per-slot unity-gain trim
+    void  setSlotTrimDb(int i, float db);
+    float getSlotTrimDb(int i) const;
+    void  setSlotKeepLevel(int i, bool keep);
+    bool  getSlotKeepLevel(int i) const;
+    juce::String slotTrimText(int i) const;                 // "-2.3 dB match" / "kept" / ""
+    juce::String trimTextForName(const juce::String& name) const;   // the chain card's line, by slot name
+    // Measure every measured slot except the Level slot and the last limiter: trim = -(out - in) short-term, clamped +-12,
+    // skipping kept slots. Returns how many trims changed; one log line per slot into `lines` when given.
+    int   measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines = nullptr);
+
+    // ===== 21m PER-RACK UNDO/REDO (22 Sep 2026) =====
+    // 20 deep. A snapshot is the SAME pair a session save writes (buildChainSlotsVar +
+    // getCachedSlotStatesVar + getCachedSlotParamsVar), pushed BEFORE every user or
+    // assistant mutation of THIS rack: add, remove, move, bypass, wet (one step per knob
+    // gesture), keep-level, and one step per applyChainEdits batch. Undo/redo restore
+    // through restoreSavedChain, the recall path, so the restored rack is what a saved
+    // chain would give. Per rack: every ChainHost (V2's, each Link's, the borrowed copy)
+    // owns its own stack. The loop's own Undo (LoudnessLoop::undo) is separate and
+    // unchanged. Over the transport a single {"op":"undo"|"redo"} edit is answered by
+    // the receiving rack's own stack (applyChainEdits, before the base-slot guards).
+    static constexpr int kUndoDepth = 20;
+    struct UndoSnapshot { juce::var slots, state, params; juce::String label; };
+    void pushUndo(const juce::String& label, const juce::String& coalesceKey = {});
+    bool canUndo() const { return ! undoStack_.empty(); }
+    bool canRedo() const { return ! redoStack_.empty(); }
+    int  undoDepth() const { return (int) undoStack_.size(); }
+    int  redoDepth() const { return (int) redoStack_.size(); }
+    juce::String undoLabel() const { return undoStack_.empty() ? juce::String() : undoStack_.back().label; }
+    juce::String redoLabel() const { return redoStack_.empty() ? juce::String() : redoStack_.back().label; }
+    bool undo(std::function<void()> onSlotSettled = {});
+    bool redo(std::function<void()> onSlotSettled = {});
+    void beginUndoBatch(const juce::String& label);   // one undo step for a whole sequence (applyChainEdits)
+    void endUndoBatch();
+    UndoSnapshot captureUndoSnapshot(const juce::String& label) const;
     // slot's; both come from THIS function, so they can only differ when the
     // slots differ. Empty out of range.
     juce::String slotIdentityHex(int i) const;
@@ -2061,6 +2097,12 @@ private:
     // plugin on the next scan without a host restart.
     void reloadBlacklistFromDisk();
     // path -> "reason<TAB>ISO date", written into chain_blacklist.txt after
+    // 21m undo/redo state (see the public block above)
+    std::deque<UndoSnapshot> undoStack_, redoStack_;
+    int  undoBatchDepth_ = 0;      // > 0: mutations inside a batch push nothing (the batch pushed once)
+    bool undoSuppressed_ = false;  // true while undo/redo itself removes and restores
+    juce::String lastUndoKey_; juce::int64 lastUndoPushMs_ = 0;
+    void applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled);
     // the path. Absent for entries that predate the tabbed format; the
     // reader tolerates bare paths and the writer keeps them bare. NOT a
     // fourth exclusion store: the blacklist is still blacklist_, this only

@@ -1764,6 +1764,19 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                        + juce::String(getChainRevision())).toRawUTF8());
         return abort("the rack was modified after this edit was proposed"
                      " - ask again");
+    // 21m undo THROUGH THE TRANSPORT: a single undo/redo op is answered by this rack's own
+    // stack, before the base-slot guards (the sender's base is the rack BEFORE the undo,
+    // which is what it is looking at; the stack, not the base, says what comes back).
+    if (ops.size() == 1 && (ops[0].op == "undo" || ops[0].op == "redo"))
+    {
+        const bool isUndo = ops[0].op == "undo";
+        const juce::String was = isUndo ? undoLabel() : redoLabel();
+        const bool ok = isUndo ? undo() : redo();
+        if (onDone) onDone(juce::StringArray{ ok ? (juce::String(isUndo ? "undo: " : "redo: ") + was)
+                                                 : juce::String("nothing to " + ops[0].op) }, ok ? 1 : 0, ! ok);
+        return;
+    }
+
     }
 
     // ---- Pre-flight guard 2: baseSlots vs live rack ----
@@ -1892,7 +1905,10 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
 
     auto st = std::make_shared<EditSeqState>();
     st->ops = std::move(ops);
-    st->onDone = std::move(onDone);
+    // 21m undo: the whole batch is ONE step; the per-op mutations inside push nothing
+    beginUndoBatch(juce::String(st->ops.size()) + " edit" + (st->ops.size() == 1 ? "" : "s"));
+    st->onDone = [this, userDone = std::move(onDone)](const juce::StringArray& r, int applied, bool aborted)
+    { endUndoBatch(); if (userDone) userDone(r, applied, aborted); };
     st->onProgress = std::move(onProgress);
     st->map.resize((size_t)n);
     for (int i = 0; i < n; ++i) st->map[(size_t)i] = i;
@@ -2331,6 +2347,103 @@ void ChainHost::setSlotWet(int i, float wet01, WetSource src)
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);
     bumpChainRevision();
     if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
+void ChainHost::setSlotTrimDb(int i, float db)
+{
+    if (i < 0 || i >= (int) slots_.size()) return;
+    auto& s = slots_[(size_t) i]; s.trimDb = juce::jlimit(-12.0f, 12.0f, db);
+    if (s.trimShared) s.trimShared->store(s.trimDb, std::memory_order_relaxed);
+    bumpChainRevision();
+}
+float ChainHost::getSlotTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].trimDb : 0.0f; }
+void ChainHost::setSlotKeepLevel(int i, bool keep) { if (i >= 0 && i < (int) slots_.size()) { if (slots_[(size_t) i].keepLevel != keep) pushUndo(juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name); slots_[(size_t) i].keepLevel = keep; bumpChainRevision(); } }
+bool ChainHost::getSlotKeepLevel(int i) const { return i >= 0 && i < (int) slots_.size() && slots_[(size_t) i].keepLevel; }
+juce::String ChainHost::slotTrimText(int i) const
+{
+    if (i < 0 || i >= (int) slots_.size()) return {};
+    const auto& s = slots_[(size_t) i];
+    if (s.keepLevel) return "level kept";
+    if (std::abs(s.trimDb) < 0.05f) return {};
+    return (s.trimDb > 0 ? "+" : "") + juce::String(s.trimDb, 1) + " dB match";
+}
+juce::String ChainHost::trimTextForName(const juce::String& name) const
+{
+    const auto n = name.trim().toLowerCase();
+    for (int i = 0; i < (int) slots_.size(); ++i) if (slots_[(size_t) i].desc.name.trim().toLowerCase() == n) return slotTrimText(i);
+    return {};
+}
+int ChainHost::measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines)
+{
+    int changed = 0;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        auto& s = slots_[(size_t) i];
+        if (i == exemptLevelSlot || i == exemptLimiterSlot) continue;
+        if (s.desc.name == "EchoJay Level" || s.desc.name == "EchoJay Limiter") continue;
+        if (s.bypassed || s.blendNode == nullptr) continue;
+        const auto lv = getSlotLevels(i);
+        if (! lv.measured || ! std::isfinite(lv.in.shortTermDb) || ! std::isfinite(lv.out.shortTermDb)) { if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": no full window yet"); continue; }
+        // the slot's own gain = out - in, with the CURRENT trim already inside out: the new trim = old trim - (out - in)
+        const float gainNow = lv.out.shortTermDb - lv.in.shortTermDb;
+        const float want = juce::jlimit(-12.0f, 12.0f, s.trimDb - gainNow);
+        if (s.keepLevel) { if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": kept (" + juce::String(gainNow, 1) + " dB)"); continue; }
+        if (std::abs(want - s.trimDb) >= 0.1f) { setSlotTrimDb(i, want); ++changed; }
+        if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": out-in " + juce::String(gainNow, 1) + " dB -> trim " + juce::String(s.trimDb, 1) + " dB");
+    }
+    return changed;
+}
+// ===== 21m per-rack undo/redo (22 Sep 2026) =====
+ChainHost::UndoSnapshot ChainHost::captureUndoSnapshot(const juce::String& label) const
+{
+    UndoSnapshot u; u.label = label;
+    u.slots  = buildChainSlotsVar();
+    u.state  = getCachedSlotStatesVar(kApiStateMaxSlotBytes, kApiStateMaxTotalBytes, "undo");
+    u.params = getCachedSlotParamsVar();
+    return u;
+}
+void ChainHost::pushUndo(const juce::String& label, const juce::String& coalesceKey)
+{
+    if (undoSuppressed_ || undoBatchDepth_ > 0) return;
+    const auto now = juce::Time::currentTimeMillis();
+    if (coalesceKey.isNotEmpty() && coalesceKey == lastUndoKey_ && now - lastUndoPushMs_ < 1500) { lastUndoPushMs_ = now; return; }
+    lastUndoKey_ = coalesceKey; lastUndoPushMs_ = now;
+    undoStack_.push_back(captureUndoSnapshot(label));
+    while ((int) undoStack_.size() > kUndoDepth) undoStack_.pop_front();
+    redoStack_.clear();
+}
+void ChainHost::beginUndoBatch(const juce::String& label) { if (undoBatchDepth_ == 0) pushUndo(label); ++undoBatchDepth_; }
+void ChainHost::endUndoBatch() { if (undoBatchDepth_ > 0) --undoBatchDepth_; }
+void ChainHost::applyUndoSnapshot(const UndoSnapshot& u, std::function<void()> onSlotSettled)
+{
+    {
+        const bool sup = undoSuppressed_; undoSuppressed_ = true;
+        for (int i = (int) slots_.size() - 1; i >= 0; --i) removeSlot(i);
+        undoSuppressed_ = sup;
+    }
+    auto* arr = u.slots.getArray();
+    if (arr != nullptr && ! arr->isEmpty()) restoreSavedChain(u.slots, u.state, std::move(onSlotSettled), {}, u.params);
+    else if (onSlotSettled) onSlotSettled();
+}
+bool ChainHost::undo(std::function<void()> onSlotSettled)
+{
+    if (undoStack_.empty()) return false;
+    UndoSnapshot target = undoStack_.back(); undoStack_.pop_back();
+    redoStack_.push_back(captureUndoSnapshot(target.label));
+    while ((int) redoStack_.size() > kUndoDepth) redoStack_.pop_front();
+    lastUndoKey_.clear();
+    applyUndoSnapshot(target, std::move(onSlotSettled));
+    return true;
+}
+bool ChainHost::redo(std::function<void()> onSlotSettled)
+{
+    if (redoStack_.empty()) return false;
+    UndoSnapshot target = redoStack_.back(); redoStack_.pop_back();
+    undoStack_.push_back(captureUndoSnapshot(target.label));
+    while ((int) undoStack_.size() > kUndoDepth) undoStack_.pop_front();
+    lastUndoKey_.clear();
+    applyUndoSnapshot(target, std::move(onSlotSettled));
+    return true;
+}
+
         s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
     else
         s.wetShared->store(s.wet, std::memory_order_relaxed);
@@ -2346,6 +2459,8 @@ juce::String ChainHost::slotIdentityHex(int i) const
 {
     if (i < 0 || i >= (int)slots_.size()) return {};
     return juce::String::toHexString(descUid(slots_[(size_t)i].desc));
+    if (src != WetSource::Restore && std::abs(s.wet - juce::jlimit(0.0f, 1.0f, wet01)) > 1e-4f)
+        pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
 }
 
 ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
@@ -2660,6 +2775,7 @@ void ChainHost::removeSlot(int i)
         // instances are parked in the graveyard for the session instead.
         graveyard_.push_back(slots_[i].node);
         graph_->removeNode(slots_[i].node->nodeID);
+    pushUndo("remove " + slots_[(size_t)i].desc.name);   // 21m undo
     }
     // The wet-blend node is OURS (no third-party UI timers) — destroy for real
     if (slots_[i].blendNode)
@@ -2713,6 +2829,7 @@ juce::String ChainHost::insertBuiltinAt(const juce::PluginDescription& desc, int
     if (index >= 0 && index < last) moveSlotTo(last, index);
     return {};
 }
+    if (j >= 0 && j < (int)slots_.size()) pushUndo("move " + slots_[(size_t)i].desc.name);   // 21m undo
 bool ChainHost::moveSlotTo(int from, int to)
 {
     GraphMutation graphMutation(*this);
@@ -2753,6 +2870,7 @@ juce::AudioProcessorEditor* ChainHost::createEditorForSlot(int i)
     if (i < 0 || i >= (int)slots_.size()) return nullptr;
     if (!slots_[i].node) return nullptr;
     try
+    if (slots_[(size_t)i].bypassed != bypassed) pushUndo(juce::String(bypassed ? "bypass " : "un-bypass ") + slots_[(size_t)i].desc.name);   // 21m undo
     {
         auto* proc = slots_[i].node->getProcessor();
         if (proc == nullptr) return nullptr;
@@ -5666,6 +5784,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
 
     // Borrowed mode: the pool first, same rule as the builtin branch inside
     // loadBuiltinNow. The key is the resolved description's identity, which
+    if (origin != LoadOrigin::Restore) pushUndo("add " + desc.name);   // 21m undo (inside an edit batch this is a no-op)
     // arrives through the same resolution path on every borrow.
     if (mode_ == Mode::Borrowed && borrowTryReuseInto(desc))
     {
@@ -8328,7 +8447,13 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                 if (lastSlot >= 0)
                 {
                     setSlotWet(lastSlot, savedWet, WetSource::Restore);
-                    if (wasBypassed) setSlotBypassed(lastSlot, true);
+                    {   // a restore is not an undo step (and undo/redo restore through here)
+                        const bool sup = undoSuppressed_; undoSuppressed_ = true;
+                        if (wasBypassed) setSlotBypassed(lastSlot, true);
+                        setSlotTrimDb(lastSlot, items[idx].trimDb);          // 21m ruling 2: persisted like the pre-gain
+                        setSlotKeepLevel(lastSlot, items[idx].keepLevel);
+                        undoSuppressed_ = sup;
+                    }
                     // Withheld chunks were already explained by the note that
                     // decided it (restoreSavedChain); no second line here.
                     if (!withholdState)

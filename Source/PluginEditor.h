@@ -2001,6 +2001,16 @@ private:
 
         // Inline hosted editor — at most ONE alive at any moment
         std::unique_ptr<juce::AudioProcessorEditor> inlineEditor;
+        // 21m per-rack undo/redo (22 Sep 2026): the buttons beside the add block; Cmd-Z / Cmd-Shift-Z
+        // reach the same callbacks from the editor's keyPressed. Enabled from the rack's own stack.
+        juce::TextButton undoBtn { juce::String::fromUTF8("\xe2\x86\xb6") }, redoBtn { juce::String::fromUTF8("\xe2\x86\xb7") };
+        std::function<void()> onUndo, onRedo;
+        void setUndoState(bool canUndo, bool canRedo, const juce::String& undoWhat, const juce::String& redoWhat)
+        {
+            undoBtn.setEnabled(canUndo); redoBtn.setEnabled(canRedo);
+            undoBtn.setTooltip(canUndo ? "Undo " + undoWhat + " (Cmd-Z)" : juce::String("Nothing to undo on this rack"));
+            redoBtn.setTooltip(canRedo ? "Redo " + redoWhat + " (Cmd-Shift-Z)" : juce::String("Nothing to redo on this rack"));
+        }
         int  inlineSlot  = -1;
         int  realW = 0, realH = 0;  // actual native NSView size (JUCE sizes lie)
         int  framePolls  = 0;
@@ -2279,6 +2289,10 @@ private:
             popBtn.setTooltip("Open in floating window at native size");
             popBtn.onClick = [this] { openPopoutForSelected(); };
             addChildComponent(popBtn);
+            stripContent.addAndMakeVisible(undoBtn); stripContent.addAndMakeVisible(redoBtn);   // 21m undo/redo
+            undoBtn.onClick = [this] { if (onUndo) onUndo(); };
+            redoBtn.onClick = [this] { if (onRedo) onRedo(); };
+            setUndoState(false, false, {}, {});
 
             // Card header B / X — same actions as the strip blocks
             auto cardStyle = [](juce::TextButton& b, juce::Colour fg) {
@@ -2933,6 +2947,9 @@ private:
                 int shown = juce::jmin(kNoteMaxRow, stateNotes.size());
                 for (int i = 0; i < shown; ++i)
                 {
+            undoBtn.setBounds(x, y + kBlockH / 2 - 21, 24, 20);   // 21m undo/redo, stacked after the add block
+            redoBtn.setBounds(x, y + kBlockH / 2 + 1,  24, 20);
+            x += 24 + 12;
                     juce::String line = stateNotes[i];
                     if (i == kNoteMaxRow - 1 && stateNotes.size() > kNoteMaxRow)
                         line = line + "   (+" + juce::String(stateNotes.size() - kNoteMaxRow)
@@ -4676,6 +4693,10 @@ private:
         feedRowsWithSessionExclusions(std::vector<ScannedPlugin> rows) const;
     // Link build results with load_failed entries: one dialog, per-plugin
     // "don't suggest again" toggle rows (no modal chain).
+    // 21m per-rack undo/redo: local rack = its ChainHost stack; borrowed rack = the local copy's stack plus
+    // the same op through the transport; held remote rack = the op through the transport alone.
+    void rackUndoRedo(bool redo);
+    void sendRackUndo(const juce::String& uid, bool redo);
     std::set<juce::String> chainFailSessionSeen_; // names user chose "Keep it" this session
 
     juce::String currentlyPlayingChatWav;
