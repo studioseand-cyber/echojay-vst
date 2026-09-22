@@ -110,6 +110,20 @@ int main()
 #else
     check (false, "APPLIED n/n: Ratio 2:1 / Threshold -18 dB / Attack 30 ms / Release auto translated and dialled (was 0/3)", "TODAY: the controls payload is dropped");
 #endif
+    std::printf ("== V. 22 Sep 2026 (21m item 2): a mono variant is never loaded on a stereo rack - the stereo sibling by name, else refused ==\n");
+    {
+        auto mk = [] (const char* name) { juce::PluginDescription d; d.name = name; d.pluginFormatName = "AudioUnit"; d.fileOrIdentifier = juce::String ("AudioUnit:Effects/aufx,") + name; d.uniqueId = d.deprecatedUid = juce::String (name).hashCode(); d.manufacturerName = "Waves"; return d; };
+        ChainHost h (ChainHost::Mode::Primary); h.prepare (48000.0, 512); h.setHostChannelWidth (2);
+        h.addKnownPluginForTests (mk ("PuigChild 660 (m)")); h.addKnownPluginForTests (mk ("PuigChild 660 (s)")); h.addKnownPluginForTests (mk ("Kramer Tape (m)"));
+        juce::String why; const auto s = h.variantForRack (mk ("PuigChild 660 (m)"), &why);
+        check (s.name == "PuigChild 660 (s)" && why.isEmpty(), "V1. \"PuigChild 660 (m)\" requested on a STEREO rack -> \"PuigChild 660 (s)\" (the same product's stereo sibling)", s.name + " | " + why);
+        const auto k = h.variantForRack (mk ("Kramer Tape (m)"), &why);
+        check (k.name == "Kramer Tape (m)" && why == "mono-only plugin on a stereo channel", "V2. a mono variant with NO stereo sibling -> refused \"mono-only plugin on a stereo channel\" (not loaded)", k.name + " | " + why);
+        const auto st = h.variantForRack (mk ("PuigChild 660 (s)"), &why);
+        check (st.name == "PuigChild 660 (s)" && why.isEmpty(), "V3. a stereo variant is untouched", st.name);
+        h.setHostChannelWidth (1); const auto m1 = h.variantForRack (mk ("PuigChild 660 (m)"), &why);
+        check (m1.name == "PuigChild 660 (m)" && why.isEmpty(), "V4. on a MONO rack the mono variant loads as asked", m1.name);
+    }
     std::printf ("\n==== substitute_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

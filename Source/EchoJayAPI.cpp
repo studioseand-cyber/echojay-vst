@@ -1218,6 +1218,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // turnType is staged per send ("" = plain "chat"); capture payloads only
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
+    if (channelWidth_ > 0) body += ",\"channelWidth\":" + juce::String(channelWidth_);   // 21m item 2
     // Auto-dial mode rides EVERY chat turn when on; the server only acts on
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
@@ -2146,6 +2147,7 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     if (req.channel.isNotEmpty())        body->setProperty("channel", req.channel);
     if (req.genre.isNotEmpty())          body->setProperty("genre", req.genre);
     if (req.priorAssistant.isNotEmpty()) body->setProperty("priorAssistant", req.priorAssistant);
+    if (channelWidth_ > 0) body->setProperty("channelWidth", channelWidth_);   // 21m item 2
     if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
     if (req.answers.isNotEmpty())        body->setProperty("answers", req.answers);
     if (auto* linkArr = req.links.getArray())

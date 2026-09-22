@@ -1599,6 +1599,14 @@ public:
     // containable by the existing machinery). Applies at NEW instantiation
     // only; restores keep their saved format. Logs the substitution.
     juce::PluginDescription preferInlineHostableDesc(const juce::PluginDescription& d);
+    // 21m item 2 (22 Sep 2026): a plugin variant whose layout is mono ("(m)" / " Mono") is never loaded on a stereo rack - the
+    // same product's stereo sibling by name if the collection has it, else a refusal ("mono-only plugin on a stereo channel").
+    void setHostChannelWidth(int channels) { hostChannelWidth_ = juce::jlimit(1, 2, channels); }
+    int  hostChannelWidth() const { return hostChannelWidth_; }
+    static bool isMonoVariantName(const juce::String& name);
+    static juce::String stereoSiblingName(const juce::String& monoName);
+    juce::PluginDescription variantForRack(const juce::PluginDescription& d, juce::String* refusalOut) const;
+    void addKnownPluginForTests(const juce::PluginDescription& d) { knownPlugins_.addType(d); }   // the mono-variant guard
 
     // VST3 build of `pluginName`: direct entry, previously deep-scanned
     // cache, or on-demand enumeration of WaveShell VST3 modules (a single
@@ -2043,6 +2051,7 @@ private:
     mutable std::mutex  pluginsMutex_;
     juce::Array<juce::PluginDescription> entries_;
     juce::KnownPluginList                knownPlugins_;
+    int                                  hostChannelWidth_ = 2;   // 21m item 2: the rack's channel width (from the host bus)
     juce::StringArray                    blacklist_;
     std::map<juce::String, int>          stateOversize_;   // path -> default-state bytes; see WithholdReason::SettingsTooLarge
     void reloadStateOversizeFromDisk();                    // pluginsMutex_ taken inside

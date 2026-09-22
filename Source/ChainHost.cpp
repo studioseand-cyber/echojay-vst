@@ -548,6 +548,37 @@ bool ChainHost::isBuiltinSlot(int i) const
     return isBuiltinDescription(slots_[(size_t)i].desc);
 }
 
+bool ChainHost::isMonoVariantName(const juce::String& name)
+{
+    const auto l = name.trim().toLowerCase();
+    return l.endsWith("(m)") || l.endsWith(" mono") || l.endsWith("(mono)");
+}
+juce::String ChainHost::stereoSiblingName(const juce::String& monoName)
+{
+    const auto t = monoName.trim();
+    if (t.endsWithIgnoreCase("(m)"))    return t.dropLastCharacters(3) + "(s)";
+    if (t.endsWithIgnoreCase("(mono)")) return t.dropLastCharacters(6) + "(stereo)";
+    if (t.endsWithIgnoreCase(" mono"))  return t.dropLastCharacters(5) + " Stereo";
+    return {};
+}
+juce::PluginDescription ChainHost::variantForRack(const juce::PluginDescription& d, juce::String* refusalOut) const
+{
+    if (refusalOut != nullptr) refusalOut->clear();
+    if (hostChannelWidth_ < 2 || ! isMonoVariantName(d.name)) return d;
+    const auto want = stereoSiblingName(d.name);
+    juce::PluginDescription picked; bool found = false;   // a COPY: getTypes() returns a temporary array
+    const auto types = knownPlugins_.getTypes();
+    for (const auto& t : types)
+        if (t.name.trim().equalsIgnoreCase(want) && (! found || t.pluginFormatName == d.pluginFormatName)) { picked = t; found = true; if (t.pluginFormatName == d.pluginFormatName) break; }
+    if (found)
+    {
+        EchoJay_NSLog(("EJVariant: \"" + d.name + "\" is a mono variant on a stereo rack - loading its stereo sibling \"" + picked.name + "\" (" + picked.pluginFormatName + ")").toRawUTF8());
+        return picked;
+    }
+    if (refusalOut != nullptr) *refusalOut = "mono-only plugin on a stereo channel";
+    EchoJay_NSLog(("EJVariant: \"" + d.name + "\" is a mono variant on a stereo rack and has no stereo sibling - refused").toRawUTF8());
+    return d;
+}
 juce::PluginDescription ChainHost::preferInlineHostableDesc(const juce::PluginDescription& d)
 {
     if (isBuiltinDescription(d)) return d;   // never swapped for a VST3 build
@@ -2127,6 +2158,11 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
                                           ? juce::String("not resolvable")
                                           : withholdReasonText(why)));
         desc = preferInlineHostableDesc(desc);
+        {   // 21m item 2: never a mono variant on a stereo rack
+            juce::String refusal; desc = variantForRack(desc, &refusal);
+            if (refusal.isNotEmpty())
+                return failButContinue(op.op + " refused: \"" + op.name + "\" - " + refusal);
+        }
         auto self = st;
         const auto theOp = op;
         loadPluginAsync(desc, LoadOrigin::Assistant,
@@ -2740,8 +2776,23 @@ void ChainHost::asyncCreatePlugin(const juce::PluginDescription& d,
     // every purpose the blacklist serves.
     const int mark = pushDeathMark("instantiate", d);
     formatManager_.createPluginInstanceAsync(d, sampleRate_, blockSize_,
-        [mark, cb = std::move(cb)](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+        [this, mark, d, cb = std::move(cb)](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
         {
+            // 21m item 2 (22 Sep 2026): a plugin whose main output bus is mono-only never lands on a stereo rack - refused at
+            // instantiate with the same words the name rule uses; the instance is destroyed here, never added to the graph.
+            if (inst != nullptr && hostChannelWidth_ == 2 && ! isBuiltinDescription(d))
+            {
+                auto* ob = inst->getBus(false, 0);
+                const bool monoOnly = ob != nullptr && ob->getCurrentLayout().size() == 1 && ! ob->isLayoutSupported(juce::AudioChannelSet::stereo());
+                if (monoOnly)
+                {
+                    EchoJay_NSLog(("EJVariant: \"" + d.name + "\" instantiated with a mono-only output bus on a stereo rack - refused").toRawUTF8());
+                    inst.reset();
+                    if (cb) cb(nullptr, "mono-only plugin on a stereo channel");
+                    popDeathMark(mark);
+                    return;
+                }
+            }
             if (cb) cb(std::move(inst), err);
             popDeathMark(mark);
         });

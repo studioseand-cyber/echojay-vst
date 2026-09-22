@@ -362,6 +362,11 @@ public:
     // including the limit-failure path, so a blocked capture can never leak
     // its payload onto the next plain chat turn. sendChat discards any
     // staged blob that arrives without this flag (logged).
+    // 21m item 2 (22 Sep 2026): the rack's channel width (1 mono / 2 stereo) rides EVERY chat and classify turn as "channelWidth"
+    // (Session B's server half chooses the plugin variant by it). 0 = unknown, not sent.
+    void setChannelWidth(int channels) { channelWidth_ = juce::jlimit(0, 2, channels); }
+    int  channelWidth() const { return channelWidth_; }
+    int  channelWidth_ = 0;
     void stageCapturePayload(const juce::String& metersBlob, int busCount)
     {
         nextChatMeters_   = metersBlob;
