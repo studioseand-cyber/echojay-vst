@@ -71,6 +71,15 @@ public:
     static constexpr float kQuietUnderDb     = 3.0f;     // window sanity: >= 3 dB under the build-time input = a quiet section
     static constexpr float kOverTargetDb     = 1.0f;     // tracking: > 1 dB over the target proposes a back-off
     static constexpr float kCloseEnoughDb    = 1.0f;     // 18g: on target = within +-1.0 dB (was 0.5)
+    // 22 Sep 2026 (item 5): every proposal is bounded by the limiter's GR on the hits, per loudness option
+    static float grCapDb (const juce::String& option) noexcept
+    {
+        if (option == "pushed")  return 6.0f;
+        if (option == "dynamic") return 2.0f;
+        if (option == "keep")    return 1.0f;
+        return 4.0f;   // commercial (and the default)
+    }
+    static constexpr float kOpeningHeadroomDb = 3.0f;   // 22 Sep 2026 (item 5): peaks into the limiter never open more than 3 dB over the ceiling
     static constexpr int   kMaxProposals     = 3;        // 18g: at most 3 proposals, then the result bubble (was 4 rounds)
     static constexpr float kRatioMin         = 0.5f, kRatioMax = 2.0f;   // 18g: achieved/commanded clamp for the step scaling
     static constexpr float kGrOfferDb        = 6.0f;
@@ -226,6 +235,18 @@ public:
         if (! haveUndo_) { preLoopGainDb_ = (float) lv->gainDb(); haveUndo_ = true; }
         const auto in = host_.getChainInLevels();
         buildInputLufs_ = in.known ? in.levelDb : std::numeric_limits<float>::quiet_NaN();
+        // 22 Sep 2026 (item 5): opening gain at build = min (estimate, ceiling + 3 dB - build-time true peak of the loudest
+        // section), so peaks into the limiter never open more than 3 dB over the ceiling.
+        if (in.known && in.truePeakDb > -150.0f && std::isfinite (ceilingDb_))
+        {
+            const float maxOpen = ceilingDb_ + kOpeningHeadroomDb - in.truePeakDb;
+            if ((float) lv->gainDb() > maxOpen)
+            {
+                const float was = (float) lv->gainDb();
+                writeGainDb (juce::jlimit (-kLevelMaxDb, kLevelMaxDb, maxOpen));
+                log ("opening gain capped: " + fmtSigned (was) + " -> " + fmtSigned ((float) lv->gainDb()) + " dB (ceiling " + fmt (ceilingDb_) + " + 3 - build-time true peak " + fmt (in.truePeakDb) + " dBTP)");
+            }
+        }
         log ("armed: target " + fmt (target_) + " LUFS (" + armSource_ + (loudnessOption_.isNotEmpty() ? ", " + loudnessOption_ : juce::String()) + "), Level slot " + juce::String (slot_)
              + " gain " + fmtSigned ((float) lv->gainDb()) + " dB, limiter slot " + juce::String (limiterSlot_) + " (" + limiterName() + "), build-time input " + fmt (buildInputLufs_) + " LUFS");
         // 18g (item 1): NO window runs on the first audio. The user cues the loudest section and taps Listen (or types it).
@@ -466,11 +487,31 @@ public:
             log ("step scaling: commanded " + fmtSigned (lastCommanded_) + " dB, achieved " + fmtSigned (achieved) + " dB -> ratio " + juce::String (ratio, 2) + " (clamped 0.5-2.0)");
         }
         float trim = juce::jlimit (-kPassClampDb, kPassClampDb, needed / ratio);
+        // 22 Sep 2026 (item 5): the proposal is bounded by the limiter's GR on the hits for this loudness option - if the
+        // target needs more, the CAPPED level is proposed and said so ("-9.4 is as loud as this goes with the limiter
+        // working <=4 dB. Push to -8 anyway?") with [Push it anyway] [Leave it].
+        // predicted GR on the hits after the trim = (Level OUT true peak, max-held) + trim - the limiter's ceiling: the peaks
+        // above the ceiling are what the limiter takes; a trim that keeps the peaks under the ceiling costs no GR at all
+        bool capped = false; const float cap = grCapDb (loudnessOption_); const float lvTP = lv->outputLevels().truePeakDb;
+        if (trim > 0.0f && lvTP > -150.0f && std::isfinite (ceilingDb_))
+        {
+            const float predictedHits = juce::jmax (0.0f, lvTP + trim - ceilingDb_);
+            if (predictedHits > cap + 0.05f) { const float capTrim = juce::jmax (0.0f, cap + ceilingDb_ - lvTP); log ("GR cap: Level OUT true peak " + fmt (lvTP) + " dBTP + trim " + fmtSigned (trim) + " - ceiling " + fmt (ceilingDb_) + " = " + fmt (predictedHits) + " dB on the hits > cap " + fmt (cap) + " (" + loudnessOption_ + ") -> trim " + fmtSigned (capTrim)); trim = capTrim; capped = true; }
+        }
         bool atCeiling = false;
         if (cur + trim > kLevelMaxDb) { trim = kLevelMaxDb - cur; atCeiling = true; }
         if (cur + trim < -kLevelMaxDb) { trim = -kLevelMaxDb - cur; atCeiling = true; }
         log ("measured: max short-term " + fmt (measured) + " LUFS (input window " + fmt (lastInputWindow_) + "), target " + fmt (target_) + ", needed " + fmtSigned (needed) + " dB, Level " + fmtSigned (cur) + " dB, trim " + fmtSigned (trim) + (atCeiling ? " (Level ceiling)" : "") + ", limiter GR avg " + fmt (grAvg()) + " max " + fmt (grMax()) + " dB, round " + juce::String (round_));
         const juce::String grText = grText_();
+        if (grIsEstimated()) log ("limiter GR (estimated, third-party limiter): mean Level OUT - chain OUT " + fmt (juce::jmax (0.0f, grEstimateDb())) + " dB (LUFS-S), on the hits " + fmt (juce::jmax (0.0f, grPeakEstimateDb())) + " dB (true peak, max-held) - the measured avg/max above are the EchoJay Limiter's and read 0.0 when it is not in the chain");   // 22 Sep 2026 (observation 4)
+        if (capped)
+        {
+            state_ = State::proposed; pendingTrim_ = trim; pendingKind_ = PendingKind::propose; ++proposals_;
+            const float cappedLevel = measured + trim;
+            juce::StringArray pills { "Push it anyway", "Leave it" }; if (applied_) pills.add ("Undo");
+            emit ("Measured " + fmt (measured) + " LUFS (loudest 3 s). " + fmt (cappedLevel) + " is as loud as this goes with the limiter working <=" + juce::String ((int) std::round (cap)) + " dB. Push to " + fmt (target_) + " anyway? " + grText, -1.0f, false, false, Bubble::Kind::proposal, pills);
+            return;
+        }
         if (reportOnly_)
         {   // 18h (item 4): a Check REPORTS - on target, or the distance - with the result pills (Push it only when short), then watches
             reportOnly_ = false; state_ = State::tracking; startTracking();

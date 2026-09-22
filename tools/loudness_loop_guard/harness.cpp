@@ -65,7 +65,7 @@ struct IndependentMeter
     float truePeakDb() const { return tpMax > 0 ? 20 * std::log10 (tpMax) : -200; }
 };
 
-struct Programme { juce::Random rng { 4242 }; float amp = 0.1f; bool peaky = false; int blockCount = 0; };
+struct Programme { juce::Random rng { 4242 }; float amp = 0.1f; bool peaky = false; int blockCount = 0; float burst = 5.0f; };   // burst: the hit's gain over the bed (5x = +14 dB); K1 uses 12x
 void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, LoudnessLoop* loop, IndependentMeter* ind, float gainDb = 0.0f)
 {
     juce::AudioBuffer<float> buf (2, 512); juce::MidiBuffer midi;
@@ -73,7 +73,7 @@ void feed (EchoJayProcessor& p, Programme& prog, int blocks, bool silent, Loudne
     for (int b = 0; b < blocks; ++b)
     {
         const bool burst = prog.peaky && (prog.blockCount % 12) == 0;   // a drum hit every ~128 ms: 3 ms of noise at +14 dB
-        for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = silent ? 0.0f : (prog.rng.nextFloat() * 2.0f - 1.0f) * prog.amp * g * ((burst && i < 144) ? 5.0f : 1.0f); }
+        for (int ch = 0; ch < 2; ++ch) { auto* d = buf.getWritePointer (ch); for (int i = 0; i < 512; ++i) d[i] = silent ? 0.0f : (prog.rng.nextFloat() * 2.0f - 1.0f) * prog.amp * g * ((burst && i < 144) ? prog.burst : 1.0f); }
         ++prog.blockCount;
         p.processBlock (buf, midi);
         if (ind != nullptr) ind->push (buf.getReadPointer (0), buf.getReadPointer (1), 512);
@@ -351,7 +351,11 @@ int main()
     {
         Rig r (false); r.setTarget (-9.0f, 0.0); r.prog.peaky = true;
         calibrate (r.proc, r.prog, -15.0f);
-        r.loop.armFromChain(); r.runWindow(); r.loop.go(); r.loop.check();   // 21 Sep: Go holds; Check runs the window
+        r.loop.armFromChain(); r.runWindow();
+        // 22 Sep 2026 (item 5): on a peaky programme the first proposal is CAPPED (the limiter would work > 4 dB) - driving into the
+        // limiter is now the user's [Push it anyway]; then Check runs the window and the GR text reads as before
+        check (r.last().contains ("is as loud as this goes with the limiter working <=4 dB"), "F. (22 Sep) the peaky programme's first proposal is capped", r.last());
+        r.loop.pushIt(); r.loop.check();
         IndependentMeter ind; r.runWindow (0.0f, &ind);
         const auto last = r.last();
         check (last.contains ("limiter working ") && last.contains (" dB average, up to ") && last.contains (" dB on the hits"), "F. GR text: working X dB average, up to Y dB on the hits", last);
@@ -451,10 +455,15 @@ int main()
         // by the INDEPENDENT meter is the pre-limiter signal (true peak and loudness); the clipper rig's output by the same meter is
         // the post-limiter signal. (A sample-peak formula was wrong: white noise carries ~5 dB of intersample overshoot, so a clipper
         // at -0.5 dBFS still reads +5.7 dBTP - Sean's observation (b) in miniature.)
-        Rig r (true, true); r.setTarget (-9.0f); calibrate (r.proc, r.prog, +3.0f);   // +3 LUFS in: sample peaks ~+1.7 dBFS, over the -0.5 dBFS clip
-        Rig b (true, true, "EJ Test Bypass"); b.setTarget (-9.0f); calibrate (b.proc, b.prog, +3.0f);
-        r.loop.armFromChain(); r.loop.listen(); IndependentMeter ind; r.runWindow (0.0f, &ind);
-        b.loop.armFromChain(); b.loop.listen(); IndependentMeter indB; b.runWindow (0.0f, &indB);
+        // 22 Sep 2026 (item 5): the target sits ABOVE the programme (+6) so the first proposal is a capped push; [Push it anyway] then drives
+        // both rigs into the clipper by the same +6 (arming had clamped the opening gain below 0 dB: peaks ~+9 dBTP over a -0.5 ceiling)
+        Rig r (true, true); r.setTarget (+6.0f); calibrate (r.proc, r.prog, +3.0f);   // +3 LUFS in: sample peaks ~+1.7 dBFS, over the -0.5 dBFS clip
+        Rig b (true, true, "EJ Test Bypass"); b.setTarget (+6.0f); calibrate (b.proc, b.prog, +3.0f);
+        // 22 Sep 2026 (item 5): arming CLAMPS the opening gain (peaks +7 dBTP over a -0.5 ceiling -> the Level opens below 0 dB) and the
+        // first proposal is capped, so both rigs are driven into the clipper the user's way - [Push it anyway] (+6, the same on both) -
+        // and the estimate window is measured after that push with fresh tallies and fresh independent meters
+        r.loop.armFromChain(); r.loop.listen(); r.runWindow(); r.loop.pushIt(); r.loop.check(); IndependentMeter ind; r.runWindow (0.0f, &ind);
+        b.loop.armFromChain(); b.loop.listen(); b.runWindow(); b.loop.pushIt(); b.loop.check(); IndependentMeter indB; b.runWindow (0.0f, &indB);
         const float g = r.levelGain();
         const auto in = r.h.getChainInLevels(), out = r.h.getChainOutLevels();
         const float truthLoud = (in.maxShortTermDb + g) - out.maxShortTermDb;
@@ -497,6 +506,34 @@ int main()
         check (proposals <= 2, "J3 (AS IT STOOD): the unscaled loop on the 0.6x fixture converges in at most 2 proposals - this build's count", juce::String (proposals) + " proposal(s), last: " + r.last());
     }
 #endif
+    std::printf ("== K. 22 Sep 2026 (item 5): the GR cap per loudness option, the capped proposal, the opening-gain clamp, the estimated-GR line ==\n");
+    {
+        Rig r (true); r.setTarget (-8.0f, 0.0); r.prog.peaky = true; r.prog.burst = 12.0f;   // third-party limiter (hard clip -0.5 dBTP), Commercial (option 0) -> cap 4 dB; hits ~+1.6 dBTP so +6 would cost ~8 dB on the hits
+        const float cal = calibrate (r.proc, r.prog, -18.0f); check (std::abs (cal + 18.0f) < 0.8f, "K. peaky programme calibrated to -18 LUFS", f1 (cal));
+        check (r.loop.armFromChain(), "K. armed (third-party limiter last, Commercial)", r.logs.joinIntoString (" | ").substring (0, 200));
+        r.runWindow();
+        const auto prop = r.last(); const auto logAll = r.logs.joinIntoString ("\n");
+        check (r.loop.state() == LoudnessLoop::State::proposed && prop.contains ("is as loud as this goes with the limiter working <=4 dB. Push to -8.0 anyway?"),
+               "K1. the proposal is CAPPED by limiter GR on the hits (Commercial <= 4 dB): \"<level> is as loud as this goes with the limiter working <=4 dB. Push to -8.0 anyway?\"", prop);
+        check (r.loop.lastPills().joinIntoString ("|") == "Push it anyway|Leave it", "K2. the capped proposal carries [Push it anyway] [Leave it]", r.loop.lastPills().joinIntoString ("|"));
+        check (logAll.contains ("GR cap: Level OUT true peak") && logAll.contains ("> cap 4.0 (commercial) -> trim +"), "K1. the cap arithmetic is logged (Level OUT true peak + trim - ceiling > cap -> trim)", logAll.fromLastOccurrenceOf ("GR cap", false, false).substring (0, 160));
+        check (logAll.contains ("limiter GR (estimated, third-party limiter): mean Level OUT - chain OUT") && logAll.contains ("on the hits"),
+               "K4 (observation 4): with a third-party limiter the measured line is followed by the ESTIMATED GR line (mean LUFS-S difference, and the true-peak difference on the hits) - the measured avg/max are the EchoJay Limiter's and read 0.0", logAll.fromLastOccurrenceOf ("limiter GR (estimated", false, false).substring (0, 120));
+        const float cappedGain = numberAfter (prop, "(loudest 3 s). ") - r.loop.lastMeasured();   // the capped level minus the measured = the capped trim
+        check (cappedGain > 0.3f && cappedGain < 4.5f, "K1. the capped trim is positive and under the cap (the limiter would work <= 4 dB)", f1 (cappedGain));
+        check (r.loop.pushIt() && r.levelGain() > cappedGain + 0.5f, "K2. Push it anyway applies the UNCAPPED step (the pass clamp, +6)", f1 (r.levelGain()));
+    }
+    {
+        Rig r (false); r.setTarget (-8.0f, 0.0); r.prog.peaky = true;
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 12.0); pp->setProperty ("target_lufs", -8.0); pp->setProperty ("loudness_option", 0); auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp)); r.h.setSlotStructuredSettings (r.levelSlot, juce::var (w)); }
+        check (std::abs (r.levelGain() - 12.0f) < 0.01f, "K3. the build opened the Level at +12 dB (the server's estimate)", f1 (r.levelGain()));
+        r.h.resetAllLevels(); feed (r.proc, r.prog, 900, false, nullptr, nullptr, 0.0f);   // ~9.6 s of the peaky programme: the chain-in tally knows its true peak
+        const auto in = r.h.getChainInLevels(); const float maxOpen = -0.1f + 3.0f - in.truePeakDb;
+        check (in.known && in.truePeakDb > -60.0f, "K3. the chain-in tally carries the build-time true peak", f1 (in.truePeakDb) + " dBTP known=" + juce::String ((int) in.known));
+        check (r.loop.armFromChain(), "K3. armed");
+        check (r.levelGain() <= maxOpen + 0.05f && r.levelGain() < 11.9f && r.logs.joinIntoString ("\n").contains ("opening gain capped:"),
+               "K3. opening gain at build = min (estimate, ceiling + 3 dB - build-time true peak): +12 is clamped so peaks never open more than 3 dB over the ceiling", "Level " + f1 (r.levelGain()) + " dB, allowed " + f1 (maxOpen) + " (ceiling -0.1 + 3 - TP " + f1 (in.truePeakDb) + ")");
+    }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
