@@ -4,6 +4,7 @@
 #include "ChainHost.h"    // buildCurrentChainInjection reads the live rack
 #include "LinkShm.h"      // RackSidecar — targeted [CURRENT CHAIN] (Phase R)
 #include "EJSettingsClip.h" // the model-side slot-settings cap, and its marker
+#include "EJUserDataWrite.h" // userDataWriteMayProceed: a failed read must not write
 #include "NativeClip.h"   // EchoJay_NSLog — unified-log diagnostics
 #include "EqPresets.h"    // the EQ teaching block lists presets from the table
 #include "EchoJayChannelLabel.h" // kChannelChooserCapability — the classify flag
@@ -4082,14 +4083,50 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
     // First GET the existing data so we don't overwrite chats/albums/reviews
     getJSON("/api/data", [this, settings, onComplete](const juce::var& json, int statusCode)
     {
+        // ---- A FAILED READ MUST NOT BECOME A WRITE (open list 225) --------
+        //
+        // This used to fall through to an else branch that wrote chats,
+        // albums, reviews and refTracks as EMPTY ARRAYS and POSTed them. A
+        // failed GET therefore submitted a record asserting the user has none
+        // of any of them. The plugin never originates content for those four
+        // keys, so it had nothing to restore them from.
+        //
+        // THE DECISION IS A PURE PREDICATE so the suite can EXECUTE it rather
+        // than grep for it: see echojay::userDataWriteMayProceed and open list
+        // 217 for why a text pin over this file is presence, not behaviour.
+        auto* root = json.isObject() ? json.getDynamicObject() : nullptr;
+        if (! echojay::userDataWriteMayProceed (statusCode, json.isObject(),
+                                                root != nullptr))
+        {
+            // A non-2xx is ALREADY logged by getJSON's own logNon2xx at the
+            // transport (EJStream: /api/data status=...). The case that was
+            // silent is a 2xx whose body is unusable, because logNon2xx
+            // returns early on 2xx, so that one is named here through the
+            // same EchoJay_NSLog mechanism rather than a new one.
+            if (statusCode >= 200 && statusCode < 300)
+                EchoJay_NSLog (("EJStream: /api/data read OK but body unusable "
+                                "(status=" + juce::String (statusCode)
+                                + " isObject=" + juce::String (json.isObject() ? 1 : 0)
+                                + " root=" + juce::String (root != nullptr ? 1 : 0)
+                                + "); settings write ABORTED").toRawUTF8());
+            if (onComplete) onComplete (false);
+            return;
+        }
+
         // Build the payload using DynamicObject for proper JSON
         auto payload = std::make_unique<juce::DynamicObject>();
-        
-        // Preserve existing data fields from the GET response
-        if (statusCode == 200 && json.isObject())
+
+        // Preserve existing data fields from the GET response.
+        //
+        // A KEY MISSING FROM AN OTHERWISE GOOD BODY IS STILL WRITTEN AS AN
+        // EMPTY ARRAY, AND THAT IS LEFT EXACTLY AS IT WAS. Omitting the key
+        // instead would be safe ONLY under MERGE semantics, and whether
+        // POST /api/data merges or replaces is UNANSWERED: see
+        // HANDOVER/ECHOJAY_API_CONTRACT.md section 6. It must be READ in
+        // echojay-saas-dash rather than guessed here, so this round changes
+        // only the case that is wrong under BOTH answers, which is writing
+        // after a read that failed.
         {
-            auto* root = json.getDynamicObject();
-            if (root)
             {
                 if (root->hasProperty("chats"))
                     payload->setProperty("chats", root->getProperty("chats"));
@@ -4111,13 +4148,6 @@ void EchoJayAPI::saveUserSettings(const UserSettings& settings,
                 else
                     payload->setProperty("refTracks", juce::var(juce::Array<juce::var>()));
             }
-        }
-        else
-        {
-            payload->setProperty("chats", juce::var(juce::Array<juce::var>()));
-            payload->setProperty("albums", juce::var(juce::Array<juce::var>()));
-            payload->setProperty("reviews", juce::var(juce::Array<juce::var>()));
-            payload->setProperty("refTracks", juce::var(juce::Array<juce::var>()));
         }
         
         // Build profile object

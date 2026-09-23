@@ -28,6 +28,7 @@
 #include "EJDialTally.h"         // dial-4 A8: header-inline, the shipped tally
 #include "EJDialMissRows.h"      // A9 step 1: header-inline, the shipped row set
 #include "EJSettingsClip.h"      // 6a: header-inline, the shipped model-side clip
+#include "EJUserDataWrite.h"     // ud: the user-data write guard, open list 225
 #include "EJParamReads.h"        // 6c §8: header-inline, the shipped read serialiser
 #include "EJRefusalLine.h"      // refusal bubble: header-inline, the shipped composer
 #include "EJDisableReasons.h"  // disable provenance: header-inline, shipped
@@ -8089,6 +8090,58 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (ones > 0 && ones < 12,
                    "cg PIN8: and the table is not all yes or all no",
                    juce::String (ones));
+        }
+
+        // ud PIN1 -- A FAILED READ MUST NOT BECOME A WRITE.
+        //
+        // THE RULE THAT SHIPPED THE DEFECT IS NOW EXECUTING CODE. Before this,
+        // saveUserSettings decided inline whether to build a payload, so the
+        // only thing the suite could do was grep EchoJayAPI.cpp for a string.
+        // Open list 217: the gate links harnesses and never the API layer, so
+        // a text pin there asserts a line was TYPED. These checks CALL the
+        // shipped predicate out of the header the test TU compiles directly.
+        {
+            using namespace echojay;
+
+            // THE ONE THAT MATTERS, stated on its own rather than only as a
+            // row of a table: a good read proceeds.
+            check (userDataWriteMayProceed (200, true, true),
+                   "ud PIN1: a 200 with an object body and a live root proceeds");
+
+            // THE THREE WAYS THE OLD CODE SHIPPED AN EMPTY RECORD, each named,
+            // because a table alone would not say WHICH input was load-bearing.
+            check (! userDataWriteMayProceed (500, true, true),
+                   "ud PIN1: a non-200 is a FAILED READ, not an empty account");
+            check (! userDataWriteMayProceed (200, false, false),
+                   "ud PIN1: a 200 carrying a non-object body says nothing about "
+                   "what the user has, so it does not authorise a write");
+            check (! userDataWriteMayProceed (200, true, false),
+                   "ud PIN1: and a null root refuses rather than falling through, "
+                   "which is the guard the old code let drop to no payload at all");
+
+            // ALL EIGHT COMBINATIONS against an independently written
+            // expectation, the cg PIN8 shape. Driven, not asserted.
+            int agreed = 0, yes = 0;
+            for (int m = 0; m < 8; ++m)
+            {
+                const int  code = (m & 1) != 0 ? 200 : 503;
+                const bool obj  = (m & 2) != 0;
+                const bool root = (m & 4) != 0;
+                const bool expected = (code == 200 && obj && root);
+                if (userDataWriteMayProceed (code, obj, root) == expected) ++agreed;
+                if (expected) ++yes;
+            }
+            check (agreed == 8, "ud PIN1: all eight combinations agree",
+                   juce::String (agreed));
+            check (yes == 1,
+                   "ud PIN1: and exactly ONE of the eight proceeds, so a predicate "
+                   "returning a constant fails this", juce::String (yes));
+
+            // 0 IS A STATUS TOO. The transport leaves statusCode at 0 when the
+            // connection never happened, which is the commonest real failure
+            // and the one a `!= 200` written as `>= 400` would miss.
+            check (! userDataWriteMayProceed (0, true, true),
+                   "ud PIN1: statusCode 0, an unreachable server, refuses");
         }
 
         // cg PIN9 -- THE BUTTONS ARE A GESTURE, BY TEXT.
