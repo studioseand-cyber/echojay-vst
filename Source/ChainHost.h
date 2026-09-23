@@ -710,9 +710,10 @@ public:
     // cache, so a machine that has synced once starts complete.
     void applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows);
     int  syncedIdentityCount() const noexcept { return (int) syncedIdentity_.size(); }
-    // The inventory as the sync body wants it: the same identity refs the existence
-    // index sends, so the two calls cannot drift on what an identity is.
-    std::vector<echojay::IdentityRef> syncIdentityRefs() const { return recommendableIdentityRefs(); }
+    // The inventory as the sync body wants it. NOT the existence index's refs: that call is keyed by identity,
+    // this one is keyed by NAME plus manufacturer/format/version (verified live, 23 Sep 2026). The identity key
+    // rides along unsent, as the key the ANSWER is stored under.
+    std::vector<echojay::SyncRef> syncRefs() const;
 
     // ---- BUILD-TIME SUBSTITUTION (17 Sep 2026 ruling, item 3) ------------------
     // Under dial-only, a third-party slot that ends noMap after its fetches is

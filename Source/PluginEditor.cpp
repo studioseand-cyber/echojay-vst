@@ -25517,7 +25517,7 @@ void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
     if (! api.isLoggedIn()) return;
     if (syncQueryInFlight_) return;
 
-    const auto refs = ch.syncIdentityRefs();
+    const auto refs = ch.syncRefs();
     if (refs.empty()) return;
 
     // The signature changes only when the identity set does, i.e. once per scan

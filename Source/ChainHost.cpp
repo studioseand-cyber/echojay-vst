@@ -8513,6 +8513,20 @@ std::vector<echojay::IdentityRef> ChainHost::recommendableIdentityRefs() const
     return refs;
 }
 
+std::vector<echojay::SyncRef> ChainHost::syncRefs() const
+{
+    std::vector<echojay::SyncRef> refs;
+    std::set<juce::String> seen;
+    for (const auto& e : recommendable_)
+    {
+        if (e.desc.uniqueId == 0) continue;            // no identity: the answer could not be stored anywhere
+        auto r = echojay::syncRefForDescription (e.desc);
+        if (r.name.isEmpty()) continue;                // the server matches on the name; an empty one asks nothing
+        if (seen.insert (r.ik).second) refs.push_back (std::move (r));
+    }
+    return refs;
+}
+
 void ChainHost::applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows)
 {
     // MERGE, never replace. A batch that failed, or a server that can only answer

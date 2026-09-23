@@ -184,6 +184,39 @@ int main()
                "E. an empty store answers nothing rather than guessing");
     }
 
+    // ---- F. THE WIRE SHAPE, PINNED AGAINST A VERBATIM LIVE BODY -------------------------------------------
+    // Captured from the deployed endpoint on 23 Sep 2026. The server joins by "i" (the index into the batch that
+    // was sent) and never echoes the identity key, so this is the one thing that must not drift silently.
+    {
+        const char* liveBody =
+            R"({"count":4,"mapped":1,"unmapped":3,"tiers":{"exact":1,"same_count":0,"prefix":0,"none":3},)"
+            R"("results":[{"i":0,"name":"Pro-Q 3","mapped":true,"tier":"exact",)"
+            R"("fp":"e9ec80394bda9b4a893af34255f31b1de4b69a1434237458df37e5c2f7ddda94","version":"3.2.3",)"
+            R"("versions":["3.2.5","3.2.3"]},)"
+            R"({"i":1,"name":"Auto-Tune Pro","mapped":false,"tier":"none","fp":null,"version":null,"versions":[]},)"
+            R"({"i":2,"name":"UAD Pultec HLF-3C","mapped":false,"tier":"none","fp":null,"version":null,"versions":[]},)"
+            R"({"i":9,"name":"off the end","mapped":true,"tier":"exact","fp":"deadbeef","version":"1.0","versions":[]}],"ms":372})";
+        const std::vector<echojay::SyncRef> sent {
+            { "AudioUnit|61453c50|3.2.3",  "Pro-Q 3",           "FabFilter",       "AudioUnit", "3.2.3" },
+            { "AudioUnit|76720177|10.5.0", "Auto-Tune Pro",     "Antares",         "AudioUnit", "10.5.0" },
+            { "AudioUnit|12616669|11.8.0", "UAD Pultec HLF-3C", "Universal Audio", "AudioUnit", "11.8.0" } };
+        int unjoinable = 0;
+        const auto parsed = echojay::parseSyncResponse (juce::JSON::parse (liveBody), sent, &unjoinable);
+        check (parsed.size() == 1, "F. the live body yields exactly the ONE mapped row",
+               juce::String ((int) parsed.size()) + " of 4 rows");
+        const auto it = parsed.find ("AudioUnit|61453c50|3.2.3");
+        check (it != parsed.end() && it->second.fp == "e9ec80394bda9b4a893af34255f31b1de4b69a1434237458df37e5c2f7ddda94",
+               "F. ...joined by \"i\" onto the identity key the CLIENT sent, carrying the server's fp",
+               it == parsed.end() ? juce::String ("not stored") : it->second.fp.substring (0, 16) + "...");
+        check (it != parsed.end() && it->second.version == "3.2.3" && it->second.tier == "exact",
+               "F. ...with version and tier stored beside it",
+               it == parsed.end() ? juce::String() : it->second.version + " / " + it->second.tier);
+        check (parsed.count ("AudioUnit|76720177|10.5.0") == 0,
+               "F. a mapped:false / null-fp row is not an answer and is not stored");
+        check (unjoinable == 1, "F. a row whose index is off the end is DROPPED, never guessed at",
+               juce::String (unjoinable) + " unjoinable");
+    }
+
     std::printf ("\n==== mapfps_sync_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

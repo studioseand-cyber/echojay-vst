@@ -627,21 +627,19 @@ void EchoJayAPI::fetchDialableIdentities(const std::vector<echojay::IdentityRef>
     }
 }
 
-void EchoJayAPI::syncParamIdentities(const std::vector<echojay::IdentityRef>& plugins,
+void EchoJayAPI::syncParamIdentities(const std::vector<echojay::SyncRef>& plugins,
                                      std::function<void(bool, std::map<juce::String, echojay::SyncedIdentity>)> onComplete)
 {
     auto cb = std::make_shared<std::function<void(bool, std::map<juce::String, echojay::SyncedIdentity>)>>(std::move(onComplete));
     if (plugins.empty()) { if (*cb) (*cb)(true, {}); return; }
 
-    // 2500 per request (the contract's ceiling). 1429 plugins is one request; the
-    // boundary exists so a 6000-plugin machine is three requests, not one body of
-    // 6000 rows. Same batching shape as the existence index, a different ceiling
-    // because this call is an inventory, not a per-turn narrowing.
-    struct Agg { std::map<juce::String, echojay::SyncedIdentity> rows; int remaining = 0; bool anyFail = false; };
+    // 2500 per request. 1429 plugins is one request; the boundary exists so a 6000-plugin machine is three
+    // requests, not one body of 6000 rows.
+    struct Agg { std::map<juce::String, echojay::SyncedIdentity> rows; int remaining = 0; bool anyFail = false; int unjoinable = 0; };
     auto agg = std::make_shared<Agg>();
     constexpr int kBatch = 2500;
 
-    std::vector<std::vector<echojay::IdentityRef>> batches;
+    std::vector<std::vector<echojay::SyncRef>> batches;
     for (size_t i = 0; i < plugins.size(); i += (size_t) kBatch)
         batches.emplace_back(plugins.begin() + (long) i,
                              plugins.begin() + (long) juce::jmin(plugins.size(), i + (size_t) kBatch));
@@ -651,47 +649,47 @@ void EchoJayAPI::syncParamIdentities(const std::vector<echojay::IdentityRef>& pl
 
     for (auto& b : batches)
     {
-        // {"plugins":[{"ik":..,"manufacturer":..}]} - built through juce::var so a
-        // manufacturer name carrying a quote or a backslash cannot break the JSON.
+        // THE LIVE SHAPE, verified against the deployed endpoint 23 Sep 2026: the server resolves by NAME plus
+        // manufacturer/format/version. An {ik, manufacturer} body returns name:"" and tier:"none" for every row,
+        // and the endpoint says so itself: expected { plugins: [ { name, manufacturer?, format?, version? } ] }.
+        // Built through juce::var so a name carrying a quote or a backslash cannot break the JSON.
         juce::Array<juce::var> pluginArr;
         for (auto& r : b)
         {
             auto* o = new juce::DynamicObject();
-            o->setProperty("ik", r.ik);
+            o->setProperty("name", r.name);
             o->setProperty("manufacturer", r.manufacturer);
+            o->setProperty("format", r.format);
+            o->setProperty("version", r.version);
             pluginArr.add(juce::var(o));
         }
         auto* root = new juce::DynamicObject();
         root->setProperty("plugins", pluginArr);
         const auto body = juce::JSON::toString(juce::var(root), true);
 
-        // postJSON fires its completion on the message thread, so agg is only ever
-        // touched there: no lock across the batch callbacks.
-        postJSON("/api/params/sync", body, [agg, cb](const juce::var& json, int sc)
+        // postJSON fires its completion on the message thread, so agg is only ever touched there.
+        const auto sent = b;   // the join is BY INDEX into this batch; the server does not echo the identity key
+        postJSON("/api/params/sync", body, [agg, cb, sent](const juce::var& json, int sc)
         {
             if (sc != 200)
             {
-                // Includes the 404 this will return until the server half ships.
                 agg->anyFail = true;
                 EchoJay_NSLog(("EJSync: /api/params/sync status " + juce::String(sc)
                                + " - no answer, the store keeps what it had").toRawUTF8());
             }
-            else if (auto* results = json.getProperty("results", juce::var()).getArray())
+            else if (json.getProperty("results", juce::var()).isArray())
             {
-                for (auto& row : *results)
-                {
-                    const auto ik = row.getProperty("ik", juce::var()).toString();
-                    const auto fp = row.getProperty("fp", juce::var()).toString();
-                    if (ik.isEmpty() || fp.isEmpty()) continue;   // not an answer
-                    agg->rows[ik] = { fp,
-                                      row.getProperty("version", juce::var()).toString(),
-                                      row.getProperty("tier", juce::var()).toString() };
-                }
+                int unjoinable = 0;
+                const auto parsed = echojay::parseSyncResponse(json, sent, &unjoinable);
+                agg->unjoinable += unjoinable;
+                for (const auto& kv : parsed) agg->rows[kv.first] = kv.second;
+                EchoJay_NSLog(("EJSync: batch of " + juce::String((int) sent.size()) + " answered "
+                               + juce::String((int) parsed.size()) + " mapped, "
+                               + juce::String(unjoinable) + " unjoinable row(s)").toRawUTF8());
             }
             else
             {
-                // A 200 with no results array is a contract mismatch, not an empty
-                // answer: say so loudly and change nothing.
+                // A 200 with no results array is a contract mismatch, not an empty answer.
                 agg->anyFail = true;
                 EchoJay_NSLog("EJSync: /api/params/sync 200 with no results array -- "
                               "contract mismatch, the store keeps what it had");

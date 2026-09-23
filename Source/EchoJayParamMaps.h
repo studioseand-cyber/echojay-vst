@@ -150,6 +150,61 @@ struct SyncedIdentity
     juce::String tier;      // OPAQUE to the client: stored and logged, never interpreted
 };
 
+// What POST /api/params/sync actually keys on, VERIFIED LIVE 23 Sep 2026 against the deployed endpoint: the server
+// resolves by NAME plus manufacturer/format/version, not by identity key. Sending {ik, manufacturer} returns
+// name:"" and tier:"none" for every row, and the endpoint's own error body names the shape it wants:
+//     {"error":"bad_body","message":"expected { plugins: [ { name, manufacturer?, format?, version? } ] }"}
+// ik is carried along so the ANSWER can be stored under the client's own identity key - the server never echoes it.
+struct SyncRef
+{
+    juce::String ik;             // client-side storage key (format|uidHex|version); never sent
+    juce::String name;           // what the server matches on
+    juce::String manufacturer;
+    juce::String format;
+    juce::String version;
+};
+
+inline SyncRef syncRefForDescription (const juce::PluginDescription& desc)
+{
+    return { identityKeyForDescription (desc), desc.name, desc.manufacturerName,
+             desc.pluginFormatName, desc.version };
+}
+
+// The response parse, as a pure function so a guard can pin it against a VERBATIM live body.
+// Live shape (23 Sep 2026):
+//   {"count":N,"mapped":M,"unmapped":U,"tiers":{...},
+//    "results":[{"i":0,"name":"Pro-Q 3","mapped":true,"tier":"exact",
+//                "fp":"e9ec8039...","version":"3.2.3","versions":["3.2.5","3.2.3"]}],"ms":372}
+// Rows are joined back by "i", the INDEX INTO THE BATCH THAT WAS SENT - the server does not echo the identity
+// key, so an out-of-range or missing index is unjoinable and is dropped rather than guessed at.
+// A row with mapped:false or a null fp is not an answer and is not stored.
+inline std::map<juce::String, SyncedIdentity> parseSyncResponse (const juce::var& json,
+                                                                 const std::vector<SyncRef>& sent,
+                                                                 int* unjoinableOut = nullptr)
+{
+    std::map<juce::String, SyncedIdentity> out;
+    int unjoinable = 0;
+    if (auto* results = json.getProperty ("results", juce::var()).getArray())
+    {
+        for (auto& row : *results)
+        {
+            const auto iv = row.getProperty ("i", juce::var());
+            if (! iv.isInt() && ! iv.isDouble()) { ++unjoinable; continue; }
+            const int i = (int) iv;
+            if (i < 0 || i >= (int) sent.size())  { ++unjoinable; continue; }
+            const auto fp = row.getProperty ("fp", juce::var());
+            if (fp.isVoid() || ! fp.isString() || fp.toString().isEmpty()) continue;   // null fp: not an answer
+            if (! (bool) row.getProperty ("mapped", juce::var (true)))               continue;
+            const auto ver = row.getProperty ("version", juce::var()).toString();
+            out[sent[(size_t) i].ik] = { fp.toString(),
+                                         ver.isNotEmpty() ? ver : sent[(size_t) i].version,
+                                         row.getProperty ("tier", juce::var()).toString() };
+        }
+    }
+    if (unjoinableOut != nullptr) *unjoinableOut = unjoinable;
+    return out;
+}
+
 // Exact identity only. No uid fallback here on purpose: the client asked about
 // exactly these identity keys and the server answered about exactly these
 // identity keys, so a near-miss is a different binary, not a near answer. The
