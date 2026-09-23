@@ -9,6 +9,7 @@
 #include <atomic>
 #include <map>
 #include <deque>
+#include "EchoJayReadingGate.h"   // 21p item 1: the one validity gate
 #include <set>
 #include "LinkShm.h"   // StructureEdit plan/journal types (phase 2)
 #include <mutex>
@@ -56,9 +57,11 @@ public:
         juce::String settings;  // suggested dial-in guidance from AI (display only)
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
+        float preTrimDb = 0.0f; // 21p item 3: the trim on the plugin's INPUT (no stage hit above -3 dBTP)
         float trimDb = 0.0f;    // 21m ruling 2: the unity trim (dB) applied inside the blend node
         bool  keepLevel = false;   // 21m ruling 2: "keep this plugin's level" (the trim measure skips it)
         juce::String trimText;  // "-2.3 dB match" / "level kept" / "" (ChainHost::slotTrimText)
+        juce::String pictureText;  // 21p item 2: "in -5.2 / out -5.1 dBTP · GR 1.8" or "no reading", under the slot
         juce::String manufacturer;  // catalogue identity — editorPlacement's
                                     // float-by-identity rule keys on it
         // THE MODEL'S COPY of the same slot's settings text, and the reason
@@ -1161,7 +1164,29 @@ public:
     juce::String trimTextForName(const juce::String& name) const;   // the chain card's line, by slot name
     // Measure every measured slot except the Level slot and the last limiter: trim = -(out - in) short-term, clamped +-12,
     // skipping kept slots. Returns how many trims changed; one log line per slot into `lines` when given.
-    int   measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines = nullptr);
+    // 21p items 1-3 (23 Sep 2026). `transportRolling` is the loop's own isPlaying: a trim is never derived from a
+    // reading taken while the transport was stopped. Each slot that passes the gate gets TWO trims - a PRE-trim on
+    // the plugin's input so no stage is hit above -3 dBTP, and the POST-trim that restores unity - and a PICTURE
+    // (input peak, output peak, GR where the plugin exposes it) kept in state for the strip and the Listen card.
+    int   measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines = nullptr, bool transportRolling = true);
+    static constexpr float kSlotInputCeilingDb = -3.0f;   // the principle's line: no slot input above -3 dBTP
+    static constexpr float kFlagGrDb = 3.0f;              // ...and no stage working harder than 3 dB
+    struct SlotPicture
+    {
+        bool  valid = false;          // a reading that passed the gate; false = "no reading", never a floor number
+        juce::String why;             // why it did not pass, in the card's words
+        float inTpDb = -200.0f, outTpDb = -200.0f;
+        float inLufs = -200.0f, outLufs = -200.0f;
+        float grDb = 0.0f; bool grKnown = false;
+        float preTrimDb = 0.0f, postTrimDb = 0.0f;
+        bool  hot() const { return valid && inTpDb > kSlotInputCeilingDb; }
+        bool  working() const { return valid && grKnown && grDb > kFlagGrDb; }
+    };
+    SlotPicture slotPicture(int i) const;
+    juce::String slotPictureText(int i) const;            // the line under the slot in the chain strip
+    juce::StringArray listenCardLines() const;            // the per-slot picture for the Listen reply card, flags by name
+    float getSlotPreTrimDb(int i) const;
+    void  setSlotPreTrimDb(int i, float db);
     // 21m ruling (unityChain capability): true when any live (non-bypassed) slot carries a non-zero trim - the rack
     // sits at unity because the trims made it so. False on an empty rack or before the first Listen.
     bool  hasActiveTrims() const;
@@ -1941,6 +1966,12 @@ private:
         float                                    trimDb = 0.0f;
         bool                                     keepLevel = false;
         std::shared_ptr<std::atomic<float>>      trimShared;
+        // 21p item 3: the PRE-trim rides its own node ahead of the plugin (the blend node is after it), so the
+        // plugin's input can be held under -3 dBTP while the dry tap the blend mixes stays untouched at unity.
+        float                                    preTrimDb = 0.0f;
+        std::shared_ptr<std::atomic<float>>      preTrimShared;
+        juce::AudioProcessorGraph::Node::Ptr     preTrimNode;
+        SlotPicture                              picture;   // 21p item 2: filled at Listen, kept in state
         juce::AudioProcessorGraph::Node::Ptr     blendNode;
         // Auto-parameter-mapping state
         juce::var                            structuredSettings;        // settings_structured from the chain reply

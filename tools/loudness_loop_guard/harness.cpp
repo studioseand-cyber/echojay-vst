@@ -10,6 +10,8 @@
 #include "PluginProcessor.h"
 #include "EedLimiterProcessor.h"   // force-link the built-in's registrar
 #include "EedDeviceRegistry.h"
+#include "EchoJayFileLog.h"
+#include "EchoJayReadingGate.h"
 #include <cstdio>
 #include <memory>
 #include <cmath>
@@ -626,7 +628,7 @@ int main()
                "P1. the tile and the card line read \"-X.X dB match\" from the same atomic", r.h.slotTrimText (1));
         check (std::abs (r.h.getSlotTrimDb (0)) < 0.01f && std::abs (r.h.getSlotTrimDb (2)) < 0.01f && r.h.slotTrimText (0).isEmpty() && r.h.slotTrimText (2).isEmpty(),
                "P2. the Level slot and the last limiter are exempt (no trim, no text)", f1 (r.h.getSlotTrimDb (0)) + " / " + f1 (r.h.getSlotTrimDb (2)));
-        check (r.logs.joinIntoString ("\n").contains ("unity trim: slot 1 EchoJay Gain: out-in ") && r.logs.joinIntoString ("\n").contains ("unity trims changed: 1"), "P2. the EJLoudness log carries the trim line", r.logs.joinIntoString (" | ").fromFirstOccurrenceOf ("unity", false, false).substring (0, 160));
+        check (r.logs.joinIntoString ("\n").contains ("unity trim: slot 1 EchoJay Gain: in ") && r.logs.joinIntoString ("\n").contains ("post ") && r.logs.joinIntoString ("\n").contains ("unity trims changed: 1"), "P2. the EJLoudness log carries the trim line (21p: the peaks and BOTH trims)", r.logs.joinIntoString (" | ").fromFirstOccurrenceOf ("unity", false, false).substring (0, 160));
         // the loop's opening gain assumes a unity chain: after Go the output lands on the target even though the window measured the un-trimmed chain
         {   // the window measured the UN-trimmed chain (-14 = -18 programme + 4 dB); the proposal must be computed from the unity chain (-18): needed +9, not +5
             juce::String ml; for (const auto& l : r.logs) if (l.contains ("measured: max short-term")) ml = l;
@@ -669,6 +671,61 @@ int main()
                  "trim " + f1 (r.h.getSlotTrimDb (1)) + " state " + juce::String ((int) r.loop.state()) + " bypassed " + juce::String ((int) r.h.getSlotInfo (1).bypassed) + " | " + ul.joinIntoString (" || ").substring (0, 300) + " | " + b.fromFirstOccurrenceOf ("\"appVersion\"", false, false).substring (0, 60)); }
         r.h.setSlotBypassed (1, true);
         { const auto b = bodyOf (r.proc, r.h); check (! r.h.hasActiveTrims() && ! b.contains ("unityChain"), "Q4. the trimmed slot bypassed -> no live trim, the field is absent again", b.substring (0, 60)); }
+    }
+    std::printf ("== V21P. 23 Sep 2026 (21p items 1-4): the validity gate, the per-slot picture, the pre-trim, and the plugin's own log ==\n");
+    {   // (1) a reading taken with the transport STOPPED writes nothing, and says so
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain();
+        r.h.setSlotTrimDb (1, 0.0f);
+        juce::StringArray lines; const int changed = r.h.measureUnityTrims (0, 2, &lines, /*transportRolling*/ false);
+        check (changed == 0 && std::abs (r.h.getSlotTrimDb (1)) < 0.01f, "V1. transport stopped: NO trim is written  (RED as it stood: the pass accepted any finite reading)", "changed " + juce::String (changed) + " trim " + f1 (r.h.getSlotTrimDb (1)));
+        check (lines.joinIntoString ("|").contains ("NO READING") && lines.joinIntoString ("|").contains ("transport"), "V1. ...and the line says why", lines.joinIntoString (" | ").substring (0, 120));
+        check (! r.h.slotPicture (1).valid && r.h.slotPictureText (1) == "no reading", "V1. the slot's picture is \"no reading\", never a floor number", r.h.slotPictureText (1));
+    }
+    {   // (1b) SILENCE with the transport rolling is still not a reading
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        r.h.resetAllLevels(); feed (r.proc, r.prog, 400, true, nullptr, nullptr);   // silent blocks
+        juce::StringArray lines; const int changed = r.h.measureUnityTrims (0, 2, &lines, true);
+        check (changed == 0 && ! r.h.slotPicture (1).valid, "V1b. silence with the transport rolling: no trim, no picture  (RED as it stood: -245 is finite, so a trim was written from it)", "changed " + juce::String (changed) + " | " + lines.joinIntoString (" | ").substring (0, 110));
+        check (echojay::ReadingGate::kFloorLufs == -60.0f && echojay::ReadingGate::kFloorTruePeakDb == -60.0f, "V1b. the floors are -60 LUFS-S and -60 dBTP");
+    }
+    {   // (2) + (3): a real window gives every slot a picture, and a slot driven over -3 dBTP gets a PRE-trim
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        calibrate (r.proc, r.prog, -18.0f);
+        r.prog.amp *= juce::Decibels::decibelsToGain (16.0f);   // drive the chain so slot 1's INPUT sits about -1 dBTP
+        r.loop.armFromChain(); r.runWindow();
+        const auto pic = r.h.slotPicture (1);
+        check (pic.valid && pic.inTpDb > -60.0f && pic.outTpDb > -60.0f, "V2. after Listen the slot carries a picture: input peak, output peak", "in " + f1 (pic.inTpDb) + " out " + f1 (pic.outTpDb) + " dBTP");
+        check (r.h.slotPictureText (1).contains ("dBTP"), "V2. ...and the strip line reads it", r.h.slotPictureText (1));
+        const auto card = r.h.listenCardLines();
+        check (card.size() >= 1 && card.joinIntoString ("|").contains ("EchoJay Gain"), "V2. the Listen card carries one line per slot, by name  (RED as it stood: no per-slot numbers existed)", card.joinIntoString (" | ").substring (0, 150));
+        std::printf ("  V2 card: %s\n", card.joinIntoString (" | ").substring (0, 220).toRawUTF8());
+        if (pic.inTpDb > ChainHost::kSlotInputCeilingDb)
+        {
+            check (r.h.getSlotPreTrimDb (1) < -0.05f, "V3. a slot driven over -3 dBTP gets a PRE-trim on its input  (RED as it stood: no pre-trim existed)", "pre " + f1 (r.h.getSlotPreTrimDb (1)) + " dB for an input of " + f1 (pic.inTpDb) + " dBTP");
+            check (std::abs ((pic.inTpDb + r.h.getSlotPreTrimDb (1)) - ChainHost::kSlotInputCeilingDb) < 0.35f, "V3. ...sized to land the input ON the ceiling, not below it", f1 (pic.inTpDb + r.h.getSlotPreTrimDb (1)) + " dBTP");
+            check (card.joinIntoString ("|").contains ("pre ") && card.joinIntoString ("|").contains ("post "), "V3. ...and BOTH trims are reported per slot", card.joinIntoString (" | ").substring (0, 150));
+            check (card.joinIntoString ("|").contains ("over -3 dBTP into this slot"), "V2. a slot over the line is FLAGGED by name in the card", card.joinIntoString (" | ").substring (0, 160));
+        }
+        else
+            check (false, "V3. the fixture drove slot 1 over -3 dBTP", "input was " + f1 (pic.inTpDb) + " dBTP - fixture too quiet");
+    }
+    {   // (4) the plugin's own rolling log exists and carries the Listen lines
+        Rig r2 (false, true, "EJ Test Limiter", true);
+        const juce::File f (juce::String (echojay::FileLog::instance().currentPath()));
+        EchoJay_NSLog ("EJGuard: 21p item 4 marker");
+        check (f.existsAsFile(), "V4. the plugin writes its own log at " + f.getParentDirectory().getFullPathName() + "  (RED as it stood: no such file)", f.getFullPathName());
+        const auto text = f.loadFileAsString();
+        check (text.contains ("EJGuard: 21p item 4 marker"), "V4. ...and every EchoJay_NSLog line lands in it");
+        // the loop's own lines reach this file through logLine -> EchoJay_NSLog, which the editor wires
+        // (PluginEditor.cpp: "loop.logLine = [](line) { EchoJay_NSLog(line); }"); THIS harness replaces logLine with
+        // its own collector, so the leg proves the route rather than re-proving the collector.
+        { LoudnessLoop probeLoop (r2.h); probeLoop.logLine = [] (const juce::String& l) { EchoJay_NSLog (l.toRawUTF8()); };
+          probeLoop.logLine ("EJLoudness: slot picture: guard route check");
+          const auto after = f.loadFileAsString();
+          check (after.contains ("EJLoudness: slot picture: guard route check"), "V4. ...and a loop line routed the way the editor routes it lands in the file", after.substring (juce::jmax (0, after.length() - 120)).replace ("\n", " | ")); }
+        check (text.contains ("EJ"), "V4. ...the file is the plugin's own log, not an empty file", juce::String (text.length()) + " bytes");
+        check (echojay::FileLog::kFiles == 5 && echojay::FileLog::kMaxBytes == 2L * 1024L * 1024L, "V4. five files of 2 MB", juce::String (echojay::FileLog::kFiles));
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

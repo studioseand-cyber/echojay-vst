@@ -2,6 +2,7 @@
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EedLimiterProcessor.h"   // 21p item 2: the one plugin that publishes its own GR
 #include "EedLatencyLog.h"
 #include "EJVariantPreference.h"
 #include "EJWavesAlias.h"
@@ -671,6 +672,49 @@ juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& plugi
 // Phase caveat (inherent, not a bug): plugins that rotate phase — most
 // minimum-phase EQs — comb-filter against the dry signal at partial wet.
 // Latency alignment cannot remove that; it is true of every wet/dry blend.
+// 21p item 3 (23 Sep 2026): the PRE-TRIM node. It sits between the previous stage and the plugin - and NOT on the
+// dry tap the blend node mixes - so the plugin's input can be held under -3 dBTP while the dry path stays at unity.
+// A plain smoothed gain: no tallies, no state, one atomic read per block.
+class SlotPreTrim : public juce::AudioProcessor
+{
+public:
+    explicit SlotPreTrim (std::shared_ptr<std::atomic<float>> trimDb)
+        : juce::AudioProcessor (BusesProperties()
+              .withInput ("In", juce::AudioChannelSet::stereo(), true)
+              .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
+          trimDb_ (std::move (trimDb)) {}
+    void prepareToPlay (double sampleRate, int) override
+    { smooth_.reset (sampleRate, 0.05); smooth_.setCurrentAndTargetValue (gainNow()); }
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        smooth_.setTargetValue (gainNow());
+        if (smooth_.isSmoothing() || std::abs (smooth_.getCurrentValue() - 1.0f) > 1.0e-6f)
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                const float g = smooth_.getNextValue();
+                for (int ch = 0; ch < juce::jmin (2, b.getNumChannels()); ++ch) b.getWritePointer (ch)[i] *= g;
+            }
+    }
+    const juce::String getName() const override { return "EchoJay Slot Pre-Trim"; }
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+private:
+    float gainNow() const { return trimDb_ ? juce::Decibels::decibelsToGain (trimDb_->load (std::memory_order_relaxed)) : 1.0f; }
+    std::shared_ptr<std::atomic<float>> trimDb_;
+    juce::LinearSmoothedValue<float> smooth_ { 1.0f };
+};
+
 class SlotWetBlend : public juce::AudioProcessor
 {
 public:
@@ -1507,6 +1551,8 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.settings         = s.settings;
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
+    info.preTrimDb        = s.preTrimDb;         // 21p item 3
+    info.pictureText      = slotPictureText(i);  // 21p item 2
     info.trimDb           = s.trimDb;            // 21m ruling 2
     info.keepLevel        = s.keepLevel;
     info.trimText         = slotTrimText(i);
@@ -2380,8 +2426,12 @@ juce::String ChainHost::trimTextForName(const juce::String& name) const
     for (int i = 0; i < (int) slots_.size(); ++i) if (slots_[(size_t) i].desc.name.trim().toLowerCase() == n) return slotTrimText(i);
     return {};
 }
-int ChainHost::measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines)
+int ChainHost::measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines, bool transportRolling)
 {
+    // 21p items 1-3 (23 Sep 2026), under the binding principle: EVERY reading goes through the one gate first, a
+    // reading that fails writes NOTHING and is recorded as "no reading", and a slot that passes gets both trims -
+    // the PRE-trim that holds the plugin's input under -3 dBTP and the POST-trim that restores unity - plus the
+    // picture the strip and the Listen card show.
     int changed = 0;
     for (int i = 0; i < (int) slots_.size(); ++i)
     {
@@ -2390,15 +2440,87 @@ int ChainHost::measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juc
         if (s.desc.name == "EchoJay Level" || s.desc.name == "EchoJay Limiter") continue;
         if (s.bypassed || s.blendNode == nullptr) continue;
         const auto lv = getSlotLevels(i);
-        if (! lv.measured || ! std::isfinite(lv.in.shortTermDb) || ! std::isfinite(lv.out.shortTermDb)) { if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": no full window yet"); continue; }
-        // the slot's own gain = out - in, with the CURRENT trim already inside out: the new trim = old trim - (out - in)
+        SlotPicture pic;
+        const auto gIn  = echojay::ReadingGate::check(lv.in.shortTermDb,  lv.in.truePeakDb,  transportRolling, lv.in.heardSeconds);
+        const auto gOut = echojay::ReadingGate::check(lv.out.shortTermDb, lv.out.truePeakDb, transportRolling, lv.out.heardSeconds);
+        if (! lv.measured || ! gIn.valid || ! gOut.valid)
+        {
+            pic.valid = false;
+            pic.why = ! lv.measured ? juce::String("no full window yet") : (gIn.valid ? gOut.why : gIn.why);
+            s.picture = pic;
+            if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": NO READING (" + pic.why + ") - nothing written");
+            continue;
+        }
+        pic.valid = true;
+        pic.inLufs = lv.in.shortTermDb;   pic.outLufs = lv.out.shortTermDb;
+        pic.inTpDb = lv.in.truePeakDb;    pic.outTpDb = lv.out.truePeakDb;
+        // GR only where the plugin exposes it: EchoJay's own limiter publishes a wall figure; nothing else does,
+        // and an out-minus-in difference is a level change, not gain reduction, so it is NOT reported as GR.
+        if (auto* lim = dynamic_cast<EedLimiterProcessor*>(getSlotProcessor(i)))
+        { pic.grDb = lim->gainReductionDb(); pic.grKnown = true; }
         const float gainNow = lv.out.shortTermDb - lv.in.shortTermDb;
-        const float want = juce::jlimit(-12.0f, 12.0f, s.trimDb - gainNow);
-        if (s.keepLevel) { if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": kept (" + juce::String(gainNow, 1) + " dB)"); continue; }
-        if (std::abs(want - s.trimDb) >= 0.1f) { setSlotTrimDb(i, want); ++changed; }
-        if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": out-in " + juce::String(gainNow, 1) + " dB -> trim " + juce::String(s.trimDb, 1) + " dB");
+        if (s.keepLevel)
+        {
+            pic.preTrimDb = s.preTrimDb; pic.postTrimDb = s.trimDb; s.picture = pic;
+            if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": kept (" + juce::String(gainNow, 1) + " dB)");
+            continue;
+        }
+        // (3) the PRE-trim's job is the input: the peak ARRIVING at this slot, plus whatever pre-trim is already in
+        // place, must land under the ceiling. in.truePeakDb is the dry tap, i.e. before the pre-trim node.
+        const float wantPre = juce::jlimit(-24.0f, 0.0f, juce::jmin(0.0f, kSlotInputCeilingDb - pic.inTpDb));
+        if (std::abs(wantPre - s.preTrimDb) >= 0.1f) { setSlotPreTrimDb(i, wantPre); ++changed; }
+        // (the POST-trim then restores unity across the slot: out - in with the current trims already inside out)
+        const float wantPost = juce::jlimit(-12.0f, 12.0f, s.trimDb - gainNow);
+        if (std::abs(wantPost - s.trimDb) >= 0.1f) { setSlotTrimDb(i, wantPost); ++changed; }
+        pic.preTrimDb = s.preTrimDb; pic.postTrimDb = s.trimDb;
+        s.picture = pic;
+        if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name
+                              + ": in " + juce::String(pic.inTpDb, 1) + " dBTP out " + juce::String(pic.outTpDb, 1) + " dBTP"
+                              + (pic.grKnown ? " GR " + juce::String(pic.grDb, 1) + " dB" : juce::String())
+                              + " -> pre " + juce::String(s.preTrimDb, 1) + " dB, post " + juce::String(s.trimDb, 1) + " dB"
+                              + (pic.hot() ? "  [HOT: input over " + juce::String(kSlotInputCeilingDb, 0) + " dBTP]" : juce::String())
+                              + (pic.working() ? "  [WORKING: GR over " + juce::String(kFlagGrDb, 0) + " dB]" : juce::String()));
     }
     return changed;
+}
+void ChainHost::setSlotPreTrimDb(int i, float db)
+{
+    if (i < 0 || i >= (int) slots_.size()) return;
+    auto& s = slots_[(size_t) i];
+    s.preTrimDb = juce::jlimit(-24.0f, 0.0f, db);
+    if (s.preTrimShared) s.preTrimShared->store(s.preTrimDb, std::memory_order_relaxed);
+    bumpChainRevision();
+}
+float ChainHost::getSlotPreTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].preTrimDb : 0.0f; }
+ChainHost::SlotPicture ChainHost::slotPicture(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].picture : SlotPicture{}; }
+juce::String ChainHost::slotPictureText(int i) const
+{
+    const auto p = slotPicture(i);
+    if (! p.valid) return p.why.isEmpty() ? juce::String() : "no reading";
+    juce::String t = "in " + juce::String(p.inTpDb, 1) + " / out " + juce::String(p.outTpDb, 1) + " dBTP";
+    if (p.grKnown) t += juce::String::fromUTF8(" \xc2\xb7 GR ") + juce::String(p.grDb, 1);
+    if (p.hot())     t += " HOT";
+    if (p.working()) t += " WORKING";
+    return t;
+}
+juce::StringArray ChainHost::listenCardLines() const
+{
+    juce::StringArray out;
+    for (int i = 0; i < (int) slots_.size(); ++i)
+    {
+        const auto& s = slots_[(size_t) i];
+        if (s.bypassed) continue;
+        const auto p = s.picture;
+        if (! p.valid) { out.add(s.desc.name + ": no reading" + (p.why.isNotEmpty() ? " (" + p.why + ")" : juce::String())); continue; }
+        juce::String line = s.desc.name + ": in " + juce::String(p.inTpDb, 1) + " dBTP, out " + juce::String(p.outTpDb, 1) + " dBTP";
+        if (p.grKnown) line += ", GR " + juce::String(p.grDb, 1) + " dB";
+        if (std::abs(p.preTrimDb) >= 0.1f || std::abs(p.postTrimDb) >= 0.1f)
+            line += " (pre " + juce::String(p.preTrimDb, 1) + ", post " + juce::String(p.postTrimDb, 1) + " dB)";
+        if (p.hot())     line += "  - over " + juce::String(kSlotInputCeilingDb, 0) + " dBTP into this slot";
+        if (p.working()) line += "  - working harder than " + juce::String(kFlagGrDb, 0) + " dB";
+        out.add(line);
+    }
+    return out;
 }
 // ===== 21m per-rack undo/redo (22 Sep 2026) =====
 ChainHost::UndoSnapshot ChainHost::captureUndoSnapshot(const juce::String& label) const
@@ -6053,7 +6175,7 @@ void ChainHost::rebuildGraph()
     // ALWAYS in circuit, so wet/dry knob moves are pure atomic writes — no
     // graph rebuild, no dropout mid-drag. At 100% wet the blend node is a
     // settled no-op (see SlotWetBlend::processBlock).
-    struct ActivePair { juce::AudioProcessorGraph::NodeID plugin, blend; };
+    struct ActivePair { juce::AudioProcessorGraph::NodeID plugin, blend, preTrim; };
     std::vector<ActivePair> active;
     for (auto& s : slots_)
         if (!s.bypassed && s.node)
@@ -6063,9 +6185,11 @@ void ChainHost::rebuildGraph()
             // 21m ruling 2: ONE trim atomic per slot for the slot's life. It is created here at most once;
             // a fresh atomic on every rebuild would leave the blend node reading the OLD one.
             if (s.trimShared == nullptr) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);
+            if (s.preTrimShared == nullptr) s.preTrimShared = std::make_shared<std::atomic<float>>(s.preTrimDb);   // 21p item 3
+            if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared));
             if (!s.blendNode)
                 s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.trimShared));
-            active.push_back({ s.node->nodeID, s.blendNode->nodeID });
+            active.push_back({ s.node->nodeID, s.blendNode->nodeID, s.preTrimNode->nodeID });
         }
 
     hasActiveSlots_.store(!active.empty());
@@ -6133,8 +6257,12 @@ void ChainHost::rebuildGraph()
         int nIn  = channelsOf(stage.plugin, true);
         int nOut = channelsOf(stage.plugin, false);
 
+        // 21p item 3: prev -> PRE-TRIM -> plugin. The dry tap below still comes straight from prev, so the blend's
+        // dry leg stays the untouched signal and only what the PLUGIN hears is held under the ceiling.
+        for (int ch = 0; ch < 2; ++ch)
+            graph_->addConnection({{prev, ch}, {stage.preTrim, ch}});
         for (int ch = 0; ch < juce::jmin(2, nIn); ++ch)
-            graph_->addConnection({{prev, ch}, {stage.plugin, ch}});
+            graph_->addConnection({{stage.preTrim, ch}, {stage.plugin, ch}});
 
         for (int ch = 0; ch < 2; ++ch)
             graph_->addConnection({{prev, ch}, {stage.blend, ch + 2}});   // dry tap

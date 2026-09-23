@@ -18,6 +18,7 @@
 #import <Cocoa/Cocoa.h>
 #include <cstdint>
 #include <cmath>
+#include "EchoJayFileLog.h"   // 21p item 4: every log line also lands in the plugin's own rolling file
 
 // Per-target identity: both plugins compile this file into their own dylib
 // and can coexist in one hosting process. The ObjC class name MUST be unique
@@ -54,6 +55,9 @@ extern "C"
 void EchoJay_NSLog(const char* msg)
 {
     NSLog(@"%s", msg != nullptr ? msg : "(null)");
+    // 21p item 4 (23 Sep 2026): and into the plugin's OWN rolling log, because the unified store dropped every
+    // EchoJay line of the session that mattered (23 Sep noon) and the answer had to be reasoned instead of read.
+    echojay::FileLog::instance().write (msg != nullptr ? msg : "(null)");
 }
 
 static ECHOJAY_CLIP_CLASS* NativeClip2_findContainer(NSView* peer)

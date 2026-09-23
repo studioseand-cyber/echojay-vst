@@ -1,4 +1,5 @@
 #include "EedLevelEditor.h"
+#include "EchoJayReadingGate.h"   // 21p item 1: the panel shows an em dash, never a floor number
 namespace { constexpr int kDefaultW = 300, kDefaultH = 150 + 4 * 18 + 12; }
 using C = echojay::device::Colours;
 EedLevelEditor::EedLevelEditor (EedLevelProcessor& p) : DeviceEditorBase (p, "LEVEL", kDefaultW, kDefaultH), proc_ (p)
@@ -31,11 +32,17 @@ void EedLevelEditor::timerCallback()
     {   const juce::ScopedValueSetter<bool> g (suppressCallbacks_, true);
         const double v = proc_.getParamValue (EedLevelProcessor::kGainDb);
         if (std::abs (gainKnob_.getRealValue() - v) > 0.005) gainKnob_.setRealValue (v); }
+    // 21p item 1 (23 Sep 2026): a figure that did not pass the validity gate is shown as an em dash, NEVER as the
+    // floor number. "-245.5 LUFS-S" is silence wearing the costume of a measurement, and it is what made a bad
+    // decision look like a reading; the card now says there was none.
     auto fmt = [] (const echojay::LevelTally::Snapshot& s, const juce::String& tag)
     {
+        const auto dash = echojay::ReadingGate::noReadingText();
+        const bool lufsOk = std::isfinite (s.shortTermDb) && s.shortTermDb > echojay::ReadingGate::kFloorLufs;
+        const bool tpOk   = std::isfinite (s.truePeakDb)  && s.truePeakDb  > echojay::ReadingGate::kFloorTruePeakDb;
         juce::String t (tag);
-        t += std::isfinite (s.shortTermDb) ? juce::String (s.shortTermDb, 1) + " LUFS-S" : juce::String ("-- LUFS-S");
-        t += "  " + (s.truePeakDb > -150.0f ? juce::String (s.truePeakDb, 1) + " dBTP" : juce::String ("-- dBTP"));
+        t += lufsOk ? juce::String (s.shortTermDb, 1) + " LUFS-S" : dash + " LUFS-S";
+        t += "  " + (tpOk ? juce::String (s.truePeakDb, 1) + " dBTP" : dash + " dBTP");
         return t;
     };
     inLabel_.setText (fmt (proc_.inputLevels(), inTag()), juce::dontSendNotification);

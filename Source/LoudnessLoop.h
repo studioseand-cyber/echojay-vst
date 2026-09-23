@@ -31,6 +31,7 @@
 #include <vector>
 #include <algorithm>
 #include "ChainHost.h"
+#include "EchoJayReadingGate.h"   // 21p item 1: the one validity gate
 #include "EedLimiterProcessor.h"
 #include "EedLevelProcessor.h"
 #include "EedDeviceRegistry.h"
@@ -510,10 +511,27 @@ public:
             // unity (-(out - in) short-term, +-12 dB, kept slots untouched) BEFORE the proposal - the loop then works on a unity chain
             auto sumTrims = [this] { float t = 0.0f; for (int i = 0; i < host_.getNumSlots(); ++i) t += host_.getSlotTrimDb (i); return t; };
             const float trimsBefore = sumTrims();
-            juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl);
+            // 21p item 1: the transport state travels WITH the request. A trim is never derived from a reading taken
+            // while the transport was stopped, and the trim pass is not left to guess.
+            juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl, isPlaying ? isPlaying() : true);
             for (const auto& l : tl) log ("unity trim: " + l);
             trimDeltaDb_ = sumTrims() - trimsBefore;   // what the chain output moved by, after this window measured it
             if (changed > 0) log ("unity trims changed: " + juce::String (changed) + " (chain output moves " + juce::String (trimDeltaDb_, 1) + " dB)"); }
+        {   // 21p item 2: the per-slot picture the Listen card shows, and the flags by name
+            for (const auto& l : host_.listenCardLines()) log ("slot picture: " + l);
+        }
+        // 21p item 1: the loop's OWN reading goes through the same gate. A window that passed the count floor can
+        // still be silence at the chain output (a muted send, a stopped transport between ticks): it is "no reading".
+        {
+            const auto g = echojay::ReadingGate::check (measured, out.truePeakDb, isPlaying ? isPlaying() : true, out.heardSeconds);
+            if (! g.valid)
+            {
+                log ("no reading: " + g.why + " - nothing applied");
+                state_ = State::hold; stopTimer();
+                emit ("No reading - " + g.why + ". Play the loudest part and tap Listen again.", -1.0f, false, false, Bubble::Kind::info, { "Listen" });
+                return;
+            }
+        }
         // the loop's opening gain assumes a UNITY chain: the window measured the un-trimmed chain, so the figures it proposes from carry the trims just applied
         proposeFrom (measured + trimDeltaDb_, out.truePeakDb + trimDeltaDb_);
     }

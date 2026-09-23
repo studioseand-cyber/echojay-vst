@@ -1853,6 +1853,7 @@ private:
             bool selected = false;
             bool popoutOnly = false;   // editor opens in a floating window
             juce::String trimText;     // 21m ruling 2: "-2.3 dB match" / "level kept" (from the slot's trim atomic, via SlotInfo)
+            juce::String pictureText;  // 21p item 2: "in -5.2 / out -5.1 dBTP - GR 1.8" or "no reading", measured at Listen
             bool keepLevel = false;    // 21m ruling 2: the per-slot "keep this plugin's level" flag
             // 21m ruling 3: on a borrowed or held remote rack the toggle is GREYED with a note, never a silent no-op
             // (the transport op is owed). The pure menu state, so the guard reads what the popup would show.
@@ -1952,6 +1953,13 @@ private:
                     g.setColour(Card::nameOn.withAlpha(0.8f));
                     g.setFont(juce::Font(juce::FontOptions(7.0f)));
                     g.drawText(trimText, 2, 39, getWidth() - 4, 8, juce::Justification::centred, true);
+                }
+                if (pictureText.isNotEmpty() && ! bypassed)
+                {   // 21p item 2: the per-slot picture from the last Listen - amber when the slot is over a line
+                    const bool flagged = pictureText.contains("HOT") || pictureText.contains("WORKING");
+                    g.setColour(flagged ? juce::Colour(0xfff59e0b) : Card::nameOn.withAlpha(0.55f));
+                    g.setFont(juce::Font(juce::FontOptions(6.5f)));
+                    g.drawText(pictureText, 1, 47, getWidth() - 2, 8, juce::Justification::centred, true);
                 }
             }
 
@@ -2853,7 +2861,8 @@ private:
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
                 bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
-                bl->trimText  = slotInfos[(size_t)i].trimText;    // 21m ruling 2
+                bl->trimText    = slotInfos[(size_t)i].trimText;    // 21m ruling 2
+                bl->pictureText = slotInfos[(size_t)i].pictureText; // 21p item 2
                 bl->keepLevel = slotInfos[(size_t)i].keepLevel;
                 bl->keepAvailable = keepLevelAvailable;   // 21m ruling 3
                 bl->onKeepLevel = [this, ci](bool k) { if (onSlotKeepLevel) onSlotKeepLevel(ci, k); };
