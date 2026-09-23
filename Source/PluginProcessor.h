@@ -953,6 +953,10 @@ public:
     bool shouldAutoFeedback() const { return autoFeedbackReady.exchange(false); }
     bool isAudioSilent() const { return audioSilent.load(); }
     bool isTransportPlaying() const { return transportPlaying.load(); }
+    // 21p item 1 (23 Sep 2026): whether the HOST has told us anything about its transport at all. A host that never
+    // publishes a play head (and a harness) must not be read as "stopped" - the gate refuses a reading taken while
+    // the transport is KNOWN to be stopped, and says nothing about one it cannot see.
+    bool isTransportKnown() const { return transportKnown.load(); }
     LoudnessLoop& loudnessLoop() noexcept { return loudnessLoop_; }
 
     // Chat history — stored here so it persists when the editor is destroyed/recreated
@@ -1322,6 +1326,7 @@ private:
     // Silence detection (triggers auto-stop when DAW stops)
     std::atomic<bool> audioSilent { true };
     std::atomic<bool> transportPlaying { false };
+    std::atomic<bool> transportKnown   { false };   // 21p item 1: set the first time a play head answers
     int latLogBlocks_ = 0;   // round 49: blocks still to log after a play start (EJ_LATENCY_LOG builds only)
     bool wasTransportPlaying = false;
     int silenceCounter = 0;

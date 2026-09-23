@@ -430,6 +430,7 @@ EchoJayProcessor::EchoJayProcessor()
     selfKeyEngine_.setLiveChromaEnabled(false);
     selfKeyWorker_.startThread();
     loudnessLoop_.isPlaying = [this] { return isTransportPlaying(); };   // ruling G
+    loudnessLoop_.transportKnown = [this] { return isTransportKnown(); };   // 21p item 1: unknown never blocks
     startTimer(1000);
 }
 
@@ -665,6 +666,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             }
 #endif
             transportPlaying.store(playing);
+            transportKnown.store(true);   // 21p item 1: the host has spoken, so "stopped" now means stopped
 
             // Self key scheduler (§6.1/§5.4): a position landing far from
             // where the last block left off is a section jump — the next

@@ -101,6 +101,9 @@ public:
     std::function<void (const Bubble&)> onBubble;                          // message thread
     std::function<void (const juce::String&)> logLine;                      // "EJLoudness: ..." (item 5); the editor wires EchoJay_NSLog
     std::function<bool()>               isPlaying  { [] { return true; } };
+    // 21p item 1: does the host publish a transport at all? Default FALSE = unknown, and unknown never blocks - a
+    // host with no play head must not be read as "stopped" forever. Only a transport the host says is stopped does.
+    std::function<bool()>               transportKnown { [] { return false; } };
     std::function<void (float beforeDb, float afterDb)> onGainWritten;      // 21n item 3: every loop write of the Level gain (an undo entry)
     std::function<bool()>               knobGestureOpen { [] { return echojay::knobGestureOpen(); } };
     std::function<juce::int64()>        nowMs      { [] { return juce::Time::currentTimeMillis(); } };
@@ -513,7 +516,7 @@ public:
             const float trimsBefore = sumTrims();
             // 21p item 1: the transport state travels WITH the request. A trim is never derived from a reading taken
             // while the transport was stopped, and the trim pass is not left to guess.
-            juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl, isPlaying ? isPlaying() : true);
+            juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl, rollingOrUnknown());
             for (const auto& l : tl) log ("unity trim: " + l);
             trimDeltaDb_ = sumTrims() - trimsBefore;   // what the chain output moved by, after this window measured it
             if (changed > 0) log ("unity trims changed: " + juce::String (changed) + " (chain output moves " + juce::String (trimDeltaDb_, 1) + " dB)"); }
@@ -523,7 +526,7 @@ public:
         // 21p item 1: the loop's OWN reading goes through the same gate. A window that passed the count floor can
         // still be silence at the chain output (a muted send, a stopped transport between ticks): it is "no reading".
         {
-            const auto g = echojay::ReadingGate::check (measured, out.truePeakDb, isPlaying ? isPlaying() : true, out.heardSeconds);
+            const auto g = echojay::ReadingGate::check (measured, out.truePeakDb, rollingOrUnknown(), out.heardSeconds);
             if (! g.valid)
             {
                 log ("no reading: " + g.why + " - nothing applied");
@@ -704,6 +707,13 @@ public:
         if (kind != Bubble::Kind::progress) ++bubbleCount_;
         log ("bubble: " + text + (pills.isEmpty() ? juce::String() : " [" + pills.joinIntoString (" | ") + "]"));
         if (onBubble) { Bubble b; b.text = text; b.progress = progress; b.replace = replace; b.final = final; b.kind = kind; b.pills = pills; onBubble (b); }
+    }
+    /// 21p item 1: rolling, or a host that has never said. Only a KNOWN-stopped transport fails the gate.
+    bool rollingOrUnknown() const
+    {
+        const bool known = transportKnown ? transportKnown() : false;
+        if (! known) return true;
+        return isPlaying ? isPlaying() : true;
     }
     void log (const juce::String& s) const { if (logLine) logLine ("EJLoudness: " + s); }
     static juce::String fmt (float v) { return std::isfinite (v) ? juce::String (v, 1).replace ("-0.0", "0.0") : juce::String ("n/a"); }

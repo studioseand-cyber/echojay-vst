@@ -677,7 +677,8 @@ int main()
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
         calibrate (r.proc, r.prog, -18.0f); r.loop.armFromChain();
         r.h.setSlotTrimDb (1, 0.0f);
-        juce::StringArray lines; const int changed = r.h.measureUnityTrims (0, 2, &lines, /*transportRolling*/ false);
+        r.loop.isPlaying = [] { return false; }; r.loop.transportKnown = [] { return true; };   // the host SAYS it is stopped
+        juce::StringArray lines; const int changed = r.h.measureUnityTrims (0, 2, &lines, r.loop.rollingOrUnknown());
         check (changed == 0 && std::abs (r.h.getSlotTrimDb (1)) < 0.01f, "V1. transport stopped: NO trim is written  (RED as it stood: the pass accepted any finite reading)", "changed " + juce::String (changed) + " trim " + f1 (r.h.getSlotTrimDb (1)));
         check (lines.joinIntoString ("|").contains ("NO READING") && lines.joinIntoString ("|").contains ("transport"), "V1. ...and the line says why", lines.joinIntoString (" | ").substring (0, 120));
         check (! r.h.slotPicture (1).valid && r.h.slotPictureText (1) == "no reading", "V1. the slot's picture is \"no reading\", never a floor number", r.h.slotPictureText (1));
@@ -688,6 +689,11 @@ int main()
         juce::StringArray lines; const int changed = r.h.measureUnityTrims (0, 2, &lines, true);
         check (changed == 0 && ! r.h.slotPicture (1).valid, "V1b. silence with the transport rolling: no trim, no picture  (RED as it stood: -245 is finite, so a trim was written from it)", "changed " + juce::String (changed) + " | " + lines.joinIntoString (" | ").substring (0, 110));
         check (echojay::ReadingGate::kFloorLufs == -60.0f && echojay::ReadingGate::kFloorTruePeakDb == -60.0f, "V1b. the floors are -60 LUFS-S and -60 dBTP");
+        { LoudnessLoop l2 (r.h);
+          l2.isPlaying = [] { return false; }; l2.transportKnown = [] { return false; };
+          check (l2.rollingOrUnknown(), "V1c. a host that never publishes a transport is UNKNOWN, not stopped: it does not block the loop");
+          l2.transportKnown = [] { return true; };
+          check (! l2.rollingOrUnknown(), "V1c. ...and a host that SAYS stopped does"); }
     }
     {   // (2) + (3): a real window gives every slot a picture, and a slot driven over -3 dBTP gets a PRE-trim
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
