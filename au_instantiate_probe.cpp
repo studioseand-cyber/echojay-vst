@@ -12,6 +12,8 @@
 // is the caller's job to time out and kill — this program never dismisses one.
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
+#include <set>
+#include <vector>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -55,7 +57,15 @@ int main (int argc, char** argv)
     // `positions`. Same rules as list mode: no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>".
     const bool listParams = argc >= 5 && juce::String (argv[4]) == "--list-params";
     const bool listSteps  = argc >= 6 && juce::String (argv[4]) == "--list-steps";
-    const bool listMode = listParams || listSteps;
+    // 21o item 5 (23 Sep 2026): "--sample-text <index>" = SAMPLED-TEXT MODE. A plugin may hold a stepped control while
+    // telling the host it is continuous - Auto-Tune Pro reports numSteps 2147483647 and isDiscrete 0 for Scale, Key and
+    // Detune, so --list-steps refuses them and the map can only carry a bare numeric range. This mode sweeps the
+    // NORMALISED range at 1/512 and records every value at which the DISPLAY TEXT changes; a sweep that yields a finite
+    // set of distinct texts (2..128) is a stepped control with those names, whatever numSteps claims. Prints one line
+    // per run: "pos<TAB>n<TAB>normCentre<TAB>normLo<TAB>normHi<TAB>text", then "distinct<TAB>N". Same rules as the other
+    // list modes: no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>".
+    const bool sampleText = argc >= 6 && juce::String (argv[4]) == "--sample-text";
+    const bool listMode = listParams || listSteps || sampleText;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -96,6 +106,39 @@ int main (int argc, char** argv)
         const auto& ps = inst->getParameters();
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
+        if (sampleText)
+        {
+            const int idx = atoi (argv[5]);
+            auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
+            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            constexpr int kSamples = 513;        // 1/512 spacing, endpoints included
+            constexpr int kMaxTexts = 128;
+            const float before = q->getValue();
+            struct Run { juce::String text; float lo = 0.0f, hi = 0.0f; };
+            std::vector<Run> runs;
+            for (int i = 0; i < kSamples; ++i)
+            {
+                const float norm = (float) i / (float) (kSamples - 1);
+                q->setValueNotifyingHost (norm);
+                for (int k = 0; k < 3; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.004, false); }   // the AU's text follows on its own run loop
+                const auto t = clean (q->getCurrentValueAsText().trim());
+                if (! runs.empty() && runs.back().text == t) runs.back().hi = norm;
+                else                                        runs.push_back ({ t, norm, norm });
+                if ((int) runs.size() > kMaxTexts + 1) break;   // a continuous read-out: stop early, it is not a stepped control
+            }
+            q->setValueNotifyingHost (before);
+            // runs are contiguous by construction; distinct texts is what decides
+            std::set<juce::String> distinct;
+            for (const auto& r : runs) distinct.insert (r.text);
+            if (distinct.size() < 2 || distinct.size() > (size_t) kMaxTexts)
+            { std::printf ("refused not a named control (%d distinct text(s) over %d samples)\n", (int) distinct.size(), kSamples); std::fflush (stdout); std::_Exit (3); }
+            int n = 0;
+            for (const auto& r : runs)
+                std::printf ("pos\t%d\t%.6f\t%.6f\t%.6f\t%s\n", ++n, (r.lo + r.hi) * 0.5f, r.lo, r.hi, r.text.toRawUTF8());
+            std::printf ("distinct\t%d\n", (int) distinct.size());
+            std::fflush (stdout);
+            std::_Exit (0);
+        }
         if (listSteps)
         {
             const int idx = atoi (argv[5]);
@@ -116,7 +159,12 @@ int main (int argc, char** argv)
         for (int i = 0; i < ps.size(); ++i)
         {
             auto* q = ps[i]; if (q == nullptr) continue;
-            std::printf ("%d\t%s\t%s\t%d\t%d\n", i, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8(), q->getNumSteps(), q->isDiscrete() ? 1 : 0);
+            // 21o item 6: two more columns, additive - automatable and meta. On an AudioUnit JUCE sets automatable from
+            // the AU's own flags ((flags & kAudioUnitParameterFlag_NonRealTime) == 0), which is exactly the line between a
+            // settable control and a read-out: the PuigChild 660's six controls are Readable+Writable, its 69 LED / VU
+            // rows are "Not Real Time, Readable" and nothing else (auval, 23 Sep).
+            std::printf ("%d\t%s\t%s\t%d\t%d\t%d\t%d\n", i, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8(), q->getNumSteps(), q->isDiscrete() ? 1 : 0,
+                         q->isAutomatable() ? 1 : 0, q->isMetaParameter() ? 1 : 0);
         }
         std::fflush (stdout);
         std::_Exit (0);   // a third-party AU's teardown is not this mode's subject
