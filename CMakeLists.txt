@@ -1074,3 +1074,13 @@ if(ECHOJAY_BUILD_STREAM_TESTS)
         juce::juce_core
         juce::juce_recommended_config_flags)
 endif()
+
+# ============================================================================================================
+#  The guard suite as one test tree (21q, 23 Sep 2026). OFF by default so a normal plugin build is untouched;
+#  a guard run configures its own build dir with -DEJ_BUILD_GUARDS=ON. See tools/tests/CMakeLists.txt.
+# ============================================================================================================
+option(EJ_BUILD_GUARDS "Build the guard suite as CMake targets and register them with ctest" OFF)
+if(EJ_BUILD_GUARDS)
+    enable_testing()          # at the TOP level, or ctest at the build root finds no tests in the subdirectory
+    add_subdirectory(tools/tests)
+endif()
