@@ -6567,6 +6567,12 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::ifstream fp ("Source/PluginProcessor.cpp");
             std::stringstream sp; sp << fp.rdbuf();
             const auto pc = codeOnly (juce::String (sp.str()));
+            // OPENING CONTROL: see cg PIN7's note. A text pin that reads an
+            // empty string reports green on every ! contains and on nothing
+            // else, so each buffer says first that it IS the file it thinks.
+            check (pc.length() > 10000 && pc.contains ("EchoJayProcessor::startCapture"),
+                   "cg PIN6: PluginProcessor.cpp was read and is the real file",
+                   "len=" + juce::String (pc.length()));
             check (pc.contains ("const auto sub = activeOutputSubstitution();")
                    && pc.contains ("if (sub != echojay::OutputSubstitution::None)"),
                    "cg PIN6: startCapture asks the predicate");
@@ -6581,6 +6587,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::ifstream fe ("Source/PluginEditor.cpp");
             std::stringstream se; se << fe.rdbuf();
             const auto ec = codeOnly (juce::String (se.str()));
+            check (ec.length() > 10000 && ec.contains ("EchoJayEditor::timerCallback"),
+                   "cg PIN6: PluginEditor.cpp was read and is the real file",
+                   "len=" + juce::String (ec.length()));
             check (ec.contains ("chainListPanel.statusText = echojay::captureRefusalReason(sub);"),
                    "cg PIN6: the button states the reason rather than failing silently");
             // The processor cannot see codec mode by itself. Three sites keep
@@ -6680,6 +6689,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 // itself: real code, it survives comment stripping, and it
                 // occurs exactly ONCE in the file, which was verified before
                 // it was used rather than after it failed.
+                check (pc.length() > 10000 && pc.contains ("EchoJayProcessor::processBlock"),
+                       "cg PIN7: PluginProcessor.cpp was read and is the real file",
+                       "len=" + juce::String (pc.length()));
                 const int blockAt = pc.indexOf ("playing != wasTransportPlaying");
                 check (blockAt >= 0,
                        "cg PIN7: the sync block was found by a CODE anchor, so this sweep is "
@@ -7941,6 +7953,145 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                 check (newReferenceId().startsWith ("r_"),
                        "ri PIN28: while entry ids keep theirs, so an id says what it points at");
             }
+        }
+
+        // cg PIN8 -- SELECTING A SLOT IS NOT ENOUGH TO HEAR IT.
+        //
+        // THE REGRESSION THIS EXISTS FOR. The A/B buttons stored cmpAudible
+        // and nothing else. That was correct until open list 215, which made a
+        // slot roll only when a gesture asked it to; after it, pressing B
+        // selected a stream nobody had started and the ramp target stayed at
+        // zero. THE SUITE COULD NOT SEE IT: the buttons are in the editor and
+        // the gate links harnesses and never the editor (open list 158). The
+        // rule they broke is the one thing that CAN be pinned, so it is.
+        {
+            using namespace echojay;
+
+            // A BOOLEAN VIEW OF THE GAIN, so the table below does not compare
+            // floats with ==. The function returns exactly 0.0f or 1.0f today,
+            // but a pin that would break if it ever returned 0.999f is pinning
+            // the representation rather than the rule.
+            auto heard = [] (bool rolling, int slot, int audible, bool stopAt)
+            { return cmpMixTargetGain (rolling, slot, audible, stopAt) > 0.5f; };
+
+            // THE FIRST CONDITION IS THE DEFECT. Audible but not rolling is
+            // silence, and that is the whole of what the user reported.
+            check (! heard (false, 1, 1, false),
+                   "cg PIN8: a slot that is SELECTED but not rolling has target 0, which is the "
+                   "silence the A/B buttons produced after 215");
+            check (heard (true, 1, 1, false),
+                   "cg PIN8: and rolling AND selected is heard");
+
+            // THE CONTROL. Without it both checks above pass against a
+            // function that always returns 0.
+            check (heard (true, 0, 0, false) && heard (true, 1, 1, false),
+                   "cg PIN8: CONTROL, either slot can be the heard one, so the zero checks are "
+                   "checking a rule and not a function that refuses everything");
+
+            check (! heard (true, 0, 1, false) && ! heard (true, 1, 0, false),
+                   "cg PIN8: a rolling slot that is NOT the selected one is silent, which is what "
+                   "keeps the other stream in time without being heard");
+            check (! heard (true, 1, 1, true),
+                   "cg PIN8: and a stream fading out to disengage is not brought back by being "
+                   "selected");
+            check (! heard (true, 0, -1, false) && ! heard (true, 1, -1, false),
+                   "cg PIN8: -1 is nothing audible, for both slots");
+
+            // EXHAUSTIVE OVER THE THREE BOOLEANS AND BOTH SLOTS. Twelve rows,
+            // small enough to enumerate rather than sample.
+            int agreed = 0, ones = 0;
+            for (int m = 0; m < 12; ++m)
+            {
+                const bool rolling = (m & 1) != 0;
+                const bool stopAt  = (m & 2) != 0;
+                const int  slot    = (m & 4) != 0 ? 1 : 0;
+                const int  audible = (m / 8) != 0 ? slot : 1 - slot;
+                const bool expected = (rolling && slot == audible && ! stopAt);
+                if (heard (rolling, slot, audible, stopAt) == expected) ++agreed;
+                if (expected) ++ones;
+            }
+            check (agreed == 12, "cg PIN8: all twelve combinations agree",
+                   juce::String (agreed));
+            check (ones > 0 && ones < 12,
+                   "cg PIN8: and the table is not all yes or all no",
+                   juce::String (ones));
+        }
+
+        // cg PIN9 -- THE BUTTONS ARE A GESTURE, BY TEXT.
+        //
+        // cg PIN8 pins the RULE; nothing can pin that the editor obeys it,
+        // because the gate never links the editor. This is the nearest
+        // available: that the handlers call the gesture path at all. It is
+        // open list 217's shape and its limit is the same, presence and not
+        // reachability, which is stated rather than left to be found.
+        {
+            std::ifstream fe ("Source/PluginEditor.cpp");
+            std::stringstream se; se << fe.rdbuf();
+            const auto pe = codeOnly (juce::String (se.str()));
+
+            check (pe.length() > 10000 && pe.contains ("EchoJayEditor::makeCompareSlotAudible"),
+                   "cg PIN9: PluginEditor.cpp was read and the gesture path exists",
+                   "len=" + juce::String (pe.length()));
+            check (pe.contains ("if (! makeCompareSlotAudible (0)) processorRef.cmpAudible.store(0);")
+                   && pe.contains ("if (! makeCompareSlotAudible (1)) processorRef.cmpAudible.store(1);"),
+                   "cg PIN9: BOTH A/B handlers go through it, so selecting a side grants intent "
+                   "rather than only routing");
+            check (pe.contains ("makeCompareSlotAudible (slotIdx);"),
+                   "cg PIN9: and the SEEK uses the same path, so the two gestures cannot drift");
+            check (pe.contains ("if (! s.loaded.load()) return false;"),
+                   "cg PIN9: which refuses a slot with no stream behind it, so intent is never "
+                   "granted to an empty or Live slot");
+
+            // THE DISPLAY READS THE AUDIBLE RULE, NOT THE SELECTION. This is
+            // the divergence two reports were: B lit while the live signal
+            // played, and B still lit after SYNC was unpressed.
+            check (pe.contains ("echojay::cmpMixTargetGain (st.playing.load(), sl, aud,"),
+                   "cg PIN9: the display derives what is HEARD from cmpMixTargetGain");
+            check (pe.contains ("const int heard = audibleCompareSlot();")
+                   && ! pe.contains ("aud == 0 ? juce::Colour(0xff1a2d4a) : C::bg3"),
+                   "cg PIN9: and lights from it, with the old cmpAudible-only test GONE rather "
+                   "than left beside it");
+            check (pe.contains ("const bool aIsLive = (compareTop_.kind == CompareSlotState::Kind::Live);"),
+                   "cg PIN9: the nothing-audible case lights A only when A is LIVE, because a "
+                   "user can put a capture in A and lighting it would name the wrong source");
+            // THE FRESH-OPEN DEFAULT IS A DECISION AND IS MADE IN ONE PLACE.
+            check (pe.contains ("    processorRef.silenceCompareStream (0);\n    processorRef.silenceCompareStream (1);\n    processorRef.cmpAudible.store (-1);"),
+                   "cg PIN9: opening the plugin silences both slots and selects neither, so the "
+                   "live signal is a decision rather than an accident of nothing rolling");
+
+            // THE BAR RECOMPUTES ON THE TIMER. Three of the places that change
+            // what is audible run on the AUDIO THREAD and can never call a UI
+            // function, so an event-driven-only bar is structurally unable to
+            // stay correct. Guarded, or it repaints twenty times a second.
+            check (pe.contains ("const int  nowHeard   = audibleCompareSlot();")
+                   && pe.contains ("|| nowPlaying0 != lastSlotPlaying_[0] || nowPlaying1 != lastSlotPlaying_[1])"),
+                   "cg PIN9: the timer recomputes what is audible AND each slot's playing flag, "
+                   "so a stop made on the audio thread cannot leave either control stale");
+            check (pe.contains ("            updateComparePlayBtns();"),
+                   "cg PIN9: and refreshes through updateComparePlayBtns, which cascades to the "
+                   "bar, so ONE guard covers both rather than two conditions on one repaint");
+            // THE SENTINEL IS A MEMBER AND MEMBERS LIVE IN THE HEADER. This
+            // read PluginEditor.cpp and could never have passed: the string
+            // appears 0 times there and once in PluginEditor.h. A text pin
+            // that looks in the wrong file is the same defect as one that
+            // anchors on a stripped comment, so it gets its own control.
+            std::ifstream fh ("Source/PluginEditor.h");
+            std::stringstream sh; sh << fh.rdbuf();
+            const auto ph = codeOnly (juce::String (sh.str()));
+            check (ph.length() > 10000 && ph.contains ("class EchoJayEditor"),
+                   "cg PIN9: PluginEditor.h was read, so the header check below is reading "
+                   "something",
+                   "len=" + juce::String (ph.length()));
+            check (ph.contains ("int  lastAudibleSlot_  = -2;"),
+                   "cg PIN9: with a never-computed sentinel, so the first tick always paints");
+
+            // SLOT A DEFAULTS TO LIVE, THROUGH THE PICKER'S OWN TWO LINES.
+            check (pe.contains ("compareTop_.kind  = CompareSlotState::Kind::Live;\n        compareTop_.label = \"Live signal\";"),
+                   "cg PIN9: an empty slot A becomes the live signal, with the label the picker "
+                   "uses rather than a second spelling of it");
+            check (! pe.contains ("compareBot_.kind  = CompareSlotState::Kind::Live;"),
+                   "cg PIN9: and slot B gets NO default, because an empty reference side is a "
+                   "real state meaning no reference has been chosen");
         }
 
         // ri PIN31 -- A COMPARE SLOT THAT OUTLIVES THE EDITOR.
@@ -13940,6 +14091,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             std::ifstream fp ("Source/PluginProcessor.cpp");
             std::stringstream sp; sp << fp.rdbuf();
             const auto pc = codeOnly (juce::String (sp.str()));
+            check (pc.length() > 10000 && pc.contains ("EchoJayProcessor::getStateInformation"),
+                   "mr PIN15 (text pin): PluginProcessor.cpp was read and is the real file",
+                   "len=" + juce::String (pc.length()));
             const juce::String writeLine ("m->setProperty(\"oversCount\", s.averagedData.oversCount);");
             const juce::String readLine  ("s.averagedData.oversCount = mo->hasProperty(\"oversCount\")");
             check (pc.contains (writeLine) && pc.contains (readLine) && pc.contains ("? (int)mo->getProperty(\"oversCount\") : -1;"),
@@ -14509,6 +14663,9 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             const auto frac = functionBody (src2, "float EchoJayEditor::compareStreamFrac");
             const auto seek = functionBody (src2, "void EchoJayEditor::seekCompareStream");
 
+            check (src2.length() > 10000 && src2.contains ("EchoJayEditor::seekCompareStream"),
+                   "mr PIN28: PluginEditor.cpp was read and is the real file",
+                   "len=" + juce::String (src2.length()));
             check (frac.isNotEmpty() && seek.isNotEmpty(),
                    "mr PIN28: the playhead and the seek both have bodies to read");
             check (frac.contains ("playbackPos") && frac.contains ("sampleCount"),
@@ -14517,10 +14674,24 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
             check (! frac.contains ("Time::") && ! frac.contains ("getMillisecond")
                    && ! frac.contains ("elapsed"),
                    "mr PIN28: and it consults no clock, so it cannot drift from the audio");
-            check (seek.contains ("cmpMutex") && seek.contains ("playing.store")
-                   && seek.contains ("cmpAudible.store"),
-                   "mr PIN28: and a seek sets the position, plays and makes that side audible "
-                   "under the mutex, which is Compare's own gesture and not a second one");
+            // REWRITTEN 23 Sep. THE BEHAVIOUR DID NOT MOVE, ONLY THE LINE DID.
+            // This read:
+            //
+            //   seek.contains ("cmpMutex") && seek.contains ("playing.store")
+            //     && seek.contains ("cmpAudible.store")
+            //
+            // The seek still does all three. Two of them now happen inside
+            // makeCompareSlotAudible, which the A/B buttons call as well: one
+            // gesture path instead of two copies, which is the point of the
+            // change. So the position and the lock are still asserted HERE,
+            // and the start-and-make-audible half is asserted THROUGH the
+            // function, whose existence and whose refusal of an unloaded slot
+            // cg PIN9 pins.
+            check (seek.contains ("cmpMutex") && seek.contains ("playbackPos")
+                   && seek.contains ("makeCompareSlotAudible"),
+                   "mr PIN28: and a seek sets the position under the mutex and makes that side "
+                   "audible THROUGH the shared gesture path, which is Compare's own gesture "
+                   "and not a second one");
         }
 
         // mr PIN29 -- A LIVE MIX SIDE YIELDS NO TRANSPORT AND SAYS WHY. Same

@@ -834,7 +834,11 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
             auto& s = cmpStream[sl];
             if (!s.loaded.load() || s.sampleCount <= 0) continue;
             const bool rolling = s.playing.load();
-            const float target = (rolling && sl == audible && !s.stopAtZero.load()) ? 1.0f : 0.0f;
+            // THE RULE IS A FUNCTION NOW, so the suite can pin it: the
+            // editor's A/B buttons are unreachable from the gate, and this is
+            // the line their regression showed up in. See cmpMixTargetGain.
+            const float target = echojay::cmpMixTargetGain (rolling, sl, audible,
+                                                            s.stopAtZero.load());
             if (!rolling && s.monGain <= 0.0001f) continue;   // fully idle
 
             double ratio = (s.sampleRate > 0 && dawRate > 0) ? s.sampleRate / dawRate : 1.0;

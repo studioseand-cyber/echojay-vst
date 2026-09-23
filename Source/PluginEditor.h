@@ -167,6 +167,34 @@ private:
         playbackPos, is untouched and unrelated to this. */
     void silenceCompareStreams (const char* why);
 
+    /** MAKE A SLOT AUDIBLE, AS A GESTURE. The one path for "the user asked to
+        hear this slot": it grants intent, starts the stream and routes audio
+        to it. seekCompareStream and the A/B buttons both call it, so the two
+        cannot drift into meaning different things.
+
+        RETURNS FALSE AND GRANTS NOTHING for a slot with no stream behind it,
+        which is what an empty or Live slot is. */
+    bool makeCompareSlotAudible (int slotIdx);
+
+    /** WHICH SLOT YOU ARE ACTUALLY HEARING, or -1 for none.
+
+        NOT cmpAudible, WHICH IS ONLY WHAT IS SELECTED. The two diverge the
+        moment a selected slot is not rolling, and the display then claims B
+        while the live signal plays. This mirrors the audio block's own test,
+        including the loaded and sampleCount guards it skips a slot on, so the
+        button and the ramp cannot disagree. */
+    int audibleCompareSlot() const;
+
+    /** THE BAR RECOMPUTES, IT IS NOT NOTIFIED. What is audible changes on the
+        AUDIO THREAD in three places that can never call a UI function: the
+        transport sync stopping a stream when the host stops, the self-stop at
+        the end of a fade, and the sync's own start. An event-driven bar is
+        therefore structurally unable to stay correct, not merely missing a
+        call. -2 is "never computed", so the first tick always paints. */
+    int  lastAudibleSlot_  = -2;      // -2 = never computed, so tick one paints
+    bool lastASlotWasLive_ = false;
+    bool lastSlotPlaying_[2] = { false, false };
+
     /** THE SLOT IDENTITY, ACROSS A WINDOW CLOSE. TWO CALL SITES ONLY, which
         is why this shape was chosen over moving the members to the processor:
         compareTop_ and compareBot_ are mentioned 63 times in this file with 25

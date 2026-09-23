@@ -123,6 +123,27 @@ inline bool cmpSyncMayStart (bool syncOn, bool bothCaptures, bool loaded,
     return syncOn && ! bothCaptures && loaded && userWantsRolling;
 }
 
+/** THE MONITOR RAMP'S TARGET FOR ONE SLOT: 1 when this slot should be heard.
+
+    THREE CONDITIONS, AND THE FIRST IS THE ONE THAT CAUGHT US. `audible` alone
+    is NOT enough: a slot that is selected but not ROLLING has target 0, so the
+    A/B button switches and the audio does not.
+
+    THAT IS EXACTLY WHAT HAPPENED. Before open list 215, the transport sync
+    started every loaded slot when the host rolled, so both were rolling and
+    A/B only chose which was heard. After 215 a slot rolls only if a gesture
+    asked it to, and the A/B buttons were not a gesture: they stored cmpAudible
+    and nothing else. The button switched; the target stayed at zero; the user
+    heard silence. Pinning the rule here is what would have caught it, because
+    the suite cannot reach the editor where the button lives.
+
+    stopAtZero is the fade-to-disengage: a stream on its way out is not coming
+    back in this block whatever else is true. */
+inline float cmpMixTargetGain (bool rolling, int slot, int audible, bool stopAtZero) noexcept
+{
+    return (rolling && slot == audible && ! stopAtZero) ? 1.0f : 0.0f;
+}
+
 /** Which substitution is active, most specific first.
 
     PRECEDENCE FOLLOWS THE AUDIO PATH, not a preference. A/B assigns into the

@@ -1530,15 +1530,34 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
 
         cmpABtn_.setButtonText("A");
         styleTBar(cmpABtn_);
+        // SELECTING A SIDE IS A GESTURE, NOT A ROUTING SWITCH.
+        //
+        // These used to store cmpAudible and nothing else, which was correct
+        // until open list 215: before it, the transport sync started EVERY
+        // loaded slot when the host rolled, so both were already rolling and
+        // A/B only chose which was heard. After 215 a slot rolls only if the
+        // user asked it to, so pressing B selected a stream nobody had
+        // started and the ramp target (rolling && sl == audible) stayed at
+        // zero. The button switched; the audio did not.
+        //
+        // THE OTHER SLOT KEEPS ROLLING, DELIBERATELY. Both streams advance and
+        // analyse every block and only the audible one is mixed, so leaving
+        // the silent one running is what keeps the two IN TIME: switching back
+        // to A must land where A would have been by now, not where it was left.
+        // Stopping it looks like an obvious tidy-up and would make every
+        // switch a comparison between two different points in the two files.
         cmpABtn_.onClick = [this] {
-            processorRef.cmpAudible.store(0);
+            if (! makeCompareSlotAudible (0)) processorRef.cmpAudible.store(0);
             updateTransportBar(); updateComparePlayBtns(); repaint();
         };
 
         cmpBBtn_.setButtonText("B");
         styleTBar(cmpBBtn_);
         cmpBBtn_.onClick = [this] {
-            processorRef.cmpAudible.store(1);
+            // The fallback store keeps the SELECTION honest for a slot with no
+            // stream, such as Live: the side is still selected and the meters
+            // still follow it, there is simply nothing to start.
+            if (! makeCompareSlotAudible (1)) processorRef.cmpAudible.store(1);
             updateTransportBar(); updateComparePlayBtns(); repaint();
         };
 
@@ -5169,6 +5188,31 @@ void EchoJayEditor::saveCompareSlotsToProcessor()
 
 void EchoJayEditor::restoreCompareSlotsFromProcessor()
 {
+    // ---- OPENING THE PLUGIN LEAVES YOU ON YOUR OWN MIX -------------------
+    //
+    // A DECISION, MADE HERE, RATHER THAN AN ACCIDENT OF NOTHING ROLLING.
+    // Until now the live signal was what you heard on a fresh open only
+    // because no stream happened to have been started, which is not the same
+    // as having decided it: cmpAudible is a processor member and SURVIVES a
+    // window close, so reopening could come back selecting a slot nobody had
+    // chosen this session.
+    //
+    // THE RESTORED SLOT STAYS RESTORED. silenceCompareStream stops playback
+    // and withdraws intent and touches neither `loaded` nor the buffer nor
+    // the position, so a reference in B is still there, still loaded, silent,
+    // and one press away. What must not happen is it being audible, or
+    // APPEARING to be, before the user asks for it.
+    //
+    // IT OVERRIDES THE PROJECT RESTORE DELIBERATELY. A project saved with B
+    // audible reopens with B loaded and silent, not playing. Forgetting which
+    // side you were on costs one press; reopening a project playing a
+    // reference over the mix is audio the user did not ask for, in a session
+    // they have just opened and are not yet looking at. cmpAudible is not in
+    // the blob and must not be added to it for the same reason.
+    processorRef.silenceCompareStream (0);
+    processorRef.silenceCompareStream (1);
+    processorRef.cmpAudible.store (-1);
+
     const auto entries = refBrowserEntries();
     for (int i = 0; i < 2; ++i)
     {
@@ -5210,6 +5254,33 @@ void EchoJayEditor::restoreCompareSlotsFromProcessor()
             default: break;
         }
     }
+
+    // ---- EMPTY IN SLOT A MEANS THE LIVE SIGNAL ---------------------------
+    //
+    // WITHOUT THIS THERE IS NOTHING TO MONITOR AND NOTHING TO SWITCH BACK TO.
+    // CompareSlotState defaults to Kind::Empty and nothing has ever set slot A
+    // to Live on open, so a fresh plugin came up with an empty monitoring side
+    // and the A button naming nothing.
+    //
+    // IT CANNOT OVERRIDE A DELIBERATE CHOICE, because emptying the monitoring
+    // slot is not a state a user can express as distinct from the live signal:
+    // both are the host's audio, unaltered. openCompareSlotMenu offers Live,
+    // captures and references and has NO "Empty" item, so Empty in A only ever
+    // arises from a fresh open or a restore that had nothing in it.
+    //
+    // THE SAME TWO LINES THE PICKER SETS (openCompareSlotMenu, result == 1),
+    // so the slot reads "Live signal" exactly as it does when chosen from the
+    // menu rather than being a second spelling of the same state.
+    if (compareTop_.kind == CompareSlotState::Kind::Empty)
+    {
+        compareTop_.kind  = CompareSlotState::Kind::Live;
+        compareTop_.label = "Live signal";
+    }
+
+    // SLOT B GETS NO DEFAULT, DELIBERATELY. An empty reference side is a REAL
+    // state: it means the user has not chosen a reference yet, and the bar's
+    // own "No references yet" invitation is the right thing to show.
+    // Defaulting it would invent a comparison nobody asked for.
 }
 
 void EchoJayEditor::silenceCompareStreams (const char* why)
@@ -7159,9 +7230,7 @@ void EchoJayEditor::seekCompareStream (int slotIdx, float fraction)
         //
         // So the sync may STOP freely and may START only what a gesture
         // already asked for. See echojay::cmpSyncMayStart.
-        s.userWantsRolling.store (true);
-        s.playing.store (true);
-        processorRef.cmpAudible.store (slotIdx);
+        makeCompareSlotAudible (slotIdx);
         // SYNC: mirror seek position to the other capture slot
         if (processorRef.cmpSyncToTransport.load() && bothSlotsAreCaptures())
         {
@@ -7252,6 +7321,54 @@ MeterEngine* EchoJayEditor::matchFastEngine (const CompareSlotState& slot, int s
         && processorRef.cmpStream[slotIdx].playing.load())
         return &processorRef.getCompareMeter (slotIdx);
     return nullptr;
+}
+
+int EchoJayEditor::audibleCompareSlot() const
+{
+    const int aud = processorRef.cmpAudible.load();
+    for (int sl = 0; sl < 2; ++sl)
+    {
+        const auto& st = processorRef.cmpStream[sl];
+        // THE SAME SKIP THE AUDIO BLOCK MAKES, and it is not decoration: a
+        // slot with no buffer or no samples is never mixed, so a display that
+        // ignored these would light a button for audio that cannot be heard.
+        if (! st.loaded.load() || st.sampleCount <= 0) continue;
+        if (echojay::cmpMixTargetGain (st.playing.load(), sl, aud,
+                                       st.stopAtZero.load()) > 0.5f)
+            return sl;
+    }
+    return -1;
+}
+
+bool EchoJayEditor::makeCompareSlotAudible (int slotIdx)
+{
+    if (slotIdx < 0 || slotIdx > 1) return false;
+    auto& s = processorRef.cmpStream[slotIdx];
+
+    // AN EMPTY SLOT GETS NOTHING. Intent on a slot with no buffer behind it
+    // would be a standing permission for the transport sync to "start" a
+    // stream that does not exist, and cmpAudible would point at silence while
+    // the button claimed otherwise. A Live slot is the same case: it is host
+    // passthrough with no cmpStream, which is why toggleComparePlay returns
+    // early for one.
+    if (! s.loaded.load()) return false;
+
+    // A GESTURE GRANTS INTENT. This is the same three lines seekCompareStream
+    // used inline, lifted here so the seek and the A/B buttons cannot drift
+    // into meaning different things.
+    //
+    // A PAUSE DOES NOT BLOCK IT, and the distinction is the whole of open list
+    // 215. What 215 closed was the HOST TRANSPORT starting audio with no
+    // gesture behind it: the DAW rolling says nothing about this reference,
+    // and letting it grant permission re-granted what a pause had just
+    // withdrawn. A PERSON PRESSING B IS A GESTURE ON THAT SLOT, exactly as
+    // clicking its waveform to seek is. Selecting a side to hear and being
+    // given silence because of an earlier pause is a control that lies about
+    // what it does.
+    s.userWantsRolling.store (true);
+    if (! s.playing.load()) s.playing.store (true);
+    processorRef.cmpAudible.store (slotIdx);
+    return true;
 }
 
 bool EchoJayEditor::matchFastFrame (const CompareSlotState& slot, int slotIdx,
@@ -10517,15 +10634,36 @@ void EchoJayEditor::updateTransportBar()
 {
     int aud = processorRef.cmpAudible.load();
 
-    // A/B selector — lit up when that side is audible
+    // ---- THE BUTTON SHOWS WHAT YOU HEAR, NOT WHAT IS SELECTED ------------
+    //
+    // These used to light from cmpAudible alone. cmpAudible is the SELECTION;
+    // what reaches your ears is cmpMixTargetGain(rolling, slot, audible,
+    // stopAtZero), and the two diverge the moment the selected slot is not
+    // rolling. Two reports were exactly that: B lit while the live signal
+    // played on a fresh open, and B still lit after unpressing SYNC stopped
+    // the stream. The button was telling the truth about a variable and
+    // lying about the audio.
+    const int heard = audibleCompareSlot();
+
+    // WHEN NOTHING IS AUDIBLE YOU ARE HEARING THE HOST, AND THAT IS ONLY
+    // SLOT A WHEN SLOT A IS LIVE. openCompareSlotMenu offers the same menu
+    // for both slots, so a user CAN put a capture or a reference in A;
+    // lighting A then would claim you are hearing that capture when you are
+    // hearing your mix. So this is a THIRD STATE, not a fallback to A:
+    // neither button lights, which is the honest answer for "you are
+    // monitoring the host through a slot that is not playing".
+    const bool aIsLive = (compareTop_.kind == CompareSlotState::Kind::Live);
+    const bool litA = (heard == 0) || (heard < 0 && aIsLive);
+    const bool litB = (heard == 1);
+
     cmpABtn_.setColour(juce::TextButton::buttonColourId,
-                       aud == 0 ? juce::Colour(0xff1a2d4a) : C::bg3);
+                       litA ? juce::Colour(0xff1a2d4a) : C::bg3);
     cmpABtn_.setColour(juce::TextButton::textColourOffId,
-                       aud == 0 ? C::blue : C::text3);
+                       litA ? C::blue : C::text3);
     cmpBBtn_.setColour(juce::TextButton::buttonColourId,
-                       aud == 1 ? juce::Colour(0xff1a2d4a) : C::bg3);
+                       litB ? juce::Colour(0xff1a2d4a) : C::bg3);
     cmpBBtn_.setColour(juce::TextButton::textColourOffId,
-                       aud == 1 ? C::blue : C::text3);
+                       litB ? C::blue : C::text3);
 
     // Play button reflects the audible side's play state
     bool anyPlaying = false;
@@ -25222,6 +25360,50 @@ int EchoJayEditor::measureChatContentHeight()
 
 void EchoJayEditor::timerCallback()
 {
+    // ---- THE COMPARE CONTROLS, RECOMPUTED RATHER THAN NOTIFIED -----------
+    //
+    // WHY A TIMER AND NOT MORE HANDLER CALLS. Three of the places that change
+    // what is audible run on the AUDIO THREAD and can never call a UI
+    // function: the transport sync stopping a stream when the host stops, its
+    // start, and the self-stop at the end of a fade. An event-driven bar is
+    // not missing a call, it is STRUCTURALLY UNABLE to stay correct, and no
+    // number of added calls fixes that.
+    //
+    // ONE GUARD, NOT TWO, BECAUSE THE TWO UPDATES ARE ALREADY ONE.
+    // updateComparePlayBtns ends by calling updateTransportBar, so a second
+    // guard around the bar would be a second condition on the same repaint.
+    // The four values below are the union of what both read: the audible slot
+    // and whether A is Live (the bar), and each slot's playing flag (the
+    // per-slot buttons). Any change repaints both, which they already do.
+    //
+    // GUARDED, NOT UNCONDITIONAL. Repainting four buttons twenty times a
+    // second for no reason is its own defect, so this compares the answer
+    // with the last tick's and does nothing when it has not moved. The same
+    // shape the target pill below already uses.
+    //
+    // THE EVENT-DRIVEN CALLS STAY. They make a press instant rather than up
+    // to 50 ms late, which is the difference between a button that responds
+    // and one that lags; this is the BACKSTOP for the changes no handler can
+    // see.
+    {
+        const int  nowHeard   = audibleCompareSlot();
+        const bool nowALive   = (compareTop_.kind == CompareSlotState::Kind::Live);
+        const bool nowPlaying0 = processorRef.cmpStream[0].playing.load();
+        const bool nowPlaying1 = processorRef.cmpStream[1].playing.load();
+
+        if (nowHeard != lastAudibleSlot_ || nowALive != lastASlotWasLive_
+            || nowPlaying0 != lastSlotPlaying_[0] || nowPlaying1 != lastSlotPlaying_[1])
+        {
+            lastAudibleSlot_   = nowHeard;
+            lastASlotWasLive_  = nowALive;
+            lastSlotPlaying_[0] = nowPlaying0;
+            lastSlotPlaying_[1] = nowPlaying1;
+            // This cascades to updateTransportBar, so both the play glyphs and
+            // the A/B lighting come back true in one pass.
+            updateComparePlayBtns();
+        }
+    }
+
     // Target pill appears/disappears with Link connectivity — relayout on
     // change (no height change; the composer row is fixed). The ACTIVE
     // chat's target flipping live<->offline is ALSO a relayout, not a
