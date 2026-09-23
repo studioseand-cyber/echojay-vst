@@ -69,11 +69,40 @@
 #include <regex>
 
 static int passN = 0, failN = 0;
+// ONE FLUSH PER LINE, AND IT IS NOT COSMETIC (23 Sep 2026, open list 221).
+//
+// std::cout is BLOCK buffered when the run is redirected to a file, which is
+// how the gate runs it. The buffer therefore fills and flushes at an arbitrary
+// byte position, which can be the MIDDLE of a check line. EchoJay_NSLog writes
+// unbuffered to fd 2, and the gate merges the descriptors, so an NSLog line
+// can land in that gap and split a check line in two. The green run of 23 Sep
+// did exactly that four times; line 1066 became "  o" plus an NSLog line, with
+// its remainder at line 1076. NO BYTES WERE LOST. The hazard is that a split
+// can land inside the word FAIL, and then a grep for a failure finds nothing
+// while that failure's bytes are sitting in the file.
+//
+// Flushing here means the buffer holds one line when it is emptied, so the
+// line goes out as a single write with no interior boundary to split at.
+//
+// THE MECHANISM IS INFERRED FROM THE SHAPE OF THE SPLICE AND WAS NOT MEASURED
+// TO A BYTE: the four splice offsets are not multiples of 1024 or 4096 in
+// either the merged file or a reconstructed cout-only stream, so the exact
+// buffer arithmetic is unconfirmed.
+//
+// IT STOPS HOLDING FOR A LINE LONGER THAN THE STREAM BUFFER, because such a
+// line fills the buffer and flushes mid-line before ever reaching this flush.
+// The longest line in the 23 Sep run is 415 bytes and none exceeds 512, so
+// every current line is well inside it. A FAIL line carries name plus detail
+// and nothing bounds detail, so that margin is a measurement and not a rule.
+//
+// THIS DOES NOT UNMERGE THE TWO STREAMS. That is a separate change to
+// tools/reinstall-v2.sh and is deliberately not made here.
 static void check (bool ok, const juce::String& name, const juce::String& detail = {})
 {
-    if (ok) { ++passN; std::cout << "  ok    " << name << "\n"; }
+    if (ok) { ++passN; std::cout << "  ok    " << name << "\n" << std::flush; }
     else    { ++failN; std::cout << "  FAIL  " << name
-                                 << (detail.isNotEmpty() ? ("\n        " + detail) : juce::String()) << "\n"; }
+                                 << (detail.isNotEmpty() ? ("\n        " + detail) : juce::String())
+                                 << "\n" << std::flush; }
 }
 
 static juce::PluginDescription makeDesc (const juce::String& format, int uid, const juce::String& version)
@@ -1580,7 +1609,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         {
             std::ifstream fsh ("Source/LinkShm.h");
             std::stringstream ssh; ssh << fsh.rdbuf();
-            check (! codeOnly (juce::String (ssh.str())).contains ("settingsForModel"),
+            // HOISTED 23 Sep (open list 220) SO THERE IS SOMETHING TO ASSERT
+            // ABOUT. This was one expression, codeOnly(...) built and searched
+            // inline, which left no name to control: the sole check is an
+            // ABSENCE, and an absence is satisfied by a file that never
+            // opened. The expression is unchanged, evaluated once into a name
+            // rather than inside the check, so the searched text is byte for
+            // byte what it was.
+            const auto shm = codeOnly (juce::String (ssh.str()));
+            check (shm.length() > 10000
+                   && shm.contains ("struct alignas(64) LinkShmHeader"),
+                   "6a PIN4: LinkShm.h was read and is the real file",
+                   "len=" + juce::String (shm.length()));
+            check (! shm.contains ("settingsForModel"),
                    "6a PIN4: the Link wire struct did not grow a field");
         }
 
@@ -2241,6 +2282,27 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
         std::ifstream fed ("Source/PluginEditor.cpp");
         std::stringstream sed_; sed_ << fed.rdbuf();
         const auto ed = codeOnly (juce::String (sed_.str()));
+
+        // THE CONTROL FOR ed, ADDED 23 Sep (open list 220).
+        //
+        // IT SITS IN PIN 1'S SCOPE AND IT PROTECTS PIN 2, and the gap is the
+        // reason it is worth a sentence. `ed` is read HERE, at the top of the
+        // fd block, alongside chRaw and chH, but the ONLY check that reads it
+        // is the fd PIN2 line further down: `! ed.contains
+        // ("buildFallbackLookupJson()")`. A BUFFER THAT OUTLIVES THE PIN THAT
+        // CREATED IT is how this went unnoticed, and it made the census cite
+        // the wrong id three times: the reader sees "PIN 1" above the read and
+        // never looks down to whose claim actually depends on it.
+        //
+        // WHY IT MATTERS AT ALL: fd PIN2's use is an ABSENCE, and an absence is
+        // satisfied by a file that never opened. Without this, a failed read
+        // makes that check pass, which is cg PIN7's defect exactly.
+        //
+        // The anchor is a definition, so it survives codeOnly, and it occurs
+        // once in PluginEditor.cpp.
+        check (ed.length() > 10000 && ed.contains ("EchoJayEditor::timerCallback"),
+               "fd PIN2: PluginEditor.cpp was read and is the real file",
+               "len=" + juce::String (ed.length()));
 
         // PIN 1 — THE TRIGGER IS THE MAPLESS DIAL. The ask is composed inside
         // setSlotStructuredSettings, the function that handles a dial arriving
@@ -5369,7 +5431,19 @@ That is five slots: EQ, glue, multiband, saturation, limiter. Want me to put tha
                    "dw PIN5: two separate members, two separate defaults");
             std::ifstream fd2 ("Source/EJDialWrites.h");
             std::stringstream sd2; sd2 << fd2.rdbuf();
-            check (! juce::String (sd2.str()).contains ("autoDial"),
+            // HOISTED 23 Sep (open list 220), same shape as 6a PIN4 above.
+            // NOTE THE THRESHOLD, WHICH IS WHY IT IS PER FILE AND NOT A HOUSE
+            // CONSTANT: this sweep searches the RAW file and not the codeOnly
+            // view, so the anchor is checked against raw, and EJDialWrites.h
+            // is a SMALL header, 2,873 bytes raw and 457 after comment
+            // stripping. A 10,000 threshold copied from the big-file pins
+            // would fail on a perfectly good read.
+            const auto dwSrc = juce::String (sd2.str());
+            check (dwSrc.length() > 1000
+                   && dwSrc.contains ("inline bool dialWritesBlocked() noexcept"),
+                   "dw PIN5: EJDialWrites.h was read and is the real file",
+                   "len=" + juce::String (dwSrc.length()));
+            check (! dwSrc.contains ("autoDial"),
                    "dw PIN5: and the write guard never consults auto-dial");
         }
 
