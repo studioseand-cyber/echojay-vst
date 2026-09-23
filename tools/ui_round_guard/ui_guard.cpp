@@ -43,6 +43,29 @@ struct EchoJayTabStripTestAccess
     static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void refreshPanel (EchoJayEditor& e) { e.refreshChainPanelForView (true); }   // 21m ruling 3 (keep-level grey-out)
+    // ---- 21o (23 Sep 2026) ----
+    using Geom = EchoJayEditor::StripGeom;
+    using Tb   = EchoJayEditor::Tab;
+    static void toTab (EchoJayEditor& e, Tb t) { e.switchToTab (t, true); }
+    static Tb tabChat() { return EchoJayEditor::Tab::Chat; }
+    static Tb tabSettings() { return EchoJayEditor::Tab::Settings; }
+    static void toLinkTab (EchoJayEditor& e) { e.switchToTab (EchoJayEditor::Tab::Link, true); e.resized(); }
+    static void measureOnly (EchoJayEditor& e) { e.measureLinkStrips(); }   // the rows are injected between these two
+    static const std::vector<Geom>& geom (EchoJayEditor& e) { return e.linkStripGeom_; }
+    static bool replyAllowed (EchoJayEditor& e) { return e.chatReplyControlsAllowed(); }
+    static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
+    static juce::TextButton& undoHdr (EchoJayEditor& e) { return e.undoHdrBtn; }
+    static juce::TextButton& redoHdr (EchoJayEditor& e) { return e.redoHdrBtn; }
+    static juce::TextButton& collapseBtn (EchoJayEditor& e) { return e.chatCollapseBtn; }
+    static juce::Component&  chainPanelOf (EchoJayEditor& e) { return e.chainListPanel; }
+    static void setChainsMode (EchoJayEditor& e, bool on) { e.setChainSidebarMode (on); }
+    static juce::Array<juce::Rectangle<int>> headerRow (EchoJayEditor& e)
+    {   // the tab-row controls the undo pills must sit right of
+        juce::Array<juce::Rectangle<int>> r;
+        for (juce::Component* c : { (juce::Component*) &e.captureBtn, (juce::Component*) &e.scanBtn, (juce::Component*) &e.headerNewChatBtn, (juce::Component*) &e.settingsBtn })
+            if (c->isVisible() && c->getWidth() > 2) r.add (c->getBounds());
+        return r;
+    }
     static int  targetWidth (EchoJayEditor& e) { return e.chatTargetChannelWidth(); }   // 21n ruling 1b
     using Block = EchoJayEditor::ChainListPanel::Block;   // the friend names the private nested type (as Msg)
     static void tapPill (EchoJayEditor& e, int msgIdx) { e.onResultChipTapped (msgIdx, 2); }
@@ -398,6 +421,94 @@ int main()
         check (! panel.keepLevelAvailable, "(10) a Link's rack in view (chainViewUid non-empty): keep-level GREYED (RED as it stood: the flag did not exist - compile refusal)", juce::String ((int) panel.keepLevelAvailable));
         proc.pendingChannelUid = {}; A::refreshPanel (*ed);
         check (panel.keepLevelAvailable, "(10) back on the local rack: available again");
+    std::printf ("== (12) 23 Sep 2026 (21o): roster selection, group-strip parity, chat-reply controls, the undo pair and ONE tooltip ==\n");
+        // ---- (12a) the selection model ----
+        proc.pendingChannelUid = "lnk_01";                       // A is the working Link
+        ed->clearRosterSelection();
+        const juce::ModifierKeys plain (0), cmd (juce::ModifierKeys::commandModifier);
+        const bool consumedCmd = ed->applyRosterSelectionClick ("lnk_02", false, false, cmd);
+        { const auto sel = ed->rosterSelection();
+          check (consumedCmd && sel.size() == 2 && sel.count ("lnk_01") && sel.count ("lnk_02"), "(12a) click A, Cmd-click B -> the selection is A AND B (the first Cmd-click seeds from the working strip)  (RED as it stood: B alone)", juce::String ((int) sel.size())); }
+        ed->applyRosterSelectionClick ("lnk_02", false, false, cmd);
+        { const auto sel = ed->rosterSelection();
+          check (sel.size() == 1 && sel.count ("lnk_01"), "(12a) Cmd-click the same strip again TOGGLES it out", juce::String ((int) sel.size())); }
+        const bool consumedPlain = ed->applyRosterSelectionClick ("lnk_03", false, false, plain);
+        check (! consumedPlain && ed->rosterSelection().empty(), "(12a) a plain click clears the multi-selection and falls through to the working-Link path -> exactly one strip selected", juce::String ((int) ed->rosterSelection().size()));
+        ed->applyRosterSelectionClick ("lnk_02", false, false, cmd);
+        check (ed->applyRosterSelectionClick ({}, false, false, plain) && ed->rosterSelection().empty(), "(12a) a click on empty roster space clears the selection");
+        // ---- (12b) group strip parity ----
+        const auto gid = proc.createLinkGroup ("the BVs", juce::StringArray { "lnk_01", "lnk_02", "lnk_03" });
+        A::toLinkTab (*ed);
+        EchoJayAlignTestAccess::setLinks (proc, links);   // the tab switch refreshes the registry: inject AFTER it, read with no pump between
+        A::measureOnly (*ed);
+        const A::Geom* linkSg = nullptr; const A::Geom* grpSg = nullptr;
+        for (const auto& sg : A::geom (*ed)) { if (sg.isGroup) grpSg = &sg; else if (! sg.isBus && linkSg == nullptr) linkSg = &sg; }
+        check (grpSg != nullptr && linkSg != nullptr, "(12b) the roster has both a Link strip and the group strip", juce::String ((int) A::geom (*ed).size()) + " strips");
+        if (grpSg != nullptr && linkSg != nullptr)
+        {
+            check (grpSg->fader.getWidth() == linkSg->fader.getWidth() && grpSg->fader.getHeight() == linkSg->fader.getHeight()
+                   && grpSg->fader.getY() == linkSg->fader.getY(), "(12b) the group strip's FADER rect equals a Link strip's in size and vertical position",
+                   grpSg->fader.toString() + " vs " + linkSg->fader.toString());
+            check (grpSg->full.getWidth() == linkSg->full.getWidth() && grpSg->name.getHeight() == linkSg->name.getHeight()
+                   && grpSg->mute.getHeight() == linkSg->mute.getHeight() && grpSg->solo.getHeight() == linkSg->solo.getHeight(),
+                   "(12b) ...and the same strip width, name band and M/S row", juce::String (grpSg->full.getWidth()) + "/" + juce::String (linkSg->full.getWidth()));
+            bool allFit = true; juce::String worst;
+            for (float db = -12.0f; db <= 12.0001f; db += 0.5f)
+                if (! EchoJayEditor::groupReadoutFits (db, grpSg->full.getWidth() - 6)) { allFit = false; worst = EchoJayEditor::groupOffsetText (db); }
+            check (allFit, "(12b) the offset readout FITS the strip at every offset from -12 to +12 (never \"+0....\")", allFit ? EchoJayEditor::groupOffsetText (0.0f) : "does not fit: " + worst);
+            check (EchoJayEditor::groupOffsetText (0.0f) == "+0.0 dB" && EchoJayEditor::groupOffsetText (-2.5f) == "-2.5 dB", "(12b) the readout reads \"+0.0 dB\"", EchoJayEditor::groupOffsetText (0.0f));
+        }
+        // ---- (12c) chat-reply controls belong to the AI sub-view ----
+        // the TAB SWITCH itself is the author (a repaint of the new surface can run before the next paint pass), so the
+        // legs assert the switch's own effect: the rule (chatReplyControlsAllowed) and the button it hides.
+        A::toTab (*ed, A::tabChat()); A::setChainsMode (*ed, false);
+        A::applyBtn (*ed, 0).setVisible (true);
+        check (A::replyAllowed (*ed) && A::applyBtn (*ed, 0).isVisible(), "(12c) a pending Apply on the Chat tab is visible", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
+        A::toTab (*ed, A::tabSettings());
+        check (! A::replyAllowed (*ed) && ! A::applyBtn (*ed, 0).isVisible(), "(12c) switch to SETTINGS -> the Apply button is NOT visible  (RED as it stood: it drew over the account panel)", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
+        A::toTab (*ed, A::tabChat()); A::applyBtn (*ed, 0).setVisible (true);
+        check (A::replyAllowed (*ed) && A::applyBtn (*ed, 0).isVisible(), "(12c) switch back -> the rule allows it again and the button stays visible", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
+        A::setChainsMode (*ed, true);
+        check (! A::replyAllowed (*ed) && ! A::applyBtn (*ed, 0).isVisible(), "(12c) the panel shows CHAINS -> not visible  (RED as it stood: Apply drew over the saved-chains list)", juce::String ((int) A::applyBtn (*ed, 0).isVisible()));
+        A::setChainsMode (*ed, false); A::applyBtn (*ed, 0).setVisible (true);
+        check (A::replyAllowed (*ed) && A::applyBtn (*ed, 0).isVisible(), "(12c) back to AI -> allowed and visible again");
+        // ---- (12d) the chain strip has no undo/redo of its own ----
+        {
+            std::function<int (juce::Component&)> arrows = [&] (juce::Component& c)
+            {
+                int n = 0;
+                for (int i = 0; i < c.getNumChildComponents(); ++i)
+                {
+                    auto* k = c.getChildComponent (i);
+                    if (auto* b = dynamic_cast<juce::TextButton*> (k))
+                        if (b->getButtonText().containsAnyOf (juce::String::fromUTF8 ("\xe2\x86\xb6\xe2\x86\xb7"))) ++n;
+                    n += arrows (*k);
+                }
+                return n;
+            };
+            check (arrows (A::chainPanelOf (*ed)) == 0, "(12d) the chain strip carries NO undo/redo buttons  (RED as it stood: the pair sat beside \"+\")", juce::String (arrows (A::chainPanelOf (*ed))));
+        }
+        // ---- (12e) the header pair, far right, left of Hide AI ----
+        ed->resized(); pumpMs (20);
+        { const auto u = A::undoHdr (*ed).getBounds(), r = A::redoHdr (*ed).getBounds(), c = A::collapseBtn (*ed).getBounds();
+          bool rightOfAll = true; juce::String blocker;
+          for (const auto& hb : A::headerRow (*ed)) if (u.getX() <= hb.getRight()) { rightOfAll = false; blocker = hb.toString(); }
+          check (rightOfAll, "(12e) the header Undo sits RIGHT of every other header control", rightOfAll ? u.toString() : "overlaps " + blocker);
+          check (u.getRight() <= r.getX() && r.getRight() <= c.getX(), "(12e) ...Undo then Redo, both immediately LEFT of \"Hide AI\"", u.toString() + " " + r.toString() + " " + c.toString());
+          check (u.getHeight() == c.getHeight(), "(12e) ...and the same height as the header's pill buttons", juce::String (u.getHeight()) + " vs " + juce::String (c.getHeight())); }
+        // ---- (12f) ONE tooltip window in the editor tree ----
+        {
+            std::function<int (juce::Component&)> tips = [&] (juce::Component& c)
+            {
+                int n = 0;
+                for (int i = 0; i < c.getNumChildComponents(); ++i)
+                { auto* k = c.getChildComponent (i); if (dynamic_cast<juce::TooltipWindow*> (k) != nullptr) ++n; n += tips (*k); }
+                return n;
+            };
+            check (tips (*ed) == 1, "(12f) exactly ONE TooltipWindow exists in the editor tree  (RED as it stood: 2 - the chain panel owned a second, so every hint drew twice)", juce::String (tips (*ed)));
+        }
+        proc.removeLinkGroup (gid); proc.pendingChannelUid = {}; ed->clearRosterSelection();   // the later legs start from the state they expect
+
         // ---- (11) 21n ruling 1b: channelWidth per TARGET, on this editor ----
         std::printf ("== (11) 22 Sep 2026 (21n ruling 1b): channelWidth follows the TARGET - a Link's registry width on a Link turn, never V2's own ==\n");
         check (A::targetWidth (*ed) == 2 && proc.getTotalNumInputChannels() == 2, "(11) local rack: V2's own bus width (stereo -> 2)", juce::String (A::targetWidth (*ed)));

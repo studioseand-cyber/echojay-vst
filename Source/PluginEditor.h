@@ -2012,16 +2012,10 @@ private:
         EditGateOverlay  editGate;
         StripContent     stripContent;
         juce::TextButton addBlock { "+" };
-        // 21m per-rack undo/redo (22 Sep 2026): the buttons beside the add block; Cmd-Z / Cmd-Shift-Z
-        // reach the same callbacks from the editor's keyPressed. Enabled from the rack's own stack.
-        juce::TextButton undoBtn { juce::String::fromUTF8("\xe2\x86\xb6") }, redoBtn { juce::String::fromUTF8("\xe2\x86\xb7") };
-        std::function<void()> onUndo, onRedo;
-        void setUndoState(bool canUndo, bool canRedo, const juce::String& undoWhat, const juce::String& redoWhat)
-        {
-            undoBtn.setEnabled(canUndo); redoBtn.setEnabled(canRedo);
-            undoBtn.setTooltip(canUndo ? "Undo " + undoWhat + " (Cmd-Z)" : juce::String("Nothing to undo on this rack"));
-            redoBtn.setTooltip(canRedo ? "Redo " + redoWhat + " (Cmd-Shift-Z)" : juce::String("Nothing to redo on this rack"));
-        }
+        // 21o item 3 (23 Sep 2026): the per-rack undo/redo pair beside "+" on the RACK: THIS INSTANCE row is GONE.
+        // The plugin-wide history (EchoJayProcessor::undoHistory, 21n item 3) is the only undo the UI reaches;
+        // ChainHost's per-rack stack stays as the mechanism under it and as a Link's own answer to {"op":"undo"} over
+        // the transport, but nothing in this panel reaches it directly any more.
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
         PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (local + remote)
         std::vector<std::unique_ptr<Block>> blocks;
@@ -2173,7 +2167,11 @@ private:
 
         // SUGGESTED SETTINGS box content — wraps, scrolls when it overflows
         juce::TextEditor settingsBox;
-        juce::TooltipWindow tooltipWindow { this, 600 };
+        // 21o item 4 (23 Sep 2026): THE DOUBLE TOOLTIP, cause first. This panel owned a SECOND juce::TooltipWindow
+        // beside the editor's own (tooltipWindow_, further down this header). Two TooltipWindows over ONE component
+        // tree both find the same TooltipClient under the mouse and both display it, each positioned against its own
+        // owner - which is the two copies Sean sees, one over the tab row and one below it. The editor's window
+        // already serves every child's Button tooltip, so this one is DELETED, not moved.
 
         juce::String statusText;
 
@@ -2301,10 +2299,6 @@ private:
             addBlock.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
             addBlock.onClick = [this] { if (onAddClick) onAddClick(); };
             stripContent.addAndMakeVisible(addBlock);
-            stripContent.addAndMakeVisible(undoBtn); stripContent.addAndMakeVisible(redoBtn);   // 21m undo/redo
-            undoBtn.onClick = [this] { if (onUndo) onUndo(); };
-            redoBtn.onClick = [this] { if (onRedo) onRedo(); };
-            setUndoState(false, false, {}, {});
 
             // Master chain wet/dry — fixed at the right edge of the strip
             // (outside the scrolling viewport, always visible)
@@ -2960,9 +2954,6 @@ private:
                 addBlock.setBounds(x, y + (kBlockH - kAddW) / 2, kAddW, kAddW);
                 x += kAddW + 12;
             }
-            undoBtn.setBounds(x, y + kBlockH / 2 - 21, 24, 20);   // 21m undo/redo, stacked after the add block
-            redoBtn.setBounds(x, y + kBlockH / 2 + 1,  24, 20);
-            x += 24 + 12;
             stripContent.lineY    = y + kBlockH / 2;
             stripContent.lineEndX = blocks.empty() ? 0 : x - 12;
             stripContent.setSize(juce::jmax(x, stripView.getWidth()), contentH);
@@ -4722,7 +4713,25 @@ private:
     std::set<juce::String> linkSelection_;          // Cmd-click multi-select on the roster (the "Group..." source)
     juce::ModifierKeys lastStripClickMods_;         // the click's modifiers, for linkStripMouseDown
     std::vector<juce::String> rosterAddresses() const;   // 21n item 4: the roster's rows (Links, then "grp:<id>" per group)
+    // 21o item 2: where a chat-reply control may appear, and the one setter that hides or shows all of them
+    bool chatReplyControlsAllowed() const;
+    void setChatReplyControlsVisible(bool on);
     void paintGroupStrip(juce::Graphics& g, const StripGeom& sg);
+    // 21o item 1b: the group readout, pure so the guard can assert it fits at every offset
+public:
+    static juce::String groupOffsetText(float db);
+    static float groupReadoutFontFor(const juce::String& text, int widthPx);
+    static bool  groupReadoutFits(float db, int widthPx);
+private:
+    void groupMuteSoloClick(const juce::String& groupId, bool isSolo);
+public:
+    /** 21o item 1a: THE roster selection decision, in one function so the click path and the guard read the same
+        rule. Returns true when the click was a selection gesture and the caller must stop (a Cmd-click toggle or a
+        click on empty space); a plain click clears the selection and returns false so the working-Link path runs. */
+    bool applyRosterSelectionClick(const juce::String& addr, bool isBus, bool isGroup, const juce::ModifierKeys& mods);
+    void clearRosterSelection() { linkSelection_.clear(); }
+    std::set<juce::String> rosterSelection() const { return linkSelection_; }
+private:
     void showGroupMenu(const juce::String& groupId);
     void promptGroupName(const juce::StringArray& members);
     juce::String lastGroupMoveStatus_;              // "the BVs moved by 1.0 dB (BV 2 is at -24 dB)" - the guard reads it

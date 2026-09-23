@@ -2100,10 +2100,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         processorRef.getChainHost().setSlotKeepLevel(i, keep);
         refreshChainPanelForView(true);
     };
-    chainListPanel.onUndo = [this] { rackUndoRedo(false); };   // 21m per-rack undo/redo -> 21n: the plugin-wide history
-    chainListPanel.onRedo = [this] { rackUndoRedo(true); };
     // 21n item 3: the header Undo / Redo
-    addAndMakeVisible(undoHdrBtn); addAndMakeVisible(redoHdrBtn);
+    // 21o item 4: styled as the header's own pill buttons (same fill, same cyan text, same height as "Hide AI"),
+    // not the square arrow tiles; the glyphs keep their meaning but sit in a pill.
+    for (auto* bt : { &undoHdrBtn, &redoHdrBtn })
+    {
+        bt->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff141626));
+        bt->setColour(juce::TextButton::textColourOffId, juce::Colour(0xff22d3ee));
+        bt->setColour(juce::TextButton::textColourOnId, juce::Colour(0xff22d3ee));
+        addAndMakeVisible(*bt);
+    }
     undoHdrBtn.onClick = [this] { rackUndoRedo(false); };
     redoHdrBtn.onClick = [this] { rackUndoRedo(true); };
     processorRef.undoHistory().onChanged = [safe = juce::Component::SafePointer<EchoJayEditor>(this)] { if (safe != nullptr) safe->refreshUndoButtons(); };
@@ -7571,13 +7577,7 @@ void EchoJayEditor::refreshChainPanelForView(bool force)
     // 21m ruling 3: the keep-level toggle is available on the LOCAL rack only (no transport op yet); elsewhere it is
     // greyed with the note, never a silent no-op
     chainListPanel.keepLevelAvailable = chainViewUid().isEmpty();
-    {   // 21m undo/redo -> 21n: the chain-panel buttons follow the plugin-wide history (a held remote rack answers from its own stack, so stay enabled)
-        const juce::String uid = chainViewUid();
-        const bool remote = uid.isNotEmpty() && processorRef.borrowHostIfActiveFor(uid) == nullptr;
-        auto& hist = processorRef.undoHistory();
-        chainListPanel.setUndoState(remote || hist.canUndo(), remote || hist.canRedo(),
-                                    remote ? juce::String("on the Link") : hist.undoLabel(), remote ? juce::String("on the Link") : hist.redoLabel());
-    }
+    refreshUndoButtons();   // 21o item 3: the chain strip has no undo/redo of its own; the header pair is the only one
     // A cheap signature so a 20Hz tick does not rebuild the panel (and tear
     // down its child components) sixty times a second for nothing. Revision
     // covers structure; validity and offline cover the honesty states.
@@ -8669,6 +8669,29 @@ int EchoJayEditor::buildChainOnTargets(const juce::StringArray& uids, const juce
     lastGroupBuildLine_ = line;
     if (line.isNotEmpty()) appendLocalResultBubble(line);
     return built;
+}
+
+// ===== 21o item 2 (23 Sep 2026): the chat-reply controls =====
+// Apply / the build buttons / the edit-alternative buttons / the wave-play overlays are children of the AI sub-view.
+// One predicate says where they may appear, one setter hides or shows all of them, and both the tab switch and the
+// AI|CHAINS switch call it. The loop's pill row (Go / Check / Undo / Done / Listen) is PAINTED inside the chat
+// bubble with hit zones rather than being a child component, so it cannot outlive the block that draws it - its
+// zones are cleared by the same reset (gainCardZones_ / chatWavePositions), so it disappears with the block.
+bool EchoJayEditor::chatReplyControlsAllowed() const
+{
+    if (processorRef.chainSidebarChainsMode) return false;   // the panel is showing CHAINS, not the AI sub-view
+    if (currentView == View::Settings || currentView == View::Compare) return false;   // a full-width view covers the column
+    if (processorRef.chatSidebarCollapsed || visualOnlyMode) return false;             // no AI column at all
+    return currentTab == Tab::Chat || currentTab == Tab::Chain;   // the two tabs whose content owns a chat reply
+}
+void EchoJayEditor::setChatReplyControlsVisible(bool on)
+{
+    for (int i = 0; i < kMaxChainBuildBtns; ++i)
+    {
+        chainBuildBtns[(size_t) i].setVisible(on && i < activeChainBuildBtns);
+        if (! on) { editApplyBtns[(size_t) i].setVisible(false); editAltBtns[(size_t) i].setVisible(false); }
+    }
+    if (! on) for (int i = 0; i < kMaxWavePlayBtns; ++i) wavePlayOverlays[(size_t) i].setVisible(false);
 }
 
 // 21n item 4: THE roster's row list - the live Links (linkAddrForSlot), then one "grp:<id>" row per group. One source:
@@ -10012,49 +10035,153 @@ void EchoJayEditor::paintFaderLane(juce::Graphics& g, const StripGeom& sg,
     }
 }
 
-// 21n item 4: a GROUP row in the roster - name, "GROUP" badge (bus named when set), member count, and the level
-// offset fader (drag = offset from 0; on release each member's trim moves by the applied delta, the bus alone when set)
+// ===== 21o item 1b (23 Sep 2026): the GROUP row is a STRIP, with a Link strip's geometry =====
+// Same rects (they come from the same layOutOne), same widgets, same width: the name band carries the group's name,
+// the badge band "GROUP", the data band the member names one per line and centred, the fader is paintFaderLane with
+// the strip's own travel, the readout is the OFFSET fitted to the strip width, and the M/S row is the same pair of
+// lamps. The meter and EQ areas are blank panels of the same size - a group has no meter of its own, and drawing
+// nothing there would make the row a different height from its neighbours.
+juce::String EchoJayEditor::groupOffsetText(float db)
+{
+    return juce::String(db >= 0.0f ? "+" : "-") + juce::String(std::abs(db), 1) + " dB";
+}
+float EchoJayEditor::groupReadoutFontFor(const juce::String& text, int widthPx)
+{   // the largest of the strip's own sizes whose string FITS; never an ellipsis ("+0....") and never a clip
+    for (float pt : { 10.0f, 9.0f, 8.0f, 7.0f, 6.5f })
+        if (juce::Font(juce::FontOptions(pt)).getStringWidthFloat(text) <= (float) widthPx - 2.0f) return pt;
+    return 6.0f;
+}
+bool EchoJayEditor::groupReadoutFits(float db, int widthPx)
+{
+    const auto t = groupOffsetText(db);
+    return juce::Font(juce::FontOptions(groupReadoutFontFor(t, widthPx))).getStringWidthFloat(t) <= (float) widthPx - 2.0f;
+}
+// ===== 21o item 1a (23 Sep 2026): THE ROSTER SELECTION MODEL, one function =====
+// A plain click selects that Link ALONE: it clears the selection and falls through to the working-Link path.
+// Cmd-click TOGGLES the clicked strip, and the FIRST Cmd-click seeds the selection from the strip that is already
+// the working one - so "click A, Cmd-click B" is a selection of A and B, which is what a mixer does and what the
+// words describe. A click on empty roster space, and Escape, clear it. The Group... menu reads this selection.
+bool EchoJayEditor::applyRosterSelectionClick(const juce::String& addr, bool isBus, bool isGroup, const juce::ModifierKeys& mods)
+{
+    if (isGroup || mods.isPopupMenu()) return false;          // a group row and a right-click are not selection gestures
+    if (addr.isEmpty() && ! isBus)                            // empty roster space
+    { const bool had = ! linkSelection_.empty(); linkSelection_.clear(); return had; }
+    if (mods.isCommandDown() && ! isBus)
+    {
+        if (linkSelection_.empty())
+        {
+            const juce::String working = effectiveChannelUid();
+            if (working.isNotEmpty()) linkSelection_.insert(working);
+        }
+        if (linkSelection_.count(addr)) linkSelection_.erase(addr);
+        else                            linkSelection_.insert(addr);
+        return true;                                          // consumed: the working Link does not change
+    }
+    linkSelection_.clear();                                   // a plain click is a selection of one
+    return false;
+}
+
+// 21o item 1b: M / S on a group act on EVERY member through the per-Link command that already exists
+// (sendLinkMuteSoloCommand via stripMuteSoloClick); no new transport is invented. A member whose Link cannot take
+// the command is skipped and the lamps are drawn disabled when no member can.
+void EchoJayEditor::groupMuteSoloClick(const juce::String& groupId, bool isSolo)
+{
+    const auto* gr = processorRef.linkGroupById(groupId);
+    if (gr == nullptr) return;
+    for (const auto& u : gr->members)
+    {
+        auto it = processorRef.muteSoloSnaps_.find(u);
+        if (it == processorRef.muteSoloSnaps_.end() || ! it->second.capable) continue;
+        stripMuteSoloClick(u, isSolo);
+    }
+    linkMixerView_.repaint(); repaint();
+}
+
 void EchoJayEditor::paintGroupStrip(juce::Graphics& g, const StripGeom& sg)
 {
     const auto* gr = processorRef.linkGroupById(sg.groupId);
     if (gr == nullptr) return;
     const auto cyan = juce::Colour(0xff22d3ee);
-    g.setColour(LinkConsole::strip.brighter(0.06f));
-    g.fillRoundedRectangle(sg.full.toFloat(), 4.0f);
-    g.setColour(cyan.withAlpha(0.55f));
-    g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 4.0f, 1.0f);
+    const bool wide = processorRef.linkMixerWide;
+    const bool selected = linkSelection_.count(sg.addr) > 0;
+
+    // frame: the Link strip's own fill, edge and selected top bar
+    g.setColour(LinkConsole::strip);
+    g.fillRoundedRectangle(sg.full.toFloat(), 6.0f);
+    if (! selected)
+    {
+        g.setColour(LinkConsole::edge);
+        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 6.0f, 1.0f);
+    }
+    else
+    {
+        g.setColour(cyan);
+        g.fillRoundedRectangle((float) sg.full.getX() + 3.0f, (float) sg.full.getY() + 2.0f,
+                               (float) sg.full.getWidth() - 6.0f, 3.0f, 1.5f);
+    }
+    // name band — the group's name, the Link strip's font and justification
     g.setColour(LinkConsole::value);
-    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-    g.drawFittedText(gr->name, sg.name, juce::Justification::centredLeft, 1);
+    g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f, juce::Font::bold)));
+    g.drawText(gr->name, sg.name, juce::Justification::centred, true);
+    // badge band — "GROUP", centred like a placement chip
     g.setColour(cyan);
-    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
-    g.drawText(gr->bus.isNotEmpty() ? "GROUP \xc2\xb7 bus " + processorRef.resolveLinkDisplayName(gr->bus) : juce::String("GROUP"), sg.badge, juce::Justification::centredLeft, true);
-    g.setColour(LinkConsole::label);
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    juce::StringArray names; for (const auto& u : gr->members) names.add(processorRef.resolveLinkDisplayName(u));
-    g.drawFittedText(juce::String(gr->members.size()) + " Links: " + names.joinIntoString(", "), sg.data.reduced(4), juce::Justification::topLeft, 4);
+    g.setFont(juce::Font(juce::FontOptions(wide ? 9.0f : 8.0f, juce::Font::bold)));
+    g.drawFittedText("GROUP", sg.badge, juce::Justification::centred, 1, 0.8f);
+    // blank panels where the meter well and the EQ box sit on a Link strip, so the row keeps the same height
+    auto blank = [&g](juce::Rectangle<int> r)
+    {
+        if (r.isEmpty()) return;
+        g.setColour(LinkConsole::strip.darker(0.25f));
+        g.fillRoundedRectangle(r.toFloat(), 3.0f);
+        g.setColour(LinkConsole::edge.withAlpha(0.6f));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 3.0f, 1.0f);
+    };
+    blank(sg.meter); blank(sg.clip); blank(sg.eq);
+    // data band — the member names, centred, one per line (plus the bus when one is set)
+    {
+        juce::StringArray lines;
+        for (const auto& u : gr->members) lines.add(processorRef.resolveLinkDisplayName(u));
+        if (gr->bus.isNotEmpty()) lines.add("bus: " + processorRef.resolveLinkDisplayName(gr->bus));
+        g.setColour(LinkConsole::label);
+        g.setFont(juce::Font(juce::FontOptions(wide ? 10.0f : 9.0f)));
+        g.drawFittedText(lines.joinIntoString("\n"), sg.data.reduced(3),
+                         juce::Justification::centred, juce::jmax(1, lines.size()), 1.0f);
+    }
+    // fader — the same widget and the same travel as a Link strip; the cap shows the offset being dragged
     const bool dragging = (linkMixerView_.dragAddr == sg.addr);
     const float off = dragging ? linkMixerView_.dragValue : 0.0f;
-    g.setColour(LinkConsole::structure);
-    g.fillRect(sg.fader.getCentreX() - 1, sg.fader.getY(), 2, sg.fader.getHeight());
-    const int cy = yFromGainRanged(off, sg.faderImg, -24.0f, 12.0f);
-    g.setColour(dragging ? cyan : LinkConsole::value);
-    g.fillRoundedRectangle(juce::Rectangle<int>(sg.fader.getCentreX() - 10, cy - 5, 20, 10).toFloat(), 2.0f);
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.drawText((off >= 0 ? "+" : "") + juce::String(off, 1) + " dB", sg.fader.getX(), sg.fader.getBottom() - 14, sg.fader.getWidth(), 14, juce::Justification::centred);
-    if (lastGroupMoveStatus_.isNotEmpty() && lastGroupMoveStatus_.startsWith(gr->name))
-    { g.setColour(LinkConsole::label); g.setFont(juce::Font(juce::FontOptions(9.0f))); g.drawFittedText(lastGroupMoveStatus_, sg.data.reduced(4).withTrimmedTop(46), juce::Justification::bottomLeft, 2); }
+    if (! sg.fader.isEmpty()) paintFaderLane(g, sg, off, faderLo(), faderHi());
+    // readout — the offset, FITTED to the strip width ("+0.0 dB", never an ellipsis)
+    if (! sg.faderImg.isEmpty())
+    {
+        const auto txt = groupOffsetText(off);
+        const int w = sg.full.getWidth() - 6;
+        g.setColour(dragging ? cyan : LinkConsole::caption);
+        g.setFont(juce::Font(juce::FontOptions(groupReadoutFontFor(txt, w), juce::Font::bold)));
+        g.drawText(txt, sg.full.getX() + 3, sg.faderImg.getY() + 1, w, 10, juce::Justification::centred, false);
+    }
+    // M / S — the same lamps; enabled when at least one member's Link reports the capability
+    {
+        bool cap = false, mOn = true, sOn = false, anyMember = false;
+        for (const auto& u : gr->members)
+        {
+            auto it = processorRef.muteSoloSnaps_.find(u);
+            if (it == processorRef.muteSoloSnaps_.end()) continue;
+            anyMember = true;
+            cap = cap || it->second.capable;             // enabled while at least ONE member's Link can take the command
+            mOn = mOn && it->second.muteUser;            // lit only when EVERY member is muted
+            sOn = sOn || processorRef.soloIndicatorOn(u);// lit when ANY member is soloed
+        }
+        if (! anyMember) { mOn = false; sOn = false; }
+        drawMsLamp(g, sg.mute, false, mOn && cap, cap);
+        drawMsLamp(g, sg.solo, true,  sOn && cap, cap, false);
+    }
 }
 
 void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
                                    const EchoJayProcessor::LinkDisplayEntry* entry)
 {
     if (sg.isGroup) { paintGroupStrip(g, sg); return; }   // 21n item 4
-    if (! sg.isBus && linkSelection_.count(sg.addr) > 0)
-    {   // 21n item 4: Cmd-click multi-select (the "Group..." source) - a cyan frame
-        g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.9f));
-        g.drawRoundedRectangle(sg.full.toFloat().reduced(0.5f), 4.0f, 2.0f);
-    }
     // Consumes stored rects only. Data lookups are the caller's (entry) or
     // addr-keyed (pending state); geometry is measureLinkStrips' alone.
     const bool isBus = sg.isBus;
@@ -10070,7 +10197,10 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     // collapsed this outline is the ONLY indication of it, so it must be
     // unmistakable at 46px: a 2px accent border, a solid accent bar across
     // the strip's top edge, and a lifted fill. Three cues, not one.
-    const bool selected = stripSelected(isBus,
+    // 21o item 1a: a strip in the multi-selection is highlighted exactly as the working strip is (the top bar), so
+    // the selection is visible in the idiom the roster already has rather than a second one.
+    const bool inSelection = ! isBus && linkSelection_.count(sg.addr) > 0;
+    const bool selected = inSelection || stripSelected(isBus,
                                         entry != nullptr ? entry->info.uid
                                                          : juce::String(),
                                         effectiveChannelUid());
@@ -10818,6 +10948,13 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
     // strip's bounds, which is exactly how the Visualisation preset strip
     // ended up painting to full width while click-testing 280px short.
     const auto p = e.getPosition();
+    bool onAStrip = false;
+    for (const auto& sg : owner->linkStripGeom_) if (sg.full.contains(p)) { onAStrip = true; break; }
+    if (! onAStrip)
+    {   // 21o item 1a: empty roster space clears the selection
+        if (owner->applyRosterSelectionClick({}, false, false, e.mods)) { repaint(); owner->repaint(); }
+        return;
+    }
     for (const auto& sg : owner->linkStripGeom_)
         if (sg.full.contains(p))
         {
@@ -10826,15 +10963,14 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
             if (sg.isGroup)
             {
                 if (e.mods.isPopupMenu() || sg.name.contains(p) || sg.badge.contains(p)) { owner->showGroupMenu(sg.groupId); return; }
+                if (sg.mute.contains(p)) { owner->groupMuteSoloClick(sg.groupId, false); return; }   // 21o item 1b
+                if (sg.solo.contains(p)) { owner->groupMuteSoloClick(sg.groupId, true);  return; }
                 if (sg.fader.contains(p)) { dragAddr = sg.addr; dragValue = 0.0f; lastDragY = p.y; repaint(); }
                 return;
             }
-            // 21n item 4: Cmd-click toggles a Link's multi-selection (the "Group..." source)
-            if (e.mods.isCommandDown() && ! sg.isBus && ! e.mods.isPopupMenu())
-            {
-                if (owner->linkSelection_.count(sg.addr)) owner->linkSelection_.erase(sg.addr); else owner->linkSelection_.insert(sg.addr);
-                repaint(); return;
-            }
+            // 21o item 1a: the selection model decides first (see applyRosterSelectionClick)
+            if (owner->applyRosterSelectionClick(sg.addr, sg.isBus, sg.isGroup, e.mods))
+            { repaint(); owner->repaint(); return; }
             // 21m rename alias: a right-click on a Link strip opens the placement menu (Rename... / Reset name live there)
             if (e.mods.isPopupMenu() && ! sg.isBus) { owner->showLinkPlacementMenu(sg.addr); return; }
             owner->linkStripMouseDown(sg, p, e.getNumberOfClicks());
@@ -11610,6 +11746,9 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
 {
     if (!force && currentTab == t) return;
     currentTab = t;
+    // 21o item 2: hidden the moment the tab changes, not at the next paint - a repaint of the NEW surface can run
+    // first and draw the old tab's Apply over it.
+    if (! chatReplyControlsAllowed()) setChatReplyControlsVisible(false);
     // Remembered on the PROCESSOR so an editor recreate comes back here. See
     // lastTabIndex in PluginProcessor.h.
     processorRef.lastTabIndex = (int) t;
@@ -17752,11 +17891,14 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // gain/wave hit-zone stays clickable on a tab that never drew it. The block
     // repopulates only when it actually paints; mouseDown gates on the same
     // predicate.
-    const bool assistantVisible = (!visualOnlyMode && chatW > 0);
+    // 21o item 2 (23 Sep 2026): a chat-reply control belongs to the AI sub-view and to nothing else. It used to be
+    // reset only when the whole column was gone, so on a tab that HAS the column but does not paint the chat block -
+    // Settings over the account panel, and the CHAINS sub-view - an "Apply changes" button kept its stale bounds and
+    // stayed clickable on top of another surface. The predicate now carries the same test the guard states.
+    const bool assistantVisible = (!visualOnlyMode && chatW > 0) && chatReplyControlsAllowed();
     if (!assistantVisible)
     {
-        for (int i = 0; i < kMaxChainBuildBtns; ++i) chainBuildBtns[(size_t)i].setVisible(false);
-        for (int i = 0; i < kMaxWavePlayBtns;   ++i) wavePlayOverlays[(size_t)i].setVisible(false);
+        setChatReplyControlsVisible(false);
         activeChainBuildBtns = 0;
         gainCardZones_.clear();
         chatWavePositions.clear();
@@ -19035,9 +19177,18 @@ void EchoJayEditor::resized()
         const int iconsW = 58;                 // the two icons plus their gap
         const int btnW = 68, btnH = 20;
         chatCollapseBtn.setButtonText(processorRef.chatSidebarCollapsed ? "Show AI" : "Hide AI");
-        chatCollapseBtn.setBounds(b.getWidth() - iconsW - btnW, (kTopBarH - btnH) / 2,
-                                  btnW, btnH);
+        const int collapseX = b.getWidth() - iconsW - btnW;
+        chatCollapseBtn.setBounds(collapseX, (kTopBarH - btnH) / 2, btnW, btnH);
         chatCollapseBtn.setVisible(chatCollapseControlVisible());
+        // 21o item 4 (23 Sep 2026): the plugin-wide Undo / Redo live at the FAR RIGHT of the header, immediately left
+        // of "Hide AI", as header pills of the same height - not the square arrow tiles that sat in the tab row.
+        // Anchored off collapseX, so they stay right of every other header control whatever that row holds.
+        {
+            const int uW = 34, gap = 4;
+            redoHdrBtn.setBounds(collapseX - gap - uW,           (kTopBarH - btnH) / 2, uW, btnH);
+            undoHdrBtn.setBounds(collapseX - gap - uW * 2 - gap, (kTopBarH - btnH) / 2, uW, btnH);
+            undoHdrBtn.setVisible(true); redoHdrBtn.setVisible(true);
+        }
     }
 
     // ---- LINK MIXER: resized() IS the geometry author -----------------------
@@ -19246,8 +19397,6 @@ void EchoJayEditor::resized()
         }
         // Item 2a: FIXED-width Capture button.
         captureBtn.setBounds(tx, ty, 64, bh); tx += 68;
-        undoHdrBtn.setBounds(tx, ty, 30, bh); tx += 32;   // 21n item 3
-        redoHdrBtn.setBounds(tx, ty, 30, bh); tx += 36;
         // Item 2b: target indicator takes the room up to the detected label,
         // truncating (it is the variable-width element now).
         const int detLabW = 140;
@@ -30920,6 +31069,7 @@ void EchoJayEditor::setChainSidebarMode(bool chainsMode)
 {
     if (processorRef.chainSidebarChainsMode == chainsMode) return;
     processorRef.chainSidebarChainsMode = chainsMode;
+    if (! chatReplyControlsAllowed()) setChatReplyControlsVisible(false);   // 21o item 2 (widened): CHAINS hides them too
 
     // NOTHING about the conversation is torn down here. The thread lives on
     // the processor (chatHistory) and the chat components only render it, so
@@ -33809,6 +33959,10 @@ bool EchoJayEditor::keyPressed(const juce::KeyPress& key)
         settingsGenres.hasKeyboardFocus(false) || settingsPlugins.hasKeyboardFocus(false) ||
         reviewSearchBox.hasKeyboardFocus(false))
         return false;
+
+    // 21o item 1a: Escape clears the roster's multi-selection
+    if (key == juce::KeyPress::escapeKey && ! linkSelection_.empty())
+    { linkSelection_.clear(); linkMixerView_.repaint(); repaint(); return true; }
 
     // 21m per-rack Undo/Redo -> 21n item 3: Cmd-Z / Shift-Cmd-Z ANYWHERE outside a text field drive the plugin-wide history
     if (key.getModifiers().isCommandDown()
