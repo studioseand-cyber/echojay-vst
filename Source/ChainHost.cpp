@@ -7491,6 +7491,17 @@ juce::var ChainHost::fallbackEntryForSlot(int slot, juce::String& whyOut) const
         names.add(params[p] != nullptr ? params[p]->getName(echojay::kParamNameQueryLen)
                                        : juce::String());
     o->setProperty("param_names", names);
+    // 21o item 6 (23 Sep 2026): WHICH of those names are settable. On an AudioUnit JUCE's isAutomatable() is the AU's own
+    // flag ((flags & kAudioUnitParameterFlag_NonRealTime) == 0), and that is exactly the line between a control and a
+    // read-out: measured on the PuigChild 660 (m) with auval, its six controls are "Readable, Writable" and all 69 LED /
+    // VU rows are "Not Real Time, Readable" and nothing else. The map builder can therefore mark the read-outs readOnly
+    // instead of offering the model seven plausible "Left Threshold n" controls beside the one real Threshold.
+    {   // ONE classifier, shared with the guard (EchoJayParamApply.h)
+        juce::Array<juce::var> ro;
+        for (const auto& nm : echojay::readOnlyParamNames(*proc, echojay::kMaxParamReadsPerSlot, echojay::kParamNameQueryLen)) ro.add(nm);
+        o->setProperty("read_only", juce::var(ro));
+        o->setProperty("settable_count", echojay::settableParamCount(*proc, echojay::kMaxParamReadsPerSlot));
+    }
     return juce::var(o.get());
 }
 

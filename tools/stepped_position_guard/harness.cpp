@@ -26,6 +26,40 @@ struct StepParam final : juce::HostedAudioProcessorParameter
     juce::String getText (float x, int) const override { if (liar) return tx[0]; const int i = (int) std::round (juce::jlimit (0.0f, 1.0f, x) * (float) (tx.size() - 1)); return tx[i]; }
     juce::String nm; juce::StringArray tx; bool liar; float v = 0.0f;
 };
+// 21o item 5 (23 Sep 2026): the Auto-Tune shape - a control that reports itself CONTINUOUS (numSteps INT_MAX,
+// isDiscrete false) while its display text steps through names at UNEVEN normalised centres. The measured centres
+// below are the first five of the real Key sweep (probe --sample-text 2 on Auto-Tune Pro, 23 Sep).
+struct UnevenTextParam final : juce::HostedAudioProcessorParameter
+{
+    UnevenTextParam (juce::String n, juce::StringArray texts, juce::Array<float> los, juce::Array<float> his)
+        : nm (std::move (n)), tx (std::move (texts)), lo (std::move (los)), hi (std::move (his)) {}
+    juce::String getParameterID() const override { return nm.replace (" ", "_"); }
+    float getValue() const override { return v; }
+    void setValue (float x) override { v = juce::jlimit (0.0f, 1.0f, x); }
+    float getDefaultValue() const override { return 0.0f; }
+    juce::String getName (int) const override { return nm; }
+    juce::String getLabel() const override { return {}; }
+    int getNumSteps() const override { return juce::AudioProcessor::getDefaultNumParameterSteps(); }   // "continuous", as Antares reports
+    bool isDiscrete() const override { return false; }
+    float getValueForText (const juce::String& t) const override { const int i = tx.indexOf (t); return i < 0 ? 0.0f : (lo[i] + hi[i]) * 0.5f; }
+    juce::String getText (float x, int) const override
+    { for (int i = 0; i < tx.size(); ++i) if (x >= lo[i] - 1.0e-6f && x <= hi[i] + 1.0e-6f) return tx[i]; return tx[tx.size() - 1]; }
+    juce::String nm; juce::StringArray tx; juce::Array<float> lo, hi; float v = 0.0f;
+};
+// 21o item 6: a read-out row - readable, never writable; JUCE reports isAutomatable() false for exactly these on an AU
+struct MeterParam final : juce::HostedAudioProcessorParameter
+{
+    explicit MeterParam (juce::String n) : nm (std::move (n)) {}
+    juce::String getParameterID() const override { return nm.replace (" ", "_"); }
+    float getValue() const override { return v; } void setValue (float x) override { v = x; }
+    float getDefaultValue() const override { return 0.0f; }
+    juce::String getName (int) const override { return nm; }
+    juce::String getLabel() const override { return {}; }
+    bool isAutomatable() const override { return false; }
+    float getValueForText (const juce::String& t) const override { return juce::jlimit (0.0f, 1.0f, t.getFloatValue()); }
+    juce::String getText (float x, int) const override { return juce::String (x, 2); }
+    juce::String nm; float v = 0.0f;
+};
 struct MockStepped final : juce::AudioPluginInstance
 {
     explicit MockStepped (bool lie = false)
@@ -35,6 +69,13 @@ struct MockStepped final : juce::AudioPluginInstance
         addHostedParameter (std::make_unique<StepParam> ("Thresh", th));
         juce::StringArray gn; for (int i = 0; i < 16; ++i) gn.add ("+" + juce::String (i) + " dB");   // 22 Sep 2026 (ruling 3): a 16-step gain knob, the Manley shape
         addHostedParameter (std::make_unique<StepParam> ("Gain", gn));
+        // 21o item 5: "Key", continuous by its own account, five named detents at the measured centres
+        addHostedParameter (std::make_unique<UnevenTextParam> ("Key", juce::StringArray { "C", "C#", "D", "D#", "E" },
+                            juce::Array<float> { 0.000000f, 0.046875f, 0.136719f, 0.228516f, 0.318359f },
+                            juce::Array<float> { 0.044922f, 0.134766f, 0.226562f, 0.316406f, 1.000000f }));
+        // 21o item 6: the read-out rows, shaped as the PuigChild 660's LED ladder
+        addHostedParameter (std::make_unique<MeterParam> ("Left VU"));
+        addHostedParameter (std::make_unique<MeterParam> ("Left Threshold 0"));
     }
     const juce::String getName() const override { return "MockStepped"; }
     void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = getName(); }
@@ -151,6 +192,75 @@ int main()
             }
             inst.reset();
         }
+    }
+    std::printf ("== S. 23 Sep 2026 (21o item 5): a position entry may carry its own MEASURED normalised centre; the write lands there, not on (p-1)/(steps-1) ==\n");
+    {
+        MockStepped m; auto& ps = m.getParameters();
+        auto* key = ps[3];
+        check (key != nullptr && key->getName (32) == "Key" && ! key->isDiscrete(), "S0. the mock's Key reports itself CONTINUOUS, as Auto-Tune Pro does", key ? juce::String ((int) key->isDiscrete()) : "null");
+        // the map the sampled-text builder would write: {index, name, normalised} per detent
+        auto posObj = [] (int i, const char* nm, double norm) { auto* o = new juce::DynamicObject(); o->setProperty ("index", i); o->setProperty ("name", nm); o->setProperty ("normalised", norm); return juce::var (o); };
+        juce::Array<juce::var> pos { posObj (1, "C", 0.022461), posObj (2, "C#", 0.090820), posObj (3, "D", 0.181641), posObj (4, "D#", 0.272461), posObj (5, "E", 0.363281) };
+        auto* me = new juce::DynamicObject(); me->setProperty ("name", "Key"); me->setProperty ("index", 3); me->setProperty ("kind", "position"); me->setProperty ("positions", juce::var (pos));
+        const juce::var mapEntry (me);
+        {
+            const auto r = echojay::applyOne (m, "key", mapEntry, juce::var ("D"));
+            check (r.applied && std::abs (key->getValue() - 0.181641f) < 0.002f && r.landedText.trim() == "D",
+                   "S1. \"D\" lands on the MEASURED centre 0.1816 and the plugin reads back \"D\"  (RED as it stood: the object entries parse as empty names and the position is refused)",
+                   "norm " + juce::String (key->getValue(), 4) + " text \"" + r.landedText.trim() + "\" | " + r.note.substring (0, 80));
+        }
+        {
+            const auto r = echojay::applyOne (m, "key", mapEntry, juce::var ("C#"));
+            check (r.applied && std::abs (key->getValue() - 0.090820f) < 0.002f && r.landedText.trim() == "C#", "S2. ...and \"C#\" on 0.0908 (even spacing would have written 0.25 and read \"D#\")",
+                   "norm " + juce::String (key->getValue(), 4) + " text \"" + r.landedText.trim() + "\"");
+        }
+        {
+            const auto r = echojay::applyOne (m, "key", mapEntry, juce::var ("Minor"));
+            check (! r.applied && r.note.containsIgnoreCase ("unknown position"), "S3. a name the control does not have is REFUSED and the positions are listed", r.note.substring (0, 90));
+        }
+        {   // a bare-string map is unchanged: even spacing, as round (c) shipped it
+            auto* mo = new juce::DynamicObject(); mo->setProperty ("name", "Analog"); mo->setProperty ("index", 0); mo->setProperty ("kind", "position"); mo->setProperty ("steps", 3);
+            juce::Array<juce::var> bare { juce::var ("Off"), juce::var ("50Hz"), juce::var ("60Hz") };
+            mo->setProperty ("positions", juce::var (bare));
+            const auto r = echojay::applyOne (m, "analog", juce::var (mo), juce::var ("50Hz"));
+            check (r.applied && std::abs (ps[0]->getValue() - 0.5f) < 0.001f, "S4. a bare-string position map is unchanged (even spacing)", juce::String (ps[0]->getValue(), 3));
+        }
+    }
+    std::printf ("== T. 23 Sep 2026 (21o item 6): a read-out row is distinguishable by flag, so the client marks it instead of offering it ==\n");
+    {
+        // the 660's own shape, measured: 6 settable controls, 69 read-out rows
+        struct Mock660 final : juce::AudioPluginInstance
+        {
+            Mock660()
+            {
+                for (const char* n : { "OnOff", "Mains", "Input", "Threshold", "Time Constant", "Output" })
+                    addHostedParameter (std::make_unique<StepParam> (n, juce::StringArray { "a", "b" }));
+                addHostedParameter (std::make_unique<MeterParam> ("OnOffLed"));
+                addHostedParameter (std::make_unique<MeterParam> ("Left VU"));
+                for (int i = -20; i <= 0; ++i)  addHostedParameter (std::make_unique<MeterParam> ("Left Input " + juce::String (i)));
+                for (int i = 0; i <= 10; ++i)   addHostedParameter (std::make_unique<MeterParam> ("Left Threshold " + juce::String (i)));
+                for (int i = 1; i <= 6; ++i)    addHostedParameter (std::make_unique<MeterParam> ("Left Time Constant " + juce::String (i)));
+                for (int i = 0; i < 25; ++i)    addHostedParameter (std::make_unique<MeterParam> ("Left Output " + juce::String (-18.0 + i * 1.5, 1)));
+                for (const char* n : { "OnOff_On", "Mains_American", "Mains_Off", "Mains_British" })
+                    addHostedParameter (std::make_unique<MeterParam> (n));
+            }
+            const juce::String getName() const override { return "PuigChild 660 (m) [shape]"; }
+            void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = getName(); }
+            void prepareToPlay (double, int) override {} void releaseResources() override {} void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+            double getTailLengthSeconds() const override { return 0; } bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
+            juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
+            int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
+            const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
+            void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
+        };
+        Mock660 m660;
+        const int settable = echojay::settableParamCount (m660, 512);
+        const auto ro = echojay::readOnlyParamNames (m660, 512, 128);
+        check (m660.getParameters().size() == 75, "T1. the fixture carries the 660's 75 parameters", juce::String (m660.getParameters().size()));
+        check (settable == 6 && ro.size() == 69, "T1. the client's classifier (the one ChainHost's lookup body uses) exposes SIX settable controls and marks the other 69  (RED as it stood: the body carried no mark at all)",
+               juce::String (settable) + " settable / " + juce::String (ro.size()) + " marked");
+        check (ro.contains ("Left Threshold 0") && ro.contains ("Left Threshold 6") && ro.contains ("Left VU") && ! ro.contains ("Threshold"),
+               "T1. ...the marked set holds the LED rows (Left Threshold 0..6, Left VU) and NOT the real Threshold", ro.joinIntoString (",").substring (0, 90));
     }
     std::printf ("\n==== stepped_position_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

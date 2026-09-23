@@ -635,6 +635,30 @@ inline int resolveParamIndex (juce::AudioPluginInstance& plugin, const juce::var
     how = "unresolved"; return -1;
 }
 
+// 21o item 6 (23 Sep 2026): WHICH parameters are settable, in one place. On an AudioUnit JUCE sets isAutomatable()
+// from the AU's own flag ((flags & kAudioUnitParameterFlag_NonRealTime) == 0) and on a VST3 from kCanAutomate, so this
+// is the plugin's own statement rather than a heuristic on names. Measured on the PuigChild 660 (m) (auval, 23 Sep):
+// its six controls are "Readable, Writable"; all 69 LED / VU rows are "Not Real Time, Readable" and nothing else.
+// The lookup body carries the read-only names so the map builder can mark them instead of offering a model seven
+// plausible "Left Threshold n" controls beside the one real Threshold.
+inline juce::StringArray readOnlyParamNames (const juce::AudioProcessor& p, int cap, int nameLen)
+{
+    juce::StringArray out;
+    const auto& params = p.getParameters();
+    const int n = juce::jmin (params.size(), cap);
+    for (int i = 0; i < n; ++i)
+        if (params[i] != nullptr && ! params[i]->isAutomatable()) out.add (params[i]->getName (nameLen));
+    return out;
+}
+inline int settableParamCount (const juce::AudioProcessor& p, int cap)
+{
+    const auto& params = p.getParameters();
+    const int n = juce::jmin (params.size(), cap);
+    int k = 0;
+    for (int i = 0; i < n; ++i) if (params[i] != nullptr && params[i]->isAutomatable()) ++k;
+    return k;
+}
+
 inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
                              const juce::String& semantic,
                              const juce::var& mapEntry,
@@ -765,8 +789,24 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         // carries ("60" -> "60Hz", via the same unit parse the readback uses), or as a bare 1-based index - and an unknown
         // position is REFUSED, never clamped to the last detent. With positions the landed text is verified against the
         // position's text and a mismatch reverts; without them the norm round-trip is all that can be checked, as before.
-        const int steps = juce::jmax (2, (int) mapEntry.getProperty ("steps", 2));
-        juce::StringArray positions; if (auto* pa = mapEntry.getProperty ("positions", juce::var()).getArray()) for (const auto& t : *pa) positions.add (t.toString().trim());
+        // 21o item 5 (23 Sep 2026): a position entry may be an OBJECT {index, name, normalised} as well as a bare string.
+        // The sampled-text builder (probe --sample-text) measures each detent's own normalised CENTRE, and those centres
+        // are not evenly spaced - Auto-Tune Pro's Key runs are 0.022, 0.091, 0.182 ... - so an entry that carries its own
+        // normalised is written AT that value instead of the (p-1)/(steps-1) formula. A bare-string map behaves exactly
+        // as it did, and `steps` may be omitted when the positions themselves say how many there are.
+        juce::StringArray positions; juce::Array<float> posNorms;
+        if (auto* pa = mapEntry.getProperty ("positions", juce::var()).getArray())
+            for (const auto& t : *pa)
+            {
+                if (auto* o = t.getDynamicObject())
+                {
+                    positions.add (o->getProperty ("name").toString().trim());
+                    posNorms.add (o->hasProperty ("normalised") ? (float) (double) o->getProperty ("normalised")
+                                : o->hasProperty ("normalized") ? (float) (double) o->getProperty ("normalized") : -1.0f);
+                }
+                else { positions.add (t.toString().trim()); posNorms.add (-1.0f); }
+            }
+        const int steps = juce::jmax (2, (int) mapEntry.getProperty ("steps", juce::var (juce::jmax (2, positions.size()))));
         const bool havePositions = positions.size() == steps;
         auto flatText = [] (const juce::String& t) { return t.removeCharacters (" \t").toLowerCase(); };
         int p = -1;
@@ -793,7 +833,10 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
             if (! numeric) { r.note = "bad position value"; return r; }
             p = juce::jlimit (1, steps, (int) std::round (pos));
         }
-        norm = (float) (p - 1) / (float) (steps - 1);
+        // the measured centre when the map carries one, else the even-spacing formula
+        norm = (havePositions && p >= 1 && p <= posNorms.size() && posNorms[p - 1] >= 0.0f)
+                 ? juce::jlimit (0.0f, 1.0f, posNorms[p - 1])
+                 : (float) (p - 1) / (float) (steps - 1);
         writeNorm (norm);
         r.landedText = param->getCurrentValueAsText();
         const bool normOk = std::abs (param->getValue() - norm) <= 0.5f / (float) (steps - 1);
