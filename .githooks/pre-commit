@@ -78,13 +78,64 @@ for T in reinstall_v2_test; do
   RUNNER="$REPO/tools/$T/build_and_run.sh"
   [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
   echo "  running $T..."
-  out=$("$RUNNER" 2>&1)
+  # THE RUNNER'S STDERR GOES TO ITS OWN FILE (23 Sep 2026, open list 221).
+  #
+  # This used to be out=$("$RUNNER" 2>&1), which merged the suite's stdout with
+  # EchoJay_NSLog output from the scanner and the chat harness. THE WINDOW
+  # BELOW IS 12 LINES AND THE NOISE IS NOT EVENLY SPREAD: on the last green
+  # mapfps run, 667 of 4,530 lines were NSLog and they CLUSTER AT THE END,
+  # which is exactly where a failure is most likely to be pushed out. A failed
+  # suite could report twelve lines of scanner chatter and nothing about what
+  # broke, which is open list 199's defect made worse by unrelated output.
+  #
+  # ORDER MATTERS ON THE NEXT THREE LINES. Both assignments go BEFORE the
+  # runner call, because the verdict below reads $?, and any command between
+  # the call and the test would overwrite it.
+  #
+  # SAME PATH AND SAME NAMING AS tools/reinstall-v2.sh, deliberately, so there
+  # is ONE convention rather than two. Both callers therefore write the SAME
+  # file for a given suite: it reflects the most recent run by EITHER caller,
+  # LAST WRITER WINS. That is accepted rather than overlooked; the file is a
+  # convenience for reading the run you just did, not a history.
+  GATE_ERR="$REPO/HANDOVER/gate-stderr-$T.log"
+  mkdir -p "$REPO/HANDOVER"
+  out=$("$RUNNER" 2>"$GATE_ERR")
   if [ $? -ne 0 ]; then
     echo "GATE FAIL: $T"
     echo "$out" | tail -12
+    echo "  stderr from this run (scanner and chat logging): $GATE_ERR"
     exit 1
   fi
-  echo "  ok  $T: $(echo "$out" | tail -1)"
+  # THE SUMMARY MAY BE ON STDERR (23 Sep 2026, open list 223). Splitting the
+  # streams blanked this line for workspace_roundtrip_test, whose ENTIRE
+  # output is one fprintf(stderr) in EchoJayWorkspace.cpp:1096, so $out held
+  # nothing and tail -1 of nothing is nothing. LABELLED, NOT SILENT: a
+  # fallback that prints the line without saying where it came from just
+  # moves the blank somewhere nobody looks, and a blank where a result
+  # belongs is open list 199's whole subject. NEVER PRINT AN EMPTY RESULT.
+  #
+  # WRITTEN TO SURVIVE set -e, WHICH NEITHER FILE SETS TODAY. Plain `if`
+  # blocks and a readability guard, so no line here can exit the shell if
+  # anyone adds errexit later. The first version used
+  # `SUMMARY=$(tail -1 "$GATE_ERR" 2>/dev/null)`, and MEASURED under set -e
+  # in both /bin/sh and /bin/zsh that exits when the file is absent: an
+  # assignment takes the substitution's status, so the gate would have died
+  # SILENTLY, with no output at all, AFTER the suite had already passed.
+  #
+  # && AND || ARE NOT MIRROR IMAGES HERE, and the asymmetry is not the
+  # obvious one. `[ ... ] || X` is safe because the list returns 0 when its
+  # test succeeds. `[ ... ] && X` was ALSO safe, but for an unrelated
+  # reason: errexit does not fire on a non-final command of an AND-OR list,
+  # measured in both shells. Two different reasons for two lines that look
+  # symmetrical is exactly the kind of thing to stop relying on, so neither
+  # form is used below.
+  SUMMARY=$(echo "$out" | tail -1)
+  if [ -z "$SUMMARY" ] && [ -r "$GATE_ERR" ]; then
+    SUMMARY=$(tail -1 "$GATE_ERR")
+    if [ -n "$SUMMARY" ]; then SUMMARY="(stderr) $SUMMARY"; fi
+  fi
+  if [ -z "$SUMMARY" ]; then SUMMARY="(NO SUMMARY on stdout or stderr; see $GATE_ERR)"; fi
+  echo "  ok  $T: $SUMMARY"
 done
 
 # A MISSING ARCHIVE IS NEVER SILENT (18 Sep 2026). This block used to print a
@@ -127,13 +178,64 @@ for T in workspace_roundtrip_test mapfps_test; do
   RUNNER="$REPO/tools/$T/build_and_run.sh"
   [ -x "$RUNNER" ] || { echo "  SKIP  $T (not in this worktree)"; continue; }
   echo "  running $T..."
-  out=$("$RUNNER" 2>&1)
+  # THE RUNNER'S STDERR GOES TO ITS OWN FILE (23 Sep 2026, open list 221).
+  #
+  # This used to be out=$("$RUNNER" 2>&1), which merged the suite's stdout with
+  # EchoJay_NSLog output from the scanner and the chat harness. THE WINDOW
+  # BELOW IS 12 LINES AND THE NOISE IS NOT EVENLY SPREAD: on the last green
+  # mapfps run, 667 of 4,530 lines were NSLog and they CLUSTER AT THE END,
+  # which is exactly where a failure is most likely to be pushed out. A failed
+  # suite could report twelve lines of scanner chatter and nothing about what
+  # broke, which is open list 199's defect made worse by unrelated output.
+  #
+  # ORDER MATTERS ON THE NEXT THREE LINES. Both assignments go BEFORE the
+  # runner call, because the verdict below reads $?, and any command between
+  # the call and the test would overwrite it.
+  #
+  # SAME PATH AND SAME NAMING AS tools/reinstall-v2.sh, deliberately, so there
+  # is ONE convention rather than two. Both callers therefore write the SAME
+  # file for a given suite: it reflects the most recent run by EITHER caller,
+  # LAST WRITER WINS. That is accepted rather than overlooked; the file is a
+  # convenience for reading the run you just did, not a history.
+  GATE_ERR="$REPO/HANDOVER/gate-stderr-$T.log"
+  mkdir -p "$REPO/HANDOVER"
+  out=$("$RUNNER" 2>"$GATE_ERR")
   if [ $? -ne 0 ]; then
     echo "GATE FAIL: $T"
     echo "$out" | tail -12
+    echo "  stderr from this run (scanner and chat logging): $GATE_ERR"
     exit 1
   fi
-  echo "  ok  $T: $(echo "$out" | tail -1)"
+  # THE SUMMARY MAY BE ON STDERR (23 Sep 2026, open list 223). Splitting the
+  # streams blanked this line for workspace_roundtrip_test, whose ENTIRE
+  # output is one fprintf(stderr) in EchoJayWorkspace.cpp:1096, so $out held
+  # nothing and tail -1 of nothing is nothing. LABELLED, NOT SILENT: a
+  # fallback that prints the line without saying where it came from just
+  # moves the blank somewhere nobody looks, and a blank where a result
+  # belongs is open list 199's whole subject. NEVER PRINT AN EMPTY RESULT.
+  #
+  # WRITTEN TO SURVIVE set -e, WHICH NEITHER FILE SETS TODAY. Plain `if`
+  # blocks and a readability guard, so no line here can exit the shell if
+  # anyone adds errexit later. The first version used
+  # `SUMMARY=$(tail -1 "$GATE_ERR" 2>/dev/null)`, and MEASURED under set -e
+  # in both /bin/sh and /bin/zsh that exits when the file is absent: an
+  # assignment takes the substitution's status, so the gate would have died
+  # SILENTLY, with no output at all, AFTER the suite had already passed.
+  #
+  # && AND || ARE NOT MIRROR IMAGES HERE, and the asymmetry is not the
+  # obvious one. `[ ... ] || X` is safe because the list returns 0 when its
+  # test succeeds. `[ ... ] && X` was ALSO safe, but for an unrelated
+  # reason: errexit does not fire on a non-final command of an AND-OR list,
+  # measured in both shells. Two different reasons for two lines that look
+  # symmetrical is exactly the kind of thing to stop relying on, so neither
+  # form is used below.
+  SUMMARY=$(echo "$out" | tail -1)
+  if [ -z "$SUMMARY" ] && [ -r "$GATE_ERR" ]; then
+    SUMMARY=$(tail -1 "$GATE_ERR")
+    if [ -n "$SUMMARY" ]; then SUMMARY="(stderr) $SUMMARY"; fi
+  fi
+  if [ -z "$SUMMARY" ]; then SUMMARY="(NO SUMMARY on stdout or stderr; see $GATE_ERR)"; fi
+  echo "  ok  $T: $SUMMARY"
 done
 # ---------------------------------------------------------------------------
 # THE FORMAT LINK. The only step here that proves a plugin can be built.

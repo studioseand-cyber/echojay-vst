@@ -235,13 +235,68 @@ for T in tabstrip_test art_parity_test dashboard_test linkmixer_test mapfps_test
     continue
   fi
   echo "  running $T ..."
-  if ! OUT=$("$RUNNER" 2>&1); then
+  # THE RUNNER'S STDERR GOES TO ITS OWN FILE (23 Sep 2026, open list 221).
+  #
+  # This used to be OUT=$("$RUNNER" 2>&1), which merged the suite's stdout with
+  # EchoJay_NSLog output from the scanner and the chat harness. Two costs, and
+  # the second is the one that bites:
+  #
+  #   1. Both streams then share one file description, so an unbuffered NSLog
+  #      write could land inside a buffered std::cout line and SPLIT it. The
+  #      suite now flushes per line, which closes that from its side; this
+  #      closes it from the other side by removing the second writer entirely.
+  #
+  #   2. THE WINDOW BELOW IS 20 LINES AND THE NOISE IS NOT EVENLY SPREAD.
+  #      MEASURED on the last green run: 667 of 4,530 lines were NSLog, and
+  #      they CLUSTER AT THE END, which is exactly where a failure is most
+  #      likely to be pushed out of the window. A failed suite could therefore
+  #      report twenty lines of scanner chatter and nothing about what broke.
+  #      After this, the twenty lines are twenty lines of suite output.
+  #
+  # A FIXED PATH, NOT mktemp, AND NOT APPENDED. One file per suite, overwritten
+  # each run. The reason is that a caller may truncate THIS script's output too,
+  # so the line naming the path is not guaranteed to survive to be read. A fixed
+  # path does not need to survive: you can go and look without having been told.
+  # HANDOVER is never staged, and already holds build_watchdog logs.
+  GATE_ERR="$REPO/HANDOVER/gate-stderr-$T.log"
+  mkdir -p "$REPO/HANDOVER"
+  if ! OUT=$("$RUNNER" 2>"$GATE_ERR"); then
     echo "$OUT" | tail -20
+    echo "  stderr from this run (scanner and chat logging): $GATE_ERR"
     bumpfiles "$NEW" "$OLD"
     echo "ABORT: $T FAILED. Version reverted to $OLD, nothing installed."
     exit 1
   fi
-  echo "  ok    $T: $(echo "$OUT" | tail -1)"
+  # THE SUMMARY MAY BE ON STDERR (23 Sep 2026, open list 223). Splitting the
+  # streams blanked this line for workspace_roundtrip_test, whose ENTIRE
+  # output is one fprintf(stderr) in EchoJayWorkspace.cpp:1096, so $OUT held
+  # nothing and tail -1 of nothing is nothing. LABELLED, NOT SILENT: a
+  # fallback that prints the line without saying where it came from just
+  # moves the blank somewhere nobody looks, and a blank where a result
+  # belongs is open list 199's whole subject. NEVER PRINT AN EMPTY RESULT.
+  #
+  # WRITTEN TO SURVIVE set -e, WHICH NEITHER FILE SETS TODAY. Plain `if`
+  # blocks and a readability guard, so no line here can exit the shell if
+  # anyone adds errexit later. The first version used
+  # `SUMMARY=$(tail -1 "$GATE_ERR" 2>/dev/null)`, and MEASURED under set -e
+  # in both /bin/sh and /bin/zsh that exits when the file is absent: an
+  # assignment takes the substitution's status, so the gate would have died
+  # SILENTLY, with no output at all, AFTER the suite had already passed.
+  #
+  # && AND || ARE NOT MIRROR IMAGES HERE, and the asymmetry is not the
+  # obvious one. `[ ... ] || X` is safe because the list returns 0 when its
+  # test succeeds. `[ ... ] && X` was ALSO safe, but for an unrelated
+  # reason: errexit does not fire on a non-final command of an AND-OR list,
+  # measured in both shells. Two different reasons for two lines that look
+  # symmetrical is exactly the kind of thing to stop relying on, so neither
+  # form is used below.
+  SUMMARY=$(echo "$OUT" | tail -1)
+  if [ -z "$SUMMARY" ] && [ -r "$GATE_ERR" ]; then
+    SUMMARY=$(tail -1 "$GATE_ERR")
+    if [ -n "$SUMMARY" ]; then SUMMARY="(stderr) $SUMMARY"; fi
+  fi
+  if [ -z "$SUMMARY" ]; then SUMMARY="(NO SUMMARY on stdout or stderr; see $GATE_ERR)"; fi
+  echo "  ok    $T: $SUMMARY"
 done
 
 # 4. Install (existing behaviour, unchanged).
