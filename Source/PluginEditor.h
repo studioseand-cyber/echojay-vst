@@ -4641,6 +4641,18 @@ private:
     void maybeRefreshExistenceDialable(ChainHost& ch);
     juce::String existenceKeysSig_;
     bool existenceQueryInFlight_ = false;
+
+    // INVENTORY SYNC (21q item 1, 23 Sep 2026). Same latch shape as the existence
+    // index, a different call: POST /api/params/sync hands the server the whole
+    // inventory as identity keys and stores the fingerprints it answers with, so
+    // mapFps can name binaries this machine has never loaded. Fired from the two
+    // points a scan generation can change - launch (entries ready) and the scan
+    // falling edge - and latched on the identity signature, so a persistent
+    // failure re-asks once per scan and an unchanged inventory asks nothing.
+    // NEVER per turn: no chat path calls it.
+    void maybeSyncParamIdentities(ChainHost& ch);
+    juce::String syncKeysSig_;
+    bool syncQueryInFlight_ = false;
     // Fix 3: the add's COMPLETION memory. The ok arm of pollLinkBlockAck
     // records the finished add here (then erases the pending); the derived
     // status line writes "Added ..." only once the sidecar cache actually

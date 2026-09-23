@@ -20647,6 +20647,9 @@ void EchoJayEditor::timerCallback()
                 // fingerprint the persistent index knows (throttled inside),
                 // so a Build later this session needs no round trip.
                 ch.requestMapPrefetch();
+                // ON LAUNCH (21q item 1): one inventory sync per scan generation,
+                // in the background. Latched inside; never per turn.
+                maybeSyncParamIdentities(ch);
             }
         }
     }
@@ -20923,6 +20926,9 @@ void EchoJayEditor::timerCallback()
             {
                 ch.buildRecommendable(feedRowsWithSessionExclusions(scanned), chainFormatFilter_);
                 ch.requestMapPrefetch();
+                // ON SCAN COMPLETION (21q item 1): the inventory just changed, so
+                // this generation's sync fires here. Latched inside.
+                maybeSyncParamIdentities(ch);
             }
             if (chainListModel)
                 chainListModel->items = ch.getFilteredPlugins({}, chainFormatFilter_, !chainOfferBothBuilds_);
@@ -25500,6 +25506,41 @@ void EchoJayEditor::maybeRefreshExistenceDialable(ChainHost& ch)
             {
                 self->existenceQueryInFlight_ = false;
                 self->existenceKeysSig_ = sig;   // latch on completion, ok or 404
+            }
+        });
+}
+
+void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
+{
+    // A server query needs a session; without one it 401s. Skip, and mapFps stays
+    // exactly what the local fingerprint index can say - today's behaviour.
+    if (! api.isLoggedIn()) return;
+    if (syncQueryInFlight_) return;
+
+    const auto refs = ch.syncIdentityRefs();
+    if (refs.empty()) return;
+
+    // The signature changes only when the identity set does, i.e. once per scan
+    // generation. Latched when the call COMPLETES, success or failure, so a
+    // persistent non-200 (the 404 this returns until the server half ships)
+    // re-asks once per scan rather than on every rebuild.
+    juce::String sig; sig << (int) refs.size();
+    for (const auto& r : refs) sig << ":" << r.ik;
+    if (sig == syncKeysSig_) return;
+
+    syncQueryInFlight_ = true;
+    // The callback fires on the message thread. ch (owned by the processor)
+    // outlives this editor; the editor may not, so its members are touched only
+    // behind a SafePointer.
+    juce::Component::SafePointer<EchoJayEditor> safe (this);
+    api.syncParamIdentities (refs,
+        [safe, sig, &ch] (bool ok, std::map<juce::String, echojay::SyncedIdentity> rows)
+        {
+            if (ok && ! rows.empty()) ch.applySyncedIdentities (rows);
+            if (auto* self = safe.getComponent())
+            {
+                self->syncQueryInFlight_ = false;
+                self->syncKeysSig_ = sig;   // latch on completion, ok or 404
             }
         });
 }

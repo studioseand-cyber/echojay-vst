@@ -4999,9 +4999,18 @@ void ChainHost::loadParamMapsFromDisk()
     if (auto* fa = root.getProperty("fpFetchedAt", juce::var()).getDynamicObject())
         for (auto& p : fa->getProperties())
             fpFetchedAt_[p.name.toString()] = (juce::int64)(double) p.value;
+    // The synced identity store (21q item 1). Its own section, never merged into
+    // identityToFp: a synced fp must stay distinguishable from a measured one.
+    if (auto* sy = root.getProperty("syncedIdentity", juce::var()).getDynamicObject())
+        for (auto& p : sy->getProperties())
+            if (auto* row = p.value.getDynamicObject())
+                syncedIdentity_[p.name.toString()] = { row->getProperty("fp").toString(),
+                                                       row->getProperty("version").toString(),
+                                                       row->getProperty("tier").toString() };
     EchoJay_NSLog(("EJParamMaps: cache loaded, " + juce::String((int)identityToFp_.size())
                    + " identities, " + juce::String((int)paramMaps_.size()) + " map(s), "
-                   + juce::String(fpAttempted_.size()) + " fp skip marker(s)").toRawUTF8());
+                   + juce::String(fpAttempted_.size()) + " fp skip marker(s), "
+                   + juce::String((int)syncedIdentity_.size()) + " synced identit(ies)").toRawUTF8());
 }
 
 void ChainHost::saveParamMapsToDisk()
@@ -5017,7 +5026,17 @@ void ChainHost::saveParamMapsToDisk()
     for (auto& s : fpAttempted_) att.append(s);
     juce::DynamicObject::Ptr fetchedAt = new juce::DynamicObject();
     for (auto& kv : fpFetchedAt_) fetchedAt->setProperty(juce::Identifier(kv.first), (double) kv.second);
+    juce::DynamicObject::Ptr synced = new juce::DynamicObject();
+    for (auto& kv : syncedIdentity_)
+    {
+        juce::DynamicObject::Ptr row = new juce::DynamicObject();
+        row->setProperty("fp", kv.second.fp);
+        row->setProperty("version", kv.second.version);
+        row->setProperty("tier", kv.second.tier);
+        synced->setProperty(juce::Identifier(kv.first), juce::var(row.get()));
+    }
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty("syncedIdentity", juce::var(synced.get()));
     root->setProperty("identityToFp", juce::var(idx.get()));
     root->setProperty("maps", juce::var(maps.get()));
     root->setProperty("fpAttempted", att);
@@ -8332,7 +8351,7 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
             rackNames.addIfNotAlreadyThere(s.desc.name);
     int exact = 0, uidFb = 0, ambig = 0, miss = 0, noUid = 0,
         rackWon = 0, dupSameFp = 0, dupDiffFp = 0, dupUnresolved = 0,
-        nameConfl = 0, capped = 0;
+        nameConfl = 0, capped = 0, synced = 0;
     for (const auto& e : recommendable_)
     {
         if (o->getProperties().size() >= maxEntries)               { ++capped;    continue; }
@@ -8360,7 +8379,18 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
             case echojay::FpLookup::miss:        ++miss;  break;
             case echojay::FpLookup::noUid:       ++noUid; break;
         }
-        if (fp.isNotEmpty()) put(e.displayName, fp);
+        // THE SYNCED STORE IS THE FALLBACK, NEVER THE OVERRIDE (21q item 1). The
+        // local index is consulted first and its answer stands; only a name the
+        // machine has never fingerprinted reaches the server's answer. That
+        // ordering is the whole rule: a probe-derived fp was measured here from
+        // the binary the user holds, a synced one is the server's best answer for
+        // an identity key. See ~/echojay-saas/CONTRACT_SYNC_2026-09-23.md.
+        if (fp.isNotEmpty()) { put(e.displayName, fp); continue; }
+        if (const auto sfp = echojay::syncedFpForIdentity(syncedIdentity_, e.desc); sfp.isNotEmpty())
+        {
+            put(e.displayName, sfp);
+            ++synced;
+        }
     }
     // An ambiguous name (two fps claimed) is omitted entirely; the server's
     // sibling merge is the honest serve for it.
@@ -8380,6 +8410,8 @@ juce::String ChainHost::buildMapFpsJson(int maxEntries) const
                    + " dupUnresolved=" + juce::String(dupUnresolved)
                    + " nameConfl=" + juce::String(nameConfl)
                    + " capped=" + juce::String(capped)
+                   + " synced=" + juce::String(synced)
+                   + " syncStore=" + juce::String((int) syncedIdentity_.size())
                    + " -> " + juce::String(o->getProperties().size()) + " entr(ies)").toRawUTF8());
     if (o->getProperties().size() == 0) return "{}";
     return juce::JSON::toString(juce::var(o.get()), true);
@@ -8479,6 +8511,27 @@ std::vector<echojay::IdentityRef> ChainHost::recommendableIdentityRefs() const
             refs.push_back ({ ik, e.desc.manufacturerName });
     }
     return refs;
+}
+
+void ChainHost::applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows)
+{
+    // MERGE, never replace. A batch that failed, or a server that can only answer
+    // some of the inventory, must not erase what an earlier generation learned;
+    // and a row with no fp is not an answer, so it is not stored.
+    int added = 0, updated = 0, skipped = 0;
+    for (const auto& kv : rows)
+    {
+        if (kv.first.isEmpty() || kv.second.fp.isEmpty()) { ++skipped; continue; }
+        auto it = syncedIdentity_.find (kv.first);
+        if (it == syncedIdentity_.end())      { syncedIdentity_[kv.first] = kv.second; ++added; }
+        else if (it->second.fp != kv.second.fp) { it->second = kv.second; ++updated; }
+        else                                    { it->second = kv.second; }
+    }
+    EchoJay_NSLog(("EJSync: " + juce::String((int) rows.size()) + " row(s) applied - "
+                   + juce::String(added) + " new, " + juce::String(updated) + " changed, "
+                   + juce::String(skipped) + " without an fp; store now "
+                   + juce::String((int) syncedIdentity_.size()) + " identit(ies)").toRawUTF8());
+    if (added > 0 || updated > 0) saveParamMapsToDisk();
 }
 
 void ChainHost::setExistenceDialable (std::set<juce::String> keys)

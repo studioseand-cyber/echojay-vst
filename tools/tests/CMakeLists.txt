@@ -240,6 +240,7 @@ ej_add_guard(eq_readback              SOURCE tools/eq_readback/harness.cpp      
 ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp               LABEL fast)
 # own_diff's verdict is the sha256 of the own-channel text it writes, not its exit code, so it runs through a
 # wrapper that keeps the suite script's check (shasum -a 256 /tmp/own_out.txt against the 19 Sep baseline).
+ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
              WRAPPER run_own_diff.sh WRAPPER_ARG 5f47897eebef7116c74c35d35ab8b461cfb2333c3014269e339612d5244b25ce)
 

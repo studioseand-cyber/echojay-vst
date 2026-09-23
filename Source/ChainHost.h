@@ -698,6 +698,22 @@ public:
     // cache a map under ANOTHER version of the same product.
     void indexIdentityFp (const juce::String& ik, const juce::String& fp) { identityToFp_[ik] = fp; }
 
+    // ---- THE SYNCED IDENTITY STORE (21q item 1, 23 Sep 2026) -------------------
+    // POST /api/params/sync answers the inventory with the fingerprints the server
+    // already holds; they are stored HERE, never merged into identityToFp_, so a
+    // probe-derived fp (measured on this machine, from the binary the user holds)
+    // always outranks a synced one and the two can never be confused in a log.
+    // See ~/echojay-saas/CONTRACT_SYNC_2026-09-23.md for the wire contract.
+    //
+    // Merges: an identity the answer does not mention keeps whatever it had, so a
+    // partial or failed batch never erases the store. Persisted with the param-map
+    // cache, so a machine that has synced once starts complete.
+    void applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows);
+    int  syncedIdentityCount() const noexcept { return (int) syncedIdentity_.size(); }
+    // The inventory as the sync body wants it: the same identity refs the existence
+    // index sends, so the two calls cannot drift on what an identity is.
+    std::vector<echojay::IdentityRef> syncIdentityRefs() const { return recommendableIdentityRefs(); }
+
     // ---- BUILD-TIME SUBSTITUTION (17 Sep 2026 ruling, item 3) ------------------
     // Under dial-only, a third-party slot that ends noMap after its fetches is
     // replaced by the built-in of its role/category, and the model's params are
@@ -2020,7 +2036,8 @@ private:
 
     // Auto-parameter-mapping caches (message thread only)
     std::map<juce::String, juce::var>    paramMaps_;     // fp -> map object
-    std::map<juce::String, juce::String> identityToFp_;  // format|uid|version -> fp
+    std::map<juce::String, juce::String> identityToFp_;  // format|uid|version -> fp (PROBE-DERIVED: a load measured it here)
+    std::map<juce::String, echojay::SyncedIdentity> syncedIdentity_;  // format|uid|version -> {fp, version, tier} from /api/params/sync
     juce::StringArray                    mapsRequested_; // fps requested this session
     // fps whose fetch is IN FLIGHT (requested, no storeParamMaps answer
     // yet). Distinct from mapsRequested_, which is never cleared (it is the

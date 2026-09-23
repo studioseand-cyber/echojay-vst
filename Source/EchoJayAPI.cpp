@@ -627,6 +627,82 @@ void EchoJayAPI::fetchDialableIdentities(const std::vector<echojay::IdentityRef>
     }
 }
 
+void EchoJayAPI::syncParamIdentities(const std::vector<echojay::IdentityRef>& plugins,
+                                     std::function<void(bool, std::map<juce::String, echojay::SyncedIdentity>)> onComplete)
+{
+    auto cb = std::make_shared<std::function<void(bool, std::map<juce::String, echojay::SyncedIdentity>)>>(std::move(onComplete));
+    if (plugins.empty()) { if (*cb) (*cb)(true, {}); return; }
+
+    // 2500 per request (the contract's ceiling). 1429 plugins is one request; the
+    // boundary exists so a 6000-plugin machine is three requests, not one body of
+    // 6000 rows. Same batching shape as the existence index, a different ceiling
+    // because this call is an inventory, not a per-turn narrowing.
+    struct Agg { std::map<juce::String, echojay::SyncedIdentity> rows; int remaining = 0; bool anyFail = false; };
+    auto agg = std::make_shared<Agg>();
+    constexpr int kBatch = 2500;
+
+    std::vector<std::vector<echojay::IdentityRef>> batches;
+    for (size_t i = 0; i < plugins.size(); i += (size_t) kBatch)
+        batches.emplace_back(plugins.begin() + (long) i,
+                             plugins.begin() + (long) juce::jmin(plugins.size(), i + (size_t) kBatch));
+    agg->remaining = (int) batches.size();
+    EchoJay_NSLog(("EJSync: /api/params/sync asking for " + juce::String((int) plugins.size())
+                   + " identit(ies) in " + juce::String((int) batches.size()) + " batch(es)").toRawUTF8());
+
+    for (auto& b : batches)
+    {
+        // {"plugins":[{"ik":..,"manufacturer":..}]} - built through juce::var so a
+        // manufacturer name carrying a quote or a backslash cannot break the JSON.
+        juce::Array<juce::var> pluginArr;
+        for (auto& r : b)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty("ik", r.ik);
+            o->setProperty("manufacturer", r.manufacturer);
+            pluginArr.add(juce::var(o));
+        }
+        auto* root = new juce::DynamicObject();
+        root->setProperty("plugins", pluginArr);
+        const auto body = juce::JSON::toString(juce::var(root), true);
+
+        // postJSON fires its completion on the message thread, so agg is only ever
+        // touched there: no lock across the batch callbacks.
+        postJSON("/api/params/sync", body, [agg, cb](const juce::var& json, int sc)
+        {
+            if (sc != 200)
+            {
+                // Includes the 404 this will return until the server half ships.
+                agg->anyFail = true;
+                EchoJay_NSLog(("EJSync: /api/params/sync status " + juce::String(sc)
+                               + " - no answer, the store keeps what it had").toRawUTF8());
+            }
+            else if (auto* results = json.getProperty("results", juce::var()).getArray())
+            {
+                for (auto& row : *results)
+                {
+                    const auto ik = row.getProperty("ik", juce::var()).toString();
+                    const auto fp = row.getProperty("fp", juce::var()).toString();
+                    if (ik.isEmpty() || fp.isEmpty()) continue;   // not an answer
+                    agg->rows[ik] = { fp,
+                                      row.getProperty("version", juce::var()).toString(),
+                                      row.getProperty("tier", juce::var()).toString() };
+                }
+            }
+            else
+            {
+                // A 200 with no results array is a contract mismatch, not an empty
+                // answer: say so loudly and change nothing.
+                agg->anyFail = true;
+                EchoJay_NSLog("EJSync: /api/params/sync 200 with no results array -- "
+                              "contract mismatch, the store keeps what it had");
+            }
+
+            if (--agg->remaining == 0 && *cb)
+                (*cb)(! agg->anyFail, agg->rows);
+        });
+    }
+}
+
 // ============ Auth ============
 
 void EchoJayAPI::login(const juce::String& email, const juce::String& password,

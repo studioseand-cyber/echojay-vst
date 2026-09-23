@@ -671,6 +671,20 @@ public:
     void fetchDialableIdentities(const std::vector<echojay::IdentityRef>& plugins,
                                  std::function<void(bool ok, std::set<juce::String> dialableIks)> onComplete);
 
+    // INVENTORY SYNC (21q item 1, 23 Sep 2026). POSTs the whole inventory as
+    // identity keys to /api/params/sync, BATCHED AT 2500, and calls back with
+    // identity -> {fp, version, tier} for every identity the server could answer.
+    // Its purpose is mapFps: a fingerprint is otherwise only learned by loading a
+    // plugin, which left 63 of 1429 plugins identified to the server.
+    //
+    // ok=false on ANY non-200 or on a 200 with no results array, and the caller
+    // then changes nothing - a failed sync must never be read as "this machine has
+    // no fingerprints". Fired once per scan generation, in the background, never
+    // per turn. Contract: ~/echojay-saas/CONTRACT_SYNC_2026-09-23.md - the server
+    // half does not exist yet, so today this degrades to exactly today's behaviour.
+    void syncParamIdentities(const std::vector<echojay::IdentityRef>& plugins,
+                             std::function<void(bool ok, std::map<juce::String, echojay::SyncedIdentity> rows)> onComplete);
+
     // PRODUCT FALLBACK (26 Aug 2026). Same endpoint as the existence index,
     // the OTHER mode: "lookup" runs the tiered resolver and returns a map per
     // plugin, tagged served_from + anchors_unverified when it had to reach

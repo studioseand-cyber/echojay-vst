@@ -132,6 +132,37 @@ inline juce::String fpForIdentity (const std::map<juce::String, juce::String>& i
 }
 
 // ---------------------------------------------------------------------------
+// THE SYNCED IDENTITY STORE (21q item 1, 23 Sep 2026). See
+// ~/echojay-saas/CONTRACT_SYNC_2026-09-23.md.
+//
+// A fingerprint is only learned locally by LOADING a plugin, so on a 1429-plugin
+// machine mapFps carried 63 of them and the server was told nothing about the
+// other 1366. POST /api/params/sync hands the server the inventory as identity
+// keys and it answers with the fingerprint it already holds. Those answers live
+// here, beside - never inside - identityToFp_: a probe-derived fingerprint was
+// measured on THIS machine from the binary the user actually holds and always
+// wins; a synced one is the server's best answer for that identity.
+// ---------------------------------------------------------------------------
+struct SyncedIdentity
+{
+    juce::String fp;        // format|uid|version|paramCount, as the server holds it
+    juce::String version;   // the version the fp belongs to
+    juce::String tier;      // OPAQUE to the client: stored and logged, never interpreted
+};
+
+// Exact identity only. No uid fallback here on purpose: the client asked about
+// exactly these identity keys and the server answered about exactly these
+// identity keys, so a near-miss is a different binary, not a near answer. The
+// version-insensitive tolerance stays where it was earned, in fpForIdentity.
+inline juce::String syncedFpForIdentity (const std::map<juce::String, SyncedIdentity>& synced,
+                                          const juce::PluginDescription& desc)
+{
+    if (desc.uniqueId == 0) return {};                       // no identity, same refusal as fpForIdentity
+    const auto it = synced.find (identityKeyForDescription (desc));
+    return it == synced.end() ? juce::String() : it->second.fp;
+}
+
+// ---------------------------------------------------------------------------
 // Stale-map ladder (12 Aug 2026). completeLoad is the ONLY point where index
 // staleness is detectable: at buildMapFpsJson time nothing has been loaded,
 // so a live fp differing from the indexed fp is the first and last proof the
