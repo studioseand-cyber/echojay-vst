@@ -64,6 +64,11 @@ struct EchoJayTabStripTestAccess
     static juce::TextButton& scanTrigger (EchoJayEditor& e) { return e.scanBtn; }                  // F4
     static juce::TextButton& viewAllTrigger (EchoJayEditor& e) { return e.viewAllPluginsBtn; }     // F4
     static bool pillEligible (EchoJayEditor& e) { return e.targetPillEligible(); }                 // F1-rest
+    static bool panelVisibleOn (EchoJayEditor& e) { return e.assistantSidebarVisible(); }          // F1 revised
+    static juce::TextEditor& composer (EchoJayEditor& e) { return e.chatInput; }
+    static Tb tabVis()   { return EchoJayEditor::Tab::Visualisation; }
+    static Tb tabComp()  { return EchoJayEditor::Tab::Compare; }
+    static Tb tabMeters(){ return EchoJayEditor::Tab::Meters; }
     static std::vector<EchoJayEditor::ScanMenuItem> menuItems() { return EchoJayEditor::scanMenuItems(); }   // F4
     static Tb tabChain() { return EchoJayEditor::Tab::Chain; }
     static Tb tabLink()  { return EchoJayEditor::Tab::Link; }
@@ -218,8 +223,10 @@ int main()
                 check (onScreen (A::chip (*ed, 0)),
                        "F1. ...a pill whose own flag is set shows while the layer is visible (the chain is live)", chain);
             }
-            A::toLinkTab (*ed); pumpMs (60);
-            check (! A::replyAllowed (*ed), "F1. the Link tab is not a chat-reply tab");
+            // SUPERSEDED BY F1 REVISED (24 Sep 2026): Link now HAS the panel, so the tab that proves the rule is
+            // one with no column at all. Settings is that tab, and it is the layout that says so.
+            A::toTab (*ed, A::tabSettings()); pumpMs (60);
+            check (! A::replyAllowed (*ed), "F1. a tab with no panel column is not a chat-reply tab (Settings)");
             check (! layer.isVisible(), "F1. ...so the layer is hidden");
             check (A::chip (*ed, 0).isVisible() && ! onScreen (A::chip (*ed, 0)),
                    "F1. ...and the stale pill CANNOT be on screen even with its own visible flag still true  "
@@ -227,6 +234,37 @@ int main()
             A::toChat (*ed); pumpMs (60);
             check (layer.isVisible(), "F1. back on Chat the layer returns  (the one switch drives BOTH ways)");
             A::chip (*ed, 0).setVisible (false);
+        }
+
+        // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------
+        // THE COMPLAINT: the whole chat - banner, transcript, composer - is missing on Link, Visualisation,
+        // Compare and Meters. One line said so: the panel was gated on "Chat or Chain", which was the rule for
+        // which tabs own a chat REPLY, applied to the whole panel.
+        {
+            std::printf ("\n== F1 revised: the assistant panel is on every tab that has a column for it ==\n");
+            ed->setSize (2000, 1100);
+            A::toChat (*ed); pumpMs (40);
+            const int msgs = (int) A::msgs (*ed).size();
+            check (msgs > 0, "F1r. fixture: the transcript has messages", juce::String (msgs));
+            struct T { A::Tb tab; const char* name; };
+            const T six[] = { { A::tabChat(), "Chat" }, { A::tabChain(), "Chain" }, { A::tabLink(), "Link" },
+                              { A::tabVis(), "Visualisation" }, { A::tabComp(), "Compare" }, { A::tabMeters(), "Meters" } };
+            for (const auto& t : six)
+            {
+                A::toTab (*ed, t.tab); ed->resized(); pumpMs (40);
+                const bool panel = A::panelVisibleOn (*ed);
+                check (panel, juce::String ("F1r. ") + t.name + ": the panel has a column  (RED as it stood on four of these)");
+                check (panel == A::replyAllowed (*ed),
+                       juce::String ("F1r. ") + t.name + ": ...and the reply layer follows the panel, not a tab list");
+                check ((int) A::msgs (*ed).size() == msgs,
+                       juce::String ("F1r. ") + t.name + ": ...over the SAME transcript state (one instance)",
+                       juce::String ((int) A::msgs (*ed).size()) + " of " + juce::String (msgs));
+            }
+            // Settings still has no column, and that is the layout's answer, not a second list of tabs.
+            A::toTab (*ed, A::tabSettings()); ed->resized(); pumpMs (40);
+            check (! A::panelVisibleOn (*ed) && ! A::replyAllowed (*ed),
+                   "F1r. Settings has no column, so no panel - excluded by the layout, not by a tab list");
+            A::toChat (*ed); pumpMs (40);
         }
 
         // ---- F1-rest (21s-b): the banner and the composer label are one answer, wherever the composer is --------

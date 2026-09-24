@@ -8696,9 +8696,20 @@ int EchoJayEditor::buildChainOnTargets(const juce::StringArray& uids, const juce
 bool EchoJayEditor::chatReplyControlsAllowed() const
 {
     if (processorRef.chainSidebarChainsMode) return false;   // the panel is showing CHAINS, not the AI sub-view
-    if (currentView == View::Settings || currentView == View::Compare) return false;   // a full-width view covers the column
+    // F1 REVISED (21s-b): the Settings VIEW is full width and covers the column, so it still says no. The Compare
+    // VIEW does not - the Compare TAB has a panel column like every other tab - and excluding it here was a second
+    // list of surfaces beside the layout's. The layout is the one answer.
+    if (currentView == View::Settings) return false;
     if (processorRef.chatSidebarCollapsed || visualOnlyMode) return false;             // no AI column at all
-    return currentTab == Tab::Chat || currentTab == Tab::Chain;   // the two tabs whose content owns a chat reply
+    // F1 REVISED (21s-b, 24 Sep 2026): THE PANEL IS ONE PANEL, ON EVERY TAB THAT HAS A COLUMN FOR IT.
+    // This used to read `currentTab == Tab::Chat || currentTab == Tab::Chain`, and that one line is why the whole
+    // assistant - banner, transcript, reply layer and composer - was missing on Link, Visualisation, Compare and
+    // Meters: computeColumns gives those tabs a 280-420 px chat column, and the paint pass then skipped it.
+    // The 21o rule was about which tabs own a chat REPLY; it was applied to the whole panel by mistake.
+    // Now: wherever the layout gives a column, the panel is there, with the one transcript state behind it.
+    // Settings and Dashboard are excluded by the layout itself (chatW = 0), as are CHAINS mode and a collapsed
+    // sidebar, so there is no second list of tabs to keep in step with this one.
+    return computeColumns (getWidth()).chatW > 0;
 }
 void EchoJayEditor::setChatReplyControlsVisible(bool on)
 {
@@ -11771,11 +11782,7 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
     currentTab = t;
     // 21o item 2: hidden the moment the tab changes, not at the next paint - a repaint of the NEW surface can run
     // first and draw the old tab's Apply over it.
-    // F1 (21s-a): and the layer follows the SAME predicate, both ways, HERE - the one place a tab change is known.
-    // Not in resized(): hiding a parent moves keyboard focus, focus movement re-enters layout, and doing that from
-    // inside a layout pass took the editor down mid-switch.
     if (! chatReplyControlsAllowed()) setChatReplyControlsVisible(false);
-    else if (! replyLayer.isVisible()) replyLayer.setVisible (true);
     // Remembered on the PROCESSOR so an editor recreate comes back here. See
     // lastTabIndex in PluginProcessor.h.
     processorRef.lastTabIndex = (int) t;
@@ -11970,6 +11977,13 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
 
     resized();
     repaint();
+
+    // F1 (21s-a, corrected 21s-b): the layer follows the SAME predicate, both ways, HERE - the one place a tab
+    // change is known - and at the END, after any full-width view (Settings) has been torn down. Evaluated before
+    // that teardown it still saw the old view and left the panel hidden on the way back. Not in resized(): hiding
+    // a parent moves keyboard focus, focus movement re-enters layout, and that took the editor down mid-switch.
+    { const bool want = chatReplyControlsAllowed();
+      if (replyLayer.isVisible() != want) replyLayer.setVisible (want); }
 }
 
 // =============================================================================
