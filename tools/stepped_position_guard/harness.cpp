@@ -6,6 +6,8 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EchoJayParamApply.h"
+#include "ChainHost.h"        // 21r item 2(b): the sampled-text store lives on the host that processes audio
+#include "EchoJayParamMaps.h"
 #include "EJPaceCheck.h"
 #include <cstdio>
 namespace {
@@ -334,6 +336,80 @@ int main()
             check (! rBare.applied && rBare.note.contains ("not named yet"),
                    "(2a) a stepped control with no named positions is not written; the probe names it first", rBare.note);
         }
+    }
+
+    // ---- 21r item 2(b): the sampled-text sweep, parsed and merged ------------------------------------------
+    // The probe output below is VERBATIM from EchoJayProbe --sample-stepped against UAD Auto-Tune Realtime
+    // Advanced (AudioUnit|22424d57|11.8.0) on 24 Sep 2026, trimmed to three controls. The parse is pinned against
+    // the bytes, not against a description of them.
+    {
+        std::printf ("\n== 21r item 2(b): the sampled-text sweep is parsed and merged by parameter index ==\n");
+        const juce::String probeOut =
+            "param\t0\tInput Type\n"
+            "pos\t1\t0.166016\t0.000000\t0.332031\tSOPRANO\n"
+            "pos\t2\t0.500000\t0.333984\t0.666016\tALTO/TEN\n"
+            "pos\t3\t0.833008\t0.667969\t0.998047\tLOW MALE\n"
+            "pos\t4\t1.000000\t1.000000\t1.000000\tINSTRUME\n"
+            "distinct\t4\n"
+            "skip\t3\tRetune Speed\tcontinuous\n"
+            "param\t2\tScale\n"
+            "pos\t1\t0.017578\t0.000000\t0.035156\tMAJOR\n"
+            "pos\t2\t0.053711\t0.037109\t0.070312\tMINOR\n"
+            "pos\t3\t0.088867\t0.072266\t0.105469\tCHROMATI\n"
+            "distinct\t3\n"
+            "sampled\t2\tof\t20\n";
+        const auto sampled = echojay::parseSampledStepped (probeOut);
+        auto* so = sampled.getDynamicObject();
+        check (so != nullptr && so->getProperties().size() == 2,
+               "(2b) two named controls parsed out of the sweep, the continuous one skipped",
+               juce::String (so == nullptr ? -1 : so->getProperties().size()));
+        auto scale = sampled.getProperty ("2", juce::var());
+        auto* sps = scale.getProperty ("positions", juce::var()).getArray();
+        check (scale.getProperty ("name", juce::var()).toString() == "Scale" && sps != nullptr && sps->size() == 3,
+               "(2b) ...keyed by PARAMETER INDEX, with the control's own name",
+               scale.getProperty ("name", juce::var()).toString() + " / " + juce::String (sps == nullptr ? -1 : sps->size()));
+        if (sps != nullptr && sps->size() == 3)
+        {
+            const auto p2 = sps->getReference (1);
+            check (p2.getProperty ("name", juce::var()).toString() == "MINOR"
+                   && p2.getProperty ("display", juce::var()).toString() == "MINOR",
+                   "(2b) ...each position carrying BOTH texts (identical until a profile names it)");
+            check (std::abs ((double) p2.getProperty ("normalised", juce::var()) - 0.053711) < 1e-6,
+                   "(2b) ...at the MEASURED centre of the detent, not an even-spacing guess",
+                   juce::String ((double) p2.getProperty ("normalised", juce::var()), 6));
+        }
+
+        // The merge: a map control at that index gains the names; one the map already names is left alone.
+        auto* c2 = new juce::DynamicObject(); c2->setProperty ("index", 2); c2->setProperty ("kind", "position");
+        auto* c0 = new juce::DynamicObject(); c0->setProperty ("index", 0); c0->setProperty ("kind", "position");
+        juce::Array<juce::var> mine; mine.add (juce::var ("Hand Written"));
+        c0->setProperty ("positions", mine); c0->setProperty ("steps", 1);
+        auto* ctrl = new juce::DynamicObject();
+        ctrl->setProperty ("scale", juce::var (c2)); ctrl->setProperty ("input_type", juce::var (c0));
+        auto* mp = new juce::DynamicObject(); mp->setProperty ("controls", juce::var (ctrl));
+        juce::var theMap (mp);
+        const int filled = echojay::mergeSampledIntoMap (theMap, sampled);
+        check (filled == 1, "(2b) exactly the unnamed control is filled", juce::String (filled));
+        auto merged = theMap.getProperty ("controls", juce::var()).getProperty ("scale", juce::var());
+        check ((int) merged.getProperty ("steps", juce::var()) == 3
+               && merged.getProperty ("positions", juce::var()).getArray() != nullptr,
+               "(2b) ...and it becomes dialable by name (3 positions)",
+               juce::String ((int) merged.getProperty ("steps", juce::var())));
+        auto kept = theMap.getProperty ("controls", juce::var()).getProperty ("input_type", juce::var());
+        check (kept.getProperty ("positions", juce::var()).getArray() != nullptr
+               && kept.getProperty ("positions", juce::var()).getArray()->getReference (0).toString() == "Hand Written",
+               "(2b) a map that already names its positions is NOT overwritten by the sweep");
+
+        // A sweep that found nothing still counts as done: it must not be repeated on every load.
+        auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+        const juce::String ik = "AudioUnit|22424d57|11.8.0", fp = "fp-of-that-binary";
+        check (! host->steppedTextSampled (ik), "(2b) an identity starts unsampled");
+        host->applySampledStepped (fp, ik, juce::var());
+        check (host->steppedTextSampled (ik),
+               "(2b) a sweep that found NOTHING still marks the identity sampled - it is not repeated every load");
+        host->applySampledStepped (fp, ik, sampled);
+        check (host->steppedTextFor (fp).getDynamicObject() != nullptr,
+               "(2b) ...and a sweep that found something is stored against the fp");
     }
 
     std::printf ("\n==== stepped_position_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

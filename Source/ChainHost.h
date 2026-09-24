@@ -709,6 +709,17 @@ public:
     // partial or failed batch never erases the store. Persisted with the param-map
     // cache, so a machine that has synced once starts complete.
     void applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows);
+
+    // ---- SAMPLED STEPPED TEXT (21r item 2(b), 24 Sep 2026) ---------------------
+    // The first time a plugin is racked, its stepped controls are swept OUT OF PROCESS, once per identity, in the
+    // background, and the position names ride the fp map from then on. Without names a stepped control is not
+    // written at all (applyOne refuses it), so this is what makes one dialable by name.
+    void maybeSampleSteppedText (const juce::PluginDescription& desc, const juce::String& fp);
+    // The two halves the guard drives directly, with no child process: the answer arriving, and what it changes.
+    void applySampledStepped (const juce::String& fp, const juce::String& ik, const juce::var& sampled);
+    bool steppedTextSampled (const juce::String& ik) const { return steppedSampledIks_.count (ik) > 0; }
+    juce::var steppedTextFor (const juce::String& fp) const
+    { auto it = steppedText_.find (fp); return it == steppedText_.end() ? juce::var() : it->second; }
     int  syncedIdentityCount() const noexcept { return (int) syncedIdentity_.size(); }
     // The inventory as the sync body wants it. NOT the existence index's refs: that call is keyed by identity,
     // this one is keyed by NAME plus manufacturer/format/version (verified live, 23 Sep 2026). The identity key
@@ -2039,6 +2050,9 @@ private:
     std::map<juce::String, juce::var>    paramMaps_;     // fp -> map object
     std::map<juce::String, juce::String> identityToFp_;  // format|uid|version -> fp (PROBE-DERIVED: a load measured it here)
     std::map<juce::String, echojay::SyncedIdentity> syncedIdentity_;  // format|uid|version -> {fp, version, tier} from /api/params/sync
+    std::set<juce::String>            steppedSampledIks_;   // identities whose stepped controls have been swept (once each, ever)
+    std::map<juce::String, juce::var> steppedText_;         // fp -> { "<paramIndex>": {name, positions[]} } from the probe
+    std::set<juce::String>            steppedSweepInFlight_;
     juce::StringArray                    mapsRequested_; // fps requested this session
     // fps whose fetch is IN FLIGHT (requested, no storeParamMaps answer
     // yet). Distinct from mapsRequested_, which is never cleared (it is the

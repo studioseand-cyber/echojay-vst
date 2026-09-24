@@ -3281,6 +3281,9 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
         }
         if (step.markSlot)
             slots_[(size_t)newSlotIdx].staleIndexedFp = indexedFp;
+        // 21r item 2(b): the first rack load of this identity sweeps its stepped controls out of process, in the
+        // background. Nothing here waits on it - the names are for the next turn's dial, not this load.
+        maybeSampleSteppedText (liveDesc, liveFp);
         if (step.kickRefetch)
         {
             requestMapPrefetch();
@@ -3507,6 +3510,12 @@ void ChainHost::storeParamMaps(const juce::var& mapsObj)
                 if (oldRev.isNotEmpty() && oldRev == newRev) continue;   // unchanged
             }
             paramMaps_[fp] = p.value;
+            // 21r item 2(b): a map arriving for a plugin we have already swept gets the sampled names now. The
+            // map's own positions always win - a human-authored list outranks a sweep (mergeSampledIntoMap).
+            if (auto st = steppedText_.find (fp); st != steppedText_.end())
+                if (const int filled = echojay::mergeSampledIntoMap (paramMaps_[fp], st->second); filled > 0)
+                    EchoJay_NSLog (("EJSampled: " + juce::String (filled) + " control(s) in the new map for fp "
+                                    + fp.substring (0, 12) + " took their names from the earlier sweep").toRawUTF8());
             ++added;
         }
         else if (paramMaps_.find(fp) != paramMaps_.end())
@@ -5001,6 +5010,11 @@ void ChainHost::loadParamMapsFromDisk()
             fpFetchedAt_[p.name.toString()] = (juce::int64)(double) p.value;
     // The synced identity store (21q item 1). Its own section, never merged into
     // identityToFp: a synced fp must stay distinguishable from a measured one.
+    if (auto* st = root.getProperty("steppedText", juce::var()).getDynamicObject())
+        for (auto& p : st->getProperties())
+            steppedText_[p.name.toString()] = p.value;
+    if (auto* sk = root.getProperty("steppedSampled", juce::var()).getArray())
+        for (auto& v : *sk) steppedSampledIks_.insert (v.toString());
     if (auto* sy = root.getProperty("syncedIdentity", juce::var()).getDynamicObject())
         for (auto& p : sy->getProperties())
             if (auto* row = p.value.getDynamicObject())
@@ -5035,7 +5049,13 @@ void ChainHost::saveParamMapsToDisk()
         row->setProperty("tier", kv.second.tier);
         synced->setProperty(juce::Identifier(kv.first), juce::var(row.get()));
     }
+    juce::DynamicObject::Ptr stepped = new juce::DynamicObject();
+    for (auto& kv : steppedText_) stepped->setProperty (juce::Identifier (kv.first), kv.second);
+    juce::var sampledIks;
+    for (auto& k : steppedSampledIks_) sampledIks.append (k);
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty("steppedText", juce::var(stepped.get()));
+    root->setProperty("steppedSampled", sampledIks);
     root->setProperty("syncedIdentity", juce::var(synced.get()));
     root->setProperty("identityToFp", juce::var(idx.get()));
     root->setProperty("maps", juce::var(maps.get()));
@@ -8525,6 +8545,70 @@ std::vector<echojay::SyncRef> ChainHost::syncRefs() const
         if (seen.insert (r.ik).second) refs.push_back (std::move (r));
     }
     return refs;
+}
+
+// ---- SAMPLED STEPPED TEXT (21r item 2(b), 24 Sep 2026) ------------------------------------------------------
+// ONE sweep per identity, ever: the probe instantiates the plugin out of process, walks every control at 1/512
+// and reports the ones whose display text is a short list of names. Out of process because a sweep sets 513
+// values on a real plugin; once per identity because the answer is a property of the binary, not of the session;
+// in the background because nothing waits on it - the names are for the NEXT turn, not this one.
+void ChainHost::applySampledStepped (const juce::String& fp, const juce::String& ik, const juce::var& sampled)
+{
+    steppedSweepInFlight_.erase (ik);
+    steppedSampledIks_.insert (ik);          // sampled, even when it found nothing: a second sweep would find the same
+    if (! sampled.isObject())
+    {
+        EchoJay_NSLog (("EJSampled: " + ik + " has no named stepped controls (sampled once, not repeated)").toRawUTF8());
+        saveParamMapsToDisk();
+        return;
+    }
+    steppedText_[fp] = sampled;
+    int filled = 0;
+    if (auto m = paramMaps_.find (fp); m != paramMaps_.end())
+        filled = echojay::mergeSampledIntoMap (m->second, sampled);
+    EchoJay_NSLog (("EJSampled: " + ik + " -> " + juce::String (sampled.getDynamicObject()->getProperties().size())
+                    + " named control(s), " + juce::String (filled) + " merged into the map for fp "
+                    + fp.substring (0, 12)).toRawUTF8());
+    saveParamMapsToDisk();
+}
+
+void ChainHost::maybeSampleSteppedText (const juce::PluginDescription& desc, const juce::String& fp)
+{
+    JUCE_ASSERT_MESSAGE_THREAD
+    if (desc.uniqueId == 0 || isBuiltinDescription (desc) || fp.isEmpty()) return;
+    const auto ik = echojay::identityKeyForDescription (desc);
+    if (steppedSampledIks_.count (ik) > 0 || steppedSweepInFlight_.count (ik) > 0) return;
+    const auto helper = probeHelperFile();
+    if (! helper.existsAsFile()) return;                      // no helper beside the binary: nothing to run
+    steppedSweepInFlight_.insert (ik);
+
+    juce::StringArray cmd;
+    if (hostArchName() == "x86_64") cmd.addArray ({ "/usr/bin/arch", "-x86_64" });
+    cmd.addArray ({ helper.getFullPathName(), desc.name, desc.fileOrIdentifier,
+                    juce::String::toHexString (desc.uniqueId), "--sample-stepped" });
+    EchoJay_NSLog (("EJSampled: sweeping \"" + desc.name + "\" out of process for its stepped control names (once for "
+                    + ik + ")").toRawUTF8());
+
+    // A detached thread reads the child; the answer lands back on the message thread, where every store lives.
+    struct Sweep final : juce::Thread
+    {
+        Sweep (juce::StringArray c, juce::String f, juce::String i, ChainHost& h)
+            : juce::Thread ("ej-stepped-sweep"), cmd (std::move (c)), fp (std::move (f)), ik (std::move (i)), host (h) {}
+        void run() override
+        {
+            juce::String out;
+            juce::ChildProcess proc;
+            if (proc.start (cmd, juce::ChildProcess::wantStdOut))
+                out = proc.readAllProcessOutput();
+            const auto parsed = echojay::parseSampledStepped (out);
+            auto fpC = fp, ikC = ik; auto* h = &host;
+            juce::MessageManager::callAsync ([h, fpC, ikC, parsed] { h->applySampledStepped (fpC, ikC, parsed); });
+            // self-owned: the thread deletes itself once the answer is posted
+            juce::MessageManager::callAsync ([this] { delete this; });
+        }
+        juce::StringArray cmd; juce::String fp, ik; ChainHost& host;
+    };
+    (new Sweep (cmd, fp, ik, *this))->startThread();
 }
 
 void ChainHost::applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows)

@@ -230,6 +230,86 @@ inline std::map<juce::String, SyncedIdentity> parseSyncResponse (const juce::var
 }
 
 // ---------------------------------------------------------------------------
+// 21r item 2(b) (24 Sep 2026): the sampled-text probe's output, parsed.
+// `EchoJayProbe <name> <file> <uid> --sample-stepped` prints, per named control:
+//     param   <index>  <control name>
+//     pos     <n>  <centre>  <lo>  <hi>  <display text>
+//     distinct<count>
+// and `skip <index> <name> <reason>` for a control that is not a named one. The parse is a pure function so a
+// guard pins it against verbatim probe output rather than a description of it.
+//
+// The result is keyed by PARAMETER INDEX, because that is the only key the probe and the map share:
+//   { "2": { "name": "Scale", "positions": [ {index, name, display, normalised}, ... ] }, ... }
+// `name` and `display` are the same text here - the probe reads what the plugin prints, and a canonical name
+// (Chromatic for "CHROMATI") only ever comes from a profile or the learn flow, never invented by the client.
+inline juce::var parseSampledStepped (const juce::String& probeOutput)
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    juce::StringArray lines;
+    lines.addLines (probeOutput);
+    juce::String curIndex, curName;
+    juce::Array<juce::var> positions;
+    auto flush = [&]
+    {
+        if (curIndex.isNotEmpty() && positions.size() > 0)
+        {
+            juce::DynamicObject::Ptr entry = new juce::DynamicObject();
+            entry->setProperty ("name", curName);
+            entry->setProperty ("positions", positions);
+            root->setProperty (juce::Identifier (curIndex), juce::var (entry.get()));
+        }
+        curIndex = curName = {};
+        positions.clear();
+    };
+    for (const auto& raw : lines)
+    {
+        juce::StringArray f;
+        f.addTokens (raw, "\t", "");
+        if (f.size() >= 3 && f[0] == "param") { flush(); curIndex = f[1].trim(); curName = f[2].trim(); }
+        else if (f.size() >= 6 && f[0] == "pos" && curIndex.isNotEmpty())
+        {
+            juce::DynamicObject::Ptr pos = new juce::DynamicObject();
+            pos->setProperty ("index", f[1].getIntValue());
+            pos->setProperty ("name", f[5].trim());        // canonical until a profile says otherwise
+            pos->setProperty ("display", f[5].trim());     // exactly what the plugin printed
+            pos->setProperty ("normalised", (double) f[2].getFloatValue());   // the measured CENTRE of the detent
+            positions.add (juce::var (pos.get()));
+        }
+        else if (f.size() >= 1 && (f[0] == "sampled" || f[0] == "skip")) { if (f[0] == "sampled") flush(); }
+    }
+    flush();
+    return root->getProperties().size() > 0 ? juce::var (root.get()) : juce::var();
+}
+
+// Merge sampled positions INTO a map's controls, by parameter index. A control the map already names is left
+// alone: a human-authored map outranks a sweep. Returns how many controls gained names.
+inline int mergeSampledIntoMap (juce::var& map, const juce::var& sampled)
+{
+    auto* controls = map.getProperty ("controls", juce::var()).getDynamicObject();
+    auto* samp = sampled.getDynamicObject();
+    if (controls == nullptr || samp == nullptr) return 0;
+    int filled = 0;
+    for (auto& kv : controls->getProperties())
+    {
+        auto* entry = kv.value.getDynamicObject();
+        if (entry == nullptr) continue;
+        const int idx = (int) entry->getProperty ("index");
+        if (idx < 0) continue;
+        auto s = samp->getProperty (juce::Identifier (juce::String (idx)));
+        auto* so = s.getDynamicObject();
+        if (so == nullptr) continue;
+        auto ps = so->getProperty ("positions");
+        if (! ps.isArray() || ps.getArray()->size() < 2) continue;
+        if (entry->hasProperty ("positions")) continue;        // the map already names them: leave it
+        entry->setProperty ("kind", "position");
+        entry->setProperty ("positions", ps);
+        entry->setProperty ("steps", ps.getArray()->size());
+        ++filled;
+    }
+    return filled;
+}
+
+// ---------------------------------------------------------------------------
 // THE SYNC LATCH (24 Sep 2026 ruling). A scan generation is latched ONLY by an answer that actually carried
 // something. Zero mapped rows, a non-200, or a transport error are NOT answers: the generation stays unlatched,
 // the next launch asks again, and the log says which of the three it was.

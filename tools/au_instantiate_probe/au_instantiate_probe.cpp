@@ -65,7 +65,11 @@ int main (int argc, char** argv)
     // per run: "pos<TAB>n<TAB>normCentre<TAB>normLo<TAB>normHi<TAB>text", then "distinct<TAB>N". Same rules as the other
     // list modes: no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>".
     const bool sampleText = argc >= 6 && juce::String (argv[4]) == "--sample-text";
-    const bool listMode = listParams || listSteps || sampleText;
+    // 21r item 2(b) (24 Sep 2026): "--sample-stepped" = EVERY stepped control in ONE instantiation. The client runs
+    // this once per identity the first time a plugin is racked, in the background, and the names ride the fp map.
+    // One launch, not one per control: instantiating a UAD plugin costs ~5 s, sweeping a control costs ~2.
+    const bool sampleAll = argc >= 5 && juce::String (argv[4]) == "--sample-stepped";
+    const bool listMode = listParams || listSteps || sampleText || sampleAll;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -106,36 +110,72 @@ int main (int argc, char** argv)
         const auto& ps = inst->getParameters();
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
+        // ONE sweep, shared by --sample-text (one control) and --sample-stepped (every control). Returns the number
+        // of distinct texts, or 0 when the control is not a named one. THE TEXT IS READ AT 256 CHARACTERS
+        // (ruling of 24 Sep 2026: at least 64, so a name is never truncated BY US - when it still comes back
+        // short, as UAD's 8-character "CHROMATI" does, that is the plugin's own display width and the profile
+        // keeps the canonical name beside it).
+        struct Run { juce::String text; float lo = 0.0f, hi = 0.0f; };
+        auto sweep = [&clean] (juce::AudioProcessorParameter* q, std::vector<Run>& runs) -> int
+        {
+            constexpr int kSamples = 513;        // 1/512 spacing, endpoints included
+            constexpr int kMaxTexts = 128;
+            const float before = q->getValue();
+            runs.clear();
+            for (int i = 0; i < kSamples; ++i)
+            {
+                const float norm = (float) i / (float) (kSamples - 1);
+                q->setValueNotifyingHost (norm);
+                for (int k = 0; k < 3; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.004, false); }
+                const auto t = clean (q->getText (norm, 256).trim());
+                if (! runs.empty() && runs.back().text == t) runs.back().hi = norm;
+                else                                        runs.push_back ({ t, norm, norm });
+                if ((int) runs.size() > kMaxTexts + 1) break;   // a continuous read-out: not a stepped control
+            }
+            q->setValueNotifyingHost (before);
+            std::set<juce::String> distinct;
+            for (const auto& r : runs) distinct.insert (r.text);
+            return (distinct.size() < 2 || distinct.size() > (size_t) kMaxTexts) ? 0 : (int) distinct.size();
+        };
+        auto printRuns = [] (const std::vector<Run>& runs, int distinct)
+        {
+            int n = 0;
+            for (const auto& r : runs)
+                std::printf ("pos\t%d\t%.6f\t%.6f\t%.6f\t%s\n", ++n, (r.lo + r.hi) * 0.5f, r.lo, r.hi, r.text.toRawUTF8());
+            std::printf ("distinct\t%d\n", distinct);
+        };
         if (sampleText)
         {
             const int idx = atoi (argv[5]);
             auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
             if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
-            constexpr int kSamples = 513;        // 1/512 spacing, endpoints included
-            constexpr int kMaxTexts = 128;
-            const float before = q->getValue();
-            struct Run { juce::String text; float lo = 0.0f, hi = 0.0f; };
             std::vector<Run> runs;
-            for (int i = 0; i < kSamples; ++i)
+            const int distinct = sweep (q, runs);
+            if (distinct == 0) { std::printf ("refused not a named control (over 513 samples)\n"); std::fflush (stdout); std::_Exit (3); }
+            printRuns (runs, distinct);
+            std::fflush (stdout);
+            std::_Exit (0);
+        }
+        if (sampleAll)
+        {
+            // 21r item 2(b): every control in ONE instantiation - the client runs this once per identity, in the
+            // background, the first time a plugin is racked. A control that is not a named one prints a skip line,
+            // so "sampled, nothing there" is distinguishable from "never sampled".
+            std::vector<Run> runs;
+            int sampled = 0;
+            for (int i = 0; i < ps.size(); ++i)
             {
-                const float norm = (float) i / (float) (kSamples - 1);
-                q->setValueNotifyingHost (norm);
-                for (int k = 0; k < 3; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.004, false); }   // the AU's text follows on its own run loop
-                const auto t = clean (q->getCurrentValueAsText().trim());
-                if (! runs.empty() && runs.back().text == t) runs.back().hi = norm;
-                else                                        runs.push_back ({ t, norm, norm });
-                if ((int) runs.size() > kMaxTexts + 1) break;   // a continuous read-out: stop early, it is not a stepped control
+                auto* q = ps[i]; if (q == nullptr) continue;
+                if (! q->isAutomatable() || q->isMetaParameter())
+                { std::printf ("skip\t%d\t%s\tnot a settable control\n", i, clean (q->getName (128)).toRawUTF8()); continue; }
+                const int distinct = sweep (q, runs);
+                if (distinct == 0)
+                { std::printf ("skip\t%d\t%s\tcontinuous\n", i, clean (q->getName (128)).toRawUTF8()); continue; }
+                std::printf ("param\t%d\t%s\n", i, clean (q->getName (128)).toRawUTF8());
+                printRuns (runs, distinct);
+                ++sampled;
             }
-            q->setValueNotifyingHost (before);
-            // runs are contiguous by construction; distinct texts is what decides
-            std::set<juce::String> distinct;
-            for (const auto& r : runs) distinct.insert (r.text);
-            if (distinct.size() < 2 || distinct.size() > (size_t) kMaxTexts)
-            { std::printf ("refused not a named control (%d distinct text(s) over %d samples)\n", (int) distinct.size(), kSamples); std::fflush (stdout); std::_Exit (3); }
-            int n = 0;
-            for (const auto& r : runs)
-                std::printf ("pos\t%d\t%.6f\t%.6f\t%.6f\t%s\n", ++n, (r.lo + r.hi) * 0.5f, r.lo, r.hi, r.text.toRawUTF8());
-            std::printf ("distinct\t%d\n", (int) distinct.size());
+            std::printf ("sampled\t%d\tof\t%d\n", sampled, ps.size());
             std::fflush (stdout);
             std::_Exit (0);
         }
