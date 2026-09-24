@@ -200,7 +200,21 @@ struct Rig
 #endif
 } // namespace
 
-int main()
+// ---- RUNNING THIS GUARD UNDER AddressSanitizer (21r, 24 Sep 2026) ------------------------------------------
+// ASan puts a redzone around every stack object, and this guard holds several EchoJayProcessors in one frame, so
+// it overflows the 8 MB main stack before it asserts anything ("stack-overflow ... in main"). The work therefore
+// runs on a thread with room when - and only when - the binary is sanitized. NOT ONE ASSERTION CHANGES: the
+// ordinary build calls guardMain() directly, exactly as before.
+#if defined(__has_feature)
+ #if __has_feature(address_sanitizer)
+  #define EJ_UNDER_ASAN 1
+ #endif
+#endif
+#if defined(EJ_UNDER_ASAN)
+ #include <pthread.h>
+#endif
+
+static int guardMain()
 {
     (void) EedGainProcessor::schema();   // the static archive links the Gain registrar only when referenced (as level_slot_guard)
     std::setvbuf (stdout, nullptr, _IONBF, 0); juce::ScopedJuceInitialiser_GUI gui;
@@ -735,4 +749,21 @@ int main()
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
+}
+
+int main()
+{
+#if defined(EJ_UNDER_ASAN)
+    pthread_attr_t attr;
+    pthread_attr_init (&attr);
+    pthread_attr_setstacksize (&attr, 512ull * 1024ull * 1024ull);
+    pthread_t th {};
+    static int rc = 0;
+    auto entry = [] (void*) -> void* { rc = guardMain(); return nullptr; };
+    if (pthread_create (&th, &attr, entry, nullptr) != 0) return guardMain();
+    pthread_join (th, nullptr);
+    return rc;
+#else
+    return guardMain();
+#endif
 }

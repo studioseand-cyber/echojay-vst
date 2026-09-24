@@ -908,6 +908,9 @@ static std::vector<juce::AudioProcessorGraph::Node::Ptr>& leakedNodeStore()
 
 ChainHost::~ChainHost()
 {
+    // 21r item 2(b): a stepped-text sweep may still be running in a child process. It holds a token, not this
+    // object; clearing it here is what makes its completion a no-op instead of a write into freed memory.
+    if (sweepAlive_ != nullptr) sweepAlive_->store (false);
     *settleAlive_ = false;   // a settle tick that fires after this dies must not touch us
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
@@ -8590,25 +8593,25 @@ void ChainHost::maybeSampleSteppedText (const juce::PluginDescription& desc, con
                     + ik + ")").toRawUTF8());
 
     // A detached thread reads the child; the answer lands back on the message thread, where every store lives.
-    struct Sweep final : juce::Thread
+    // LIFETIME: the thread outlives nothing. It captures an ALIVE TOKEN, not the host - a ChainHost destroyed
+    // while a sweep is in flight clears the token in its destructor, and the callback then does nothing. (The
+    // first cut captured `*this` and deleted its own Thread object from a message callback: two lifetime bugs in
+    // four lines, in the same week as the teardown use-after-free this round is still hunting.)
+    auto alive = sweepAlive_;
+    auto* self = this;
+    juce::Thread::launch ([cmd, fp, ik, alive, self]
     {
-        Sweep (juce::StringArray c, juce::String f, juce::String i, ChainHost& h)
-            : juce::Thread ("ej-stepped-sweep"), cmd (std::move (c)), fp (std::move (f)), ik (std::move (i)), host (h) {}
-        void run() override
+        juce::String out;
+        juce::ChildProcess proc;
+        if (proc.start (cmd, juce::ChildProcess::wantStdOut))
+            out = proc.readAllProcessOutput();
+        const auto parsed = echojay::parseSampledStepped (out);
+        juce::MessageManager::callAsync ([alive, self, fp, ik, parsed]
         {
-            juce::String out;
-            juce::ChildProcess proc;
-            if (proc.start (cmd, juce::ChildProcess::wantStdOut))
-                out = proc.readAllProcessOutput();
-            const auto parsed = echojay::parseSampledStepped (out);
-            auto fpC = fp, ikC = ik; auto* h = &host;
-            juce::MessageManager::callAsync ([h, fpC, ikC, parsed] { h->applySampledStepped (fpC, ikC, parsed); });
-            // self-owned: the thread deletes itself once the answer is posted
-            juce::MessageManager::callAsync ([this] { delete this; });
-        }
-        juce::StringArray cmd; juce::String fp, ik; ChainHost& host;
-    };
-    (new Sweep (cmd, fp, ik, *this))->startThread();
+            if (alive == nullptr || ! alive->load()) return;   // the host went away while the child was running
+            self->applySampledStepped (fp, ik, parsed);
+        });
+    });
 }
 
 void ChainHost::applySyncedIdentities (const std::map<juce::String, echojay::SyncedIdentity>& rows)

@@ -2053,6 +2053,9 @@ private:
     std::set<juce::String>            steppedSampledIks_;   // identities whose stepped controls have been swept (once each, ever)
     std::map<juce::String, juce::var> steppedText_;         // fp -> { "<paramIndex>": {name, positions[]} } from the probe
     std::set<juce::String>            steppedSweepInFlight_;
+    // The token a background sweep holds instead of holding this object: cleared in the destructor, so a sweep
+    // that finishes after the host is gone does nothing rather than writing into freed memory.
+    std::shared_ptr<std::atomic<bool>> sweepAlive_ = std::make_shared<std::atomic<bool>> (true);
     juce::StringArray                    mapsRequested_; // fps requested this session
     // fps whose fetch is IN FLIGHT (requested, no storeParamMaps answer
     // yet). Distinct from mapsRequested_, which is never cleared (it is the

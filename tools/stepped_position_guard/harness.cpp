@@ -401,6 +401,9 @@ int main()
                "(2b) a map that already names its positions is NOT overwritten by the sweep");
 
         // A sweep that found nothing still counts as done: it must not be repeated on every load.
+        // The scribble leg re-runs this binary in the SAME isolated HOME, and this leg PERSISTS what it stores,
+        // so without clearing the cache first the second leg would start with the identity already sampled.
+        ChainHost::getParamMapsCacheFile().deleteFile();
         auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
         const juce::String ik = "AudioUnit|22424d57|11.8.0", fp = "fp-of-that-binary";
         check (! host->steppedTextSampled (ik), "(2b) an identity starts unsampled");

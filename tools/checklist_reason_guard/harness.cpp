@@ -27,7 +27,13 @@ int main()
     echojay::recordDisableReasons ({ uid2 }, echojay::kDisableWhyLoadFailure);
     scanner.setPluginEnabled (uid, false);
     const auto text = list.rowReasonText (uid);
-    check (text.contains ("hangs on load (Rosetta static initialisers, 17 Sep sample)") && text.contains ("re-checked after 2026-09-"), "the row text carries the hangs-on-load reason and its expiry date", text);
+    // 24 Sep 2026: the expiry is a DATE COMPUTED FROM TODAY, and this leg asserted the literal month "2026-09-".
+    // A 14-day window from 24 September lands in OCTOBER, so the leg started failing on the calendar rather than
+    // on the code. It now asserts the SHAPE of the date, which is what the row actually promises.
+    const bool expiryShape = text.contains ("re-checked after 20") && text.length() > 20
+                             && text.fromFirstOccurrenceOf ("re-checked after ", false, false).length() >= 10;
+    check (text.contains ("hangs on load (Rosetta static initialisers, 17 Sep sample)") && expiryShape,
+           "the row text carries the hangs-on-load reason and its expiry date", text);
     check (list.rowMarkClearable (uid), "a hangs-on-load mark is clearable");
     check (! list.rowMarkClearable (uid2) && list.rowReasonText (uid2) == "load-failure", "a load-failure reason is shown but NOT clearable", list.rowReasonText (uid2));
     list.clearMark (uid);
