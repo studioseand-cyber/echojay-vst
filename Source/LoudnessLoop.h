@@ -60,6 +60,13 @@ public:
     // 18h (item 4): after a level verb (A bit louder / softer / Push it / Undo): "Applied +-X dB (Level now +Y). How's it sounding?"
     static juce::StringArray afterVerbPills(){ return { "Check", "A bit louder", "A bit softer", "Undo", "Done" }; }
     static juce::StringArray armPills()      { return { "Listen" }; }
+    // 21r item 1: THE ARM BUBBLE'S TEXT AS A CONSTANT, and the pills that belong to the loop's CURRENT state.
+    // Pills are not persisted with a chat message - a reload rebuilds the bubbles from the workspace and they come
+    // back bare, which is why the Listen button vanished on 21q. They are re-attached from the LIVE loop instead,
+    // which is also the honest rule: a stale bubble from a previous build must never carry a live verb.
+    static juce::String armBubbleText()      { return "Cue the loudest section, press play, then tap Listen."; }
+    juce::StringArray livePills() const      { return state_ == State::armed ? armPills() : juce::StringArray(); }
+    juce::String      liveBubbleText() const { return state_ == State::armed ? armBubbleText() : juce::String(); }
     static juce::StringArray checkPills()    { return { "Check" }; }
     static juce::StringArray proposalPills() { return { "Go", "Leave it" }; }
     static juce::StringArray proposalAfterApplyPills() { return { "Go", "Leave it", "Undo" }; }   // 21 Sep: a proposal that follows ANY prior apply
@@ -267,7 +274,7 @@ public:
              + " gain " + fmtSigned ((float) lv->gainDb()) + " dB, limiter slot " + juce::String (limiterSlot_) + " (" + limiterName() + "), build-time input " + fmt (buildInputLufs_) + " LUFS");
         // 18g (item 1): NO window runs on the first audio. The user cues the loudest section and taps Listen (or types it).
         state_ = State::armed; proposals_ = 0; lastCommanded_ = 0.0f; prevMeasured_ = std::numeric_limits<float>::quiet_NaN();
-        emit ("Cue the loudest section, press play, then tap Listen.", -1.0f, false, false, Bubble::Kind::arm, armPills());
+        emit (armBubbleText(), -1.0f, false, false, Bubble::Kind::arm, armPills());
         if (! juce::MessageManager::getInstanceWithoutCreating() || ! isTimerRunning()) startTimer (kTickMs);   // the tick feeds the Level card's GR while armed
     }
     // 18g (item 1): Listen starts the measuring window - from armed, from a Check prompt, from the quiet-window question, or

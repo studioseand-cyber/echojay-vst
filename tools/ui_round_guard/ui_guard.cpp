@@ -53,6 +53,7 @@ struct EchoJayTabStripTestAccess
     static void measureOnly (EchoJayEditor& e) { e.measureLinkStrips(); }   // the rows are injected between these two
     static const std::vector<Geom>& geom (EchoJayEditor& e) { return e.linkStripGeom_; }
     static bool replyAllowed (EchoJayEditor& e) { return e.chatReplyControlsAllowed(); }
+    static void reattach (EchoJayEditor& e) { e.reattachLoopPills(); }   // 21r item 1
     static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
     static juce::TextButton& undoHdr (EchoJayEditor& e) { return e.undoHdrBtn; }
     static juce::TextButton& redoHdr (EchoJayEditor& e) { return e.redoHdrBtn; }
@@ -166,6 +167,48 @@ int main()
         auto& M = A::msgs (*ed);
         auto lastLoop = [&] () -> const A::Msg* { for (int i = (int) M.size() - 1; i >= 0; --i) if (M[(size_t) i].role == "assistant" && (M[(size_t) i].content.startsWith ("Chain built. Play") || ! M[(size_t) i].loopPills.isEmpty() || M[(size_t) i].loopBubbleId > 0)) return &M[(size_t) i]; return nullptr; };
         check (loop.everArmed() && lastLoop() != nullptr && (lastLoop()->content.startsWith ("Chain built. Play the loudest part") || lastLoop()->content.startsWith ("Cue the loudest section")), "(4) the ARM bubble is shown after the build (before any Listening...)", lastLoop() ? lastLoop()->content.substring (0, 60) : "no loop bubble");
+        // ---- 21r item 1 (24 Sep 2026): ONE arm bubble per build, and its Listen is a chat-reply control ----------
+        // THE COMPLAINT: on 21q the arm bubble rendered TWICE and with NO Listen button. Two causes, both here:
+        // the emit path wrote the message to the workspace twice, and pills are not part of that store, so every
+        // reload drew bare copies.
+        {
+            const auto armText = loop.liveBubbleText();
+            check (armText.isNotEmpty(), "(13) fixture: the build armed the loop", armText);
+            int armBubbles = 0, armIdx = -1;
+            for (int i = 0; i < (int) M.size(); ++i)
+                if (M[(size_t) i].role == "assistant" && M[(size_t) i].content == armText) { ++armBubbles; armIdx = i; }
+            check (armBubbles == 1, "(13) ONE arm bubble per build  (RED as it stood: the emit wrote it to the chat twice)",
+                   juce::String (armBubbles) + " bubble(s)");
+            auto chipsAt = [&] (int i) { return i >= 0 ? A::chips (*ed, M[(size_t) i]).joinIntoString ("|") : juce::String ("<none>"); };
+            check (chipsAt (armIdx).contains ("Listen#2"), "(13) the arm bubble renders a visible Listen", chipsAt (armIdx));
+            // A workspace reload rebuilds the bubbles from the store, where pills do not exist: this is that state.
+            if (armIdx >= 0) M[(size_t) armIdx].loopPills.clear();
+            check (! chipsAt (armIdx).contains ("Listen"), "(13) a reloaded bubble comes back bare - the 21q defect, reproduced",
+                   chipsAt (armIdx));
+            A::reattach (*ed);
+            check (chipsAt (armIdx).contains ("Listen#2"),
+                   "(13) ...and the LIVE loop puts Listen back  (RED as it stood: nothing reattached it)", chipsAt (armIdx));
+            // Shown where Apply and Build are shown, hidden where they are hidden.
+            A::toTab (*ed, A::tabSettings()); pumpMs (30);
+            check (! A::replyAllowed (*ed) && chipsAt (armIdx).isEmpty(),
+                   "(13) hidden on a tab that hides the chat-reply controls (Settings)", chipsAt (armIdx));
+            A::setChainsMode (*ed, true); A::toChat (*ed); pumpMs (30);
+            check (! A::replyAllowed (*ed) && chipsAt (armIdx).isEmpty(),
+                   "(13) hidden in CHAINS mode, like Apply and Build", chipsAt (armIdx));
+            A::setChainsMode (*ed, false); A::toChat (*ed); pumpMs (30);
+            check (A::replyAllowed (*ed) && chipsAt (armIdx).contains ("Listen#2"),
+                   "(13) and back on the Chat tab", chipsAt (armIdx));
+            // A stale bubble from an earlier build must NOT get live verbs.
+            A::Msg stale; stale.role = "assistant"; stale.content = armText; M.push_back (stale);
+            A::reattach (*ed);
+            check (A::chips (*ed, M.back()).joinIntoString ("|").contains ("Listen#2")
+                   && ! chipsAt (armIdx).contains ("Listen#2"),
+                   "(13) exactly ONE message holds the live verbs - the newest match, never two",
+                   "newest=" + A::chips (*ed, M.back()).joinIntoString ("|") + " older=" + chipsAt (armIdx));
+            M.pop_back();
+            A::reattach (*ed);
+        }
+
         // progress bubbles: two ticks -> ONE progress bubble; a proposal -> a NEW bubble, the progress bubble stays
         const size_t n0 = M.size();
         LoudnessLoop::Bubble pb; pb.kind = LoudnessLoop::Bubble::Kind::progress; pb.replace = true; pb.text = "Listening..."; pb.progress = 0.2f; loop.onBubble (pb);

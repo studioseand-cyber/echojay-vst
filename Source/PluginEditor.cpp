@@ -13698,9 +13698,32 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         // stands rather than arriving all at once at done.
         noteStageSuppressedIfForeign();   // count BEFORE the clear reads state
         clearStageStatus();
+        reattachLoopPills();   // 21r item 1: a reloaded bubble comes back bare; the LIVE loop puts its verbs back
         if (restreamRepaint_) restreamRepaint_();
         repaint();
         return;
+    }
+}
+
+// 21r item 1. Chat messages are rebuilt from the workspace on every activation, and pills are not part of that
+// store - which is why the arm bubble came back with no Listen button on 21q. The verbs are re-attached from the
+// LIVE loop, to the LAST message whose text is the loop's current bubble text, so:
+//   - a reloaded arm bubble gets its Listen back;
+//   - a stale arm bubble from an earlier build gets NOTHING, because the loop is no longer in that state;
+//   - only one message can hold them, so a reload can never manufacture a second live bubble.
+void EchoJayEditor::reattachLoopPills()
+{
+    const auto& loop = processorRef.loudnessLoop();
+    const auto text = loop.liveBubbleText();
+    const auto pills = loop.livePills();
+    if (text.isEmpty() || pills.isEmpty()) return;
+    bool claimed = false;
+    for (int i = (int) chatMessages.size() - 1; i >= 0; --i)
+    {
+        auto& m = chatMessages[(size_t) i];
+        if (m.role != "assistant" || m.content != text) continue;
+        if (! claimed) { m.loopPills = pills; claimed = true; }
+        else           m.loopPills.clear();   // an OLDER bubble with the same words is history, not a live control
     }
 }
 
@@ -22660,7 +22683,10 @@ EchoJayEditor::resultChipList(const ChatMsg& m) const
     if (m.editAltPrompt.isNotEmpty())
         chips.push_back({ m.editAltPrompt.startsWith("These")
                             ? "Suggest alternatives" : "Suggest an alternative", 0 });
-    for (const auto& pill : m.loopPills) chips.push_back({ pill, 2 });   // 18f: the loop bubble's verbs (kind 2 -> handleLoudnessVerb(label))
+    // 21r item 1: the loop's verbs (Listen / Go / Check / Undo / Done) are CHAT-REPLY CONTROLS, shown exactly where
+    // Apply and Build are - the Chat and Chain tabs - and hidden by the same predicate everywhere else.
+    if (chatReplyControlsAllowed())
+        for (const auto& pill : m.loopPills) chips.push_back({ pill, 2 });   // 18f: kind 2 -> handleLoudnessVerb(label)
     return chips;
 }
 
@@ -22839,7 +22865,9 @@ void EchoJayEditor::armLoudnessLoopIfTargeted()
         auto& nm = ed->chatMessages.back();
         nm.loopPills = b.pills;
         if (b.kind == LoudnessLoop::Bubble::Kind::progress) { nm.loopBubbleId = ++ed->loopBubbleSeq_; nm.loopProgress = b.progress; }
-        ed->workspace.appendMessageToChat(ed->currentChatId, "assistant", b.text, {}, {}, {}, {}, {}, {}, {});
+        // 21r item 1: NO SECOND WRITE. appendLocalResultBubble has already appended this message to the workspace
+        // chat; appending it again here put TWO copies in the store, and a reload then drew the arm bubble twice.
+        // One emit, one bubble, one stored row.
         ed->workspace.requestMutationSync();
         ed->resized(); ed->repaint();
     };

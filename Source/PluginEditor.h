@@ -1317,6 +1317,7 @@ private:
     static std::map<juce::String, juce::String> roleByNameFor(const juce::String& chainJson);
     void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
     void armLoudnessLoopIfTargeted();      // ruling G: arm after an own-rack build whose limiter names a LUFS target
+    void reattachLoopPills();              // 21r item 1: a workspace reload drops the pills; the live loop puts them back
     void appendLocalUserBubble(const juce::String& text);
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"
     int  loopBubbleSeq_ = 0;
