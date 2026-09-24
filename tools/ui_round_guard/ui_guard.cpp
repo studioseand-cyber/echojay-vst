@@ -73,6 +73,9 @@ struct EchoJayTabStripTestAccess
     static juce::String channelIdentity (EchoJayEditor& e) { return e.turnChannelIdentity(); }
     static juce::String injections (EchoJayEditor& e) { return e.standardChainInjections ("what is this chain", true, nullptr, {}); }
     static void newChat (EchoJayEditor& e) { e.createNewChat ({}); }
+    static void masterWet (EchoJayEditor& e, float v) { e.chainListPanel.onMasterWet (v); }        // F5
+    static juce::String viewUid (EchoJayEditor& e) { return e.chainViewUid(); }
+    static void sendChainWet (EchoJayEditor& e, const juce::String& uid, float v) { e.sendLinkMasterWetCommand (uid, v); }
     static Tb tabVis()   { return EchoJayEditor::Tab::Visualisation; }
     static Tb tabComp()  { return EchoJayEditor::Tab::Compare; }
     static Tb tabMeters(){ return EchoJayEditor::Tab::Meters; }
@@ -241,6 +244,41 @@ int main()
             A::toChat (*ed); pumpMs (60);
             check (layer.isVisible(), "F1. back on Chat the layer returns  (the one switch drives BOTH ways)");
             A::chip (*ed, 0).setVisible (false);
+        }
+
+        // ---- F5 (21s-b): the chain MIX is a RACK property ------------------------------------------------------
+        // It used to be V2's: with a Link's rack on screen the knob simply returned, so the control was dead and
+        // the only chain mix that existed was the main plugin's.
+        {
+            std::printf ("\n== F5: the chain MIX belongs to the rack on screen ==\n");
+            auto& own = proc.getChainHost();
+            own.setMasterWet (1.0f);
+            check (std::abs (own.getMasterWet() - 1.0f) < 1e-4f, "F5. V2's own rack starts at 100%");
+            // With no Link rack on screen the knob is V2's own.
+            A::masterWet (*ed, 0.6f);
+            check (A::viewUid (*ed).isEmpty() && std::abs (own.getMasterWet() - 0.6f) < 1e-4f,
+                   "F5. with V2's own rack on screen the knob writes V2's own mix", juce::String (own.getMasterWet(), 2));
+            own.setMasterWet (1.0f);
+            // A REMOTE rack: the knob writes a ctrl-cmd for THAT Link, and V2's own mix is untouched.
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            juce::File (dir + "ctrl-cmd-lnk_01.json").deleteFile();
+            A::sendChainWet (*ed, "lnk_01", 0.6f);
+            const auto cmdA = juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_01.json").loadFileAsString());
+            check (std::abs ((double) cmdA.getProperty ("chainWet", juce::var (-1.0)) - 0.6) < 1e-6,
+                   "F5. Link A gets a chainWet command carrying ITS value  (RED as it stood: the knob returned)",
+                   juce::JSON::toString (cmdA).substring (0, 80));
+            juce::File (dir + "ctrl-cmd-lnk_02.json").deleteFile();
+            A::sendChainWet (*ed, "lnk_02", 0.25f);
+            const auto cmdB = juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_02.json").loadFileAsString());
+            check (std::abs ((double) cmdB.getProperty ("chainWet", juce::var (-1.0)) - 0.25) < 1e-6,
+                   "F5. switching to Link B writes B's own value, not A's", juce::JSON::toString (cmdB).substring (0, 80));
+            const auto cmdAstill = juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_01.json").loadFileAsString());
+            check (std::abs ((double) cmdAstill.getProperty ("chainWet", juce::var (-1.0)) - 0.6) < 1e-6,
+                   "F5. ...and A's command still says 0.6 - one rack's mix is not the other's");
+            check (std::abs (own.getMasterWet() - 1.0f) < 1e-4f,
+                   "F5. V2's own rack is unaffected throughout  (it is at 100%)", juce::String (own.getMasterWet(), 2));
+            juce::File (dir + "ctrl-cmd-lnk_01.json").deleteFile();
+            juce::File (dir + "ctrl-cmd-lnk_02.json").deleteFile();
         }
 
         // ---- THE REQUEST CONTRACT (21s-b, 24 Sep 2026) --------------------------------------------------------

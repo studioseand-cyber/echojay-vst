@@ -865,6 +865,18 @@ void LinkProcessor::pollControlCommand()
     // it). The model copy is mirrored because it is the SESSION-SAVE source
     // (chainModelToVar). NOT rackLockGuard'ed — the sender IS the rack's lock
     // holder; NOT stampLocalRackEdit'ed — a remote edit, like preGainDb.
+    // F5 (21s-b, 24 Sep 2026): the rack's OWN chain mix, set from V2 while it views this rack. A pure value write
+    // into the object that processes audio - no graph mutation - and it is this Link's state from then on, so
+    // releasing the rack leaves the value where it was put.
+    if (obj->hasProperty("chainWet"))
+    {
+        const float w = juce::jlimit(0.0f, 1.0f, (float)(double) obj->getProperty("chainWet"));
+        chainHost.setMasterWet(w);
+        EchoJay_NSLog(("EJCtrl: chainWet applied " + juce::String(w, 3)
+                       + " (seq " + juce::String(seq) + ")").toRawUTF8());
+        updateShmState();      // dirty-mark for save; the sidecar republishes on the revision bump
+        notifyChainModel();
+    }
     if (auto* sw = obj->getProperty("slotWet").getDynamicObject())
     {
         const int          idx  = (int) sw->getProperty("idx");

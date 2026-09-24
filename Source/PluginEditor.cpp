@@ -2138,13 +2138,19 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         // USER: the hand on the knob. Do-not-dial must never block this.
         processorRef.getChainHost().setSlotWet(i, v, ChainHost::WetSource::User);
     };
+    // F5 (21s-b, 24 Sep 2026): THE CHAIN MIX IS A RACK PROPERTY. Each ChainHost owns its own chain wet/dry - V2's
+    // and every Link's - and this knob writes THE RACK ON SCREEN. It used to `return` for a remote rack, so on a
+    // Link's rack the MIX knob was a dead control; V2's own mix was the only one that existed. A borrowed rack
+    // already wrote through its borrow host; a remote one now writes the same ctrl-cmd transport the slot wet
+    // uses, and the value stays with that Link when the rack is released, because it is that Link's state.
     chainListPanel.onMasterWet = [this](float v) {
         if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         const juce::String uid = chainViewUid();
         if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
         { bh->setMasterWet(v); return; }
-        if (uid.isNotEmpty()) return;
+        if (uid.isNotEmpty()) { sendLinkMasterWetCommand(uid, v); return; }
         processorRef.getChainHost().setMasterWet(v);
+        processorRef.markStateDirty();
     };
     // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
     // replacing the master-knob menu items (that menu was on the wrong
@@ -30150,6 +30156,29 @@ void EchoJayEditor::sendLinkSlotWetCommand(const juce::String& uid, int idx,
     juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
     juce::File(dir + "ctrl-cmd-" + uid + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+}
+
+// F5 (21s-b): ctrl-cmd verb chainWet { wet } - the rack's OWN chain mix, written to the Link that owns it. Same
+// fire-and-forget shape as slotWet: a knob drag supersedes itself on one file, the Link consumes the latest, and
+// the value lives in that Link's state from then on. Nothing about V2's own rack is touched.
+void EchoJayEditor::sendLinkMasterWetCommand(const juce::String& uid, float wet)
+{
+    if (uid.isEmpty()) return;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    int seq = LinkShm::nextCtrlSeq();
+    for (auto& p : linkCtrlPending_)
+        if (p.addr == uid && p.seq >= seq) seq = p.seq + 1;
+    auto* cmd = new juce::DynamicObject();
+    cmd->setProperty("v",        1);
+    cmd->setProperty("seq",      seq);
+    cmd->setProperty("chainWet", (double) juce::jlimit(0.0f, 1.0f, wet));
+    juce::File(dir + "ctrl-ack-" + uid + ".json").deleteFile();
+    juce::File(dir + "ctrl-cmd-" + uid + ".json")
+        .replaceWithText(juce::JSON::toString(juce::var(cmd), true));
+    EchoJay_NSLog(("EJCtrl: chainWet " + juce::String(wet, 3) + " -> " + uid
+                   + " (seq " + juce::String(seq) + ")").toRawUTF8());
 }
 
 void EchoJayEditor::sendLinkPreGainResetCommand(const juce::String& linkAddr)
