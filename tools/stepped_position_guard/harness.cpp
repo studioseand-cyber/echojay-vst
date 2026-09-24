@@ -133,8 +133,18 @@ int main()
         check (r.applied && std::abs (ps[0]->getValue()) < 0.001f && flat (r.landedText) == "off" && r.note.contains ("Off"), "P1. a position asked by its panel text (\"off\") lands position 1 = norm 0.0 and the note reads \"Off\" (verified)", show (r));
         r = one (plug, map, "Analog", 60);
         check (r.applied && std::abs (ps[0]->getValue() - 1.0f) < 0.001f && flat (r.landedText) == "60hz" && r.note.contains ("60Hz"), "P2. a number the panel text carries (60 -> \"60Hz\") lands position 3 = norm 1.0, text verified in the note", show (r));
+        // P3 SUPERSEDED BY THE 24 Sep 2026 RULING (21r item 2a). It used to assert that a bare 1-based index lands
+        // position 2. A bare index is a claim about the ORDER of a list the server holds, and when that order is
+        // wrong the write lands on a different position and reads back as one - "op said Minor, plugin shows
+        // Arabic 2". The assertion is INVERTED here rather than deleted, so the change of rule is visible in the
+        // guard that used to hold the old one. Position 2 is still reachable, by its NAME ("50Hz"), one line below.
+        const float wasNorm = ps[0]->getValue();
         r = one (plug, map, "Analog", 2);
-        check (r.applied && std::abs (ps[0]->getValue() - 0.5f) < 0.001f && flat (r.landedText) == "50hz", "P3. a bare 1-based position (2) lands position 2 = norm 0.5 (\"50Hz\")", show (r));
+        check (! r.applied && r.note.contains ("bare index") && std::abs (ps[0]->getValue() - wasNorm) < 0.001f,
+               "P3. a bare 1-based position (2) is REFUSED and nothing is written  (ruling of 24 Sep 2026; this leg used to assert the opposite)", show (r));
+        r = one (plug, map, "Analog", "50Hz");
+        check (r.applied && std::abs (ps[0]->getValue() - 0.5f) < 0.001f && flat (r.landedText) == "50hz",
+               "P3. ...and the same position lands by NAME", show (r));
         ps[0]->setValue (0.5f); r = one (plug, map, "Analog", "70Hz");
         check (! r.applied && std::abs (ps[0]->getValue() - 0.5f) < 0.001f && r.note.containsIgnoreCase ("position"), "P4. an unknown position (\"70Hz\") is refused, not clamped to the last detent, the value untouched", show (r));
         r = one (plug, map, "Thresh", -12.3);
@@ -262,6 +272,70 @@ int main()
         check (ro.contains ("Left Threshold 0") && ro.contains ("Left Threshold 6") && ro.contains ("Left VU") && ! ro.contains ("Threshold"),
                "T1. ...the marked set holds the LED rows (Left Threshold 0..6, Left VU) and NOT the real Threshold", ro.joinIntoString (",").substring (0, 90));
     }
+    // ---- 21r item 2(a) (24 Sep 2026): a named position is VERIFIED, and anything else is refused ---------------
+    // THE DEFECT SHAPE: the op says Minor, the map's position 2 is "Arabic 2", and the write lands on Arabic 2 and
+    // reads back as one. A stepped control is dialled BY NAME, the plugin's own display text is read back, and a
+    // mismatch is refused and rolled back rather than reported as applied.
+    {
+        std::printf ("\n== 21r item 2(a): named positions are verified, bare indices are not written ==\n");
+        // Ruling 1: the display width is the limit, not a mismatch.
+        check (echojay::positionTextMatches ("CHROMATI", "Chromatic"),
+               "(2a) a truncated display reads back as its canonical name  [CHROMATI <-> Chromatic]");
+        check (echojay::positionTextMatches ("INSTRUME", "Instrument"),
+               "(2a) ...at whatever width the plugin prints  [INSTRUME <-> Instrument]");
+        check (echojay::positionTextMatches ("MINOR", "Minor"), "(2a) ...and an untruncated name still matches");
+        check (! echojay::positionTextMatches ("ARABIC 2", "Minor"),
+               "(2a) \"ARABIC 2\" does NOT read back as Minor  (the defect this exists for)");
+        check (! echojay::positionTextMatches ("MINOR", "Harmonic Minor"),
+               "(2a) ...and it is a PREFIX rule, not a substring rule: MINOR is not Harmonic Minor");
+        check (! echojay::positionTextMatches ("", "Minor"), "(2a) an empty readback is never a match");
+        check (echojay::positionTextMatches ("MINOR", "Minor", "MINOR"),
+               "(2a) a sampled position carries BOTH texts and either one matches");
+
+        // The behavioural half, on a plugin whose position 2 IS "Arabic 2" and whose display truncates at 8.
+        {
+            struct Trunc8 final : juce::AudioPluginInstance
+            {
+                Trunc8() { addHostedParameter (std::make_unique<StepParam> ("Scale", juce::StringArray { "MAJOR", "ARABIC 2", "CHROMATI" })); }
+                const juce::String getName() const override { return "Trunc8"; }
+                void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = getName(); }
+                void prepareToPlay (double, int) override {} void releaseResources() override {}
+                void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+                double getTailLengthSeconds() const override { return 0; }
+                bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
+                juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
+                int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
+                const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
+                void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
+            };
+            Trunc8 t8;
+            auto* scale = t8.getParameters()[0];
+            const auto entry = positionEntry ("Scale", 0, { "Major", "Arabic 2", "Chromatic" });
+
+            const auto rMinor = echojay::applyOne (t8, "scale", entry, juce::var ("Minor"));
+            check (! rMinor.applied && rMinor.note.contains ("unknown position"),
+                   "(2a) the op says Minor, no position is named Minor -> NOT written", rMinor.note);
+            check (scale->getValue() == 0.0f, "(2a) ...and the parameter never moved", juce::String (scale->getValue(), 3));
+
+            const auto rIdx = echojay::applyOne (t8, "scale", entry, juce::var (2));
+            check (! rIdx.applied && rIdx.note.contains ("bare index"),
+                   "(2a) a bare index (2) is REFUSED  (RED as it stood: it wrote position 2 - \"Arabic 2\")", rIdx.note);
+            check (scale->getValue() == 0.0f, "(2a) ...and again the parameter never moved", juce::String (scale->getValue(), 3));
+
+            const auto rChrom = echojay::applyOne (t8, "scale", entry, juce::var ("Chromatic"));
+            check (rChrom.applied && rChrom.landedText == "CHROMATI",
+                   "(2a) \"Chromatic\" lands and its truncated readback verifies (ruling 1)",
+                   rChrom.landedText + " / " + rChrom.note);
+
+            auto* bare = new juce::DynamicObject();
+            bare->setProperty ("name", "Scale"); bare->setProperty ("index", 0);
+            bare->setProperty ("kind", "position"); bare->setProperty ("steps", 3);
+            const auto rBare = echojay::applyOne (t8, "scale", juce::var (bare), juce::var (2));
+            check (! rBare.applied && rBare.note.contains ("not named yet"),
+                   "(2a) a stepped control with no named positions is not written; the probe names it first", rBare.note);
+        }
+    }
+
     std::printf ("\n==== stepped_position_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

@@ -616,6 +616,29 @@ inline juce::String normNameServerRule (const juce::String& raw)
 // at all (an old flat map) keeps its index, said in `how`.
 #define EJ_LAND_BY_NAME 1
 #define EJ_SETTLED_READBACK 1   // 21 Sep 2026 ruling: a landed value is verified AFTER a message-loop settle for every plugin; revert only if it still mismatches
+// ---------------------------------------------------------------------------
+// 21r item 2(a) + ruling 1 (24 Sep 2026). A PLUGIN'S DISPLAY WIDTH IS THE LIMIT, NOT A MISMATCH.
+// UAD Auto-Tune Realtime Advanced shows its Scale positions in 8 characters: "CHROMATI", "INSTRUME", "SCHOLAR'".
+// The profile keeps the CANONICAL name ("Chromatic"), and a readback matches when the displayed text is a
+// case-insensitive prefix of the canonical name AT THE DISPLAYED WIDTH. A sampled position therefore stores both:
+// `name` (canonical) and `display` (exactly what the plugin printed).
+//
+// It is a PREFIX rule, not a "contains" rule, and that is the whole point: "MINOR" must not match "Harmonic Minor",
+// and a plugin showing "ARABIC 2" where Minor was asked must FAIL - which is the defect this was written for.
+inline bool positionTextMatches (const juce::String& landed,
+                                 const juce::String& canonical,
+                                 const juce::String& display = {})
+{
+    auto flat = [] (const juce::String& t) { return t.removeCharacters (" \t").toLowerCase(); };
+    const auto l = flat (landed);
+    if (l.isEmpty()) return false;
+    if (display.isNotEmpty() && l == flat (display)) return true;   // exactly what the probe sampled
+    const auto c = flat (canonical);
+    if (l == c) return true;
+    // the truncation case: what the plugin can show, at the width it can show it
+    return l.length() < c.length() && c.startsWith (l);
+}
+
 #define EJ_STEPPED_POSITIONS 1   // round (c), 21 Sep 2026: positions by panel text / number / index, snap to a detent, verify the text; anchored+steps snaps
 extern "C" void EchoJay_NSLog (const char* msg);   // NativeClip.mm (the log every harness and both plugins link)
 inline juce::String normalizeControlName (const juce::String& raw);   // defined below (the controls pass)
@@ -794,17 +817,20 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         // are not evenly spaced - Auto-Tune Pro's Key runs are 0.022, 0.091, 0.182 ... - so an entry that carries its own
         // normalised is written AT that value instead of the (p-1)/(steps-1) formula. A bare-string map behaves exactly
         // as it did, and `steps` may be omitted when the positions themselves say how many there are.
-        juce::StringArray positions; juce::Array<float> posNorms;
+        juce::StringArray positions, displays; juce::Array<float> posNorms;
         if (auto* pa = mapEntry.getProperty ("positions", juce::var()).getArray())
             for (const auto& t : *pa)
             {
                 if (auto* o = t.getDynamicObject())
                 {
                     positions.add (o->getProperty ("name").toString().trim());
+                    // 21r item 2(a): `display` is what the PLUGIN printed when the position was sampled; `name` is
+                    // the canonical name. A map written before this carries only `name`, and behaves as it did.
+                    displays.add (o->getProperty ("display").toString().trim());
                     posNorms.add (o->hasProperty ("normalised") ? (float) (double) o->getProperty ("normalised")
                                 : o->hasProperty ("normalized") ? (float) (double) o->getProperty ("normalized") : -1.0f);
                 }
-                else { positions.add (t.toString().trim()); posNorms.add (-1.0f); }
+                else { positions.add (t.toString().trim()); displays.add ({}); posNorms.add (-1.0f); }
             }
         const int steps = juce::jmax (2, (int) mapEntry.getProperty ("steps", juce::var (juce::jmax (2, positions.size()))));
         const bool havePositions = positions.size() == steps;
@@ -815,23 +841,45 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         if (havePositions)
         {
             const auto asked = value.toString().trim();
-            for (int i = 0; i < positions.size() && p < 0; ++i) if (flatText (positions[i]) == flatText (asked)) p = i + 1;   // the panel text itself
+            // by the canonical name, then by the text the plugin actually prints (they differ when the plugin
+            // truncates: canonical "Chromatic", display "CHROMATI")
+            for (int i = 0; i < positions.size() && p < 0; ++i) if (flatText (positions[i]) == flatText (asked)) p = i + 1;
+            for (int i = 0; i < displays.size() && p < 0; ++i)
+                if (displays[i].isNotEmpty() && flatText (displays[i]) == flatText (asked)) p = i + 1;
             if (p < 0 && numeric)
-            {   // a number the panel text carries: "60" against "60Hz", "-12" against "-12 dB"
+            {   // a number the panel text carries: "60" against "60Hz", "-12" against "-12 dB". This NAMES a
+                // position - the number is the position's own label - so it stays allowed.
                 for (int i = 0; i < positions.size() && p < 0; ++i)
                 {
-                    const auto lead = positions[i].trim().retainCharacters ("0123456789.-+");
-                    if (lead.isNotEmpty() && lead.containsAnyOf ("0123456789") && std::abs (lead.getFloatValue() - pos) < 0.001f) p = i + 1;
+                    // THE NUMBER MUST LEAD THE TEXT (21r item 2(a)). Retaining digits from anywhere in the name
+                    // made "Arabic 2" answer to the number 2, so a bare index 2 landed on Arabic 2 and read back
+                    // as one - the exact defect. "60Hz" and "-12 dB" still resolve; "Arabic 2" no longer does.
+                    const auto t0 = positions[i].trim();
+                    int n = 0; while (n < t0.length() && juce::String ("0123456789.-+").containsChar (t0[n])) ++n;
+                    const auto lead = t0.substring (0, n);
+                    if (lead.containsAnyOf ("0123456789") && std::abs (lead.getFloatValue() - pos) < 0.001f) p = i + 1;
                 }
-                if (p < 0 && ! value.isString() && pos >= 1.0f && pos <= (float) steps && std::abs (pos - std::round (pos)) < 0.001f)
-                    p = (int) std::round (pos);   // a bare 1-based index (a number a position text carries was tried first, so "2" on {1|2|3} means the text)
+                // 21r item 2(a): A BARE 1-BASED INDEX IS NO LONGER WRITTEN. An index is a claim about the ORDER of
+                // a list the server holds, and when that order is wrong the write lands on a different position
+                // and reads back as one - which is exactly the "op said Minor, plugin shows Arabic 2" defect. A
+                // stepped control is dialled BY NAME or not at all.
+                if (p < 0 && ! value.isString() && pos >= 1.0f && pos <= (float) steps)
+                {
+                    r.note = "REFUSED: a bare index (" + juce::String (pos, 0) + ") is not a position name; this control is dialled by name {"
+                           + positions.joinIntoString (" | ") + "}";
+                    return r;
+                }
             }
             if (p < 0) { r.note = "unknown position \"" + asked + "\" (this control has " + positions.joinIntoString (" | ") + ")"; return r; }
         }
         else
         {
-            if (! numeric) { r.note = "bad position value"; return r; }
-            p = juce::jlimit (1, steps, (int) std::round (pos));
+            // 21r item 2(a): the map says this control is STEPPED but does not name its positions, so there is
+            // nothing to verify a write against and nothing to dial by. It is not written. The sampled-text probe
+            // (--sample-text, run per identity on first load) names the positions, and then it can be dialled.
+            r.note = "REFUSED: this control is stepped (" + juce::String (steps)
+                   + " positions) but its positions are not named yet - the sampled-text probe names them first";
+            return r;
         }
         // the measured centre when the map carries one, else the even-spacing formula
         norm = (havePositions && p >= 1 && p <= posNorms.size() && posNorms[p - 1] >= 0.0f)
@@ -842,14 +890,19 @@ inline ApplyResult applyOne (juce::AudioPluginInstance& plugin,
         const bool normOk = std::abs (param->getValue() - norm) <= 0.5f / (float) (steps - 1);
         if (havePositions)
         {
-            const bool textOk = flatText (r.landedText) == flatText (positions[p - 1]);
+            // Ruling 1 (24 Sep 2026): the display width is the limit, not a mismatch - "CHROMATI" reads back as
+            // Chromatic, "ARABIC 2" does not read back as Minor.
+            const bool textOk = positionTextMatches (r.landedText, positions[p - 1],
+                                                     p - 1 < displays.size() ? displays[p - 1] : juce::String());
             if (normOk && textOk) { r.applied = true; r.normalized = norm; r.note = "position " + juce::String (p) + " of " + juce::String (steps) + " set, reads \"" + r.landedText.trim() + "\""; }
             else
             {
                 r.normalized = norm;
                 const auto want = positions[p - 1]; const float tol = 0.5f / (float) (steps - 1);
+                const auto disp = (p - 1 < displays.size()) ? displays[p - 1] : juce::String();
                 defer ("asked position " + juce::String (p) + " (\"" + want + "\"), plugin shows \"" + r.landedText.trim() + "\"",
-                       [want, norm, tol, flatText] (const juce::String& t, float v) { return flatText (t) == flatText (want) && std::abs (v - norm) <= tol; });
+                       [want, disp, norm, tol] (const juce::String& t, float v)
+                       { return positionTextMatches (t, want, disp) && std::abs (v - norm) <= tol; });
             }
             return r;
         }
