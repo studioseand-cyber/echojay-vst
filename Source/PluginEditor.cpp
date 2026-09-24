@@ -6307,7 +6307,8 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
-    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
+    api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -24891,6 +24892,29 @@ juce::String EchoJayEditor::computeNextCaptureName() const
                           : (proj + " v" + juce::String(version));
 }
 
+// THE REQUEST CONTRACT (21s-b, 24 Sep 2026): WHICH CHANNEL THIS TURN IS ABOUT, whichever surface chose it.
+// One answer, from the same selection source F2 established, so a turn begun on the Link tab, from the Working-on
+// menu or by clicking a group strip cannot reach the server with channel null - which is what tonight's turns did.
+// Order: a selected GROUP names itself; a Link target names that Link; otherwise the channel this chat is open on;
+// otherwise the plugin's own channel. Empty only when the instance genuinely has no channel of its own.
+juce::String EchoJayEditor::turnChannelIdentity() const
+{
+    if (processorRef.chatTargetGroupId.isNotEmpty() && processorRef.chatTargetGroupName.isNotEmpty())
+        return "Group: " + processorRef.chatTargetGroupName;
+    if (processorRef.chatTargetLinkUid.isNotEmpty())
+    {
+        const auto label = channelDisplayLabel(processorRef.chatTargetLinkUid);
+        if (echojay::channelLabelUsable(processorRef.chatTargetLinkUid.toStdString(), label.toStdString())) return label;
+    }
+    const auto uid = effectiveChannelUid();
+    if (uid.isNotEmpty())
+    {
+        const auto label = channelDisplayLabel(uid);
+        if (echojay::channelLabelUsable(uid.toStdString(), label.toStdString())) return label;
+    }
+    return materialContextName(processorRef.getEffectiveChannelName());
+}
+
 juce::String EchoJayEditor::materialContextName(const juce::String& mainDefault) const
 {
     // MUST STAY IN STEP WITH the [TARGET CHANNEL] composer's guard (search
@@ -27621,7 +27645,8 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
-    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
+    api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
                         sysPrompt, channelName, genreName, userContent, msg,
                         rolesSnap, contentsSnap]
@@ -28252,7 +28277,8 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
-    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
+    api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
@@ -28307,7 +28333,8 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
-    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
+    api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -33472,7 +33499,8 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
-    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
+    api.setTurnIdentity(currentChatId, turnChannelIdentity());   // 21s-b request contract: chatId + the TARGET channel   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis2, captureChatId](const juce::String& reply, bool success) {
             if (safeThis2 == nullptr)

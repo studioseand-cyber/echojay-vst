@@ -377,10 +377,20 @@ public:
     // 21r item 5 (24 Sep 2026, contract addendum): the group chosen in the Working-on selector rides EVERY body as
     // selectedGroupId, and the server resolves level-match and group targets from it. Empty = no group selected;
     // the field is then absent rather than empty, so "no group" cannot be read as a group whose id is "".
+    // ---- THE REQUEST CONTRACT (21s-b, 24 Sep 2026) -----------------------------
+    // Every chat request carries the chat's stable id and the TARGET CHANNEL identity. Tonight's turns reached the
+    // server with channel null: the chat body had no channel field at all - only /api/classify had one - so a turn
+    // begun anywhere but the Chat tab told the server nothing about where it was. Staged once per turn, from ONE
+    // place in the editor, and written on every chat body (streaming and not).
+    void setTurnIdentity(const juce::String& chatId, const juce::String& channel)
+    { turnChatId_ = chatId.trim(); turnChannel_ = channel.trim(); }
+    juce::String turnChatId() const { return turnChatId_; }
+    juce::String turnChannel() const { return turnChannel_; }
     void setSelectedGroupId(const juce::String& id) { selectedGroupId_ = id; }
     juce::String selectedGroupId() const { return selectedGroupId_; }
     juce::var groupsLinks_, groupsVar_;
     juce::String selectedGroupId_;
+    juce::String turnChatId_, turnChannel_;   // 21s-b: the request contract
     bool unityChain() const { return unityChain_; }
     bool unityChain_ = false;
     void stageCapturePayload(const juce::String& metersBlob, int busCount)

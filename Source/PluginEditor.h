@@ -1340,7 +1340,8 @@ private:
     struct ScanMenuItem { int id; juce::String label; };
     static std::vector<ScanMenuItem> scanMenuItems();
     void setChatTargetGroup(const juce::String& groupId);   // F2 (21s-a): the ONE way a group becomes the target
-    juce::String chatTargetLabel() const;                   // F2: the composer pill's text, from that one answer
+    juce::String chatTargetLabel() const;
+    juce::String turnChannelIdentity() const;   // 21s-b: the channel identity every request carries                   // F2: the composer pill's text, from that one answer
     void maybeOfferRescan();               // 21r item 3: "Plugins changed since the last scan - Scan now?", once per launch
     void appendLocalUserBubble(const juce::String& text);
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"

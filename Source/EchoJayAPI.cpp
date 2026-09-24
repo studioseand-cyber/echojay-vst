@@ -1298,6 +1298,12 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // turnType is staged per send ("" = plain "chat"); capture payloads only
     // ride on explicit capture turns (the callers enforce that pairing).
     body += ",\"appVersion\":\"" + juce::String(JucePlugin_VersionString) + "\"";
+    // THE REQUEST CONTRACT (21s-b, 24 Sep 2026): the chat's stable id and the TARGET CHANNEL identity, on every
+    // turn, whichever tab / selector / strip chose the target. Absent rather than empty when unknown, so "no
+    // channel" is distinguishable from "a channel whose name is the empty string" - and so the server can tell
+    // an old client from a new one that genuinely has nothing to say.
+    if (turnChatId_.isNotEmpty())  body += ",\"chatId\":" + juce::JSON::toString(turnChatId_);
+    if (turnChannel_.isNotEmpty()) body += ",\"channel\":" + juce::JSON::toString(turnChannel_);
     // 21m item 2 / 21n: CONTRACT_GROUPS "Channel width" - the wire form is the STRING "mono" | "stereo" (a number was sent until 21n)
     if (channelWidth_ > 0) body += juce::String(",\"channelWidth\":\"") + (channelWidth_ == 1 ? "mono" : "stereo") + "\"";
     if (unityChain_) body += ",\"unityChain\":true";   // 21m ruling: present only while the rack carries active per-slot trims

@@ -19,6 +19,8 @@
 #include "NotDialableText.h"    // hurdle 1 item 3
 #endif
 #include <cstdio>
+// The request body as the shipping client builds it (the same pin groups_guard uses).
+struct EchoJayAPIRequestPin { static juce::String body (EchoJayAPI& a, const juce::StringArray& r, const juce::StringArray& c, const juce::String& sys, const juce::String& mb) { return a.buildChatRequestBody (r, c, sys, mb); } };
 struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v)
     {   // 22 Sep 2026: STOP the processor's 1 Hz timer first - refreshLinkRegistry() rebuilds linkSlotInfos from the real
         // registry (empty under the isolated home) and would wipe the injected rows the moment it fires (a longer run is
@@ -66,6 +68,11 @@ struct EchoJayTabStripTestAccess
     static bool pillEligible (EchoJayEditor& e) { return e.targetPillEligible(); }                 // F1-rest
     static bool panelVisibleOn (EchoJayEditor& e) { return e.assistantSidebarVisible(); }          // F1 revised
     static juce::TextEditor& composer (EchoJayEditor& e) { return e.chatInput; }
+    static juce::String chatId (EchoJayEditor& e) { return e.currentChatId; }                        // 21s-b contract
+    static void setChatId (EchoJayEditor& e, const juce::String& id) { e.currentChatId = id; }
+    static juce::String channelIdentity (EchoJayEditor& e) { return e.turnChannelIdentity(); }
+    static juce::String injections (EchoJayEditor& e) { return e.standardChainInjections ("what is this chain", true, nullptr, {}); }
+    static void newChat (EchoJayEditor& e) { e.createNewChat ({}); }
     static Tb tabVis()   { return EchoJayEditor::Tab::Visualisation; }
     static Tb tabComp()  { return EchoJayEditor::Tab::Compare; }
     static Tb tabMeters(){ return EchoJayEditor::Tab::Meters; }
@@ -234,6 +241,69 @@ int main()
             A::toChat (*ed); pumpMs (60);
             check (layer.isVisible(), "F1. back on Chat the layer returns  (the one switch drives BOTH ways)");
             A::chip (*ed, 0).setVisible (false);
+        }
+
+        // ---- THE REQUEST CONTRACT (21s-b, 24 Sep 2026) --------------------------------------------------------
+        // TONIGHT'S DEFECT: turns reached the server with channel null. The chat body had NO channel field at all -
+        // only /api/classify had one - so a turn begun anywhere but the Chat tab told the server nothing about
+        // where it was. Every request now carries the chat's stable id and the TARGET channel identity.
+        {
+            std::printf ("\n== the request contract: chatId + channel + the chain block, from every surface ==\n");
+            // "+ New chat" empties the transcript, and the legs after this one assert on the arm bubble this scope
+            // built - so the fixture is saved here and put back at the end. A guard must not move the ground the
+            // next leg is standing on.
+            const auto savedMsgs = A::msgs (*ed);
+            const auto savedId   = A::chatId (*ed);
+            if (A::chatId (*ed).isEmpty()) { A::newChat (*ed); pumpMs (60); }
+            auto bodyNow = [&] ()
+            {
+                proc.getApi().setTurnIdentity (A::chatId (*ed), A::channelIdentity (*ed));
+                proc.getApi().setGroupsContext (proc.linksBodyVar(), proc.groupsBodyVar());
+                return EchoJayAPIRequestPin::body (proc.getApi(), juce::StringArray { "user" },
+                                                   juce::StringArray { "what is this chain" }, "sys", {});
+            };
+            A::toLinkTab (*ed); pumpMs (40);
+            {
+                const auto b = bodyNow();
+                check (b.contains ("\"chatId\""),
+                       "contract. Link tab: the body carries chatId  (RED as it stood: no such field)",
+                       b.fromFirstOccurrenceOf ("\"chatId\"", true, false).substring (0, 30));
+                check (b.contains ("\"channel\":\"") && ! b.contains ("\"channel\":\"\""),
+                       "contract. Link tab: ...and a NON-NULL channel  (RED as it stood: the server saw null)",
+                       b.fromFirstOccurrenceOf ("\"channel\"", true, false).substring (0, 40));
+            }
+            proc.chatTargetLinkUid = "lnk_01"; proc.chatTargetLinkName = "BV 1";
+            {
+                const auto b = bodyNow();
+                check (b.contains ("\"channel\""), "contract. Working-on menu: the chosen Link names the channel",
+                       b.fromFirstOccurrenceOf ("\"channel\"", true, false).substring (0, 40));
+            }
+            proc.chatTargetLinkUid.clear(); proc.chatTargetLinkName.clear();
+            const auto gidc = proc.createLinkGroup ("Group 3", juce::StringArray { "lnk_01", "lnk_02" });
+            A::targetGroup (*ed, gidc);
+            {
+                const auto b = bodyNow();
+                check (b.contains ("Group: Group 3"), "contract. group strip: the group names the channel",
+                       b.fromFirstOccurrenceOf ("\"channel\"", true, false).substring (0, 40));
+                check (b.contains ("\"selectedGroupId\""), "contract. ...and the group id rides with it");
+            }
+            const auto inj = A::injections (*ed);
+            check (inj.contains ("CURRENT CHAIN"),
+                   "contract. the turn carries a [CURRENT CHAIN] block for the target", inj.substring (0, 110));
+            const auto id1 = A::chatId (*ed);
+            check (id1.isNotEmpty(), "contract. the chat has a stable id", id1);
+            check (A::chatId (*ed) == id1, "contract. a continued chat keeps it");
+            // "+ New chat" mints a record only when the current chat HAS messages - an empty one already IS a
+            // fresh chat, which is the product's rule, not a fixture detail. So give it one.
+            { A::Msg m; m.role = "user"; m.content = "a turn, so this chat is not already fresh"; A::msgs (*ed).push_back (m); }
+            A::newChat (*ed); pumpMs (60);
+            const auto id2 = A::chatId (*ed);
+            check (id2.isNotEmpty() && id2 != id1, "contract. \"+ New chat\" gets a NEW chatId", id1 + " -> " + id2);
+            A::targetGroup (*ed, {});
+            proc.removeLinkGroup (gidc);
+            A::toChat (*ed); pumpMs (40);
+            A::msgs (*ed) = savedMsgs;
+            A::setChatId (*ed, savedId);
         }
 
         // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------
