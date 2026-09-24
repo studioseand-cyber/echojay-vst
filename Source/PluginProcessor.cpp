@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "EJRackSidecarFill.h"   // ruling 1 (21s-b)
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>
 #include <unistd.h>
@@ -2186,6 +2187,34 @@ ChainHost* EchoJayProcessor::borrowHost()
 ChainHost* EchoJayProcessor::borrowHostIfActiveFor(const juce::String& uid)
 {
     return (borrowActive() && borrowSession_.uid == uid) ? borrowHost_.get() : nullptr;
+}
+
+// RULING 1 (21s-b, 24 Sep 2026). While a rack is borrowed the Link parks its own slots and keeps publishing an
+// EMPTY sidecar, so the two sources disagree about what is in the rack for as long as the lease is held. That is
+// what refused a real edit on 24 Sep ("guard=baseSlots-count base=1 [UAD Teletronix LA-2] live=0") and what made
+// the chat say "sidecar missing/empty" about a rack it had just built into. The lease holder now writes the file
+// from the rack it actually holds: the SAME slot fill the Link uses (EJRackSidecarFill.h), the Link's own fields
+// preserved from the file already on disk, and the revision bumped so every reader sees it as newer.
+bool EchoJayProcessor::republishBorrowedRackSidecar()
+{
+    if (! borrowActive() || borrowHost_ == nullptr || borrowSession_.uid.isEmpty()) return false;
+    int err = 0;
+    const juce::String dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return false;
+
+    // Start from what the Link published: identity, capability flags, mute/solo, pre-gain - everything only the
+    // Link can know stays as it was. Only the slot list and the rack values the lease holder owns are replaced.
+    auto rc = LinkShm::readRackSidecar(dir, borrowSession_.uid);
+    rc.valid = true;
+    rc.uid   = borrowSession_.uid;
+    if (rc.name.isEmpty()) rc.name = resolveLinkDisplayName(borrowSession_.uid);
+    rc.slots.clear();
+    echojay::fillRackSidecarSlots(rc, *borrowHost_, juce::Time::currentTimeMillis());
+    LinkShm::writeRackSidecar(dir, rc);
+    EchoJay_NSLog(("EJBorrow: sidecar republished for " + borrowSession_.uid + " from the borrowed host, "
+                   + juce::String((int) rc.slots.size()) + " slot(s), rev " + juce::String(rc.revision)
+                   + " - the preflight and [CURRENT CHAIN] now read what was built").toRawUTF8());
+    return true;
 }
 
 void EchoJayProcessor::renewBorrowLease()

@@ -6,6 +6,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "EJRackSidecarFill.h"   // ruling 1 (21s-b): the shared sidecar slot fill
 #include "EedLimiterProcessor.h"
 #include "EedGainProcessor.h"
 #include "EedDeviceRegistry.h"
@@ -202,6 +203,52 @@ int main()
         }
         else check (false, "R3g. fixture: the three built-ins are registered");
     }
+    {   // RULING 1: one source for "what is in this rack" - the sidecar carries what the lease holder built
+        std::printf ("\n== ruling 1 (21s-b): the sidecar is filled from the rack that actually holds the slots ==\n");
+        auto held = std::make_unique<ChainHost> (ChainHost::Mode::Primary);   // stands for the BORROWED host
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        if (gn != nullptr && lv != nullptr)
+        {
+            held->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
+            held->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            const juce::String uid = "guard_rul1_uid";
+            // What the Link publishes while its slots are parked: an EMPTY rack. This is the 24 Sep state.
+            LinkShm::RackSidecar empty; empty.valid = true; empty.uid = uid; empty.name = "Guard Link";
+            LinkShm::writeRackSidecar (dir, empty);
+            check (LinkShm::readRackSidecar (dir, uid).slots.empty(),
+                   "R1g. while the rack is held the Link's own sidecar is empty - the state that refused a real edit");
+            // The lease holder republishes from the rack it holds, through the SHARED fill both publishers use.
+            auto rc = LinkShm::readRackSidecar (dir, uid);
+            rc.valid = true; rc.uid = uid; rc.slots.clear();
+            echojay::fillRackSidecarSlots (rc, *held, juce::Time::currentTimeMillis());
+            LinkShm::writeRackSidecar (dir, rc);
+            const auto back = LinkShm::readRackSidecar (dir, uid);
+            check (back.slots.size() == 2,
+                   "R1g. after the republish the sidecar carries the built slot list  (RED as it stood: 0)",
+                   juce::String ((int) back.slots.size()) + " slot(s)");
+            check (back.slots.size() == 2 && back.slots[0].name == "EchoJay Gain" && back.slots[1].name == "EchoJay Level",
+                   "R1g. ...by name, in order - the same list a preview would have been written against",
+                   back.slots.empty() ? juce::String() : back.slots[0].name + " | " + back.slots[1].name);
+            check (back.name == "Guard Link",
+                   "R1g. ...and everything only the Link can know survives the republish (its name)", back.name);
+            // ...and the preflight, reading that list, passes the edit the old state refused.
+            std::vector<ChainHost::ChainEditOp> ops;
+            ChainHost::ChainEditOp b; b.op = "bypass"; b.slot = 0; b.on = true; ops.push_back (b);
+            juce::StringArray baseFromSidecar;
+            for (const auto& sl : back.slots) baseFromSidecar.add (sl.name);
+            bool done = false, aborted = true;
+            held->applyChainEdits (ops, -1, baseFromSidecar,
+                                   [&] (const juce::StringArray&, int, bool ab) { aborted = ab; done = true; });
+            for (int k = 0; k < 60 && ! done; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (done && ! aborted,
+                   "R1g. an Apply whose base came from that sidecar is accepted by the rack that holds the slots");
+            juce::File (dir + "rack-" + uid + ".json").deleteFile();
+        }
+        else check (false, "R1g. fixture: the built-ins are registered");
+    }
+
 
     std::printf ("\n==== level_slot_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

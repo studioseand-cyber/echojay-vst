@@ -24294,6 +24294,9 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
         {
             if (safeThis != nullptr) safeThis->clearStageStatus();
             if (safeThis == nullptr) return;
+            // RULING 1 (21s-b): an edit on a borrowed rack republishes that Link's sidecar too - the same rule as
+            // a build. It is a no-op when no rack is borrowed.
+            safeThis->processorRef.republishBorrowedRackSidecar();
             if (msgIdx < 0 || msgIdx >= (int)safeThis->chatMessages.size()) return;
             auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
 
@@ -29513,11 +29516,19 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
             // at 15:06:12.425 while its exact map landed at .866 and dialled
             // 3/4. Now the host settles (every fetch bounded at 4 s) before
             // the summary is written.
+            // RULING 1 (21s-b, 24 Sep 2026): the sidecar is republished from the borrowed host the moment the
+            // build lands, BEFORE anything releases the lock. Until now the Link kept publishing an empty rack
+            // while V2 held the lease, so the very next edit was refused against a rack the user had just watched
+            // being built, and the chat said "sidecar missing/empty" about it.
+            p4.republishBorrowedRackSidecar();
             bh2->whenDialSettled(ChainHost::kMapFetchBoundMs, [safeThis, linkUid, chainJsonForBubble] (bool settled)
             {
                 if (safeThis == nullptr) return;
                 auto* bhS = safeThis->processorRef.borrowHostIfActiveFor(linkUid);
                 if (bhS == nullptr) return;
+                // ...and again once the dial has settled: the settings text in the sidecar is part of what a
+                // preview reads back, and it is only final here.
+                safeThis->processorRef.republishBorrowedRackSidecar();
                 // Item 3 (17 Sep 2026 ruling): substitute the noMap slots with built-ins, keep the
                 // session's name-only identities in step, and say so in normal text.
                 safeThis->finishSessionBuild(linkUid, chainJsonForBubble, settled);

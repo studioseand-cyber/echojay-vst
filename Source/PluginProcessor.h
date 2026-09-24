@@ -538,6 +538,11 @@ public:
     // borrowed host is session-long (spec §1); the session engages/releases.
     ChainHost*   borrowHost();                       // lazy, Mode::Borrowed
     ChainHost*   borrowHostIfActiveFor(const juce::String& uid);
+    // RULING 1 (21s-b, 24 Sep 2026): republish THIS rack's sidecar from the borrowed host, so the Link's published
+    // description of its own rack matches what the lease holder just built into it. Called after any build or edit
+    // on a borrowed rack, BEFORE the lock is released - the edit preflight and the chat's [CURRENT CHAIN] block
+    // both read that file, and until now they read an empty one while the rack was held.
+    bool republishBorrowedRackSidecar();
     bool         borrowActive() const noexcept
     { return borrowSession_.active.load(std::memory_order_relaxed); }
     juce::String borrowUid() const { return borrowSession_.uid; }

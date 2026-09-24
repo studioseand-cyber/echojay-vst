@@ -1,4 +1,5 @@
 #include "LinkProcessor.h"
+#include "EJRackSidecarFill.h"   // ruling 1 (21s-b): one source for the slot list
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include <signal.h>   // kill(pid, 0): publisher liveness (C4b)
 #include <unistd.h>
@@ -338,38 +339,18 @@ void LinkProcessor::publishRackSidecar()
     rc.preGainDb         = pgDb;
     rc.preGainUserSet    = pgUser;
     rc.preGainInputKnown = pgKnown;
-    {
-        const auto infos = chainHost.getAllSlotInfos();
-        for (int i = 0; i < (int) infos.size(); ++i)
-        {
-            const auto& s = infos[(size_t) i];
-            rc.slots.push_back({ s.name, s.format,
-                                 s.settings.substring(0, 200),   // bound file size
-                                 s.bypassed, s.wet,
-                                 // Stage 1: the leased slot says so, so the
-                                 // main plugin can see its lease landed (and
-                                 // see it die: controlled vanishing while it
-                                 // still holds the lease is the teardown
-                                 // signal).
-                                 leaseActive_.load(std::memory_order_relaxed)
-                                     && (rackLeaseActive_ || i == leaseSlot0_),
-                                 // The curve rides on the EQ's OWN slot, so a
-                                 // reader never has to guess which entry it
-                                 // describes. Every other slot leaves it empty.
-                                 i == eqSlot ? curve : std::vector<int16_t>{} });
-            // Identity so the slot can enter the server's fp union and dial.
-            const auto id = chainHost.getSlotIdentity(i);
-            auto& back = rc.slots.back();
-            back.fp = id.fp; back.uid = id.uid; back.version = id.version;
-            // Rack lock recency: the Link's last LOCAL rack edit rides every
-            // slot (assigned by name, after the positional init, like the
-            // identity trio above).
-            back.lastEditMs = lastLocalRackEditMs_;
-            // Manufacturer from the backfilled single source (SlotInfo),
-            // assigned after the positional init like the trio above.
-            back.manufacturer = s.manufacturer;
-        }
-    }
+    // RULING 1 (21s-b): the slot list is filled by the ONE shared function (EJRackSidecarFill.h), so the Link and
+    // a main plugin holding this rack's lease cannot describe the same rack differently. Everything only the Link
+    // can know - the lease flags and the EQ curve - is passed in.
+    echojay::fillRackSidecarSlots (rc, chainHost, lastLocalRackEditMs_, eqSlot, curve,
+                                   [this] (int i)
+                                   {
+                                       // Stage 1: the leased slot says so, so the main plugin can see its lease
+                                       // landed (and see it die: controlled vanishing while it still holds the
+                                       // lease is the teardown signal).
+                                       return leaseActive_.load (std::memory_order_relaxed)
+                                              && (rackLeaseActive_ || i == leaseSlot0_);
+                                   });
     LinkShm::writeRackSidecar(resolvedDir, rc);
 }
 
