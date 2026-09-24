@@ -55,6 +55,14 @@ struct EchoJayTabStripTestAccess
     static bool replyAllowed (EchoJayEditor& e) { return e.chatReplyControlsAllowed(); }
     static void reattach (EchoJayEditor& e) { e.reattachLoopPills(); }   // 21r item 1
     static bool channelPrompt (EchoJayEditor& e) { return e.shouldShowChannelPrompt(); }   // 21r item 7
+    // ---- 21s-a ----
+    static juce::Component& replyLayer (EchoJayEditor& e) { return e.replyLayer; }                 // F1
+    static juce::TextButton& chip (EchoJayEditor& e, int i) { return e.resultChipBtns[(size_t) i]; }
+    static juce::TextButton& buildBtn (EchoJayEditor& e, int i) { return e.chainBuildBtns[(size_t) i]; }
+    static void targetGroup (EchoJayEditor& e, const juce::String& id) { e.setChatTargetGroup (id); }   // F2
+    static juce::String targetLabel (EchoJayEditor& e) { return e.chatTargetLabel(); }
+    static juce::String banner (EchoJayEditor& e) { e.refreshChannelBannerCache(); return e.chanBannerText_; }
+    static bool stripSelected (EchoJayEditor& e, const juce::String& addr) { return e.linkSelection_.count (addr) > 0; }
     static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
     static juce::TextButton& undoHdr (EchoJayEditor& e) { return e.undoHdrBtn; }
     static juce::TextButton& redoHdr (EchoJayEditor& e) { return e.redoHdrBtn; }
@@ -168,6 +176,75 @@ int main()
         auto& M = A::msgs (*ed);
         auto lastLoop = [&] () -> const A::Msg* { for (int i = (int) M.size() - 1; i >= 0; --i) if (M[(size_t) i].role == "assistant" && (M[(size_t) i].content.startsWith ("Chain built. Play") || ! M[(size_t) i].loopPills.isEmpty() || M[(size_t) i].loopBubbleId > 0)) return &M[(size_t) i]; return nullptr; };
         check (loop.everArmed() && lastLoop() != nullptr && (lastLoop()->content.startsWith ("Chain built. Play the loudest part") || lastLoop()->content.startsWith ("Cue the loudest section")), "(4) the ARM bubble is shown after the build (before any Listening...)", lastLoop() ? lastLoop()->content.substring (0, 60) : "no loop bubble");
+        // ---- F1 (21s-a): the reply pills cannot leak onto a tab that has no transcript -------------------------
+        // THE COMPLAINT: loop pills floating in an empty panel on the Link tab. The controls used to be children of
+        // the EDITOR, shown and hidden one by one, so any stale layout pass left one on screen. They are now
+        // children of ONE layer whose visibility is the whole answer.
+        {
+            std::printf ("\n== F1: reply controls are owned by one layer, so they cannot outlive the transcript ==\n");
+            A::toChat (*ed); pumpMs (40);
+            auto& layer = A::replyLayer (*ed);
+            check (A::chip (*ed, 0).getParentComponent() == &layer && A::buildBtn (*ed, 0).getParentComponent() == &layer,
+                   "F1. every reply control is a child of the reply layer, not of the editor");
+            // "On screen" headless: every ancestor up to the editor visible. (juce::Component::isShowing also
+            // requires a window peer, which a headless guard has not got, so it cannot be the test here.)
+            // The editor itself is not visible in a headless fixture (it has no window peer), so the walk stops AT
+            // the reply layer: "would this control be drawn if the editor were on screen".
+            auto onScreen = [&layer] (juce::Component& c)
+            {
+                for (juce::Component* p = &c; p != nullptr; p = p->getParentComponent())
+                {
+                    if (! p->isVisible()) return false;
+                    if (p == &layer) return true;
+                }
+                return false;   // not inside the layer at all
+            };
+            // The defect, staged: a control left visible by a stale pass.
+            A::chip (*ed, 0).setBounds (10, 10, 60, 20);
+            A::chip (*ed, 0).setVisible (true);
+            // Checked at this instant, with no pump: the editor's own housekeeping legitimately clears stale chips
+            // on the Chat tab, and what this leg is about is the PARENT CHAIN, not that housekeeping.
+            {   // name WHICH link of the chain is closed, so a failure says something
+                juce::String chain;
+                for (juce::Component* pc = &A::chip (*ed, 0); pc != nullptr; pc = pc->getParentComponent())
+                    chain << (pc->getName().isEmpty() ? juce::String ("<unnamed>") : pc->getName())
+                          << (pc->isVisible() ? "(vis) " : "(HIDDEN) ");
+                check (onScreen (A::chip (*ed, 0)),
+                       "F1. ...a pill whose own flag is set shows while the layer is visible (the chain is live)", chain);
+            }
+            A::toLinkTab (*ed); pumpMs (60);
+            check (! A::replyAllowed (*ed), "F1. the Link tab is not a chat-reply tab");
+            check (! layer.isVisible(), "F1. ...so the layer is hidden");
+            check (A::chip (*ed, 0).isVisible() && ! onScreen (A::chip (*ed, 0)),
+                   "F1. ...and the stale pill CANNOT be on screen even with its own visible flag still true  "
+                   "(RED as it stood: it showed)");
+            A::toChat (*ed); pumpMs (60);
+            check (layer.isVisible(), "F1. back on Chat the layer returns  (the one switch drives BOTH ways)");
+            A::chip (*ed, 0).setVisible (false);
+        }
+
+        // ---- F2 (21s-a): one selection source of truth for a group target -------------------------------------
+        {
+            std::printf ("\n== F2: the strip click, the menu, the banner and the composer label are one answer ==\n");
+            const auto gid = proc.createLinkGroup ("Group 1", juce::StringArray { "lnk_01", "lnk_02", "lnk_03", "lnk_04", "lnk_05" });
+            A::targetGroup (*ed, gid);
+            check (proc.chatTargetGroupId == gid && proc.chatTargetLinkUid.isEmpty(),
+                   "F2. selecting a group sets the target and clears the Link target");
+            check (A::banner (*ed) == "Working on Group: Group 1 (5)",
+                   "F2. the banner reads \"Working on Group: Group 1 (5)\"", A::banner (*ed));
+            check (A::targetLabel (*ed) == "This group",
+                   "F2. the composer label reads \"This group\"", A::targetLabel (*ed));
+            check (A::stripSelected (*ed, "grp:" + gid),
+                   "F2. the group strip is selected, highlighted like a Link strip");
+            check (proc.getApi().selectedGroupId() == gid,
+                   "F2. ...and the same answer is what the body will carry", proc.getApi().selectedGroupId());
+            A::targetGroup (*ed, {});
+            check (proc.chatTargetGroupId.isEmpty() && A::targetLabel (*ed) == "This channel"
+                   && ! A::stripSelected (*ed, "grp:" + gid),
+                   "F2. clearing it clears the target, the label and the highlight together");
+            proc.removeLinkGroup (gid);
+        }
+
         // ---- 21r item 7 (24 Sep 2026): the channel choice is answered ONCE PER INSTANCE and survives reopen ----
         // THE COMPLAINT: reopening the project asks "which channel is this on?" again. The prompt keyed off
         // "channelType is still the default", so a user whose answer WAS Full Mix was asked on every reopen.

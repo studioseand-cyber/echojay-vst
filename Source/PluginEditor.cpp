@@ -414,6 +414,10 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // PluginProcessor.h for the lifetime argument.
     : AudioProcessorEditor(&p), processorRef(p), api(p.getApi())
 {
+    // F1 (21s-a): the reply layer is added FIRST, so every reply control created below is parented into it rather
+    // than into the editor. One parent, one visibility switch, no per-tab filtering.
+    addAndMakeVisible (replyLayer);
+    replyLayer.toFront (false);   // once, at construction - not on every resize
     // A fresh editor starts with nothing staged for the next chat turn.
     // While api was an editor member this happened by construction; now
     // that it outlives the editor, staging left behind by a Link window
@@ -2515,7 +2519,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 }
             }
         };
-        addAndMakeVisible(wavePlayOverlays[(size_t)i]);
+        replyLayer.addAndMakeVisible(wavePlayOverlays[(size_t)i]);   // F1: owned by the reply layer, not by the editor
     }
 
     // "Build this chain" overlay buttons (one per assistant chain reply)
@@ -2573,7 +2577,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // channel keeps its computePreGainAtBuild path untouched.
             if (pendingLinkPreGain_.valid && pendingLinkPreGain_.uid == uid)
                 applyPendingLinkPreGain(); };
-        addAndMakeVisible(chainBuildBtns[(size_t)i]);
+        replyLayer.addAndMakeVisible(chainBuildBtns[(size_t)i]);   // F1: owned by the reply layer, not by the editor
     }
 
     // "Apply changes" buttons for chain-edit preview cards (Phase 1c) —
@@ -2585,7 +2589,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         editApplyBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
         editApplyBtns[(size_t)i].setVisible(false);
         editApplyBtns[(size_t)i].onClick = [this, i]() { applyChainEditFromMsg(editApplyMsgIdx[(size_t)i]); };
-        addAndMakeVisible(editApplyBtns[(size_t)i]);
+        replyLayer.addAndMakeVisible(editApplyBtns[(size_t)i]);   // F1: owned by the reply layer, not by the editor
 
         editAltBtns[(size_t)i].setLookAndFeel(&askChipLnF_);
         editAltBtns[(size_t)i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7FE3F2));
@@ -2605,7 +2609,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             workspace.requestMutationSync();
             sendChatMessage(prompt, label);    // full prompt sent; label shown
         };
-        addAndMakeVisible(editAltBtns[(size_t)i]);
+        replyLayer.addAndMakeVisible(editAltBtns[(size_t)i]);   // F1: owned by the reply layer, not by the editor
     }
 
     // Result-bubble chip pool (build failures): shared LnF, dispatched by
@@ -2620,7 +2624,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
         {
             onResultChipTapped(resultChipMsgIdx[(size_t)i], resultChipKind[(size_t)i]);
         };
-        addAndMakeVisible(resultChipBtns[(size_t)i]);
+        replyLayer.addAndMakeVisible(resultChipBtns[(size_t)i]);   // F1: owned by the reply layer, not by the editor
     }
 
     // ASK surfaces (Phase 1b, B2; one card 16 Aug 2026). Pills are created
@@ -8684,6 +8688,10 @@ bool EchoJayEditor::chatReplyControlsAllowed() const
 }
 void EchoJayEditor::setChatReplyControlsVisible(bool on)
 {
+    // F1 (21s-a): ONE switch. The layer owns every reply control, so hiding it hides all of them - including any
+    // that a stale layout pass left with visible=true. The per-control lines below stay for the cases that are
+    // NOT about the panel being absent (a build with fewer than kMaxChainBuildBtns blocks, say).
+    if (replyLayer.isVisible() != on) replyLayer.setVisible (on);
     for (int i = 0; i < kMaxChainBuildBtns; ++i)
     {
         chainBuildBtns[(size_t) i].setVisible(on && i < activeChainBuildBtns);
@@ -10958,7 +10966,10 @@ void EchoJayEditor::LinkMixerView::mouseDown(const juce::MouseEvent& e)
                 if (e.mods.isPopupMenu() || sg.name.contains(p) || sg.badge.contains(p)) { owner->showGroupMenu(sg.groupId); return; }
                 if (sg.mute.contains(p)) { owner->groupMuteSoloClick(sg.groupId, false); return; }   // 21o item 1b
                 if (sg.solo.contains(p)) { owner->groupMuteSoloClick(sg.groupId, true);  return; }
-                if (sg.fader.contains(p)) { dragAddr = sg.addr; dragValue = 0.0f; lastDragY = p.y; repaint(); }
+                if (sg.fader.contains(p)) { dragAddr = sg.addr; dragValue = 0.0f; lastDragY = p.y; repaint(); return; }
+                // F2 (21s-a): anywhere else on a group strip SELECTS it - highlighted like a Link strip, and the
+                // chat target becomes the group. One call; the banner, the pill and the highlight follow from it.
+                owner->setChatTargetGroup (sg.groupId);
                 return;
             }
             // 21o item 1a: the selection model decides first (see applyRosterSelectionClick)
@@ -11746,7 +11757,11 @@ void EchoJayEditor::switchToTab(Tab t, bool force)
     currentTab = t;
     // 21o item 2: hidden the moment the tab changes, not at the next paint - a repaint of the NEW surface can run
     // first and draw the old tab's Apply over it.
+    // F1 (21s-a): and the layer follows the SAME predicate, both ways, HERE - the one place a tab change is known.
+    // Not in resized(): hiding a parent moves keyboard focus, focus movement re-enters layout, and doing that from
+    // inside a layout pass took the editor down mid-switch.
     if (! chatReplyControlsAllowed()) setChatReplyControlsVisible(false);
+    else if (! replyLayer.isVisible()) replyLayer.setVisible (true);
     // Remembered on the PROCESSOR so an editor recreate comes back here. See
     // lastTabIndex in PluginProcessor.h.
     processorRef.lastTabIndex = (int) t;
@@ -17917,6 +17932,9 @@ void EchoJayEditor::paint(juce::Graphics& g)
     // Settings over the account panel, and the CHAINS sub-view - an "Apply changes" button kept its stale bounds and
     // stayed clickable on top of another surface. The predicate now carries the same test the guard states.
     const bool assistantVisible = (!visualOnlyMode && chatW > 0) && chatReplyControlsAllowed();
+    // F1 (21s-a): the ONE switch, driven BOTH ways from the one predicate. The layer used to be turned off here and
+    // turned on only as a side effect of the chip layout, which is how a hidden panel could still hold live pills.
+    if (replyLayer.isVisible() != assistantVisible) replyLayer.setVisible (assistantVisible);
     if (!assistantVisible)
     {
         setChatReplyControlsVisible(false);
@@ -19015,6 +19033,11 @@ int EchoJayEditor::tabIndexAt (juce::Point<int> p) const
 
 void EchoJayEditor::resized()
 {
+    // F1 (21s-a): the reply layer covers the editor and passes the mouse through, so every reply control keeps the
+    // editor coordinates its own layout pass computes. Bounds only here; the visibility is settled at the END of
+    // this function, after every other child has been positioned - hiding a parent mid-layout moves keyboard focus,
+    // and doing that in the middle of a tab switch was enough to take the editor down.
+    replyLayer.setBounds (getLocalBounds());
     // No transform — layout scales to actual window size
     auto b = getLocalBounds();
 
@@ -20408,6 +20431,7 @@ void EchoJayEditor::resized()
         updateOverlay.toFront(false);
     if (reviewOverlay.visibleState)
         reviewOverlay.toFront(false);
+
 }
 
 // THE single source of the chat scroll extent: the summed height of every
@@ -24789,7 +24813,9 @@ void EchoJayEditor::refreshChannelBannerCache()
     if (processorRef.chatTargetGroupId.isNotEmpty())
     {
         chanBannerLive_ = true;
-        chanBannerText_ = "Working on Group: " + processorRef.chatTargetGroupName;
+        const auto* gsel = processorRef.linkGroupById (processorRef.chatTargetGroupId);
+        chanBannerText_ = "Working on Group: " + processorRef.chatTargetGroupName
+                        + (gsel != nullptr ? " (" + juce::String (gsel->members.size()) + ")" : juce::String());
         return;
     }
     const auto uid = effectiveChannelUid();
@@ -25246,24 +25272,18 @@ void EchoJayEditor::showChatTargetMenu()
             auto& pr = safeThis->processorRef;
             if (result == 1)
             {
-                pr.chatTargetLinkUid.clear();
+                safeThis->setChatTargetGroup ({});          // clears the group...
+                pr.chatTargetLinkUid.clear();                // ...and the Link, for "This chat"
                 pr.chatTargetLinkName.clear();
-                pr.chatTargetGroupId.clear();
-                pr.chatTargetGroupName.clear();
-                safeThis->chatTargetBtn.setButtonText("This channel");
+                safeThis->chatTargetBtn.setButtonText (safeThis->chatTargetLabel());
             }
             else if (result >= groupBase)
             {
                 const size_t gi = (size_t)(result - groupBase);
                 const auto& gs = pr.linkGroups();
                 if (gi >= gs.size()) return;
-                // One selector, one answer: choosing a group clears the Link target.
-                pr.chatTargetLinkUid.clear();
-                pr.chatTargetLinkName.clear();
-                pr.chatTargetGroupId   = gs[gi].id;
-                pr.chatTargetGroupName = gs[gi].name;
-                safeThis->chatTargetBtn.setButtonText(
-                    juce::String::fromUTF8("\xe2\x86\x92 ") + gs[gi].name);
+                // F2: the SAME call the strip click makes - one selection source of truth.
+                safeThis->setChatTargetGroup (gs[gi].id);
             }
             else
             {
@@ -25271,10 +25291,10 @@ void EchoJayEditor::showChatTargetMenu()
                 if (li >= targets.size()) return;
                 pr.chatTargetGroupId.clear();
                 pr.chatTargetGroupName.clear();
+                safeThis->api.setSelectedGroupId ({});
                 pr.chatTargetLinkUid  = targets[li].uid;
                 pr.chatTargetLinkName = targets[li].label;
-                safeThis->chatTargetBtn.setButtonText(
-                    juce::String::fromUTF8("\xe2\x86\x92 ") + targets[li].label);
+                safeThis->chatTargetBtn.setButtonText (safeThis->chatTargetLabel());
             }
             safeThis->resized();   // pill is label-sized in the strip
         });
@@ -25607,6 +25627,41 @@ void EchoJayEditor::maybeOfferRescan()
             }));
         });
     });
+}
+
+// ---- F2 (21s-a, 24 Sep 2026): ONE source of truth for "the chat is working on a group" ----------------------
+// The strip click, the target menu, the header banner and the composer label all go through THIS, so they cannot
+// disagree. Selecting a group clears the Link target (one selector, one answer), marks the strip selected so it
+// highlights like a Link strip, and refreshes the banner and the pill in one place.
+void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
+{
+    const auto* gr = processorRef.linkGroupById(groupId);
+    processorRef.chatTargetLinkUid.clear();
+    processorRef.chatTargetLinkName.clear();
+    processorRef.chatTargetGroupId   = gr != nullptr ? gr->id   : juce::String();
+    processorRef.chatTargetGroupName = gr != nullptr ? gr->name : juce::String();
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);
+    // the strip highlights exactly as a Link strip does: the same selection set, keyed by the roster address
+    linkSelection_.clear();
+    if (gr != nullptr) linkSelection_.insert("grp:" + gr->id);
+    chatTargetBtn.setButtonText(chatTargetLabel());
+    refreshChannelBannerCache();
+    EchoJay_NSLog((gr != nullptr
+                     ? "EJTarget: working on group \"" + gr->name + "\" (" + juce::String(gr->members.size()) + " links)"
+                     : juce::String("EJTarget: group selection cleared")).toRawUTF8());
+    resized();
+    repaint();
+    linkMixerView_.repaint();
+}
+
+// The composer's label, from the same one answer: "This group" when a group is selected, the Link's name when a
+// Link is, "This channel" otherwise.
+juce::String EchoJayEditor::chatTargetLabel() const
+{
+    if (processorRef.chatTargetGroupId.isNotEmpty()) return "This group";
+    if (processorRef.chatTargetLinkUid.isNotEmpty())
+        return juce::String::fromUTF8("\xe2\x86\x92 ") + processorRef.chatTargetLinkName;
+    return "This channel";
 }
 
 void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)

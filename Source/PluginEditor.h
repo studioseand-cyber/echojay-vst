@@ -1319,6 +1319,25 @@ private:
     void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
     void armLoudnessLoopIfTargeted();      // ruling G: arm after an own-rack build whose limiter names a LUFS target
     void reattachLoopPills();              // 21r item 1: a workspace reload drops the pills; the live loop puts them back
+    // ---- F1 (21s-a, 24 Sep 2026): THE REPLY LAYER ------------------------------------------------------------
+    // Every control that belongs to the assistant transcript - the reply pills, the Build buttons, Apply/alternative
+    // buttons and the waveform play overlays - is a child of THIS layer, and the layer is shown or hidden in exactly
+    // ONE place, from chatReplyControlsAllowed(). A control inside a hidden parent cannot be on screen whatever its
+    // own visible flag says, so the leak seen on the Link tab (loop pills floating in an empty panel) is impossible
+    // BY CONSTRUCTION rather than filtered per tab.
+    //
+    // The layer covers the whole editor and passes the mouse through (setInterceptsMouseClicks(false, true)), so
+    // every child keeps the editor coordinates its layout pass already computes - the ownership changes, not one
+    // rectangle.
+    struct ReplyLayer : juce::Component
+    {
+        ReplyLayer() { setInterceptsMouseClicks (false, true); setOpaque (false); }
+        void paint (juce::Graphics&) override {}
+    };
+    ReplyLayer replyLayer;
+
+    void setChatTargetGroup(const juce::String& groupId);   // F2 (21s-a): the ONE way a group becomes the target
+    juce::String chatTargetLabel() const;                   // F2: the composer pill's text, from that one answer
     void maybeOfferRescan();               // 21r item 3: "Plugins changed since the last scan - Scan now?", once per launch
     void appendLocalUserBubble(const juce::String& text);
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"
