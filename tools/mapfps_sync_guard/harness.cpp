@@ -197,9 +197,39 @@ int main()
             R"({"i":2,"name":"UAD Pultec HLF-3C","mapped":false,"tier":"none","fp":null,"version":null,"versions":[]},)"
             R"({"i":9,"name":"off the end","mapped":true,"tier":"exact","fp":"deadbeef","version":"1.0","versions":[]}],"ms":372})";
         const std::vector<echojay::SyncRef> sent {
-            { "AudioUnit|61453c50|3.2.3",  "Pro-Q 3",           "FabFilter",       "AudioUnit", "3.2.3" },
-            { "AudioUnit|76720177|10.5.0", "Auto-Tune Pro",     "Antares",         "AudioUnit", "10.5.0" },
-            { "AudioUnit|12616669|11.8.0", "UAD Pultec HLF-3C", "Universal Audio", "AudioUnit", "11.8.0" } };
+            { "AudioUnit|61453c50|3.2.3",  "61453c50", "Pro-Q 3",           "FabFilter",       "AudioUnit", "3.2.3" },
+            { "AudioUnit|76720177|10.5.0", "76720177", "Auto-Tune Pro",     "Antares",         "AudioUnit", "10.5.0" },
+            { "AudioUnit|12616669|11.8.0", "12616669", "UAD Pultec HLF-3C", "Universal Audio", "AudioUnit", "11.8.0" } };
+        // THE REQUEST BYTES. The shape has moved twice in two days (ik-keyed -> name-keyed -> uid-first), so the
+        // body that actually goes out is pinned here, built by the same function the API calls.
+        {
+            const auto sentBody = echojay::buildSyncRequestBody (sent);
+            const auto parsedBody = juce::JSON::parse (sentBody);
+            auto* rows = parsedBody.getProperty ("plugins", juce::var()).getArray();
+            check (rows != nullptr && rows->size() == 3, "F. the request body carries one row per identity",
+                   juce::String (rows == nullptr ? 0 : rows->size()) + " row(s)");
+            if (rows != nullptr && rows->size() == 3)
+            {
+                const auto& r0 = rows->getReference (0);
+                check (r0.getProperty ("uid", juce::var()).toString() == "61453c50",
+                       "F. ...uid, the hex from the PRODUCT identity, is what the server resolves on first",
+                       r0.getProperty ("uid", juce::var()).toString());
+                check (r0.getProperty ("name", juce::var()).toString() == "Pro-Q 3"
+                       && r0.getProperty ("manufacturer", juce::var()).toString() == "FabFilter"
+                       && r0.getProperty ("format", juce::var()).toString() == "AudioUnit"
+                       && r0.getProperty ("version", juce::var()).toString() == "3.2.3",
+                       "F. ...with name, manufacturer, format and version beside it as the fallback");
+                check (r0.getProperty ("ik", juce::var()).isVoid(),
+                       "F. ...and the client's own identity key is NOT sent");
+            }
+            // The uid a description yields is the product key's, never a second spelling.
+            juce::PluginDescription d; d.name = "Pro-Q 3"; d.pluginFormatName = "AudioUnit";
+            d.uniqueId = 0x61453c50; d.version = "3.2.3"; d.manufacturerName = "FabFilter";
+            check (echojay::syncRefForDescription (d).uid == "61453c50",
+                   "F. ...and it is derived from the product key, so the two cannot drift",
+                   echojay::syncRefForDescription (d).uid);
+        }
+
         int unjoinable = 0;
         const auto parsed = echojay::parseSyncResponse (juce::JSON::parse (liveBody), sent, &unjoinable);
         check (parsed.size() == 1, "F. the live body yields exactly the ONE mapped row",
@@ -215,6 +245,43 @@ int main()
                "F. a mapped:false / null-fp row is not an answer and is not stored");
         check (unjoinable == 1, "F. a row whose index is off the end is DROPPED, never guessed at",
                juce::String (unjoinable) + " unjoinable");
+    }
+
+    // ---- G. THE LATCH: an empty answer is NOT an answer (24 Sep 2026 ruling) ------------------------------
+    // Driven on the SAME object the editor runs (echojay::SyncLatch), not a re-description of it. The old rule is
+    // re-created here as a lambda so the before and after are measured in one run: it latched on COMPLETION.
+    {
+        const juce::String sigA = "1429:AudioUnit|10000|1.0:...";   // one scan generation's identity signature
+        auto oldRuleLatch = juce::String();                          // "latch on completion, ok or 404"
+        auto oldRule = [&oldRuleLatch] (bool, int, const juce::String& asked) { oldRuleLatch = asked; };
+
+        echojay::SyncLatch latch;
+        check (latch.shouldAsk (sigA), "G. launch 1 asks: nothing has been answered yet");
+
+        // The live failure mode, exactly: a clean 200, every row tier:"none", nothing mapped.
+        const auto whyNone = latch.recordAnswer (true, 0, sigA);
+        oldRule (true, 0, sigA);
+        check (latch.shouldAsk (sigA),
+               "G. an all-none answer does NOT latch: launch 2 syncs again  (RED as it stood: it latched)",
+               whyNone);
+        check (oldRuleLatch == sigA && ! juce::String (oldRuleLatch).isEmpty(),
+               "G. ...and the OLD rule, measured in the same run, DID latch on that same answer",
+               "old rule latched \"" + oldRuleLatch.substring (0, 12) + "...\"");
+        check (whyNone.contains ("0 mapped row"), "G. ...and the log says which of the three it was", whyNone);
+
+        // A non-200 or a transport error: also not an answer.
+        const auto whyFail = latch.recordAnswer (false, 0, sigA);
+        check (latch.shouldAsk (sigA), "G. a non-200 / transport error does NOT latch either", whyFail);
+        check (whyFail.contains ("non-200 or transport"), "G. ...and says so", whyFail);
+        // ok=false with rows present (a partial batch failure) is still not an answer.
+        check (latch.shouldAsk (sigA) && latch.recordAnswer (false, 7, sigA).contains ("NOT latched"),
+               "G. a failed batch is not rescued by the rows that did arrive");
+
+        // A real answer latches, and only for the generation it answered.
+        const auto whyOk = latch.recordAnswer (true, 1062, sigA);
+        check (! latch.shouldAsk (sigA), "G. an answer with mapped rows latches THIS generation", whyOk);
+        check (latch.shouldAsk ("1430:AudioUnit|10000|1.0:..."),
+               "G. ...and a changed inventory is a new generation, which asks again");
     }
 
     std::printf ("\n==== mapfps_sync_guard: %s (%d assertion(s) failed) ====\n",

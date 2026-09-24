@@ -158,7 +158,8 @@ struct SyncedIdentity
 struct SyncRef
 {
     juce::String ik;             // client-side storage key (format|uidHex|version); never sent
-    juce::String name;           // what the server matches on
+    juce::String uid;            // the hex uid out of the PRODUCT identity - what the server resolves on FIRST
+    juce::String name;           // the fallback the server resolves on when the uid is unknown to it
     juce::String manufacturer;
     juce::String format;
     juce::String version;
@@ -166,8 +167,31 @@ struct SyncRef
 
 inline SyncRef syncRefForDescription (const juce::PluginDescription& desc)
 {
-    return { identityKeyForDescription (desc), desc.name, desc.manufacturerName,
-             desc.pluginFormatName, desc.version };
+    // uid is the same hex the product key carries (format|uidHex), so the client cannot hand the server one
+    // spelling of a uid here and another there.
+    return { identityKeyForDescription (desc),
+             productKeyForDescription (desc).fromLastOccurrenceOf ("|", false, false),
+             desc.name, desc.manufacturerName, desc.pluginFormatName, desc.version };
+}
+
+// The request body, as a pure function so a guard pins the WIRE SHAPE instead of describing it. This shape has
+// moved twice in two days (ik-keyed -> name-keyed -> uid-first, 24 Sep), which is exactly why it is pinned.
+inline juce::String buildSyncRequestBody (const std::vector<SyncRef>& refs)
+{
+    juce::Array<juce::var> arr;
+    for (const auto& r : refs)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("uid", r.uid);                  // resolved FIRST by the server
+        o->setProperty ("name", r.name);                // fallback when the uid is unknown
+        o->setProperty ("manufacturer", r.manufacturer);
+        o->setProperty ("format", r.format);
+        o->setProperty ("version", r.version);
+        arr.add (juce::var (o));
+    }
+    auto* root = new juce::DynamicObject();
+    root->setProperty ("plugins", arr);
+    return juce::JSON::toString (juce::var (root), true);
 }
 
 // The response parse, as a pure function so a guard can pin it against a VERBATIM live body.
@@ -204,6 +228,38 @@ inline std::map<juce::String, SyncedIdentity> parseSyncResponse (const juce::var
     if (unjoinableOut != nullptr) *unjoinableOut = unjoinable;
     return out;
 }
+
+// ---------------------------------------------------------------------------
+// THE SYNC LATCH (24 Sep 2026 ruling). A scan generation is latched ONLY by an answer that actually carried
+// something. Zero mapped rows, a non-200, or a transport error are NOT answers: the generation stays unlatched,
+// the next launch asks again, and the log says which of the three it was.
+//
+// WHY THE RULE EXISTS. The first cut latched "on completion, ok or 404", which is right for the existence index
+// (a 404 there means the feature is off) and WRONG here: the endpoint answered every row tier:"none" for a plugin
+// it holds a map for, and a latch on that would have frozen a whole inventory out of mapFps until the user
+// rescanned. An empty answer is indistinguishable, client-side, from a server that has nothing - so it must be
+// retried, not believed.
+//
+// It is a plain object rather than two loose members so the guard can drive the SAME state machine the editor
+// runs, instead of a re-description of it.
+// ---------------------------------------------------------------------------
+struct SyncLatch
+{
+    juce::String answeredSig;      // the identity signature an answer actually arrived for
+
+    bool shouldAsk (const juce::String& sig) const { return sig.isNotEmpty() && sig != answeredSig; }
+
+    // ok: a clean 200 whose body parsed. mappedRows: how many rows carried an fp. Returns the log reason.
+    juce::String recordAnswer (bool ok, int mappedRows, const juce::String& askedSig)
+    {
+        if (! ok)
+            return "no answer (non-200 or transport error) - NOT latched, the next launch asks again";
+        if (mappedRows <= 0)
+            return "answered with 0 mapped row(s) - NOT latched, the next launch asks again";
+        answeredSig = askedSig;
+        return "answered with " + juce::String (mappedRows) + " mapped row(s) - latched for this scan generation";
+    }
+};
 
 // Exact identity only. No uid fallback here on purpose: the client asked about
 // exactly these identity keys and the server answered about exactly these

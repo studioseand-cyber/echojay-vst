@@ -4651,7 +4651,9 @@ private:
     // failure re-asks once per scan and an unchanged inventory asks nothing.
     // NEVER per turn: no chat path calls it.
     void maybeSyncParamIdentities(ChainHost& ch);
-    juce::String syncKeysSig_;
+    // The latch is echojay::SyncLatch, not a bare signature string: a generation is latched only by an answer that
+    // carried mapped rows. Zero rows, a non-200 or a transport error leave it unlatched so the next launch retries.
+    echojay::SyncLatch syncLatch_;
     bool syncQueryInFlight_ = false;
     // Fix 3: the add's COMPLETION memory. The ok arm of pollLinkBlockAck
     // records the finished add here (then erases the pending); the derived

@@ -649,23 +649,13 @@ void EchoJayAPI::syncParamIdentities(const std::vector<echojay::SyncRef>& plugin
 
     for (auto& b : batches)
     {
-        // THE LIVE SHAPE, verified against the deployed endpoint 23 Sep 2026: the server resolves by NAME plus
-        // manufacturer/format/version. An {ik, manufacturer} body returns name:"" and tier:"none" for every row,
-        // and the endpoint says so itself: expected { plugins: [ { name, manufacturer?, format?, version? } ] }.
-        // Built through juce::var so a name carrying a quote or a backslash cannot break the JSON.
-        juce::Array<juce::var> pluginArr;
-        for (auto& r : b)
-        {
-            auto* o = new juce::DynamicObject();
-            o->setProperty("name", r.name);
-            o->setProperty("manufacturer", r.manufacturer);
-            o->setProperty("format", r.format);
-            o->setProperty("version", r.version);
-            pluginArr.add(juce::var(o));
-        }
-        auto* root = new juce::DynamicObject();
-        root->setProperty("plugins", pluginArr);
-        const auto body = juce::JSON::toString(juce::var(root), true);
+        // THE WIRE SHAPE lives in EchoJayParamMaps.h as a pure function, so the guard pins the bytes that go out
+        // rather than a description of them. Verified against the deployed endpoint 23 Sep 2026: an {ik,...} body
+        // returned name:"" and tier:"none" for every row, and the endpoint names what it wants itself:
+        //   {"error":"bad_body","message":"expected { plugins: [ { name, manufacturer?, format?, version? } ] }"}
+        // 24 Sep ruling: uid (the hex from the product identity) rides alongside and the server resolves on it
+        // FIRST, the name as the fallback.
+        const auto body = echojay::buildSyncRequestBody(b);
 
         // postJSON fires its completion on the message thread, so agg is only ever touched there.
         const auto sent = b;   // the join is BY INDEX into this batch; the server does not echo the identity key

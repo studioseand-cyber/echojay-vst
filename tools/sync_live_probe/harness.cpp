@@ -74,24 +74,12 @@ int main()
 
     std::printf ("\n== the three identities, as the client would send them ==\n");
     for (size_t i = 0; i < refs.size(); ++i)
-        std::printf ("  %-22s ik=%-30s name=%-20s manu=%-17s format=%-10s version=%s\n",
-                     picked[i].name.toRawUTF8(), refs[i].ik.toRawUTF8(), refs[i].name.toRawUTF8(),
+        std::printf ("  %-22s uid=%-10s ik=%-30s manu=%-17s format=%-10s version=%s\n",
+                     picked[i].name.toRawUTF8(), refs[i].uid.toRawUTF8(), refs[i].ik.toRawUTF8(),
                      refs[i].manufacturer.toRawUTF8(), refs[i].format.toRawUTF8(), refs[i].version.toRawUTF8());
 
     // ---- the body, built exactly as syncParamIdentities builds it ------------------------------------------
-    Array<var> arr;
-    for (auto& r : refs)
-    {
-        auto* o = new DynamicObject();
-        o->setProperty ("name", r.name);
-        o->setProperty ("manufacturer", r.manufacturer);
-        o->setProperty ("format", r.format);
-        o->setProperty ("version", r.version);
-        arr.add (var (o));
-    }
-    auto* root = new DynamicObject();
-    root->setProperty ("plugins", arr);
-    const auto body = JSON::toString (var (root), true);
+    const auto body = echojay::buildSyncRequestBody (refs);
     std::printf ("\n== REQUEST BODY ==\n%s\n", body.toRawUTF8());
 
     // ---- RAW LEG ------------------------------------------------------------------------------------------

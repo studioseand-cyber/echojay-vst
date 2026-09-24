@@ -25520,13 +25520,13 @@ void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
     const auto refs = ch.syncRefs();
     if (refs.empty()) return;
 
-    // The signature changes only when the identity set does, i.e. once per scan
-    // generation. Latched when the call COMPLETES, success or failure, so a
-    // persistent non-200 (the 404 this returns until the server half ships)
-    // re-asks once per scan rather than on every rebuild.
+    // The signature changes only when the identity set does, i.e. once per scan generation. It is latched ONLY by
+    // an answer that carried mapped rows (24 Sep ruling): zero rows, a non-200 or a transport error are not
+    // answers, and the next launch asks again. In-flight de-duplication is the flag above, so an unlatched
+    // generation still asks exactly once per launch, never per rebuild.
     juce::String sig; sig << (int) refs.size();
     for (const auto& r : refs) sig << ":" << r.ik;
-    if (sig == syncKeysSig_) return;
+    if (! syncLatch_.shouldAsk (sig)) return;
 
     syncQueryInFlight_ = true;
     // The callback fires on the message thread. ch (owned by the processor)
@@ -25540,7 +25540,8 @@ void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
             if (auto* self = safe.getComponent())
             {
                 self->syncQueryInFlight_ = false;
-                self->syncKeysSig_ = sig;   // latch on completion, ok or 404
+                const auto why = self->syncLatch_.recordAnswer (ok, (int) rows.size(), sig);
+                EchoJay_NSLog (("EJSync: " + why).toRawUTF8());
             }
         });
 }
