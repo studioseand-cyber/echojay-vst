@@ -69,7 +69,12 @@ int main (int argc, char** argv)
     // this once per identity the first time a plugin is racked, in the background, and the names ride the fp map.
     // One launch, not one per control: instantiating a UAD plugin costs ~5 s, sweeping a control costs ~2.
     const bool sampleAll = argc >= 5 && juce::String (argv[4]) == "--sample-stepped";
-    const bool listMode = listParams || listSteps || sampleText || sampleAll;
+    // 21s-b (24 Sep 2026): "--text-at <index>" = THREE READS, at normalised 0.0, 0.5 and 1.0. A CONTINUOUS control
+    // is exactly what --sample-text refuses (it is not a named control), so a fixture had a unit and no range.
+    // This is the smallest honest answer: what the plugin PRINTS at the two ends and the middle, which is where a
+    // numeric range comes from when the text parses as a number.
+    const bool textAt = argc >= 6 && juce::String (argv[4]) == "--text-at";
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -144,6 +149,23 @@ int main (int argc, char** argv)
                 std::printf ("pos\t%d\t%.6f\t%.6f\t%.6f\t%s\n", ++n, (r.lo + r.hi) * 0.5f, r.lo, r.hi, r.text.toRawUTF8());
             std::printf ("distinct\t%d\n", distinct);
         };
+        if (textAt)
+        {
+            const int idx = atoi (argv[5]);
+            auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
+            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            const float before = q->getValue();
+            for (float nrm : { 0.0f, 0.5f, 1.0f })
+            {
+                q->setValueNotifyingHost (nrm);
+                for (int k = 0; k < 6; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }
+                std::printf ("at\t%.3f\t%s\n", nrm, clean (q->getText (nrm, 256).trim()).toRawUTF8());
+            }
+            q->setValueNotifyingHost (before);   // put it back: this mode reads, it does not set
+            std::printf ("name\t%s\tunit\t%s\n", clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8());
+            std::fflush (stdout);
+            std::_Exit (0);
+        }
         if (sampleText)
         {
             const int idx = atoi (argv[5]);

@@ -138,6 +138,71 @@ int main()
         }
     }
     check (EedLimiterEditor::thresholdReadout (-0.1, 8.8) == "threshold -8.9 dB" && EedLimiterEditor::thresholdReadout (-1.0, 0.0) == "threshold -1.0 dB", "21m: the EchoJay Limiter Threshold READOUT = ceiling - input gain (display only): -0.1 ceiling with +8.8 in -> \"threshold -8.9 dB\"", EedLimiterEditor::thresholdReadout (-0.1, 8.8));
+    // ================= 21s-b rulings 2 and 3 =====================================================
+    {   // RULING 2: two counters. A value write is not a user edit.
+        std::printf ("\n== ruling 2 (21s-b): trims and wets bump the VALUE counter, not the user-edit revision ==\n");
+        auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (lv != nullptr && gn != nullptr)
+        {
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
+            const int rev0 = host->getChainRevision(), val0 = host->getChainValueRevision();
+            host->setSlotTrimDb (0, -3.0f);
+            host->setSlotPreTrimDb (0, -1.0f);
+            host->setMasterWet (0.5f);
+            host->setSlotWet (0, 0.75f, ChainHost::WetSource::User);
+            check (host->getChainRevision() == rev0,
+                   "R2g. four value writes leave the user-edit revision alone  (RED as it stood: each bumped it)",
+                   juce::String (rev0) + " -> " + juce::String (host->getChainRevision()));
+            check (host->getChainValueRevision() >= val0 + 4,
+                   "R2g. ...and each one moves the VALUE counter the save/sidecar path reads",
+                   juce::String (val0) + " -> " + juce::String (host->getChainValueRevision()));
+            const int rev1 = host->getChainRevision(), val1 = host->getChainValueRevision();
+            host->removeSlot (1);
+            check (host->getChainRevision() > rev1 && host->getChainValueRevision() > val1,
+                   "R2g. a STRUCTURAL op bumps both - a structural change is also something to save",
+                   juce::String (rev1) + "/" + juce::String (val1) + " -> "
+                   + juce::String (host->getChainRevision()) + "/" + juce::String (host->getChainValueRevision()));
+        }
+        else check (false, "R2g. fixture: the Level and Gain built-ins are registered");
+    }
+    {   // RULING 3: the preflight judges only the slots the edit touches - tonight's replace@1 must pass
+        std::printf ("\n== ruling 3 (21s-b): only a touched slot's identity can make an edit stale ==\n");
+        auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        const auto* li = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        if (lv != nullptr && gn != nullptr && li != nullptr)
+        {
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
+            // The preview was written for a TWO-slot chain; the rack has since gained a third at the end.
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*li), 2);
+            std::vector<ChainHost::ChainEditOp> ops;
+            ChainHost::ChainEditOp b; b.op = "bypass"; b.slot = 0; b.on = true; ops.push_back (b);
+            bool done = false, aborted = true; juce::StringArray res;
+            host->applyChainEdits (ops, -1, juce::StringArray { "EchoJay Gain", "EchoJay Level" },
+                                   [&] (const juce::StringArray& r, int, bool ab) { res = r; aborted = ab; done = true; });
+            for (int k = 0; k < 60 && ! done; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (done && ! aborted && host->getSlotInfo (0).bypassed,
+                   "R3g. an edit that touches slot 1 applies even though the rack gained a slot at the end  "
+                   "(RED as it stood: a count mismatch refused it)", res.joinIntoString (" | ").substring (0, 130));
+            // ...and it still refuses when the slot it touches is something else
+            std::vector<ChainHost::ChainEditOp> ops2;
+            ChainHost::ChainEditOp b2; b2.op = "bypass"; b2.slot = 0; b2.on = false; ops2.push_back (b2);
+            bool done2 = false, aborted2 = false; juce::StringArray res2;
+            host->applyChainEdits (ops2, -1, juce::StringArray { "Some Other Plugin", "EchoJay Level" },
+                                   [&] (const juce::StringArray& r, int, bool ab) { res2 = r; aborted2 = ab; done2 = true; });
+            for (int k = 0; k < 60 && ! done2; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (done2 && aborted2,
+                   "R3g. ...and it is still refused when the slot it touches is NOT what the preview saw",
+                   res2.joinIntoString (" | ").substring (0, 130));
+        }
+        else check (false, "R3g. fixture: the three built-ins are registered");
+    }
+
     std::printf ("\n==== level_slot_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

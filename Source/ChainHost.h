@@ -1127,6 +1127,9 @@ public:
     // live value differs — the rack changed between propose and confirm.
     // Atomic so any thread may read; mutations happen on the message thread.
     int getChainRevision() const noexcept { return chainRevision_.load(std::memory_order_relaxed); }
+    // Ruling 2: the value counter - trims, wets, the chain mix, the loop's level moves. Every structural op bumps
+    // this too (a structural change is also something to save), so "has anything changed at all" is one read.
+    int getChainValueRevision() const noexcept { return chainValueRev_.load(std::memory_order_relaxed); }
 
     // ---- Hosted-parameter epoch (the curve's publish trigger) --------------
     // chainRevision covers STRUCTURE and nothing else: add, remove, move,
@@ -2332,7 +2335,8 @@ private:
         ChainHost& host;
         juce::CriticalSection::ScopedLockType lock;
     };
-    std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision()
+    std::atomic<int>  chainRevision_ { 0 };       // see getChainRevision() - STRUCTURE only (ruling 2)
+    std::atomic<int>  chainValueRev_ { 0 };       // see getChainValueRevision() - values, for the save/sidecar path
     // Every chain mutation is also a settings-cache trigger: this is the
     // "after a chain edit settles" refresh point, reached through the same
     // debounce as everything else, so a burst of edit ops captures once at
@@ -2345,7 +2349,19 @@ private:
     void scheduleSettleTick(int delayMs);
     void settleTick();
     static constexpr int kSettleBoundMs = 250;
+    // RULING 2 (21s-b, 24 Sep 2026): TWO COUNTERS, because there are two questions.
+    //   bumpChainRevision()  = a STRUCTURAL op: add, remove, reorder, replace, bypass. This is the user-edit
+    //                          revision an edit preview snapshots and Apply compares against - "did someone
+    //                          change the chain".
+    //   bumpChainValue()     = a VALUE write: setSlotTrimDb, setSlotPreTrimDb, setMasterWet, setSlotWet and the
+    //                          loop's level moves. Used only by the save / sidecar path - "is there something new
+    //                          to persist". It must NOT move the user-edit revision: a chain that measures and
+    //                          levels itself has not been edited by anyone, and a revision everything bumps
+    //                          cannot answer the only question Apply asks.
     void bumpChainRevision() noexcept { chainRevision_.fetch_add(1, std::memory_order_relaxed);
+                                        chainValueRev_.fetch_add(1, std::memory_order_relaxed);
+                                        noteHostedChange(); }
+    void bumpChainValue() noexcept    { chainValueRev_.fetch_add(1, std::memory_order_relaxed);
                                         noteHostedChange(); }
 
     // Running level at the chain input and output (see getChainInLevels):

@@ -1853,32 +1853,48 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
                      " - ask again");
     }
 
-    // ---- Pre-flight guard 2: baseSlots vs live rack ----
+    // ---- Pre-flight guard 2: THE SLOTS THIS EDIT TOUCHES (ruling 3, 24 Sep 2026) ----
+    // It used to compare the WHOLE list: a count mismatch, then every name in order. That refuses a perfectly
+    // valid edit whenever anything about the rack differs - and on 24 Sep it refused a replace@1 against a rack
+    // that HAD the plugin the preview named, because the count came from a different view of the same rack.
+    // The rule now: an edit is stale only when a slot IT TOUCHES has changed identity. A slot added at the end,
+    // a trim written, a wet knob moved - none of those invalidate a replace of slot 1.
     const int n = getNumSlots();
-    if (baseSlots.size() != n)
     {
-        EchoJay_NSLog(("EJEdit: preflight REFUSED guard=baseSlots-count base="
-                       + juce::String(baseSlots.size()) + " [" + baseSlots.joinIntoString(", ")
-                       + "] live=" + juce::String(n)).toRawUTF8());
-        return abort("this edit was written for a "
-                     + juce::String(baseSlots.size()) + "-slot chain, but the rack "
-                     + (n == 0 ? juce::String("is empty")
-                               : "has " + juce::String(n) + " slot"
-                                 + (n == 1 ? "" : "s"))
-                     + " - ask again");
-    }
-    for (int i = 0; i < n; ++i)
-        if (!namesMatchLoose(baseSlots[i], slots_[(size_t)i].desc.name))
+        std::set<int> touched;
+        for (const auto& o : ops)
         {
-            EchoJay_NSLog(("EJEdit: preflight REFUSED guard=baseSlots-name slot="
-                           + juce::String(i) + " base=\"" + baseSlots[i] + "\" live=\""
-                           + slots_[(size_t)i].desc.name + "\"").toRawUTF8());
-            return abort("this edit expected \"" + baseSlots[i] + "\" at slot "
-                         + juce::String(i + 1) + ", but the rack has \""
-                         + slots_[(size_t)i].desc.name + "\" there - ask again");
+            if (o.slot >= 0) touched.insert(o.slot);
+            if (o.to   >= 0) touched.insert(o.to);
+            if (o.after >= 0) touched.insert(o.after);
         }
+        for (int i : touched)
+        {
+            const bool haveBase = i < baseSlots.size();
+            const bool haveLive = i < n;
+            if (! haveBase && ! haveLive) continue;      // an index neither view has: the dry run below judges it
+            if (haveBase != haveLive)
+            {
+                EchoJay_NSLog(("EJEdit: preflight REFUSED guard=touched-slot-missing slot=" + juce::String(i)
+                               + " base=" + juce::String(baseSlots.size()) + " [" + baseSlots.joinIntoString(", ")
+                               + "] live=" + juce::String(n)).toRawUTF8());
+                return abort("this edit works on slot " + juce::String(i + 1)
+                             + ", and the rack " + (haveLive ? "no longer has" : "does not have")
+                             + " that slot - ask again");
+            }
+            if (! namesMatchLoose(baseSlots[i], slots_[(size_t) i].desc.name))
+            {
+                EchoJay_NSLog(("EJEdit: preflight REFUSED guard=touched-slot-name slot=" + juce::String(i)
+                               + " base=\"" + baseSlots[i] + "\" live=\"" + slots_[(size_t) i].desc.name
+                               + "\"").toRawUTF8());
+                return abort("this edit expected \"" + baseSlots[i] + "\" at slot "
+                             + juce::String(i + 1) + ", but the rack has \""
+                             + slots_[(size_t) i].desc.name + "\" there - ask again");
+            }
+        }
+    }
     EchoJay_NSLog(("EJEdit: staleness guards passed rev=" + juce::String(getChainRevision())
-                   + " slots=" + juce::String(n)
+                   + " slots=" + juce::String(n) + " base=" + juce::String(baseSlots.size())
                    + " ops=" + juce::String((int) ops.size())).toRawUTF8());
 
     if (ops.empty()) return abort("no operations in this edit");
@@ -2400,7 +2416,7 @@ void ChainHost::runNextEditOp(std::shared_ptr<void> stateErased)
 void ChainHost::setMasterWet(float wet01)
 {
     masterWet_.store(juce::jlimit(0.0f, 1.0f, wet01), std::memory_order_relaxed);
-    bumpChainRevision();
+    bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
 
 void ChainHost::setSlotTrimDb(int i, float db)
@@ -2411,7 +2427,7 @@ void ChainHost::setSlotTrimDb(int i, float db)
         onScalarUndo("trim", i, (double) s.trimDb, (double) juce::jlimit(-12.0f, 12.0f, db), "trim " + s.desc.name, "trim" + juce::String(i));   // 21n item 3
     s.trimDb = juce::jlimit(-12.0f, 12.0f, db);
     if (s.trimShared) s.trimShared->store(s.trimDb, std::memory_order_relaxed);
-    bumpChainRevision();
+    bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
 bool ChainHost::hasActiveTrims() const
 {
@@ -2546,7 +2562,7 @@ void ChainHost::setSlotPreTrimDb(int i, float db)
     auto& s = slots_[(size_t) i];
     s.preTrimDb = juce::jlimit(-24.0f, 0.0f, db);
     if (s.preTrimShared) s.preTrimShared->store(s.preTrimDb, std::memory_order_relaxed);
-    bumpChainRevision();
+    bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
 float ChainHost::getSlotPreTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].preTrimDb : 0.0f; }
 ChainHost::SlotPicture ChainHost::slotPicture(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].picture : SlotPicture{}; }
@@ -2749,7 +2765,7 @@ void ChainHost::setSlotWet(int i, float wet01, WetSource src)
         else pushUndo("wet " + s.desc.name, "wet" + juce::String(i));   // 21m undo: one step per knob gesture (coalesced)
     }
     s.wet = juce::jlimit(0.0f, 1.0f, wet01);
-    bumpChainRevision();
+    bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
     if (!s.wetShared)   // slot not rebuilt yet (e.g. restore) — value rides in s.wet
         s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
     else
