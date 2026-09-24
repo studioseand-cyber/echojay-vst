@@ -673,8 +673,24 @@ void EchoJayAPI::syncParamIdentities(const std::vector<echojay::SyncRef>& plugin
                 const auto parsed = echojay::parseSyncResponse(json, sent, &unjoinable);
                 agg->unjoinable += unjoinable;
                 for (const auto& kv : parsed) agg->rows[kv.first] = kv.second;
+                // 21r item 8: the TIER BREAKDOWN on the line. Counted from the rows the client actually stored,
+                // not copied from the server's own "tiers" object - the log has to say what THIS client kept.
+                // exact = a map for the version installed here; same_count / prefix = mapped at another version.
+                int exact = 0, sameCount = 0, prefix = 0, other = 0;
+                for (const auto& kv : parsed)
+                {
+                    const auto t = kv.second.tier;
+                    if      (t == "exact")      ++exact;
+                    else if (t == "same_count") ++sameCount;
+                    else if (t == "prefix")     ++prefix;
+                    else                        ++other;
+                }
+                const int none = (int) sent.size() - (int) parsed.size() - unjoinable;
                 EchoJay_NSLog(("EJSync: batch of " + juce::String((int) sent.size()) + " answered "
-                               + juce::String((int) parsed.size()) + " mapped, "
+                               + juce::String((int) parsed.size()) + " mapped [exact " + juce::String(exact)
+                               + ", same_count " + juce::String(sameCount) + ", prefix " + juce::String(prefix)
+                               + (other > 0 ? ", other " + juce::String(other) : juce::String())
+                               + ", none " + juce::String(juce::jmax(0, none)) + "], "
                                + juce::String(unjoinable) + " unjoinable row(s)").toRawUTF8());
             }
             else
@@ -1290,6 +1306,10 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         body += ",\"groups\":" + juce::JSON::toString(groupsVar_, true);
         if (groupsLinks_.isArray()) body += ",\"links\":" + juce::JSON::toString(groupsLinks_, true);
     }
+    // 21r item 5 (contract addendum, 24 Sep 2026): the group chosen in the Working-on selector, on EVERY turn.
+    // The server resolves level-match and group targets from it. Absent when no group is selected - never "".
+    if (selectedGroupId_.isNotEmpty())
+        body += ",\"selectedGroupId\":" + juce::JSON::toString(selectedGroupId_);
     // Auto-dial mode rides EVERY chat turn when on; the server only acts on
     // it for chain turns with a live plugin feed and ignores it elsewhere.
     if (autoDialMode)
@@ -2226,6 +2246,8 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
         body->setProperty("groups", groupsVar_);
         if (groupsLinks_.isArray()) body->setProperty("links", groupsLinks_);
     }
+    // 21r item 5: the selected group, on every turn, whether or not groups[] rode this one.
+    if (selectedGroupId_.isNotEmpty()) body->setProperty("selectedGroupId", selectedGroupId_);
     else if (auto* linkArr = req.links.getArray())
         if (! linkArr->isEmpty()) body->setProperty("links", req.links);
     // Client version — telemetry and the existing chat-side gates. sendChat has

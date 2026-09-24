@@ -92,6 +92,73 @@ int main()
     // editor's construction in this process ("mutex lock failed") - the same one-editor-per-process condition the ui_guard hit
     { juce::MemoryBlock mb; p.getStateInformation (mb); auto p2 = std::make_unique<EchoJayProcessor>(); p2->prepareToPlay (48000.0, 512); p2->setStateInformation (mb.getData(), (int) mb.getSize());
       check (p2->linkGroups().size() == 1 && p2->linkGroups()[0].id == gid && p2->linkGroups()[0].members.joinIntoString (",") == "lnk_01,lnk_02,lnk_03", "G1. groups persist in the V2 session state (save / reopen)", p2->linkGroups().empty() ? "none" : p2->linkGroups()[0].members.joinIntoString (",")); }
+    // ---- 21r item 5 + the 24 Sep addendum: the selected group rides EVERY body as selectedGroupId ----------
+    {
+        std::printf ("\n== 21r item 5: the Working-on selector's group is on the wire ==\n");
+        p.getApi().setGroupsContext (p.linksBodyVar(), p.groupsBodyVar());
+        p.chatTargetGroupId.clear();
+        p.getApi().setSelectedGroupId (p.chatTargetGroupId);
+        {
+            const auto b = EchoJayAPIRequestPin::body (p.getApi(), juce::StringArray { "user" }, juce::StringArray { "hi" }, "sys", {});
+            check (! b.contains ("selectedGroupId"),
+                   "(5) with NO group selected the field is absent, never an empty string");
+        }
+        // The selector's action, as the menu performs it: the group becomes the target and the Link target clears.
+        p.chatTargetLinkUid = "lnk_01"; p.chatTargetLinkName = "BV 1";
+        p.chatTargetGroupId = gid; p.chatTargetGroupName = "the BVs";
+        p.chatTargetLinkUid.clear(); p.chatTargetLinkName.clear();
+        p.getApi().setSelectedGroupId (p.chatTargetGroupId);
+        {
+            const auto b = EchoJayAPIRequestPin::body (p.getApi(), juce::StringArray { "user" }, juce::StringArray { "hi" }, "sys", {});
+            check (b.contains ("\"selectedGroupId\":\"" + gid + "\""),
+                   "(5) with a group selected the body carries selectedGroupId  (RED as it stood: the field did not exist)",
+                   b.fromFirstOccurrenceOf ("selectedGroupId", true, false).substring (0, 40));
+            check (b.contains ("\"groups\""),
+                   "(5) ...alongside groups[], so the server can resolve the members from the id");
+        }
+        check (p.chatTargetLinkUid.isEmpty(),
+               "(5) one selector, one answer: choosing a group clears the Link target");
+        p.chatTargetGroupId.clear(); p.chatTargetGroupName.clear();
+        p.getApi().setSelectedGroupId ({});
+    }
+
+    // ---- 21r item 4 (24 Sep 2026): the group fader is an OFFSET that stays where it was put ----------------
+    {
+        std::printf ("\n== 21r item 4: the group's offset is a VCA, saved with the group ==\n");
+        check (p.linkGroups()[0].offsetDb == 0.0f, "(4) a new group's offset is 0.0 dB");
+        p.setLinkGroupOffsetDb (gid, 3.5f);
+        check (p.linkGroupById (gid) != nullptr && std::abs (p.linkGroupById (gid)->offsetDb - 3.5f) < 1e-4f,
+               "(4) the offset is stored on the group",
+               juce::String (p.linkGroupById (gid)->offsetDb, 2));
+        p.setLinkGroupOffsetDb (gid, 99.0f);
+        check (std::abs (p.linkGroupById (gid)->offsetDb - 24.0f) < 1e-4f,
+               "(4) ...and clamped to the fader's own range, never beyond it",
+               juce::String (p.linkGroupById (gid)->offsetDb, 2));
+        p.setLinkGroupOffsetDb (gid, -6.0f);
+        juce::MemoryBlock mb; p.getStateInformation (mb);
+        auto reopened = std::make_unique<EchoJayProcessor>();
+        reopened->prepareToPlay (48000.0, 512);
+        reopened->setStateInformation (mb.getData(), (int) mb.getSize());
+        check (reopened->linkGroups().size() == 1
+               && std::abs (reopened->linkGroups()[0].offsetDb - (-6.0f)) < 1e-4f,
+               "(4) ...and it survives save/reopen  (RED as it stood: the fader snapped back to 0 and nothing was saved)",
+               juce::String (reopened->linkGroups().empty() ? 0.0f : reopened->linkGroups()[0].offsetDb, 2));
+        // A state written before this build has no offset: it reads as 0.0, not as garbage.
+        {
+            auto v = juce::JSON::parse (juce::String::createStringFromData (mb.getData(), (int) mb.getSize()));
+            if (auto* o = v.getDynamicObject())
+                if (auto* ga = o->getProperty ("linkGroups").getArray())
+                    for (auto& gv : *ga) if (auto* go = gv.getDynamicObject()) go->removeProperty ("offsetDb");
+            const auto txt = juce::JSON::toString (v);
+            auto legacy = std::make_unique<EchoJayProcessor>();
+            legacy->prepareToPlay (48000.0, 512);
+            legacy->setStateInformation (txt.toRawUTF8(), (int) txt.getNumBytesAsUTF8());
+            check (legacy->linkGroups().size() == 1 && legacy->linkGroups()[0].offsetDb == 0.0f,
+                   "(4) a pre-21r state reads as 0.0 dB, not as garbage");
+        }
+        p.setLinkGroupOffsetDb (gid, 0.0f);
+    }
+
     std::printf ("\n==== groups_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }

@@ -374,7 +374,13 @@ public:
     void setUnityChain(bool on) { unityChain_ = on; }
     // 21n item 4: groups[] + links[] (contract §2) on every chat / chat-stream / classify body while the user has groups
     void setGroupsContext(juce::var links, juce::var groups) { groupsLinks_ = links; groupsVar_ = groups; }
+    // 21r item 5 (24 Sep 2026, contract addendum): the group chosen in the Working-on selector rides EVERY body as
+    // selectedGroupId, and the server resolves level-match and group targets from it. Empty = no group selected;
+    // the field is then absent rather than empty, so "no group" cannot be read as a group whose id is "".
+    void setSelectedGroupId(const juce::String& id) { selectedGroupId_ = id; }
+    juce::String selectedGroupId() const { return selectedGroupId_; }
     juce::var groupsLinks_, groupsVar_;
+    juce::String selectedGroupId_;
     bool unityChain() const { return unityChain_; }
     bool unityChain_ = false;
     void stageCapturePayload(const juce::String& metersBlob, int busCount)

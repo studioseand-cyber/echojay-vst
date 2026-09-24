@@ -54,6 +54,7 @@ struct EchoJayTabStripTestAccess
     static const std::vector<Geom>& geom (EchoJayEditor& e) { return e.linkStripGeom_; }
     static bool replyAllowed (EchoJayEditor& e) { return e.chatReplyControlsAllowed(); }
     static void reattach (EchoJayEditor& e) { e.reattachLoopPills(); }   // 21r item 1
+    static bool channelPrompt (EchoJayEditor& e) { return e.shouldShowChannelPrompt(); }   // 21r item 7
     static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
     static juce::TextButton& undoHdr (EchoJayEditor& e) { return e.undoHdrBtn; }
     static juce::TextButton& redoHdr (EchoJayEditor& e) { return e.redoHdrBtn; }
@@ -167,6 +168,41 @@ int main()
         auto& M = A::msgs (*ed);
         auto lastLoop = [&] () -> const A::Msg* { for (int i = (int) M.size() - 1; i >= 0; --i) if (M[(size_t) i].role == "assistant" && (M[(size_t) i].content.startsWith ("Chain built. Play") || ! M[(size_t) i].loopPills.isEmpty() || M[(size_t) i].loopBubbleId > 0)) return &M[(size_t) i]; return nullptr; };
         check (loop.everArmed() && lastLoop() != nullptr && (lastLoop()->content.startsWith ("Chain built. Play the loudest part") || lastLoop()->content.startsWith ("Cue the loudest section")), "(4) the ARM bubble is shown after the build (before any Listening...)", lastLoop() ? lastLoop()->content.substring (0, 60) : "no loop bubble");
+        // ---- 21r item 7 (24 Sep 2026): the channel choice is answered ONCE PER INSTANCE and survives reopen ----
+        // THE COMPLAINT: reopening the project asks "which channel is this on?" again. The prompt keyed off
+        // "channelType is still the default", so a user whose answer WAS Full Mix was asked on every reopen.
+        {
+            std::printf ("\n== 21r item 7: the channel answer round-trips with the instance's state ==\n");
+            check (! proc.isChannelChosen(), "(7) a fresh instance has not answered");
+            proc.setChannelType (ChannelType::FullMix);   // the answer that used to be ignored
+            check (proc.isChannelChosen(), "(7) answering - even with Full Mix - counts as answered");
+            juce::MemoryBlock state;
+            proc.getStateInformation (state);
+            check (state.getSize() > 0, "(7) the state is written", juce::String ((int) state.getSize()) + " bytes");
+
+            auto reopened = std::make_unique<EchoJayProcessor>();
+            check (! reopened->isChannelChosen(), "(7) ...a NEW instance starts unanswered");
+            reopened->setStateInformation (state.getData(), (int) state.getSize());
+            check (reopened->isChannelChosen(),
+                   "(7) ...and the reopened instance keeps the answer  (RED as it stood: nothing carried it)");
+            check (reopened->getChannelType() == ChannelType::FullMix,
+                   "(7) ...including the channel itself");
+
+            // A state written BEFORE this build carries no flag: a non-default channel is an answer already given.
+            auto legacy = std::make_unique<EchoJayProcessor>();
+            {
+                auto older = std::make_unique<EchoJayProcessor>();
+                older->setChannelType (ChannelType::LeadVocal);
+                juce::MemoryBlock mb; older->getStateInformation (mb);
+                auto v = juce::JSON::parse (juce::String::createStringFromData (mb.getData(), (int) mb.getSize()));
+                if (auto* o = v.getDynamicObject()) o->removeProperty ("channelChosen");   // as an older build wrote it
+                const auto txt = juce::JSON::toString (v);
+                legacy->setStateInformation (txt.toRawUTF8(), (int) txt.getNumBytesAsUTF8());
+            }
+            check (legacy->isChannelChosen() && legacy->getChannelType() == ChannelType::LeadVocal,
+                   "(7) a pre-21r state with a non-default channel counts as answered, not asked again");
+        }
+
         // ---- 21r item 1 (24 Sep 2026): ONE arm bubble per build, and its Listen is a chat-reply control ----------
         // THE COMPLAINT: on 21q the arm bubble rendered TWICE and with NO Listen button. Two causes, both here:
         // the emit path wrote the message to the workspace twice, and pills are not part of that store, so every

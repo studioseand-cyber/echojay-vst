@@ -3117,9 +3117,12 @@ void EchoJayEditor::handleLogout()
 
 bool EchoJayEditor::shouldShowChannelPrompt() const
 {
+    // 21r item 7 (24 Sep 2026): asked only when this instance has NEVER answered. It used to read
+    // "channelType == FullMix", i.e. "is it still the default" - which asked again on every reopen of a project
+    // whose answer WAS Full Mix, and again whenever the saved choice did not reach this instance.
     return currentScreen == Screen::Main
         && !processorRef.isChannelTypePromptDismissed()
-        && processorRef.getChannelType() == ChannelType::FullMix
+        && !processorRef.isChannelChosen()
         && !genrePromptVisible;   // genre goes first in the intake order
 }
 
@@ -4328,16 +4331,10 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
 {
     auto& sc = processorRef.getPluginScanner();
     juce::PopupMenu menu;
-    // Secondary staleness surface (the header label is the primary): the
-    // chain list's own count and date, right where the user decides to scan.
-    {
-        auto& chh = processorRef.getChainHost();
-        const auto ms = chh.getEntriesScannedAtMs();
-        menu.addSectionHeader("Chain list: " + juce::String(chh.getNumPlugins())
-            + " plugins, scanned "
-            + (ms > 0 ? juce::Time(ms).toString(true, false)
-                      : juce::String("unknown")));
-    }
+    // 21r item 3 (24 Sep 2026): the "Chain list: N plugins, scanned <date>" section header is GONE. The header
+    // count is the only number, and a second count in a second place is a second thing to be wrong. Staleness is
+    // now surfaced where it can be acted on - the launch prompt below (maybeOfferRescan), which asks rather than
+    // scanning.
     menu.addItem(1, "Scan Now", ! sc.isScanning());
     menu.addItem(2, "Add Folder...");
 
@@ -6291,7 +6288,8 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
-    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis, compareNumbersOnly, figuresJson, cmpChatId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -10127,16 +10125,9 @@ void EchoJayEditor::paintGroupStrip(juce::Graphics& g, const StripGeom& sg)
     g.setColour(cyan);
     g.setFont(juce::Font(juce::FontOptions(wide ? 9.0f : 8.0f, juce::Font::bold)));
     g.drawFittedText("GROUP", sg.badge, juce::Justification::centred, 1, 0.8f);
-    // blank panels where the meter well and the EQ box sit on a Link strip, so the row keeps the same height
-    auto blank = [&g](juce::Rectangle<int> r)
-    {
-        if (r.isEmpty()) return;
-        g.setColour(LinkConsole::strip.darker(0.25f));
-        g.fillRoundedRectangle(r.toFloat(), 3.0f);
-        g.setColour(LinkConsole::edge.withAlpha(0.6f));
-        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 3.0f, 1.0f);
-    };
-    blank(sg.meter); blank(sg.clip); blank(sg.eq);
+    // 21r item 4 (24 Sep 2026): THE BLANK PANELS ARE GONE. Where a Link strip has a meter well and an EQ box, a
+    // group has nothing to show, and an outlined empty box reads as a broken meter rather than as absence. The
+    // geometry is untouched - the row keeps exactly the same height, the space is simply not drawn on.
     // data band — the member names, centred, one per line (plus the bus when one is set)
     {
         juce::StringArray lines;
@@ -10147,9 +10138,11 @@ void EchoJayEditor::paintGroupStrip(juce::Graphics& g, const StripGeom& sg)
         g.drawFittedText(lines.joinIntoString("\n"), sg.data.reduced(3),
                          juce::Justification::centred, juce::jmax(1, lines.size()), 1.0f);
     }
-    // fader — the same widget and the same travel as a Link strip; the cap shows the offset being dragged
+    // fader - 21r item 4: THE GROUP'S OFFSET, LIKE A VCA. It used to snap back to 0 the moment the drag ended,
+    // which made a control that had just moved six faders look untouched. It now sits where it was put, is
+    // persisted with the group, and the readout below says what it is.
     const bool dragging = (linkMixerView_.dragAddr == sg.addr);
-    const float off = dragging ? linkMixerView_.dragValue : 0.0f;
+    const float off = dragging ? linkMixerView_.dragValue : gr->offsetDb;
     if (! sg.fader.isEmpty()) paintFaderLane(g, sg, off, faderLo(), faderHi());
     // readout — the offset, FITTED to the strip width ("+0.0 dB", never an ellipsis)
     if (! sg.faderImg.isEmpty())
@@ -11039,7 +11032,12 @@ void EchoJayEditor::LinkMixerView::mouseUp(const juce::MouseEvent&)
     {   // 21n item 4: the group's level offset - each member's trim moves by the applied delta (the bus alone when set)
         const juce::String gid = dragAddr.fromFirstOccurrenceOf("grp:", false, false);
         const auto* gr = owner->processorRef.linkGroupById(gid);
-        const auto r = owner->processorRef.moveLinkGroup(gid, dragValue, true);
+        // 21r item 4: the fader is the group's OFFSET, so what the members move by is the CHANGE in it, not the
+        // fader's absolute position. The stored offset then follows what actually applied - when a member is at
+        // the limit the group did not really move that far, and the fader must not claim it did.
+        const float wasOff = gr != nullptr ? gr->offsetDb : 0.0f;
+        const auto r = owner->processorRef.moveLinkGroup(gid, dragValue - wasOff, true);
+        owner->processorRef.setLinkGroupOffsetDb(gid, wasOff + r.applied);
         if (gr != nullptr)
             owner->lastGroupMoveStatus_ = gr->name + (std::abs(r.applied) < 0.05f
                 ? (r.limitingMember.isNotEmpty() ? " did not move: " + r.limitingMember + " is already at the limit" : juce::String(" did not move"))
@@ -20673,6 +20671,7 @@ void EchoJayEditor::timerCallback()
                 // ON LAUNCH (21q item 1): one inventory sync per scan generation,
                 // in the background. Latched inside; never per turn.
                 maybeSyncParamIdentities(ch);
+                maybeOfferRescan();   // 21r item 3: once per launch, and only ever a question
             }
         }
     }
@@ -24786,6 +24785,13 @@ void EchoJayEditor::refreshChannelBannerCache()
     // a tick: the timer detector keys on the label). Empty text = main
     // chat: the banner collapses everywhere except the Link tab, where it
     // stays as the no-channel selector (channelBannerH).
+    // 21r item 5: a selected GROUP is what the header says first - it is the target every turn will carry.
+    if (processorRef.chatTargetGroupId.isNotEmpty())
+    {
+        chanBannerLive_ = true;
+        chanBannerText_ = "Working on Group: " + processorRef.chatTargetGroupName;
+        return;
+    }
     const auto uid = effectiveChannelUid();
     if (uid.isEmpty()) { chanBannerText_.clear(); chanBannerLive_ = false; return; }
     chanBannerLive_ = linkUidLive(uid);
@@ -25212,33 +25218,61 @@ void EchoJayEditor::showChatTargetMenu()
         if (e.info.connected && e.info.uid.isNotEmpty())
             targets.push_back({ e.displayName, e.info.uid });
 
+    // 21r item 5: groups are offered beside the Links. A group is one target, not a list of them: the server
+    // resolves what a build or an edit means for its members (CONTRACT_GROUPS).
+    const auto& groups = processorRef.linkGroups();
     juce::PopupMenu menu;
     menu.addSectionHeader("SEND TO");
-    menu.addItem(1, "This chat", true, processorRef.chatTargetLinkUid.isEmpty());
+    menu.addItem(1, "This chat", true, processorRef.chatTargetLinkUid.isEmpty()
+                                        && processorRef.chatTargetGroupId.isEmpty());
     if (!targets.empty()) menu.addSeparator();
     for (size_t i = 0; i < targets.size(); ++i)
         menu.addItem((int)(2 + i), "Link: " + targets[i].label, true,
                      targets[i].uid == processorRef.chatTargetLinkUid);
+    const int kGroupBase = (int) (2 + targets.size());
+    if (! groups.empty()) menu.addSeparator();
+    for (size_t i = 0; i < groups.size(); ++i)
+        menu.addItem(kGroupBase + (int) i,
+                     "Group: " + groups[i].name + " (" + juce::String(groups[i].members.size()) + ")", true,
+                     groups[i].id == processorRef.chatTargetGroupId);
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(juce::PopupMenu::Options()
                            .withParentComponent(this)
                            .withTargetComponent(&chatTargetBtn),
-        [safeThis, targets](int result)
+        [safeThis, targets, groupBase = kGroupBase](int result)
         {
             if (safeThis == nullptr || result <= 0) return;
+            auto& pr = safeThis->processorRef;
             if (result == 1)
             {
-                safeThis->processorRef.chatTargetLinkUid.clear();
-                safeThis->processorRef.chatTargetLinkName.clear();
+                pr.chatTargetLinkUid.clear();
+                pr.chatTargetLinkName.clear();
+                pr.chatTargetGroupId.clear();
+                pr.chatTargetGroupName.clear();
                 safeThis->chatTargetBtn.setButtonText("This channel");
+            }
+            else if (result >= groupBase)
+            {
+                const size_t gi = (size_t)(result - groupBase);
+                const auto& gs = pr.linkGroups();
+                if (gi >= gs.size()) return;
+                // One selector, one answer: choosing a group clears the Link target.
+                pr.chatTargetLinkUid.clear();
+                pr.chatTargetLinkName.clear();
+                pr.chatTargetGroupId   = gs[gi].id;
+                pr.chatTargetGroupName = gs[gi].name;
+                safeThis->chatTargetBtn.setButtonText(
+                    juce::String::fromUTF8("\xe2\x86\x92 ") + gs[gi].name);
             }
             else
             {
                 size_t li = (size_t)(result - 2);
                 if (li >= targets.size()) return;
-                safeThis->processorRef.chatTargetLinkUid  = targets[li].uid;
-                safeThis->processorRef.chatTargetLinkName = targets[li].label;
+                pr.chatTargetGroupId.clear();
+                pr.chatTargetGroupName.clear();
+                pr.chatTargetLinkUid  = targets[li].uid;
+                pr.chatTargetLinkName = targets[li].label;
                 safeThis->chatTargetBtn.setButtonText(
                     juce::String::fromUTF8("\xe2\x86\x92 ") + targets[li].label);
             }
@@ -25536,6 +25570,43 @@ void EchoJayEditor::maybeRefreshExistenceDialable(ChainHost& ch)
                 self->existenceKeysSig_ = sig;   // latch on completion, ok or 404
             }
         });
+}
+
+// 21r item 3 (24 Sep 2026): ONCE PER LAUNCH, ASK - NEVER SCAN UNBIDDEN.
+// The folder walk runs on a background thread (it stats a few thousand bundles) and the question is asked on the
+// message thread. The latch is on the PROCESSOR, so closing and reopening the editor does not ask again.
+void EchoJayEditor::maybeOfferRescan()
+{
+    if (processorRef.rescanOffered_) return;
+    auto& sc = processorRef.getPluginScanner();
+    if (sc.isScanning()) return;
+    const auto scannedAt = processorRef.getChainHost().getEntriesScannedAtMs();
+    if (scannedAt <= 0) return;                       // never scanned is not stale
+    processorRef.rescanOffered_ = true;               // latched BEFORE the walk: one question per launch, win or lose
+
+    const auto folders = echojay::standardPluginFolders (sc.getCustomFolders());
+    juce::Component::SafePointer<EchoJayEditor> safe (this);
+    juce::Thread::launch ([folders, scannedAt, safe]
+    {
+        const auto f = echojay::foldersChangedSince (folders, scannedAt);
+        if (! f.changed) return;
+        const auto text = echojay::rescanPromptText (f);
+        juce::MessageManager::callAsync ([safe, text, f]
+        {
+            auto* self = safe.getComponent();
+            if (self == nullptr) return;
+            EchoJay_NSLog (("EJScan: " + juce::String (f.newer) + " plugin folder entr(ies) newer than the scan (newest \""
+                            + f.firstName + "\") - asking").toRawUTF8());
+            juce::AlertWindow::showOkCancelBox (juce::AlertWindow::QuestionIcon, "EchoJay", text, "Scan now", "Not now",
+                                                self, juce::ModalCallbackFunction::create ([safe] (int result)
+            {
+                auto* ed = safe.getComponent();
+                if (ed == nullptr) return;
+                if (result == 1) { EchoJay_NSLog ("EJScan: rescan accepted from the launch prompt"); ed->processorRef.getChainHost().startScan(); }
+                else               EchoJay_NSLog ("EJScan: rescan declined; not asked again this launch");
+            }));
+        });
+    });
 }
 
 void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
@@ -27462,7 +27533,8 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
-    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
     api.classify(creq, [safeThis, activeChatId, turnTargetUid, turnTargetName,
                         sysPrompt, channelName, genreName, userContent, msg,
                         rolesSnap, contentsSnap]
@@ -28092,7 +28164,8 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
-    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr)
@@ -28146,7 +28219,8 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
-    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(roles, contents, sysPrompt,
         [safeThis, activeChatId, turnTargetUid, turnTargetName, provisionalId](const juce::String& reply, bool success) {
             if (safeThis == nullptr) return;
@@ -33310,7 +33384,8 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     juce::String captureChatId = chatId;
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
-    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());   // 21n item 4: groups[] + links[] while groups exist
+    api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
+    api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group   // 21n item 4: groups[] + links[] while groups exist
     api.sendChat(processorRef.chatRoles, processorRef.chatContents, sysPrompt,
         [safeThis2, captureChatId](const juce::String& reply, bool success) {
             if (safeThis2 == nullptr)

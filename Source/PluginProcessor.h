@@ -350,6 +350,10 @@ public:
      *  handled by clearStagedTurn(); see the note on it in EchoJayAPI.h.
      */
     EchoJayAPI& getApi() { return api; }
+    // 21r item 3: the launch rescan question is asked at most once per PROCESS, not once per editor - closing and
+    // reopening the window is not a new launch. Public because the editor asks the question and the processor
+    // outlives it.
+    bool rescanOffered_ = false;
 
     // Save captured audio to WAV in the project/capture folder
     juce::String saveCaptureWAV();
@@ -389,6 +393,9 @@ public:
     juce::String getEffectiveChannelName() const;
 
     bool isChannelTypePromptDismissed() const { return channelTypePromptDismissed; }
+    // 21r item 7: has this instance ever answered "which channel is this on?". Persisted; the question is asked
+    // only when this is false, and the header dropdown can still change the answer afterwards.
+    bool isChannelChosen() const { return channelChosen; }
     void setChannelTypePromptDismissed(bool dismissed);
 
     juce::String getGenre() const { return genre; }
@@ -980,6 +987,11 @@ public:
     juce::String activeChatId;
     juce::String chatTargetLinkUid;    // "" = local rack (compose target)
     juce::String chatTargetLinkName;   // display label when uid set
+    // 21r item 5 (24 Sep 2026): a GROUP can be the target as well as a Link. Mutually exclusive with
+    // chatTargetLinkUid - one selector, one answer - and carried on every turn as selectedGroupId, from which the
+    // server resolves level-match and group targets (CONTRACT_GROUPS as amended 24 Sep).
+    juce::String chatTargetGroupId;
+    juce::String chatTargetGroupName;
     // Phase C3: channel tapped but no chat record yet — creation is lazy
     // at FIRST SEND (a bare tap must not mint an empty record), so the
     // pending selection holds the channel here until then. Cleared when
@@ -1268,6 +1280,7 @@ private:
     ChannelType channelType { ChannelType::FullMix };
     juce::String customChannelName;
     bool channelTypePromptDismissed = false;
+    bool channelChosen = false;   // 21r item 7: persisted "the question has been answered"
     juce::String genre { "hip-hop" };
     bool genrePromptDismissed = false;
     bool projectPromptDismissed = false;
@@ -1459,13 +1472,16 @@ public:
     // A group = a name + member Link instanceIds (display order) + an optional bus Link. Persisted in the V2 session state
     // ("linkGroups"). Every chat / chat-stream / classify body carries groups[] {id, name, members, bus} beside links[]
     // {instanceId, name, gainDb} whenever at least one group exists (omitting them = today's behaviour, per the contract).
-    struct LinkGroup { juce::String id, name, bus; juce::StringArray members; };
+    // offsetDb (21r item 4, 24 Sep 2026): the group's own level offset, like a VCA - it applies to the members,
+    // it stays where it was put, and it is saved with the group.
+    struct LinkGroup { juce::String id, name, bus; juce::StringArray members; float offsetDb = 0.0f; };
     const std::vector<LinkGroup>& linkGroups() const { return linkGroups_; }
     juce::String createLinkGroup(const juce::String& name, const juce::StringArray& members, const juce::String& bus = {});   // returns the id
     void removeLinkGroup(const juce::String& id);
     void setLinkGroupBus(const juce::String& id, const juce::String& busUid);
     void setLinkGroupMembers(const juce::String& id, const juce::StringArray& members);
     void renameLinkGroup(const juce::String& id, const juce::String& name);
+    void setLinkGroupOffsetDb(const juce::String& id, float db);   // 21r item 4
     const LinkGroup* linkGroupById(const juce::String& id) const;
     juce::var groupsBodyVar() const;    // groups[] as the contract shapes it (void when there are no groups)
     juce::var linksBodyVar() const;     // links[] {instanceId, name, gainDb} for a groups-aware body (void when no groups)

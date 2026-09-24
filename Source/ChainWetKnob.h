@@ -193,7 +193,9 @@ protected:
 // is drawn ALWAYS (not on hover), amber when the value was set by hand (a
 // build will not overwrite it) and grey when auto, "--" when no input level
 // has been heard rather than a confident 0. Shift = fine; double-click resets
-// to auto (onResetAuto). onChange still fires 0..1; the owner maps to dB.
+// to 0.0 dB (21r item 6, 24 Sep 2026 - it used to reset to "auto" via
+// onResetAuto, which is still available to the owner for its own control).
+// onChange still fires 0..1; the owner maps to dB.
 // ---------------------------------------------------------------------------
 struct PreGainKnob : ChainWetKnob
 {
@@ -294,9 +296,15 @@ struct PreGainKnob : ChainWetKnob
         setValue(dragStartValue_ + delta, true);
     }
 
+    // 21r item 6 (24 Sep 2026): DOUBLE-CLICK RESETS TO THE NATURAL DEFAULT, which for a bipolar trim is 0.0 dB -
+    // a definite value the user can see, not "auto", which reads as "something will decide later". Every other
+    // knob already follows this rule (the wet knob resets to 100%, a device rotary to its parameter default), so
+    // this is the odd one being brought into line rather than a new rule.
     void mouseDoubleClick(const juce::MouseEvent&) override
     {
-        if (onResetAuto) onResetAuto();
+        setValue (vFromDb (0.0f), true);
+        echojay::knobGestureEnded();
+        if (onGestureEnd) onGestureEnd();
     }
 
 protected:
@@ -310,6 +318,6 @@ protected:
                                               : juce::String("auto, set from the measured input");
         setTooltip("Pre-chain gain - headroom into the rack: "
                    + juce::String(db(), 1) + " dB (" + who + ")."
-                   + "  Drag to change; shift for fine; double-click for auto.");
+                   + "  Drag to change; shift for fine; double-click for 0.0 dB.");
     }
 };

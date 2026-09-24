@@ -1573,12 +1573,18 @@ juce::String EchoJayProcessor::computePassName() const
 void EchoJayProcessor::setChannelType(ChannelType t)
 {
     channelType = t;
+    // 21r item 7 (24 Sep 2026): ANSWERED, and the answer is the instance's. The prompt used to key off
+    // "channelType == FullMix", so a user who genuinely chose Full Mix was asked again on every reopen, and any
+    // instance whose state did not round-trip was asked again too. The question is now asked only when it has
+    // never been answered.
+    channelChosen = true;
     markStateDirty();
 }
 
 void EchoJayProcessor::setChannelTypePromptDismissed(bool dismissed)
 {
     channelTypePromptDismissed = dismissed;
+    if (dismissed) channelChosen = true;   // dismissing IS an answer: do not ask again on reopen
     markStateDirty();
 }
 
@@ -4606,6 +4612,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("keyShowRelative", echojay::KeyDisplayPrefs::showRelative().load());   // COMMIT 4
     state->setProperty("capableLinkSeen", capableLinkSeen_.load(std::memory_order_relaxed));   // hurdle 1 item 4
     state->setProperty("channelTypePromptDismissed", channelTypePromptDismissed);
+    state->setProperty("channelChosen", channelChosen);   // 21r item 7: asked once per instance, ever
     {   // 21m rename alias: uid -> alias, session state
         auto* al = new juce::DynamicObject();
         for (const auto& [u, a] : linkAliases_) if (a.isNotEmpty()) al->setProperty(u, a);
@@ -4616,6 +4623,7 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
         for (const auto& g : linkGroups_)
         {
             auto* o = new juce::DynamicObject(); o->setProperty("id", g.id); o->setProperty("name", g.name); o->setProperty("bus", g.bus);
+            o->setProperty("offsetDb", (double) g.offsetDb);   // 21r item 4: the fader stays where it was put
             juce::Array<juce::var> m; for (const auto& u : g.members) m.add(u); o->setProperty("members", m); ga.add(juce::var(o));
         }
         state->setProperty("linkGroups", juce::var(ga));
@@ -4846,6 +4854,12 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             // Restore dismissed — if field exists use it, otherwise derive from channel type
             if (obj->hasProperty("channelTypePromptDismissed"))
                 channelTypePromptDismissed = (bool)obj->getProperty("channelTypePromptDismissed");
+            // 21r item 7. A state written before this build has no "channelChosen": an instance that carries a
+            // channelType other than the default, or a dismissed prompt, HAS answered - reading it as unanswered
+            // would ask every existing session the question again.
+            channelChosen = obj->hasProperty("channelChosen")
+                              ? (bool)obj->getProperty("channelChosen")
+                              : (channelTypePromptDismissed || channelType != ChannelType::FullMix);
             if (auto* ga = obj->getProperty("linkGroups").getArray())   // 21n item 4
             {
                 linkGroups_.clear();
@@ -4854,6 +4868,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                     {
                         LinkGroup g; g.id = o->getProperty("id").toString(); g.name = o->getProperty("name").toString(); g.bus = o->getProperty("bus").toString();
                         if (auto* m = o->getProperty("members").getArray()) for (const auto& u : *m) g.members.addIfNotAlreadyThere(u.toString());
+                        g.offsetDb = (float) (double) o->getProperty("offsetDb");   // 21r item 4; absent in an older state = 0.0
                         if (g.id.isNotEmpty() && ! g.members.isEmpty()) linkGroups_.push_back(g);
                     }
             }
@@ -5377,6 +5392,12 @@ juce::var EchoJayProcessor::groupsBodyVar() const
         ga.add(juce::var(o));
     }
     return juce::var(ga);
+}
+
+void EchoJayProcessor::setLinkGroupOffsetDb(const juce::String& id, float db)
+{
+    for (auto& g : linkGroups_)
+        if (g.id == id) { g.offsetDb = juce::jlimit(-24.0f, 24.0f, db); markStateDirty(); return; }
 }
 juce::var EchoJayProcessor::linksBodyVar() const
 {

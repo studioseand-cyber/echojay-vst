@@ -12,6 +12,7 @@
 #include "ParticleVisual.h"
 #include "PluginChecklist.h"
 #include "EchoJayWorkspace.h"
+#include "EJScanFreshness.h"   // 21r item 3
 #include "CodecRender.h"
 #include "DashboardTab.h"
 #include "EJDialTally.h"
@@ -1318,6 +1319,7 @@ private:
     void finishSessionBuild(const juce::String& linkUid, const juce::String& chainJson, bool settled);
     void armLoudnessLoopIfTargeted();      // ruling G: arm after an own-rack build whose limiter names a LUFS target
     void reattachLoopPills();              // 21r item 1: a workspace reload drops the pills; the live loop puts them back
+    void maybeOfferRescan();               // 21r item 3: "Plugins changed since the last scan - Scan now?", once per launch
     void appendLocalUserBubble(const juce::String& text);
     bool handleLoudnessVerb(const juce::String& msg, bool forced = false);   // 18e: forced = the server answered loop_verb   // \"a bit louder\" / \"a bit softer\" / \"check the level again\" / \"undo\"
     int  loopBubbleSeq_ = 0;
