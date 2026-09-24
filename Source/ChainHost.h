@@ -1207,6 +1207,8 @@ public:
         float inLufs = -200.0f, outLufs = -200.0f;
         float grDb = 0.0f; bool grKnown = false;
         float preTrimDb = 0.0f, postTrimDb = 0.0f;
+        bool  exempt = false;     // R1 (21s-b): the Level / Limiter slots - no reading, but the trims are shown
+        bool  dynamics = false;   // R3 (21s-b): a dynamics-role slot reports "working X dB" (inLufs - outLufs)
         bool  hot() const { return valid && inTpDb > kSlotInputCeilingDb; }
         bool  working() const { return valid && grKnown && grDb > kFlagGrDb; }
     };
@@ -1215,6 +1217,14 @@ public:
     juce::StringArray listenCardLines() const;            // the per-slot picture for the Listen reply card, flags by name
     float getSlotPreTrimDb(int i) const;
     void  setSlotPreTrimDb(int i, float db);
+    // R2 (21s-b, 24 Sep 2026): the MATCH (post) trim is a COMPARE DEVICE. It is in the signal path only while an
+    // A/B compare is running; the pre-trim, which protects a slot's input, is always in the path. One flag, shared
+    // with every blend node, so the answer cannot differ per slot.
+    void setCompareActive(bool on) { if (compareActive_) compareActive_->store(on, std::memory_order_relaxed); }
+    bool compareActive() const { return compareActive_ && compareActive_->load(std::memory_order_relaxed); }
+    // R1 (21s-b): the Level and Limiter slots are exempt from BOTH trims. Any value found on them is cleared and
+    // said out loud, at build and at every Listen - a stale trim on an exempt slot is invisible otherwise.
+    int clearExemptTrims(int levelSlot, int limiterSlot, juce::StringArray* lines = nullptr);
     // 21m ruling (unityChain capability): true when any live (non-bypassed) slot carries a non-zero trim - the rack
     // sits at unity because the trims made it so. False on an empty rack or before the first Listen.
     bool  hasActiveTrims() const;
@@ -2055,6 +2065,7 @@ private:
     std::set<juce::String>            steppedSweepInFlight_;
     // The token a background sweep holds instead of holding this object: cleared in the destructor, so a sweep
     // that finishes after the host is gone does nothing rather than writing into freed memory.
+    std::shared_ptr<std::atomic<bool>> compareActive_ = std::make_shared<std::atomic<bool>> (false);   // R2 (21s-b)
     std::shared_ptr<std::atomic<bool>> sweepAlive_ = std::make_shared<std::atomic<bool>> (true);
     juce::StringArray                    mapsRequested_; // fps requested this session
     // fps whose fetch is IN FLIGHT (requested, no storeParamMaps answer

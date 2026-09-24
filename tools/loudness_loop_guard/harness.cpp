@@ -637,7 +637,23 @@ static int guardMain()
         check (std::abs (trim + 4.0f) < 0.3f, "P1. after Listen the +4 dB slot carries a -4.0 (+-0.3) dB unity trim", f1 (trim));
         feed (r.proc, r.prog, 400, false, nullptr, nullptr);   // the tallies settle on the trimmed output
         const auto lv = r.h.getSlotLevels (1);
-        check (lv.measured && std::abs (lv.out.shortTermDb - lv.in.shortTermDb) < 0.3f, "P1. ...and the slot ends +0.0 +-0.3 dB (out - in over the short-term window)", f1 (lv.out.shortTermDb - lv.in.shortTermDb));
+        // SUPERSEDED BY R2 (24 Sep 2026): the match trim is a COMPARE DEVICE. It is not in the path during normal
+        // playback, so the slot does NOT end at unity then - it ends where the plugin left it, and the trim is what
+        // an A/B would apply. The assertion is inverted here rather than deleted, and the unity claim is re-made
+        // below WITH a compare running, which is the only state it was ever true in.
+        check (lv.measured && std::abs ((lv.out.shortTermDb - lv.in.shortTermDb) - 4.0f) < 0.3f,
+               "P1. ...and with NO compare running the slot still reads its own +4 dB - the match trim is not in the path "
+               "(ruling R2, 24 Sep 2026; this leg used to assert unity here)", f1 (lv.out.shortTermDb - lv.in.shortTermDb));
+        {   // ...and with a compare running it lands at unity, which is what the trim is for
+            r.h.setCompareActive (true);
+            feed (r.proc, r.prog, 400, false, nullptr, nullptr);
+            const auto lvc = r.h.getSlotLevels (1);
+            check (lvc.measured && std::abs (lvc.out.shortTermDb - lvc.in.shortTermDb) < 0.4f,
+                   "P1. ...and WITH a compare running the same slot lands at unity (that is what match is for)",
+                   f1 (lvc.out.shortTermDb - lvc.in.shortTermDb));
+            r.h.setCompareActive (false);
+            feed (r.proc, r.prog, 200, false, nullptr, nullptr);
+        }
         check (r.h.slotTrimText (1).endsWith (" dB match") && r.h.slotTrimText (1).startsWith ("-") && r.h.getSlotInfo (1).trimText == r.h.slotTrimText (1),
                "P1. the tile and the card line read \"-X.X dB match\" from the same atomic", r.h.slotTrimText (1));
         check (std::abs (r.h.getSlotTrimDb (0)) < 0.01f && std::abs (r.h.getSlotTrimDb (2)) < 0.01f && r.h.slotTrimText (0).isEmpty() && r.h.slotTrimText (2).isEmpty(),
@@ -646,11 +662,18 @@ static int guardMain()
         // the loop's opening gain assumes a unity chain: after Go the output lands on the target even though the window measured the un-trimmed chain
         {   // the window measured the UN-trimmed chain (-14 = -18 programme + 4 dB); the proposal must be computed from the unity chain (-18): needed +9, not +5
             juce::String ml; for (const auto& l : r.logs) if (l.contains ("measured: max short-term")) ml = l;
-            check (ml.contains ("measured: max short-term -18.0 LUFS") && ml.contains ("needed +9.0 dB"), "P5. the proposal is computed from the UNITY chain: measured -18.0 (the -14.0 window plus the -4 dB trim), needed +9.0 (RED as it stood: -14.0 / +5.0)", ml.substring (0, 140));
+            // SUPERSEDED BY R2 (24 Sep 2026): ONE FIGURE EVERYWHERE. The proposal used to be computed from the
+            // window PLUS the trim change; with the match trims out of the path there is nothing to correct for,
+            // and the window IS the chain output. The leg now asserts the window is reported as measured.
+            check (ml.contains ("measured: max short-term -14.0 LUFS") && ml.contains ("needed +5.0 dB"),
+                   "P5. the proposal reports the window as measured, with no trim correction "
+                   "(ruling R2, 24 Sep 2026; this leg used to assert -18.0 / +9.0)", ml.substring (0, 170));
             juce::String gc; for (const auto& l : r.logs) if (l.contains ("GR cap")) gc = l; std::printf ("  P5 cap line: %s\n", gc.substring (0, 200).toRawUTF8());
         }
         check (r.loop.state() == LoudnessLoop::State::proposed && r.loop.go(), "P5. the proposal is offered and Go applies it", juce::String ((int) r.loop.state()));
-        check (r.levelGain() > 5.5f, "P5. ...and the Level moves by more than the +5 the un-trimmed window would have asked (the +9 unity ask, or its GR-capped value)", f1 (r.levelGain()));
+        check (r.levelGain() > 3.5f && r.levelGain() < 7.0f,
+               "P5. ...and the Level moves by what THAT figure asks for (ruling R2; it used to be the +9 unity ask)",
+               f1 (r.levelGain()));
         feed (r.proc, r.prog, 600, false, nullptr, nullptr);
         { const auto co = r.h.getChainOutLevels(); std::printf ("  P5 chain out after Go: %.2f LUFS-S (Level %+.2f dB)\n", co.shortTermDb, r.levelGain()); }
         // persistence: the trim rides the saved chain like the pre-gain
@@ -730,6 +753,82 @@ static int guardMain()
         else
             check (false, "V3. the fixture drove slot 1 over -3 dBTP", "input was " + f1 (pic.inTpDb) + " dBTP - fixture too quiet");
     }
+    // ================= 21s-b: R1, R2, R3 ==========================================================
+    {   // R1: a stale trim on an EXEMPT slot is cleared, said out loud, and shown
+        std::printf ("\n== R1 (21s-b): the Level and Limiter slots carry no trim, ever ==\n");
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        calibrate (r.proc, r.prog, -18.0f);
+        // the defect, staged: a pre-trim left on the Level slot by an earlier build
+        r.h.setSlotPreTrimDb (r.levelSlot, -2.9f);
+        r.h.setSlotTrimDb (r.limSlot, 1.7f);
+        check (std::abs (r.h.getSlotPreTrimDb (r.levelSlot) + 2.9f) < 0.01f, "R1. fixture: a stale -2.9 dB pre-trim sits on the Level slot");
+        juce::StringArray lines;
+        r.h.measureUnityTrims (r.levelSlot, r.limSlot, &lines, true);
+        const auto joined = lines.joinIntoString (" | ");
+        check (std::abs (r.h.getSlotPreTrimDb (r.levelSlot)) < 0.01f,
+               "R1. the Level slot's pre-trim is CLEARED  (RED as it stood: it survived every Listen, unseen)",
+               f1 (r.h.getSlotPreTrimDb (r.levelSlot)));
+        check (joined.contains ("exempt trim cleared: EchoJay Level pre -2.9"),
+               "R1. ...and the value found is LOGGED before it is zeroed", joined.substring (0, 150));
+        check (joined.contains ("exempt trim cleared") && joined.contains ("post 1.7"),
+               "R1. ...the limiter's post trim too");
+        check (r.h.slotPictureText (r.levelSlot).contains ("exempt: pre"),
+               "R1. ...and an exempt slot's line now SHOWS its pair instead of saying nothing",
+               r.h.slotPictureText (r.levelSlot));
+        // the arithmetic the stale trim used to break: Level OUT = the slot before it + the Level's gain
+        // The arithmetic the stale trim used to break. The Level is the FIRST slot in this fixture, so what feeds
+        // it is the chain input - and with the exempt pre-trim cleared, its own gain is the whole difference.
+        r.h.resetAllLevels(); r.loop.armFromChain(); r.runWindow();
+        auto* lv = dynamic_cast<EedLevelProcessor*> (r.h.getSlotProcessor (r.levelSlot));
+        if (lv != nullptr)
+        {
+            const float inTp   = lv->inputLevels().truePeakDb;
+            const float outTp  = lv->outputLevels().truePeakDb;
+            const float expect = inTp + (float) lv->gainDb();
+            check (std::abs (outTp - expect) < 0.2f,
+                   "R1. Level OUT TP = its input + its own gain, within 0.2 dB - nothing hidden in front of it "
+                   "(the 2.9 dB that went missing)",
+                   "in " + f1 (inTp) + " + gain " + f1 ((float) lv->gainDb()) + " = " + f1 (expect) + ", read " + f1 (outTp));
+        }
+        else check (false, "R1. fixture: the Level slot is an EchoJay Level");
+    }
+    {   // R2: ONE figure everywhere, and the match trim is a compare device
+        std::printf ("\n== R2 (21s-b): the match trim is compare-only, and the proposal and Done agree ==\n");
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        check (! r.h.compareActive(), "R2. a compare is not running by default");
+        calibrate (r.proc, r.prog, -14.0f);
+        r.loop.armFromChain(); r.runWindow();
+        const float atProposal = r.loop.lastMeasured();
+        juce::String doneLine;
+        r.logs.clear();
+        const bool doneOk = r.loop.done();
+        for (const auto& l : r.logs) if (l.contains ("done:")) doneLine = l;
+        check (doneOk && doneLine.isNotEmpty(), "R2. Done reports a figure",
+               juce::String (doneOk ? "done ok, " : "done refused, ") + juce::String (r.logs.size()) + " line(s): "
+               + r.logs.joinIntoString (" | ").substring (0, 120));
+        check (doneLine.contains (juce::String (atProposal, 1)),   // the loop prints one decimal; f1 here is two
+               "R2. ...and it is the SAME figure the proposal used  (RED as it stood: -11.3 at the proposal, -14.9 at Done)",
+               "proposal " + f1 (atProposal) + " / " + doneLine);
+        r.h.setCompareActive (true);
+        check (r.h.compareActive(), "R2. the compare flag is the one switch the blend nodes read");
+        r.h.setCompareActive (false);
+    }
+    {   // R3: the loudness pair, and what a dynamics slot is doing
+        std::printf ("\n== R3 (21s-b): per-slot loudness in and out, and 'working X dB' ==\n");
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
+        calibrate (r.proc, r.prog, -18.0f);
+        r.loop.armFromChain(); r.runWindow();
+        const auto txt = r.h.slotPictureText (1);
+        const auto card = r.h.listenCardLines().joinIntoString (" | ");
+        check (txt.contains ("LUFS"), "R3. the strip line carries the loudness pair as well as the peaks  (RED as it stood: dBTP only)", txt);
+        check (card.contains ("LUFS"), "R3. ...and so does the Listen card", card.substring (0, 200));
+        const auto lim = r.h.listenCardLines();
+        bool anyWorking = false;
+        for (const auto& l : lim) if (l.contains ("working ")) anyWorking = true;
+        check (anyWorking || ! r.h.slotPicture (r.limSlot).dynamics,
+               "R3. a dynamics-role slot reports how hard it is working (in - out, in LUFS)", card.substring (0, 200));
+    }
+
     {   // (4) the plugin's own rolling log exists and carries the Listen lines
         Rig r2 (false, true, "EJ Test Limiter", true);
         const juce::File f (juce::String (echojay::FileLog::instance().currentPath()));

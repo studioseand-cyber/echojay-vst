@@ -525,8 +525,9 @@ public:
             // while the transport was stopped, and the trim pass is not left to guess.
             juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl, rollingOrUnknown());
             for (const auto& l : tl) log ("unity trim: " + l);
-            trimDeltaDb_ = sumTrims() - trimsBefore;   // what the chain output moved by, after this window measured it
-            if (changed > 0) log ("unity trims changed: " + juce::String (changed) + " (chain output moves " + juce::String (trimDeltaDb_, 1) + " dB)"); }
+            trimDeltaDb_ = sumTrims() - trimsBefore;   // kept for the log line only - R2: it no longer moves the proposal
+            if (changed > 0) log ("unity trims changed: " + juce::String (changed)
+                                  + " (match trims, compare-only: the chain output does NOT move)"); }
         {   // 21p item 2: the per-slot picture the Listen card shows, and the flags by name
             for (const auto& l : host_.listenCardLines()) log ("slot picture: " + l);
         }
@@ -543,7 +544,12 @@ public:
             }
         }
         // the loop's opening gain assumes a UNITY chain: the window measured the un-trimmed chain, so the figures it proposes from carry the trims just applied
-        proposeFrom (measured + trimDeltaDb_, out.truePeakDb + trimDeltaDb_);
+        // R2 (21s-b, 24 Sep 2026): ONE FIGURE EVERYWHERE. The proposal used to be computed from the window PLUS the
+        // trim change (measured + trimDeltaDb_), while Done reported the raw window - so one Listen printed -11.3
+        // at the proposal and -14.9 at Done, 3.6 dB apart, and it read as the level having dropped after a push.
+        // Now the match trims are compare-only (they are not in the path during a measurement), so the window IS
+        // the chain output and there is nothing to correct for.
+        proposeFrom (measured, out.truePeakDb);
     }
     // 18f: the decision after a measurement (also reached from loudestPart()) - proposal / on-target / stuck / at the limit
     void proposeFrom (float measured, float truePeakDb)

@@ -752,16 +752,9 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     viewAllPluginsBtn.setColour(juce::TextButton::buttonColourId, C::bg4);
     viewAllPluginsBtn.setColour(juce::TextButton::textColourOffId, C::text2);
     addChildComponent(viewAllPluginsBtn);
-    viewAllPluginsBtn.onClick = [this]()
-    {
-        if (reviewChecklist)
-        {
-            reviewChecklist->setFilter(juce::String());
-            reviewChecklist->refresh();
-        }
-        reviewSearchBox.setText(juce::String(), juce::dontSendNotification);
-        showPluginReview();
-    };
+    // F4 (21s-b): the Settings row's button is now the SAME dropdown trigger as the header pill - same menu, same
+    // order, same actions. "View all" lives on the menu as its first item.
+    viewAllPluginsBtn.onClick = [this]() { showScanMenu(&viewAllPluginsBtn); };
 
     // Help & Support — a quiet link-style button (transparent, muted text) on
     // the bottom row near Log Out, so it reads as an app action, not a plugins
@@ -4331,6 +4324,13 @@ void EchoJayEditor::PluginReviewOverlay::mouseDown(const juce::MouseEvent& e)
     if (! cardBounds.contains(p)) { if (onDone) onDone(); return; }
 }
 
+// F4 (21s-b): THE menu's items, in order, in one place. showScanMenu builds the menu from this and the guard
+// asserts both triggers produce it - so "adding an item to one" is not a thing that can happen.
+std::vector<EchoJayEditor::ScanMenuItem> EchoJayEditor::scanMenuItems()
+{
+    return { { 3, "View all" }, { 1, "Scan Now" }, { 2, "Add Folder..." } };
+}
+
 void EchoJayEditor::showScanMenu(juce::Component* target)
 {
     auto& sc = processorRef.getPluginScanner();
@@ -4339,8 +4339,12 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
     // count is the only number, and a second count in a second place is a second thing to be wrong. Staleness is
     // now surfaced where it can be acted on - the launch prompt below (maybeOfferRescan), which asks rather than
     // scanning.
-    menu.addItem(1, "Scan Now", ! sc.isScanning());
-    menu.addItem(2, "Add Folder...");
+    // F4 (21s-b, 24 Sep 2026): ONE menu, built HERE, in this order. Both triggers - the header's "N Plugins" pill
+    // and the Settings "Your plugins" row - call this function, so an item added here cannot miss either of them.
+    // The item list is also available as scanMenuItems(), which is what the guard reads: a second list would be a
+    // second thing to keep in step.
+    for (const auto& it : scanMenuItems())
+        menu.addItem(it.id, it.label, it.id == 1 ? ! sc.isScanning() : true);
 
     auto folders = sc.getCustomFolders();
     if (folders.size() > 0)
@@ -4372,6 +4376,16 @@ void EchoJayEditor::showScanMenu(juce::Component* target)
                 scanner->startScan();
                 safeThis->chainScanAfterSettings_ = true;
                 EchoJay_NSLog("EJScan: chain scan queued to follow the settings scan");
+            }
+            else if (result == 3)
+            {   // F4: the same action the Settings "View all" button used to own, now an item on the one menu
+                if (safeThis->reviewChecklist)
+                {
+                    safeThis->reviewChecklist->setFilter(juce::String());
+                    safeThis->reviewChecklist->refresh();
+                }
+                safeThis->reviewSearchBox.setText(juce::String(), juce::dontSendNotification);
+                safeThis->showPluginReview();
             }
             else if (result == 2)
             {
@@ -25092,6 +25106,10 @@ bool EchoJayEditor::targetPillEligible() const
 {
     // Pill shows when it MEANS something: a target is set, or Links exist
     // to target. Hidden costs no height — the composer row is fixed.
+    // F1-rest (21s-b): a selected GROUP is a target, so the pill means something then too. Same selection source
+    // as everything else (setChatTargetGroup) - the pill cannot disagree with the banner about what is selected.
+    if (processorRef.chatTargetGroupId.isNotEmpty()) return true;
+    if (! processorRef.linkGroups().empty()) return true;   // groups exist to target, exactly as Links do
     if (processorRef.chatTargetLinkUid.isNotEmpty()) return true;
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.connected && e.info.uid.isNotEmpty()) return true;
@@ -25120,9 +25138,9 @@ void EchoJayEditor::layoutChatBox(juce::Rectangle<int> box)
     // transient (cleared on every activation and after every routed send).
     const bool bannerShowing = channelBannerH() > 0;
     if (!bannerShowing)
-        chatTargetBtn.setButtonText(processorRef.chatTargetLinkUid.isNotEmpty()
-            ? juce::String::fromUTF8("\xe2\x86\x92 ") + processorRef.chatTargetLinkName
-            : juce::String("This channel"));
+        // F1-rest (21s-b): ONE answer, from chatTargetLabel() - "This group" / the Link's name / "This channel".
+        // The composer's label and the Working-on banner are the same selection, so they cannot drift apart.
+        chatTargetBtn.setButtonText(chatTargetLabel());
     chatTargetBtn.setInterceptsMouseClicks(true, true);
     chatTargetBtn.setAlpha(1.0f);
 

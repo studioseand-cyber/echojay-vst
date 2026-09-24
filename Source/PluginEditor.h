@@ -1336,6 +1336,9 @@ private:
     };
     ReplyLayer replyLayer;
 
+    // F4 (21s-b): the plugins menu's items, in order, in ONE place - both triggers build from this.
+    struct ScanMenuItem { int id; juce::String label; };
+    static std::vector<ScanMenuItem> scanMenuItems();
     void setChatTargetGroup(const juce::String& groupId);   // F2 (21s-a): the ONE way a group becomes the target
     juce::String chatTargetLabel() const;                   // F2: the composer pill's text, from that one answer
     void maybeOfferRescan();               // 21r item 3: "Plugins changed since the last scan - Scan now?", once per launch

@@ -61,6 +61,12 @@ struct EchoJayTabStripTestAccess
     static juce::TextButton& buildBtn (EchoJayEditor& e, int i) { return e.chainBuildBtns[(size_t) i]; }
     static void targetGroup (EchoJayEditor& e, const juce::String& id) { e.setChatTargetGroup (id); }   // F2
     static juce::String targetLabel (EchoJayEditor& e) { return e.chatTargetLabel(); }
+    static juce::TextButton& scanTrigger (EchoJayEditor& e) { return e.scanBtn; }                  // F4
+    static juce::TextButton& viewAllTrigger (EchoJayEditor& e) { return e.viewAllPluginsBtn; }     // F4
+    static bool pillEligible (EchoJayEditor& e) { return e.targetPillEligible(); }                 // F1-rest
+    static std::vector<EchoJayEditor::ScanMenuItem> menuItems() { return EchoJayEditor::scanMenuItems(); }   // F4
+    static Tb tabChain() { return EchoJayEditor::Tab::Chain; }
+    static Tb tabLink()  { return EchoJayEditor::Tab::Link; }
     static juce::String banner (EchoJayEditor& e) { e.refreshChannelBannerCache(); return e.chanBannerText_; }
     static bool stripSelected (EchoJayEditor& e, const juce::String& addr) { return e.linkSelection_.count (addr) > 0; }
     static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
@@ -221,6 +227,45 @@ int main()
             A::toChat (*ed); pumpMs (60);
             check (layer.isVisible(), "F1. back on Chat the layer returns  (the one switch drives BOTH ways)");
             A::chip (*ed, 0).setVisible (false);
+        }
+
+        // ---- F1-rest (21s-b): the banner and the composer label are one answer, wherever the composer is --------
+        {
+            std::printf ("\n== F1-rest: the Working-on banner and the composer label follow the one selection ==\n");
+            const auto gid2 = proc.createLinkGroup ("Group 2", juce::StringArray { "lnk_01", "lnk_02" });
+            A::targetGroup (*ed, gid2);
+            const A::Tb tabs[] = { A::tabChat(), A::tabChain(), A::tabLink() };
+            for (auto t : tabs)
+            {
+                A::toTab (*ed, t); pumpMs (30);
+                check (A::banner (*ed) == "Working on Group: Group 2 (2)" && A::targetLabel (*ed) == "This group",
+                       "F1-rest. tab " + juce::String ((int) t) + ": banner and label both say the group",
+                       A::banner (*ed) + " / " + A::targetLabel (*ed));
+            }
+            check (A::pillEligible (*ed), "F1-rest. ...and the composer pill is shown, because a group IS a target");
+            A::targetGroup (*ed, {});
+            proc.removeLinkGroup (gid2);
+            A::toChat (*ed); pumpMs (30);
+        }
+
+        // ---- F4 (21s-b): ONE plugins menu, and both triggers are the same trigger ------------------------------
+        {
+            std::printf ("\n== F4: the plugins menu is one menu, in one place, in one order ==\n");
+            const auto items = A::menuItems();
+            juce::StringArray labels;
+            for (const auto& it : items) labels.add (it.label);
+            check (labels.joinIntoString ("|") == "View all|Scan Now|Add Folder...",
+                   "F4. the menu is View all, Scan Now, Add Folder... in that order", labels.joinIntoString ("|"));
+            // Both triggers are wired to the SAME function, so their item lists cannot differ: what a guard can
+            // assert without opening a modal menu is that neither has an onClick of its own any more.
+            check (A::scanTrigger (*ed).onClick != nullptr && A::viewAllTrigger (*ed).onClick != nullptr,
+                   "F4. both the header pill and the Settings row have a trigger");
+            // ...and that the list a trigger would build has no second author: scanMenuItems() is static, so the
+            // only way to add an item to one trigger is to add it to both.
+            const auto again = A::menuItems();
+            juce::StringArray labels2;
+            for (const auto& it : again) labels2.add (it.label);
+            check (labels2 == labels, "F4. both triggers build from the same list - adding to one cannot miss the other");
         }
 
         // ---- F2 (21s-a): one selection source of truth for a group target -------------------------------------
