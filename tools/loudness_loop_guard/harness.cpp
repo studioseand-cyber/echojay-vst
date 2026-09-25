@@ -12,6 +12,7 @@
 #include "EedDeviceRegistry.h"
 #include "EchoJayFileLog.h"
 #include "EchoJayReadingGate.h"
+#include "EJCalibLoop.h"   // 21t-d: the calibration loop under test
 #include <cstdio>
 #include <memory>
 #include <cmath>
@@ -119,6 +120,42 @@ struct EJTestSoftLimiter final : juce::AudioProcessor
     const juce::String getName() const override { return "EJ Test Soft Limiter"; }
     void prepareToPlay (double, int) override {} void releaseResources() override {}
     void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override { for (int ch = 0; ch < b.getNumChannels(); ++ch) { auto* d = b.getWritePointer (ch); for (int i = 0; i < b.getNumSamples(); ++i) { const float x = d[i]; d[i] = (x < 0 ? -1.0f : 1.0f) * std::pow (std::abs (x), 0.6f); } } }
+    double getTailLengthSeconds() const override { return 0.0; } bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; } void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {} void setStateInformation (const void*, int) override {}
+};
+// 21t-d: a compressor whose GAIN REDUCTION RISES WITH INPUT above a fixed knee - the one property the
+// calibration loop depends on. Above the knee it applies (over-knee / ratio) of reduction, so driving it harder
+// makes it work harder, which is what the drive steps are for. Linear, memoryless, no ballistics: the loop is
+// being tested, not a compressor design.
+struct EJTestCompressor final : juce::AudioProcessor
+{
+    EJTestCompressor() : juce::AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true).withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    const juce::String getName() const override { return "EJ Test Compressor"; }
+    void prepareToPlay (double, int) override {} void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        // The knee sits just below the fixture's programme level, so the band (2-3 dB of GR) is reached with a
+        // couple of dB of drive - which is what a real compressor set near its threshold does, and what makes
+        // the step budget a meaningful test rather than an arithmetic impossibility.
+        const float kneeDb = -27.0f, ratio = 4.0f;
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        {
+            auto* d = b.getWritePointer (ch);
+            for (int i = 0; i < b.getNumSamples(); ++i)
+            {
+                const float a = std::abs (d[i]);
+                if (a <= 1.0e-7f) continue;
+                const float db = juce::Decibels::gainToDecibels (a);
+                if (db <= kneeDb) continue;
+                const float over = db - kneeDb;
+                const float outDb = kneeDb + over / ratio;
+                d[i] *= juce::Decibels::decibelsToGain (outDb - db);
+            }
+        }
+    }
     double getTailLengthSeconds() const override { return 0.0; } bool acceptsMidi() const override { return false; } bool producesMidi() const override { return false; }
     juce::AudioProcessorEditor* createEditor() override { return nullptr; } bool hasEditor() const override { return false; }
     int getNumPrograms() override { return 1; } int getCurrentProgram() override { return 0; } void setCurrentProgram (int) override {}
@@ -847,6 +884,177 @@ static int guardMain()
         check (echojay::FileLog::kFiles == 5 && echojay::FileLog::kMaxBytes == 2L * 1024L * 1024L, "V4. five files of 2 MB", juce::String (echojay::FileLog::kFiles));
     }
     std::printf ("\n==== loudness_loop_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
+    // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------
+    // Driven by the SHIPPED state machine (EJCalibLoop.h, the one both binaries compile), over windows measured
+    // from the SHIPPED synthetic compressor: its GR rises with input above a fixed knee, which is the property
+    // the drive steps depend on. A window is handed in as the host would compute it - slot-in LUFS minus
+    // slot-out LUFS - so what is under test is the loop's decisions, not a re-description of them.
+    {
+        std::printf ("\n== 21t-d: the calibration loop drives to the band, and says what it did ==\n");
+        // GR as a function of drive, measured from the real processor: the same knee/ratio the plugin applies.
+        auto grAtDrive = [] (float driveDb)
+        {
+            EJTestCompressor comp;
+            comp.prepareToPlay (48000.0, 512);
+            juce::AudioBuffer<float> b (2, 4800);
+            juce::Random rng (77);
+            const float baseDb = -26.0f;                       // quiet enough that 0 dB drive works ~0 dB
+            const float amp = juce::Decibels::decibelsToGain (baseDb + driveDb);
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                    b.setSample (ch, i, amp * (rng.nextFloat() * 2.0f - 1.0f));
+            auto rms = [&b] { double s = 0.0; for (int i = 0; i < b.getNumSamples(); ++i) { const double v = b.getSample (0, i); s += v * v; }
+                              return juce::Decibels::gainToDecibels ((float) std::sqrt (s / b.getNumSamples())); };
+            const float inDb = rms();
+            juce::MidiBuffer m; comp.processBlock (b, m);
+            const float outDb = rms();
+            return inDb - outDb;   // GR = in - out, the same figure the slot tallies give
+        };
+        check (grAtDrive (0.0f) < 1.0f && grAtDrive (12.0f) > grAtDrive (0.0f) + 2.0f,
+               "21t-d. fixture: the synthetic compressor's GR RISES with drive",
+               juce::String (grAtDrive (0.0f), 2) + " dB at 0, " + juce::String (grAtDrive (12.0f), 2) + " dB at +12");
+
+        {   // (1) it drives to the band and ENDS there - the RED is a drive that never moves and a card that
+            //     never leaves "Listening".
+            echojay::CalibLoop loop;
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            check (loop.card() == "Listening... play the loudest part",
+                   "21t-d (1). it opens on \"Listening... play the loudest part\"", loop.card());
+            juce::StringArray logs; bool done = false; float drive = 0.0f; juce::String closing;
+            for (int w = 0; w < 30 && ! done; ++w)
+            {
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = grAtDrive (drive);
+                const auto st = loop.onWindow (win, 3000.0);
+                logs.add (st.logLine);
+                if (st.writeDrive) { drive = st.newPre; check (std::abs (st.newPost + st.newPre) < 1.0e-4f, "21t-d (1). the post-trim mirrors the drive", juce::String (st.newPre, 1) + " / " + juce::String (st.newPost, 1)); }
+                if (st.finished) { done = true; closing = st.closing; }
+            }
+            check (done, "21t-d (1). the loop ENDS", juce::String (logs.size()) + " window(s)");
+            check (drive > 0.5f,
+                   "21t-d (1). ...by moving the drive, 1 dB at a time  (RED as it stood: nothing moved it)",
+                   juce::String (drive, 1) + " dB");
+            check (loop.state == echojay::CalibLoop::State::Adjusted,
+                   "21t-d (1). ...and it ends ADJUSTED, in the band", juce::String ((int) loop.state));
+            check (loop.lastGr >= 2.0f && loop.lastGr <= 3.0f,
+                   "21t-d (1). ...with the last measured GR inside 2-3 dB", juce::String (loop.lastGr, 2));
+            check (loop.card().contains ("working"),
+                   "21t-d (1). ...and the card left \"Listening\" for a live figure", loop.card());
+            check (closing.startsWith ("Adjusted the EJ Test Compressor to ") && closing.contains ("working"),
+                   "21t-d (1). the closing names what was adjusted in ONE clause, then asks about the chain", closing);
+            check (! closing.contains ("More") && ! closing.contains ("Less") && ! closing.contains ("Fine"),
+                   "21t-d (1). ...and offers no pills - the user answers in words");
+            check (logs[0].startsWith ("EJCalib: \"EJ Test Compressor\" window 1 gr=") && logs[0].contains ("state="),
+                   "21t-d (1). every window logs gr, pre, post and state", logs[0]);
+            // never the same closing question twice running
+            echojay::CalibLoop l2 = loop; l2.state = echojay::CalibLoop::State::Adjusted;
+            const auto q1 = loop.closingMessage(), q2 = loop.closingMessage();
+            check (q1.fromLastOccurrenceOf (". ", false, false) != q2.fromLastOccurrenceOf (". ", false, false),
+                   "21t-d (1). ...and the question is never the same one twice running",
+                   q1.fromLastOccurrenceOf (". ", false, false) + " | " + q2.fromLastOccurrenceOf (". ", false, false));
+        }
+
+        {   // (2) no audio: it pauses at 30 s and resumes, and nothing is written while it waits
+            std::printf ("\n== 21t-d (2): silence pauses the loop at 30 s, and it resumes ==\n");
+            echojay::CalibLoop loop;
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            bool wrote = false;
+            for (int w = 0; w < 9; ++w)   // 9 x 3 s = 27 s: not yet
+            {
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = true;
+                const auto st = loop.onWindow (win, 3000.0);
+                if (st.writeDrive) wrote = true;
+            }
+            check (loop.state == echojay::CalibLoop::State::Listening,
+                   "21t-d (2). 27 s of silence is not yet a pause", juce::String ((int) loop.state));
+            {
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = true;
+                const auto st = loop.onWindow (win, 3000.0);
+                check (loop.state == echojay::CalibLoop::State::Waiting && st.card.startsWith ("Waiting for playback"),
+                       "21t-d (2). at 30 s the card says \"Waiting for playback - play the loudest part of this "
+                       "channel\"", st.card);
+                check (st.logLine.contains ("state=waiting"), "21t-d (2). ...and the log says waiting", st.logLine);
+            }
+            check (! wrote, "21t-d (2). nothing was written while it waited");
+            const float driveBefore = loop.preDb; const int stepsBefore = loop.steps;
+            {   // signal returns
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.2f;
+                const auto st = loop.onWindow (win, 3000.0);
+                check (loop.state != echojay::CalibLoop::State::Waiting,
+                       "21t-d (2). ...and it RESUMES when signal returns", st.card);
+                check (loop.preDb != driveBefore || loop.steps == stepsBefore + 1 || st.writeDrive,
+                       "21t-d (2). ...and starts working again on the first real window",
+                       juce::String (loop.steps) + " step(s)");
+            }
+        }
+
+        {   // (3) the clamp: the band cannot be reached by drive alone, and the line says so honestly
+            std::printf ("\n== 21t-d (3): the drive limit ends it with the figure it measured ==\n");
+            echojay::CalibLoop loop;
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 11.0f);   // one step from the +12 limit
+            juce::String closing; bool done = false;
+            for (int w = 0; w < 20 && ! done; ++w)
+            {
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.4f;   // never reaches the band
+                const auto st = loop.onWindow (win, 3000.0);
+                if (st.finished) { done = true; closing = st.closing; }
+            }
+            check (done && loop.state == echojay::CalibLoop::State::Clamped,
+                   "21t-d (3). it ends CLAMPED rather than driving past +/-12", juce::String (loop.preDb, 1) + " dB");
+            check (std::abs (loop.preDb) <= 12.0f + 1.0e-4f,
+                   "21t-d (3). ...and the drive never left the limit", juce::String (loop.preDb, 1));
+            check (closing.contains ("could not get") && closing.contains ("0.4") && closing.contains ("band"),
+                   "21t-d (3). ...and the line names the figure it MEASURED, not one it did not", closing);
+        }
+
+        {   // (4) the handover: the step count survives the move to the other host
+            std::printf ("\n== 21t-d (4): a handover continues the loop, it does not restart it ==\n");
+            echojay::CalibLoop loop;
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            for (int w = 0; w < 4; ++w)
+            {
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.3f;
+                loop.onWindow (win, 3000.0);
+            }
+            const int stepsAtHandover = loop.steps; const float driveAtHandover = loop.preDb;
+            check (stepsAtHandover > 0, "21t-d (4). fixture: the loop has already taken steps", juce::String (stepsAtHandover));
+            const auto hl = loop.onHandover();
+            check (hl.contains ("state=handover"), "21t-d (4). the handover is logged", hl);
+            check (loop.steps == stepsAtHandover && std::abs (loop.preDb - driveAtHandover) < 1.0e-4f,
+                   "21t-d (4). ...with the step count and the drive UNCHANGED",
+                   juce::String (loop.steps) + " step(s), " + juce::String (loop.preDb, 1) + " dB");
+            {   // the first window on the new host is seen and NOT judged
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.3f;
+                const auto st = loop.onWindow (win, 3000.0);
+                check (! st.writeDrive && loop.steps == stepsAtHandover,
+                       "21t-d (4). ...and the first window on the new host is not judged - it is that host's first",
+                       juce::String (loop.steps));
+            }
+            {   // the next one is
+                echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.3f;
+                const auto st = loop.onWindow (win, 3000.0);
+                check (st.writeDrive && loop.steps == stepsAtHandover + 1,
+                       "21t-d (4). ...and the one after it continues the count",
+                       juce::String (loop.steps));
+            }
+        }
+
+        {   // a dropped window is not a measurement
+            std::printf ("\n== 21t-d: a window with dropped frames is not a measurement ==\n");
+            echojay::CalibLoop loop;
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            echojay::CalibLoop::Window bad; bad.measured = false; bad.silent = false; bad.grDb = 0.0f;
+            const auto st = loop.onWindow (bad, 3000.0);
+            check (! st.writeDrive && loop.steps == 0 && loop.noSignalMs == 0.0,
+                   "21t-d. a dropped window advances nothing, and is not counted as silence",
+                   juce::String (loop.steps) + " step(s), " + juce::String (loop.noSignalMs, 0) + " ms");
+            echojay::CalibLoop::Window badQuiet; badQuiet.measured = false; badQuiet.silent = true;
+            loop.onWindow (badQuiet, 3000.0);
+            check (loop.noSignalMs == 3000.0,
+                   "21t-d. ...but a dropped window that was SILENT does count toward the 30 s clock",
+                   juce::String (loop.noSignalMs, 0) + " ms");
+        }
+    }
+
     return failures == 0 ? 0 : 1;
 }
 
