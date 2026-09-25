@@ -151,18 +151,27 @@ int main (int argc, char** argv)
         };
         if (textAt)
         {
-            const int idx = atoi (argv[5]);
-            auto* q = idx >= 0 && idx < ps.size() ? ps[idx] : nullptr;
-            if (q == nullptr) { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
-            const float before = q->getValue();
-            for (float nrm : { 0.0f, 0.5f, 1.0f })
+            // "--text-at all" walks every settable control in ONE instantiation - 55 controls across the tuner
+            // set is 55 launches otherwise, and a UAD instantiation is five seconds.
+            const bool everyone = juce::String (argv[5]) == "all";
+            const int  idx = everyone ? -1 : atoi (argv[5]);
+            if (! everyone && (idx < 0 || idx >= ps.size()))
+            { std::printf ("refused no parameter at index %d (%d parameters)\n", idx, ps.size()); std::fflush (stdout); std::_Exit (3); }
+            for (int pi = 0; pi < ps.size(); ++pi)
             {
-                q->setValueNotifyingHost (nrm);
-                for (int k = 0; k < 6; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }
-                std::printf ("at\t%.3f\t%s\n", nrm, clean (q->getText (nrm, 256).trim()).toRawUTF8());
+                if (! everyone && pi != idx) continue;
+                auto* q = ps[pi]; if (q == nullptr) continue;
+                if (everyone && (! q->isAutomatable() || q->isMetaParameter())) continue;
+                const float before = q->getValue();
+                std::printf ("param\t%d\t%s\tunit\t%s\n", pi, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8());
+                for (float nrm : { 0.0f, 0.5f, 1.0f })
+                {
+                    q->setValueNotifyingHost (nrm);
+                    for (int k = 0; k < 6; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }
+                    std::printf ("at\t%.3f\t%s\n", nrm, clean (q->getText (nrm, 256).trim()).toRawUTF8());
+                }
+                q->setValueNotifyingHost (before);   // put it back: this mode reads, it does not set
             }
-            q->setValueNotifyingHost (before);   // put it back: this mode reads, it does not set
-            std::printf ("name\t%s\tunit\t%s\n", clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8());
             std::fflush (stdout);
             std::_Exit (0);
         }
