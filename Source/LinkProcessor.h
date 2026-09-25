@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "ChainHost.h"
 #include "MeterEngine.h"
+#include "EchoJayLevelTally.h"   // 21t-d: SHORTMAX + HEARD
 #include "EedKeyEngine.h"   // detected key -> LinkMeterFrame (KEY_DETECTOR_SPEC §9)
 #include "EedKeyWorker.h"
 #include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
@@ -388,6 +389,9 @@ private:
     // LinkMeterFrame into the registry, also only while Active — an
     // inactive Link publishes nothing, so its strip freezes and dims.
     MeterEngine meterEngine_;
+    // 21t-d: the Link's own gated tally, fed at the SAME pre-trim tap as the meters. K-weighted, because what it
+    // publishes (SHORTMAX, HEARD) sits beside LUFS figures and has to mean the same thing they do.
+    echojay::LevelTally levelTally_ { echojay::LevelTally::Weighting::K };
     int meterFramesPublished_ = 0;    // frame diagnostics counter
     LinkMeterFrame lastPublishedFrame_;   // frozen-engine guard (see publish)
     // Detected key (KEY_DETECTOR_SPEC.md §9): the Link is where key detection

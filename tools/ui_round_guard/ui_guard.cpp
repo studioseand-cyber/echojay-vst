@@ -12,6 +12,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "EchoJayLevelTally.h"   // 21t-d (c)
 #ifndef UI_GUARD_NO_HELPERS
 #include "BorrowStatusText.h"
 #include "AskShelfLayout.h"
@@ -164,6 +165,13 @@ struct EchoJayTabStripTestAccess
     static void setBuildJson (EchoJayEditor& e, int i, const juce::String& j) { e.chainBuildJsons[(size_t) i] = j; }
     // ---- 21t-c ----
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
+    // ---- 21t-d ----
+    static LinkMeterFrame stripFrame (EchoJayEditor& e, const juce::String& addr, int regIdx)
+    {
+        bool fresh = false; float dim = 0.0f;
+        e.ingestLinkStripFrame (addr, regIdx, true, juce::Time::getMillisecondCounter(), fresh, dim);
+        return e.linkStripStates_[addr].frame;
+    }
     static int levelMatch (EchoJayEditor& e, const juce::var& members) { return e.applyGroupLevelMatch (members); }
     static void addChat (EchoJayEditor& e, const WsChat& c) { e.workspace.addChat (c); }
     static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
@@ -630,6 +638,148 @@ int main()
             // OWED (recorded, not claimed): the other half of H3 - the borrowed host seeded from the rack's own
             // sidecar at engage - is only reachable through the real engage path (ring + lease + a running Link),
             // so it rides with F5's two-process leg. In-host evidence only until then.
+        }
+
+        // ---- 21t-d (25 Sep 2026): the Link measures BEFORE its trim, and says so -----------------------------
+        // A REAL registry slot and a REAL published frame: the guard claims a slot in its own isolated Link
+        // directory and publishes through LinkShm exactly as a Link does, so the processor reads it through the
+        // shipping path (readLinkMeterFrame) and nothing here is a stand-in for the transport.
+        {
+            std::printf ("\n== 21t-d: a pre-trim frame, the strip that adds the trim back, and the block that does not ==\n");
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            int fd = -1, oerr = 0;
+            void* reg = LinkShm::openRegistry (dir, fd, oerr);
+            check (reg != nullptr, "21t-d. fixture: the guard's own Link registry opened", dir);
+            if (reg != nullptr)
+            {
+                const juce::String uid = "pretrim01";
+                const int slot = LinkShm::claimSlot (reg, "Pre-trim Vocal", "pretrim.wav", uid, 48000.0f, 2);
+                check (slot >= 0, "21t-d. fixture: a slot was claimed", juce::String (slot));
+                LinkShm::setSlotActive (reg, slot, true);
+                LinkShm::setSlotGain (reg, slot, -6.0f);
+                // A slot whose heartbeat never moves is SKIPPED by refreshLinkRegistry (liveness is observed in
+                // time, not assumed) - so the fixture beats it like a Link would, and refreshes twice so the
+                // observer sees an advance.
+                auto beat = [&] { LinkShm::bumpHeartbeat (reg, slot); proc.refreshLinkRegistry(); };
+                beat(); beat();
+                LinkMeterFrame f;
+                f.momentary = -12.0f; f.shortTerm = -14.0f; f.integrated = -16.0f;
+                f.truePeakMax = -3.0f; f.shortTermTP = -7.0f;
+                f.shortTermMax = -11.5f; f.heardSeconds = 42.0f;
+                f.fieldsMask = kFrameHasPreTrim | kFrameHasShortMax | kFrameHasHeard;
+                LinkShm::publishMeterFrame (reg, slot, f);
+                beat();
+                {
+                    bool listed = false; float sawTrim = 0.0f; int sawIdx = -1;
+                    for (const auto& li : proc.getLinkSlotInfos())
+                        if (li.uid == uid) { listed = true; sawTrim = li.gainDb; sawIdx = li.regIdx; }
+                    check (listed && std::abs (sawTrim - (-6.0f)) < 0.01f && sawIdx == slot,
+                           "21t-d. fixture: the claimed slot is listed, with its trim and its frame index",
+                           juce::String (listed ? "listed" : "absent") + " trim " + juce::String (sawTrim, 1)
+                           + " regIdx " + juce::String (sawIdx));
+                }
+
+                // (a) THE STRIP SHOWS WHAT THE DAW HEARS: pre-trim -16 with a trim of -6 is -22.
+                const auto st = A::stripFrame (*ed, uid, slot);
+                check (std::abs (st.integrated - (-22.0f)) < 0.05f,
+                       "21t-d (a). the strip adds the trim back: INT -16 pre-trim with trim -6 shows -22  "
+                       "(RED as it stood: the frame was post-trim and the strip showed it raw)",
+                       juce::String (st.integrated, 2));
+                check (std::abs (st.shortTerm - (-20.0f)) < 0.05f && std::abs (st.truePeakMax - (-9.0f)) < 0.05f,
+                       "21t-d (a). ...and so do SHORT and PEAK, by the same one conversion",
+                       juce::String (st.shortTerm, 1) + " / " + juce::String (st.truePeakMax, 1));
+
+                // ...and a frame WITHOUT the bit is untouched: an older Link still means what it always meant.
+                LinkMeterFrame old = f; old.fieldsMask = 0; old.seq = 0;
+                LinkShm::publishMeterFrame (reg, slot, old);
+                const auto st2 = A::stripFrame (*ed, uid + "_old", slot);
+                check (std::abs (st2.integrated - (-16.0f)) < 0.05f,
+                       "21t-d (a). a frame with NO pre-trim bit is stored raw - an old Link is not double-counted",
+                       juce::String (st2.integrated, 2));
+                LinkShm::publishMeterFrame (reg, slot, f);   // back to the pre-trim frame
+                beat();
+
+                // (b) THE BLOCK REPORTS THE MEASUREMENT, NOT THE TRIM: on a LIVE frame, moving the trim moves
+                // the trim it prints and nothing else.
+                const auto gid = proc.createLinkGroup ("Levelling set", juce::StringArray { uid });
+                A::targetGroup (*ed, gid);
+                const auto before = A::groupLevels (*ed);
+                LinkShm::setSlotGain (reg, slot, -12.0f);
+                beat();
+                const auto after = A::groupLevels (*ed);
+                check (before.contains ("INT -16.0") && after.contains ("INT -16.0"),
+                       "21t-d (b). the block's INT does not move when the member's trim moves  (a live frame, "
+                       "not a latch)", after.fromFirstOccurrenceOf ("INT", true, false).substring (0, 24));
+                check (before.contains ("trim -6.0 dB") && after.contains ("trim -12.0 dB"),
+                       "21t-d (b). ...and the trim it prints DOES move",
+                       after.fromFirstOccurrenceOf ("trim", true, false).substring (0, 16));
+                check (after.contains ("SHORTMAX -11.5") && after.contains ("HEARD 42"),
+                       "21t-d (b). ...and SHORTMAX and HEARD are real now, not \"no reading\"",
+                       after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 34));
+                {   // the MEMBER LINE must not be marked post-trim (the note still explains what that marking
+                    // would mean on an older Link's line, which is why the whole block is not what is checked).
+                    juce::StringArray al; al.addLines (after);
+                    juce::String memberLine;
+                    for (const auto& l : al) if (l.startsWith ("  ")) { memberLine = l; break; }
+                    check (memberLine.isNotEmpty() && ! memberLine.contains ("POST-TRIM"),
+                           "21t-d (b). ...and the member's line is NOT marked post-trim - this Link measures "
+                           "before its gain", memberLine.substring (0, 120));
+                }
+                A::targetGroup (*ed, {});
+                proc.removeLinkGroup (gid);
+                LinkShm::releaseSlot (reg, slot);
+            }
+        }
+
+        // ---- 21t-d (c): SHORTMAX is the max of SHORT since the tally started, and resets with it -------------
+        {
+            std::printf ("\n== 21t-d (c): SHORTMAX follows the short-term window and resets with the tally ==\n");
+            echojay::LevelTally tally { echojay::LevelTally::Weighting::K };
+            tally.prepare (48000.0);
+            std::vector<float> buf (4800, 0.0f);
+            // A MOVING signal, not a constant tone: a gated loudness meter is specified against programme
+            // material, and a DC-flat block is not that. 1 kHz-ish alternating samples at the asked amplitude.
+            juce::Random rng (1234);
+            auto pushSeconds = [&] (float amp, double seconds)
+            {
+                const int blocks = (int) (seconds * 10.0);   // 4800 samples at 48k = 0.1 s
+                for (int i = 0; i < blocks; ++i)
+                {
+                    for (int k = 0; k < (int) buf.size(); ++k)
+                        buf[(size_t) k] = amp * (rng.nextFloat() * 2.0f - 1.0f);
+                    tally.push (buf.data(), buf.data(), (int) buf.size());
+                }
+            };
+            pushSeconds (0.1f, 4.0);                       // ~-20 dBFS for 4 s
+            const auto quiet = tally.snapshot();
+            check (quiet.maxShortTermDb == quiet.maxShortTermDb,
+                   "21t-d (c). a closed 3 s window gives a SHORTMAX", juce::String (quiet.maxShortTermDb, 1));
+            const float afterQuiet = quiet.maxShortTermDb;
+            pushSeconds (0.5f, 4.0);                       // ~14 dB louder for 4 s
+            const auto loud = tally.snapshot();
+            check (loud.maxShortTermDb > afterQuiet + 5.0f,
+                   "21t-d (c). ...and it RISES to the loudest 3 s window",
+                   juce::String (afterQuiet, 1) + " -> " + juce::String (loud.maxShortTermDb, 1));
+            pushSeconds (0.1f, 4.0);                       // quiet again
+            const auto back = tally.snapshot();
+            check (std::abs (back.maxShortTermDb - loud.maxShortTermDb) < 0.5f,
+                   "21t-d (c). ...and it HOLDS when the signal drops - it is a max, not a follower",
+                   juce::String (back.maxShortTermDb, 1));
+            check (back.shortTermDb < back.maxShortTermDb - 5.0f,
+                   "21t-d (c). ...while SHORT itself has come back down",
+                   juce::String (back.shortTermDb, 1) + " vs " + juce::String (back.maxShortTermDb, 1));
+            tally.resetShortTermMax();
+            pushSeconds (0.1f, 4.0);
+            const auto reset = tally.snapshot();
+            check (reset.maxShortTermDb < loud.maxShortTermDb - 5.0f,
+                   "21t-d (c). ...and resetting the tally's max starts it again from the quiet material",
+                   juce::String (reset.maxShortTermDb, 1));
+            const float heardBefore = reset.heardSeconds;
+            pushSeconds (0.1f, 3.0);
+            const auto grown = tally.snapshot();
+            check (grown.heardSeconds > heardBefore,
+                   "21t-d (c). HEARD counts UP as audio arrives - it is a measurement of how much was heard, "
+                   "not a clock", juce::String (heardBefore, 1) + " s -> " + juce::String (grown.heardSeconds, 1) + " s");
         }
 
         // ---- 21t-c (25 Sep 2026): a group turn is about the MEMBERS ------------------------------------------

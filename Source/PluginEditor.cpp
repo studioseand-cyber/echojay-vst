@@ -6991,7 +6991,26 @@ void EchoJayEditor::ingestLinkStripFrame(const juce::String& addr, int regIdx,
     {
         if (!st.has || f.seq != st.lastSeq)
         {
-            st.frame        = f;
+            // 21t-d (25 Sep 2026): THESE STRIPS SHOW WHAT THE DAW HEARS. A 21t-d Link meters BEFORE its gain
+            // stage, so its loudness fields describe the signal arriving at the trim; the strips add the trim
+            // back when the frame says so (kFrameHasPreTrim). An older Link's frame carries no such bit and is
+            // stored exactly as it always was. ONE conversion, here at ingest, so every reader of
+            // LinkStripState - the cells, the ribbon, the smoothing - sees one consistent figure.
+            st.frame = f;
+            if (framePreTrim (f))
+            {
+                float trim = 0.0f;
+                for (const auto& li : processorRef.getLinkSlotInfos())
+                    if (li.regIdx == regIdx || li.uid == addr
+                        || LinkShm::makeSafeFilePart (li.name) == addr) { trim = li.gainDb; break; }
+                st.frame.momentary   = frameLoudnessAsHeard (f.momentary,   trim, f);
+                st.frame.shortTerm   = frameLoudnessAsHeard (f.shortTerm,   trim, f);
+                st.frame.integrated  = frameLoudnessAsHeard (f.integrated,  trim, f);
+                st.frame.truePeakMax = frameLoudnessAsHeard (f.truePeakMax, trim, f);
+                st.frame.truePeakCur = frameLoudnessAsHeard (f.truePeakCur, trim, f);
+                st.frame.shortTermTP = frameLoudnessAsHeard (f.shortTermTP, trim, f);
+                st.frame.shortTermMax= frameLoudnessAsHeard (f.shortTermMax,trim, f);
+            }
             st.lastSeq      = f.seq;
             st.lastChangeMs = nowMs;
             st.has          = true;
@@ -26101,15 +26120,22 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
         // true-peak and short-term true-peak, and nothing else. The tokens are still printed, with "no reading"
         // as their value, because a token that silently disappears is a shape the server cannot rely on - and a
         // number invented for it would be worse than its absence.
+        // 21t-d: the figures are the Link's PRE-TRIM measurement when it says so, which is what levelling needs -
+        // moving one member's trim must not rewrite the number the next member is judged against. An older Link
+        // publishes post-trim figures and no bit; its line says so rather than pretending.
+        const bool pre = framePreTrim (*use);
         lines.add (head
                    + "MOM "     + num (use->momentary) + ", "
                    + "SHORT "   + num (use->shortTerm) + ", "
-                   + "SHORTMAX no reading, "
+                   + "SHORTMAX " + (frameHasShortMax (*use) ? juce::String (use->shortTermMax, 1)
+                                                                     : juce::String ("no reading")) + ", "
                    + "INT "     + num (use->integrated) + ", "
                    + "PEAK "    + num (use->truePeakMax) + ", "
                    + "PSR "     + ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
                                        ? juce::String (use->shortTermTP - use->shortTerm, 1) : juce::String ("no reading")) + ", "
-                   + "HEARD no reading"
+                   + "HEARD "   + (frameHasHeard (*use) ? juce::String ((int) (use->heardSeconds + 0.5f))
+                                                                 : juce::String ("no reading"))
+                   + (pre ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"))
                    + (liveUsable ? juce::String() : " (last heard " + juce::String ((int) (ageMs / 1000)) + " s ago)"));
     }
     if (lines.isEmpty()) return {};
@@ -26118,9 +26144,10 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
     return "\n\n[GROUP LEVELS - \"" + g->name + "\"]\n"
            "note: these are the ONLY channels this turn is about; no other Link is listed because none is in "
            "the group. A member with NO FRAME says \"no signal\" - do not guess a level for it, and do not ask for "
-           "a listen pass: levelling does not need one. THE FIGURES ARE POST-TRIM, not input levels: this Link "
-           "build meters after its own gain stage, so a member's INT already includes the trim printed beside it. "
-           "SHORTMAX and HEARD read \"no reading\" because this Link build does not publish them.\n"
+           "a listen pass: levelling does not need one. The figures are each Link's own measurement BEFORE its "
+           "trim, so moving one member's trim does not change what the others report; HEARD is how many seconds "
+           "of sound that measurement describes. A line that ends \"(POST-TRIM...)\" comes from an older Link "
+           "whose figures include its trim.\n"
            + lines.joinIntoString ("\n");
 }
 

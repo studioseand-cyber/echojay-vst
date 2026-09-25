@@ -399,6 +399,18 @@ void LinkProcessor::publishMeterFrame()
     f.peakFastL   = md.peakFastL;
     f.peakFastR   = md.peakFastR;
     f.fieldsMask  = kFrameHasFastPeak;   // this writer populates the fast pair
+    // 21t-d: WHERE these were measured, and the two fields that describe the measurement itself.
+    // PRE_TRIM is unconditional for this writer - the tap is above the gain stage now, for every frame it
+    // publishes. SHORTMAX and HEARD carry their own bits because a tally that has not closed a 3 s window yet
+    // has no max to report, and "0 seconds heard" and "this writer does not publish HEARD" are different facts.
+    f.fieldsMask |= kFrameHasPreTrim;
+    {
+        const auto snap = levelTally_.snapshot();
+        if (snap.maxShortTermDb == snap.maxShortTermDb)   // not NaN: a 3 s window has closed
+        { f.shortTermMax = snap.maxShortTermDb; f.fieldsMask |= kFrameHasShortMax; }
+        f.heardSeconds = snap.heardSeconds;
+        f.fieldsMask |= kFrameHasHeard;
+    }
     f.audioBlocks = blocksNow;
     f.audioStale  = audioStale ? 1u : 0u;
     if (audioStale)
@@ -1614,6 +1626,7 @@ void LinkProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     hostNumChannels = 2;
     const int block = samplesPerBlock > 0 ? samplesPerBlock : 512;
     meterEngine_.prepare(sampleRate, block);
+    levelTally_.prepare(sampleRate);   // 21t-d: SHORTMAX + HEARD ride the same tap as the meters
     keyEngine_.prepare(sampleRate, block);   // resets its tap; continuous mode
                                              // re-accumulates from here
 
@@ -1753,19 +1766,26 @@ void LinkProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuf
     // reflects the gain — which is exactly what the "match level" feature
     // needs to converge (target minus post-gain integrated IS the delta to
     // apply). Bit-transparent at 0 dB (unity multiply skipped entirely).
-    applyGainSmoothed(buffer);
-
-    // Metering for the LINK tab mini strips — Active only, POST-chain so
-    // the meters read the processed signal (same tap point as the ring)
+    // 21t-d (25 Sep 2026): THE METER TAP MOVED ABOVE THE GAIN STAGE.
+    // It used to sit below, deliberately, so the published integrated already included the trim and a level
+    // match could converge by subtraction. That is one use; levelling a GROUP is the other, and it needs the
+    // opposite - what each channel is delivering INTO its trim, so moving one member's trim does not rewrite
+    // the number the next decision is made from. The frame now says which it published (kFrameHasPreTrim), and
+    // a reader that wants the DAW's figure adds the trim back (frameLoudnessAsHeard). POST-chain as before:
+    // this is the Link's own rack output arriving at the trim.
     if (linkOn.load(std::memory_order_acquire) && buffer.getNumChannels() >= 1)
     {
         const float* L = buffer.getReadPointer(0);
         const float* R = buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : L;
         meterEngine_.processBlock(L, R, buffer.getNumSamples());
+        // The tally rides the SAME tap: SHORTMAX and HEARD describe the same signal the loudness fields do.
+        levelTally_.push(L, R, buffer.getNumSamples());
         // Key tap, same gate and tap point: lock-free ring write, analysis
         // happens on the worker thread (KEY_DETECTOR_SPEC.md §9).
         keyEngine_.pushBlock(L, R, buffer.getNumSamples());
     }
+
+    applyGainSmoothed(buffer);
 
     // Write into ring buffer if active -- non-blocking tryEnter. ALSO while
     // an edit lease is held: linkOn gates the ring, and an inactive Link

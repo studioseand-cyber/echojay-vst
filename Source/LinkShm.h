@@ -257,7 +257,14 @@ struct alignas(64) LinkMeterFrame
     float    keyConfidence = 0.0f;    // 0..1, margin-normalised
     float    keyTuningHz   = 0.0f;    // detected reference pitch, 0 = unknown
     uint32_t keyAgeMs      = 0;       // reading age at publish time
-    uint8_t _pad[128 - 4 - 11 * 4 - 6 * 4 - 4 - 8 - 8 - 8 - 4 - 16];   // -> 128 (2 cache lines)
+    // 21t-d (25 Sep 2026): THE LAST 8 BYTES OF PAD, SPENT. Ruled: no growth and no version bump - the frame
+    // size IS the mapping stride (kRegSize below), so growing it would move every frame after slot 0 under any
+    // instance that had not been rebuilt. These two land exactly in the pad that was left, offsets frozen below.
+    // shortTermMax: max-hold of the 3 s short-term window since the tally started (resets with the tally).
+    // heardSeconds: the tally's gated audio time, in SECONDS - how much sound the figures actually describe.
+    // Both gate on their own fieldsMask bit: 0.0f is a legitimate "old writer" value for either.
+    float shortTermMax = -100.0f;   // LUFS
+    float heardSeconds = 0.0f;      // s
 };
 static_assert(sizeof(LinkMeterFrame) == 128, "LinkMeterFrame must be 128 bytes");
 // Layout freeze: the cross-version story above is only true while these hold.
@@ -268,11 +275,22 @@ static_assert(offsetof(LinkMeterFrame, fieldsMask) == 100, "fieldsMask offset");
 static_assert(offsetof(LinkMeterFrame, keyRoot)       == 104, "key group offset");
 static_assert(offsetof(LinkMeterFrame, keyConfidence) == 108, "key group offset");
 static_assert(offsetof(LinkMeterFrame, keyAgeMs)      == 116, "key group offset");
+static_assert(offsetof(LinkMeterFrame, shortTermMax)  == 120, "21t-d: shortTermMax sits in the old pad");
+static_assert(offsetof(LinkMeterFrame, heardSeconds)  == 124, "21t-d: heardSeconds sits in the old pad");
 
 /// fieldsMask bits. A bit promises ONLY that the writer populates the
 /// field group; values still carry their own absent conventions (-100).
 static constexpr uint32_t kFrameHasFastPeak = 1u << 0;
 static constexpr uint32_t kFrameHasKey      = 1u << 1;
+// 21t-d (25 Sep 2026). PRE_TRIM says WHERE the loudness fields were measured, which is the one thing a reader
+// cannot infer: a Link with this bit meters BEFORE its own gain stage, so momentary / shortTerm / integrated /
+// truePeakMax describe the signal arriving at the trim, not what the DAW hears. A reader that wants the DAW's
+// figure ADDS THE PUBLISHED TRIM BACK; a reader that wants to level channels against each other uses them as
+// they are. Without the bit the fields mean exactly what they always meant (post-gain), so an old Link keeps
+// working and nothing has to be guessed from a version number.
+static constexpr uint32_t kFrameHasPreTrim  = 1u << 2;
+static constexpr uint32_t kFrameHasShortMax = 1u << 3;
+static constexpr uint32_t kFrameHasHeard    = 1u << 4;
 
 /// THE gate every fast-peak consumer goes through. Pure, testable.
 inline bool frameHasFastPeak(const LinkMeterFrame& f)
@@ -284,6 +302,15 @@ inline bool frameHasFastPeak(const LinkMeterFrame& f)
 /// key-capable writer; the root range rejects both the "no reading yet"
 /// sentinel (-1) and an old writer's zeroed pad served through a recycled
 /// slot's stale mask (belt and braces — claimSlot blanks the frame anyway).
+inline bool framePreTrim(const LinkMeterFrame& f) { return (f.fieldsMask & kFrameHasPreTrim) != 0; }
+inline bool frameHasShortMax(const LinkMeterFrame& f)
+{ return (f.fieldsMask & kFrameHasShortMax) != 0 && f.shortTermMax > -99.0f; }
+inline bool frameHasHeard(const LinkMeterFrame& f)
+{ return (f.fieldsMask & kFrameHasHeard) != 0 && f.heardSeconds > 0.0f; }
+/** The figure the DAW hears, whichever side of the trim the writer measured (21t-d). */
+inline float frameLoudnessAsHeard(float published, float trimDb, const LinkMeterFrame& f)
+{ return (published > -99.0f && framePreTrim(f)) ? published + trimDb : published; }
+
 inline bool frameHasKey(const LinkMeterFrame& f)
 {
     return (f.fieldsMask & kFrameHasKey) != 0
