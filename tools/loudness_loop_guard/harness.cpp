@@ -1006,6 +1006,49 @@ static int guardMain()
                    "21t-d (3). ...and the line names the figure it MEASURED, not one it did not", closing);
         }
 
+        {   // (5) HEADROOM: the drive limit is min(+12, the drive that brings the input to -3 dBTP)
+            std::printf ("\n== 21t-d (5): the drive stops where the INPUT runs out of headroom ==\n");
+            echojay::CalibLoop loop;
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            // The fixture's slot input sits at -9 dBTP at 0 dB of drive, and it RISES WITH THE DRIVE, because a
+            // pre-gain is what the drive is. -3 is the ceiling, so +6 dB is the last drive that does not clip it.
+            float drive = 0.0f; juce::String closing; bool done = false;
+            for (int w = 0; w < 30 && ! done; ++w)
+            {
+                echojay::CalibLoop::Window win;
+                win.measured = true; win.silent = false;
+                win.grDb = 0.5f;                       // never reaches the band, so it keeps asking for more drive
+                win.inTruePeakDb = -9.0f + drive;      // the input follows the drive, as it does in the rack
+                const auto st = loop.onWindow (win, 3000.0);
+                if (st.writeDrive) drive = st.newPre;
+                if (st.finished) { done = true; closing = st.closing; }
+            }
+            check (done && std::abs (drive - 6.0f) < 0.01f,
+                   "21t-d (5). it stops at +6 dB - the drive that puts a -9 dBTP input at the -3 ceiling  "
+                   "(RED as it stood: it drove to the step budget and clipped the input on the way)",
+                   juce::String (drive, 1) + " dB");
+            check (closing.contains ("band not reached - drive limited by headroom at +6.0 dB, working 0.5 dB"),
+                   "21t-d (5). ...and says so in the ruled words", closing);
+            check (loop.state == echojay::CalibLoop::State::Clamped && loop.headroomStopped,
+                   "21t-d (5). ...as a HEADROOM stop, not a step-budget one");
+            // With headroom to spare the limit is the ordinary +12 again.
+            echojay::CalibLoop loop2;
+            loop2.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            float drive2 = 0.0f; bool done2 = false;
+            for (int w = 0; w < 30 && ! done2; ++w)
+            {
+                echojay::CalibLoop::Window win;
+                win.measured = true; win.silent = false; win.grDb = 0.5f;
+                win.inTruePeakDb = -30.0f + drive2;    // acres of headroom
+                const auto st = loop2.onWindow (win, 3000.0);
+                if (st.writeDrive) drive2 = st.newPre;
+                if (st.finished) done2 = true;
+            }
+            check (done2 && ! loop2.headroomStopped && loop2.steps == echojay::CalibLoop::kMaxSteps,
+                   "21t-d (5). ...and with headroom to spare it is the step budget that ends it, as before",
+                   juce::String (drive2, 1) + " dB after " + juce::String (loop2.steps) + " step(s)");
+        }
+
         {   // (4) the handover: the step count survives the move to the other host
             std::printf ("\n== 21t-d (4): a handover continues the loop, it does not restart it ==\n");
             echojay::CalibLoop loop;

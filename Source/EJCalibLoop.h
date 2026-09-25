@@ -32,6 +32,7 @@ struct CalibLoop
     static constexpr int   kMaxSteps    = 6;       // ruled
     static constexpr int   kInBandRuns  = 2;       // two CONSECUTIVE windows in the band
     static constexpr double kNoSignalMs = 30000.0; // ruled
+    static constexpr float kCeilingDbTp = -3.0f;   // the input ceiling the drive may not push past (21p item 3)
 
     // ---- the state that rides the sidecar ----
     juce::String plugin;               // the slot's plugin name, for the card and the log
@@ -48,6 +49,8 @@ struct CalibLoop
     bool   awaitFresh  = false;        // a move or a handover just happened: the next window is not judged
     State  state       = State::Idle;
     bool   closingOwed = false;        // the loop ended and nobody has posted the message yet
+    bool   headroomStopped = false;    // it stopped because the INPUT ran out of headroom, not the step budget
+    float  headroomLimit = kDriveLimit; // the drive at which the slot input would reach -3 dBTP, last computed
 
     // ---- one 3 s window, as the host measured it ----
     struct Window
@@ -55,6 +58,10 @@ struct CalibLoop
         bool  measured = false;   // a full window with no dropped frames
         bool  silent   = false;   // below the gate: nothing was playing
         float grDb     = 0.0f;    // slot-in LUFS minus slot-out LUFS
+        // 21t-d: the slot's INPUT true peak, as measured at the drive this window ran at. The drive limit is not
+        // a fixed +12: it is whatever drive brings this figure to -3 dBTP, because past that the loop would be
+        // buying gain reduction with a clipped input. -200 = the host could not read it (then +12 alone applies).
+        float inTruePeakDb = -200.0f;
     };
 
     // ---- what the host should do about it ----
@@ -76,7 +83,8 @@ struct CalibLoop
         preDb = openingDrive;
         steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0;
         lastGr = std::numeric_limits<float>::quiet_NaN();
-        awaitFresh = false; closingOwed = false;
+        awaitFresh = false; closingOwed = false; headroomStopped = false;
+        headroomLimit = kDriveLimit;
         state = State::Listening;
     }
 
@@ -148,9 +156,24 @@ struct CalibLoop
         }
         inBandRun = 0;
 
-        // (4) OUT OF THE BAND: one step toward it, unless the budget or the drive limit says stop.
+        // (4) OUT OF THE BAND: one step toward it, unless the budget, the drive limit or the HEADROOM says stop.
         const float want = w.grDb < lo ? preDb + kStepDb : preDb - kStepDb;
-        if (steps >= kMaxSteps || std::abs (want) > kDriveLimit + 1.0e-4f)
+        // THE HEADROOM LIMIT (21t-d): the drive at which the slot's input true peak would reach -3 dBTP. The
+        // input TP was measured AT THE CURRENT DRIVE, so the headroom left is (-3 - inTP) dB and the limit is
+        // this drive plus that. It binds only upward - driving DOWN never costs headroom.
+        headroomLimit = (w.inTruePeakDb > -190.0f) ? preDb + (kCeilingDbTp - w.inTruePeakDb) : kDriveLimit;
+        const bool up = want > preDb;
+        const float upperLimit = up ? juce::jmin (kDriveLimit, headroomLimit) : kDriveLimit;
+        if (up && want > upperLimit + 1.0e-4f && headroomLimit < kDriveLimit - 1.0e-4f)
+        {
+            // Stopped by HEADROOM, not by the budget: a different sentence, because it is a different fact and
+            // the user can act on it (turn the source down, or accept less compression).
+            state = State::Clamped; closingOwed = true; headroomStopped = true;
+            s.finished = true; s.closing = closingMessage();
+            s.card = card(); s.logLine = log ("clamped");
+            return s;
+        }
+        if (steps >= kMaxSteps || std::abs (want) > kDriveLimit + 1.0e-4f || (up && want > upperLimit + 1.0e-4f))
         {
             state = State::Clamped; closingOwed = true;
             s.finished = true; s.closing = closingMessage();
@@ -193,11 +216,15 @@ struct CalibLoop
         if (pick == phraseIdx) pick = (pick + 1) % n;   // never the same one twice running
         phraseIdx = pick;
 
-        const juce::String what = state == State::Clamped
-            ? "I could not get " + plugin + " into the " + juce::String (lo, 1) + "-" + juce::String (hi, 1)
-              + " dB band with drive alone - it is working " + grText() + " dB at "
-              + driveText() + " dB of drive."
-            : "Adjusted the " + plugin + " to " + driveText() + " dB - it is working " + grText() + " dB.";
+        const juce::String what =
+            (state == State::Clamped && headroomStopped)
+                ? plugin + ": band not reached - drive limited by headroom at " + driveText()
+                  + " dB, working " + grText() + " dB."
+          : state == State::Clamped
+                ? "I could not get " + plugin + " into the " + juce::String (lo, 1) + "-" + juce::String (hi, 1)
+                  + " dB band with drive alone - it is working " + grText() + " dB at "
+                  + driveText() + " dB of drive."
+                : "Adjusted the " + plugin + " to " + driveText() + " dB - it is working " + grText() + " dB.";
         return what + " " + kQuestions[pick];
     }
 
@@ -217,6 +244,7 @@ struct CalibLoop
         o->setProperty ("awaitFresh", awaitFresh);
         o->setProperty ("state", (int) state);
         o->setProperty ("closingOwed", closingOwed);
+        o->setProperty ("headroomStopped", headroomStopped);
         return juce::var (o);
     }
     static CalibLoop fromVar (const juce::var& v)
@@ -236,6 +264,7 @@ struct CalibLoop
         c.awaitFresh = (bool) o->getProperty ("awaitFresh");
         c.state = (State) (int) o->getProperty ("state");
         c.closingOwed = (bool) o->getProperty ("closingOwed");
+        c.headroomStopped = (bool) o->getProperty ("headroomStopped");
         return c;
     }
     bool active() const { return state != State::Idle; }

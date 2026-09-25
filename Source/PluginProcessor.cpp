@@ -6115,6 +6115,9 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     w.measured = lv.measured && lv.in.known && lv.out.known;
     w.silent   = lv.measured && ! lv.in.known;   // a window that closed with nothing above the gate
     w.grDb     = (w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f);
+    // 21t-d: the slot's INPUT true peak at the drive this window ran at - what decides whether another dB of
+    // drive would clip the input rather than buy gain reduction.
+    w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
 
     const double nowMs = juce::Time::getMillisecondCounterHiRes();
     if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
