@@ -164,6 +164,13 @@ int main (int argc, char** argv)
                 if (everyone && (! q->isAutomatable() || q->isMetaParameter())) continue;
                 const float before = q->getValue();
                 std::printf ("param\t%d\t%s\tunit\t%s\n", pi, clean (q->getName (128)).toRawUTF8(), clean (q->getLabel()).toRawUTF8());
+                // 21t (25 Sep 2026): THE VALUE THE PLUGIN CAME UP WITH. The compressor profiling pass asked for
+                // "the default position on instantiate" and no mode printed it - this one restored it silently
+                // and said nothing. Printed BEFORE the sweep moves anything, so it is the instantiate value and
+                // not a read-back of our own write. getDefaultValue() rides beside it: what the plugin calls its
+                // default is not always what it opens at, and conflating the two would be a guess.
+                std::printf ("def\t%.6f\t%s\tdefault\t%.6f\n", before,
+                             clean (q->getText (before, 256).trim()).toRawUTF8(), q->getDefaultValue());
                 for (float nrm : { 0.0f, 0.5f, 1.0f })
                 {
                     q->setValueNotifyingHost (nrm);
