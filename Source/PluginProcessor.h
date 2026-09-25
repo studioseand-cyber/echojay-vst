@@ -1581,6 +1581,7 @@ private:
     // test, consumer here) — the one gate that asserts in-context is IN
     // TIME, not just level-safe and continuous.
     friend struct EchoJayAlignTestAccess;
+    friend struct EchoJayPromptTestAccess;
     void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
                                  float sr, const juce::String& uid);
     void disconnectLinkAudioSlot(int i);

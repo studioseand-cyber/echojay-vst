@@ -19,6 +19,7 @@
 #include "NotDialableText.h"    // hurdle 1 item 3
 #endif
 #include <cstdio>
+#include <typeinfo>
 // The request body as the shipping client builds it (the same pin groups_guard uses).
 struct EchoJayAPIRequestPin { static juce::String body (EchoJayAPI& a, const juce::StringArray& r, const juce::StringArray& c, const juce::String& sys, const juce::String& mb) { return a.buildChatRequestBody (r, c, sys, mb); } };
 struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v)
@@ -27,6 +28,21 @@ struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::
         // all it takes). The guard owns this input; the product path is untouched.
         static_cast<juce::Timer&> (p).stopTimer(); p.linkSlotInfos = std::move (v); } };   // 21m ruling 1: the roster's Link rows
 struct EchoJayRosterTestAccess { static EchoJayEditor::LastLinkActiveCmd last (EchoJayEditor& e) { return e.lastLinkActiveCmd_; } };
+// 21t-a: the H1 leg has to dismiss the onboarding prompts (the overlay legitimately covers the whole editor
+// while a prompt is up) and then put the instance back EXACTLY as it found it - item 7's leg asserts on
+// isChannelChosen(), and dismissing IS an answer. A guard must not move the ground a later leg stands on.
+struct EchoJayPromptTestAccess
+{
+    struct Saved { bool chanType = false, genre = false, project = false, chosen = false; };
+    static Saved save (EchoJayProcessor& p)
+    { return { p.channelTypePromptDismissed, p.genrePromptDismissed, p.projectPromptDismissed, p.channelChosen }; }
+    static void restore (EchoJayProcessor& p, const Saved& s)
+    {
+        p.channelTypePromptDismissed = s.chanType; p.genrePromptDismissed = s.genre;
+        p.projectPromptDismissed = s.project;      p.channelChosen = s.chosen;
+    }
+};
+
 struct EchoJayTabStripTestAccess
 {
     static void toChat (EchoJayEditor& e)   { e.switchToTab (EchoJayEditor::Tab::Chat, true); }
@@ -61,6 +77,8 @@ struct EchoJayTabStripTestAccess
     static juce::Component& replyLayer (EchoJayEditor& e) { return e.replyLayer; }                 // F1
     static juce::TextButton& chip (EchoJayEditor& e, int i) { return e.resultChipBtns[(size_t) i]; }
     static juce::TextButton& buildBtn (EchoJayEditor& e, int i) { return e.chainBuildBtns[(size_t) i]; }
+    static int  activeBuilds (EchoJayEditor& e) { return e.activeChainBuildBtns; }                     // H1
+    static void setActiveBuilds (EchoJayEditor& e, int n) { e.activeChainBuildBtns = n; }
     static void targetGroup (EchoJayEditor& e, const juce::String& id) { e.setChatTargetGroup (id); }   // F2
     static juce::String targetLabel (EchoJayEditor& e) { return e.chatTargetLabel(); }
     static juce::TextButton& scanTrigger (EchoJayEditor& e) { return e.scanBtn; }                  // F4
@@ -342,6 +360,61 @@ int main()
             A::toChat (*ed); pumpMs (40);
             A::msgs (*ed) = savedMsgs;
             A::setChatId (*ed, savedId);
+        // ---- H1 (21t-a, 25 Sep 2026): a click at a reply control's own position must REACH it -----------------
+        // F1 made every reply control a child of one layer and brought that layer to front ONCE, at the top of the
+        // constructor - before the other 107 children were added, each of which then landed above it. The controls
+        // ended up at the BOTTOM of the stack, under the transcript viewport, and nothing could be pressed.
+        {
+            std::printf ("\n== H1: a click at a Build button's position reaches the Build button ==\n");
+            // getComponentAt walks only VISIBLE components, and an editor with no window peer starts invisible in a
+            // headless fixture - so the editor is made visible here or the hit test answers "nothing" about
+            // everything. This is the fixture catching up with the product, not a relaxation.
+            const auto savedPrompts = EchoJayPromptTestAccess::save (proc);
+            ed->setVisible (true);
+            // ...and the onboarding overlay is dismissed, because it legitimately covers the whole editor while a
+            // prompt is up. A fresh instance has answered nothing (21r item 7), so in a fixture it is always up -
+            // and it was the first thing this leg found at the button's centre.
+            proc.setChannelTypePromptDismissed (true);
+            proc.setGenrePromptDismissed (true);
+            proc.setProjectPromptDismissed (true);
+            ed->resized(); pumpMs (40);
+            for (auto tab : { A::tabChat(), A::tabChain() })
+            {
+                A::toTab (*ed, tab); ed->resized(); pumpMs (40);
+                auto& btn = A::buildBtn (*ed, 0);
+                A::setActiveBuilds (*ed, 1);
+                btn.setBounds (60, 300, 120, 24);
+                btn.setVisible (true);
+                bool fired = false;
+                btn.onClick = [&fired] { fired = true; };
+                // THE HIT TEST IS THE TEST: what does the editor say is at that point? A button under another
+                // component never sees the click, whatever its own state says.
+                const auto centre = btn.getBounds().getCentre();
+                auto* hit = ed->getComponentAt (centre);
+                check (hit == &btn,
+                       juce::String ("H1. tab ") + juce::String ((int) tab)
+                       + ": the component at the Build button's centre IS the Build button  (RED as it stood: the "
+                         "layer was at the bottom, so something else was)",
+                       hit == nullptr ? juce::String ("nothing")
+                                      : (hit == &btn ? juce::String ("the button")
+                                                     : juce::String (typeid (*hit).name()) + " name=\"" + hit->getName()
+                                                       + "\" parentIsLayer=" + (hit->getParentComponent() == &A::replyLayer (*ed) ? "y" : "n")));
+                btn.triggerClick(); pumpMs (30);
+                check (fired, juce::String ("H1. tab ") + juce::String ((int) tab) + ": ...and pressing it runs the handler");
+                btn.onClick = nullptr;
+                btn.setVisible (false);
+                A::setActiveBuilds (*ed, 0);
+            }
+            EchoJayPromptTestAccess::restore (proc, savedPrompts);   // the instance goes back as it was
+        }
+
+        // ---- H2 (21t-a, 25 Sep 2026): a group is a target you can choose, leave, and come back to ------------
+        // (a) The Working-on banner's dropdown listed the Links and nothing else: the only way to choose a group
+        // was the composer pill, so from the banner - the control that SAYS what you are working on - groups did
+        // not exist. (b) One source of truth both ways: choosing a Link cleared nothing, so the banner kept
+        // saying "Working on Group: ..." over a Link's chat. (c) A chat begun on a group fell into Main, with no
+        // folder of its own, because a chat could only be bound to a channel.
+        {
         }
 
         // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------

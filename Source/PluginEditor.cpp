@@ -417,7 +417,6 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     // F1 (21s-a): the reply layer is added FIRST, so every reply control created below is parented into it rather
     // than into the editor. One parent, one visibility switch, no per-tab filtering.
     addAndMakeVisible (replyLayer);
-    replyLayer.toFront (false);   // once, at construction - not on every resize
     // A fresh editor starts with nothing staged for the next chat turn.
     // While api was an editor member this happened by construction; now
     // that it outlives the editor, staging left behind by a Link window
@@ -19072,7 +19071,14 @@ void EchoJayEditor::resized()
     // editor coordinates its own layout pass computes. Bounds only here; the visibility is settled at the END of
     // this function, after every other child has been positioned - hiding a parent mid-layout moves keyboard focus,
     // and doing that in the middle of a tab switch was enough to take the editor down.
+    // H1 (21t-a, 25 Sep 2026): THE LAYER MUST BE ON TOP, and one toFront at construction cannot do it - 107 more
+    // children are added after it, each landing ABOVE it, so the reply controls ended up at the BOTTOM of the
+    // stack, under the transcript viewport and the panel. A click at a Build button's own position hit whatever
+    // covered it, which is why nothing could be pressed on any tab after F1.
+    // toFront(false) does NOT move keyboard focus (that is setVisible's problem, and why the visibility switch
+    // lives in switchToTab), so it is safe to re-assert here on every layout.
     replyLayer.setBounds (getLocalBounds());
+    replyLayer.toFront (false);
     // No transform — layout scales to actual window size
     auto b = getLocalBounds();
 
