@@ -127,6 +127,10 @@ struct EchoJayTabStripTestAccess
     static std::vector<BannerItem> bannerItems (EchoJayEditor& e) { return e.channelBannerMenuItems(); }   // H2a
     static void openChannel (EchoJayEditor& e, const juce::String& uid) { e.openChannelByUid (uid); }      // H2b
     static juce::String projName (EchoJayEditor& e) { return e.newChatProjectName(); }                     // H2c
+    // ---- 21t-b R1 ----
+    static void selectView (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
+    static juce::String workingOn (EchoJayEditor& e) { return e.workingOnUid(); }
+    static void setBuildJson (EchoJayEditor& e, int i, const juce::String& j) { e.chainBuildJsons[(size_t) i] = j; }
     static void addChat (EchoJayEditor& e, const WsChat& c) { e.workspace.addChat (c); }
     static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
     static void openChat (EchoJayEditor& e, const juce::String& id) { e.loadChatFromWorkspace (id); }
@@ -428,6 +432,9 @@ int main()
                 btn.setBounds (60, 300, 120, 24);
                 btn.setVisible (true);
                 bool fired = false;
+                // The REAL handler is put back at the end of this leg: R1's leg presses this same button and
+                // asserts on what the shipped handler does, and a guard must not leave a control gutted.
+                auto savedOnClick = btn.onClick;
                 btn.onClick = [&fired] { fired = true; };
                 // THE HIT TEST IS THE TEST: what does the editor say is at that point? A button under another
                 // component never sees the click, whatever its own state says.
@@ -443,7 +450,7 @@ int main()
                                                        + "\" parentIsLayer=" + (hit->getParentComponent() == &A::replyLayer (*ed) ? "y" : "n")));
                 btn.triggerClick(); pumpMs (30);
                 check (fired, juce::String ("H1. tab ") + juce::String ((int) tab) + ": ...and pressing it runs the handler");
-                btn.onClick = nullptr;
+                btn.onClick = savedOnClick;
                 btn.setVisible (false);
                 A::setActiveBuilds (*ed, 0);
             }
@@ -589,6 +596,49 @@ int main()
             // OWED (recorded, not claimed): the other half of H3 - the borrowed host seeded from the rack's own
             // sidecar at engage - is only reachable through the real engage path (ring + lease + a running Link),
             // so it rides with F5's two-process leg. In-host evidence only until then.
+        }
+
+        // ---- R1 (21t-b, 25 Sep 2026): the rack you look at is not the channel you build on -------------------
+        // O3: a mix-bus request built into "Aitch Lead Vocal" because that rack was on screen. The view and the
+        // Working-on channel were ONE variable, so selecting a strip moved the destination silently.
+        {
+            std::printf ("\n== R1: a rack selection moves the view; the build targets the chat's channel ==\n");
+            const auto savedId = A::chatId (*ed);
+            A::setChatId (*ed, {});
+            proc.pendingChannelUid = "lnk_01";          // the chat is working on lnk_01
+            check (A::workingOn (*ed) == "lnk_01" && A::viewUid (*ed) == "lnk_01",
+                   "R1. fixture: with nothing selected, the view follows the chat's channel", A::viewUid (*ed));
+            A::selectView (*ed, "lnk_02"); pumpMs (40);
+            check (A::viewUid (*ed) == "lnk_02",
+                   "R1. selecting a rack moves the view to it", A::viewUid (*ed));
+            check (A::workingOn (*ed) == "lnk_01",
+                   "R1. ...and the chat is STILL working on its own channel  (RED as it stood: the selection "
+                   "moved the build target too, which is how a bus request built into another Link)",
+                   A::workingOn (*ed));
+            check (proc.pendingChannelUid == "lnk_01",
+                   "R1. ...and the chat was not thrown away by the selection", proc.pendingChannelUid);
+            // THE BUTTON'S OWN DECISION: Build moves the view to whatever it targeted, so where the view lands
+            // after a press is what the build acted on.
+            A::setActiveBuilds (*ed, 1);
+            A::setBuildJson (*ed, 0, "{\"chain\":[{\"name\":\"EchoJay Gain\"}]}");
+            A::buildBtn (*ed, 0).triggerClick(); pumpMs (80);
+            check (A::viewUid (*ed) == "lnk_01",
+                   "R1. pressing Build targets the chat's channel, and the view follows it there  (RED as it "
+                   "stood: it built on the rack that happened to be on screen)", A::viewUid (*ed));
+            // The own channel: a main chat builds locally, and the view returns to the local rack first.
+            proc.pendingChannelUid.clear();
+            A::selectView (*ed, "lnk_02"); pumpMs (40);
+            check (A::viewUid (*ed) == "lnk_02" && A::workingOn (*ed).isEmpty(),
+                   "R1. fixture: a main chat with another rack on screen", A::viewUid (*ed));
+            A::buildBtn (*ed, 0).triggerClick(); pumpMs (80);
+            check (A::viewUid (*ed).isEmpty(),
+                   "R1. building on the own channel switches the view to the own rack first",
+                   A::viewUid (*ed).isEmpty() ? juce::String ("(local rack)") : A::viewUid (*ed));
+            A::setActiveBuilds (*ed, 0);
+            A::setChatId (*ed, savedId);
+            A::toChat (*ed); pumpMs (40);
+        }
+
         }
 
         // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------

@@ -4631,7 +4631,22 @@ private:
         editor recreate (that selection already does, on the processor).
         Empty means the LOCAL rack, exactly as an empty channel uid means the
         main context everywhere else. */
-    juce::String chainViewUid() const { return effectiveChannelUid(); }
+    // R1 (21t-b, 25 Sep 2026): THE RACK YOU LOOK AT AND THE CHANNEL YOU WORK ON ARE TWO THINGS.
+    // They were one variable, so selecting a rack strip silently moved what the next build would target - on
+    // 25 Sep a mix-bus request built into "Aitch Lead Vocal" because that rack was on screen (O3). A rack
+    // selection now PINS the view and leaves the chat's Working-on channel exactly where it was; opening a chat
+    // or choosing a channel in the banner unpins it, so the view follows the conversation again.
+    // Empty uid with the pin set = the local rack, the same meaning an empty channel uid has everywhere.
+    juce::String chainViewUid() const { return viewRackPinned_ ? viewRackUid_ : effectiveChannelUid(); }
+    /** Pin the view to one rack (uid) or to the local rack (""). View only: the chat, the banner and the build
+        target are untouched. This is what a rack strip and the rack menu do. */
+    void selectRackForView (const juce::String& uid);
+    /** THE build/edit destination: the channel this chat is working on ("" = the local rack). */
+    juce::String workingOnUid() const;
+    /** Let the view follow the chat again - called wherever the Working-on channel itself changes. */
+    void unpinRackView() { viewRackPinned_ = false; viewRackUid_.clear(); }
+    bool         viewRackPinned_ = false;   // R1: a rack selection chose the view
+    juce::String viewRackUid_;              // ...and this is the rack it chose ("" = the local one)
     /** Slots for whichever rack chainViewUid() names, in the panel's own
         type. Local reads ChainHost directly; remote converts the sidecar,
         whose RackSidecarSlot carries the same five fields SlotInfo does.

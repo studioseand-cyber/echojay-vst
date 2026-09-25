@@ -2551,7 +2551,11 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // chat builds on ITS channel, a main chat builds on the local
             // rack. The old target menu (which pre-ticked "Build here"
             // even inside channel chats) is deleted, not conditioned.
-            const juce::String uid = effectiveChannelUid();
+            // R1 (21t-b, 25 Sep 2026): THE TARGET IS THE CHAT'S WORKING-ON CHANNEL, NEVER THE RACK ON SCREEN.
+            // It used to be the same variable as the view, so a rack selection moved the destination silently.
+            // The view now follows the target instead: press Build and you are looking at what you built on.
+            const juce::String uid = workingOnUid();
+            if (chainViewUid() != uid) selectRackForView(uid);
             // THE ROUTER LINE (11 Aug 2026). Two build paths that looked
             // identical in the log is what let a whole class of failure sit
             // undiagnosed: every dial instrument lives in loadChainFromJson,
@@ -2559,6 +2563,8 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             // read as "the summary is broken" rather than "the summary is on
             // the other path". Never infer which one ran again.
             EchoJay_NSLog(("EJChain: build target uid=" + (uid.isEmpty() ? juce::String("(local rack)") : uid)
+                           + " (the chat's Working-on channel; view now "
+                           + (chainViewUid().isEmpty() ? juce::String("(local rack)") : chainViewUid()) + ")"
                            + "  path=" + (uid.isEmpty() ? "loadChainFromJson" : "sendChainToLink")
                            + "  dialCapable=" + (uid.isEmpty() ? "n/a (local)"
                                                               : (linkUidDialCapable(uid) ? "y" : "n -> prose only"))).toRawUTF8());
@@ -7941,9 +7947,8 @@ void EchoJayEditor::showChainRackMenu()
                 if (cur.isNotEmpty())
                 {
                     EchoJay_NSLog(("EJRackSel: row=bus resolved=(main) current="
-                                   + cur + " -> switching to main").toRawUTF8());
-                    safeThis->pendingSelectionIsUser_ = true;
-                    safeThis->resetToMainContext();
+                                   + cur + " -> viewing the local rack (R1: the view moves, the chat does not)").toRawUTF8());
+                    safeThis->selectRackForView({});
                 }
                 else
                     EchoJay_NSLog("EJRackSel: row=bus resolved=(main) "
@@ -7982,9 +7987,8 @@ void EchoJayEditor::showChainRackMenu()
             {
                 EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
                                + " resolved=" + clicked + " current=" + curLbl
-                               + " -> switching").toRawUTF8());
-                safeThis->pendingSelectionIsUser_ = true;
-                safeThis->openChannelByUid(clicked);
+                               + " -> viewing it (R1: the view moves, the chat does not)").toRawUTF8());
+                safeThis->selectRackForView(clicked);
             }
             safeThis->refreshChainPanelForView(true);
         });
@@ -10773,11 +10777,8 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 // Selecting the bus = the main context, via the banner
                 // menu's own arm WITH its guard: resetting while already in
                 // main context would wipe a live conversation for nothing.
-                if (effectiveChannelUid().isNotEmpty())
-                {
-                    pendingSelectionIsUser_ = true;
-                    resetToMainContext();
-                }
+                if (chainViewUid().isNotEmpty())
+                    selectRackForView({});   // R1: view only
             }
             else
             {
@@ -10793,11 +10794,10 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                     linkLegacyFlashMs_   = juce::Time::getMillisecondCounter();
                     linkMixerView_.repaint();
                 }
-                else if (en.info.uid != effectiveChannelUid())
+                else if (en.info.uid != chainViewUid())
                 {
-                    // The banner's already-here guard, same as the AI arm.
-                    pendingSelectionIsUser_ = true;
-                    openChannelByUid(en.info.uid);
+                    // The already-here guard, now on the VIEW - which is what a strip selects (R1).
+                    selectRackForView(en.info.uid);
                 }
             }
             break;
@@ -13573,6 +13573,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         processorRef.pendingChannelUid.clear();   // any activation ends pending
         processorRef.chatTargetLinkUid.clear();   // router selection is transient:
         processorRef.chatTargetLinkName.clear();  // every activation resets it
+        unpinRackView();   // R1: you are in a different conversation now, so the view follows it
         // 21t-a H2c (25 Sep 2026): the GROUP target follows the chat you open,
         // both ways - a group chat selects its group, any other chat clears a
         // group selection. One source of truth (H2b): without this the banner
@@ -24316,7 +24317,15 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
 
     // Phase R: Link-targeted cards never touch the local sequencer — the
     // ops' slot numbers refer to the LINK's rack (see editTargetUid).
-    if (cm.editTargetUid.isNotEmpty()) { applyChainEditToLink(msgIdx); return; }
+    // R1 (21t-b): an edit targets the channel the turn was made on, and the view follows it - applying a change
+    // you cannot see is the same defect as building into a rack you did not choose.
+    if (cm.editTargetUid.isNotEmpty())
+    {
+        if (chainViewUid() != cm.editTargetUid) selectRackForView(cm.editTargetUid);
+        applyChainEditToLink(msgIdx);
+        return;
+    }
+    if (chainViewUid().isNotEmpty()) selectRackForView({});   // a local edit shows the local rack
 
     // The rack lives on the Chain tab: switch there FIRST so the apply
     // progress, the rebuilt rack, and any auto-opened editor land where the
@@ -24672,6 +24681,7 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     juce::StringArray baseSlots;
     auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
     if (ops.empty()) return;
+
 
     const int seq = sendChainEditToLink(uid, cm.editData);
     if (seq < 0)
@@ -25034,8 +25044,39 @@ juce::String EchoJayEditor::mainContextLabel() const
     return kFullCaptureLabel;
 }
 
+// R1 (21t-b, 25 Sep 2026): THE ONE ANSWER to "what does a build or an edit act on" - the channel this chat is
+// working on. The Working-on pill wins when it holds a Link (it is the most recent explicit choice), then the
+// chat's own channel. The rack in view is deliberately not consulted.
+juce::String EchoJayEditor::workingOnUid() const
+{
+    if (processorRef.chatTargetLinkUid.isNotEmpty()) return processorRef.chatTargetLinkUid;
+    return effectiveChannelUid();
+}
+
+// R1 (21t-b, 25 Sep 2026): a rack selection moves the VIEW and nothing else. It engages the borrow for that
+// rack (that is what "on screen" means here - you hear and edit what you are looking at) and leaves the chat, the
+// Working-on banner and the build target exactly where they were.
+void EchoJayEditor::selectRackForView(const juce::String& uid)
+{
+    viewRackPinned_ = true;
+    viewRackUid_    = uid;
+    // §5a-R: a USER selection applies-and-engages; this is always a user selection - the programmatic sites move
+    // the view by unpinning, not by pinning.
+    handleBorrowSelectionChange(uid, true);
+    pendingSelectionIsUser_ = false;
+    EchoJay_NSLog(("EJRackView: pinned view to " + (uid.isEmpty() ? juce::String("(local rack)") : uid)
+                   + "; the Working-on channel is still "
+                   + (effectiveChannelUid().isEmpty() ? juce::String("(main)") : effectiveChannelUid())).toRawUTF8());
+    refreshChainPanelForView(true);
+    resized();
+    repaint();
+    linkMixerView_.repaint();
+}
+
 void EchoJayEditor::resetToMainContext()
 {
+    unpinRackView();   // R1: the Working-on channel is changing, so the view follows it again
+
     // §5a-R: leaving a Link's rack for the main IS the deselect when the
     // USER did it; programmatic resets move the view only (§3f pin). The
     // flag defaults false; the user click sites pass true explicitly.
@@ -25165,6 +25206,7 @@ void EchoJayEditor::openChannelByUid(const juce::String& uid)
     // activation - clears any group selection, or the banner keeps saying "Working on Group: ..." about a chat
     // that is now pointed at a Link. setChatTargetGroup({}) is the same call the other direction uses.
     if (processorRef.chatTargetGroupId.isNotEmpty()) setChatTargetGroup({});
+    unpinRackView();   // R1: the Working-on channel is changing, so the view follows it again
     // §5a-R + §3f: user selections apply-and-engage; programmatic ones
     // (chat activation, deep links) move the view only.
     handleBorrowSelectionChange(uid, pendingSelectionIsUser_);
