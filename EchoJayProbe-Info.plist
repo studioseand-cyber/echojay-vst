@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- EchoJayProbe's embedded Info.plist (21t-e, 25 Sep 2026).
+
+     The probe is a BARE Mach-O executable copied into every plugin bundle's Contents/MacOS - it has no bundle of
+     its own, so this plist is linked into the binary itself (-sectcreate __TEXT __info_plist) and macOS reads it
+     from there.
+
+     WHY: the probe links juce_gui_basics and opens a GUI connection, because hosting an AudioUnit needs one. That
+     makes it a foreground app as far as the Dock is concerned, so a sampling pass of 74 products bounced 74 icons
+     through the Dock. LSBackgroundOnly says what is already true - this process never shows a window - so it runs
+     invisibly. It does NOT change what the probe may do: it still instantiates and reads plugins exactly as before.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.echojay.EchoJayProbe</string>
+    <key>CFBundleName</key>
+    <string>EchoJayProbe</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
