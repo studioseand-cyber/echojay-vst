@@ -24682,6 +24682,53 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
     auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
     if (ops.empty()) return;
 
+    // R3 / O1 (21t-b, 25 Sep 2026): WHILE THIS RACK IS THE LIVE SESSION, THE EDIT LANDS IN THE SESSION.
+    // A build already diverts here (the Link parks its own slots while leased, so its chain is empty and the
+    // content lives in the borrowed host). The chat edit did not, so on 25 Sep a dial op was shipped to the Link
+    // and judged against an empty rack: "preflight REFUSED guard=touched-slot-missing slot=0 base=1
+    // [EchoJay Pitch] live=0" - the identity the preflight was asked to match was not there to match. Sent to the
+    // host that actually holds the slot, the same guard sees the same identity and accepts it, which is what R3
+    // asks for. The session commits to the Link at deselect, as every other session edit does.
+    if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
+    {
+        switchToTab(Tab::Chain);
+        chainListPanel.closeAllEditors();   // AMEK discipline, as the local path does
+        auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+        auto opsForAlt = ops;
+        EchoJay_NSLog(("EJEdit: apply target uid=" + uid + "  path=SESSION (borrowed host) ops="
+                       + juce::String((int) ops.size()) + " base=" + juce::String(baseSlots.size())
+                       + " live=" + juce::String(bh->getNumSlots())).toRawUTF8());
+        setStageStatus("Applying to \"" + label + juce::String::fromUTF8("\"\xe2\x80\xa6"));
+        juce::Timer::callAfterDelay(80, [safeThis, uid, key, chatIdAtApply, label, ops, opsForAlt, baseSlots]() mutable
+        {
+            if (safeThis == nullptr) return;
+            auto* bh2 = safeThis->processorRef.borrowHostIfActiveFor(uid);
+            if (bh2 == nullptr)
+            {   // the session ended between the press and the beat: say so, never guess
+                safeThis->clearStageStatus();
+                safeThis->retireLinkEditCard(key, chatIdAtApply,
+                    "Not applied: the session on \"" + label + "\" ended before this could apply - ask again.", {}, {}, {});
+                return;
+            }
+            const int total = (int) ops.size();
+            bh2->applyChainEdits(std::move(ops), -1, baseSlots,
+                [safeThis, key, chatIdAtApply, label, total](const juce::StringArray& results, int applied, bool aborted)
+            {
+                if (safeThis == nullptr) return;
+                safeThis->clearStageStatus();
+                // RULING 1 (21s-b): the lease holder republishes the sidecar it built into.
+                safeThis->processorRef.republishBorrowedRackSidecar();
+                safeThis->refreshChainPanelForView(true);
+                safeThis->repaint();
+                const juce::String summary = aborted
+                    ? "Not applied: " + results.joinIntoString("; ")
+                    : "Applied to \"" + label + "\" - " + juce::String(applied) + " of "
+                      + juce::String(total) + (total == 1 ? " change." : " changes.");
+                safeThis->retireLinkEditCard(key, chatIdAtApply, summary, {}, {}, {});
+            });
+        });
+        return;
+    }
 
     const int seq = sendChainEditToLink(uid, cm.editData);
     if (seq < 0)

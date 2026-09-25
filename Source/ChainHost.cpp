@@ -1844,7 +1844,17 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
     // ASCII punctuation only in these strings: they travel as char*
     // literals into juce::String, which reads bytes, not UTF-8 (the em
     // dash drew as mojibake).
-    if (expectedRevision >= 0 && expectedRevision != getChainRevision())
+    // R3 (21t-b, 25 Sep 2026): A DIAL OP IS JUDGED BY THE SLOT'S IDENTITY, NOT BY THE RACK'S HISTORY.
+    // set / set_wet change one slot's settings and nothing about the shape of the rack, so a revision that moved
+    // for any other reason - a trim, a wet knob, a slot added at the end - is not a reason to refuse them. The
+    // touched-slot guard below still has to pass: if the slot this op names is not the slot the preview named,
+    // it is still refused, and by the guard that actually checked.
+    const bool dialOnly = [&ops]
+    {
+        for (const auto& o : ops) if (o.op != "set" && o.op != "set_wet") return false;
+        return ! ops.empty();
+    }();
+    if (expectedRevision >= 0 && expectedRevision != getChainRevision() && ! dialOnly)
     {
         EchoJay_NSLog(("EJEdit: preflight REFUSED guard=revision expected="
                        + juce::String(expectedRevision) + " live="
@@ -1852,6 +1862,9 @@ void ChainHost::applyChainEdits(std::vector<ChainEditOp> ops,
         return abort("the rack was modified after this edit was proposed"
                      " - ask again");
     }
+    if (dialOnly && expectedRevision >= 0 && expectedRevision != getChainRevision())
+        EchoJay_NSLog(("EJEdit: revision moved (" + juce::String(expectedRevision) + " -> "
+                       + juce::String(getChainRevision()) + ") but every op is a dial op - judged on identity (R3)").toRawUTF8());
 
     // ---- Pre-flight guard 2: THE SLOTS THIS EDIT TOUCHES (ruling 3, 24 Sep 2026) ----
     // It used to compare the WHOLE list: a count mismatch, then every name in order. That refuses a perfectly

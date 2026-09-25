@@ -203,6 +203,60 @@ int main()
         }
         else check (false, "R3g. fixture: the three built-ins are registered");
     }
+    {   // R3 (21t-b): a DIAL op is judged by the slot's identity, not by the rack's history
+        std::printf ("\n== R3 (21t-b): a dial op on a slot whose identity matches is accepted ==\n");
+        auto host = std::make_unique<ChainHost> (ChainHost::Mode::Primary);
+        const auto* lv = BuiltinDeviceRegistry::instance().findByName ("EchoJay Level");
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (lv != nullptr && gn != nullptr)
+        {
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
+            const int revAtPreview = host->getChainRevision();
+            // The rack moves on AFTER the preview was written - a second slot at the end, which is exactly the
+            // kind of change that has nothing to do with the slot the dial op names.
+            host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
+            check (host->getChainRevision() != revAtPreview,
+                   "R3. fixture: the revision moved after the preview was written",
+                   juce::String (revAtPreview) + " -> " + juce::String (host->getChainRevision()));
+            auto dial = [&] (float wet)
+            {
+                std::vector<ChainHost::ChainEditOp> ops;
+                ChainHost::ChainEditOp o; o.op = "set_wet"; o.slot = 0; o.wetPct = wet; ops.push_back (o);
+                bool done = false, aborted = true; juce::StringArray res;
+                host->applyChainEdits (ops, revAtPreview, juce::StringArray { "EchoJay Gain" },
+                                       [&] (const juce::StringArray& r, int, bool ab) { res = r; aborted = ab; done = true; });
+                for (int k = 0; k < 60 && ! done; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+                return std::make_pair (done && ! aborted, res.joinIntoString (" | ").substring (0, 130));
+            };
+            const auto r1 = dial (40.0f);
+            check (r1.first,
+                   "R3. a dial op on slot 1 applies although the revision moved  (RED as it stood: guard=revision "
+                   "refused it, and the identity it was asked to match was never looked at)", r1.second);
+            // The identity guard is NOT relaxed: the same dial op against a preview that saw a different plugin
+            // at that slot is still refused, and by the guard that actually checked.
+            std::vector<ChainHost::ChainEditOp> ops2;
+            ChainHost::ChainEditOp o2; o2.op = "set_wet"; o2.slot = 0; o2.wetPct = 10.0f; ops2.push_back (o2);
+            bool done2 = false, aborted2 = false; juce::StringArray res2;
+            host->applyChainEdits (ops2, revAtPreview, juce::StringArray { "Some Other Plugin" },
+                                   [&] (const juce::StringArray& r, int, bool ab) { res2 = r; aborted2 = ab; done2 = true; });
+            for (int k = 0; k < 60 && ! done2; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (done2 && aborted2,
+                   "R3. ...and a dial op whose slot is NOT what the preview saw is still refused",
+                   res2.joinIntoString (" | ").substring (0, 130));
+            // A STRUCTURAL op keeps the revision guard - the exemption is for dial ops only.
+            std::vector<ChainHost::ChainEditOp> ops3;
+            ChainHost::ChainEditOp o3; o3.op = "remove"; o3.slot = 0; ops3.push_back (o3);
+            bool done3 = false, aborted3 = false; juce::StringArray res3;
+            host->applyChainEdits (ops3, revAtPreview, juce::StringArray { "EchoJay Gain" },
+                                   [&] (const juce::StringArray& r, int, bool ab) { res3 = r; aborted3 = ab; done3 = true; });
+            for (int k = 0; k < 60 && ! done3; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); }
+            check (done3 && aborted3,
+                   "R3. ...and a STRUCTURAL op on a moved revision is still refused - the exemption is dial-only",
+                   res3.joinIntoString (" | ").substring (0, 130));
+        }
+        else check (false, "R3. fixture: the two built-ins are registered");
+    }
+
     {   // RULING 1: one source for "what is in this rack" - the sidecar carries what the lease holder built
         std::printf ("\n== ruling 1 (21s-b): the sidecar is filled from the rack that actually holds the slots ==\n");
         auto held = std::make_unique<ChainHost> (ChainHost::Mode::Primary);   // stands for the BORROWED host
