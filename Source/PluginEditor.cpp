@@ -2145,11 +2145,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     chainListPanel.onMasterWet = [this](float v) {
         if (chainEditGateRefuses()) return;   // COMMIT 2: not held yet
         const juce::String uid = chainViewUid();
-        if (auto* bh = processorRef.borrowHostIfActiveFor(uid))
-        { bh->setMasterWet(v); return; }
-        if (uid.isNotEmpty()) { sendLinkMasterWetCommand(uid, v); return; }
-        processorRef.getChainHost().setMasterWet(v);
-        processorRef.markStateDirty();
+        if (uid.isEmpty())
+        {   // V2's own rack
+            processorRef.getChainHost().setMasterWet(v);
+            processorRef.markStateDirty();
+            return;
+        }
     };
     // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
     // replacing the master-knob menu items (that menu was on the wrong
@@ -12782,16 +12783,28 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
         std::map<juce::String, std::vector<const WsChat*>> chanChats;
         std::vector<juce::String> chanOrder;
         std::vector<const WsChat*> mainChats;
+        // 21t-a H2c (25 Sep 2026): a group chat gets a folder of its own, by
+        // the same grammar as a channel's - a group is a target, so its chats
+        // are no more "Main" than a Link's are. The bucket key is prefixed
+        // because it is a group id, not a uid, and the two vocabularies must
+        // not be allowed to collide in the collapse state either.
+        std::map<juce::String, juce::String> groupFolderLabel;   // key -> name
         for (auto* chat : projs[name].chats)
         {
-            if (chat->linkUid.isEmpty())
+            const bool isGroup = chat->groupId.isNotEmpty();
+            if (chat->linkUid.isEmpty() && ! isGroup)
             {
                 mainChats.push_back(chat);
                 continue;
             }
-            if (chanChats.find(chat->linkUid) == chanChats.end())
-                chanOrder.push_back(chat->linkUid);
-            chanChats[chat->linkUid].push_back(chat);
+            const juce::String key = isGroup ? ("group:" + chat->groupId)
+                                             : chat->linkUid;
+            if (isGroup && chat->groupName.isNotEmpty()
+                && groupFolderLabel.find(key) == groupFolderLabel.end())
+                groupFolderLabel[key] = chat->groupName;
+            if (chanChats.find(key) == chanChats.end())
+                chanOrder.push_back(key);
+            chanChats[key].push_back(chat);
         }
 
         // Emit one folder: header + (unless collapsed) its chats. Shared by
@@ -12828,9 +12841,15 @@ void EchoJayEditor::ChatSidebarModel::refreshRows(
             // Label from the newest non-empty linkNameSnap (cc inherits the
             // project's newest-first order); the uid itself never displays.
             juce::String label;
-            for (auto* chat : cc)
-                if (chat->linkNameSnap.isNotEmpty()) { label = chat->linkNameSnap; break; }
-            if (label.isEmpty()) label = "Channel";
+            {
+                auto gl = groupFolderLabel.find(cu);
+                if (gl != groupFolderLabel.end()) label = gl->second;
+            }
+            if (label.isEmpty())
+                for (auto* chat : cc)
+                    if (chat->linkNameSnap.isNotEmpty()) { label = chat->linkNameSnap; break; }
+            if (label.isEmpty())
+                label = cu.startsWith("group:") ? "Group" : "Channel";
             pushChanFolder(cu, label, cc);
         }
     };
@@ -13547,6 +13566,14 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         processorRef.pendingChannelUid.clear();   // any activation ends pending
         processorRef.chatTargetLinkUid.clear();   // router selection is transient:
         processorRef.chatTargetLinkName.clear();  // every activation resets it
+        // 21t-a H2c (25 Sep 2026): the GROUP target follows the chat you open,
+        // both ways - a group chat selects its group, any other chat clears a
+        // group selection. One source of truth (H2b): without this the banner
+        // kept saying "Group X" while a Link's chat was on screen. Guarded on
+        // change so an ordinary activation does not disturb the strip
+        // selection set.
+        if (ch.groupId != processorRef.chatTargetGroupId)
+            setChatTargetGroup(ch.groupId);
         refreshChannelBannerCache();
         refreshCaptureButtonLabel();   // item 4a: fit on activation, not just on capture
         resized();
@@ -13936,6 +13963,15 @@ void EchoJayEditor::createNewChat(const juce::String& bindToUid)
     c.linkUid      = inheritUid;             // "" = main chat, unchanged shape
     c.linkNameSnap = inheritUid.isNotEmpty() ? channelDisplayLabel(inheritUid)
                                              : juce::String();
+    // 21t-a H2c: a new chat started while a GROUP is the target belongs to that
+    // group, exactly as a channel chat inherits its uid. Only when no channel
+    // was inherited - the two targets are mutually exclusive by construction
+    // (setChatTargetGroup clears the Link selection).
+    if (inheritUid.isEmpty() && processorRef.chatTargetGroupId.isNotEmpty())
+    {
+        c.groupId   = processorRef.chatTargetGroupId;
+        c.groupName = processorRef.chatTargetGroupName;
+    }
     // messages intentionally empty — won't appear in sidebar until first send
 
     workspace.addChat(c);
@@ -24846,6 +24882,37 @@ juce::String EchoJayEditor::findOrCreateChannelChatId(const juce::String& linkUi
     return c.id;
 }
 
+// 21t-a H2c (25 Sep 2026): the create half for a GROUP target, the exact shape
+// findOrCreateChannelChatId has for a channel - first send creates, a bare
+// selection does not mint an empty record. The chat carries groupId (the key)
+// and groupName (display), which is what puts it in its own sidebar folder
+// named after the group instead of under Main.
+juce::String EchoJayEditor::findOrCreateGroupChatId(const juce::String& groupId,
+                                                    const juce::String& groupNameNow)
+{
+    const juce::String proj = newChatProjectName();
+    const auto pick = echojay::latestChatForGroup(workspace.getChats(), groupId, proj);
+    if (pick.index >= 0)
+    {
+        const auto existing = workspace.getChats()[(size_t) pick.index].id;
+        EchoJay_NSLog(("EJChat: group " + groupId + " -> chat " + existing
+                       + " (latest of " + juce::String(pick.matches) + ")").toRawUTF8());
+        return existing;
+    }
+
+    WsChat c;
+    c.id        = juce::String(juce::Time::currentTimeMillis());
+    c.title     = groupNameNow.isNotEmpty() ? groupNameNow : juce::String("Group chat");
+    c.created   = juce::Time::getCurrentTime().toISO8601(true);
+    c.trackName = proj;                      // same stamping as channel and main chats
+    c.groupId   = groupId;
+    c.groupName = groupNameNow;
+    workspace.addChat(c);
+    EchoJay_NSLog(("EJChat: group " + groupId + " -> chat " + c.id
+                   + " (created, none existed)").toRawUTF8());
+    return c.id;
+}
+
 void EchoJayEditor::refreshChannelBannerCache()
 {
     // ONE registry resolution, on change ticks and activation points —
@@ -24988,7 +25055,11 @@ void EchoJayEditor::resetToMainContext()
     repaint();
 }
 
-void EchoJayEditor::showChannelBannerMenu()
+// H2a (21t-a, 25 Sep 2026): THE LIST IS ONE FUNCTION, so the guard tests the shipped list rather than a
+// re-description of it (the F4 discipline). It answers in ONE vocabulary - channels first (main, then the live
+// Links, then an offline current one), then the groups - and the tick comes from the same selection state the
+// banner reads, so the menu cannot disagree with the banner about what is selected.
+std::vector<EchoJayEditor::BannerMenuItem> EchoJayEditor::channelBannerMenuItems()
 {
     // THE channel selector. Live channels from the registry; the current
     // channel ticked; an offline CURRENT channel still listed (dimmed) —
@@ -25010,47 +25081,83 @@ void EchoJayEditor::showChannelBannerMenu()
     //     not a new inconsistency.
     processorRef.refreshLinkRegistry();
     const juce::String cur = effectiveChannelUid();
-    struct Row { juce::String label, uid; bool live; };
-    std::vector<Row> rows;
+    const bool groupSel = processorRef.chatTargetGroupId.isNotEmpty();
+    std::vector<BannerMenuItem> items;
     for (const auto& e : processorRef.getLinkDisplayList())
         if (e.info.connected && e.info.uid.isNotEmpty())
-            rows.push_back({ e.displayName, e.info.uid, true });
+            items.push_back({ e.displayName, e.info.uid, false, true, false });
     if (cur.isNotEmpty())
     {
         bool inList = false;
-        for (auto& r : rows) if (r.uid == cur) { inList = true; break; }
-        if (!inList)
-            rows.push_back({ channelDisplayLabel(cur) + " (offline)", cur, false });
+        for (auto& r : items) if (r.id == cur) { inList = true; break; }
+        if (! inList)
+            items.push_back({ channelDisplayLabel(cur) + " (offline)", cur, false, false, false });
     }
-    // The MAIN instance is always the first entry — a LABEL for the
-    // existing no-channel state (empty linkUid, STATE 1, local builds),
-    // NEVER a new targeting destination: uid stays "" and selecting it
-    // runs resetToMainContext(), the same path a clean main state already
-    // takes. No sentinel value exists anywhere in the target machinery.
-    rows.insert(rows.begin(), { mainContextLabel(), juce::String(), true });
+    items.insert(items.begin(), { mainContextLabel(), juce::String(), false, true, false });
+    // A channel is ticked only when no group is selected: the two are one selection, and two ticks would say
+    // the turn goes to both.
+    if (! groupSel)
+        for (auto& r : items) r.ticked = (r.id == cur);
+
+    // H2a: THE GROUPS BELONG IN THIS LIST TOO. The Working-on banner is the channel selector, and since 21r a
+    // group can be what a turn is working on - it was offered in the composer's pill menu and nowhere else, so
+    // the banner listed none of them.
+    for (const auto& g : processorRef.linkGroups())
+        items.push_back({ g.name + " (" + juce::String((int) g.members.size()) + ")", g.id, true, true,
+                          g.id == processorRef.chatTargetGroupId });
+    return items;
+}
+
+void EchoJayEditor::showChannelBannerMenu()
+{
+    const auto items = channelBannerMenuItems();
 
     juce::PopupMenu menu;
     menu.addSectionHeader("CHANNEL");
-    for (size_t i = 0; i < rows.size(); ++i)
-        menu.addItem((int)(1 + i), rows[i].label, rows[i].live, rows[i].uid == cur);
+    bool groupHeaderDone = false;
+    for (size_t i = 0; i < items.size(); ++i)
+    {
+        if (items[i].isGroup && ! groupHeaderDone)
+        {
+            menu.addSeparator();
+            menu.addSectionHeader("GROUP");
+            groupHeaderDone = true;
+        }
+        menu.addItem((int)(1 + i), items[i].label, items[i].live, items[i].ticked);
+    }
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
-        [safeThis, rows](int result)
+        [safeThis, items](int result)
         {
             if (safeThis == nullptr || result <= 0) return;
             const size_t i = (size_t)(result - 1);
-            if (i >= rows.size()) return;
-            if (rows[i].uid == safeThis->effectiveChannelUid()) return;   // already here
+            if (i >= items.size()) return;
+            if (items[i].isGroup)
+            {   // the ONE selection call (banner, pill, strip and body all follow it)
+                safeThis->setChatTargetGroup(items[i].id);
+                return;
+            }
+            if (items[i].id == safeThis->effectiveChannelUid()
+                && safeThis->processorRef.chatTargetGroupId.isEmpty()) return;   // already here
             safeThis->pendingSelectionIsUser_ = true;
-            if (rows[i].uid.isEmpty()) { safeThis->resetToMainContext(); return; }
-            safeThis->openChannelByUid(rows[i].uid);
+            if (items[i].id.isEmpty())
+            {   // H2b: main clears a group selection too - it is a target like any other
+                if (safeThis->processorRef.chatTargetGroupId.isNotEmpty()) safeThis->setChatTargetGroup({});
+                safeThis->resetToMainContext();
+                return;
+            }
+            safeThis->openChannelByUid(items[i].id);
         });
 }
 
 void EchoJayEditor::openChannelByUid(const juce::String& uid)
 {
     if (uid.isEmpty()) return;
+    // H2b (21t-a): ONE SOURCE OF TRUTH, BOTH WAYS. Choosing a Link - from the banner, a strip click, or a chat
+    // activation - clears any group selection, or the banner keeps saying "Working on Group: ..." about a chat
+    // that is now pointed at a Link. setChatTargetGroup({}) is the same call the other direction uses.
+    if (processorRef.chatTargetGroupId.isNotEmpty()) setChatTargetGroup({});
     // §5a-R + §3f: user selections apply-and-engage; programmatic ones
     // (chat activation, deep links) move the view only.
     handleBorrowSelectionChange(uid, pendingSelectionIsUser_);
@@ -27334,7 +27441,40 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // The selection resets in every taken branch — transient by design; a
     // chat silently pointed at a channel was the invisible mode the router
     // pass removed, and that stays removed.
-    if (processorRef.chatTargetLinkUid.isNotEmpty())
+    // 21t-a H2c (25 Sep 2026): a GROUP target routes by the same three cases,
+    // one level earlier because a group selection clears the Link selection
+    // (setChatTargetGroup) and the two can never both be live. The one
+    // difference is deliberate: the group selection does NOT reset after the
+    // send. A Link selection is a one-shot route; a group is where you are
+    // working until you click a Link strip (H2b), and the banner says so.
+    if (processorRef.chatTargetGroupId.isNotEmpty())
+    {
+        const juce::String gid   = processorRef.chatTargetGroupId;
+        const juce::String gname = processorRef.chatTargetGroupName;
+        auto* wc = currentChatId.isNotEmpty() ? workspace.findChatById(currentChatId) : nullptr;
+
+        if (wc != nullptr && wc->groupId == gid)
+        {
+            EchoJay_NSLog(("EJChat: send stays in current chat " + currentChatId
+                           + " (already group \"" + gname + "\")").toRawUTF8());
+        }
+        else if (wc != nullptr && wc->messages.empty() && wc->linkUid.isEmpty())
+        {
+            wc->groupId   = gid;
+            wc->groupName = gname;
+            refreshChannelBannerCache();
+            EchoJay_NSLog(("EJChat: assigned group \"" + gname
+                           + "\" to virgin chat " + currentChatId).toRawUTF8());
+        }
+        else
+        {
+            const juce::String cid = findOrCreateGroupChatId(gid, gname);
+            loadChatFromWorkspace(cid);   // view + sidebar selection follow
+            EchoJay_NSLog(("EJChat: routed send -> group chat \"" + gname
+                           + "\" (" + cid + ")").toRawUTF8());
+        }
+    }
+    else if (processorRef.chatTargetLinkUid.isNotEmpty())
     {
         const juce::String uid   = processorRef.chatTargetLinkUid;
         const juce::String label = channelDisplayLabel(uid);

@@ -1548,6 +1548,9 @@ private:
     // Capability, not version. False for every Link that does not claim it.
     bool linkUidDialCapable(const juce::String& uid) const;
     juce::String channelDisplayLabel(const juce::String& uid) const;
+    // 21t-a H2c: the group equivalent (own folder, named after the group)
+    juce::String findOrCreateGroupChatId(const juce::String& groupId,
+                                         const juce::String& groupNameNow);
     juce::String findOrCreateChannelChatId(const juce::String& linkUid,
                                            const juce::String& linkNameNow);
     juce::Rectangle<int> chatBoxRect_;
@@ -3428,6 +3431,10 @@ private:
     // channel listed dimmed). Selecting uses the same open-or-pend path
     // the chips used. EXACTLY ONE selector is visible at any time — the
     // composer pill hides wherever the banner shows.
+    // H2a (21t-a): one row of the Working-on menu. id = a Link uid, "" for the main context, or a group id
+    // when isGroup. live = selectable (an offline current channel is listed but dimmed).
+    struct BannerMenuItem { juce::String label, id; bool isGroup = false, live = true, ticked = false; };
+    std::vector<BannerMenuItem> channelBannerMenuItems();
     void showChannelBannerMenu();
     void openChannelByUid(const juce::String& uid);
     // Label for the no-channel state (dropdown first entry + banner text in

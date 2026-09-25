@@ -65,6 +65,19 @@ struct WsChat {
     // future adopt-by-name repair. Refreshed on each send while live.
     juce::String linkUid;
     juce::String linkNameSnap;
+    // ---- 21t-a H2c (25 Sep 2026): group chats ----
+    // A chat started while a GROUP is the chat target belongs to that group,
+    // not to any one Link and not to Main. A group is NOT a channel, so it
+    // does not borrow linkUid: a group id would then be read as a rack
+    // identity by every uid consumer (borrow, banner, orphan repair). Two
+    // own fields instead, with linkUid's exact migration guarantee -
+    // serialised only when non-empty, so every chat that has never been on a
+    // group round-trips byte-identically.
+    // groupId: the LinkGroup id (stable, never displayed).
+    // groupName: the group's display name at the time of writing (display
+    // only, same role linkNameSnap plays for a channel).
+    juce::String groupId;
+    juce::String groupName;
     // ---- Session B.0: last activity ----
     // The dashboard orders recentChats by `updatedAt || created`
     // (lib/dash/adapters.js activityKey), and the web client has stamped it on

@@ -53,4 +53,34 @@ inline LatestChatPick latestChatForLink (const ChatVec& chats,
     return r;
 }
 
+// 21t-a H2c (25 Sep 2026): the same decision for a GROUP target. A group chat
+// is keyed on groupId, never on linkUid - a group is a target made of Links,
+// not a Link - and the activity rule above is unchanged, so "which chat does a
+// group send land in" has one answer with one meaning.
+//
+// Templated on the chat type (needs .groupId, .trackName, .updatedAt,
+// .created) for the same reason latestChatForLink is.
+template <typename ChatVec, typename StringType>
+inline LatestChatPick latestChatForGroup (const ChatVec& chats,
+                                          const StringType& groupId,
+                                          const StringType& trackName)
+{
+    LatestChatPick r;
+    StringType bestKey;
+    for (std::size_t i = 0; i < chats.size(); ++i)
+    {
+        const auto& c = chats[i];
+        if (! (c.groupId == groupId) || ! (c.trackName == trackName))
+            continue;
+        ++r.matches;
+        const StringType key = c.updatedAt.isNotEmpty() ? c.updatedAt : c.created;
+        if (r.index < 0 || bestKey < key)
+        {
+            bestKey = key;
+            r.index = (int) i;
+        }
+    }
+    return r;
+}
+
 } // namespace echojay

@@ -795,6 +795,9 @@ WsChat EchoJayWorkspace::parseChat(const juce::var& v)
         c.pinned        = (bool)obj->getProperty("pinned");
         c.linkUid       = obj->getProperty("linkUid").toString();      // absent -> "" = main chat
         c.linkNameSnap  = obj->getProperty("linkNameSnap").toString();
+        // 21t-a H2c: absent -> "" = not a group chat (every pre-21t record)
+        c.groupId       = obj->getProperty("groupId").toString();
+        c.groupName     = obj->getProperty("groupName").toString();
         c.pinnedAt      = obj->getProperty("pinnedAt").toString();
         // B.0: whatever the web stamped. Absent on chats neither client has
         // touched since D1.1, which is why it is only written back when set.
@@ -1128,6 +1131,11 @@ juce::var EchoJayWorkspace::chatToVar(const WsChat& c)
         obj->setProperty("linkUid",      c.linkUid);
     if (c.linkNameSnap.isNotEmpty())
         obj->setProperty("linkNameSnap", c.linkNameSnap);
+    // 21t-a H2c: written only when set, so a non-group chat is byte-identical
+    if (c.groupId.isNotEmpty())
+        obj->setProperty("groupId",   c.groupId);
+    if (c.groupName.isNotEmpty())
+        obj->setProperty("groupName", c.groupName);
 
     juce::Array<juce::var> msgs;
     for (auto& m : c.messages)

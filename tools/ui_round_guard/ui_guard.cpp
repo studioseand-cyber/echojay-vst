@@ -101,6 +101,25 @@ struct EchoJayTabStripTestAccess
     static Tb tabChain() { return EchoJayEditor::Tab::Chain; }
     static Tb tabLink()  { return EchoJayEditor::Tab::Link; }
     static juce::String banner (EchoJayEditor& e) { e.refreshChannelBannerCache(); return e.chanBannerText_; }
+    // ---- 21t-a (25 Sep 2026) ----
+    using BannerItem = EchoJayEditor::BannerMenuItem;
+    static std::vector<BannerItem> bannerItems (EchoJayEditor& e) { return e.channelBannerMenuItems(); }   // H2a
+    static void openChannel (EchoJayEditor& e, const juce::String& uid) { e.openChannelByUid (uid); }      // H2b
+    static juce::String projName (EchoJayEditor& e) { return e.newChatProjectName(); }                     // H2c
+    static void addChat (EchoJayEditor& e, const WsChat& c) { e.workspace.addChat (c); }
+    static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
+    static void openChat (EchoJayEditor& e, const juce::String& id) { e.loadChatFromWorkspace (id); }
+    // The sidebar's own folder rows, from the shipped row builder: "<folder id>|<label>".
+    static juce::StringArray folders (EchoJayEditor& e)
+    {
+        e.sidebarModel->refreshRows (e.workspace.getChats(), e.workspace.getAlbums(), e.workspace.getReviews(),
+                                     e.workspace.getPinnedProjects(), e.collapsedAlbums, e.currentChatId);
+        juce::StringArray out;
+        for (const auto& r : e.sidebarModel->rows)
+            if (r.kind == EchoJayEditor::ChatSidebarModel::Row::Kind::ChannelHeader)
+                out.add (r.id + "|" + r.label);
+        return out;
+    }
     static bool stripSelected (EchoJayEditor& e, const juce::String& addr) { return e.linkSelection_.count (addr) > 0; }
     static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
     static juce::TextButton& undoHdr (EchoJayEditor& e) { return e.undoHdrBtn; }
@@ -360,6 +379,8 @@ int main()
             A::toChat (*ed); pumpMs (40);
             A::msgs (*ed) = savedMsgs;
             A::setChatId (*ed, savedId);
+        }
+
         // ---- H1 (21t-a, 25 Sep 2026): a click at a reply control's own position must REACH it -----------------
         // F1 made every reply control a child of one layer and brought that layer to front ONCE, at the top of the
         // constructor - before the other 107 children were added, each of which then landed above it. The controls
@@ -415,6 +436,104 @@ int main()
         // saying "Working on Group: ..." over a Link's chat. (c) A chat begun on a group fell into Main, with no
         // folder of its own, because a chat could only be bound to a channel.
         {
+            std::printf ("\n== H2a: the Working-on menu lists the groups beside the channels ==\n");
+            // SAVED HERE, before the first thing that moves it: H2b's Link click opens that channel's chat, and
+            // the legs after this one assert on the transcript this fixture built. A guard must not move the
+            // ground the next leg is standing on.
+            const auto savedId   = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+            const auto gA = proc.createLinkGroup ("Verses",   juce::StringArray { "lnk_01", "lnk_02" });
+            const auto gB = proc.createLinkGroup ("Choruses", juce::StringArray { "lnk_02" });
+            {
+                const auto items = A::bannerItems (*ed);
+                int groups = 0; juce::String names;
+                for (const auto& it : items) if (it.isGroup) { ++groups; names << "[" << it.label << "]"; }
+                check (groups == 2,
+                       "H2a. both groups are rows of the menu  (RED as it stood: it listed none)",
+                       juce::String (groups) + " of " + juce::String ((int) proc.linkGroups().size()) + " " + names);
+                bool anyChan = false;
+                for (const auto& it : items) if (! it.isGroup) { anyChan = true; break; }
+                check (anyChan, "H2a. ...beside the channels, in one list (the channels are still there)");
+            }
+            A::targetGroup (*ed, gB);
+            {
+                const auto items = A::bannerItems (*ed);
+                juce::String ticked;
+                for (const auto& it : items) if (it.ticked) ticked << (it.isGroup ? "group:" : "chan:") << it.label << " ";
+                check (ticked.trim() == "group:Choruses (1)",
+                       "H2a. the selected group is the ticked row, and the ONLY ticked row  (one selection, one tick)",
+                       ticked.isEmpty() ? juce::String ("nothing ticked") : ticked);
+            }
+
+            std::printf ("\n== H2b: choosing a Link leaves the group, and the banner follows ==\n");
+            check (A::banner (*ed).startsWith ("Working on Group: Choruses"),
+                   "H2b. fixture: the banner is on the group", A::banner (*ed));
+            A::openChannel (*ed, "lnk_01"); pumpMs (40);
+            check (proc.chatTargetGroupId.isEmpty(),
+                   "H2b. clicking a Link clears the group selection  (RED as it stood: it survived)",
+                   proc.chatTargetGroupId.isEmpty() ? juce::String ("cleared") : proc.chatTargetGroupName);
+            check (! A::banner (*ed).contains ("Group:"),
+                   "H2b. ...and the banner stops saying \"Working on Group\"  (RED as it stood: it stuck)",
+                   A::banner (*ed));
+            check (! A::stripSelected (*ed, "grp:" + gB),
+                   "H2b. ...and the group strip is no longer the selected row");
+
+            std::printf ("\n== H2c: a chat begun on a group gets its own folder, named after the group ==\n");
+            // A send routes only out of a chat that HAS history (a virgin chat is assigned instead - the router's
+            // own rule, unchanged), so the fixture gives the current chat a turn first.
+            {
+                WsChat seed;
+                seed.id = "h2c_main"; seed.title = "a main chat"; seed.trackName = A::projName (*ed);
+                seed.created = juce::Time::getCurrentTime().toISO8601 (true);
+                WsMessage m; m.role = "user"; m.content = "a turn, so this chat is not virgin";
+                seed.messages.push_back (m);
+                A::addChat (*ed, seed);
+                A::openChat (*ed, "h2c_main"); pumpMs (40);
+            }
+            A::targetGroup (*ed, gB); pumpMs (20);
+            A::send (*ed, "make the choruses louder"); pumpMs (80);
+            const auto cid = A::chatId (*ed);
+            auto* gc = A::chat (*ed, cid);
+            check (gc != nullptr && gc->groupId == gB,
+                   "H2c. the send lands in a chat bound to the GROUP, not in the main chat  (RED as it stood: "
+                   "there was no group binding at all)",
+                   gc == nullptr ? juce::String ("no chat") : (cid + " groupId=\"" + gc->groupId + "\""));
+            check (gc != nullptr && gc->groupName == "Choruses",
+                   "H2c. ...carrying the group's name for display", gc == nullptr ? juce::String() : gc->groupName);
+            if (gc != nullptr && gc->messages.empty())
+            {   // offline fixture: the turn never reaches the server, so the record is given the message the
+                // send would have written - the sidebar filters empty chats, and what is under test is the FOLDER.
+                WsMessage m; m.role = "user"; m.content = "make the choruses louder";
+                gc->messages.push_back (m);
+            }
+            {
+                const auto folders = A::folders (*ed);
+                bool own = false, named = false;
+                for (const auto& f : folders)
+                {
+                    if (! f.startsWith ("group:" + gB + "|")) continue;
+                    own = true;
+                    named = f.fromFirstOccurrenceOf ("|", false, false).startsWith ("Choruses");
+                }
+                check (own, "H2c. the sidebar gives that chat a folder of its own, like a Link's  (RED as it "
+                            "stood: it sat under Main)", folders.joinIntoString (" , "));
+                check (named, "H2c. ...named after the group", folders.joinIntoString (" , "));
+            }
+            // The target follows the chat you open, both ways - the same one-source-of-truth rule as H2b.
+            A::openChat (*ed, "h2c_main"); pumpMs (40);
+            check (proc.chatTargetGroupId.isEmpty(),
+                   "H2c. opening a non-group chat clears the group target", proc.chatTargetGroupName);
+            A::openChat (*ed, cid); pumpMs (40);
+            check (proc.chatTargetGroupId == gB,
+                   "H2c. opening the group's chat selects that group again  (the banner says where you are)",
+                   proc.chatTargetGroupId);
+            A::targetGroup (*ed, {});
+            proc.removeLinkGroup (gA); proc.removeLinkGroup (gB);
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed) = savedMsgs;
+            A::toChat (*ed); pumpMs (40);
+        }
+
         }
 
         // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------
