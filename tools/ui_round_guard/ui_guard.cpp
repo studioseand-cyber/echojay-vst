@@ -12,6 +12,7 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "EchoJayFileLog.h"   // 21t-e: the guard finds the log the way the WRITER does
 #include "EedCompressorProcessor.h"   // 21t-d: force-link the built-in registrars the wiring leg racks
 #include "SurgicalEqProcessor.h"
 #include "EchoJayLevelTally.h"   // 21t-d (c)
@@ -1098,10 +1099,12 @@ int main()
                        after.fromFirstOccurrenceOf ("trim", true, false).substring (0, 16));
                 // PSR is PEAK minus SHORTMAX while SHORTMAX is published: -3.0 - (-11.5) = 8.5.
                 {   // 21t-e (4): the block is LOGGED, one line per member, and the figures match what was sent.
-                    juce::File logDir (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
-                                           .getChildFile ("Library/EchoJay/logs"));
+                    // The log file is found the way the WRITER finds it (FileLog::currentPath), not by guessing
+                    // a path from $HOME - the two can differ, and a guard that reads the wrong file proves
+                    // nothing either way.
+                    const juce::File cur (juce::String (echojay::FileLog::instance().currentPath()));
                     juce::String logs;
-                    for (const auto& lf : logDir.findChildFiles (juce::File::findFiles, false, "echojay-*.log"))
+                    for (const auto& lf : cur.getParentDirectory().findChildFiles (juce::File::findFiles, false, "echojay-*.log"))
                         logs << lf.loadFileAsString();
                     check (logs.contains ("EJGroupLevels: Pre-trim Vocal (id " + uid + ")"),
                            "21t-e (4). every member of the block is logged beside it  (RED as it stood: the block "
