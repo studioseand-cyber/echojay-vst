@@ -753,6 +753,13 @@ target_link_libraries(EchoJayProbe PRIVATE
     juce::juce_gui_basics
     juce::juce_recommended_config_flags)
 set_target_properties(EchoJayProbe PROPERTIES OSX_ARCHITECTURES "arm64;x86_64")
+# 21t-e: the probe is a BARE executable (no bundle), so its Info.plist is linked into the binary and macOS reads
+# it from there. LSBackgroundOnly/LSUIElement keep a sampling pass of 74 launches out of the Dock - the probe
+# never shows a window, and saying so is all this does.
+if(APPLE)
+    target_link_options(EchoJayProbe PRIVATE
+        "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_SOURCE_DIR}/tools/au_instantiate_probe/EchoJayProbe-Info.plist")
+endif()
 if(APPLE)
     target_link_libraries(EchoJayProbe PRIVATE "-framework CoreAudioKit")
     foreach(target_name EchoJay_VST3 EchoJay_AU EchoJay_AAX EchoJayLink_VST3 EchoJayLink_AU EchoJayLink_AAX)

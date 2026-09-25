@@ -250,6 +250,8 @@ ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp         
 # Kept as their own scripts on purpose: each is a two-process orchestration (a real LinkProcessor against the Link
 # archive plus a real EchoJayProcessor against the V2 one), a grep over the source tree, or a python driver. They
 # gain the label and the parallel run; their internals are untouched.
+add_test(NAME probe_plist_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/probe_plist_guard/build_and_run.sh)
+set_tests_properties(probe_plist_guard PROPERTIES LABELS "fast" TIMEOUT 600 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME temp_var_grep_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/temp_var_grep_guard/build_and_run.sh)
 set_tests_properties(temp_var_grep_guard PROPERTIES LABELS "fast" TIMEOUT 300 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # 21t-d: one process, but the same shape - a real LinkProcessor against the Link archive, so it lives here.
