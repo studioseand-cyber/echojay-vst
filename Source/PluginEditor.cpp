@@ -24303,11 +24303,92 @@ int EchoJayEditor::editCardHeight(const ChatMsg& msg) const
                             : 26 + 8);
 }
 
+// level_match (21t-c, 25 Sep 2026): the group's levels, applied as a MOVE PER MEMBER.
+// The op carries members: [{uid, name, int_lufs, delta_db}] - the reference is the group's median INT, computed
+// on the server from the [GROUP LEVELS] block this client now sends. Each delta is added to that member's own
+// Link trim, before and after are logged per member, and a member the server marked no-signal (int_lufs null,
+// delta 0) is LEFT ALONE: a channel nobody could hear must not be moved on a guess.
+// Returns how many trims were written.
+int EchoJayEditor::applyGroupLevelMatch(const juce::var& membersVar)
+{
+    auto* arr = membersVar.getArray();
+    if (arr == nullptr) { EchoJay_NSLog("EJLevelMatch: no members array - nothing applied"); return 0; }
+    // NO REGISTRY REFRESH HERE: the trims are applied against the state the card was computed from, and a
+    // refresh in the middle of an apply is a roster that can change between one member and the next.
+    int moved = 0, skipped = 0;
+    for (const auto& mv : *arr)
+    {
+        auto* mo = mv.getDynamicObject();
+        if (mo == nullptr) continue;
+        const juce::String uid  = mo->getProperty("uid").toString();
+        juce::String       name = mo->getProperty("name").toString();
+        const juce::var    intV = mo->getProperty("int_lufs");
+        const double       delta = (double) mo->getProperty("delta_db");
+        if (name.isEmpty()) name = channelDisplayLabel(uid);
+        if (uid.isEmpty()) { EchoJay_NSLog("EJLevelMatch: a member with no uid - skipped"); continue; }
+
+        // NO SIGNAL: the server says it could not read this member (null INT), or asks for no move.
+        if (intV.isVoid() || ! (intV.isDouble() || intV.isInt() || intV.isInt64()) || std::abs(delta) < 0.005)
+        {
+            ++skipped;
+            EchoJay_NSLog(("EJLevelMatch: \"" + name + "\" (" + uid + ") LEFT ALONE - "
+                           + (intV.isVoid() || ! (intV.isDouble() || intV.isInt() || intV.isInt64())
+                                  ? juce::String("no signal, so there is nothing to match it to")
+                                  : juce::String("delta 0.0 dB"))).toRawUTF8());
+            continue;
+        }
+
+        float before = 0.0f; bool known = false;
+        for (const auto& li : processorRef.getLinkSlotInfos())
+            if (li.uid == uid) { before = li.gainDb; known = true; break; }
+        if (! known)
+        {
+            EchoJay_NSLog(("EJLevelMatch: \"" + name + "\" (" + uid + ") NOT in the registry - nothing written").toRawUTF8());
+            continue;
+        }
+        const float after = juce::jlimit(-24.0f, 12.0f, (float) (before + delta));
+        sendLinkGainCommand(uid, after);
+        ++moved;
+        EchoJay_NSLog(("EJLevelMatch: \"" + name + "\" (" + uid + ") INT " + intV.toString()
+                       + " LUFS, delta " + juce::String(delta, 2) + " dB: trim "
+                       + juce::String(before, 2) + " -> " + juce::String(after, 2) + " dB"
+                       + (std::abs((before + (float) delta) - after) > 0.001f ? " (clamped)" : "")).toRawUTF8());
+    }
+    EchoJay_NSLog(("EJLevelMatch: " + juce::String(moved) + " member trim(s) written, "
+                   + juce::String(skipped) + " left alone").toRawUTF8());
+    return moved;
+}
+
 void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
 {
     if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
     auto& cm = chatMessages[(size_t)msgIdx];
     if (cm.editApplied || cm.editData.isEmpty()) return;
+
+    // 21t-c: a level_match op is a GROUP move, not a rack edit - it never reaches the chain sequencer.
+    {
+        auto ev = juce::JSON::parse(cm.editData);
+        juce::var members;
+        if (auto* eo = ev.getDynamicObject())
+        {
+            if (eo->hasProperty("level_match")) members = eo->getProperty("level_match").getProperty("members", juce::var());
+            if (! members.isArray())
+                if (auto* ea = eo->getProperty("edit").getArray())
+                    for (const auto& opv : *ea)
+                        if (opv.getProperty("op", juce::var()).toString() == "level_match")
+                        { members = opv.getProperty("members", juce::var()); break; }
+        }
+        if (members.isArray())
+        {
+            const int moved = applyGroupLevelMatch(members);
+            cm.editApplied = true;
+            appendLocalResultBubble(moved == 0
+                ? juce::String("Nothing was moved - no member had a reading to match.")
+                : juce::String(moved) + (moved == 1 ? " channel's level was matched." : " channels' levels were matched."));
+            repaint();
+            return;
+        }
+    }
 
     juce::StringArray baseSlots;
     auto ops = ChainHost::parseChainEditOps(cm.editData, &baseSlots);
@@ -25974,6 +26055,75 @@ void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
         });
 }
 
+// [GROUP LEVELS] (21t-c, 25 Sep 2026): one line per MEMBER of the selected group - name, trim, MOM, SHORT, INT
+// from that Link's own published frame, or "no signal" when no frame exists for it. Members only: a non-member
+// appears nowhere in a group turn, so the model cannot level a channel the user did not put in the group.
+// The live frame is preferred; a member that is not publishing right now falls back to its last good frame with
+// the age stated, because a reading from two minutes ago is still what that channel sounded like - and a member
+// with neither is sent as "no signal", never as a silent omission or a zero.
+juce::String EchoJayEditor::buildGroupLevelsContext()
+{
+    const juce::String gid = processorRef.chatTargetGroupId;
+    if (gid.isEmpty()) return {};
+    const auto* g = processorRef.linkGroupById (gid);
+    if (g == nullptr || g->members.isEmpty()) return {};
+
+    // NO REGISTRY REFRESH HERE, deliberately: the 1 Hz tick has just refreshed it, and a refresh inside the
+    // compose would let the roster change between the group the user selected and the lines that describe it.
+    auto num = [] (float v) { return v > -99.0f ? juce::String (v, 1) : juce::String ("no reading"); };
+
+    juce::StringArray lines;
+    for (const auto& uid : g->members)
+    {
+        juce::String name; int regIdx = -1; float trim = 0.0f; bool known = false;
+        for (const auto& e : processorRef.getLinkDisplayList())
+            if (e.info.uid == uid) { name = e.displayName; regIdx = e.info.regIdx; trim = e.info.gainDb; known = true; break; }
+        if (name.isEmpty()) name = channelDisplayLabel (uid);
+        if (name.isEmpty()) name = uid;
+
+        LinkMeterFrame f;
+        const bool live = known && regIdx >= 0 && processorRef.readLinkMeterFrame (regIdx, f);
+        LinkMeterFrame good; juce::uint32 ageMs = 0;
+        const bool latched = processorRef.linkLastGoodFrame (uid, good, ageMs);
+        const bool liveUsable = live && (f.momentary > -99.0f || f.shortTerm > -99.0f || f.integrated > -99.0f);
+        const LinkMeterFrame* use = liveUsable ? &f : (latched ? &good : nullptr);
+
+        // THE LINE FORMAT IS THE CONTRACT (ruled 25 Sep 2026): the token names are literal and in this order, so
+        // the server parses one shape and the guard asserts the tokens themselves.
+        const juce::String head = "  " + name + " (id " + uid + "): trim " + juce::String (trim, 1) + " dB, ";
+        if (use == nullptr)
+        {
+            // "no signal" means exactly one thing: there is NO FRAME for this member. Not "quiet", not "zero".
+            lines.add (head + "no signal");
+            continue;
+        }
+        // SHORTMAX and HEARD are NOT in LinkMeterFrame: the Link publishes momentary, short-term, integrated,
+        // true-peak and short-term true-peak, and nothing else. The tokens are still printed, with "no reading"
+        // as their value, because a token that silently disappears is a shape the server cannot rely on - and a
+        // number invented for it would be worse than its absence.
+        lines.add (head
+                   + "MOM "     + num (use->momentary) + ", "
+                   + "SHORT "   + num (use->shortTerm) + ", "
+                   + "SHORTMAX no reading, "
+                   + "INT "     + num (use->integrated) + ", "
+                   + "PEAK "    + num (use->truePeakMax) + ", "
+                   + "PSR "     + ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
+                                       ? juce::String (use->shortTermTP - use->shortTerm, 1) : juce::String ("no reading")) + ", "
+                   + "HEARD no reading"
+                   + (liveUsable ? juce::String() : " (last heard " + juce::String ((int) (ageMs / 1000)) + " s ago)"));
+    }
+    if (lines.isEmpty()) return {};
+    // The note sits at column 0 and every MEMBER line is indented by two spaces: one shape, so a reader (or a
+    // guard) can tell a member line from prose without parsing English.
+    return "\n\n[GROUP LEVELS - \"" + g->name + "\"]\n"
+           "note: these are the ONLY channels this turn is about; no other Link is listed because none is in "
+           "the group. A member with NO FRAME says \"no signal\" - do not guess a level for it, and do not ask for "
+           "a listen pass: levelling does not need one. THE FIGURES ARE POST-TRIM, not input levels: this Link "
+           "build meters after its own gain stage, so a member's INT already includes the trim printed beside it. "
+           "SHORTMAX and HEARD read \"no reading\" because this Link build does not publish them.\n"
+           + lines.joinIntoString ("\n");
+}
+
 juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg,
                                                     bool alwaysAttach,
                                                     bool* hadChainFeedOut,
@@ -26297,6 +26447,19 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         {
             out += keyBlock;
             EchoJay_NSLog("EJChat: DETECTED KEY injection attached");
+        }
+    }
+    // [GROUP LEVELS] (21t-c, 25 Sep 2026): THE MEMBERS' OWN READINGS.
+    // A group turn used to carry every Link on the session with nothing but a trim, and not one loudness figure -
+    // "level these vocal channels" reached the server with 14 Links, 7 of them not in the group, and no MOM,
+    // SHORT or INT for any of them, while the Link tab was showing all three for all seven. The readings exist:
+    // each Link publishes a LinkMeterFrame. This block sends the members' own numbers and nothing else.
+    {
+        const juce::String gLevels = buildGroupLevelsContext();
+        if (gLevels.isNotEmpty())
+        {
+            out += gLevels;
+            EchoJay_NSLog("EJChat: GROUP LEVELS injection attached");
         }
     }
     // [ECHOJAY FEATURES v1]: what the APP can do, so a product question gets an

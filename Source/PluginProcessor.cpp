@@ -5488,10 +5488,16 @@ void EchoJayProcessor::setLinkGroupOffsetDb(const juce::String& id, float db)
 juce::var EchoJayProcessor::linksBodyVar() const
 {
     if (linkGroups_.empty()) return {};
+    // 21t-c (25 Sep 2026): A GROUP TURN CARRIES THE MEMBERS AND NOBODY ELSE. "level these vocal channels" on a
+    // group of 7 went out with all 14 Links on the session, so the seven channels the user named sat in a list
+    // with seven they did not, and nothing said which was which. When a group is selected this roster IS the
+    // group; the Links outside it are not the turn's business.
+    const LinkGroup* sel = chatTargetGroupId.isNotEmpty() ? linkGroupById (chatTargetGroupId) : nullptr;
     juce::Array<juce::var> la;
     for (const auto& e : getLinkDisplayList())
     {
         if (e.info.uid.isEmpty()) continue;   // a Link without an instanceId can be a member of nothing (the contract)
+        if (sel != nullptr && ! sel->members.contains (e.info.uid)) continue;
         auto* o = new juce::DynamicObject(); o->setProperty("instanceId", e.info.uid); o->setProperty("name", e.displayName);
         o->setProperty("gainDb", (double) e.info.gainDb);
         la.add(juce::var(o));

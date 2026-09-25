@@ -47,6 +47,22 @@ struct EchoJayPromptTestAccess
 // none exists under an isolated state home, so the state it produces is set here directly. What is under test is
 // unchanged shipping code: what onMasterWet does when borrowHostIfActiveFor() answers yes - exactly the state
 // every rack on screen is in, and the state H3 was wrong in.
+// 21t-c: a LATCHED meter frame the guard owns. No Link process publishes under an isolated state home, and the
+// latch is the same store the product reads when a member is not publishing right now - so a member WITH a frame
+// is representable without faking the shared memory.
+struct EchoJayLinkFrameTestAccess
+{
+    static void set (EchoJayProcessor& p, const juce::String& uid, float mom, float sht, float integ,
+                     float tpMax, float shortTP)
+    {
+        LinkMeterFrame f;
+        f.momentary = mom; f.shortTerm = sht; f.integrated = integ;
+        f.truePeakMax = tpMax; f.shortTermTP = shortTP;
+        p.linkLastGoodFrame_[uid] = EchoJayProcessor::LinkGoodFrame { f, juce::Time::getMillisecondCounter(), true };
+    }
+    static void clear (EchoJayProcessor& p) { p.linkLastGoodFrame_.clear(); }
+};
+
 struct EchoJayBorrowTestAccess
 {
     static ChainHost& engage (EchoJayProcessor& p, const juce::String& uid)
@@ -146,6 +162,9 @@ struct EchoJayTabStripTestAccess
     static void selectView (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
     static juce::String workingOn (EchoJayEditor& e) { return e.workingOnUid(); }
     static void setBuildJson (EchoJayEditor& e, int i, const juce::String& j) { e.chainBuildJsons[(size_t) i] = j; }
+    // ---- 21t-c ----
+    static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
+    static int levelMatch (EchoJayEditor& e, const juce::var& members) { return e.applyGroupLevelMatch (members); }
     static void addChat (EchoJayEditor& e, const WsChat& c) { e.workspace.addChat (c); }
     static WsChat* chat (EchoJayEditor& e, const juce::String& id) { return e.workspace.findChatById (id); }
     static void openChat (EchoJayEditor& e, const juce::String& id) { e.loadChatFromWorkspace (id); }
@@ -611,6 +630,165 @@ int main()
             // OWED (recorded, not claimed): the other half of H3 - the borrowed host seeded from the rack's own
             // sidecar at engage - is only reachable through the real engage path (ring + lease + a running Link),
             // so it rides with F5's two-process leg. In-host evidence only until then.
+        }
+
+        // ---- 21t-c (25 Sep 2026): a group turn is about the MEMBERS ------------------------------------------
+        // "level these vocal channels" on a group of 7 went out with all 14 Links, none of them carrying a
+        // loudness figure, while the Link tab was showing MOM/SHORT/INT for all seven.
+        {
+            std::printf ("\n== 21t-c: a group turn carries the members only, with their own readings ==\n");
+            // 14 Links, 7 of them members. One member is given no meter frame at all - that is the "no signal"
+            // case, and it must be SAID, not omitted.
+            std::vector<EchoJayProcessor::LinkSlotInfo> rows;
+            juce::StringArray memberUids;
+            for (int i = 0; i < 14; ++i)
+            {
+                EchoJayProcessor::LinkSlotInfo li;
+                li.uid = "grp_lnk_" + juce::String (i);
+                li.name = (i < 7 ? "Main vocal " : "Other ") + juce::String (i + 1);
+                li.connected = true; li.gainDb = -2.0f - (float) i * 0.1f; li.regIdx = -1;   // regIdx -1 = no live frame
+                rows.push_back (li);
+                if (i < 7) memberUids.add (li.uid);
+            }
+            const auto gid = proc.createLinkGroup ("Main vocals", memberUids);
+            A::targetGroup (*ed, gid); pumpMs (40);
+            // INJECTED AFTER the selection and with no pump between here and the assertions: the editor's own
+            // 1 Hz tick rebuilds the registry from the real one (empty under an isolated home) and would wipe
+            // the rows this leg owns.
+            EchoJayAlignTestAccess::setLinks (proc, rows);
+
+            const auto body = EchoJayAPIRequestPin::body (proc.getApi(), juce::StringArray { "user" },
+                                                          juce::StringArray { "level these vocal channels" }, "sys", {});
+            juce::ignoreUnused (body);
+            proc.getApi().setGroupsContext (proc.linksBodyVar(), proc.groupsBodyVar());
+            const auto body2 = EchoJayAPIRequestPin::body (proc.getApi(), juce::StringArray { "user" },
+                                                           juce::StringArray { "level these vocal channels" }, "sys", {});
+            int linkCount = 0; bool anyNonMember = false;
+            // THE VAR IS HELD: a pointer into the temporary linksBodyVar() returns dangles the moment the full
+            // expression ends (the 18 Sep Pro Tools crash class, in a guard this time - it read 0 of 14 and
+            // looked like a product failure).
+            const juce::var linksVar = proc.linksBodyVar();
+            if (auto* la = linksVar.getArray())
+            {
+                linkCount = la->size();
+                for (const auto& lv : *la)
+                    if (! memberUids.contains (lv.getProperty ("instanceId", juce::var()).toString())) anyNonMember = true;
+            }
+            check (linkCount == 7,
+                   "21t-c. the body's links list holds exactly the 7 members  (RED as it stood: all 14 went out)",
+                   juce::String (linkCount) + " of 14");
+            check (! anyNonMember, "21t-c. ...and no non-member appears in it");
+            check (body2.contains ("\"selectedGroupId\""), "21t-c. ...and the group id rides with it");
+
+            const auto block = A::groupLevels (*ed);
+            check (block.contains ("[GROUP LEVELS"),
+                   "21t-c. the turn carries a [GROUP LEVELS] block  (RED as it stood: no such block existed)",
+                   block.substring (0, 70));
+            juce::StringArray blockLines;
+            blockLines.addLines (block);
+            int memberLines = 0, noSignal = 0;
+            for (const auto& l : blockLines)
+                if (l.startsWith ("  ")) { ++memberLines; if (l.contains ("no signal")) ++noSignal; }
+            check (memberLines == 7, "21t-c. ...with one line per member, and only the members",
+                   juce::String (memberLines) + " line(s)");
+            check (noSignal == 7,
+                   "21t-c. ...and a member with no frame is sent as \"no signal\", never omitted and never zero",
+                   juce::String (noSignal) + " of " + juce::String (memberLines));
+            for (const auto& l : blockLines)
+                if (l.startsWith ("  ")) { check (l.contains ("trim "), "21t-c. ...and every line carries the member's trim", l.substring (0, 60)); break; }
+            // A member WITH a frame carries every field the Link publishes, and the trim does not rewrite them.
+            {
+                EchoJayLinkFrameTestAccess::set (proc, memberUids[0], -14.2f, -16.8f, -18.4f, -1.2f, -9.9f);
+                const auto withFrame = A::groupLevels (*ed);
+                juce::StringArray ls; ls.addLines (withFrame);
+                juce::String first;
+                for (const auto& l : ls) if (l.startsWith ("  ")) { first = l; break; }
+                // THE TOKENS ARE ASSERTED LITERALLY, in the ruled order and spelling.
+                check (first.contains (" (id ") && first.contains ("): trim ") && first.contains (" dB, MOM ")
+                       && first.contains (", SHORT ") && first.contains (", SHORTMAX ") && first.contains (", INT ")
+                       && first.contains (", PEAK ") && first.contains (", PSR ") && first.contains (", HEARD "),
+                       "21t-c. a member's line carries the ruled tokens: name (id uid): trim, MOM, SHORT, "
+                       "SHORTMAX, INT, PEAK, PSR, HEARD", first.substring (0, 140));
+                check (withFrame.contains ("[GROUP LEVELS - \"Main vocals\"]"),
+                       "21t-c. ...under the ruled header", withFrame.substring (2, 40));
+                check (first.contains ("SHORTMAX no reading") && first.contains ("HEARD no reading"),
+                       "21t-c. ...and the two the Link does not publish say \"no reading\", never a number",
+                       first.substring (0, 140));
+                check (withFrame.contains ("POST-TRIM"),
+                       "21t-c. ...and the block SAYS the figures are post-trim, so the model is not told they "
+                       "are input levels when the Link meters after its gain");
+                check (withFrame.contains ("do not ask for a listen pass"),
+                       "21t-c. ...and levelling never asks for a listen pass");
+                check (first.contains ("INT -18.4") && first.contains ("PEAK -1.2") && first.contains ("PSR 6.9"),
+                       "21t-c. ...and the figures are the frame's own, PSR computed from its two terms", first.substring (0, 130));
+                // A TRIM CHANGE DOES NOT REWRITE THE MEMBER'S INT: the figure comes from the frame, and the frame
+                // is not a function of the trim we just moved.
+                auto rows2 = rows; rows2[0].gainDb = rows[0].gainDb - 6.0f;
+                EchoJayAlignTestAccess::setLinks (proc, rows2);
+                const auto after = A::groupLevels (*ed);
+                juce::StringArray ls2; ls2.addLines (after);
+                juce::String firstAfter;
+                for (const auto& l : ls2) if (l.startsWith ("  ")) { firstAfter = l; break; }
+                check (firstAfter.contains ("INT -18.4") && firstAfter.contains ("trim -8.0 dB"),
+                       "21t-c. moving a member's trim changes the trim it reports and NOT its INT",
+                       firstAfter.substring (0, 110));
+                EchoJayAlignTestAccess::setLinks (proc, rows);
+                EchoJayLinkFrameTestAccess::clear (proc);
+            }
+            A::targetGroup (*ed, {});
+            proc.removeLinkGroup (gid);
+        }
+
+        // ---- 21t-c: the apply side - a level_match moves each member's own trim ------------------------------
+        {
+            std::printf ("\n== 21t-c: level_match adds each member's delta to its own Link trim ==\n");
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            std::vector<EchoJayProcessor::LinkSlotInfo> rows;
+            const char* uids[4] = { "lm_a", "lm_b", "lm_c", "lm_d" };
+            const float trims[4] = { -2.0f, -3.0f, -4.0f, -5.0f };
+            for (int i = 0; i < 4; ++i)
+            {
+                EchoJayProcessor::LinkSlotInfo li;
+                li.uid = uids[i]; li.name = juce::String ("Member ") + juce::String (i + 1);
+                li.connected = true; li.gainDb = trims[i];
+                rows.push_back (li);
+                juce::File (dir + "ctrl-cmd-" + juce::String (uids[i]) + ".json").deleteFile();
+            }
+            EchoJayAlignTestAccess::setLinks (proc, rows);
+            juce::Array<juce::var> members;
+            auto member = [] (const char* uid, const char* nm, juce::var intL, double d)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("uid", uid); o->setProperty ("name", nm);
+                o->setProperty ("int_lufs", intL); o->setProperty ("delta_db", d);
+                return juce::var (o);
+            };
+            members.add (member ("lm_a", "Member 1", juce::var (-19.5), -1.5));
+            members.add (member ("lm_b", "Member 2", juce::var (-18.0),  0.0));
+            members.add (member ("lm_c", "Member 3", juce::var (-16.0),  2.0));
+            members.add (member ("lm_d", "Member 4", juce::var(),        0.0));   // no signal
+            const int moved = A::levelMatch (*ed, juce::var (members));
+            auto sentGain = [&] (const char* uid, float& out) -> bool
+            {
+                const auto v = juce::JSON::parse (juce::File (dir + "ctrl-cmd-" + juce::String (uid) + ".json").loadFileAsString());
+                if (! v.isObject() || ! v.getDynamicObject()->hasProperty ("gainDb")) return false;
+                out = (float) (double) v.getProperty ("gainDb", juce::var (0.0));
+                return true;
+            };
+            float ga = 0, gb = 0, gc = 0, gd = 0;
+            const bool hasA = sentGain ("lm_a", ga), hasB = sentGain ("lm_b", gb), hasC = sentGain ("lm_c", gc), hasD = sentGain ("lm_d", gd);
+            check (hasA && std::abs (ga - (-3.5f)) < 0.01f,
+                   "21t-c. -1.5 dB lands on a trim of -2.0 as -3.5  (RED as it stood: no level_match apply existed)",
+                   hasA ? juce::String (ga, 2) : juce::String ("no command written"));
+            check (! hasB || std::abs (gb - (-3.0f)) < 0.01f,
+                   "21t-c. a delta of 0 leaves the trim where it was", hasB ? juce::String (gb, 2) : juce::String ("no command - unchanged"));
+            check (hasC && std::abs (gc - (-2.0f)) < 0.01f,
+                   "21t-c. +2.0 dB lands on a trim of -4.0 as -2.0", hasC ? juce::String (gc, 2) : juce::String ("no command written"));
+            check (! hasD,
+                   "21t-c. the no-signal member is NOT touched - nothing was written for it",
+                   hasD ? juce::String (gd, 2) : juce::String ("no command, as it must be"));
+            check (moved == 2, "21t-c. ...and exactly two trims were written", juce::String (moved));
+            for (int i = 0; i < 4; ++i) juce::File (dir + "ctrl-cmd-" + juce::String (uids[i]) + ".json").deleteFile();
         }
 
         // ---- R1 (21t-b, 25 Sep 2026): the rack you look at is not the channel you build on -------------------

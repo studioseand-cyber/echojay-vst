@@ -1594,6 +1594,8 @@ private:
     friend struct EchoJayBorrowTestAccess;
     // 21t-a H1: save/restore the onboarding answers around the leg that has to dismiss them
     friend struct EchoJayPromptTestAccess;
+    // 21t-c: the guard's own latched Link frame - no Link publishes under an isolated state home
+    friend struct EchoJayLinkFrameTestAccess;
     void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
                                  float sr, const juce::String& uid);
     void disconnectLinkAudioSlot(int i);

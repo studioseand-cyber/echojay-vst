@@ -3680,6 +3680,10 @@ private:
     // built from collectKeySources(); names which source won (and which stem,
     // for a channel reading). Empty when no source has a reading.
     juce::String buildDetectedKeyContext();
+    /** [GROUP LEVELS] (21t-c): the selected group's MEMBERS and their own readings; empty when no group. */
+    juce::String buildGroupLevelsContext();
+    /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
+    int applyGroupLevelMatch (const juce::var& membersVar);
 
     // The [SAVED CHAINS] block: names and ids from the user's saved chain
     // library, NEVER slots or state. See the definition for the data-source
