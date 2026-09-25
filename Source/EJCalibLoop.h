@@ -201,6 +201,45 @@ struct CalibLoop
         return what + " " + kQuestions[pick];
     }
 
+    // ---- the state as it rides the sidecar -------------------------------------------------------------------
+    // One object, written by whichever host owns the tallies and read by the other and by V2's editor. Every
+    // field the loop needs to continue is here: a handover that lost the step count would restart the work.
+    juce::var toVar() const
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("plugin", plugin);      o->setProperty ("slot", slot);
+        o->setProperty ("lo", (double) lo);     o->setProperty ("hi", (double) hi);
+        o->setProperty ("preDb", (double) preDb);
+        o->setProperty ("steps", steps);        o->setProperty ("window", window);
+        o->setProperty ("inBandRun", inBandRun); o->setProperty ("phraseIdx", phraseIdx);
+        o->setProperty ("lastGr", (lastGr == lastGr) ? juce::var ((double) lastGr) : juce::var());
+        o->setProperty ("noSignalMs", noSignalMs);
+        o->setProperty ("awaitFresh", awaitFresh);
+        o->setProperty ("state", (int) state);
+        o->setProperty ("closingOwed", closingOwed);
+        return juce::var (o);
+    }
+    static CalibLoop fromVar (const juce::var& v)
+    {
+        CalibLoop c;
+        auto* o = v.getDynamicObject();
+        if (o == nullptr) return c;
+        c.plugin = o->getProperty ("plugin").toString();
+        c.slot   = (int) o->getProperty ("slot");
+        c.lo = (float) (double) o->getProperty ("lo");  c.hi = (float) (double) o->getProperty ("hi");
+        c.preDb = (float) (double) o->getProperty ("preDb");
+        c.steps = (int) o->getProperty ("steps");       c.window = (int) o->getProperty ("window");
+        c.inBandRun = (int) o->getProperty ("inBandRun"); c.phraseIdx = (int) o->getProperty ("phraseIdx");
+        const auto g = o->getProperty ("lastGr");
+        c.lastGr = g.isVoid() ? std::numeric_limits<float>::quiet_NaN() : (float) (double) g;
+        c.noSignalMs = (double) o->getProperty ("noSignalMs");
+        c.awaitFresh = (bool) o->getProperty ("awaitFresh");
+        c.state = (State) (int) o->getProperty ("state");
+        c.closingOwed = (bool) o->getProperty ("closingOwed");
+        return c;
+    }
+    bool active() const { return state != State::Idle; }
+
     juce::String log (const char* stateWord) const
     {
         return "EJCalib: \"" + plugin + "\" window " + juce::String (window)

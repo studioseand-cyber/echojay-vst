@@ -12,6 +12,8 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "EedCompressorProcessor.h"   // 21t-d: force-link the built-in registrars the wiring leg racks
+#include "SurgicalEqProcessor.h"
 #include "EchoJayLevelTally.h"   // 21t-d (c)
 #ifndef UI_GUARD_NO_HELPERS
 #include "BorrowStatusText.h"
@@ -165,6 +167,10 @@ struct EchoJayTabStripTestAccess
     static void setBuildJson (EchoJayEditor& e, int i, const juce::String& j) { e.chainBuildJsons[(size_t) i] = j; }
     // ---- 21t-c ----
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
+    // ---- 21t-d wiring ----
+    static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops); }
+    static void calibTick (EchoJayEditor& e, const juce::String& uid) { e.calibTickAndPost (uid); }
+    static juce::String panelStatus (EchoJayEditor& e) { return e.chainListPanel.statusText; }
     // ---- 21t-d ----
     static LinkMeterFrame stripFrame (EchoJayEditor& e, const juce::String& addr, int regIdx)
     {
@@ -638,6 +644,125 @@ int main()
             // OWED (recorded, not claimed): the other half of H3 - the borrowed host seeded from the rack's own
             // sidecar at engage - is only reachable through the real engage path (ring + lease + a running Link),
             // so it rides with F5's two-process leg. In-host evidence only until then.
+        }
+
+        // ---- 21t-d wiring (25 Sep 2026): the trigger, the card from the sidecar, the closing posted once -----
+        {
+            std::printf ("\n== 21t-d wiring: an applied op starts the loop on the dynamics slot, and only there ==\n");
+            // ON A BORROWED HOST, not this instance's own rack: the legs around this one assert on the fixture's
+            // chain, and a leg that empties it to build its own two slots would be moving their ground. The
+            // borrowed host is the guard's own, and it is also the host that actually runs a Link rack's loop.
+            const juce::String tuid = "calib_trig";
+            auto& own = EchoJayBorrowTestAccess::engage (proc, tuid);
+            // Two built-ins: a compressor (dynamics) and an EQ (not). The op names both; only one may start.
+            // FORCE-LINK: including the headers is not enough - the registrars live in the .cpp files and the
+            // static archive drops an object nothing references. Constructing one of each pulls them in, which
+            // is what registers "EchoJay Compressor" and "EchoJay EQ" with the registry.
+            { EedCompressorProcessor forceComp; SurgicalEqProcessor forceEq; juce::ignoreUnused (forceComp, forceEq); }
+            const auto* comp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor");
+            const auto* eq   = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+            if (comp != nullptr && eq != nullptr)
+            {
+                while (own.getNumSlots() > 0) own.removeSlot (0);
+                own.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eq),   0);
+                own.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*comp), 1);
+                check (own.getNumSlots() == 2, "21t-d w. fixture: an EQ at slot 1 and a compressor at slot 2",
+                       juce::String (own.getNumSlots()));
+                juce::Array<juce::var> ops;
+                auto op = [] (int slot1, juce::var band, double drive)
+                {
+                    auto* o = new juce::DynamicObject();
+                    o->setProperty ("slot", slot1);
+                    if (! band.isVoid()) o->setProperty ("gr_target_db", band);
+                    o->setProperty ("slot_pre_gain_db", drive);
+                    return juce::var (o);
+                };
+                juce::Array<juce::var> band; band.add (2.5); band.add (3.5);
+                ops.add (op (1, juce::var(), 4.0));          // the EQ: must not start a loop
+                ops.add (op (2, juce::var (band), 4.0));     // the compressor: must
+                const int started = A::calibFromOps (*ed, tuid, juce::var (ops));
+                check (started == 1,
+                       "21t-d w. exactly ONE loop started - the dynamics slot, not the EQ  (RED as it stood: "
+                       "nothing started a loop at all)", juce::String (started));
+                const auto loop = proc.calibLoad (tuid);
+                check (loop.slot == 1 && loop.plugin.containsIgnoreCase ("Compressor"),
+                       "21t-d w. ...on the compressor's slot", juce::String (loop.slot) + " \"" + loop.plugin + "\"");
+                check (std::abs (loop.lo - 2.5f) < 0.01f && std::abs (loop.hi - 3.5f) < 0.01f,
+                       "21t-d w. ...with the band from the op's gr_target_db, not the fallback",
+                       juce::String (loop.lo, 1) + "-" + juce::String (loop.hi, 1));
+                check (std::abs (loop.preDb - 4.0f) < 0.01f,
+                       "21t-d w. ...and slot_pre_gain_db as the opening drive", juce::String (loop.preDb, 1));
+                const auto si = own.getSlotInfo (1);
+                check (std::abs (si.preTrimDb - 4.0f) < 0.05f && std::abs (si.trimDb + 4.0f) < 0.05f,
+                       "21t-d w. ...written to the slot with the post-trim MIRRORED",
+                       juce::String (si.preTrimDb, 1) + " / " + juce::String (si.trimDb, 1));
+                // A later op with a NEW band restarts from the drive already found, not from zero.
+                juce::Array<juce::var> band2; band2.add (1.0); band2.add (2.0);
+                juce::Array<juce::var> ops2; ops2.add (op (2, juce::var (band2), 0.0));
+                A::calibFromOps (*ed, tuid, juce::var (ops2));
+                const auto loop2 = proc.calibLoad (tuid);
+                check (std::abs (loop2.lo - 1.0f) < 0.01f && std::abs (loop2.preDb - 4.0f) < 0.01f
+                       && loop2.steps == 0,
+                       "21t-d w. a new gr_target_db re-targets and CONTINUES from the current drive",
+                       juce::String (loop2.lo, 1) + "-" + juce::String (loop2.hi, 1) + " at "
+                       + juce::String (loop2.preDb, 1) + " dB, " + juce::String (loop2.steps) + " step(s)");
+                while (own.getNumSlots() > 0) own.removeSlot (0);
+                proc.calibStore (tuid, echojay::CalibLoop{});
+                EchoJayBorrowTestAccess::release (proc);
+                { int e2 = 0; juce::File (LinkShm::resolveDir (e2) + "rack-" + tuid + ".json").deleteFile(); }
+            }
+            else check (false, "21t-d w. fixture: the two built-ins are registered");
+        }
+
+        {
+            std::printf ("\n== 21t-d wiring: V2 renders the card from a loop the OTHER host is running ==\n");
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            const juce::String luid = "calib_lnk";
+            // A stand-in "Link": the sidecar is written from outside this instance, exactly as the Link writes it
+            // after deselect. V2 owns no tallies for this rack, so it must render and not advance.
+            echojay::CalibLoop remote;
+            remote.begin ("Tube-Tech CL 1B", 0, 2.0f, 3.0f, 3.0f);
+            remote.lastGr = 2.4f;
+            // revision >= 0 is what makes a sidecar VALID on read (LinkShm), so the fixture writes a real one -
+            // a rack with no revision is not a rack anyone has described.
+            LinkShm::RackSidecar rc; rc.valid = true; rc.uid = luid; rc.name = "Aitch Lead Vocal"; rc.revision = 1;
+            rc.calib = remote.toVar();
+            LinkShm::writeRackSidecar (dir, rc);
+            A::calibTick (*ed, luid);
+            check (A::panelStatus (*ed) == "Tube-Tech CL 1B working 2.4 dB",
+                   "21t-d w. the card comes from the OTHER host's state  (RED as it stood: no card existed)",
+                   A::panelStatus (*ed));
+            // ...and the waiting state renders as ruled.
+            remote.state = echojay::CalibLoop::State::Waiting;
+            rc.calib = remote.toVar(); LinkShm::writeRackSidecar (dir, rc);
+            A::calibTick (*ed, luid);
+            check (A::panelStatus (*ed) == "Waiting for playback - play the loudest part of this channel",
+                   "21t-d w. ...including \"Waiting for playback\"", A::panelStatus (*ed));
+            // V2 did NOT advance a loop whose tallies it does not own.
+            const auto still = proc.calibLoad (luid);
+            check (still.steps == 0 && still.window == 0,
+                   "21t-d w. ...and V2 advanced nothing - it owns no tallies for that rack",
+                   juce::String (still.window) + " window(s)");
+
+            std::printf ("\n== 21t-d wiring: a loop that ended while the editor was closed posts on next open ==\n");
+            remote.state = echojay::CalibLoop::State::Adjusted;
+            remote.closingOwed = true;
+            rc.calib = remote.toVar(); LinkShm::writeRackSidecar (dir, rc);
+            const int before = (int) A::msgs (*ed).size();
+            A::calibTick (*ed, luid);   // the first tick after the editor opens
+            const int after1 = (int) A::msgs (*ed).size();
+            check (after1 == before + 1,
+                   "21t-d w. the closing message posts when the editor opens  (RED as it stood: it was never "
+                   "posted at all)", juce::String (before) + " -> " + juce::String (after1));
+            check (A::msgs (*ed).back().content.contains ("Adjusted the Tube-Tech CL 1B")
+                   && A::msgs (*ed).back().content.contains ("2.4"),
+                   "21t-d w. ...naming what was adjusted and the figure measured",
+                   A::msgs (*ed).back().content.substring (0, 110));
+            A::calibTick (*ed, luid);
+            check ((int) A::msgs (*ed).size() == after1,
+                   "21t-d w. ...EXACTLY once - a second tick posts nothing",
+                   juce::String ((int) A::msgs (*ed).size()));
+            juce::File (dir + "rack-" + luid + ".json").deleteFile();
         }
 
         // ---- 21t-d (25 Sep 2026): the Link measures BEFORE its trim, and says so -----------------------------
@@ -1572,6 +1697,8 @@ int main()
           check (p2.linkAlias ("lnk_01") == "Lead Vox" && nameOf (p2, "lnk_01") == "Lead Vox", "(9) the alias persists in the V2 session state", p2.linkAlias ("lnk_01")); }
         proc.setLinkAlias ("lnk_01", {});
         check (nameOf (proc, "lnk_01") == "BV 1" && proc.linkAlias ("lnk_01").isEmpty(), "(9) Reset name clears it", nameOf (proc, "lnk_01"));
+
+
     }
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;

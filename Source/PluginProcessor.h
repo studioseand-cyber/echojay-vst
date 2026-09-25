@@ -9,6 +9,7 @@
 #include "ReferenceAnalyser.h"
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
+#include "EJCalibLoop.h"   // 21t-d: the calibration loop (shared with the Link)
 #include "EchoJayAPI.h"
 #include "DashPoll.h"
 #include "LinkShm.h"
@@ -611,6 +612,9 @@ public:
     // and retried the next time that rack is engaged - which is what "retried when the Link answers" means when
     // the Link only answers while it is leased.
     std::map<juce::String, std::vector<BorrowPendingPush>> borrowParkedPushes_;
+    // 21t-d: the loop for THIS instance's own rack (the mix bus case); a Link rack's loop lives on its sidecar.
+    echojay::CalibLoop ownCalib_;
+    double calibLastWindowMs_ = 0.0;
     bool  borrowPushInFlight_ = false;
     int   borrowPendingCount() const { return (int) borrowPendingPushes_.size(); }
     void  borrowWriteHeadPush();                                  // writes the head of the queue (if any) and starts its ack poll
@@ -621,6 +625,20 @@ public:
     void  borrowFlushPendingThen(std::function<void(bool)> then, int maxWaitMs = 5000);
     /** R2: re-arm this rack's parked edits as the session's pending queue. Returns how many. */
     int   borrowRearmParkedFor(const juce::String& uid);
+
+    // ---- 21t-d: the compressor calibration loop --------------------------------------------------------------
+    // The loop lives where the per-slot tallies are: this processor's own ChainHost for the mix bus, its
+    // borrowHost while a Link's rack is leased. The Link runs the same header on its own chain after deselect,
+    // and the state crosses on the sidecar.
+    /** Start (or re-target) the loop on a dynamics slot. uid empty = this instance's own rack. */
+    void calibStart(const juce::String& uid, int slot, const juce::String& pluginName,
+                    float bandLo, float bandHi, float openingDrive);
+    /** One tick: advance the loop by any 3 s windows the owning host has measured. Returns the card text. */
+    juce::String calibTick(const juce::String& uid);
+    /** The closing message, handed over exactly once - whoever asks first posts it. */
+    juce::String calibTakeClosing(const juce::String& uid);
+    echojay::CalibLoop calibLoad(const juce::String& uid) const;
+    void               calibStore(const juce::String& uid, const echojay::CalibLoop& loop);
     void borrowEditorClosed();
     // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
     // session is LIVE its uid is authoritative — a chat activation may

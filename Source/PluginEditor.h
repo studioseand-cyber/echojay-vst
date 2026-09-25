@@ -3684,6 +3684,11 @@ private:
     juce::String buildGroupLevelsContext();
     /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
     int applyGroupLevelMatch (const juce::var& membersVar);
+    // ---- 21t-d: the calibration loop's trigger and its surface ----
+    /** Start the loop for any dynamics-role slot an applied build/edit left in the rack. uid empty = own rack. */
+    int startCalibrationFromOps (const juce::String& uid, const juce::var& ops);
+    /** One tick: render the card from whichever host is running the loop, and post a closing message once. */
+    void calibTickAndPost (const juce::String& uid);
 
     // The [SAVED CHAINS] block: names and ids from the user's saved chain
     // library, NEVER slots or state. See the definition for the data-source

@@ -24322,6 +24322,60 @@ int EchoJayEditor::editCardHeight(const ChatMsg& msg) const
                             : 26 + 8);
 }
 
+// 21t-d (25 Sep 2026): THE TRIGGER. Any applied build or edit that leaves a dynamics-role slot in the rack
+// starts the loop for that slot. The band comes from the op's gr_target_db; without one it is [2,3] on a track
+// and [1,2] on a bus, because those are the bands the ruling names and a missing field is not a reason to guess
+// a different one. slot_pre_gain_db is the opening drive - written with the post-trim mirrored, like every later
+// step. Returns how many loops were started.
+int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce::var& ops)
+{
+    auto* arr = ops.getArray();
+    if (arr == nullptr) return 0;
+    auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
+    if (host == nullptr) return 0;
+    // A BUS band or a TRACK band: the own rack on a master/full-mix channel is the bus case, a Link's rack is a
+    // track unless it says otherwise. One place, so the two bands cannot drift apart.
+    const bool bus = uid.isEmpty()
+                   && (processorRef.getChannelType() == ChannelType::MasterBus
+                       || processorRef.getChannelType() == ChannelType::FullMix);
+    int started = 0;
+    for (const auto& ov : *arr)
+    {
+        auto* o = ov.getDynamicObject();
+        if (o == nullptr) continue;
+        const int slot = o->hasProperty ("slot") ? ((int) o->getProperty ("slot")) - 1 : -1;
+        if (slot < 0 || slot >= host->getNumSlots()) continue;
+        const auto info = host->getSlotInfo (slot);
+        // "dynamics" by the plugin's own category, the same word the catalogue and 21s R3 use - no new
+        // classification, and no calibration on an EQ because an op happened to name it.
+        const auto cat = host->getSlotDescription (slot).category.toLowerCase();
+        const bool dynamics = cat.contains ("dynamic") || cat.contains ("compress") || cat.contains ("limit")
+                           || cat.contains ("gate") || cat.contains ("expand");
+        if (! dynamics) continue;
+        float lo = bus ? 1.0f : 2.0f, hi = bus ? 2.0f : 3.0f;
+        if (auto* band = o->getProperty ("gr_target_db").getArray())
+            if (band->size() == 2)
+            { lo = (float) (double) band->getUnchecked (0); hi = (float) (double) band->getUnchecked (1); }
+        const float opening = o->hasProperty ("slot_pre_gain_db")
+                                ? (float) (double) o->getProperty ("slot_pre_gain_db") : 0.0f;
+        processorRef.calibStart (uid, slot, info.name, lo, hi, opening);
+        ++started;
+    }
+    return started;
+}
+
+// 21t-d: V2 RENDERS THE CARD AND POSTS THE CLOSING MESSAGE, whichever host is running the loop. calibTick only
+// ADVANCES the loop where this instance owns the tallies; where it does not, it returns the card built from the
+// state the other host wrote, which is the whole point of the state riding the sidecar.
+void EchoJayEditor::calibTickAndPost (const juce::String& uid)
+{
+    const auto card = processorRef.calibTick (uid);
+    if (card.isNotEmpty() && chainListPanel.statusText != card)
+    { chainListPanel.statusText = card; chainListPanel.repaint(); }
+    const auto closing = processorRef.calibTakeClosing (uid);
+    if (closing.isNotEmpty()) appendLocalResultBubble (closing);
+}
+
 // level_match (21t-c, 25 Sep 2026): the group's levels, applied as a MOVE PER MEMBER.
 // The op carries members: [{uid, name, int_lufs, delta_db}] - the reference is the group's median INT, computed
 // on the server from the [GROUP LEVELS] block this client now sends. Each delta is added to that member's own

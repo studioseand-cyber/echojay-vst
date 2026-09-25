@@ -1167,6 +1167,10 @@ struct RackSidecarSlot {
 };
 struct RackSidecar {
     bool  valid = false;
+    // 21t-d (25 Sep 2026): the compressor calibration loop's state (EJCalibLoop::toVar). Written by whichever
+    // host owns the per-slot tallies, read by the other host and by V2's editor, so a lease handover continues
+    // the loop instead of ending it. Void = no loop on this rack.
+    juce::var calib;
     juce::String uid, name;
     bool  ackPerSeq = false;   // v9 Link: answers also written to ctrl-ack-<uid>-<seq>.json
     int   revision = -1;
@@ -1862,6 +1866,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.structureEditCapable) obj->setProperty("structureEditCapable", true);
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
     if (rc.ackPerSeq) obj->setProperty("ackPerSeq", true);
+    if (! rc.calib.isVoid()) obj->setProperty("calib", rc.calib);   // 21t-d
     if (rc.publisherPid > 0)
     {
         obj->setProperty("publisherPid", rc.publisherPid);
@@ -1933,6 +1938,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainDb        = obj->hasProperty("preGainDb") ? (float)(double)obj->getProperty("preGainDb") : 0.0f;
     rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
+    if (obj->hasProperty("calib")) rc.calib = obj->getProperty("calib");   // 21t-d
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");

@@ -6040,3 +6040,109 @@ void EchoJayProcessor::publishLiveSlotList()
             liveSlotIdx_[(size_t) n++] = i;
     liveSlotCount_.store(n, std::memory_order_release);
 }
+
+// ============================================================================
+//  21t-d: the compressor calibration loop, wired to whichever host owns the tallies
+// ============================================================================
+// WHERE THE STATE LIVES. A Link rack's loop rides that rack's sidecar, because the host running it changes: V2's
+// borrowHost while the rack is leased, the Link itself after deselect. This instance's OWN rack (the mix bus)
+// keeps its loop in memory - there is no second host to hand it to, and nothing to survive.
+echojay::CalibLoop EchoJayProcessor::calibLoad(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return ownCalib_;
+    int err = 0; const auto dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return {};
+    const auto rc = LinkShm::readRackSidecar(dir, uid);
+    return rc.valid ? echojay::CalibLoop::fromVar(rc.calib) : echojay::CalibLoop{};
+}
+
+void EchoJayProcessor::calibStore(const juce::String& uid, const echojay::CalibLoop& loop)
+{
+    if (uid.isEmpty()) { ownCalib_ = loop; return; }
+    int err = 0; const auto dir = LinkShm::resolveDir(err);
+    if (dir.isEmpty()) return;
+    auto rc = LinkShm::readRackSidecar(dir, uid);
+    // A sidecar with no revision is not VALID on read (LinkShm: uid match AND revision >= 0), so a loop written
+    // to a rack nobody has described yet would be written and never read back. Revision 0 = described, nothing
+    // built into it - which is exactly what this is.
+    if (! rc.valid) { rc.uid = uid; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
+    rc.calib = loop.toVar();
+    LinkShm::writeRackSidecar(dir, rc);
+}
+
+void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce::String& pluginName,
+                                  float bandLo, float bandHi, float openingDrive)
+{
+    auto loop = calibLoad(uid);
+    // A NEW TARGET ON A RUNNING LOOP RESTARTS IT FROM THE CURRENT DRIVE (ruled): the band changed, the drive the
+    // loop has already found has not, and throwing it away would re-walk ground already covered.
+    if (loop.running() && loop.slot == slot && loop.plugin == pluginName)
+    {
+        loop.retarget(bandLo, bandHi);
+        EchoJay_NSLog(("EJCalib: \"" + pluginName + "\" re-targeted to " + juce::String(bandLo, 1) + "-"
+                       + juce::String(bandHi, 1) + " dB, continuing from " + juce::String(loop.preDb, 1)
+                       + " dB of drive").toRawUTF8());
+    }
+    else
+    {
+        loop.begin(pluginName, slot, bandLo, bandHi, openingDrive);
+        EchoJay_NSLog(("EJCalib: \"" + pluginName + "\" slot " + juce::String(slot + 1) + " listening, band "
+                       + juce::String(bandLo, 1) + "-" + juce::String(bandHi, 1) + " dB, opening drive "
+                       + juce::String(openingDrive, 1) + " dB").toRawUTF8());
+        // The opening drive is written the same way every later step is: pre-gain set, post-trim mirrored.
+        if (auto* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+            if (slot >= 0 && slot < host->getNumSlots())
+            { host->setSlotPreTrimDb(slot, openingDrive); host->setSlotTrimDb(slot, -openingDrive); }
+    }
+    calibStore(uid, loop);
+}
+
+juce::String EchoJayProcessor::calibTick(const juce::String& uid)
+{
+    auto loop = calibLoad(uid);
+    if (! loop.active()) return {};
+
+    // ONLY THE HOST THAT OWNS THE TALLIES ADVANCES IT. For a Link rack that is this instance only while the rack
+    // is leased here; after deselect the Link advances it from its own chain, and this instance renders the card
+    // from the state without touching it.
+    ChainHost* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+    if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots()) return loop.card();
+
+    const auto lv = host->getSlotLevels(loop.slot);
+    echojay::CalibLoop::Window w;
+    // A WINDOW IS A MEASUREMENT ONLY IF THE HOST SAW A WHOLE ONE. `measured` is false while the slot is bypassed
+    // or out of circuit, and while no full window has closed - neither is evidence, and neither may move a drive.
+    w.measured = lv.measured && lv.in.known && lv.out.known;
+    w.silent   = lv.measured && ! lv.in.known;   // a window that closed with nothing above the gate
+    w.grDb     = (w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f);
+
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
+    const double sinceMs = nowMs - calibLastWindowMs_;
+    if (sinceMs < 3000.0) return loop.card();   // one decision per 3 s window, never per tick
+    calibLastWindowMs_ = nowMs;
+
+    const auto step = loop.onWindow(w, sinceMs);
+    if (step.logLine.isNotEmpty()) EchoJay_NSLog(step.logLine.toRawUTF8());
+    if (step.writeDrive)
+    {
+        host->setSlotPreTrimDb(loop.slot, step.newPre);
+        host->setSlotTrimDb   (loop.slot, step.newPost);
+        if (uid.isNotEmpty()) republishBorrowedRackSidecar();
+    }
+    calibStore(uid, loop);
+    return step.card.isNotEmpty() ? step.card : loop.card();
+}
+
+juce::String EchoJayProcessor::calibTakeClosing(const juce::String& uid)
+{
+    auto loop = calibLoad(uid);
+    if (! loop.closingOwed) return {};
+    // EXACTLY ONCE: the flag is cleared before the message is handed back, so two ticks (or a tick and an editor
+    // opening) cannot both post it.
+    loop.closingOwed = false;
+    const auto msg = loop.closingMessage();
+    calibStore(uid, loop);
+    EchoJay_NSLog(("EJCalib: closing message handed to the chat: " + msg).toRawUTF8());
+    return msg;
+}

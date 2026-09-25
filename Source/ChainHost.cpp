@@ -2573,7 +2573,12 @@ void ChainHost::setSlotPreTrimDb(int i, float db)
 {
     if (i < 0 || i >= (int) slots_.size()) return;
     auto& s = slots_[(size_t) i];
-    s.preTrimDb = juce::jlimit(-24.0f, 0.0f, db);
+    // 21t-d (25 Sep 2026): the range opens upward to +12 dB. It was attenuation-only (21p item 3, so a stage
+    // could not be hit above -3 dBTP), and the calibration loop's whole purpose is the opposite move - driving a
+    // compressor HARDER until it works in its band. What keeps the old protection is the MIRROR: every drive the
+    // loop writes is matched by a post-trim of the same size and the opposite sign, so the next slot's input
+    // does not move by a single dB. A hand-set pre-trim still cannot exceed +12, and the -24 floor is unchanged.
+    s.preTrimDb = juce::jlimit(-24.0f, 12.0f, db);
     if (s.preTrimShared) s.preTrimShared->store(s.preTrimDb, std::memory_order_relaxed);
     bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
