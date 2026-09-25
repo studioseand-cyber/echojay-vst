@@ -3,6 +3,7 @@
 #include "ChainHost.h"
 #include "MeterEngine.h"
 #include "EchoJayLevelTally.h"   // 21t-d: SHORTMAX + HEARD
+#include "EJCalibLoop.h"          // 21t-d: the calibration loop - the Link drives it once it owns the rack
 #include "EedKeyEngine.h"   // detected key -> LinkMeterFrame (KEY_DETECTOR_SPEC §9)
 #include "EedKeyWorker.h"
 #include "LinkShm.h"     // LinkMeterFrame (frozen-engine publish guard member)
@@ -357,6 +358,8 @@ private:
     void rackLeaseEngage();
     void rackLeaseRelease();
     friend struct EchoJayLinkSyncTestAccess;
+    // 21t-d: the Link-side calibration guard reads the loop and the chain it drives
+    friend struct EJCalibLinkTestAccess;
     void notifyChainModel();
     juce::PluginDescription resolveChainPlugin(const juce::String& name) const;
     static juce::StringArray loadDisabledUids();
@@ -392,6 +395,13 @@ private:
     // 21t-d: the Link's own gated tally, fed at the SAME pre-trim tap as the meters. K-weighted, because what it
     // publishes (SHORTMAX, HEARD) sits beside LUFS figures and has to mean the same thing they do.
     echojay::LevelTally levelTally_ { echojay::LevelTally::Weighting::K };
+    // 21t-d: the calibration loop AS THIS LINK HOLDS IT. V2 runs it while the rack is leased; the moment the
+    // lease ends this process owns the tallies, so it owns the loop. The state crosses on the sidecar, which is
+    // why it is loaded from there rather than started here.
+    echojay::CalibLoop calibLoop_;
+    double calibLastWindowMs_ = 0.0;
+    bool   calibLoadedFromSidecar_ = false;
+    void   calibTickOwnRack();
     int meterFramesPublished_ = 0;    // frame diagnostics counter
     LinkMeterFrame lastPublishedFrame_;   // frozen-engine guard (see publish)
     // Detected key (KEY_DETECTOR_SPEC.md §9): the Link is where key detection

@@ -106,6 +106,7 @@ void LinkProcessor::timerCallback()
     // Solo fabric scan at ~4Hz: cheap by construction (shared-memory
     // registry walk; sidecar parses only when a file's mtime moved).
     if (++soloScanDivider_ >= 8) { soloScanDivider_ = 0; soloFabricScan(); }
+    calibTickOwnRack();   // 21t-d: while THIS process owns the rack, it owns the calibration loop
     if (++heartbeatDivider_ >= 30)
     {
         heartbeatDivider_ = 0;
@@ -351,7 +352,79 @@ void LinkProcessor::publishRackSidecar()
                                        return leaseActive_.load (std::memory_order_relaxed)
                                               && (rackLeaseActive_ || i == leaseSlot0_);
                                    });
+    // 21t-d: THE LOOP STATE SURVIVES THIS PUBLISH. The Link rewrites its whole sidecar every time, so without
+    // this the calibration state V2 wrote during a lease would be erased the moment the lease ended - the loop
+    // would not "stop at handover", it would be deleted by it. When this process is running the loop it writes
+    // its own state; when it is not, it carries forward whatever is already on disk.
+    if (calibLoop_.active()) rc.calib = calibLoop_.toVar();
+    else
+    {
+        const auto existing = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+        if (existing.valid && ! existing.calib.isVoid()) rc.calib = existing.calib;
+    }
     LinkShm::writeRackSidecar(resolvedDir, rc);
+}
+
+// 21t-d (25 Sep 2026): THE LINK DRIVES THE LOOP ONCE IT OWNS THE RACK.
+// While the rack is leased the per-slot tallies that matter are V2's borrowHost ones, and V2 advances the loop.
+// The moment the lease ends this process is the only one measuring the rack, so it takes the loop over - from
+// the sidecar, at the step count and drive V2 left it at, with the first window on this host not judged (the
+// handover rule: two hosts, two tally histories).
+void LinkProcessor::calibTickOwnRack()
+{
+    if (instanceUid_.isEmpty() || resolvedDir.isEmpty()) return;
+    if (rackLeaseActive_ || leaseActive_.load(std::memory_order_relaxed))
+    {
+        // V2 owns the tallies: drop our copy so the next release re-reads the state V2 has been writing.
+        calibLoadedFromSidecar_ = false;
+        calibLoop_ = {};
+        return;
+    }
+    if (! calibLoadedFromSidecar_)
+    {
+        const auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+        calibLoop_ = rc.valid ? echojay::CalibLoop::fromVar(rc.calib) : echojay::CalibLoop{};
+        calibLoadedFromSidecar_ = true;
+        if (calibLoop_.running())
+        {
+            const auto line = calibLoop_.onHandover();
+            EchoJay_NSLog(line.toRawUTF8());
+            calibLastWindowMs_ = juce::Time::getMillisecondCounterHiRes();
+        }
+    }
+    if (! calibLoop_.active()) return;
+    if (calibLoop_.slot < 0 || calibLoop_.slot >= chainHost.getNumSlots()) return;
+
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
+    const double sinceMs = nowMs - calibLastWindowMs_;
+    if (sinceMs < 3000.0) return;           // one decision per 3 s window, never per tick
+    calibLastWindowMs_ = nowMs;
+
+    const auto lv = chainHost.getSlotLevels(calibLoop_.slot);
+    echojay::CalibLoop::Window w;
+    w.measured = lv.measured && lv.in.known && lv.out.known;
+    w.silent   = lv.measured && ! lv.in.known;
+    w.grDb     = w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f;
+    w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
+
+    const auto step = calibLoop_.onWindow(w, sinceMs);
+    if (step.logLine.isNotEmpty()) EchoJay_NSLog(step.logLine.toRawUTF8());
+    if (step.writeDrive)
+    {
+        chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
+        chainHost.setSlotTrimDb   (calibLoop_.slot, step.newPost);
+    }
+    // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
+    // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing
+    // else. Written directly rather than through publishRackSidecar, which is rate-limited on the rack picture
+    // and would leave the loop state a window or two behind what this process has already decided.
+    {
+        auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+        if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
+        rc.calib = calibLoop_.toVar();
+        LinkShm::writeRackSidecar(resolvedDir, rc);
+    }
 }
 
 void LinkProcessor::publishMeterFrame()

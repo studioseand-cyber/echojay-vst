@@ -252,6 +252,9 @@ ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp         
 # gain the label and the parallel run; their internals are untouched.
 add_test(NAME temp_var_grep_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/temp_var_grep_guard/build_and_run.sh)
 set_tests_properties(temp_var_grep_guard PROPERTIES LABELS "fast" TIMEOUT 300 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# 21t-d: one process, but the same shape - a real LinkProcessor against the Link archive, so it lives here.
+add_test(NAME calib_link_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/calib_link_guard/build_and_run.sh)
+set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 foreach(TWO alias_mirror_guard lease_id_guard)
     add_test(NAME ${TWO} COMMAND bash ${CMAKE_SOURCE_DIR}/tools/${TWO}/build_and_run.sh)
     set_tests_properties(${TWO} PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
