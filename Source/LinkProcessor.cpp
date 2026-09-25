@@ -2558,9 +2558,25 @@ void LinkProcessor::pollChainCommand()
         writeChainAck(seq, "ok", { "already applied (id " + cmdId + ")" }, {});
         return;
     }
-    if ((ver != 1 && ver != 2) || seq == lastAppliedChainSeq_ || seq == 0)
-        return;   // unknown version or already applied — leave for inspection
-                  // (older Links reject v:2 the same way: forward-safe)
+    if (ver != 1 && ver != 2)
+        return;   // unknown version — leave for inspection (older Links reject v:2 the same way: forward-safe)
+    if (seq == 0)
+        return;
+    // O2 (21t-b, 25 Sep 2026): THIS BRANCH USED TO RETURN IN SILENCE, and that is what locked a user out of a
+    // rack for six minutes. An edit that ABORTED still burned its seq here (it is stamped below, before the
+    // apply runs), and the id-based ack-again path above only records ids for edits that were NOT aborted - so
+    // every re-send of a refused edit matched this test, returned with no ack, and the sender waited for an
+    // answer that could never come. Two corrections: the abort now CLEARS the stamp (see the callback below), so
+    // a genuine retry is judged afresh; and a repeat of a seq that really was applied is ANSWERED, the same rule
+    // the ctrl-cmd path has carried since 24 Aug 2026 - silence is never a valid response.
+    if (seq == lastAppliedChainSeq_)
+    {
+        cmdFile.deleteFile();
+        EchoJay_NSLog(("EJLink: repeat seq=" + juce::String(seq)
+                       + " - already applied, acked ok again, NOT re-applied").toRawUTF8());
+        writeChainAck(seq, "ok", { "already applied (seq " + juce::String(seq) + ")" }, {});
+        return;
+    }
 
     lastAppliedChainSeq_ = seq;
     cmdFile.deleteFile();   // consumed
@@ -2571,8 +2587,12 @@ void LinkProcessor::pollChainCommand()
     // onChainAboutToChange, sequencer starts a beat later (AMEK discipline).
     if (ver == 2)
     {
+        // O2 (21t-b): every path that does NOT apply releases the seq stamp, or the retry of a refused command
+        // is mistaken for a repeat of an applied one.
+        auto failChain = [this, seq](const juce::String& why)
+        { lastAppliedChainSeq_ = 0; writeChainAck(seq, "failed", { why }, {}); };
         if (!obj->hasProperty("editOps"))
-        { writeChainAck(seq, "failed", { "v2 command without editOps" }, {}); return; }
+        { failChain("v2 command without editOps"); return; }
         // A leased rack refuses STRUCTURE. The lease saved one slot's bypass
         // state and will restore it BY INDEX; an edit that removes or moves
         // slots underneath it would make that restore hit the wrong plugin.
@@ -2582,9 +2602,7 @@ void LinkProcessor::pollChainCommand()
         const juce::String cmdLease = obj->getProperty("leaseId").toString();
         const bool fromLeaseHolder = leaseActive_.load(std::memory_order_relaxed) && cmdLease.isNotEmpty() && cmdLease == leaseGate_.activeId;
         if (leaseActive_.load(std::memory_order_relaxed) && ! fromLeaseHolder)
-        { writeChainAck(seq, "failed",
-              { "this rack is being edited from the main plugin - try again after release" },
-              {}); return; }
+        { failChain("this rack is being edited from the main plugin - try again after release"); return; }
 
         juce::StringArray baseSlots;
         if (auto* bs = obj->getProperty("baseSlots").getArray())
@@ -2599,7 +2617,7 @@ void LinkProcessor::pollChainCommand()
             ops = ChainHost::parseChainEditOps(juce::JSON::toString(juce::var(wrap), true));
         }
         if (ops.empty())
-        { writeChainAck(seq, "failed", { "editOps empty or malformed" }, {}); return; }
+        { failChain("editOps empty or malformed"); return; }
 
         if (onChainAboutToChange) onChainAboutToChange();   // editors close first
         auto self = this;   // processor outlives message-thread callbacks in-session
@@ -2611,6 +2629,9 @@ void LinkProcessor::pollChainCommand()
                 [self, seq, countBefore, opNames, cmdId](const juce::StringArray& results, int applied, bool aborted)
             {
                 if (! aborted && cmdId.isNotEmpty()) { self->appliedChainIds_.add(cmdId); while (self->appliedChainIds_.size() > 64) self->appliedChainIds_.remove(0); }
+                // O2 (21t-b): an ABORTED edit releases its seq stamp. It was never applied, so a retry must be
+                // judged on the rack as it stands - not swallowed as "already applied".
+                if (aborted && self->lastAppliedChainSeq_ == seq) self->lastAppliedChainSeq_ = 0;
                 if (! aborted) ++self->chainCmdApplied_;
                 // 20 Sep 2026: under a rack lease the priors (what the release restores, what the MODEL and the SAVED chunk
                 // report) follow the edited rack - one rule, the same as engage: the intent of every slot as it stands now.

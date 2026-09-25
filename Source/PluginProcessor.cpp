@@ -2327,6 +2327,10 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
 
+    // R2 (21t-b, 25 Sep 2026): edits parked when this rack last failed to answer are re-armed HERE, at the only
+    // moment the Link can take them - it answers chain commands while it is leased, and it is leased now.
+    borrowRearmParkedFor(uid);
+
     // H3 (21t-a, 25 Sep 2026): SEED THE BORROWED HOST'S CHAIN MIX FROM THE RACK IT IS BORROWING.
     // A parked borrow host is REUSED for the next rack ("EJBorrowPool: rack released, N instance(s) parked"), so
     // without this it arrives carrying the PREVIOUS rack's mix - which is why the knob read the same value on
@@ -2833,6 +2837,20 @@ void EchoJayProcessor::borrowRebaseAfterPush()
     borrowRemovedWithheld_.clear();
 }
 
+// R2 (21t-b): the retry half of "the edits stay queued". One method so the engage path and the guard exercise the
+// same code: a parked queue for this rack becomes this session's pending queue, and the next flush sends it.
+int EchoJayProcessor::borrowRearmParkedFor(const juce::String& uid)
+{
+    auto parked = borrowParkedPushes_.find(uid);
+    if (parked == borrowParkedPushes_.end() || parked->second.empty()) return 0;
+    borrowPendingPushes_ = parked->second;
+    borrowParkedPushes_.erase(parked);
+    const int n = (int) borrowPendingPushes_.size();
+    EchoJay_NSLog(("EJLink: re-armed " + juce::String(n) + " parked edit(s) for uid=" + uid
+                   + " (R2 retry, this rack is leased again)").toRawUTF8());
+    return n;
+}
+
 void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
 {
     if (! borrowActive()) return;
@@ -2842,9 +2860,28 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
         borrowFlushPendingThen([&flushed](bool ok) { flushed = ok; });
         if (! flushed)
         {
-            borrowStickyBanner_ = "Your session is still live. " + juce::String((int) borrowPendingPushes_.size())
-                + " rack edit(s) have not reached " + resolveLinkDisplayName(borrowSession_.uid) + " yet - it may be paused or its shared folder unavailable. Deselect again to retry.";
-            if (releaseLockOnFail) borrowApplyFinish(false, "pending structural edits not acked", false);
+            // R2 (21t-b, 25 Sep 2026): A LEASE HANDOVER NEVER LOCKS THE USER OUT. The old behaviour kept the
+            // rack held and told the user to "deselect again to retry" - on 25 Sep that left one rack held for
+            // six minutes and another stuck on "Connecting to rack...". The edits are PARKED against this rack,
+            // the rack is released whatever the caller asked for, and the queue is retried the next time this
+            // rack is engaged.
+            const juce::String puid = borrowSession_.uid;
+            const juce::String pname = resolveLinkDisplayName(puid);
+            const int nPending = (int) borrowPendingPushes_.size();
+            borrowParkedPushes_[puid] = borrowPendingPushes_;
+            juce::String ops;
+            for (const auto& p : borrowPendingPushes_) ops += (ops.isEmpty() ? "" : ", ") + p.op;
+            EchoJay_NSLog(("EJLink: " + juce::String(nPending) + " edit(s) unacked by " + pname
+                           + " in 5 s [" + ops + "] - PARKED and the rack released (R2); they are retried when "
+                             "this rack is next engaged").toRawUTF8());
+            borrowApplyReleaseOnFail_ = true;   // R2: the release is not optional
+            borrowApplyFinish(false, juce::String(nPending) + " edit(s) unacked in 5 s (parked, will retry)", false);
+            // LAST WORD, deliberately after the release: borrowApplyFinish writes the generic "ended WITHOUT
+            // writing" note, and R2 asks for the banner to report WHICH edits are still owed and that they are
+            // coming - a user who can carry on still has to be told what is outstanding.
+            borrowStickyBanner_ = juce::String(nPending) + " edit(s) have not reached "
+                + (pname.isNotEmpty() ? pname : juce::String("that rack")) + " yet (" + ops + "). It has its rack "
+                "back and you can carry on - the edits are kept and go through the moment it answers.";
             return;
         }
     }

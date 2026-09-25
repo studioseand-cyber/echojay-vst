@@ -606,12 +606,21 @@ public:
 #define EJ_V2_ACK_QUEUE 1   // 20 Sep 2026: the harness's RED-by-name key
     struct BorrowPendingPush { int seq = 0; juce::String id, op; juce::var editOps, baseSlots; int attempts = 0; };
     std::vector<BorrowPendingPush> borrowPendingPushes_;
+    // R2 (21t-b, 25 Sep 2026): edits the Link did not acknowledge in time are PARKED by rack, not thrown away.
+    // The rack is released so the user can move on (a handover never locks anyone out) and the queue is re-armed
+    // and retried the next time that rack is engaged - which is what "retried when the Link answers" means when
+    // the Link only answers while it is leased.
+    std::map<juce::String, std::vector<BorrowPendingPush>> borrowParkedPushes_;
     bool  borrowPushInFlight_ = false;
     int   borrowPendingCount() const { return (int) borrowPendingPushes_.size(); }
     void  borrowWriteHeadPush();                                  // writes the head of the queue (if any) and starts its ack poll
     void  borrowPollPushAck(int seq, const juce::String& id);     // 250 ms poll; ok -> pop + rebase + write the next
     // deselect/close: re-send the pending ops synchronously (bounded), then continue with `then(allAcked)`
-    void  borrowFlushPendingThen(std::function<void(bool)> then, int maxWaitMs = 8000);
+    // R2: 5 s, ruled 25 Sep 2026 - the old 8 s was a wait nobody asked for and the user sat through it at every
+    // deselect. A shorter bound is only honest because the queue now survives the release.
+    void  borrowFlushPendingThen(std::function<void(bool)> then, int maxWaitMs = 5000);
+    /** R2: re-arm this rack's parked edits as the session's pending queue. Returns how many. */
+    int   borrowRearmParkedFor(const juce::String& uid);
     void borrowEditorClosed();
     // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
     // session is LIVE its uid is authoritative — a chat activation may

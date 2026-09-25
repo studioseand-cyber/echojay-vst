@@ -62,6 +62,21 @@ struct EchoJayBorrowTestAccess
         p.borrowSession_.active.store (false, std::memory_order_relaxed);
         p.borrowSession_.uid.clear();
     }
+    // ---- 21t-b R2 ----
+    static void queuePush (EchoJayProcessor& p, int seq, const juce::String& id, const juce::String& op)
+    {
+        EchoJayProcessor::BorrowPendingPush b;
+        b.seq = seq; b.id = id; b.op = op;
+        p.borrowPendingPushes_.push_back (b);
+    }
+    static int  pending (EchoJayProcessor& p) { return (int) p.borrowPendingPushes_.size(); }
+    static int  parked  (EchoJayProcessor& p, const juce::String& uid)
+    {
+        auto it = p.borrowParkedPushes_.find (uid);
+        return it == p.borrowParkedPushes_.end() ? 0 : (int) it->second.size();
+    }
+    static juce::String banner (EchoJayProcessor& p) { return p.borrowStickyBanner_; }
+    static void clearPending (EchoJayProcessor& p) { p.borrowPendingPushes_.clear(); }
 };
 
 struct EchoJayTabStripTestAccess
@@ -639,6 +654,39 @@ int main()
             A::toChat (*ed); pumpMs (40);
         }
 
+        // ---- R2 (21t-b, 25 Sep 2026): a lease handover never locks the user out ------------------------------
+        // O2: three edits sat unacknowledged, the rack stayed held for six minutes and another rack was stuck on
+        // "Connecting to rack...". The wait is 5 s, the edits are parked against that rack, the rack is released,
+        // and the queue is retried the next time the rack is engaged.
+        {
+            std::printf ("\n== R2: unacked edits park, the rack is released, and the queue survives ==\n");
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            juce::File (dir + "chain-ack-lnk_09.json").deleteFile();
+            EchoJayBorrowTestAccess::engage (proc, "lnk_09");
+            EchoJayBorrowTestAccess::queuePush (proc, 424242, "lnk_09-424242", "bypass");
+            EchoJayBorrowTestAccess::queuePush (proc, 424243, "lnk_09-424243", "remove");
+            check (EchoJayBorrowTestAccess::pending (proc) == 2, "R2. fixture: two edits are queued");
+            // No Link exists under the isolated home, so nothing will ever answer - which is the case under test.
+            const double t0 = juce::Time::getMillisecondCounterHiRes();
+            proc.borrowApplyAndRelease (true);
+            const double waited = juce::Time::getMillisecondCounterHiRes() - t0;
+            check (waited < 6500.0,
+                   "R2. the wait is bounded at 5 s, measured on the wall clock  (RED as it stood: 8 s, and the "
+                   "rack stayed held afterwards)", juce::String (waited, 0) + " ms");
+            check (! proc.borrowActive(),
+                   "R2. the rack is RELEASED even though the edits did not land - a handover never locks you out");
+            check (EchoJayBorrowTestAccess::parked (proc, "lnk_09") == 2,
+                   "R2. ...and the two edits are PARKED against that rack, not thrown away",
+                   juce::String (EchoJayBorrowTestAccess::parked (proc, "lnk_09")));
+            const auto bn = EchoJayBorrowTestAccess::banner (proc);
+            check (bn.contains ("2 edit(s) have not reached") && bn.contains ("bypass") && bn.contains ("remove"),
+                   "R2. ...and the banner says how many and which ones", bn.substring (0, 120));
+            check (proc.borrowRearmParkedFor ("lnk_09") == 2 && EchoJayBorrowTestAccess::pending (proc) == 2,
+                   "R2. engaging that rack again re-arms the queue - the retry the ruling promises");
+            check (EchoJayBorrowTestAccess::parked (proc, "lnk_09") == 0,
+                   "R2. ...and the parked copy is consumed, so the edits cannot be sent twice");
+            EchoJayBorrowTestAccess::release (proc);
+            EchoJayBorrowTestAccess::clearPending (proc);
         }
 
         // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------
