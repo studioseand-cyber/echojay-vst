@@ -24441,6 +24441,49 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
     auto& cm = chatMessages[(size_t)msgIdx];
     if (cm.editApplied || cm.editData.isEmpty()) return;
 
+    // 21t-e: AN EDIT MADE IN A GROUP CHAT GOES TO EVERY MEMBER. The chat is working on seven channels; which one
+    // happens to be on screen is a view, not a target. Each member gets the same ops through the same path a
+    // single-Link edit uses - the borrowed host when this instance holds that rack, the Link otherwise - and the
+    // card reports how many took it.
+    if (processorRef.chatTargetGroupId.isNotEmpty() && ! cm.editData.isEmpty())
+    {
+        if (const auto* g = processorRef.linkGroupById (processorRef.chatTargetGroupId))
+        {
+            juce::StringArray baseSlots;
+            auto ops = ChainHost::parseChainEditOps (cm.editData, &baseSlots);
+            if (! ops.empty())
+            {
+                int sent = 0, applied = 0;
+                for (const auto& m : g->members)
+                {
+                    if (auto* bh = processorRef.borrowHostIfActiveFor (m))
+                    {
+                        auto opsCopy = ops;
+                        bool aborted = true;
+                        bh->applyChainEdits (std::move (opsCopy), -1, baseSlots,
+                                             [&aborted] (const juce::StringArray&, int, bool ab) { aborted = ab; });
+                        if (! aborted) ++applied;
+                        ++sent;
+                    }
+                    else if (processorRef.writeChainEditCommand (m, juce::JSON::parse (cm.editData).getProperty ("edit", juce::var()),
+                                                                 juce::JSON::parse (cm.editData).getProperty ("baseSlots", juce::var()),
+                                                                 "EchoJay V2 group edit", {}) >= 0)
+                        ++sent;
+                }
+                processorRef.republishBorrowedRackSidecar();
+                refreshChainPanelForView (true);
+                cm.editApplied = true;
+                EchoJay_NSLog (("EJGroupEdit: \"" + g->name + "\" - sent to " + juce::String (sent) + " of "
+                                + juce::String (g->members.size()) + " member(s), " + juce::String (applied)
+                                + " applied in session").toRawUTF8());
+                appendLocalResultBubble (juce::String (sent) + " of " + juce::String (g->members.size())
+                                         + " channels in \"" + g->name + "\" took the change.");
+                repaint();
+                return;
+            }
+        }
+    }
+
     // 21t-c: a level_match op is a GROUP move, not a rack edit - it never reaches the chain sequencer.
     {
         auto ev = juce::JSON::parse(cm.editData);
@@ -26083,6 +26126,19 @@ void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
         // ever saying WHICH channels that means.
         for (const auto& m : gr->members) linkSelection_.insert(m);
     }
+    // 21t-e: choosing a group VIEWS one of its members - the rack on screen if it is one, the first otherwise.
+    // A group chat whose screen shows a rack outside the group is the same confusion the amendment removes.
+    if (gr != nullptr && ! gr->members.isEmpty())
+    {
+        const auto view = chainViewUid();
+        const juce::String want = gr->members.contains(view) ? view : gr->members[0];
+        viewRackPinned_ = true; viewRackUid_ = want;
+        handleBorrowSelectionChange(want, true);
+        EchoJay_NSLog(("EJRackView: group \"" + gr->name + "\" selected - viewing "
+                       + (gr->members.contains(view) ? juce::String("the rack already on screen")
+                                                     : juce::String("its first member"))
+                       + " (" + want + ")").toRawUTF8());
+    }
     chatTargetBtn.setButtonText(chatTargetLabel());
     refreshChannelBannerCache();
     EchoJay_NSLog((gr != nullptr
@@ -26146,7 +26202,13 @@ juce::String EchoJayEditor::collapsedStripLabel (const juce::String& name, const
 
 juce::String EchoJayEditor::chatTargetLabel() const
 {
-    if (processorRef.chatTargetGroupId.isNotEmpty()) return "This group";
+    // 21t-e: THE PILL NAMES THE TARGET. "This group" and "This channel" both described where a turn was going
+    // without saying where, and the one control that answers "where does this go" is the one that must say it.
+    if (processorRef.chatTargetGroupId.isNotEmpty())
+    {
+        const auto* g = processorRef.linkGroupById(processorRef.chatTargetGroupId);
+        return g != nullptr && g->name.isNotEmpty() ? g->name : juce::String("This group");
+    }
     if (processorRef.chatTargetLinkUid.isNotEmpty())
         return juce::String::fromUTF8("\xe2\x86\x92 ") + processorRef.chatTargetLinkName;
     // R1 AMENDED (21t-e, 25 Sep 2026): WHEN THE CHAT IS ON A LINK, THE PILL SAYS THE LINK'S NAME. "This channel"

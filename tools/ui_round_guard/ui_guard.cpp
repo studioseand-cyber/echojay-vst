@@ -171,6 +171,8 @@ struct EchoJayTabStripTestAccess
     static juce::String stripLabel (const juce::String& n, const juce::StringArray& sibs) { return EchoJayEditor::collapsedStripLabel (n, sibs); }
     static bool  inlineEditorOpen (EchoJayEditor& e) { return e.chainListPanel.hasInlineEditor(); }
     static juce::String pill (EchoJayEditor& e) { return e.chatTargetLabel(); }
+    static void applyEdit (EchoJayEditor& e, int msgIdx) { e.applyChainEditFromMsg (msgIdx); }
+    static void unpinView (EchoJayEditor& e) { e.unpinRackView(); }
     // ---- 21t-c ----
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
     // ---- 21t-d wiring ----
@@ -759,6 +761,7 @@ int main()
             own.setMasterWet (1.0f);
             const auto savedId = A::chatId (*ed);
             A::setChatId (*ed, {});
+            A::unpinView (*ed);                       // 21t-e: start from a view that follows the chat
             proc.pendingChannelUid = "lnk_01";        // this is what puts lnk_01's rack on screen
             auto& bh = EchoJayBorrowTestAccess::engage (proc, "lnk_01");
             bh.setMasterWet (1.0f);
@@ -861,7 +864,7 @@ int main()
                    "strip was)", juce::String (hit) + " of 7");
             check (! strays, "21t-e. ...and no non-member is");
             check (A::stripSelected (*ed, "grp:" + gid), "21t-e. ...with the group's own strip still selected");
-            check (A::pill (*ed) == "This group", "21t-e. the composer pill names the group", A::pill (*ed));
+            check (A::pill (*ed) == "Main vocals", "21t-e. the composer pill names the group", A::pill (*ed));
             A::targetGroup (*ed, {});
             proc.removeLinkGroup (gid);
         }
@@ -891,6 +894,97 @@ int main()
                 A::refreshPanel (*ed); pumpMs (40);
             }
             else check (false, "21t-e. fixture: the EQ built-in is registered");
+        }
+
+        // ---- 21t-e (3): ONE RACK-SELECTION RULE ---------------------------------------------------------------
+        // Selecting a rack switches the chat to that rack's channel UNLESS the rack is already inside what the
+        // chat is working on - which is exactly the group case, and the only case that moves the view alone.
+        {
+            std::printf ("\n== 21t-e (3): selecting a rack moves the view AND the chat - except inside a group ==\n");
+            std::vector<EchoJayProcessor::LinkSlotInfo> rows;
+            juce::StringArray mem;
+            for (int i = 0; i < 4; ++i)
+            {
+                EchoJayProcessor::LinkSlotInfo li;
+                li.uid = "sel_" + juce::String (i); li.name = "Vox " + juce::String (i + 1);
+                li.connected = true; rows.push_back (li);
+                if (i < 3) mem.add (li.uid);          // sel_0..sel_2 are members; sel_3 is not
+            }
+            const auto savedId = A::chatId (*ed);
+            A::setChatId (*ed, {});
+            proc.pendingChannelUid.clear();
+            A::unpinView (*ed);
+            // INJECTED WITH NO PUMP BEFORE THE ASSERTIONS: the editor's tick rebuilds the registry from the real
+            // one (empty under an isolated home) and drops a pending channel whose Link has "vanished".
+            EchoJayAlignTestAccess::setLinks (proc, rows);
+
+            // (a) FROM THE MAIN CHAT: selecting a Link moves both.
+            A::selectView (*ed, "sel_0");
+            check (A::viewUid (*ed) == "sel_0"
+                   && (A::workingOn (*ed) == "sel_0" || proc.pendingChannelUid == "sel_0"),
+                   "21t-e (3a). from the main chat, selecting a Link moves the view AND the chat  (a channel with "
+                   "no chat record yet is HELD as pending until the first send - the product's own rule)",
+                   "view " + A::viewUid (*ed) + " / working on " + A::workingOn (*ed)
+                   + " / pending \"" + proc.pendingChannelUid + "\" / chatId \"" + A::chatId (*ed)
+                   + "\" / links " + juce::String ((int) proc.getLinkSlotInfos().size()));
+            check (A::pill (*ed) != "This channel" && A::pill (*ed).isNotEmpty(),
+                   "21t-e (3b). ...and the pill names the Link, not \"This channel\"", A::pill (*ed));
+
+            // ...and selecting the mix bus goes back to the main chat.
+            A::selectView (*ed, {});
+            check (A::viewUid (*ed).isEmpty() && A::workingOn (*ed).isEmpty(),
+                   "21t-e (3a). selecting the mix bus moves both to the main context",
+                   A::viewUid (*ed).isEmpty() ? juce::String ("(local)") : A::viewUid (*ed));
+            check (A::pill (*ed) == "This channel",
+                   "21t-e (3b). ...and \"This channel\" means the mix bus, and only that", A::pill (*ed));
+
+            // (c) IN A GROUP CHAT: a MEMBER's rack moves the view only.
+            const auto gid = proc.createLinkGroup ("The BVs", mem);
+            EchoJayAlignTestAccess::setLinks (proc, rows); A::targetGroup (*ed, gid);
+            check (A::pill (*ed) == "The BVs",
+                   "21t-e (3b). a group chat's pill names the GROUP", A::pill (*ed));
+            check (mem.contains (A::viewUid (*ed)),
+                   "21t-e (3c). choosing the group views one of its members", A::viewUid (*ed));
+            A::selectView (*ed, "sel_2");
+            check (A::viewUid (*ed) == "sel_2",
+                   "21t-e (3c). selecting a MEMBER's rack moves the view", A::viewUid (*ed));
+            check (proc.chatTargetGroupId == gid,
+                   "21t-e (3c). ...and the chat STAYS on the group  (RED as it stood: it switched to the member "
+                   "and the other six left the conversation)", proc.chatTargetGroupId);
+
+            // ...while a NON-member leaves the group and switches, as from anywhere else.
+            A::selectView (*ed, "sel_3");
+            check (proc.chatTargetGroupId.isEmpty() && A::viewUid (*ed) == "sel_3"
+                   && (A::workingOn (*ed) == "sel_3" || proc.pendingChannelUid == "sel_3"),
+                   "21t-e (3c). selecting a NON-member leaves the group and moves both",
+                   "group \"" + proc.chatTargetGroupId + "\" working on " + A::workingOn (*ed));
+
+            // (d) AN EDIT FROM A GROUP CHAT REACHES EVERY MEMBER, whichever member is on screen.
+            A::targetGroup (*ed, gid); pumpMs (40);
+            A::selectView (*ed, "sel_1");
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            for (const auto& m : mem) juce::File (dir + "chain-cmd-" + m + ".json").deleteFile();
+            {
+                A::Msg card;
+                card.role = "assistant"; card.content = "a change for the BVs";
+                card.editData = "{\"baseSlots\":[\"EchoJay EQ\"],\"edit\":[{\"op\":\"bypass\",\"slot\":1,\"on\":true}]}";
+                A::msgs (*ed).push_back (card);
+                A::applyEdit (*ed, (int) A::msgs (*ed).size() - 1);
+            }
+            int reached = 0;
+            for (const auto& m : mem)
+                if (juce::File (dir + "chain-cmd-" + m + ".json").existsAsFile()) ++reached;
+            check (reached == mem.size(),
+                   "21t-e (3d). an edit made in a group chat reaches EVERY member  (RED as it stood: it went to "
+                   "the local rack, because a group chat has no channel of its own)",
+                   juce::String (reached) + " of " + juce::String (mem.size()));
+            check (A::viewUid (*ed) == "sel_1",
+                   "21t-e (3d). ...and the rack on screen is still the one the user was looking at", A::viewUid (*ed));
+            for (const auto& m : mem) juce::File (dir + "chain-cmd-" + m + ".json").deleteFile();
+            A::targetGroup (*ed, {});
+            proc.removeLinkGroup (gid);
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed).pop_back();
         }
 
         // ---- 21t-d wiring (25 Sep 2026): the trigger, the card from the sidecar, the closing posted once -----
@@ -1352,6 +1446,7 @@ int main()
             std::printf ("\n== R1: a rack selection moves the view; the build targets the chat's channel ==\n");
             const auto savedId = A::chatId (*ed);
             A::setChatId (*ed, {});
+            A::unpinView (*ed);                          // 21t-e: the pin is a rack SELECTION, not a fixture default
             proc.pendingChannelUid = "lnk_01";          // the chat is working on lnk_01
             check (A::workingOn (*ed) == "lnk_01" && A::viewUid (*ed) == "lnk_01",
                    "R1. fixture: with nothing selected, the view follows the chat's channel", A::viewUid (*ed));
@@ -1461,7 +1556,7 @@ int main()
             for (auto t : tabs)
             {
                 A::toTab (*ed, t); pumpMs (30);
-                check (A::banner (*ed) == "Working on Group: Group 2 (2)" && A::targetLabel (*ed) == "This group",
+                check (A::banner (*ed) == "Working on Group: Group 2 (2)" && A::targetLabel (*ed) == "Group 2",
                        "F1-rest. tab " + juce::String ((int) t) + ": banner and label both say the group",
                        A::banner (*ed) + " / " + A::targetLabel (*ed));
             }
@@ -1500,8 +1595,8 @@ int main()
                    "F2. selecting a group sets the target and clears the Link target");
             check (A::banner (*ed) == "Working on Group: Group 1 (5)",
                    "F2. the banner reads \"Working on Group: Group 1 (5)\"", A::banner (*ed));
-            check (A::targetLabel (*ed) == "This group",
-                   "F2. the composer label reads \"This group\"", A::targetLabel (*ed));
+            check (A::targetLabel (*ed) == "Group 1",
+                   "F2. the composer label NAMES the group (21t-e: the pill says where a turn goes)", A::targetLabel (*ed));
             check (A::stripSelected (*ed, "grp:" + gid),
                    "F2. the group strip is selected, highlighted like a Link strip");
             check (proc.getApi().selectedGroupId() == gid,
