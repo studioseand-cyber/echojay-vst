@@ -1566,6 +1566,7 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         const juce::String semantic = kv.name.toString();
         if (semantic == "bands")    continue; // handled after the flat pass
         if (semantic == "controls") continue; // handled after the flat pass
+        if (semantic == "deltas")   continue; // 21t: handled after the controls pass (it reads the readback)
 
         auto mapEntry = mapParams.getProperty (semantic, juce::var());
         const bool flatUsable = mapEntry.isObject() && usableParamEntry (mapEntry);
@@ -1695,6 +1696,127 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
     {
         ApplyResult r; r.semantic = "controls";
         r.note = "controls must be an object of name -> value";
+        results.add (r);
+    }
+
+    // ---- deltas (21t, 25 Sep 2026): a MOVE from where the control already is --------------------------------
+    // The server sends a delta when it was never told the control's current value, so an absolute number would be
+    // a guess. Three shapes: { db: N } adds dB, { factor: F } multiplies (ms and other times), { positions: N }
+    // moves N entries along the map's position list, positive meaning later. All three are applied to THIS
+    // instance's READBACK, clamped to the map's own range (or the ends of the position list), and logged
+    // before/after - a move whose starting point is not stated is not evidence of anything.
+    // An absolute value in `controls` for the same control always wins: the delta is then dropped, and said so.
+    auto deltasReq = settings.getProperty ("deltas", juce::var());
+    if (auto* dl = deltasReq.getDynamicObject())
+    {
+        auto mapControls = map.getProperty ("controls", juce::var());
+        auto* absObj = controlsReq.getDynamicObject();
+        for (auto& kv : dl->getProperties())
+        {
+            const juce::String name = kv.name.toString();
+            ApplyResult r; r.semantic = name;
+            // (1) an absolute for the same control wins
+            bool haveAbsolute = false;
+            if (absObj != nullptr)
+                for (auto& ak : absObj->getProperties())
+                    if (normalizeControlName (ak.name.toString()).equalsIgnoreCase (normalizeControlName (name)))
+                    { haveAbsolute = true; break; }
+            if (haveAbsolute)
+            {
+                r.note = "an absolute value was sent for this control, so the delta was not applied";
+                EchoJay_NSLog (("EJDelta: " + plugin.getName() + " \"" + name
+                                + "\" SKIPPED - an absolute value for the same control wins").toRawUTF8());
+                results.add (r);
+                continue;
+            }
+            // (2) the same map lookup the controls pass uses, whitespace- and case-insensitive
+            auto entry = mapControls.getProperty (kv.name, juce::var());
+            if (! entry.isObject())
+                if (auto* mo = mapControls.getDynamicObject())
+                {
+                    const auto want = normalizeControlName (name);
+                    for (auto& mk : mo->getProperties())
+                        if (normalizeControlName (mk.name.toString()).equalsIgnoreCase (want))
+                        { entry = mk.value; break; }
+                }
+            if (! entry.isObject())     { r.note = "no mapped control of this name on this plugin"; results.add (r); continue; }
+            if (! usableParamEntry (entry)) { r.note = "control entry unusable (bad index or anchors), left manual"; results.add (r); continue; }
+
+            juce::String how;
+            const int idx = resolveParamIndex (plugin, entry, name, how);
+            auto& ps = plugin.getParameters();
+            if (idx < 0 || idx >= ps.size() || ps[idx] == nullptr)
+            { r.note = "unresolved: no parameter of that name on this instance"; results.add (r); continue; }
+            auto* param = ps[idx];
+            const juce::String beforeText = param->getCurrentValueAsText().trim();
+
+            auto* shape = kv.value.getDynamicObject();
+            if (shape == nullptr)
+            { r.note = "a delta must be an object: { db: N }, { factor: F } or { positions: N }"; results.add (r); continue; }
+            const bool isDb  = shape->hasProperty ("db");
+            const bool isFac = shape->hasProperty ("factor");
+            const bool isPos = shape->hasProperty ("positions");
+            if ((int) isDb + (int) isFac + (int) isPos != 1)
+            { r.note = "a delta carries exactly one of db, factor or positions"; results.add (r); continue; }
+
+            juce::var target;
+            juce::String shapeText;
+            if (isPos)
+            {
+                // The position list IS the range: move N entries, clamp at the ends.
+                juce::StringArray posNames, posDisplays;
+                if (auto* pa = entry.getProperty ("positions", juce::var()).getArray())
+                    for (const auto& t : *pa)
+                    {
+                        if (auto* o = t.getDynamicObject())
+                        { posNames.add (o->getProperty ("name").toString().trim()); posDisplays.add (o->getProperty ("display").toString().trim()); }
+                        else { posNames.add (t.toString().trim()); posDisplays.add ({}); }
+                    }
+                if (posNames.size() < 2)
+                { r.note = "this control has no position list, so a positions delta cannot be placed"; results.add (r); continue; }
+                int at = -1;
+                for (int i = 0; i < posNames.size(); ++i)
+                    if (positionTextMatches (beforeText, posNames[i], posDisplays[i])) { at = i; break; }
+                if (at < 0)
+                { r.note = "the control reads \"" + beforeText + "\", which is not one of its mapped positions - left manual"; results.add (r); continue; }
+                const int step = (int) shape->getProperty ("positions");
+                const int want = juce::jlimit (0, posNames.size() - 1, at + step);
+                target = posNames[want];
+                shapeText = "positions " + juce::String (step) + " (" + juce::String (at + 1) + " -> " + juce::String (want + 1)
+                          + " of " + juce::String (posNames.size()) + ")";
+            }
+            else
+            {
+                const juce::String unit = entry.getProperty ("unit", juce::var()).toString();
+                float before = 0.0f; bool negInf = false;
+                if (! parseDisplayForUnit (beforeText, unit, before, negInf) || negInf)
+                { r.note = "the control reads \"" + beforeText + "\", which is not a number - a db or factor delta needs one"; results.add (r); continue; }
+                const double amount = (double) (isDb ? shape->getProperty ("db") : shape->getProperty ("factor"));
+                float want = isDb ? (float) (before + amount) : (float) (before * amount);
+                // Clamp to the map's own range, so a delta can never be refused for landing outside it.
+                auto anchors = anchorsFromVar (entry);
+                auto eff = dominantMonotonicTable (anchors);
+                if (eff.ok && eff.table.size() >= 2)
+                {
+                    float loV = eff.table.getFirst()[0], hiV = loV;
+                    for (auto& a : eff.table) { loV = juce::jmin (loV, a[0]); hiV = juce::jmax (hiV, a[0]); }
+                    want = juce::jlimit (loV, hiV, want);
+                }
+                target = juce::var ((double) want);
+                shapeText = (isDb ? "db " : "factor ") + juce::String (amount, 3);
+            }
+
+            auto applied = applyOne (plugin, name, entry, target, staleDisplayReads, anchorsUnverified);
+            EchoJay_NSLog (("EJDelta: " + plugin.getName() + " \"" + name + "\" " + shapeText
+                            + " before=\"" + beforeText + "\" -> after=\"" + applied.landedText.trim() + "\""
+                            + (applied.note.isNotEmpty() ? " note=" + applied.note : juce::String())).toRawUTF8());
+            results.add (applied);
+        }
+    }
+    else if (! deltasReq.isVoid())
+    {
+        ApplyResult r; r.semantic = "deltas";
+        r.note = "deltas must be an object of name -> { db | factor | positions }";
         results.add (r);
     }
     return results;

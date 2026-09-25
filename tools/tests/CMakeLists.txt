@@ -211,6 +211,7 @@ ej_add_guard(limiter_wall_guard       SOURCE tools/limiter_wall_guard/harness.cp
 ej_add_guard(loudness_loop_guard      SOURCE tools/loudness_loop_guard/harness.cpp            LABEL fast SCRIBBLE)
 ej_add_guard(level_slot_guard         SOURCE tools/level_slot_guard/harness.cpp               LABEL fast SCRIBBLE)
 ej_add_guard(pair_dial_guard          SOURCE tools/pair_dial_guard/harness.cpp                LABEL fast SCRIBBLE)
+ej_add_guard(deltas_guard             SOURCE tools/deltas_guard/harness.cpp                   LABEL fast SCRIBBLE)
 ej_add_guard(bubble_parity_guard      SOURCE tools/bubble_parity_guard/harness.cpp            LABEL fast SCRIBBLE)
 ej_add_guard(substitute_guard         SOURCE tools/substitute_guard/harness.cpp               LABEL fast SCRIBBLE)
 ej_add_guard(dialinfo_keep_guard      SOURCE tools/dialinfo_keep_guard/harness.cpp            LABEL fast SCRIBBLE)
