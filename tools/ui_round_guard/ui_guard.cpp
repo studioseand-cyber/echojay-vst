@@ -43,6 +43,27 @@ struct EchoJayPromptTestAccess
     }
 };
 
+// 21t-a H3: a borrow SESSION the guard owns. The engage path needs a running Link (ring, lease, sidecar) and
+// none exists under an isolated state home, so the state it produces is set here directly. What is under test is
+// unchanged shipping code: what onMasterWet does when borrowHostIfActiveFor() answers yes - exactly the state
+// every rack on screen is in, and the state H3 was wrong in.
+struct EchoJayBorrowTestAccess
+{
+    static ChainHost& engage (EchoJayProcessor& p, const juce::String& uid)
+    {
+        static_cast<juce::Timer&> (p).stopTimer();   // the 1 Hz tick would tear a fixture borrow down
+        if (p.borrowHost_ == nullptr) p.borrowHost_ = std::make_unique<ChainHost> (ChainHost::Mode::Borrowed);
+        p.borrowSession_.uid = uid;
+        p.borrowSession_.active.store (true, std::memory_order_relaxed);
+        return *p.borrowHost_;
+    }
+    static void release (EchoJayProcessor& p)
+    {
+        p.borrowSession_.active.store (false, std::memory_order_relaxed);
+        p.borrowSession_.uid.clear();
+    }
+};
+
 struct EchoJayTabStripTestAccess
 {
     static void toChat (EchoJayEditor& e)   { e.switchToTab (EchoJayEditor::Tab::Chat, true); }
@@ -534,6 +555,40 @@ int main()
             A::toChat (*ed); pumpMs (40);
         }
 
+        // ---- H3 (21t-a, 25 Sep 2026): the chain MIX knob writes the rack on screen, BORROWED or not ------------
+        // The rolling log had no "EJCtrl: chainWet" line at all, and repeated "EJBorrow: engaged uid=..." - every
+        // rack on screen is borrowed, and F5's borrowed branch stopped at the in-process copy. So the move never
+        // reached the Link and died with the lease.
+        {
+            std::printf ("\n== H3: the chain MIX knob writes the rack on screen, borrowed or not ==\n");
+            int err = 0; const auto dir = LinkShm::resolveDir (err);
+            juce::File (dir + "ctrl-cmd-lnk_01.json").deleteFile();
+            auto& own = proc.getChainHost();
+            own.setMasterWet (1.0f);
+            const auto savedId = A::chatId (*ed);
+            A::setChatId (*ed, {});
+            proc.pendingChannelUid = "lnk_01";        // this is what puts lnk_01's rack on screen
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, "lnk_01");
+            bh.setMasterWet (1.0f);
+            check (A::viewUid (*ed) == "lnk_01", "H3. fixture: lnk_01's rack is the one on screen", A::viewUid (*ed));
+            A::masterWet (*ed, 0.35f); pumpMs (30);
+            const auto cmd = juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_01.json").loadFileAsString());
+            check (std::abs ((double) cmd.getProperty ("chainWet", juce::var (-1.0)) - 0.35) < 1e-6,
+                   "H3. a BORROWED rack's knob still sends the move to the Link  (RED as it stood: the borrowed "
+                   "host swallowed it and no command was written)",
+                   juce::JSON::toString (cmd).substring (0, 80));
+            check (std::abs (bh.getMasterWet() - 0.35f) < 1e-4f,
+                   "H3. ...and the borrowed host takes it too, so what you hear follows the knob",
+                   juce::String (bh.getMasterWet(), 3));
+            check (std::abs (own.getMasterWet() - 1.0f) < 1e-4f,
+                   "H3. ...and V2's own rack is untouched", juce::String (own.getMasterWet(), 3));
+            EchoJayBorrowTestAccess::release (proc);
+            proc.pendingChannelUid.clear();
+            A::setChatId (*ed, savedId);
+            juce::File (dir + "ctrl-cmd-lnk_01.json").deleteFile();
+            // OWED (recorded, not claimed): the other half of H3 - the borrowed host seeded from the rack's own
+            // sidecar at engage - is only reachable through the real engage path (ring + lease + a running Link),
+            // so it rides with F5's two-process leg. In-host evidence only until then.
         }
 
         // ---- F1 REVISED (21s-b): ONE assistant panel, mounted on every tab that has a column ------------------

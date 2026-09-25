@@ -2151,6 +2151,13 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             processorRef.markStateDirty();
             return;
         }
+        // H3 (21t-a, 25 Sep 2026): A REMOTE RACK'S MIX BELONGS TO THAT LINK, BORROWED OR NOT.
+        // F5 stopped at the borrowed host when one was held - and a rack on screen IS borrowed, so every move
+        // went into V2's in-process copy, nothing reached the Link, and the value died when the rack was
+        // released. The borrowed host still takes it (the audition must follow the knob), and the SAME move is
+        // sent to the Link, which is the only place it can survive.
+        if (auto* bh = processorRef.borrowHostIfActiveFor(uid)) bh->setMasterWet(v);
+        sendLinkMasterWetCommand(uid, v);
     };
     // Pre-chain gain: driven by the rack-head PreGainKnob (18 Aug 2026),
     // replacing the master-knob menu items (that menu was on the wrong

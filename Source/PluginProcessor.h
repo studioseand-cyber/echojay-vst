@@ -1581,6 +1581,9 @@ private:
     // test, consumer here) — the one gate that asserts in-context is IN
     // TIME, not just level-safe and continuous.
     friend struct EchoJayAlignTestAccess;
+    // 21t-a H3: the guard's own borrow session (no Link process exists under an isolated state home)
+    friend struct EchoJayBorrowTestAccess;
+    // 21t-a H1: save/restore the onboarding answers around the leg that has to dismiss them
     friend struct EchoJayPromptTestAccess;
     void connectLinkAudioSlot   (int i, const juce::String& key, const juce::String& displayName,
                                  float sr, const juce::String& uid);

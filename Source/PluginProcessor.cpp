@@ -2327,6 +2327,26 @@ void EchoJayProcessor::borrowEngageBegin(const juce::String& uid,
     borrowRouteFlip_.store(false, std::memory_order_relaxed);   // default per channel type
     borrowSession_.active.store(true, std::memory_order_relaxed);
 
+    // H3 (21t-a, 25 Sep 2026): SEED THE BORROWED HOST'S CHAIN MIX FROM THE RACK IT IS BORROWING.
+    // A parked borrow host is REUSED for the next rack ("EJBorrowPool: rack released, N instance(s) parked"), so
+    // without this it arrives carrying the PREVIOUS rack's mix - which is why the knob read the same value on
+    // every rack. The Link's own published value is the truth for a rack that is not being edited yet.
+    if (borrowHost_ != nullptr)
+    {
+        int derr = 0;
+        const auto ddir = LinkShm::resolveDir(derr);
+        if (ddir.isNotEmpty())
+        {
+            const auto rc = LinkShm::readRackSidecar(ddir, uid);
+            if (rc.valid)
+            {
+                borrowHost_->setMasterWet(rc.masterWet);
+                EchoJay_NSLog(("EJBorrow: chain mix seeded from the rack's own sidecar: "
+                               + juce::String(rc.masterWet, 3)).toRawUTF8());
+            }
+        }
+    }
+
     renewBorrowLease();                              // the file appears NOW
     if (borrowLeaseTimer_ == nullptr)
         borrowLeaseTimer_ = std::make_unique<BorrowLeaseTimer>(*this);
