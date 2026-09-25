@@ -690,6 +690,18 @@ int main()
                        juce::String (st.shortTerm, 1) + " / " + juce::String (st.truePeakMax, 1));
 
                 // ...and a frame WITHOUT the bit is untouched: an older Link still means what it always meant.
+                {   // ...and a frame WITHOUT SHORTMAX falls back to the 3 s pair: -7.0 - (-14.0) = 7.0.
+                    LinkMeterFrame noMax = f; noMax.fieldsMask = kFrameHasPreTrim | kFrameHasHeard; noMax.seq = 0;
+                    LinkShm::publishMeterFrame (reg, slot, noMax); beat();
+                    const auto gidF = proc.createLinkGroup ("Fallback set", juce::StringArray { uid });
+                    A::targetGroup (*ed, gidF);
+                    const auto fb = A::groupLevels (*ed);
+                    check (fb.contains ("PSR 7.0") && fb.contains ("SHORTMAX no reading"),
+                           "21t-d. ...and a Link with no SHORTMAX falls back to shortTermTP minus SHORT",
+                           fb.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 36));
+                    A::targetGroup (*ed, {}); proc.removeLinkGroup (gidF);
+                    LinkShm::publishMeterFrame (reg, slot, f); beat();
+                }
                 LinkMeterFrame old = f; old.fieldsMask = 0; old.seq = 0;
                 LinkShm::publishMeterFrame (reg, slot, old);
                 const auto st2 = A::stripFrame (*ed, uid + "_old", slot);
@@ -713,6 +725,11 @@ int main()
                 check (before.contains ("trim -6.0 dB") && after.contains ("trim -12.0 dB"),
                        "21t-d (b). ...and the trim it prints DOES move",
                        after.fromFirstOccurrenceOf ("trim", true, false).substring (0, 16));
+                // PSR is PEAK minus SHORTMAX while SHORTMAX is published: -3.0 - (-11.5) = 8.5.
+                check (after.contains ("PSR 8.5"),
+                       "21t-d. PSR is PEAK minus SHORTMAX when SHORTMAX is there - whole programme, not the "
+                       "last 3 s  (the 3 s pair would have read 7.0)",
+                       after.fromFirstOccurrenceOf ("PSR", true, false).substring (0, 20));
                 check (after.contains ("SHORTMAX -11.5") && after.contains ("HEARD 42"),
                        "21t-d (b). ...and SHORTMAX and HEARD are real now, not \"no reading\"",
                        after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 34));

@@ -26131,8 +26131,15 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
                                                                      : juce::String ("no reading")) + ", "
                    + "INT "     + num (use->integrated) + ", "
                    + "PEAK "    + num (use->truePeakMax) + ", "
-                   + "PSR "     + ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
-                                       ? juce::String (use->shortTermTP - use->shortTerm, 1) : juce::String ("no reading")) + ", "
+                   // PSR, ruled 25 Sep 2026: PEAK minus SHORTMAX when SHORTMAX is there - a WHOLE-PROGRAMME
+                   // figure, which is what the server's transient rule asks about. The 3 s pair
+                   // (shortTermTP - shortTerm) is the fallback for a Link that does not publish SHORTMAX: the
+                   // same quantity over the last window instead of over everything heard.
+                   + "PSR "     + (frameHasShortMax (*use) && use->truePeakMax > -99.0f
+                                       ? juce::String (use->truePeakMax - use->shortTermMax, 1)
+                                       : ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
+                                              ? juce::String (use->shortTermTP - use->shortTerm, 1)
+                                              : juce::String ("no reading"))) + ", "
                    + "HEARD "   + (frameHasHeard (*use) ? juce::String ((int) (use->heardSeconds + 0.5f))
                                                                  : juce::String ("no reading"))
                    + (pre ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"))
