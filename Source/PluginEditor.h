@@ -2393,6 +2393,8 @@ private:
         }
 
         ~ChainListPanel() override { closeAllEditors(); }
+        /** 21t-e: is a hosted editor open INLINE in the rack (an NSView that composites over everything)? */
+        bool hasInlineEditor() const { return inlineEditor != nullptr; }
 
         // ---- Editor lifecycle (ONE at a time, always close-before-open) ----
 
@@ -4803,6 +4805,10 @@ public:
     static juce::String groupOffsetText(float db);
     static float groupReadoutFontFor(const juce::String& text, int widthPx);
     static bool  groupReadoutFits(float db, int widthPx);
+    /** 21t-e: a narrow strip's label. Siblings that share a leading run of words collapse it to initials -
+        "Main vocal 2" among "Main vocal *" becomes "MV 2", "Main vocal" becomes "MV". The name is returned
+        unchanged when nothing is shared; the full name still paints in a wide strip and in the tooltip. */
+    static juce::String collapsedStripLabel (const juce::String& name, const juce::StringArray& siblings);
 private:
     void groupMuteSoloClick(const juce::String& groupId, bool isSolo);
 public:

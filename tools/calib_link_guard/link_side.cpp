@@ -25,6 +25,8 @@ struct EJCalibLinkTestAccess
     static juce::String uid  (LinkProcessor& p) { return p.instanceUid_; }
     static ChainHost&   host (LinkProcessor& p) { return p.chainHost; }
     static echojay::CalibLoop loop (LinkProcessor& p) { return p.calibLoop_; }
+    // 21t-e: the tally is where PEAK must come from - the same window as INT, SHORTMAX and HEARD.
+    static echojay::LevelTally::Snapshot tally (LinkProcessor& p) { return p.levelTally_.snapshot(); }
 };
 using TA = EJCalibLinkTestAccess;
 
@@ -110,6 +112,29 @@ int main (int argc, char** argv)
         // sampled in memory, and a one-window skew there would be a race in the GUARD, not a defect.
         pumpMs (250);
         const auto afterSettle = TA::loop (*l);
+        {   // 21t-e: PEAK IN THE FRAME IS THE TALLY'S TRUE PEAK, on the same clock as INT/SHORTMAX/HEARD - not
+            // meterEngine_'s max-hold, which is only cleared when the RACK changes and on 25 Sep published
+            // -0.1 dBTP beside an INT of -17.0 on two members.
+            // SETTLE FIRST: the tally's true peak only ever rises, and the guard reads it live while publishes
+            // land up to 100 ms apart - so a live comparison is a race, not a measurement. The audio has stopped
+            // by here; one publish period is enough for the frame to carry the settled figure.
+            pumpMs (400);
+            int e3 = 0, fd3 = -1;
+            const auto dir3 = LinkShm::resolveDir (e3);
+            void* reg3 = LinkShm::openRegistry (dir3, fd3, e3);
+            const auto tal = TA::tally (*l);
+            LinkMeterFrame pub;
+            int slotIdx = -1;
+            if (reg3 != nullptr)
+                for (int i = 0; i < 64 && slotIdx < 0; ++i)
+                { LinkMeterFrame f2; if (LinkShm::readMeterFrame (reg3, i, f2) && f2.heardSeconds > 0.0f) { pub = f2; slotIdx = i; } }
+            if (slotIdx >= 0 && tal.truePeakDb > -190.0f)
+                check (std::abs (pub.truePeakMax - tal.truePeakDb) < 0.2f,
+                       "link side: the published PEAK is the TALLY's true peak, not the meter engine's hold",
+                       juce::String (pub.truePeakMax, 1) + " vs tally " + juce::String (tal.truePeakDb, 1));
+            else
+                std::printf ("  note  no published frame with a tally reading yet - PEAK source not asserted this run\n");
+        }
         const auto onDisk = echojay::CalibLoop::fromVar (LinkShm::readRackSidecar (dir, uid).calib);
         // WHAT A HANDOVER NEEDS is the drive, the step count and the band - those must match exactly. The window
         // ORDINAL is a log counter and the Link is still ticking while the file is read, so it is allowed to be

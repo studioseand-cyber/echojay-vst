@@ -356,6 +356,19 @@ void LinkProcessor::publishRackSidecar()
     // this the calibration state V2 wrote during a lease would be erased the moment the lease ended - the loop
     // would not "stop at handover", it would be deleted by it. When this process is running the loop it writes
     // its own state; when it is not, it carries forward whatever is already on disk.
+    // 21t-e: A LEASED RACK'S SLOTS ARE NOT THIS PROCESS'S TO ERASE. While the lease is held our own chain is
+    // PARKED (0 slots) and the lease holder has just republished the real picture; rewriting the file from our
+    // parked chain wipes it, which is how a [CURRENT CHAIN] block vanished ten seconds after the build that
+    // filled it. Carry the holder's slots forward instead - it is the one measuring and editing them.
+    if (rackLeaseActive_ && chainHost.getNumSlots() == 0)
+    {
+        const auto held = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+        if (held.valid && ! held.slots.empty())
+        {
+            rc.slots = held.slots;
+            rc.revision = juce::jmax(rc.revision, held.revision);
+        }
+    }
     if (calibLoop_.active()) rc.calib = calibLoop_.toVar();
     else
     {
@@ -483,6 +496,13 @@ void LinkProcessor::publishMeterFrame()
         { f.shortTermMax = snap.maxShortTermDb; f.fieldsMask |= kFrameHasShortMax; }
         f.heardSeconds = snap.heardSeconds;
         f.fieldsMask |= kFrameHasHeard;
+        // 21t-e (25 Sep 2026): PEAK COMES FROM THE TALLY, ON THE SAME CLOCK AS EVERYTHING ELSE ON THE LINE.
+        // It used to be meterEngine_'s max-hold, which is only ever cleared when the RACK changes - so on
+        // 25 Sep two members published -0.1 and -0.0 dBTP beside an INT of -17.0, a 17 dB gap that was a single
+        // historical transient (a transport click, a load) held since the Link started, and it inflated their
+        // PSR to 16.6 and 16.3. The tally's true peak is the max over the SAME heard window as INT, SHORTMAX and
+        // HEARD, and it resets with them.
+        if (snap.truePeakDb > -190.0f) f.truePeakMax = snap.truePeakDb;
     }
     f.audioBlocks = blocksNow;
     f.audioStale  = audioStale ? 1u : 0u;

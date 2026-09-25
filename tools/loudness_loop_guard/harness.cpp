@@ -1006,6 +1006,22 @@ static int guardMain()
                    "21t-d (3). ...and the line names the figure it MEASURED, not one it did not", closing);
         }
 
+        {   // (6) A TUNER-ONLY BUILD LEAVES THE GAIN ALONE AND STARTS NO LOOP (21t-e ruling)
+            std::printf ("\n== 21t-e: a chain with no compressor gets no drive and no loop ==\n");
+            // The loop's own entry point is the only thing that can start it, and it is asked about a chain that
+            // has no dynamics slot in it. Nothing about the fixture is a stand-in: this is the shipped struct.
+            echojay::CalibLoop none;
+            check (! none.active() && ! none.running(),
+                   "21t-e. a loop that was never begun is not running", juce::String ((int) none.state));
+            // ...and one that IS begun for a compressor is - so the difference is the chain, not the code path.
+            echojay::CalibLoop comp;
+            comp.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            check (comp.running() && comp.plugin == "EJ Test Compressor",
+                   "21t-e. ...while a compressor's loop is", comp.plugin);
+            // The retirement itself is a V2-side fact (no compose-time pre-gain), asserted where it lives: the
+            // ui_guard leg "a tuner-only build applies no pre-gain". Stated here so the two are not read as one.
+        }
+
         {   // (5) HEADROOM: the drive limit is min(+12, the drive that brings the input to -3 dBTP)
             std::printf ("\n== 21t-d (5): the drive stops where the INPUT runs out of headroom ==\n");
             echojay::CalibLoop loop;

@@ -165,6 +165,11 @@ struct EchoJayTabStripTestAccess
     static void selectView (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
     static juce::String workingOn (EchoJayEditor& e) { return e.workingOnUid(); }
     static void setBuildJson (EchoJayEditor& e, int i, const juce::String& j) { e.chainBuildJsons[(size_t) i] = j; }
+    // ---- 21t-e ----
+    static bool  pendingPreGain (EchoJayEditor& e) { return e.pendingLinkPreGain_.valid; }
+    static juce::String stripLabel (const juce::String& n, const juce::StringArray& sibs) { return EchoJayEditor::collapsedStripLabel (n, sibs); }
+    static bool  inlineEditorOpen (EchoJayEditor& e) { return e.chainListPanel.hasInlineEditor(); }
+    static juce::String pill (EchoJayEditor& e) { return e.chatTargetLabel(); }
     // ---- 21t-c ----
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
     // ---- 21t-d wiring ----
@@ -777,6 +782,116 @@ int main()
             // so it rides with F5's two-process leg. In-host evidence only until then.
         }
 
+        // ---- 21t-e (25 Sep 2026): [CURRENT CHAIN], the retired pre-gain, the strip labels, the picker --------
+        {
+            std::printf ("\n== 21t-e: [CURRENT CHAIN] is the chat's channel, read from where that chain lives ==\n");
+            const juce::String cuid = "cc_lnk";
+            const auto savedId = A::chatId (*ed);
+            A::setChatId (*ed, {});
+            proc.pendingChannelUid = cuid;                   // the chat is on this Link
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, cuid);
+            { EedCompressorProcessor fc; SurgicalEqProcessor fe; juce::ignoreUnused (fc, fe); }
+            const auto* pitchLike = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+            if (pitchLike != nullptr)
+            {
+                while (bh.getNumSlots() > 0) bh.removeSlot (0);
+                bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*pitchLike), 0);
+                // The SIDECAR is deliberately left empty/absent - which is exactly the state a parked Link keeps
+                // rewriting it into while V2 holds the lease, and the state that dropped the block on 25 Sep.
+                int e2 = 0; juce::File (LinkShm::resolveDir (e2) + "rack-" + cuid + ".json").deleteFile();
+                const auto inj = A::injections (*ed);
+                check (inj.contains ("[CURRENT CHAIN"),
+                       "21t-e. a Link-chat turn carries [CURRENT CHAIN]  (RED as it stood: the sidecar was empty "
+                       "because the parked Link had rewritten it, and the block was dropped)",
+                       inj.contains ("[CURRENT CHAIN") ? juce::String ("present") : juce::String ("ABSENT"));
+                check (inj.contains ("EchoJay EQ"),
+                       "21t-e. ...listing the rack that is actually there, from the borrowed session host",
+                       inj.fromFirstOccurrenceOf ("[CURRENT CHAIN", true, false).substring (0, 120));
+            }
+            else check (false, "21t-e. fixture: a built-in to rack");
+            EchoJayBorrowTestAccess::release (proc);
+            proc.pendingChannelUid.clear();
+            A::setChatId (*ed, savedId);
+        }
+
+        {
+            std::printf ("\n== 21t-e: no compose-time pre-gain reaches a Link any more ==\n");
+            check (! A::pendingPreGain (*ed),
+                   "21t-e. nothing is carried to a Link from the compose-time level match  (RED as it stood: a "
+                   "tuner-only build sent +4.4 dB)");
+        }
+
+        {
+            std::printf ("\n== 21t-e: a narrow strip shows what tells a channel apart from its siblings ==\n");
+            juce::StringArray sibs { "Main vocal", "Main vocal 2", "Main vocal 3", "Main vocal 4",
+                                     "Main vocal 5", "Main vocal 6", "v3_2" };
+            juce::StringArray got;
+            for (const auto& n : sibs) got.add (A::stripLabel (n, sibs));
+            check (A::stripLabel ("Main vocal 2", sibs) == "MV 2" && A::stripLabel ("Main vocal", sibs) == "MV",
+                   "21t-e. the shared words collapse to initials: \"Main vocal 2\" -> \"MV 2\", \"Main vocal\" -> \"MV\"",
+                   got.joinIntoString (" | "));
+            std::set<juce::String> distinct;
+            for (const auto& g : got) distinct.insert (g);
+            check ((int) distinct.size() == got.size(),
+                   "21t-e. ...and every label is DISTINCT  (RED as it stood: seven strips all painted \"Main v...\")",
+                   juce::String ((int) distinct.size()) + " of " + juce::String (got.size()));
+            check (A::stripLabel ("Kick", juce::StringArray { "Kick", "Snare" }) == "Kick",
+                   "21t-e. ...and names that share nothing are left alone", A::stripLabel ("Kick", juce::StringArray { "Kick", "Snare" }));
+        }
+
+        {
+            std::printf ("\n== 21t-e: the members of the selected group are highlighted on the roster ==\n");
+            std::vector<EchoJayProcessor::LinkSlotInfo> rows;
+            juce::StringArray mem;
+            for (int i = 0; i < 9; ++i)
+            {
+                EchoJayProcessor::LinkSlotInfo li;
+                li.uid = "hl_" + juce::String (i); li.name = "Main vocal " + juce::String (i + 1);
+                li.connected = true; rows.push_back (li);
+                if (i < 7) mem.add (li.uid);
+            }
+            const auto gid = proc.createLinkGroup ("Main vocals", mem);
+            A::targetGroup (*ed, gid);
+            EchoJayAlignTestAccess::setLinks (proc, rows);
+            int hit = 0; bool strays = false;
+            for (const auto& r : rows)
+            { if (A::stripSelected (*ed, r.uid)) { if (mem.contains (r.uid)) ++hit; else strays = true; } }
+            check (hit == 7, "21t-e. all seven members are highlighted  (RED as it stood: only the group's own "
+                   "strip was)", juce::String (hit) + " of 7");
+            check (! strays, "21t-e. ...and no non-member is");
+            check (A::stripSelected (*ed, "grp:" + gid), "21t-e. ...with the group's own strip still selected");
+            check (A::pill (*ed) == "This group", "21t-e. the composer pill names the group", A::pill (*ed));
+            A::targetGroup (*ed, {});
+            proc.removeLinkGroup (gid);
+        }
+
+        {
+            std::printf ("\n== 21t-e: the add-plugin picker never opens under a hosted editor ==\n");
+            // The inline hosted editor is a heavyweight NSView; the picker is lightweight, so the only remedy is
+            // to close it - which is what the rack menu has done since 2 Sep and the picker did not.
+            auto& own = proc.getChainHost();
+            { SurgicalEqProcessor fe; juce::ignoreUnused (fe); }
+            const auto* eqd = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
+            if (eqd != nullptr)
+            {
+                const int before = own.getNumSlots();
+                own.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eqd), before);
+                A::refreshPanel (*ed); pumpMs (40);
+                A::panel (*ed).showInline (before);
+                pumpMs (60);
+                const bool opened = A::inlineEditorOpen (*ed);
+                check (opened, "21t-e. fixture: a hosted editor is open INLINE in the rack",
+                       opened ? juce::String ("open") : juce::String ("none"));
+                A::picker (*ed); pumpMs (60);
+                check (! A::inlineEditorOpen (*ed),
+                       "21t-e. opening the picker closes it, so the picker cannot draw behind it  (RED as it "
+                       "stood: only a popped-OUT editor was handled)");
+                while (own.getNumSlots() > before) own.removeSlot (own.getNumSlots() - 1);
+                A::refreshPanel (*ed); pumpMs (40);
+            }
+            else check (false, "21t-e. fixture: the EQ built-in is registered");
+        }
+
         // ---- 21t-d wiring (25 Sep 2026): the trigger, the card from the sidecar, the closing posted once -----
         {
             std::printf ("\n== 21t-d wiring: an applied op starts the loop on the dynamics slot, and only there ==\n");
@@ -982,6 +1097,19 @@ int main()
                        "21t-d (b). ...and the trim it prints DOES move",
                        after.fromFirstOccurrenceOf ("trim", true, false).substring (0, 16));
                 // PSR is PEAK minus SHORTMAX while SHORTMAX is published: -3.0 - (-11.5) = 8.5.
+                {   // 21t-e (4): the block is LOGGED, one line per member, and the figures match what was sent.
+                    juce::File logDir (juce::File::getSpecialLocation (juce::File::userHomeDirectory)
+                                           .getChildFile ("Library/EchoJay/logs"));
+                    juce::String logs;
+                    for (const auto& lf : logDir.findChildFiles (juce::File::findFiles, false, "echojay-*.log"))
+                        logs << lf.loadFileAsString();
+                    check (logs.contains ("EJGroupLevels: Pre-trim Vocal (id " + uid + ")"),
+                           "21t-e (4). every member of the block is logged beside it  (RED as it stood: the block "
+                           "was sent and never appeared anywhere a reader could check it)",
+                           logs.fromLastOccurrenceOf ("EJGroupLevels:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 120));
+                    check (logs.contains ("PEAK -1.2") || logs.contains ("PEAK -3.0"),
+                           "21t-e (4). ...with the same PEAK the block carried");
+                }
                 check (after.contains ("PSR 8.5"),
                        "21t-d. PSR is PEAK minus SHORTMAX when SHORTMAX is there - whole programme, not the "
                        "last 3 s  (the 3 s pair would have read 7.0)",

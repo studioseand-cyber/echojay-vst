@@ -9,6 +9,7 @@
 #include "AskShelfLayout.h"     // Round C: the ask shelf never passes the chat column
 #include "ChatBubbleStyle.h"    // hurdle 1 item 3: the one text-colour rule (coral for a NOT DIALABLE report)
 #include "NotDialableText.h"
+#include "EJRackSidecarFill.h"   // 21t-e: the borrowed host IS the chain while the lease is held
 #include "ChainJsonView.h"    // hurdle 1 item 3: the words + the built-in alternative by role
 #include "EJRecall.h"            // saved-chain recall decision logic (pure)
 #include "EJDisableReasons.h"   // WHY a uid sits in plugin_disabled.json
@@ -2582,13 +2583,15 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 appendLocalResultBubble(chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr));
                 return;
             }
-            sendChainToLink(uid, chainBuildJsons[(size_t)i]);
-            // V2-only pre-gain (16 Sep 2026): carry the ONE computed Link pre-gain
-            // to the Link's OWN rack via ctrl-cmd (its audio path, the knob Sean
-            // sees), only for THIS uid - the same one the reading came from. Own
-            // channel keeps its computePreGainAtBuild path untouched.
-            if (pendingLinkPreGain_.valid && pendingLinkPreGain_.uid == uid)
-                applyPendingLinkPreGain(); };
+            sendChainToLink(uid, chainBuildJsons[(size_t)i]); };
+            // RETIRED (21t-e, 25 Sep 2026): the compose-time pre-gain.
+            // It carried a level-match figure computed from the channel's own loudness and applied it to WHATEVER
+            // was built. On 25 Sep that put +4.4 dB in front of a one-slot TUNER chain - a pitch corrector that
+            // wants the level it was given - and Sean put it back to 0.0 forty seconds later. Drive now reaches a
+            // Link exactly one way: slot_pre_gain_db in a response, for a chain that contains a compressor, which
+            // is also the only thing that starts the calibration loop. The computation still runs and still
+            // prints its figure on [CHAIN LEVELS]; nothing is applied from it.
+
         replyLayer.addAndMakeVisible(chainBuildBtns[(size_t)i]);   // F1: owned by the reply layer, not by the editor
     }
 
@@ -26064,6 +26067,7 @@ void EchoJayEditor::maybeOfferRescan()
 void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
 {
     const auto* gr = processorRef.linkGroupById(groupId);
+    juce::ignoreUnused (gr);
     processorRef.chatTargetLinkUid.clear();
     processorRef.chatTargetLinkName.clear();
     processorRef.chatTargetGroupId   = gr != nullptr ? gr->id   : juce::String();
@@ -26071,7 +26075,14 @@ void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
     api.setSelectedGroupId(processorRef.chatTargetGroupId);
     // the strip highlights exactly as a Link strip does: the same selection set, keyed by the roster address
     linkSelection_.clear();
-    if (gr != nullptr) linkSelection_.insert("grp:" + gr->id);
+    if (gr != nullptr)
+    {
+        linkSelection_.insert("grp:" + gr->id);
+        // 21t-e: THE MEMBERS ARE HIGHLIGHTED TOO. A group is a set of channels, and the roster is where a user
+        // looks to see which ones - highlighting only the group's own strip said "a group is selected" without
+        // ever saying WHICH channels that means.
+        for (const auto& m : gr->members) linkSelection_.insert(m);
+    }
     chatTargetBtn.setButtonText(chatTargetLabel());
     refreshChannelBannerCache();
     EchoJay_NSLog((gr != nullptr
@@ -26084,11 +26095,68 @@ void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
 
 // The composer's label, from the same one answer: "This group" when a group is selected, the Link's name when a
 // Link is, "This channel" otherwise.
+// 21t-e (25 Sep 2026): a narrow strip shows what tells its channel APART from its siblings.
+// Seven strips reading "Main vocal", "Main vocal 2" ... in 38 px all painted "Main v..." - the same four
+// characters seven times, which names nothing. The shared leading words collapse to their initials and the rest
+// is kept whole: "Main vocal 2" -> "MV 2". The full name still paints in a wide strip and in the tooltip, so
+// nothing is lost, only shortened where there is no room for it.
+juce::String EchoJayEditor::collapsedStripLabel (const juce::String& name, const juce::StringArray& siblings)
+{
+    if (name.isEmpty() || siblings.size() < 2) return name;
+    auto words = [] (const juce::String& s)
+    { juce::StringArray w; w.addTokens (s.trim(), " ", ""); w.removeEmptyStrings(); return w; };
+    const auto mine = words (name);
+    if (mine.isEmpty()) return name;
+
+    // How many leading words does this name share with AT LEAST ONE OTHER sibling? Not with all of them: a
+    // roster is rarely uniform, and on 25 Sep one odd name ("v3_2") among six "Main vocal ..." meant nothing
+    // collapsed and all six still painted "Main v...". The odd name shares nothing and is left whole; the six
+    // that share a prefix with each other lose it.
+    int shared = 0;
+    for (int i = 0; i < mine.size(); ++i)
+    {
+        bool any = false;
+        for (const auto& sib : siblings)
+        {
+            if (sib.trim().equalsIgnoreCase (name.trim())) continue;   // itself
+            const auto w = words (sib);
+            if (i < w.size() && w[i].equalsIgnoreCase (mine[i]))
+            {
+                // the run must be contiguous from the start for THAT sibling too
+                bool run = true;
+                for (int k = 0; k < i; ++k) if (! w[k].equalsIgnoreCase (mine[k])) { run = false; break; }
+                if (run) { any = true; break; }
+            }
+        }
+        if (! any) break;
+        ++shared;
+    }
+    // Nothing shared, or the shared run is the WHOLE name for every sibling (then collapsing tells you nothing
+    // and the number that follows is all there is): leave it alone.
+    if (shared == 0) return name;
+    if (shared == mine.size() && mine.size() == 1) return name;
+
+    juce::String initials;
+    for (int i = 0; i < shared; ++i)
+        if (mine[i].isNotEmpty()) initials << mine[i].substring (0, 1).toUpperCase();
+    juce::String rest;
+    for (int i = shared; i < mine.size(); ++i) rest << (rest.isEmpty() ? "" : " ") << mine[i];
+    return rest.isEmpty() ? initials : initials + " " + rest;
+}
+
 juce::String EchoJayEditor::chatTargetLabel() const
 {
     if (processorRef.chatTargetGroupId.isNotEmpty()) return "This group";
     if (processorRef.chatTargetLinkUid.isNotEmpty())
         return juce::String::fromUTF8("\xe2\x86\x92 ") + processorRef.chatTargetLinkName;
+    // R1 AMENDED (21t-e, 25 Sep 2026): WHEN THE CHAT IS ON A LINK, THE PILL SAYS THE LINK'S NAME. "This channel"
+    // was true of the mix bus and of a Link alike, so the one control that says where a turn is going said the
+    // same thing wherever it was going. "This channel" is now the mix bus and nothing else.
+    if (const auto uid = effectiveChannelUid(); uid.isNotEmpty())
+    {
+        const auto nm = channelDisplayLabel(uid);
+        if (nm.isNotEmpty() && nm != uid) return nm;
+    }
     return "This channel";
 }
 
@@ -26200,6 +26268,11 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
                    + (liveUsable ? juce::String() : " (last heard " + juce::String ((int) (ageMs / 1000)) + " s ago)"));
     }
     if (lines.isEmpty()) return {};
+    // 21t-e: THE BLOCK IS LOGGED, one line per member, exactly as it is sent. A figure that reaches the server and
+    // appears nowhere else cannot be checked against the strips afterwards - which is how a stale PEAK sat in this
+    // block unnoticed until Sean read the two numbers side by side.
+    for (const auto& l : lines)
+        EchoJay_NSLog (("EJGroupLevels: " + l.trim()).toRawUTF8());
     // The note sits at column 0 and every MEMBER line is indented by two spaces: one shape, so a reader (or a
     // guard) can tell a member line from prose without parsing English.
     return "\n\n[GROUP LEVELS - \"" + g->name + "\"]\n"
@@ -26369,19 +26442,37 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         // targetChannelDeclaration / chainConductRule in PluginEditor.h).
         // Only the RACK block keeps the ride condition.
         out += targetChannelDeclaration(channelPhrase);
-        if (hadFeed || relevant)
+        // 21t-e (25 Sep 2026): THE RACK BLOCK RIDES ON EVERY TURN, AND IT IS READ FROM WHERE THE CHAIN LIVES.
+        //
+        // Two defects, one line apart. (a) It was gated on `hadFeed || relevant`, so "make it work harder" - a
+        // turn with no plugin-feed cue - reached the server with no description of the rack it was about. (b) It
+        // read the SIDECAR, and while V2 holds the rack borrowed the Link parks its own slots and keeps
+        // publishing an EMPTY sidecar over the top of the one the lease holder republished: at 21:13:59 the
+        // republish wrote "1 slot(s), rev 5", and ten seconds later the next turn logged "sidecar missing/empty".
+        // The borrowed host IS the chain for as long as the lease is held, so that is what is read from.
         {
-            auto rack = readLinkRackSidecar(targetLinkUid);
+            LinkShm::RackSidecar rack;
+            const char* src = "sidecar";
+            if (auto* bh = processorRef.borrowHostIfActiveFor(targetLinkUid))
+            {
+                rack.valid = true; rack.uid = targetLinkUid; rack.name = label;
+                rack.revision = bh->getChainRevision();
+                rack.masterWet = bh->getMasterWet();
+                echojay::fillRackSidecarSlots(rack, *bh, 0, -1, {}, [](int) { return false; });
+                src = "the borrowed session host";
+            }
+            else rack = readLinkRackSidecar(targetLinkUid);
+
             if (rack.valid && !rack.slots.empty())
             {
                 out += EchoJayAPI::buildCurrentChainInjection(rack, label);
-                EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached (Link \""
-                               + label + "\") -- " + juce::String((int)rack.slots.size())
+                EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached (Link \"" + label + "\", from "
+                               + src + ") -- " + juce::String((int)rack.slots.size())
                                + " slots, rev " + juce::String(rack.revision)).toRawUTF8());
             }
             else
-                EchoJay_NSLog("EJChat: Link target live but sidecar missing/empty -- "
-                              "channel declaration only, build-only turn");
+                EchoJay_NSLog(("EJChat: Link target live but " + juce::String(src)
+                               + " reports no slots -- channel declaration only, build-only turn").toRawUTF8());
         }
         }
         else
@@ -29764,6 +29855,16 @@ void EchoJayEditor::showChainPluginPicker()
         pickerLoweredPopout_ = true;
         EchoJay_NSLog("EJPicker: hosted editor pop-out lowered while the picker is open");
     }
+    // 21t-e (25 Sep 2026): AND THE INLINE ONE. The pop-out is a top-level window and lowering it is enough; an
+    // INLINE hosted editor is an NSView inside this window, and a heavyweight NSView composites OVER every
+    // lightweight component no matter what the z-order says - which is why the rack menu has closed the inline
+    // editors since 2 Sep. The picker only ever handled the pop-out, so with a plugin open in the rack (Sean's
+    // UnFairchild) the picker drew behind it. Same remedy, same reason, now on this path too.
+    if (chainListPanel.hasInlineEditor())
+    {
+        chainListPanel.closeAllEditors();
+        EchoJay_NSLog("EJPicker: inline hosted editor closed - a heavyweight NSView composites over the picker");
+    }
     ChainPluginPicker::show(chainListPanel.addBlock, *this, plugins,
         [safeThis](const juce::PluginDescription& picked)
         {
@@ -30962,7 +31063,9 @@ EchoJayEditor::MeasuredContext EchoJayEditor::measuredContextTargetLink(const ju
     const float pg = juce::jlimit(ChainHost::kPreGainMinDb, ChainHost::kPreGainMaxDb,
                                   ChainHost::kPreGainTargetLufs - cum.integrated);
     c.preGainValid = true; c.preGainDb = pg;
-    pendingLinkPreGain_ = { targetLinkUid, pg, true };
+    // 21t-e: the figure is still COMPUTED and printed on [CHAIN LEVELS] - it is a real reading and the model uses
+    // it - but it is no longer carried to the Link. See the retirement note at the Build button.
+    pendingLinkPreGain_ = {};
 
     // [CHAIN LEVELS]: input/peak from the cumulative source; crest from the latch.
     // When cumulative IS the latch (live invalid), all three are while-flowing and
