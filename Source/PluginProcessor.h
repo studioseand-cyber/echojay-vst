@@ -1276,10 +1276,13 @@ public:
     void stopAllCompare();
 
 private:
-    // §5a-R orchestrator internals: the ack poll outlives editors, so its
-    // lambdas hold a weak token instead of `this` — a plugin unloaded
-    // mid-poll must drop the chain, never call into freed memory.
-    std::shared_ptr<bool> borrowAliveToken_ { std::make_shared<bool>(true) };
+    // THE PROCESSOR'S LIVENESS TOKEN. Every deferred callback that would touch this
+    // object - the §5a-R ack poll, and (26 Sep 2026) the state-restore callAsyncs -
+    // holds it WEAKLY instead of `this`, and goes inert the moment the destructor runs.
+    // Renamed from aliveToken_ when the restore path started using it: it is not
+    // the borrow's token, it is the processor's, and the old name made three raw-`this`
+    // captures look like a different concern. See ~EchoJayProcessor.
+    std::shared_ptr<bool> aliveToken_ { std::make_shared<bool>(true) };
     AlignDelay alignPre_, alignPost_;
     juce::SmoothedValue<float> borrowCtxMix_ { 0.0f };
     bool borrowApplyReleaseOnFail_ = false;   // switchable mid-flight (close)

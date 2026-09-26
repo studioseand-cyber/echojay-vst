@@ -480,8 +480,8 @@ EchoJayProcessor::~EchoJayProcessor()
 {
     // §5a-R: drop any in-flight apply poll — its lambdas hold this token
     // weakly and go inert now, never calling into freed memory.
-    *borrowAliveToken_ = false;
-    borrowAliveToken_.reset();
+    *aliveToken_ = false;
+    aliveToken_.reset();
 
     // Stage 1 SOLO: the plugin is leaving the track with a session open.
     // Best-effort commit (fire and forget -- no ack can be awaited in a
@@ -2748,7 +2748,7 @@ void EchoJayProcessor::borrowWriteHeadPush()
 
 void EchoJayProcessor::borrowPollPushAck(int seq, const juce::String& id)
 {
-    std::weak_ptr<bool> alive = borrowAliveToken_;
+    std::weak_ptr<bool> alive = aliveToken_;
     juce::Timer::callAfterDelay(250, [this, alive, seq, id]
     {
         if (alive.expired() || ! borrowActive() || borrowPendingPushes_.empty() || borrowPendingPushes_.front().id != id) { borrowPushInFlight_ = false; return; }
@@ -2951,7 +2951,7 @@ void EchoJayProcessor::borrowApplyAndRelease(bool releaseLockOnFail)
     }
     borrowApplyInFlight_ = true;
     borrowApplyReleaseOnFail_ = releaseLockOnFail;
-    std::weak_ptr<bool> alive = borrowAliveToken_;
+    std::weak_ptr<bool> alive = aliveToken_;
     auto poll = std::make_shared<std::function<void(int)>>();
     *poll = [this, alive, uid, seq, dir, poll](int left)
     {
@@ -5212,7 +5212,15 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
 
         if (slotsXml.isNotEmpty())
         {
-            juce::MessageManager::callAsync([this, slotsXml, chainSlotState, chainSlotParams, chainLevels] {
+            // THE RESTORE IS DEFERRED, SO IT OUTLIVES A PLUGIN THAT LEAVES FIRST (26 Sep 2026).
+            // This lambda captured a raw `this`: a processor destroyed between setStateInformation
+            // and the next message-loop turn left it locking a std::mutex inside a freed ChainHost -
+            // "mutex lock failed: Invalid argument", which is an abort, in the host. It is what
+            // ui_guard died of after destroying its second processor, and it is reachable in a DAW
+            // (remove a plugin, or close a session, during a state restore).
+            juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool>(aliveToken_),
+                                             slotsXml, chainSlotState, chainSlotParams, chainLevels] {
+                if (alive.expired()) { EchoJay_NSLog("EJState: deferred slot restore dropped - the plugin was removed before the message loop ran"); return; }
                 applyHostTrackNameIfDirty();
                 if (!chainLevels.isVoid())
                     chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
@@ -5223,7 +5231,8 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         {
             // No slots to restore, but the chain in/out tally still describes
             // this track's level (an empty rack build wants it)
-            juce::MessageManager::callAsync([this, chainLevels] {
+            juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool>(aliveToken_), chainLevels] {
+                if (alive.expired()) { EchoJay_NSLog("EJState: deferred tally restore dropped - the plugin was removed before the message loop ran"); return; }
                 applyHostTrackNameIfDirty();
                 chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
             });
@@ -5232,7 +5241,8 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         {
             // Old single-plugin format: wrap in CHAIN_SLOTS for restore
             auto xml = chainLoadedDescXml;
-            juce::MessageManager::callAsync([this, xml] {
+            juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool>(aliveToken_), xml] {
+                if (alive.expired()) { EchoJay_NSLog("EJState: deferred legacy restore dropped - the plugin was removed before the message loop ran"); return; }
                 // Build a CHAIN_SLOTS wrapper around the old single-desc XML
                 juce::String wrapped = "<CHAIN_SLOTS><SLOT bypassed=\"0\">" + xml + "</SLOT></CHAIN_SLOTS>";
                 chainHost.tryRestoreSlotsFromXml(wrapped);

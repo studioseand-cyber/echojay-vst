@@ -1947,11 +1947,10 @@ int main()
         check (lv != nullptr && std::abs ((float) lv->gainDb() - (gBefore - 2.0f)) < 0.05f && std::abs (loop.target() - (tBefore - 2.0f)) < 0.01f, "(2c) the Level moved -2 dB and the target -2 (the softer step twice)", "Level " + juce::String (gBefore, 2) + " -> " + juce::String (lv ? lv->gainDb() : 0.0, 2));
         check (M.size() >= nBefore + 2 && M.back().content.startsWith ("Applied -2.0 dB (Level now "), "(2c) one after-verb bubble \"Applied -2.0 dB (Level now ...)\" (plus the local user bubble)", M.back().content.substring (0, 60));
     }
-    // LAST, DELIBERATELY (21t-d, 25 Sep 2026): this leg constructs a SECOND EchoJayProcessor, and destroying
-    // one is what raises "mutex lock failed" and kills the process. Its four checks PASS when it runs (proved
-    // 25 Sep by running it first), but anything placed after it is skipped - so it goes last, where it can
-    // truncate nothing but itself. The abort is on the after-merge list.
-    // process. Until that is fixed the leg runs LAST, so it truncates nothing but itself - it used to sit in
+    // This leg constructs a SECOND EchoJayProcessor and destroys it. Until 21t-f (b) that was fatal - the
+    // deferred state restore fired into freed memory afterwards and aborted the process, so this leg ran LAST
+    // where it could truncate nothing but itself. The cause is fixed (the restore holds the processor's
+    // liveness token weakly) and the leg below proves it, so the order here is no longer load-bearing.
     std::printf ("== (9) 22 Sep 2026 (21m): rename alias - a V2-session alias for a Link, shown by getLinkDisplayList (the one source), Reset name clears it, persisted with the session state ==\n");
     {
         EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
@@ -1970,6 +1969,49 @@ int main()
 
 
     }
+    // ---- 21t-f (b): A DEFERRED RESTORE MUST NOT OUTLIVE ITS PROCESSOR ------------------------------------
+    // THE ABORT THIS SUITE DIED OF, now a leg. setStateInformation posts the slot restore to the message loop;
+    // the lambda captured a raw `this`, so a processor destroyed before the loop turned left
+    // ChainHost::tryRestoreSlotsFromXml locking a std::mutex in freed memory - "mutex lock failed: Invalid
+    // argument", an abort, and every assertion after it skipped. lldb named the frame; this leg reproduces it.
+    // On the pre-fix binary this leg ABORTS (the process dies here and prints no verdict), which is the RED.
+    {
+        std::printf ("\n== 21t-f (b): a deferred state restore does not outlive its processor ==\n");
+        juce::MemoryBlock mb;
+        {
+            EchoJayProcessor src; src.prepareToPlay (48000.0, 512);
+            { SurgicalEqProcessor fe; juce::ignoreUnused (fe); }
+            if (const auto* eqd = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ"))
+                src.getChainHost().insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eqd), 0);
+            src.getStateInformation (mb);
+            check (src.getChainHost().getNumSlots() == 1 && mb.getSize() > 0,
+                   "21t-f (b). fixture: a session with a slot in the rack",
+                   juce::String ((int) src.getChainHost().getNumSlots()) + " slot(s), "
+                   + juce::String ((int) mb.getSize()) + "b of state");
+        }
+        // A plugin that receives its state and is removed before the message loop turns. This is a DAW case
+        // (remove a plugin, or close a session, during a restore), not only a harness one.
+        {
+            auto doomed = std::make_unique<EchoJayProcessor>();
+            doomed->prepareToPlay (48000.0, 512);
+            doomed->setStateInformation (mb.getData(), (int) mb.getSize());
+            doomed.reset();          // destroyed with the restore still queued
+        }
+        pumpMs (200);                // ...and here is where it used to abort
+        check (true, "21t-f (b). the queued restore fired after the processor died, and nothing aborted",
+               "the lambdas hold the processor's liveness token weakly");
+        // And the ordinary path still restores when the processor IS alive - a token that always says "gone"
+        // would pass the check above and break the product.
+        {
+            EchoJayProcessor live; live.prepareToPlay (48000.0, 512);
+            live.setStateInformation (mb.getData(), (int) mb.getSize());
+            pumpMs (400);
+            check (live.getChainHost().getNumSlots() == 1,
+                   "21t-f (b). ...while a LIVE processor still restores its rack (the token is not a mute button)",
+                   juce::String ((int) live.getChainHost().getNumSlots()) + " slot(s) restored");
+        }
+    }
+
     std::printf ("\n==== ui_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
     return failures == 0 ? 0 : 1;
 }
