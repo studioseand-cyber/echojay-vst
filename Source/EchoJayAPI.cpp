@@ -3161,6 +3161,9 @@ const juce::StringArray& EchoJayAPI::historyStripMarkers()
         // The running level marker (17 Aug 2026): rides after the rack
         // block on the same arm, varies per turn, never belongs in history.
         "\n\n[CHAIN LEVELS",
+        // 21t-g item 2: [TRACK LEVELS] is a per-turn measurement, like every other block here - a stale one in
+        // history would offer the server a loudness figure from a different minute of a different take.
+        "\n\n[TRACK LEVELS",
         // The extended meter marker (2 Sep 2026): same arm, same per-turn
         // volatility. A stale snapshot resent as history would be read as a
         // second measurement of the same input.

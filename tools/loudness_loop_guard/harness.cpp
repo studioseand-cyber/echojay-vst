@@ -1114,6 +1114,146 @@ static int guardMain()
         }
     }
 
+    // ---- 21t-g (6): PASSIVE IS THE DEFAULT, AND IT IS QUIET ----------------------------------------------
+    // The whole point of the revision: by the time a user asks for a compressor the client has usually been
+    // keeping figures for minutes, so the loop should set the thing and say nothing until it is done. These legs
+    // drive the real CalibLoop - the same header both binaries compile - and assert what the USER would see.
+    {
+        std::printf ("\n== 21t-g (6): a passive loop shows no card, asks for nothing, and reports once ==\n");
+        auto inBand  = [] { echojay::CalibLoop::Window w; w.measured = true; w.grDb = 2.5f; w.inTruePeakDb = -12.0f; return w; };
+        auto tooLittle = [] { echojay::CalibLoop::Window w; w.measured = true; w.grDb = 0.4f; w.inTruePeakDb = -12.0f; return w; };
+
+        // (a) PASSIVE, out of band: it steps, and never says a word while it works.
+        {
+            echojay::CalibLoop::Config cfg;
+            cfg.plugin = "EJ Test Compressor"; cfg.slot = 1; cfg.lo = 2.0f; cfg.hi = 3.0f;
+            cfg.mode = echojay::CalibLoop::Mode::Passive;      // the default; stated here because it is the subject
+            cfg.startDb = 0.0f;
+            echojay::CalibLoop loop; loop.begin (cfg);
+            check (loop.card().isEmpty(), "21t-g (6a). a passive loop draws NO card before it has measured anything",
+                   loop.card().isEmpty() ? juce::String ("(silent)") : loop.card());
+            juce::String anyCard;
+            for (int i = 0; i < 3; ++i)
+            {
+                const auto st = loop.onWindow (tooLittle(), 3000.0);
+                if (st.card.isNotEmpty()) anyCard = st.card;
+                if (loop.card().isNotEmpty()) anyCard = loop.card();
+            }
+            check (anyCard.isEmpty(),
+                   "21t-g (6a). ...and none while it steps - no \"Listening\", no \"play the loudest part\"",
+                   anyCard.isEmpty() ? juce::String ("(silent)") : anyCard);
+            check (loop.steps > 0 && loop.mode == echojay::CalibLoop::Mode::Passive,
+                   "21t-g (6a). ...while it IS working: the drive moved toward the band",
+                   juce::String (loop.steps) + " step(s), drive " + juce::String (loop.preDb, 1));
+            // Silence in passive is silent too: no "Waiting for playback" prompt.
+            echojay::CalibLoop::Window quiet; quiet.measured = true; quiet.silent = true;
+            for (int i = 0; i < 11; ++i) loop.onWindow (quiet, 3000.0);   // past the 30 s clock
+            check (loop.card().isEmpty(),
+                   "21t-g (6a). ...and 30 s of silence asks for nothing either (the listen pass would prompt)",
+                   loop.card().isEmpty() ? juce::String ("(silent)") : loop.card());
+            // Two in-band windows end it, and THEN one line, naming what moved. No question in passive.
+            const auto s1 = loop.onWindow (inBand(), 3000.0);
+            const auto s2 = loop.onWindow (inBand(), 3000.0);
+            const auto s3 = loop.onWindow (inBand(), 3000.0);
+            const juce::String closing = s1.closing + s2.closing + s3.closing;
+            check (closing.startsWith ("Adjusted the EJ Test Compressor drive to")
+                   && ! closing.containsChar ('?'),
+                   "21t-g (6a). ...and the ONLY message is one closing line, with no question attached", closing);
+        }
+
+        // (b) PASSIVE and already in band: nothing moved, so nothing is said at all.
+        {
+            echojay::CalibLoop::Config cfg;
+            cfg.plugin = "EJ Test Compressor"; cfg.slot = 1; cfg.lo = 2.0f; cfg.hi = 3.0f;
+            echojay::CalibLoop loop; loop.begin (cfg);
+            juce::String said;
+            for (int i = 0; i < 3; ++i) { const auto st = loop.onWindow (inBand(), 3000.0); said += st.closing; }
+            check (! loop.running() && loop.steps == 0,
+                   "21t-g (6b). a compressor already in band finishes without a step",
+                   juce::String (loop.steps) + " step(s)");
+            check (said.isEmpty() && loop.closingMessage().isEmpty(),
+                   "21t-g (6b). ...and says NOTHING - there is nothing to report and a report would be noise",
+                   said.isEmpty() ? juce::String ("(silent)") : said);
+        }
+
+        // (c) LISTEN is exactly what it was: a card, a prompt, and a closing line with a question.
+        {
+            echojay::CalibLoop::Config cfg;
+            cfg.plugin = "EJ Test Compressor"; cfg.slot = 1; cfg.lo = 2.0f; cfg.hi = 3.0f;
+            cfg.mode = echojay::CalibLoop::Mode::Listen;
+            echojay::CalibLoop loop; loop.begin (cfg);
+            check (loop.card().contains ("Listening"),
+                   "21t-g (6c). a LISTEN loop still asks for playback, word for word as before", loop.card());
+            loop.onWindow (tooLittle(), 3000.0);
+            loop.onWindow (tooLittle(), 3000.0);
+            const auto a = loop.onWindow (inBand(), 3000.0);
+            const auto b = loop.onWindow (inBand(), 3000.0);
+            const auto c2 = loop.onWindow (inBand(), 3000.0);
+            const juce::String closing = a.closing + b.closing + c2.closing;
+            check (closing.contains ("Adjusted the") && closing.containsChar ('?'),
+                   "21t-g (6c). ...and its closing line still ends in a question about the chain", closing);
+        }
+
+        // (d) THE THRESHOLD ACTUATOR: the named control moves, in the sense the profile gave, and a param ARRAY
+        // moves together. The drive is left exactly where staging put it.
+        {
+            echojay::CalibLoop::Config cfg;
+            cfg.plugin = "UnFairchild 670M II"; cfg.slot = 0; cfg.lo = 2.0f; cfg.hi = 3.0f;
+            cfg.actuator = echojay::CalibLoop::Actuator::Threshold;
+            cfg.params.add ("Thresh L"); cfg.params.add ("Thresh R");   // paired: stepped as one
+            cfg.senseSign = -1;                                          // lower_is_harder, the dB case
+            cfg.startDb = -18.0f; cfg.minDb = -40.0f; cfg.maxDb = 0.0f;
+            echojay::CalibLoop loop; loop.begin (cfg);
+            const auto st = loop.onWindow (tooLittle(), 3000.0);
+            check (st.writeParams && ! st.writeDrive
+                   && st.paramNames.size() == 2 && std::abs (st.paramValue - (-19.0f)) < 0.001f,
+                   "21t-g (6d). too little reduction LOWERS the threshold by 1 dB - both sides of the pair, and "
+                   "the drive is not touched",
+                   st.paramNames.joinIntoString (" + ") + " = " + juce::String (st.paramValue, 1)
+                   + " / writeDrive " + (st.writeDrive ? "yes" : "no"));
+            // ...and the other direction raises it.
+            echojay::CalibLoop::Window tooMuch; tooMuch.measured = true; tooMuch.grDb = 7.0f; tooMuch.inTruePeakDb = -12.0f;
+            loop.onWindow (tooLittle(), 3000.0);          // the fresh window after a move is not judged
+            const auto up = loop.onWindow (tooMuch, 3000.0);
+            check (up.writeParams && up.paramValue > st.paramValue,
+                   "21t-g (6d). ...and too MUCH reduction raises it again, by the same step",
+                   juce::String (st.paramValue, 1) + " -> " + juce::String (up.paramValue, 1));
+            // The profile's range is the limit, and hitting it ends the loop saying the band was not reached.
+            echojay::CalibLoop::Config edge = cfg;
+            edge.startDb = -39.5f;                        // one step from the floor
+            echojay::CalibLoop loop2; loop2.begin (edge);
+            const auto e1 = loop2.onWindow (tooLittle(), 3000.0);
+            check (e1.finished && ! e1.writeParams,
+                   "21t-g (6d). ...and the profile's own range stops it rather than dialling past the control",
+                   juce::String (e1.finished ? "finished" : "still running")
+                   + ", threshold left at " + juce::String (loop2.value, 1));
+            // AND IT STILL SAYS NOTHING, because nothing moved. The first cut of this leg asserted a closing line
+            // here and was wrong: "only if something moved" is the ruling, and a pass that hit the control's floor
+            // on its first window moved nothing. The LISTEN mode is where that fact gets a sentence.
+            check (e1.closing.isEmpty(),
+                   "21t-g (6d). ...silently, in passive: it moved nothing, so there is nothing to report",
+                   e1.closing.isEmpty() ? juce::String ("(silent)") : e1.closing);
+            {
+                echojay::CalibLoop::Config say = edge; say.mode = echojay::CalibLoop::Mode::Listen;
+                echojay::CalibLoop loop3; loop3.begin (say);
+                const auto l1 = loop3.onWindow (tooLittle(), 3000.0);
+                check (l1.finished && l1.closing.contains ("could not get")
+                       && l1.closing.contains ("UnFairchild 670M II"),
+                       "21t-g (6d). ...while a LISTEN pass says the band was not reached, and names the figure it "
+                       "did measure", l1.closing.substring (0, 110));
+            }
+            // A handover carries the knob: the state that rides the sidecar must not turn a threshold pass into a
+            // drive pass halfway through.
+            const auto back = echojay::CalibLoop::fromVar (loop.toVar());
+            check (back.actuator == echojay::CalibLoop::Actuator::Threshold
+                   && back.params.size() == 2 && back.mode == echojay::CalibLoop::Mode::Passive
+                   && std::abs (back.value - loop.value) < 0.001f,
+                   "21t-g (6d). ...and the mode, the knob and its value survive the sidecar round trip",
+                   back.params.joinIntoString (" + ") + " @ " + juce::String (back.value, 1)
+                   + (back.mode == echojay::CalibLoop::Mode::Passive ? " passive" : " listen"));
+        }
+    }
+
     // ---- 21t-f (5): SHORT90 IS THE p90 OF THE CLOSED SHORT-TERM WINDOWS ----------------------------------
     // The tally already had a p90, over the 400 ms MOMENTARY histogram. SHORT90 is a different quantity and
     // this leg is what stops the two being confused: it drives a real EchoJayLevelTally with programme that

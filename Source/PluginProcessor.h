@@ -633,6 +633,10 @@ public:
     /** Start (or re-target) the loop on a dynamics slot. uid empty = this instance's own rack. */
     void calibStart(const juce::String& uid, int slot, const juce::String& pluginName,
                     float bandLo, float bandHi, float openingDrive);
+    /** 21t-g item 2: start from the response's calibration block, which says the MODE (passive unless it says
+        otherwise), the ACTUATOR and, for a threshold, the control name(s), the sense and the range. The old
+        overload above is the listen/drive case and stays for the callers that mean exactly that. */
+    void calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg);
     /** One tick: advance the loop by any 3 s windows the owning host has measured. Returns the card text. */
     juce::String calibTick(const juce::String& uid);
     /** The closing message, handed over exactly once - whoever asks first posts it. */

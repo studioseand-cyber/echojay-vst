@@ -3704,11 +3704,19 @@ private:
     juce::String buildDetectedKeyContext();
     /** [GROUP LEVELS] (21t-c): the selected group's MEMBERS and their own readings; empty when no group. */
     juce::String buildGroupLevelsContext();
+    // 21t-g item 2: one line builder behind both blocks, and the single-track block itself.
+    juce::String levelsTokensFor (const juce::String& uid, juce::String* nameOut = nullptr,
+                                  float* trimOut = nullptr) const;
+    juce::String buildTrackLevelsContext (const juce::String& targetUid = {});
     /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
     int applyGroupLevelMatch (const juce::var& membersVar);
     // ---- 21t-d: the calibration loop's trigger and its surface ----
     /** Start the loop for any dynamics-role slot an applied build/edit left in the rack. uid empty = own rack. */
     int startCalibrationFromOps (const juce::String& uid, const juce::var& ops);
+    // 21t-g item 2: the response's chain-level calibration block (mode, actuator, param(s), sense, range).
+    int startCalibrationFromChain (const juce::String& uid, const juce::var& chain);
+    // ...and an edit card's block, with the per-op shape as the fallback.
+    int startCalibrationForEdit (const juce::String& uid, const juce::String& editJson);
     /** One tick: render the card from whichever host is running the loop, and post a closing message once. */
     void calibTickAndPost (const juce::String& uid);
 

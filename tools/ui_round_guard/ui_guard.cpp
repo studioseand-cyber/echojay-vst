@@ -188,6 +188,12 @@ struct EchoJayTabStripTestAccess
     static bool pinned (EchoJayEditor& e) { return e.viewRackPinned_; }
     // ---- 21t-c ----
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
+    // 21t-g (6): the single-track block, and the composed body it rides in.
+    static juce::String trackLevels (EchoJayEditor& e, const juce::String& uid = {}) { return e.buildTrackLevelsContext (uid); }
+    static juce::String body (EchoJayEditor& e, const juce::String& msg, const juce::String& uid)
+    { juce::StringArray mf; return e.testAssembleChainInjections (msg, uid, &mf); }
+    static int calibFromChain (EchoJayEditor& e, const juce::String& uid, const juce::var& chain)
+    { return e.startCalibrationFromChain (uid, chain); }
     // ---- 21t-d wiring ----
     static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops); }
     static void calibTick (EchoJayEditor& e, const juce::String& uid) { e.calibTickAndPost (uid); }
@@ -1312,6 +1318,81 @@ int main()
                    "21t-f (5). ...and it does not disturb the key group it shares four bytes with",
                    "root " + juce::String ((int) k.keyRoot) + " minor " + juce::String ((int) k.keyIsMinor)
                    + " short90 " + juce::String (frameShort90Db (k), 1));
+        }
+
+        // ---- 21t-g (6): THE BUILD BODY CARRIES THE TARGET CHANNEL'S OWN TALLY -------------------------------
+        // [TRACK LEVELS] is what lets the server set a compressor from figures already kept instead of asking the
+        // user to play the track again - which is the whole reason the loop's default mode is passive. Same tokens
+        // as a [GROUP LEVELS] member line, for one channel, and NEVER beside the group block.
+        {
+            std::printf ("\n== 21t-g (6): the turn carries [TRACK LEVELS] for the chat's own channel ==\n");
+            // KNOWN STATE IN, KNOWN STATE OUT, and that includes THE CHAT: this leg moves the chat to a channel,
+            // and the first cut left it there - the (13) arm-bubble leg further down then wrote its messages into a
+            // different chat and read back "<none>" for chips that were never missing.
+            const auto savedId   = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+            A::knownState (*ed, proc);
+            int e1 = 0; const auto dir = LinkShm::resolveDir (e1);
+            int fd = -1, e2 = 0;
+            if (auto* reg = LinkShm::openRegistry (dir, fd, e2))
+            {
+                const juce::String uid = "trklv1";   // SHORT ON PURPOSE: the registry's uid field is fixed-width and
+                                                    // claimSlot truncates in silence - "trk_levels_1" landed as
+                                                    // "trk_levels_" and every lookup by the full name missed.
+                const int slot = LinkShm::claimSlot (reg, "Nafe Lead Vocal", "nafe.wav", uid, 48000.0f, 2);
+                if (slot >= 0)
+                {
+                    // Exactly the 21t-d fixture's shape (no placement call - that leg proved this is what
+                    // refreshLinkRegistry lists), so this leg tests the BLOCK and not my fixture.
+                    LinkShm::setSlotActive (reg, slot, true);
+                    LinkShm::setSlotGain (reg, slot, -3.0f);
+                    auto beat = [&] { LinkShm::bumpHeartbeat (reg, slot); proc.refreshLinkRegistry(); };
+                    beat(); beat();
+                    LinkMeterFrame f;
+                    f.momentary = -13.0f; f.shortTerm = -14.0f; f.integrated = -17.0f;
+                    f.truePeakMax = -1.0f; f.shortTermTP = -9.0f;
+                    f.shortTermMax = -12.0f; f.heardSeconds = 120.0f;
+                    f.fieldsMask = kFrameHasPreTrim | kFrameHasShortMax | kFrameHasHeard;
+                    frameSetShort90 (f, -14.25f);
+                    LinkShm::publishMeterFrame (reg, slot, f);
+                    beat();
+
+                    // NOTHING BETWEEN THE LAST HEARTBEAT AND THE READ. selectRack used to sit here, and its
+                    // registry refresh dropped this slot as not-yet-live (liveness is observed in TIME, so two
+                    // beats in the same millisecond are not enough) - the block was then empty for a fixture
+                    // reason, not a product one. The chat target is stated directly, the way the [CURRENT CHAIN]
+                    // leg states it, and both calls below take the turn's uid explicitly anyway.
+                    proc.pendingChannelUid = uid;
+                    const auto tl = A::trackLevels (*ed, uid);
+                    check (tl.startsWith ("[TRACK LEVELS"),
+                           "21t-g (6e). the block is there, in the documented shape  (RED as it stood: there was "
+                           "no single-track block at all)", tl.substring (0, 60));
+                    check (tl.contains ("SHORT90 -14.2") && tl.contains ("INT -17.0")
+                           && tl.contains ("PEAK -1.0") && tl.contains ("HEARD 120"),
+                           "21t-g (6e). ...carrying this channel's own figures, token for token",
+                           tl.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 60));
+                    const auto composed = A::body (*ed, "make it harder", uid);
+                    check (composed.contains ("[TRACK LEVELS"),
+                           "21t-g (6e). ...and the COMPOSED TURN carries it, not just the builder",
+                           composed.contains ("[TRACK LEVELS") ? juce::String ("attached") : juce::String ("absent"));
+
+                    // ...and never beside the group block: two loudness blocks on one turn are two answers.
+                    const auto gid = proc.createLinkGroup ("Vox", juce::StringArray { uid });
+                    A::targetGroup (*ed, gid);
+                    const auto both = A::body (*ed, "level these", uid);
+                    check (both.contains ("[GROUP LEVELS") && ! both.contains ("[TRACK LEVELS"),
+                           "21t-g (6e). a GROUP turn carries the group block and not the track one",
+                           both.contains ("[GROUP LEVELS") ? juce::String ("group only") : juce::String ("neither"));
+                    A::targetGroup (*ed, {}); proc.removeLinkGroup (gid);
+                    proc.pendingChannelUid.clear();
+                    LinkShm::releaseSlot (reg, slot);
+                }
+                else check (false, "21t-g (6e). fixture: a Link slot was claimed");
+            }
+            else check (false, "21t-g (6e). fixture: the isolated registry opened");
+            A::knownState (*ed, proc);
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed) = savedMsgs;
         }
 
         // ---- 21t-d (c): SHORTMAX is the max of SHORT since the tally started, and resets with it -------------

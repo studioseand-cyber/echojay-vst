@@ -20,12 +20,34 @@
 // WHAT IT IS NOT. It is not a timer: every decision is taken on a WINDOW, and a window that was not measured
 // (dropped ring frames) is not a measurement - it cannot advance the step count. Silence is its own state, with
 // its own 30 s clock, and nothing is written while it waits.
+//
+// TWO MODES, AND PASSIVE IS THE DEFAULT (21t-g item 2, 26 Sep 2026 ruling). The response's calibration block says
+// which, and a block that says nothing means PASSIVE:
+//
+//   PASSIVE - the ordinary case, because by the time a user asks for a compressor the client has usually been
+//   keeping figures for minutes. Nothing is asked of the user: no card, no "Listening...", no request to play
+//   anything. The host measures the slot's in/out over the same windows it already measures, judges the GR band
+//   by the same 1 dB / two-in-band / six-step rules, and the ONLY thing said at the end is one line, and only if
+//   something actually moved. A loop that found the compressor already in band says nothing at all - there is
+//   nothing to report and a report would be noise.
+//
+//   LISTEN - exactly what this loop has always done, cards and prompts included, entered only when the block
+//   says mode "listen" (the server sends that when it has heard less than 30 s, or when the user asks to
+//   calibrate).
+//
+// TWO ACTUATORS. DRIVE is the slot's pre-gain with the post-trim mirrored, as before. THRESHOLD dials the
+// compressor's own threshold control (the name the profile uses), in the direction the profile's sense says makes
+// it work harder, and leaves the drive where the staging put it. `param` may be an ARRAY - paired L/R thresholds -
+// and then every one of them is stepped together to the same value, because a pair at different values is a
+// different device.
 namespace echojay
 {
 
 struct CalibLoop
 {
     enum class State { Idle, Listening, Waiting, Adjusted, Clamped };
+    enum class Mode  { Passive, Listen };            // PASSIVE unless the block says otherwise
+    enum class Actuator { Drive, Threshold };
 
     static constexpr float kStepDb      = 1.0f;    // one move, ruled
     static constexpr float kDriveLimit  = 12.0f;   // +/- , ruled
@@ -36,6 +58,13 @@ struct CalibLoop
 
     // ---- the state that rides the sidecar ----
     juce::String plugin;               // the slot's plugin name, for the card and the log
+    Mode   mode        = Mode::Passive;   // the default, per the ruling: no card, no prompt, one closing line
+    Actuator actuator  = Actuator::Drive;
+    juce::StringArray params;          // the threshold control(s); empty for the drive actuator
+    int    senseSign   = -1;           // threshold: -1 = lower is harder (the dB case), +1 = higher is harder
+    float  value       = 0.0f;         // the ACTUATOR's current value in dB (the threshold, or the drive)
+    float  minDb       = -60.0f;       // the profile's range for the threshold control
+    float  maxDb       = 12.0f;
     int    slot        = -1;
     float  lo          = 2.0f;         // the band, from the op's gr_target_db
     float  hi          = 3.0f;
@@ -70,17 +99,57 @@ struct CalibLoop
         bool  writeDrive = false;   // set the slot's pre-gain to newPre and its post-trim to -newPre
         float newPre     = 0.0f;
         float newPost    = 0.0f;
+        // 21t-g: the THRESHOLD actuator. Every name in paramNames goes to paramValue together - a paired L/R
+        // threshold at two different values is a different device, so they move as one.
+        bool  writeParams = false;
+        juce::StringArray paramNames;
+        float paramValue  = 0.0f;
         juce::String card;          // what the card says now
         juce::String logLine;       // EJCalib: ... , one per window
         bool  finished   = false;   // the loop ended on this window
         juce::String closing;       // the closing message, when it ended
     };
 
+    /** Everything the response's calibration block can say. Defaults are the ruled defaults: PASSIVE, the drive
+        actuator, and a threshold range wide enough to be no constraint until a profile narrows it. */
+    struct Config
+    {
+        juce::String plugin;
+        int    slot = -1;
+        float  lo = 2.0f, hi = 3.0f;      // gr_target_db
+        Mode   mode = Mode::Passive;
+        Actuator actuator = Actuator::Drive;
+        juce::StringArray params;         // param, or every entry of a param array
+        int    senseSign = -1;            // "lower_is_harder" (the dB threshold case) unless told otherwise
+        float  startDb = 0.0f;            // the actuator's opening value: the drive, or the threshold
+        float  minDb = -60.0f, maxDb = 12.0f;
+    };
+
+    void begin (const Config& c)
+    {
+        plugin = c.plugin; slot = c.slot;
+        lo = juce::jmin (c.lo, c.hi); hi = juce::jmax (c.lo, c.hi);
+        mode = c.mode; actuator = c.actuator; params = c.params; senseSign = c.senseSign < 0 ? -1 : 1;
+        minDb = juce::jmin (c.minDb, c.maxDb); maxDb = juce::jmax (c.minDb, c.maxDb);
+        // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
+        // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
+        value = c.startDb;
+        preDb = (actuator == Actuator::Drive) ? c.startDb : 0.0f;
+        steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0;
+        lastGr = std::numeric_limits<float>::quiet_NaN();
+        awaitFresh = false; closingOwed = false; headroomStopped = false;
+        headroomLimit = kDriveLimit;
+        state = State::Listening;
+    }
+
+    /** The pre-21t-g entry point: a LISTEN pass on the drive, which is what every existing caller meant. */
     void begin (const juce::String& pluginName, int slotIndex, float bandLo, float bandHi, float openingDrive)
     {
         plugin = pluginName; slot = slotIndex;
         lo = juce::jmin (bandLo, bandHi); hi = juce::jmax (bandLo, bandHi);
-        preDb = openingDrive;
+        mode = Mode::Listen; actuator = Actuator::Drive; params.clear(); senseSign = -1;
+        minDb = -60.0f; maxDb = 12.0f;
+        preDb = openingDrive; value = openingDrive;
         steps = 0; window = 0; inBandRun = 0; noSignalMs = 0.0;
         lastGr = std::numeric_limits<float>::quiet_NaN();
         awaitFresh = false; closingOwed = false; headroomStopped = false;
@@ -156,7 +225,28 @@ struct CalibLoop
         }
         inBandRun = 0;
 
-        // (4) OUT OF THE BAND: one step toward it, unless the budget, the drive limit or the HEADROOM says stop.
+        // (4) OUT OF THE BAND: one step toward it, unless the budget, the range or the HEADROOM says stop.
+        //
+        // THE THRESHOLD ACTUATOR takes the simpler road: a threshold costs the slot's input no headroom, so the
+        // only limits are the step budget and the profile's own range. Which way is "harder" comes from the
+        // profile's sense, never from a guess - a dB threshold compresses harder as it falls, and a control whose
+        // sense was not sampled is not this actuator at all (the server sends "drive" for those).
+        if (actuator == Actuator::Threshold)
+        {
+            const bool harder = w.grDb < lo;                      // too little reduction -> work it harder
+            const float wantP = value + (harder ? (float) senseSign : -(float) senseSign) * kStepDb;
+            if (steps >= kMaxSteps || wantP < minDb - 1.0e-4f || wantP > maxDb + 1.0e-4f)
+            {
+                state = State::Clamped; closingOwed = true;
+                s.finished = true; s.closing = closingMessage();
+                s.card = card(); s.logLine = log ("clamped");
+                return s;
+            }
+            value = wantP; ++steps; awaitFresh = true;
+            s.writeParams = true; s.paramNames = params; s.paramValue = value;
+            s.card = card(); s.logLine = log ("listening");
+            return s;
+        }
         const float want = w.grDb < lo ? preDb + kStepDb : preDb - kStepDb;
         // THE HEADROOM LIMIT (21t-d): the drive at which the slot's input true peak would reach -3 dBTP. The
         // input TP was measured AT THE CURRENT DRIVE, so the headroom left is (-3 - inTP) dB and the limit is
@@ -181,6 +271,7 @@ struct CalibLoop
             return s;
         }
         preDb = want; ++steps; awaitFresh = true;
+        value = preDb;                      // one "current value", whichever knob it is
         s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
         s.card = card(); s.logLine = log ("listening");
         return s;
@@ -188,6 +279,10 @@ struct CalibLoop
 
     juce::String card() const
     {
+        // PASSIVE SAYS NOTHING WHILE IT RUNS. No card, so no "Listening... play the loudest part" and no
+        // "Waiting for playback" - nothing is waiting for the user, and telling them to play something for a
+        // measurement already in hand is a wrong instruction.
+        if (mode == Mode::Passive) return {};
         switch (state)
         {
             case State::Waiting:   return "Waiting for playback - play the loudest part of this channel";
@@ -205,6 +300,13 @@ struct CalibLoop
         server's follow-up rule routes it. */
     juce::String closingMessage()
     {
+        // PASSIVE: one line, and only if something actually moved. A compressor that was already in band needed
+        // nothing, and a message saying so is noise in a chat the user did not ask a question in.
+        if (mode == Mode::Passive)
+        {
+            if (steps == 0) return {};
+            return "Adjusted the " + plugin + " " + knobText() + " to " + driveText() + " dB.";
+        }
         static const char* kQuestions[] = {
             "How does the chain sound now?",
             "Does that sit better with the rest of the mix?",
@@ -245,6 +347,15 @@ struct CalibLoop
         o->setProperty ("state", (int) state);
         o->setProperty ("closingOwed", closingOwed);
         o->setProperty ("headroomStopped", headroomStopped);
+        // 21t-g: the mode and the actuator ride too, or a handover would turn a passive threshold pass into a
+        // listen drive pass halfway through - which is a different loop, on a different knob, talking to the user.
+        o->setProperty ("mode", (int) mode);
+        o->setProperty ("actuator", (int) actuator);
+        o->setProperty ("params", params.joinIntoString ("\n"));
+        o->setProperty ("senseSign", senseSign);
+        o->setProperty ("value", (double) value);
+        o->setProperty ("minDb", (double) minDb);
+        o->setProperty ("maxDb", (double) maxDb);
         return juce::var (o);
     }
     static CalibLoop fromVar (const juce::var& v)
@@ -265,15 +376,44 @@ struct CalibLoop
         c.state = (State) (int) o->getProperty ("state");
         c.closingOwed = (bool) o->getProperty ("closingOwed");
         c.headroomStopped = (bool) o->getProperty ("headroomStopped");
+        // 21t-g. An OLDER sidecar has none of these: mode falls back to LISTEN, not passive, because that is what
+        // a loop written by an older binary was - inferring "passive" from a missing field would silence a pass
+        // that had been showing a card.
+        c.mode = o->hasProperty ("mode") ? (Mode) (int) o->getProperty ("mode") : Mode::Listen;
+        c.actuator = o->hasProperty ("actuator") ? (Actuator) (int) o->getProperty ("actuator") : Actuator::Drive;
+        c.params.clear();
+        if (o->hasProperty ("params"))
+        {
+            const auto joined = o->getProperty ("params").toString();
+            if (joined.isNotEmpty()) c.params.addLines (joined);
+        }
+        c.senseSign = o->hasProperty ("senseSign") ? ((int) o->getProperty ("senseSign") < 0 ? -1 : 1) : -1;
+        c.value = o->hasProperty ("value") ? (float) (double) o->getProperty ("value") : c.preDb;
+        c.minDb = o->hasProperty ("minDb") ? (float) (double) o->getProperty ("minDb") : -60.0f;
+        c.maxDb = o->hasProperty ("maxDb") ? (float) (double) o->getProperty ("maxDb") : 12.0f;
         return c;
     }
     bool active() const { return state != State::Idle; }
 
     juce::String log (const char* stateWord) const
     {
+        // The log names the MODE and the KNOB, because "the loop moved something" is not readable a week later
+        // without them - a passive threshold pass and a listen drive pass look identical otherwise.
         return "EJCalib: \"" + plugin + "\" window " + juce::String (window)
-             + " gr=" + grText() + " pre=" + signed1 (preDb) + " post=" + signed1 (-preDb)
+             + " gr=" + grText()
+             + (actuator == Actuator::Threshold
+                    ? " " + knobText() + "=" + signed1 (value)
+                    : " pre=" + signed1 (preDb) + " post=" + signed1 (-preDb))
+             + " mode=" + juce::String (mode == Mode::Passive ? "passive" : "listen")
              + " state=" + stateWord;
+    }
+
+    /** What is being dialled, in the user's words: the profile's own control name, or "drive". */
+    juce::String knobText() const
+    {
+        if (actuator == Actuator::Threshold && ! params.isEmpty())
+            return params.size() == 1 ? params[0] : params.joinIntoString (" + ");
+        return "drive";
     }
 
 private:
@@ -281,7 +421,8 @@ private:
     { return (v >= 0.0f ? "+" : "") + juce::String (v, 1); }
     juce::String grText() const
     { return (lastGr == lastGr) ? juce::String (lastGr, 1) : juce::String ("--"); }
-    juce::String driveText() const { return signed1 (preDb); }
+    // The number the closing line quotes: whichever knob this loop is dialling.
+    juce::String driveText() const { return signed1 (actuator == Actuator::Threshold ? value : preDb); }
 };
 
 } // namespace echojay

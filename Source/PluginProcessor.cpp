@@ -6107,6 +6107,53 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
     calibStore(uid, loop);
 }
 
+void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg)
+{
+    auto loop = calibLoad(uid);
+    // A RE-TARGET IS ONLY A RE-TARGET WHILE NOTHING ELSE CHANGED. The same slot, the same plugin, the same mode
+    // and the same actuator means the band moved and the work done stands. A different actuator (or a passive
+    // pass arriving over a listen one) is a different loop and starts clean, or it would carry a drive figure
+    // into a threshold pass and quote it in the closing line.
+    if (loop.running() && loop.slot == cfg.slot && loop.plugin == cfg.plugin
+        && loop.mode == cfg.mode && loop.actuator == cfg.actuator)
+    {
+        loop.retarget(cfg.lo, cfg.hi);
+        EchoJay_NSLog(("EJCalib: \"" + cfg.plugin + "\" re-targeted to " + juce::String(cfg.lo, 1) + "-"
+                       + juce::String(cfg.hi, 1) + " dB, continuing on the same knob").toRawUTF8());
+        calibStore(uid, loop);
+        return;
+    }
+
+    loop.begin(cfg);
+    const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
+    EchoJay_NSLog(("EJCalib: \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
+                   + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")
+                   + ", band " + juce::String(cfg.lo, 1) + "-" + juce::String(cfg.hi, 1) + " dB, dialling "
+                   + (threshold ? cfg.params.joinIntoString(" + ") : juce::String("the drive"))
+                   + " from " + juce::String(cfg.startDb, 1) + " dB"
+                   + (threshold ? ", range " + juce::String(cfg.minDb, 1) + ".." + juce::String(cfg.maxDb, 1)
+                                  + " dB, " + (cfg.senseSign < 0 ? "lower is harder" : "higher is harder")
+                                : juce::String())).toRawUTF8());
+
+    if (auto* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+        if (cfg.slot >= 0 && cfg.slot < host->getNumSlots())
+        {
+            if (threshold)
+            {
+                // The opening THRESHOLD is written the same way every later step is. The drive is left alone:
+                // slot_pre_gain_db is staging and the server already wrote it.
+                if (cfg.startDb == cfg.startDb)   // not NaN: under 30 s heard, the server sends no start value
+                    host->setSlotControlsToValue(cfg.slot, cfg.params, cfg.startDb);
+            }
+            else
+            {
+                host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
+                host->setSlotTrimDb   (cfg.slot, -cfg.startDb);
+            }
+        }
+    calibStore(uid, loop);
+}
+
 juce::String EchoJayProcessor::calibTick(const juce::String& uid)
 {
     auto loop = calibLoad(uid);
@@ -6141,6 +6188,13 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     {
         host->setSlotPreTrimDb(loop.slot, step.newPre);
         host->setSlotTrimDb   (loop.slot, step.newPost);
+        if (uid.isNotEmpty()) republishBorrowedRackSidecar();
+    }
+    // 21t-g item 2: the THRESHOLD actuator writes the compressor's own control instead, through the same
+    // map-keyed apply a dialled setting takes. The drive is left exactly where the staging put it.
+    if (step.writeParams)
+    {
+        host->setSlotControlsToValue(loop.slot, step.paramNames, step.paramValue);
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
     }
     calibStore(uid, loop);

@@ -428,6 +428,10 @@ void LinkProcessor::calibTickOwnRack()
         chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
         chainHost.setSlotTrimDb   (calibLoop_.slot, step.newPost);
     }
+    // 21t-g item 2: the threshold actuator, the same write on this side - the loop is one header and a handover
+    // must not change which knob is being dialled.
+    if (step.writeParams)
+        chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
     // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
     // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing
     // else. Written directly rather than through publishRackSidecar, which is rate-limited on the rack picture

@@ -2569,7 +2569,17 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                            + "  path=" + (uid.isEmpty() ? "loadChainFromJson" : "sendChainToLink")
                            + "  dialCapable=" + (uid.isEmpty() ? "n/a (local)"
                                                               : (linkUidDialCapable(uid) ? "y" : "n -> prose only"))).toRawUTF8());
-            if (uid.isEmpty()) { loadChainFromJson(chainBuildJsons[(size_t)i]); return; }
+            // 21t-g item 2: THE TRIGGER, which the product never had. startCalibrationFromOps existed and was
+            // guarded from 21t-d, and nothing in the product ever called it - the loop could only be started by a
+            // test. It starts HERE, after the chain is in the rack, from the response's own calibration block:
+            // passive by default, so an ordinary build sets the compressor from the figures already kept and says
+            // one line at the end if it moved anything.
+            if (uid.isEmpty())
+            {
+                loadChainFromJson(chainBuildJsons[(size_t)i]);
+                startCalibrationFromChain({}, juce::JSON::parse(chainBuildJsons[(size_t)i]));
+                return;
+            }
             if (!linkUidLive(uid))
             {
                 appendLocalResultBubble("\"" + channelDisplayLabel(uid)
@@ -2583,7 +2593,12 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 appendLocalResultBubble(chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr));
                 return;
             }
-            sendChainToLink(uid, chainBuildJsons[(size_t)i]); };
+            sendChainToLink(uid, chainBuildJsons[(size_t)i]);
+            // A LEASED rack's slots live in this process, so the loop runs here. Without a lease the chain is the
+            // Link's own and so is the loop - it compiles the same header and continues from the sidecar; nothing
+            // is started here for a rack this process cannot measure.
+            if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
+                startCalibrationFromChain(uid, juce::JSON::parse(chainBuildJsons[(size_t)i])); };
             // RETIRED (21t-e, 25 Sep 2026): the compose-time pre-gain.
             // It carried a level-match figure computed from the channel's own loudness and applied it to WHATEVER
             // was built. On 25 Sep that put +4.4 dB in front of a one-slot TUNER chain - a pitch corrector that
@@ -24334,6 +24349,94 @@ int EchoJayEditor::editCardHeight(const ChatMsg& msg) const
 // and [1,2] on a bus, because those are the bands the ruling names and a missing field is not a reason to guess
 // a different one. slot_pre_gain_db is the opening drive - written with the post-trim mirrored, like every later
 // step. Returns how many loops were started.
+// ---- 21t-g item 2: THE CALIBRATION BLOCK, PARSED WHERE THE RESPONSE ARRIVES -------------------------------
+// The block rides on the chain (CONTRACT_GROUPS, "The calibration block"), not on each op, and it says everything
+// the loop needs: source, heard_s, measure, mode, actuator, slot, param (a name OR an array of names for a paired
+// L/R threshold), start_db (null when the server heard under 30 s and set nothing), sense, min_db, max_db and
+// gr_target_db. A block with no mode is PASSIVE, per the ruling - the default is the quiet one.
+int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juce::var& chain)
+{
+    auto* co = chain.getProperty ("calibration", juce::var()).getDynamicObject();
+    if (co == nullptr) return 0;                       // no compressor in this chain: no block, nothing to start
+    auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
+    if (host == nullptr) return 0;
+
+    echojay::CalibLoop::Config cfg;
+    cfg.slot = co->hasProperty ("slot") ? ((int) co->getProperty ("slot")) - 1 : -1;   // 1-based on the wire
+    if (cfg.slot < 0 || cfg.slot >= host->getNumSlots()) return 0;
+    cfg.plugin = host->getSlotInfo (cfg.slot).name;
+
+    // A BUS band or a TRACK band, exactly as the ops path decides it, so the two cannot drift.
+    const bool bus = uid.isEmpty()
+                   && (processorRef.getChannelType() == ChannelType::MasterBus
+                       || processorRef.getChannelType() == ChannelType::FullMix);
+    cfg.lo = bus ? 1.0f : 2.0f; cfg.hi = bus ? 2.0f : 3.0f;
+    if (auto* band = co->getProperty ("gr_target_db").getArray())
+        if (band->size() == 2)
+        { cfg.lo = (float) (double) band->getUnchecked (0); cfg.hi = (float) (double) band->getUnchecked (1); }
+
+    const auto modeS = co->getProperty ("mode").toString().trim().toLowerCase();
+    cfg.mode = (modeS == "listen") ? echojay::CalibLoop::Mode::Listen
+                                   : echojay::CalibLoop::Mode::Passive;    // absent = passive, ruled
+    const auto actS = co->getProperty ("actuator").toString().trim().toLowerCase();
+    cfg.actuator = (actS == "threshold") ? echojay::CalibLoop::Actuator::Threshold
+                                         : echojay::CalibLoop::Actuator::Drive;
+
+    // param: ONE name, or an ARRAY of them (paired L/R thresholds, stepped together).
+    {
+        const auto pv = co->getProperty ("param");
+        if (auto* pa = pv.getArray())
+            for (const auto& e : *pa) { const auto n = e.toString().trim(); if (n.isNotEmpty()) cfg.params.add (n); }
+        else if (pv.toString().trim().isNotEmpty()) cfg.params.add (pv.toString().trim());
+    }
+    // A threshold actuator with no control to dial is not a threshold actuator. Fall back to the drive rather
+    // than start a loop that would step nothing and then report that it had adjusted something.
+    if (cfg.actuator == echojay::CalibLoop::Actuator::Threshold && cfg.params.isEmpty())
+    {
+        EchoJay_NSLog ("EJCalib: the block says actuator=threshold but names no param - running the DRIVE instead");
+        cfg.actuator = echojay::CalibLoop::Actuator::Drive;
+    }
+
+    const auto senseS = co->getProperty ("sense").toString().trim().toLowerCase();
+    cfg.senseSign = (senseS == "higher_is_harder") ? 1 : -1;      // a dB threshold falls to compress harder
+
+    const auto startV = co->getProperty ("start_db");
+    const bool haveStart = ! startV.isVoid() && (startV.isDouble() || startV.isInt() || startV.isInt64());
+    cfg.startDb = haveStart ? (float) (double) startV
+                            : (cfg.actuator == echojay::CalibLoop::Actuator::Threshold
+                                   ? std::numeric_limits<float>::quiet_NaN()   // nothing is written
+                                   : 0.0f);
+    if (co->hasProperty ("min_db")) cfg.minDb = (float) (double) co->getProperty ("min_db");
+    if (co->hasProperty ("max_db")) cfg.maxDb = (float) (double) co->getProperty ("max_db");
+
+    // WHAT THE SERVER SAID IT SET THIS FROM, logged beside what we do with it: the source, how much it had heard
+    // and which measure it used are the three facts that explain a threshold nobody watched being chosen.
+    EchoJay_NSLog (("EJCalib: block source=" + co->getProperty ("source").toString()
+                    + " heard_s=" + co->getProperty ("heard_s").toString()
+                    + " measure=" + co->getProperty ("measure").toString()
+                    + " mode=" + (cfg.mode == echojay::CalibLoop::Mode::Passive ? "passive" : "listen")
+                    + " actuator=" + (cfg.actuator == echojay::CalibLoop::Actuator::Threshold ? "threshold" : "drive")
+                    + " param=" + (cfg.params.isEmpty() ? juce::String ("(none)") : cfg.params.joinIntoString (","))
+                    + " start_db=" + (haveStart ? juce::String (cfg.startDb, 2) : juce::String ("(none)"))
+                    + " band=" + juce::String (cfg.lo, 1) + "-" + juce::String (cfg.hi, 1)).toRawUTF8());
+
+    processorRef.calibStart (uid, cfg);
+    return 1;
+}
+
+// An EDIT's card carries the same block a build's chain does. Where it does not - an older server, or a set op
+// that only carries the per-op gr_target_db / slot_pre_gain_db - the ops path is the fallback, so a compressor
+// edited by either shape still gets its loop.
+int EchoJayEditor::startCalibrationForEdit (const juce::String& uid, const juce::String& editJson)
+{
+    if (editJson.isEmpty()) return 0;
+    const auto v = juce::JSON::parse (editJson);
+    if (const int n = startCalibrationFromChain (uid, v)) return n;
+    auto ops = v.getProperty ("ops", juce::var());
+    if (! ops.isArray()) ops = v.getProperty ("edits", juce::var());
+    return ops.isArray() ? startCalibrationFromOps (uid, ops) : 0;
+}
+
 int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce::var& ops)
 {
     auto* arr = ops.getArray();
@@ -24526,7 +24629,13 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
     if (cm.editTargetUid.isNotEmpty())
     {
         if (chainViewUid() != cm.editTargetUid) selectRackForView(cm.editTargetUid);
+        const auto editJson = cm.editData;              // copied: the apply may re-enter the message list
+        const auto editUid  = cm.editTargetUid;
         applyChainEditToLink(msgIdx);
+        // 21t-g item 2: an edit that touched a compressor starts the loop too - on a leased rack only, which is
+        // the only one whose slots this process can measure.
+        if (processorRef.borrowHostIfActiveFor(editUid) != nullptr)
+            startCalibrationForEdit(editUid, editJson);
         return;
     }
     if (chainViewUid().isNotEmpty()) selectRackForView({});   // a local edit shows the local rack
@@ -24561,6 +24670,9 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             safeThis->processorRef.republishBorrowedRackSidecar();
             if (msgIdx < 0 || msgIdx >= (int)safeThis->chatMessages.size()) return;
             auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
+            // 21t-g item 2: a LOCAL edit that touched a compressor starts the loop, AFTER the ops landed - the
+            // block names a slot index, and a slot index means nothing until the edit that created it is applied.
+            if (! aborted) safeThis->startCalibrationForEdit({}, cm2.editData);
 
             juce::String summary;
             bool allSuggest = !aborted && applied == total && results.size() > 0;
@@ -26306,6 +26418,85 @@ void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
 // The live frame is preferred; a member that is not publishing right now falls back to its last good frame with
 // the age stated, because a reading from two minutes ago is still what that channel sounded like - and a member
 // with neither is sent as "no signal", never as a silent omission or a zero.
+// ---- ONE LINE BUILDER FOR BOTH BLOCKS (21t-g item 2) -------------------------------------------------------
+// [GROUP LEVELS] prints one of these per member, with the "<name> (id <uid>): trim ..." head; [TRACK LEVELS]
+// prints exactly one, for the chat's own channel, with no head. The tokens and their ORDER are the contract, so
+// they are written once - a second copy of this format is a second format, and the server parses one.
+// Returns an empty string when the channel is not a Link we can read at all; "no signal" when there is no frame.
+juce::String EchoJayEditor::levelsTokensFor (const juce::String& uid, juce::String* nameOut, float* trimOut) const
+{
+    auto num = [] (float v) { return v > -99.0f ? juce::String (v, 1) : juce::String ("no reading"); };
+
+    juce::String name; int regIdx = -1; float trim = 0.0f; bool known = false;
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid) { name = e.displayName; regIdx = e.info.regIdx; trim = e.info.gainDb; known = true; break; }
+    if (name.isEmpty()) name = channelDisplayLabel (uid);
+    if (name.isEmpty()) name = uid;
+    if (nameOut != nullptr) *nameOut = name;
+    if (trimOut != nullptr) *trimOut = trim;
+
+    LinkMeterFrame f;
+    const bool live = known && regIdx >= 0 && processorRef.readLinkMeterFrame (regIdx, f);
+    LinkMeterFrame good; juce::uint32 ageMs = 0;
+    const bool latched = processorRef.linkLastGoodFrame (uid, good, ageMs);
+    const bool liveUsable = live && (f.momentary > -99.0f || f.shortTerm > -99.0f || f.integrated > -99.0f);
+    const LinkMeterFrame* use = liveUsable ? &f : (latched ? &good : nullptr);
+
+    // "no signal" means exactly one thing: there is NO FRAME for this channel. Not "quiet", not "zero".
+    if (use == nullptr) return "no signal";
+
+    // 21t-d: the figures are the Link's PRE-TRIM measurement when it says so, which is what levelling needs -
+    // moving one channel's trim must not rewrite the number the next one is judged against. An older Link
+    // publishes post-trim figures and no bit; the line says so rather than pretending.
+    const bool pre = framePreTrim (*use);
+    return juce::String ("MOM ")  + num (use->momentary) + ", "
+         + "SHORT "   + num (use->shortTerm) + ", "
+         + "SHORTMAX " + (frameHasShortMax (*use) ? juce::String (use->shortTermMax, 1)
+                                                  : juce::String ("no reading")) + ", "
+         // 21t-f item 5: SHORT90 sits after SHORTMAX, as ruled - the p90 of the CLOSED 3 s windows since the
+         // tally reset, where the programme SITS as against SHORTMAX's loudest moment. It rides one quantised
+         // byte of the frame (0.25 LU), so the printed decimal is the value to a quarter of a unit and no finer.
+         + "SHORT90 " + (frameHasShort90 (*use) ? juce::String (frameShort90Db (*use), 1)
+                                                : juce::String ("no reading")) + ", "
+         + "INT "     + num (use->integrated) + ", "
+         + "PEAK "    + num (use->truePeakMax) + ", "
+         // PSR, ruled 25 Sep 2026: PEAK minus SHORTMAX when SHORTMAX is there - a WHOLE-PROGRAMME figure, which
+         // is what the server's transient rule asks about. The 3 s pair (shortTermTP - shortTerm) is the fallback
+         // for a Link that does not publish SHORTMAX: the same quantity over the last window instead of over
+         // everything heard.
+         + "PSR "     + (frameHasShortMax (*use) && use->truePeakMax > -99.0f
+                             ? juce::String (use->truePeakMax - use->shortTermMax, 1)
+                             : ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
+                                    ? juce::String (use->shortTermTP - use->shortTerm, 1)
+                                    : juce::String ("no reading"))) + ", "
+         + "HEARD "   + (frameHasHeard (*use) ? juce::String ((int) (use->heardSeconds + 0.5f))
+                                              : juce::String ("no reading"))
+         + (pre ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"))
+         + (liveUsable ? juce::String() : " (last heard " + juce::String ((int) (ageMs / 1000)) + " s ago)");
+}
+
+// [TRACK LEVELS] (21t-g item 2, CONTRACT_GROUPS "The calibration SOURCE"): the SAME tokens, for one channel, so a
+// compressor on a single track can be set from the figures already kept instead of asking the user to play it
+// again. Empty when the chat is not on a channel, or when that channel has no frame - an empty block is better
+// than a block of "no reading", which would read as a measurement that failed rather than one never taken.
+juce::String EchoJayEditor::buildTrackLevelsContext (const juce::String& targetUid)
+{
+    // THE TURN'S TARGET, PASSED IN, not re-derived. A channel with no chat record yet is HELD as pending until the
+    // first send (the product's own rule), so workingOnUid() is empty on exactly the turn that matters most - the
+    // first build on a channel someone has just selected. The assembly already knows where the turn is going, so
+    // it says so, and a fallback to the settled target covers the callers that have one.
+    const juce::String uid = targetUid.isNotEmpty() ? targetUid
+                           : (processorRef.pendingChannelUid.isNotEmpty() ? processorRef.pendingChannelUid
+                                                                         : workingOnUid());
+    if (uid.isEmpty() || processorRef.chatTargetGroupId.isNotEmpty()) return {};
+    juce::String name; float trim = 0.0f;
+    const auto tokens = levelsTokensFor (uid, &name, &trim);
+    if (tokens.isEmpty() || tokens == "no signal") return {};
+    const auto line = "[TRACK LEVELS - \"" + name + "\"] trim " + juce::String (trim, 1) + " dB, " + tokens;
+    EchoJay_NSLog (("EJTrackLevels: " + line).toRawUTF8());
+    return line;
+}
+
 juce::String EchoJayEditor::buildGroupLevelsContext()
 {
     const juce::String gid = processorRef.chatTargetGroupId;
@@ -26320,63 +26511,13 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
     juce::StringArray lines;
     for (const auto& uid : g->members)
     {
-        juce::String name; int regIdx = -1; float trim = 0.0f; bool known = false;
-        for (const auto& e : processorRef.getLinkDisplayList())
-            if (e.info.uid == uid) { name = e.displayName; regIdx = e.info.regIdx; trim = e.info.gainDb; known = true; break; }
-        if (name.isEmpty()) name = channelDisplayLabel (uid);
-        if (name.isEmpty()) name = uid;
-
-        LinkMeterFrame f;
-        const bool live = known && regIdx >= 0 && processorRef.readLinkMeterFrame (regIdx, f);
-        LinkMeterFrame good; juce::uint32 ageMs = 0;
-        const bool latched = processorRef.linkLastGoodFrame (uid, good, ageMs);
-        const bool liveUsable = live && (f.momentary > -99.0f || f.shortTerm > -99.0f || f.integrated > -99.0f);
-        const LinkMeterFrame* use = liveUsable ? &f : (latched ? &good : nullptr);
-
+        juce::String name; float trim = 0.0f;
+        const auto tokens = levelsTokensFor (uid, &name, &trim);
         // THE LINE FORMAT IS THE CONTRACT (ruled 25 Sep 2026): the token names are literal and in this order, so
-        // the server parses one shape and the guard asserts the tokens themselves.
-        const juce::String head = "  " + name + " (id " + uid + "): trim " + juce::String (trim, 1) + " dB, ";
-        if (use == nullptr)
-        {
-            // "no signal" means exactly one thing: there is NO FRAME for this member. Not "quiet", not "zero".
-            lines.add (head + "no signal");
-            continue;
-        }
-        // SHORTMAX and HEARD are NOT in LinkMeterFrame: the Link publishes momentary, short-term, integrated,
-        // true-peak and short-term true-peak, and nothing else. The tokens are still printed, with "no reading"
-        // as their value, because a token that silently disappears is a shape the server cannot rely on - and a
-        // number invented for it would be worse than its absence.
-        // 21t-d: the figures are the Link's PRE-TRIM measurement when it says so, which is what levelling needs -
-        // moving one member's trim must not rewrite the number the next member is judged against. An older Link
-        // publishes post-trim figures and no bit; its line says so rather than pretending.
-        const bool pre = framePreTrim (*use);
-        lines.add (head
-                   + "MOM "     + num (use->momentary) + ", "
-                   + "SHORT "   + num (use->shortTerm) + ", "
-                   + "SHORTMAX " + (frameHasShortMax (*use) ? juce::String (use->shortTermMax, 1)
-                                                                     : juce::String ("no reading")) + ", "
-                   // 21t-f item 5: SHORT90 sits after SHORTMAX, as ruled. It is the p90 of the CLOSED 3 s
-                   // windows since the tally reset - where the programme SITS, as against SHORTMAX's loudest
-                   // moment - and a Link that does not publish it says "no reading" rather than borrowing a
-                   // neighbouring figure. It rides one quantised byte of the frame (0.25 LU), so the printed
-                   // decimal is the value to a quarter of a unit and no finer.
-                   + "SHORT90 " + (frameHasShort90 (*use) ? juce::String (frameShort90Db (*use), 1)
-                                                                   : juce::String ("no reading")) + ", "
-                   + "INT "     + num (use->integrated) + ", "
-                   + "PEAK "    + num (use->truePeakMax) + ", "
-                   // PSR, ruled 25 Sep 2026: PEAK minus SHORTMAX when SHORTMAX is there - a WHOLE-PROGRAMME
-                   // figure, which is what the server's transient rule asks about. The 3 s pair
-                   // (shortTermTP - shortTerm) is the fallback for a Link that does not publish SHORTMAX: the
-                   // same quantity over the last window instead of over everything heard.
-                   + "PSR "     + (frameHasShortMax (*use) && use->truePeakMax > -99.0f
-                                       ? juce::String (use->truePeakMax - use->shortTermMax, 1)
-                                       : ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
-                                              ? juce::String (use->shortTermTP - use->shortTerm, 1)
-                                              : juce::String ("no reading"))) + ", "
-                   + "HEARD "   + (frameHasHeard (*use) ? juce::String ((int) (use->heardSeconds + 0.5f))
-                                                                 : juce::String ("no reading"))
-                   + (pre ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"))
-                   + (liveUsable ? juce::String() : " (last heard " + juce::String ((int) (ageMs / 1000)) + " s ago)"));
+        // the server parses one shape and the guard asserts the tokens themselves. The head is what makes it a
+        // MEMBER line; [TRACK LEVELS] prints the same tokens with no head.
+        lines.add ("  " + name + " (id " + uid + "): trim " + juce::String (trim, 1) + " dB, "
+                   + (tokens.isEmpty() ? juce::String ("no signal") : tokens));
     }
     if (lines.isEmpty()) return {};
     // 21t-e: THE BLOCK IS LOGGED, one line per member, exactly as it is sent. A figure that reaches the server and
@@ -26750,6 +26891,19 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         {
             out += gLevels;
             EchoJay_NSLog("EJChat: GROUP LEVELS injection attached");
+        }
+    }
+    // [TRACK LEVELS] (21t-g item 2): the SAME tokens for ONE channel, on a turn that is not about a group. This is
+    // what lets the server set a compressor from figures already kept - "set from 120 s of this track" instead of
+    // "press Listen and play the loudest part" - and it is why the calibration loop's default mode is passive.
+    // Mutually exclusive with the group block by construction (buildTrackLevelsContext returns nothing while a
+    // group is the target): two loudness blocks on one turn would be two answers to one question.
+    {
+        const juce::String tLevels = buildTrackLevelsContext (targetLinkUid);
+        if (tLevels.isNotEmpty())
+        {
+            out += "\n\n" + tLevels;
+            EchoJay_NSLog("EJChat: TRACK LEVELS injection attached");
         }
     }
     // [ECHOJAY FEATURES v1]: what the APP can do, so a product question gets an
