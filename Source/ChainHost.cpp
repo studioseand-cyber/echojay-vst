@@ -938,8 +938,26 @@ ChainHost::~ChainHost()
 
     // Detach nodes from the graph, then park them in the process-lifetime
     // store instead of letting them be destroyed (see leakedNodeStore above)
+    //
+    // UNDER THE GRAPH LOCK, added 26 Sep 2026 (21t-g item 1), because this was the ONE graph mutation in the
+    // class that did not take it. Every other one goes through GraphMutation; processBlock TRY-locks the same
+    // section and passes dry when it cannot get it (Link v9 change B). So a destructor that removed connections
+    // and nodes without the lock could do it WHILE the audio thread was rendering the sequence that referenced
+    // them, and while the graph's own async rebuild was pending. The corruption showed up on the message thread:
+    //
+    //   EXC_BAD_ACCESS at juce::AudioProcessorGraph::Pimpl::handleAsyncUpdate + 252
+    //   ldr w12, [x11, #0x1c]        <- walking nodeStates' map with an overwritten node pointer
+    //
+    // - loudness_loop_guard's scribble leg, ~50 % of runs, always after its last assertion. Same family as the
+    // deferred state restore in 21t-f (b): work in flight against state whose owner is going away. The lock is
+    // the mechanism the class already had; the destructor simply did not use it.
+    //
+    // prepared_ goes false FIRST and inside the lock, so a processBlock that acquires the section after we
+    // release it returns at the "not prepared" line instead of rendering a graph with no nodes left.
     if (graph_)
     {
+        GraphMutation graphMutation(*this);
+        prepared_ = false;
         for (auto& c : graph_->getConnections()) graph_->removeConnection(c);
         for (auto& s : slots_)
             if (s.node)
@@ -3009,6 +3027,38 @@ void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& cu
     EchoJay_NSLog(("EJLevels: pending restore, chain in=" + juce::String(inOk ? "y" : "n")
                    + " out=" + juce::String(outOk ? "y" : "n") + " slots=" + juce::String(slotsPending)
                    + " track=\"" + savedTrack + "\"").toRawUTF8());
+}
+
+int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value)
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size() || controls.isEmpty()) return 0;
+    auto& s = slots_[(size_t) slotIndex];
+    // THE MAP IS NOT OPTIONAL. Without it there is no index, no unit and no anchor for the control, and writing a
+    // raw normalised guess onto a threshold is how a compressor ends up at -60 dB. No map -> nothing written, and
+    // the log says which fingerprint was missing so it can be fetched.
+    auto it = paramMaps_.find (s.fp);
+    if (it == paramMaps_.end())
+    {
+        EchoJay_NSLog (("EJCalib: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                        + "\") has no param map for fp=" + s.fp.substring (0, 12)
+                        + " - the threshold was NOT written").toRawUTF8());
+        return 0;
+    }
+    juce::DynamicObject::Ptr ctrls = new juce::DynamicObject();
+    for (const auto& name : controls)
+        if (name.isNotEmpty()) ctrls->setProperty (juce::Identifier (name), (double) value);
+    juce::DynamicObject::Ptr settings = new juce::DynamicObject();
+    settings->setProperty ("controls", juce::var (ctrls.get()));
+
+    const auto report = applyStructuredSettings (slotIndex, juce::var (settings.get()), it->second);
+    int written = 0;
+    for (const auto& r : report) if (r.applied) ++written;
+    EchoJay_NSLog (("EJCalib: wrote " + controls.joinIntoString (" + ") + " = " + juce::String (value, 2)
+                    + " on slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name + "\") - "
+                    + juce::String (written) + " of " + juce::String (controls.size())
+                    + " control(s) landed").toRawUTF8());
+    if (written > 0) bumpChainValue();
+    return written;
 }
 
 std::vector<ChainHost::ApplyReport>

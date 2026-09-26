@@ -1380,6 +1380,14 @@ public:
                          // reason: the move log needs it and nothing downstream
                          // can re-derive it once the value has been written.
                          juce::String beforeText; };
+    /** 21t-g item 2: THE CALIBRATION LOOP'S WRITE, for the threshold actuator.
+        Writes every named control on that slot to the SAME value, through the same map + applySettings path a
+        dialled setting takes - so a threshold the loop moves lands with the same guarantees (fp-keyed map, the
+        settled read-back, the apply log) as one the model asked for. Several names means a paired L/R threshold:
+        a pair left at two values is a different device, so they move together.
+        Returns how many controls were actually written. Message thread. */
+    int setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value);
+
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);
