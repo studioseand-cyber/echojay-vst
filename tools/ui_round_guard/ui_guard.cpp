@@ -1169,7 +1169,8 @@ int main()
                 f.truePeakMax = -3.0f; f.shortTermTP = -7.0f;
                 f.shortTermMax = -11.5f; f.heardSeconds = 42.0f;
                 f.fieldsMask = kFrameHasPreTrim | kFrameHasShortMax | kFrameHasHeard;
-                frameSetShort90 (f, -13.25f);   // 21t-f item 5: on the quantum, so the printed value is exact
+                frameSetShort90 (f, -13.5f);    // 21t-f item 5: on the quantum AND clear of the one-decimal
+                                                // rounding of an exact .25 (-13.25 prints as -13.2)
                 LinkShm::publishMeterFrame (reg, slot, f);
                 beat();
                 {
@@ -1255,7 +1256,7 @@ int main()
                        "21t-d (b). ...and SHORTMAX and HEARD are real now, not \"no reading\"",
                        after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 34));
                 // 21t-f item 5: SHORT90 is on the line, AFTER SHORTMAX, with the value the Link published.
-                check (after.contains ("SHORTMAX -11.5, SHORT90 -13.3, INT"),
+                check (after.contains ("SHORTMAX -11.5, SHORT90 -13.5, INT"),
                        "21t-f (5). SHORT90 is on the member's line, immediately after SHORTMAX  (RED as it "
                        "stood: the token did not exist)",
                        after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 40));

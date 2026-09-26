@@ -72,7 +72,12 @@ if ! command -v sandbox-exec >/dev/null 2>&1; then
   echo "LIVE-STATE SEAL: sandbox-exec is not available, so this run is NOT write-sealed (the fingerprint below is"
   echo "                 the only check, and it cannot attribute a change while an EchoJay host is running)."
 fi
-run_guard () {  # "$@" = env assignments are pre-applied by the caller's env; runs the guard, sealed if possible
+# BOTH LEGS ARE SEALED, and the reason that sentence is here at all: the first cut of this runner ran the scribble
+# leg UNSEALED, because one sealed run of loudness_loop_guard trapped and one unsealed run was green. Four runs
+# each says otherwise - sealed 1/4 green, unsealed 2/4 green, every failure AFTER the last assertion (149-150 ok)
+# with the signal varying (134/138/139). That is loudness_loop_guard's own flaky teardown, not the sandbox, and a
+# decision taken on one observation of each was a decision about scheduling noise. The seal stays on both.
+run_guard () {
   if [ $SEALED -eq 1 ]; then sandbox-exec -f "$PROFILE" "$BIN" "$@"; else "$BIN" "$@"; fi
 }
 

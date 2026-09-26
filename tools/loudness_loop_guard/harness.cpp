@@ -1138,11 +1138,15 @@ static int guardMain()
                 t.push (L.data(), R.data(), block);
             }
         };
-        // 12 s sitting at one level, then 3 s about 10 dB louder: 150 closed windows, 30 of them influenced by
-        // the loud passage - so the p90 sits near the quiet programme and the max hold sits on the loud one.
-        feed (0.05f, 150);
+        // THE PROPORTIONS ARE THE POINT, and the first cut of this leg got them wrong: p90 is the 90th
+        // percentile of ALL closed windows, so a 6 s loud passage after 15 s of programme IS the top tenth and
+        // p90 landed ON it. A p90 only stays with the programme while the loud material is a small minority of
+        // the windows - which is exactly the real case it is for. 60 s at one level, then 1.5 s about 10 dB
+        // louder: ~45 of ~615 windows are touched by the loud passage (7 %), so SHORTMAX goes to the loud level
+        // and SHORT90 stays with the programme.
+        feed (0.05f, 600);
         const auto quietOnly = t.snapshot();
-        feed (0.16f, 60);
+        feed (0.16f, 15);
         const auto both = t.snapshot();
         check (quietOnly.shortTermP90Db == quietOnly.shortTermP90Db,
                "21t-f (5). SHORT90 has a reading once windows have closed",
@@ -1153,7 +1157,7 @@ static int guardMain()
                "SHORTMAX " + juce::String (both.maxShortTermDb, 1) + " vs SHORT90 "
                + juce::String (both.shortTermP90Db, 1));
         check (both.shortTermP90Db >= quietOnly.shortTermP90Db - 0.01f
-               && both.shortTermP90Db <= quietOnly.shortTermP90Db + 6.0f,
+               && both.shortTermP90Db <= quietOnly.shortTermP90Db + 1.5f,
                "21t-f (5). ...and SHORT90 itself moves only as far as the distribution moved it",
                juce::String (quietOnly.shortTermP90Db, 1) + " -> " + juce::String (both.shortTermP90Db, 1));
         t.resetShortTermMax();
