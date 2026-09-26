@@ -2395,6 +2395,26 @@ private:
         ~ChainListPanel() override { closeAllEditors(); }
         /** 21t-e: is a hosted editor open INLINE in the rack (an NSView that composites over everything)? */
         bool hasInlineEditor() const { return inlineEditor != nullptr; }
+        /** TEST-ONLY SEAM (21t-e): open slot i's editor INLINE, skipping the placement decision.
+            The built-in EQ is pop-out only BY DESIGN - the placement poll looks for a hosted native view and a
+            JUCE component has none - so showInline will never open it inline, and a headless fixture has no
+            third-party plugin to host. This forces the inline state so a guard can test what the PICKER does
+            about it. It is the same three lines the InlineJuce branch of showInline runs; the compositing itself
+            is a native-view fact and is checked by hand on the installed build. */
+        bool forceInlineForTest (int i)
+        {
+            if (! onCreateEditor || i < 0 || i >= (int) slotInfos.size()) return false;
+            juce::AudioProcessorEditor* ed = nullptr;
+            try { ed = onCreateEditor (i); } catch (...) {}
+            if (ed == nullptr) return false;
+            inlineEditor.reset (ed);
+            inlineSlot = i; inlineIsBuiltin = true; settled = true;
+            inlineHolder.setVisible (true);
+            inlineHolder.addAndMakeVisible (*inlineEditor);
+            layoutInline();
+            repaint();
+            return true;
+        }
 
         // ---- Editor lifecycle (ONE at a time, always close-before-open) ----
 
@@ -4651,6 +4671,10 @@ private:
     juce::String chainViewUid() const { return viewRackPinned_ ? viewRackUid_ : effectiveChannelUid(); }
     /** Pin the view to one rack (uid) or to the local rack (""). View only: the chat, the banner and the build
         target are untouched. This is what a rack strip and the rack menu do. */
+    /** 21t-e: THE rack-selection rule, called by the rack menu AND a strip click. Switches the chat to that
+        rack's channel unless the rack is inside the group the chat is on, in which case the view moves alone. */
+    void selectRack (const juce::String& uid);
+    /** View only: pin the view to a rack (or the local one) and engage its borrow. Says nothing about the chat. */
     void selectRackForView (const juce::String& uid);
     /** THE build/edit destination: the channel this chat is working on ("" = the local rack). */
     juce::String workingOnUid() const;

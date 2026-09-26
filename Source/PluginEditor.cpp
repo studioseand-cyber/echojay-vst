@@ -7970,7 +7970,7 @@ void EchoJayEditor::showChainRackMenu()
                 {
                     EchoJay_NSLog(("EJRackSel: row=bus resolved=(main) current="
                                    + cur + " -> viewing the local rack (R1: the view moves, the chat does not)").toRawUTF8());
-                    safeThis->selectRackForView({});
+                    safeThis->selectRack({});
                 }
                 else
                     EchoJay_NSLog("EJRackSel: row=bus resolved=(main) "
@@ -8010,7 +8010,7 @@ void EchoJayEditor::showChainRackMenu()
                 EchoJay_NSLog(("EJRackSel: row=" + juce::String((int) i)
                                + " resolved=" + clicked + " current=" + curLbl
                                + " -> viewing it (R1: the view moves, the chat does not)").toRawUTF8());
-                safeThis->selectRackForView(clicked);
+                safeThis->selectRack(clicked);
             }
             safeThis->refreshChainPanelForView(true);
         });
@@ -10800,7 +10800,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 // menu's own arm WITH its guard: resetting while already in
                 // main context would wipe a live conversation for nothing.
                 if (chainViewUid().isNotEmpty())
-                    selectRackForView({});   // R1: view only
+                    selectRack({});   // 21t-e: the ONE rule, same as the menu
             }
             else
             {
@@ -10819,7 +10819,7 @@ void EchoJayEditor::linkStripMouseDown(const StripGeom& sg, juce::Point<int> loc
                 else if (en.info.uid != chainViewUid())
                 {
                     // The already-here guard, now on the VIEW - which is what a strip selects (R1).
-                    selectRackForView(en.info.uid);
+                    selectRack(en.info.uid);
                 }
             }
             break;
@@ -25303,17 +25303,55 @@ juce::String EchoJayEditor::workingOnUid() const
 // R1 (21t-b, 25 Sep 2026): a rack selection moves the VIEW and nothing else. It engages the borrow for that
 // rack (that is what "on screen" means here - you hear and edit what you are looking at) and leaves the chat, the
 // Working-on banner and the build target exactly where they were.
+// 21t-e (26 Sep 2026): THE RULE LIVES IN ONE FUNCTION, and both entry points - the rack menu and a strip click -
+// call it. It was spread across selectRackForView and its callers, which is why the strip and the menu could
+// behave differently and why a guard had to reach for the view pin to test it.
+//
+// Selecting a rack switches the chat to that rack's channel UNLESS the rack is already inside what the chat is
+// working on. A group chat working on seven channels is already working on this one, so looking at a member moves
+// the VIEW only: the conversation, and every build or edit it produces, still belongs to all seven.
+void EchoJayEditor::selectRack(const juce::String& uid)
+{
+    const bool groupChat = processorRef.chatTargetGroupId.isNotEmpty();
+    const auto* grp = groupChat ? processorRef.linkGroupById(processorRef.chatTargetGroupId) : nullptr;
+    const bool insideThisChat = grp != nullptr && uid.isNotEmpty() && grp->members.contains(uid);
+
+    if (insideThisChat)
+    {
+        selectRackForView(uid);   // view only - the chat stays on the group
+        EchoJay_NSLog(("EJRackView: viewing member " + uid + " of group \"" + grp->name
+                       + "\" - the chat stays on the group, and so does every edit").toRawUTF8());
+        return;
+    }
+    if (uid.isEmpty())
+    {
+        if (groupChat) setChatTargetGroup({});            // the mix bus is not in the group: leave it
+        pendingSelectionIsUser_ = true;
+        resetToMainContext();                              // the chat goes to the main context
+        pendingSelectionIsUser_ = false;
+        selectRackForView({});                             // ...and the view follows it
+        unpinRackView();                                   // the view IS the chat now
+        EchoJay_NSLog("EJRackView: the mix bus - view and chat both on the main context");
+        return;
+    }
+    // A Link outside this chat's business: the chat moves to it, and the view goes with it.
+    pendingSelectionIsUser_ = true;
+    openChannelByUid(uid);       // find-or-create, or held as pending until the first send - the banner's own path
+    pendingSelectionIsUser_ = false;
+    selectRackForView(uid);      // the view half, explicitly, so the two can never disagree
+    EchoJay_NSLog(("EJRackView: selected " + uid + " - view and chat moved together; working on "
+                   + (workingOnUid().isEmpty() ? juce::String("(pending)") : workingOnUid())).toRawUTF8());
+}
+
+// VIEW ONLY (21t-e): pin the view to one rack (or to the local rack) and engage the borrow for it. It says nothing
+// about the chat - selectRack above owns that decision, and the edit-card path uses this to follow a target it
+// has already chosen.
 void EchoJayEditor::selectRackForView(const juce::String& uid)
 {
     viewRackPinned_ = true;
     viewRackUid_    = uid;
-    // §5a-R: a USER selection applies-and-engages; this is always a user selection - the programmatic sites move
-    // the view by unpinning, not by pinning.
     handleBorrowSelectionChange(uid, true);
     pendingSelectionIsUser_ = false;
-    EchoJay_NSLog(("EJRackView: pinned view to " + (uid.isEmpty() ? juce::String("(local rack)") : uid)
-                   + "; the Working-on channel is still "
-                   + (effectiveChannelUid().isEmpty() ? juce::String("(main)") : effectiveChannelUid())).toRawUTF8());
     refreshChainPanelForView(true);
     resized();
     repaint();
@@ -28295,6 +28333,11 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     // value would suppress the mismatch on an unrelated later send.
     creq.answers        = nextClassifyAnswers_;
     nextClassifyAnswers_.clear();
+    // 5a (26 Sep 2026): the classifier reads the same chat the writer does. These are the
+    // SAME snapshot arrays fireChatMainCall hands buildChatRequestBody a few lines below -
+    // taken once, above, so the two calls cannot be composed from different histories.
+    creq.historyRoles    = rolesSnap;
+    creq.historyContents = contentsSnap;
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET

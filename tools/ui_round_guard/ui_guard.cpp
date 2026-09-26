@@ -163,7 +163,19 @@ struct EchoJayTabStripTestAccess
     static void openChannel (EchoJayEditor& e, const juce::String& uid) { e.openChannelByUid (uid); }      // H2b
     static juce::String projName (EchoJayEditor& e) { return e.newChatProjectName(); }                     // H2c
     // ---- 21t-b R1 ----
-    static void selectView (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
+    // 21t-e: the guard drives the SHARED rule, the way the menu and a strip click do. selectViewOnly exists for
+    // the legs that are about the view half alone (H3's "which rack is on screen").
+    static void selectRack (EchoJayEditor& e, const juce::String& uid) { e.selectRack (uid); }
+    static void selectViewOnly (EchoJayEditor& e, const juce::String& uid) { e.selectRackForView (uid); }
+    /** Every leg starts here and leaves it here: main chat, view unpinned, no group, no inline editor. */
+    static void knownState (EchoJayEditor& e, EchoJayProcessor& p)
+    {
+        e.chainListPanel.closeAllEditors();
+        if (p.chatTargetGroupId.isNotEmpty()) e.setChatTargetGroup ({});
+        p.chatTargetLinkUid.clear(); p.chatTargetLinkName.clear();
+        p.pendingChannelUid.clear();
+        e.unpinRackView();
+    }
     static juce::String workingOn (EchoJayEditor& e) { return e.workingOnUid(); }
     static void setBuildJson (EchoJayEditor& e, int i, const juce::String& j) { e.chainBuildJsons[(size_t) i] = j; }
     // ---- 21t-e ----
@@ -173,6 +185,7 @@ struct EchoJayTabStripTestAccess
     static juce::String pill (EchoJayEditor& e) { return e.chatTargetLabel(); }
     static void applyEdit (EchoJayEditor& e, int msgIdx) { e.applyChainEditFromMsg (msgIdx); }
     static void unpinView (EchoJayEditor& e) { e.unpinRackView(); }
+    static bool pinned (EchoJayEditor& e) { return e.viewRackPinned_; }
     // ---- 21t-c ----
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
     // ---- 21t-d wiring ----
@@ -854,6 +867,10 @@ int main()
                 li.connected = true; rows.push_back (li);
                 if (i < 7) mem.add (li.uid);
             }
+            // KNOWN STATE IN, KNOWN STATE OUT: selecting a group VIEWS a member, and a view left pinned here is
+            // what starved the picker leg below of an editor (createSlotEditorForView returns nullptr for a
+            // remote rack, so the seam had nothing to place).
+            A::knownState (*ed, proc);
             const auto gid = proc.createLinkGroup ("Main vocals", mem);
             A::targetGroup (*ed, gid);
             EchoJayAlignTestAccess::setLinks (proc, rows);
@@ -867,12 +884,16 @@ int main()
             check (A::pill (*ed) == "Main vocals", "21t-e. the composer pill names the group", A::pill (*ed));
             A::targetGroup (*ed, {});
             proc.removeLinkGroup (gid);
+            A::knownState (*ed, proc);          // the view this leg moved goes back to the mix bus
         }
 
         {
             std::printf ("\n== 21t-e: the add-plugin picker never opens under a hosted editor ==\n");
             // The inline hosted editor is a heavyweight NSView; the picker is lightweight, so the only remedy is
             // to close it - which is what the rack menu has done since 2 Sep and the picker did not.
+            // The rack on screen has to be the MIX BUS's own, because that is the only host whose slot editor this
+            // process can create - a Link's instance lives in the Link's process.
+            A::knownState (*ed, proc);
             auto& own = proc.getChainHost();
             { SurgicalEqProcessor fe; juce::ignoreUnused (fe); }
             const auto* eqd = BuiltinDeviceRegistry::instance().findByName ("EchoJay EQ");
@@ -880,17 +901,30 @@ int main()
             {
                 const int before = own.getNumSlots();
                 own.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*eqd), before);
-                A::refreshPanel (*ed); pumpMs (40);
-                A::panel (*ed).showInline (before);
+                // The rack lives on the Chain tab: the panel has to be the laid-out, visible one before an inline
+                // editor can be put in it, exactly as a user's click would have it.
+                A::toTab (*ed, A::tabChain()); ed->resized();
+                A::refreshPanel (*ed); pumpMs (60);
+                // THE SEAM, and why it is needed: the built-in EQ is POP-OUT ONLY by design - the placement poll
+                // looks for a hosted native view and a JUCE component has none - so showInline will never open it
+                // inline, and a headless fixture has no third-party plugin to host. The leg proves the PICKER's
+                // path; the compositing is a native-view fact, checked by hand on the installed build.
+                const bool opened = A::panel (*ed).forceInlineForTest (before);
                 pumpMs (60);
-                const bool opened = A::inlineEditorOpen (*ed);
-                check (opened, "21t-e. fixture: a hosted editor is open INLINE in the rack",
-                       opened ? juce::String ("open") : juce::String ("none"));
+                check (opened && A::inlineEditorOpen (*ed),
+                       "21t-e. fixture: a hosted editor is open INLINE in the rack",
+                       A::inlineEditorOpen (*ed) ? juce::String ("open") : juce::String ("none"));
+                const auto logBefore = juce::File (juce::String (echojay::FileLog::instance().currentPath())).loadFileAsString();
                 A::picker (*ed); pumpMs (60);
                 check (! A::inlineEditorOpen (*ed),
                        "21t-e. opening the picker closes it, so the picker cannot draw behind it  (RED as it "
                        "stood: only a popped-OUT editor was handled)");
+                const auto logAfter = juce::File (juce::String (echojay::FileLog::instance().currentPath())).loadFileAsString();
+                check (logAfter.substring (logBefore.length()).contains ("EJPicker: inline hosted editor closed"),
+                       "21t-e. ...and it says so in the log, so the path is auditable in a real session",
+                       logAfter.substring (logBefore.length()).fromFirstOccurrenceOf ("EJPicker:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 110));
                 while (own.getNumSlots() > before) own.removeSlot (own.getNumSlots() - 1);
+                A::knownState (*ed, proc);
                 A::refreshPanel (*ed); pumpMs (40);
             }
             else check (false, "21t-e. fixture: the EQ built-in is registered");
@@ -910,16 +944,18 @@ int main()
                 li.connected = true; rows.push_back (li);
                 if (i < 3) mem.add (li.uid);          // sel_0..sel_2 are members; sel_3 is not
             }
-            const auto savedId = A::chatId (*ed);
+            // EVERY LEG STARTS FROM A KNOWN STATE and leaves it there: main chat, view unpinned, no group, no
+            // inline editor. The (3) leg used to leak a rack selection into the picker leg below.
+            const auto savedId   = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+            A::knownState (*ed, proc);
             A::setChatId (*ed, {});
-            proc.pendingChannelUid.clear();
-            A::unpinView (*ed);
             // INJECTED WITH NO PUMP BEFORE THE ASSERTIONS: the editor's tick rebuilds the registry from the real
             // one (empty under an isolated home) and drops a pending channel whose Link has "vanished".
             EchoJayAlignTestAccess::setLinks (proc, rows);
 
             // (a) FROM THE MAIN CHAT: selecting a Link moves both.
-            A::selectView (*ed, "sel_0");
+            A::selectRack (*ed, "sel_0");
             check (A::viewUid (*ed) == "sel_0"
                    && (A::workingOn (*ed) == "sel_0" || proc.pendingChannelUid == "sel_0"),
                    "21t-e (3a). from the main chat, selecting a Link moves the view AND the chat  (a channel with "
@@ -931,7 +967,7 @@ int main()
                    "21t-e (3b). ...and the pill names the Link, not \"This channel\"", A::pill (*ed));
 
             // ...and selecting the mix bus goes back to the main chat.
-            A::selectView (*ed, {});
+            A::selectRack (*ed, {});
             check (A::viewUid (*ed).isEmpty() && A::workingOn (*ed).isEmpty(),
                    "21t-e (3a). selecting the mix bus moves both to the main context",
                    A::viewUid (*ed).isEmpty() ? juce::String ("(local)") : A::viewUid (*ed));
@@ -945,7 +981,7 @@ int main()
                    "21t-e (3b). a group chat's pill names the GROUP", A::pill (*ed));
             check (mem.contains (A::viewUid (*ed)),
                    "21t-e (3c). choosing the group views one of its members", A::viewUid (*ed));
-            A::selectView (*ed, "sel_2");
+            A::selectRack (*ed, "sel_2");
             check (A::viewUid (*ed) == "sel_2",
                    "21t-e (3c). selecting a MEMBER's rack moves the view", A::viewUid (*ed));
             check (proc.chatTargetGroupId == gid,
@@ -953,7 +989,7 @@ int main()
                    "and the other six left the conversation)", proc.chatTargetGroupId);
 
             // ...while a NON-member leaves the group and switches, as from anywhere else.
-            A::selectView (*ed, "sel_3");
+            A::selectRack (*ed, "sel_3");
             check (proc.chatTargetGroupId.isEmpty() && A::viewUid (*ed) == "sel_3"
                    && (A::workingOn (*ed) == "sel_3" || proc.pendingChannelUid == "sel_3"),
                    "21t-e (3c). selecting a NON-member leaves the group and moves both",
@@ -961,7 +997,7 @@ int main()
 
             // (d) AN EDIT FROM A GROUP CHAT REACHES EVERY MEMBER, whichever member is on screen.
             A::targetGroup (*ed, gid); pumpMs (40);
-            A::selectView (*ed, "sel_1");
+            A::selectRack (*ed, "sel_1");
             int err = 0; const auto dir = LinkShm::resolveDir (err);
             for (const auto& m : mem) juce::File (dir + "chain-cmd-" + m + ".json").deleteFile();
             {
@@ -981,10 +1017,10 @@ int main()
             check (A::viewUid (*ed) == "sel_1",
                    "21t-e (3d). ...and the rack on screen is still the one the user was looking at", A::viewUid (*ed));
             for (const auto& m : mem) juce::File (dir + "chain-cmd-" + m + ".json").deleteFile();
-            A::targetGroup (*ed, {});
             proc.removeLinkGroup (gid);
+            A::knownState (*ed, proc);          // leave it as it was found
             A::setChatId (*ed, savedId);
-            A::msgs (*ed).pop_back();
+            A::msgs (*ed) = savedMsgs;
         }
 
         // ---- 21t-d wiring (25 Sep 2026): the trigger, the card from the sidecar, the closing posted once -----
@@ -1450,7 +1486,7 @@ int main()
             proc.pendingChannelUid = "lnk_01";          // the chat is working on lnk_01
             check (A::workingOn (*ed) == "lnk_01" && A::viewUid (*ed) == "lnk_01",
                    "R1. fixture: with nothing selected, the view follows the chat's channel", A::viewUid (*ed));
-            A::selectView (*ed, "lnk_02"); pumpMs (40);
+            A::selectViewOnly (*ed, "lnk_02"); pumpMs (40);
             check (A::viewUid (*ed) == "lnk_02",
                    "R1. selecting a rack moves the view to it", A::viewUid (*ed));
             check (A::workingOn (*ed) == "lnk_01",
@@ -1469,7 +1505,7 @@ int main()
                    "stood: it built on the rack that happened to be on screen)", A::viewUid (*ed));
             // The own channel: a main chat builds locally, and the view returns to the local rack first.
             proc.pendingChannelUid.clear();
-            A::selectView (*ed, "lnk_02"); pumpMs (40);
+            A::selectViewOnly (*ed, "lnk_02"); pumpMs (40);
             check (A::viewUid (*ed) == "lnk_02" && A::workingOn (*ed).isEmpty(),
                    "R1. fixture: a main chat with another rack on screen", A::viewUid (*ed));
             A::buildBtn (*ed, 0).triggerClick(); pumpMs (80);
