@@ -33,6 +33,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <cstdio>   // claimSlot refuses an over-long uid loudly (21t-g item 6d)
 #include <algorithm>
 #include <atomic>
 #include <cstddef>   // offsetof (LinkMeterFrame layout freeze)
@@ -137,7 +138,25 @@ inline juce::String& lastRegistryLayoutError() { static juce::String e; return e
 static constexpr int      kRegStaleCycles = 60;   // ~30 s at 2 Hz probing
 
 // 128 bytes per slot (2 cache lines)
-struct alignas(128) RegistrySlot
+// ALIGNMENT CLAIM = WHAT THE MAPPING ACTUALLY PROVIDES (21t-g item 1d, 26 Sep 2026).
+//
+// This was alignas(128) and the mapping puts slot 0 at offset sizeof(RegistryHeader) == 64 from a page-aligned
+// base - so EVERY slot access in both binaries was a member access on a 64-byte-aligned address through a type
+// claiming 128, which is undefined behaviour and which UBSan halts on before it reaches anything else:
+//
+//   LinkShm.h:1087: runtime error: member access within misaligned address 0x000104400040 for type
+//   'RegistrySlot', which requires 128 byte alignment
+//
+// NOT ONE BYTE MOVES. The fields sum to exactly 128 with the explicit _pad[2] at the end, so the 128 never came
+// from the alignment - sizeof is 128 either way, and the static_asserts below pin sizeof AND the offset of every
+// single field to today's values. A claim of 64 is what the header's size actually guarantees, so the declaration
+// now describes the file instead of contradicting it. No version bump, because there is nothing to version: the
+// bytes an older binary writes are the bytes this one reads, which shm_layout_guard proves against a golden
+// 128-byte image built at the literal offsets.
+//
+// WHOEVER CHANGES A FIELD HERE: the asserts below are the contract with every installed binary, not a tidiness
+// check. If one of them fails, the layout moved and the file is no longer readable by what is in the field.
+struct alignas(64) RegistrySlot
 {
     uint32_t inUse;            //  4  atomic: 0=free, 1=registered
     char     displayName[40];  // 40  user-visible name, null-terminated
@@ -180,6 +199,23 @@ struct alignas(128) RegistrySlot
     uint8_t  _pad[2];          //  2  → total 128
 };
 static_assert(sizeof(RegistrySlot) == 128, "RegistrySlot must be 128 bytes");
+// THE FROZEN OFFSETS (21t-g item 1d). Every field, against the value it has had in every shipped binary.
+static_assert(offsetof(RegistrySlot, inUse)       ==   0, "RegistrySlot::inUse moved");
+static_assert(offsetof(RegistrySlot, displayName) ==   4, "RegistrySlot::displayName moved");
+static_assert(offsetof(RegistrySlot, audioFile)   ==  44, "RegistrySlot::audioFile moved");
+static_assert(offsetof(RegistrySlot, sampleRate)  ==  92, "RegistrySlot::sampleRate moved");
+static_assert(offsetof(RegistrySlot, numChannels) ==  96, "RegistrySlot::numChannels moved");
+static_assert(offsetof(RegistrySlot, heartbeat)   == 100, "RegistrySlot::heartbeat moved");
+static_assert(offsetof(RegistrySlot, activeFlag)  == 104, "RegistrySlot::activeFlag moved");
+static_assert(offsetof(RegistrySlot, instanceUid) == 108, "RegistrySlot::instanceUid moved");
+static_assert(offsetof(RegistrySlot, gainDb)      == 120, "RegistrySlot::gainDb moved");
+static_assert(offsetof(RegistrySlot, placement)   == 124, "RegistrySlot::placement moved");
+static_assert(offsetof(RegistrySlot, dialCapable) == 125, "RegistrySlot::dialCapable moved");
+static_assert(offsetof(RegistrySlot, _pad)        == 126, "RegistrySlot::_pad moved");
+static_assert(sizeof(RegistrySlot::displayName) == 40 && sizeof(RegistrySlot::audioFile) == 48
+              && sizeof(RegistrySlot::instanceUid) == 12 && sizeof(RegistrySlot::_pad) == 2,
+              "a RegistrySlot char field changed width - the file is no longer what is in the field");
+
 
 struct alignas(64) RegistryHeader
 {
@@ -189,6 +225,13 @@ struct alignas(64) RegistryHeader
     uint8_t  _pad[52];
 };
 static_assert(sizeof(RegistryHeader) == 64, "");
+// 21t-g item 1d: THE SLOT'S ALIGNMENT CLAIM MUST NOT EXCEED WHAT THE MAPPING GIVES IT. Slot 0 sits at
+// sizeof(RegistryHeader) from a page-aligned base, so that size is the whole guarantee. A future header that grows
+// must keep this true (or move the slots to a 128-byte boundary deliberately, with a version bump).
+static_assert(alignof(RegistrySlot) <= sizeof(RegistryHeader),
+              "RegistrySlot claims more alignment than the mapping provides - slot 0 lands at sizeof(RegistryHeader)");
+static_assert(sizeof(RegistryHeader) % alignof(RegistrySlot) == 0,
+              "the header's size must be a multiple of the slot's alignment, or every slot after 0 is misaligned too");
 
 // -----------------------------------------------------------------------------
 //  Per-Link meter frame (registry v2) — one per slot, appended after the slot
@@ -961,6 +1004,12 @@ inline LinkMeterFrame* meterFrames(void* regMap)
 
 /// Claim a free slot.  Returns slot index [0..15] or -1 if full.
 /// `audioFilename` = makeAudioFilename(linkName), stored so consumer can open it.
+/// THE UID IS AN IDENTITY, SO A TRUNCATED ONE IS NOT ONE (21t-g item 6d, 26 Sep 2026).
+/// instanceUid is char[12] - 11 characters and a terminator - and every uid the product generates is 10 hex
+/// characters (LinkProcessor's three generation sites), so a real uid always fits with a byte to spare. It used to
+/// be copied with strncpy and silently cut: a 12-character uid landed as 11, every lookup by the full string
+/// missed, and the only symptom was a Link that existed and could not be found (which cost a guard leg an hour on
+/// 26 Sep). A uid that does not fit is now REFUSED, loudly, because half an identity is worse than none.
 inline int claimSlot(void* regMap,
                      const juce::String& displayName,
                      const juce::String& audioFilename,
@@ -968,6 +1017,18 @@ inline int claimSlot(void* regMap,
                      float sr, uint32_t ch)
 {
     if (!regMap) return -1;
+    {
+        RegistrySlot probe {};
+        const size_t cap = sizeof(probe.instanceUid) - 1;      // 11 usable characters
+        if ((size_t) instanceUid.getNumBytesAsUTF8() > cap)
+        {
+            std::fprintf(stderr,
+                         "EJLinkShm: claimSlot REFUSED - instanceUid \"%s\" is %d bytes and the registry field "
+                         "holds %d; a truncated uid is a Link nothing can find by name.\n",
+                         instanceUid.toRawUTF8(), (int) instanceUid.getNumBytesAsUTF8(), (int) cap);
+            return -1;
+        }
+    }
     RegistrySlot* slots = regSlots(regMap);
     for (int i = 0; i < kRegMaxSlots; ++i)
     {
