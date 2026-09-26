@@ -880,6 +880,11 @@ public:
         bool  inKnown = false;
         float inLevelDb = 0.0f, inP10 = 0.0f, inP90 = 0.0f, inPeakDb = 0.0f, inCrestDb = 0.0f;
         float inMaxShortTermDb = std::numeric_limits<float>::quiet_NaN();   // 18g: the loudest 3 s heard (max short-term LUFS-S), NaN = not yet 3 s
+        // 21t-g (re-cut, 26 Sep 2026): the p90 of the CLOSED 3 s windows since the tally reset - NOT the 400 ms
+        // percentile that inP90 carries. It goes on the wire as its own token (short90), immediately after p90 on
+        // the [CHAIN LEVELS] header, because that is the line the server parses; p90's spelling and meaning are
+        // untouched. NaN until a 3 s window has closed, and then the token is simply absent.
+        float inShort90Db = std::numeric_limits<float>::quiet_NaN();
         float inHeardS = 0.0f, inWindowS = 0.0f;
         float preGainDb = 0.0f;
         bool  outKnown = false; float outLevelDb = 0.0f; int numSlots = 0;

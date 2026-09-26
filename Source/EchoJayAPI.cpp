@@ -3412,16 +3412,12 @@ juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slo
     // in level, in p90 and peak (what a threshold is set against), out
     // level, and out-in measured (on a compressor this IS the reduction).
     juce::String n;
-    // WHICH WINDOWS EACH PERCENTILE IS OVER, because a threshold is set from one of them (21t-g, 26 Sep 2026).
-    // `p90` here is the p90 of the 400 ms MOMENTARY blocks - it always has been, and on real material it sits
-    // ABOVE the 3 s figure, because shorter windows keep more of the peaks. A threshold set from it as if it were
-    // SHORT90 comes out high, which is less compression than was asked for. So the 3 s p90 is published BESIDE it
-    // under its own name (short90, the same quantity [GROUP LEVELS] and [TRACK LEVELS] print), and the momentary
-    // one keeps its name and its meaning rather than being quietly redefined under a parser that already reads it.
-    n << "in " << fmt1(lv.in.levelDb) << " dBFS RMS (p90/400ms " << fmt1(lv.in.p90);
-    if (lv.in.shortTermP90Db == lv.in.shortTermP90Db)
-        n << ", short90/3s " << fmt1(lv.in.shortTermP90Db);
-    n << ", pk " << fmt1(lv.in.peakDb)
+    // THE TOKEN SPELLINGS ON THIS LINE ARE A WIRE CONTRACT. They were briefly changed to p90/400ms + short90/3s on
+    // 26 Sep and changed straight back the same evening: the server parses these tokens, and a rename is a silent
+    // break - the regex stops matching and the figure reads as absent rather than wrong, which is worse. The 3 s
+    // percentile goes on the [CHAIN LEVELS] HEADER as a NEW token (short90) instead; see that builder below.
+    // What p90 IS, recorded here because it is easy to assume otherwise: the p90 of the 400 ms MOMENTARY blocks.
+    n << "in " << fmt1(lv.in.levelDb) << " dBFS RMS (p90 " << fmt1(lv.in.p90) << ", pk " << fmt1(lv.in.peakDb)
       << "), out " << fmt1(lv.out.levelDb) << ", out-in " << fmt1(lv.out.levelDb - lv.in.levelDb) << " dB"
       << ", heard " << formatHeard(lv.in.heardSeconds);
     if (lv.in.windowSeconds < lv.in.heardSeconds - 1.0f)
@@ -3440,6 +3436,7 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
     ChainLevelsData d;
     d.inKnown = in.known;
     d.inLevelDb = in.levelDb; d.inP10 = in.p10; d.inP90 = in.p90;
+    d.inShort90Db = in.shortTermP90Db;   // 21t-g: the 3 s p90, published as its own token beside p90
     d.inMaxShortTermDb = in.maxShortTermDb;   // 18g: the loudest 3 s heard at the input - the server's opening-gain proxy
     d.inPeakDb = in.peakDb; d.inCrestDb = in.crestDb;
     d.inHeardS = in.heardSeconds; d.inWindowS = in.windowSeconds;
@@ -3520,7 +3517,13 @@ juce::String EchoJayAPI::buildChainLevelsInjectionCore(const ChainLevelsData& d)
         b << "on the Link \"" << d.sourceLabel << "\" (its own channel, measured " << age << ", at the insert point) ";
     }
     b << "input " << fmt1(d.inLevelDb) << " LUFS (";
-    b << (d.havePercentiles ? ("p10 " + fmt1(d.inP10) + ", p90 " + fmt1(d.inP90))
+    // 21t-g (re-cut): short90 is a NEW token, immediately after p90 and inside the same parentheses, because that
+    // is the line the server's regexes read. p90 here is the p90 of the 400 ms MOMENTARY blocks and keeps both its
+    // spelling and its meaning; short90 is the p90 of the CLOSED 3 s windows since the tally reset - the same
+    // quantity [GROUP LEVELS] and [TRACK LEVELS] print - and it is what a threshold should be set from, because the
+    // momentary figure sits above it on real material. Absent (the token omitted) until a 3 s window has closed.
+    b << (d.havePercentiles ? ("p10 " + fmt1(d.inP10) + ", p90 " + fmt1(d.inP90)
+                               + (std::isfinite(d.inShort90Db) ? ", short90 " + fmt1(d.inShort90Db) : juce::String()))
                             : juce::String("p10/p90 not available from a Link"));
     // 18g (item 6): the loudest 3 s heard (max short-term). The server sets a bus/master opening gain from THIS, not the
     // integrated figure (the loop then measures the loudest section directly). Absent until 3 s have been heard.
