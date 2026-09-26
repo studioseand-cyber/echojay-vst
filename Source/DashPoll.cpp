@@ -85,13 +85,19 @@ void DashPollShared::tick()
                + " instance(s), rev=" + juce::String (unread.rev)
                + " unread=" + juce::String (unread.total));
 
-    // getJSON threads the request and marshals the completion back with
-    // MessageManager::callAsync behind its own `alive` shared_ptr, so a
-    // callback cannot fire into a destroyed api. `this` is safe to capture
-    // because SharedResourcePointer keeps this object alive while any client
-    // holds it, and a client cannot be destroyed without deregistering.
-    api->pollCommunity ([this] (const juce::var& json, int status)
+    // getJSON threads the request and marshals the completion back with MessageManager::callAsync behind its own
+    // `alive` shared_ptr, so a callback cannot fire into a destroyed api.
+    //
+    // 21t-g (26 Sep 2026): `this` IS NOT SAFE TO CAPTURE RAW, and the old comment here said it was - on the
+    // grounds that SharedResourcePointer keeps this object alive while any client holds it. It does; and the LAST
+    // client can deregister and be destroyed while this request is still out, which destroys this object and
+    // leaves the queued completion to run on freed memory. UBSan named the frame and the scribble fill proved it
+    // (see ~DashPollShared). The token is weak, so a poll that lands after the last client left does nothing.
+    std::weak_ptr<bool> alive = alive_;
+    api->pollCommunity ([this, alive] (const juce::var& json, int status)
     {
+        if (alive.expired())
+            return;   // the last client went away while this was in flight - there is nobody to tell
         inFlight = false;
 
         if (status != 200)

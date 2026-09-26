@@ -43,7 +43,20 @@ class DashPollShared final : private juce::Timer
 {
 public:
     DashPollShared() = default;
-    ~DashPollShared() override { stopTimer(); }
+    // 21t-g item 1 (26 Sep 2026): THE TOKEN GOES FIRST. The poll's completion is delivered by
+    // MessageManager::callAsync and used to capture a raw `this` on the reasoning that SharedResourcePointer keeps
+    // this object alive while a client holds it - true, and beside the point: the LAST client can deregister and
+    // be destroyed while a request is still out, which destroys this object and leaves the queued completion to
+    // run on freed memory. UBSan named it exactly, with the scribble fill in the bytes:
+    //
+    //   DashPoll.cpp:95: member access within address ... which does not point to an object of type
+    //   'DashPollShared' / note: object has invalid vptr / aa aa aa aa ...
+    //   #0 std::function<DashPollShared::tick()::$_0 ...>::operator()
+    //   #1 juce::MessageManager::callAsync<EchoJayAPI::pollCommunity(...)>::AsyncCallInvoker::messageCallback()
+    //
+    // A call through an invalid vptr is a jump to whatever the freed bytes hold, which is the execute fault the
+    // guard suite's scribble leg had been dying of (pc 0xf002, pc 0x13732ec60 - heap addresses, not code).
+    ~DashPollShared() override { *alive_ = false; alive_.reset(); stopTimer(); }
 
     struct Unread
     {
@@ -100,6 +113,8 @@ private:
     };
 
     std::vector<Client> clients;
+    // Held by value here, captured WEAKLY by every deferred completion: see the destructor.
+    std::shared_ptr<bool> alive_ { std::make_shared<bool> (true) };
     Unread unread;
     int generation = 0;
     juce::int64 tickCount = 0;
