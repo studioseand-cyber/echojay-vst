@@ -1163,40 +1163,29 @@ void EchoJayAPI::refreshUserInfo(std::function<void(bool success)> onComplete)
 // sends the identical request bytes. CONSUMES the staged per-turn state
 // (nextChat*, dial flags, classifier binding) exactly as the inline code
 // did — call once per send, after the limit gate. See the header note.
-juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
-                                              const juce::StringArray& contents,
-                                              const juce::String& systemPrompt,
-                                              const juce::String& meterJsonBlob)
+// ---- ONE AUTHOR FOR THE TURNS (5a, 26 Sep 2026) ---------------------------
+// The writer's messages[] and /api/classify's messages[] are the SAME turns.
+// They were going to be built twice - once here and once in classify() - and two
+// builders of the same array is the drift this codebase has paid for before
+// (sendChat vs streamChat, spec step 2). So the array is built HERE, once, and
+// each caller splices it: the writer puts its system message in front, classify
+// sends it as it stands.
+//
+// WHAT "the same array" MEANS, stated because it is not the whole chat: the
+// history turns go out with their injected blocks stripped and the newest turn
+// goes out whole (scrubbed of [LIVE METER] unless this is an explicit capture),
+// and the count/byte trim applies. That is what the writer sends, so it is what
+// the classifier reads. The classifier therefore sees exactly the conversation
+// the writer sees - which is the point of the item - not a fuller one.
+EchoJayAPI::ChatTurns EchoJayAPI::buildChatTurns(const juce::StringArray& roles,
+                                                const juce::StringArray& contents) const
 {
-    // Build messages JSON
-    // Limit history to the last N messages to prevent stale captures from old
-    // sessions confusing the AI. Captures persist in plugin state across DAW
-    // sessions, so without this limit a fresh "first capture" on plugin reload
-    // could be read against months of old chat history — which caused the AI
-    // to occasionally reference stale numbers (e.g. saying -8 LUFS when the
-    // current capture is -27, because some old capture in history was -8).
-    // Keeping last 12 messages = roughly last 6 capture+reply pairs, plenty
-    // for in-session continuity without dragging in unrelated old captures.
+    ChatTurns out;
+    if (roles.isEmpty() || contents.size() < roles.size()) { out.json = "[]"; return out; }
+
     constexpr int maxHistoryMessages = 12;
+    constexpr int maxHistoryBytes    = 24000;
 
-    // Byte-budget HISTORY on top of the message-count cap. Individual turns
-    // can be huge (capture turns embed meter context, Compare turns a full
-    // compareCtx, user turns the AVAILABLE PLUGINS injection), so twelve
-    // messages could still be hundreds of KB. History is walked backwards
-    // from the newest over stripped sizes; older messages fall off first.
-    // The newest message is always sent whole and is NOT charged against
-    // this budget. The previous version charged it against one shared
-    // 60000-byte payload budget on the assumption that it would always fit
-    // inside it; live sends measured the newest turn (with its injections)
-    // at 61-70KB, so the budget was negative before the walk started and
-    // history was empty on EVERY request. The decision itself lives in
-    // EchoJayHistoryTrim.h so tools/mapfps_test exercises the shipped bytes.
-    constexpr int maxHistoryBytes = 24000;
-
-    // Per-turn injection blocks (plugin lists + chain rules) only matter on
-    // the CURRENT message — strip them from history turns before sizing.
-    // The marker list lives in historyStripMarkers() (ONE list, shared with
-    // the chain-guidance self-test's coverage check).
     auto strippedContent = [&contents](int i) -> juce::String
     {
         auto c = contents[i];
@@ -1205,59 +1194,24 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
             int cut = c.indexOf(marker);
             if (cut >= 0) c = c.substring(0, cut);
         }
-        // Pre-usage-v2 history persisted [LIVE METER] blocks inside message
-        // text — band data must not ride out on ANY turn, including history
         int lm = c.indexOf("\n\n[LIVE METER");
         if (lm >= 0) c = c.substring(0, lm);
         return c;
     };
 
-    // Sizes and roles for the trim decision, index-aligned with the wire
-    // arrays. The newest entry rides along for alignment but its size is
-    // never charged (see EchoJayHistoryTrim.h). The stripped sizes are also
-    // reused by the body-breakdown log below rather than recomputed.
-    std::vector<int>  strippedSizes ((size_t) roles.size(), 0);
-    std::vector<char> roleIsUser    ((size_t) roles.size(), 0);
+    out.strippedSizes.assign((size_t) roles.size(), 0);
+    std::vector<char> roleIsUser((size_t) roles.size(), 0);
     for (int i = 0; i < roles.size(); ++i)
     {
-        strippedSizes[(size_t) i] = (int) strippedContent(i).getNumBytesAsUTF8();
-        roleIsUser[(size_t) i]    = (roles[i] == "user") ? 1 : 0;
+        out.strippedSizes[(size_t) i] = (int) strippedContent(i).getNumBytesAsUTF8();
+        roleIsUser[(size_t) i]        = (roles[i] == "user") ? 1 : 0;
     }
-    const auto trim = echojay::trimChatHistory (strippedSizes, roleIsUser,
-                                                maxHistoryMessages, maxHistoryBytes);
-    const int firstIdx = trim.firstIdx;
+    out.trim = echojay::trimChatHistory(out.strippedSizes, roleIsUser,
+                                        maxHistoryMessages, maxHistoryBytes);
+    out.firstIdx = out.trim.firstIdx;
 
-    // THE TRIM IS THE TRIGGER (item 17). These three counts are the only
-    // honest signal that the model has stopped seeing the start of the
-    // conversation, and they are measured here rather than predicted from a
-    // byte threshold. A send whose history is empty is the first turn, which
-    // is the only session reset point the builder can see for itself.
-    if (roles.size() <= 1)
-    {
-        historyDroppedTotal_ = 0;
-        historyTrimWarned_   = false;
-    }
-    historyDroppedTotal_ += trim.droppedByCap + trim.droppedByBudget + trim.droppedByRole;
-
-    // The trim observable: EVERY build logs what was kept and what each
-    // stage dropped, INCLUDING the null result -- a line that only appeared
-    // on a non-trivial trim could not distinguish "nothing was dropped"
-    // from "the log never ran".
-    EchoJay_NSLog(("EJChat: history trim -- kept " + juce::String(trim.kept)
-                   + "/" + juce::String(trim.total) + " history msgs"
-                   + " (dropped: countCap " + juce::String(trim.droppedByCap)
-                   + ", byteBudget " + juce::String(trim.droppedByBudget)
-                   + ", roleAlign " + juce::String(trim.droppedByRole)
-                   + ((trim.droppedByCap == 0 && trim.droppedByBudget == 0
-                       && trim.droppedByRole == 0)
-                        ? juce::String(" -- nothing dropped") : juce::String())
-                   + ")").toRawUTF8());
-
-    // Newest message: keep its live injection, but any meter/band TEXT is
-    // gated on the same explicit-capture flag as the meters blob — a
-    // [LIVE METER] section on a plain chat turn gets scrubbed and logged.
     juce::String newestContent = contents[roles.size() - 1];
-    if (!nextChatIsExplicitCapture_)
+    if (! nextChatIsExplicitCapture_)
     {
         int lm = newestContent.indexOf("\n\n[LIVE METER");
         if (lm >= 0)
@@ -1266,33 +1220,67 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
             EchoJay_NSLog("EJChat: SCRUBBED [LIVE METER] text from outgoing message (no explicit-capture flag)");
         }
     }
-    const int newestMsgBytes = (int) newestContent.getNumBytesAsUTF8();
+    out.newestBytes = (int) newestContent.getNumBytesAsUTF8();
 
+    juce::String j = "[";
+    for (int i = out.firstIdx; i < roles.size(); ++i)
+    {
+        juce::String c = (i == roles.size() - 1) ? newestContent : strippedContent(i);
+        if (j.length() > 1) j += ",";
+        j += "{\"role\":" + juce::JSON::toString(roles[i])
+           + ",\"content\":" + juce::JSON::toString(c) + "}";
+    }
+    j += "]";
+    out.json = j;
+    for (int i = out.firstIdx; i < roles.size() - 1; ++i)
+        out.historyBytes += out.strippedSizes[(size_t) i];
+    return out;
+}
+
+juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
+                                              const juce::StringArray& contents,
+                                              const juce::String& systemPrompt,
+                                              const juce::String& meterJsonBlob)
+{
+    // THE TURNS COME FROM buildChatTurns - the same call /api/classify makes, so the
+    // two bodies cannot carry different turns (5a). Everything the writer adds on top
+    // (the system message, the trim counters, the breakdown log) stays here.
+    const auto turns = buildChatTurns(roles, contents);
+
+    // THE TRIM IS THE TRIGGER (item 17). These counts are the only honest signal that
+    // the model has stopped seeing the start of the conversation, and they belong to the
+    // SEND, not to the turn array - classify building the same array must not move them.
+    if (roles.size() <= 1)
+    {
+        historyDroppedTotal_ = 0;
+        historyTrimWarned_   = false;
+    }
+    historyDroppedTotal_ += turns.trim.droppedByCap + turns.trim.droppedByBudget + turns.trim.droppedByRole;
+
+    EchoJay_NSLog(("EJChat: history trim -- kept " + juce::String(turns.trim.kept)
+                   + "/" + juce::String(turns.trim.total) + " history msgs"
+                   + " (dropped: countCap " + juce::String(turns.trim.droppedByCap)
+                   + ", byteBudget " + juce::String(turns.trim.droppedByBudget)
+                   + ", roleAlign " + juce::String(turns.trim.droppedByRole)
+                   + ((turns.trim.droppedByCap == 0 && turns.trim.droppedByBudget == 0
+                       && turns.trim.droppedByRole == 0)
+                        ? juce::String(" -- nothing dropped") : juce::String())
+                   + ")").toRawUTF8());
+
+    // The system message goes in FRONT of those turns, and the splice is the only
+    // place the two arrays differ.
     juce::String messagesJson = "[";
     messagesJson += "{\"role\":\"system\",\"content\":" + juce::JSON::toString(systemPrompt) + "}";
-    for (int i = firstIdx; i < roles.size(); ++i)
-    {
-        // History messages go out with injections + meter text stripped;
-        // only the newest keeps its (scrubbed) full content
-        juce::String c = (i == roles.size() - 1) ? newestContent : strippedContent(i);
-        messagesJson += ",{\"role\":" + juce::JSON::toString(roles[i]) +
-                        ",\"content\":" + juce::JSON::toString(c) + "}";
-    }
+    if (turns.json.length() > 2)
+        messagesJson += "," + turns.json.substring(1, turns.json.length() - 1);
     messagesJson += "]";
-    // Field-by-field breakdown of the messages array so nothing hides:
-    // system prompt vs history vs the newest message, each in bytes
-    {
-        int histBytes = 0;
-        for (int i = firstIdx; i < roles.size() - 1; ++i)
-            histBytes += strippedSizes[(size_t) i];
-        EchoJay_NSLog(("EJChat: body breakdown -- system="
-                       + juce::String((int) systemPrompt.getNumBytesAsUTF8()) + "b"
-                       + " history=" + juce::String(histBytes) + "b("
-                       + juce::String(roles.size() - 1 - firstIdx) + " msgs)"
-                       + " newest=" + juce::String(newestMsgBytes) + "b"
-                       + " messagesTotal=" + juce::String((int) messagesJson.getNumBytesAsUTF8()) + "b").toRawUTF8());
-    }
-    
+    EchoJay_NSLog(("EJChat: body breakdown -- system="
+                   + juce::String((int) systemPrompt.getNumBytesAsUTF8()) + "b"
+                   + " history=" + juce::String(turns.historyBytes) + "b("
+                   + juce::String(roles.size() - 1 - turns.firstIdx) + " msgs)"
+                   + " newest=" + juce::String(turns.newestBytes) + "b"
+                   + " messagesTotal=" + juce::String((int) messagesJson.getNumBytesAsUTF8()) + "b").toRawUTF8());
+
     juce::String body = "{\"messages\":" + messagesJson + ",\"max_tokens\":4096";
     // usage-v2 client contract: version identifier + turnType on EVERY turn.
     // turnType is staged per send ("" = plain "chat"); capture payloads only
@@ -1382,7 +1370,7 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
                        + " payload=" + (metersBlob.isNotEmpty()
                             ? "YES (" + juce::String((int) metersBlob.getNumBytesAsUTF8()) + "b)"
                             : juce::String("NO"))
-                       + " msg=" + juce::String(newestMsgBytes) + "b").toRawUTF8());
+                       + " msg=" + juce::String(turns.newestBytes) + "b").toRawUTF8());
         nextChatTurnType_.clear();
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;   // cleared after EVERY send
@@ -1456,7 +1444,13 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         //    flipping it mid-session ... one stat per send is free").
         if (ChainHost::devModeActive())
         {
-            auto f = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+            // echojay::userDocuments(), not the JUCE location directly: under an
+            // isolated harness root this lands there instead of in the operator's
+            // live ~/Documents/EchoJay, whose rolling history a guard run would
+            // otherwise evict (26 Sep 2026 - three guard runs did exactly that).
+            // With ECHOJAY_STATE_HOME unset it IS the JUCE location, so the
+            // shipped plugin writes where it always did.
+            auto f = echojay::userDocuments()
                          .getChildFile("EchoJay").getChildFile("chat-body-debug.json");
             // THE WRITE HALF HAS THE SAME SANDBOX PROBLEM AS THE GATE HAD, and
             // fixing only the gate would have moved the silence rather than
@@ -2220,23 +2214,13 @@ void EchoJayAPI::startChatStream(std::shared_ptr<ChatStreamHandle> handle,
     });
 }
 
-void EchoJayAPI::classify(const ClassifyRequest& req,
-                          std::function<void(const ClassifyResult&)> onComplete)
+// ---- /api/classify request body (extracted 26 Sep 2026, item 5a) ----------
+// EXTRACTED SO IT CAN BE READ. A guard cannot observe a POST, so the only way to
+// assert "the classify body's messages match the writer's turn for turn" is for
+// both bodies to come from functions a harness can call. classify() sends exactly
+// what this returns.
+juce::String EchoJayAPI::buildClassifyRequestBody(const ClassifyRequest& req) const
 {
-    JUCE_ASSERT_MESSAGE_THREAD   // arms a Timer
-
-    auto answer = std::make_shared<std::function<void(const ClassifyResult&)>>(std::move(onComplete));
-    auto fallThrough = [answer] { if (*answer) (*answer)(ClassifyResult{}); };
-
-    // ONE callback path for the caller: even the cases we can answer without
-    // touching the network answer ASYNCHRONOUSLY, so the splice never has to
-    // handle "sometimes this calls back before it returns".
-    if (classifierOff_.load() || ! isLoggedIn() || req.message.trim().isEmpty())
-    {
-        juce::MessageManager::callAsync(fallThrough);
-        return;
-    }
-
     // THE FULL COMPOSED MESSAGE, unstripped — see the contract note on
     // ClassifyRequest. The server strips it for both calls itself.
     juce::DynamicObject::Ptr body = new juce::DynamicObject();
@@ -2278,6 +2262,50 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
     // rather than trusting this comment.
     body->setProperty(echojay::kChannelChooserCapability, true);
 
+    // 5a (26 Sep 2026): THE WHOLE CHAT FOR THIS CHANNEL, the same turns the writer
+    // gets, built by the SAME function - so the router reads the conversation instead
+    // of a 400-character tail of one reply. The blocks stay in: the server strips them.
+    // Omitted entirely when the composer sent no history, which is what makes the
+    // server's "(not sent by this client)" fact honest for older clients.
+    if (! req.historyRoles.isEmpty())
+    {
+        const auto turns = buildChatTurns(req.historyRoles, req.historyContents);
+        auto parsed = juce::JSON::parse(turns.json);
+        if (auto* arr = parsed.getArray(); arr != nullptr && ! arr->isEmpty())
+            body->setProperty("messages", parsed);
+    }
+    return juce::JSON::toString(juce::var(body.get()));
+}
+
+void EchoJayAPI::classify(const ClassifyRequest& req,
+                          std::function<void(const ClassifyResult&)> onComplete)
+{
+    JUCE_ASSERT_MESSAGE_THREAD   // arms a Timer
+
+    auto answer = std::make_shared<std::function<void(const ClassifyResult&)>>(std::move(onComplete));
+    auto fallThrough = [answer] { if (*answer) (*answer)(ClassifyResult{}); };
+
+    // ONE callback path for the caller: even the cases we can answer without
+    // touching the network answer ASYNCHRONOUSLY, so the splice never has to
+    // handle "sometimes this calls back before it returns".
+    if (classifierOff_.load() || ! isLoggedIn() || req.message.trim().isEmpty())
+    {
+        juce::MessageManager::callAsync(fallThrough);
+        return;
+    }
+
+
+    const juce::String classifyBody = buildClassifyRequestBody(req);
+    {
+        int turns = 0;
+        if (auto* arr = juce::JSON::parse(classifyBody).getProperty("messages", juce::var()).getArray())
+            turns = arr->size();
+        EchoJay_NSLog(("EJClassify: body -- " + juce::String(turns) + " turn(s) of chat"
+                       + (turns == 0 ? juce::String(" (no history from the composer - the server routes on the tail)")
+                                     : juce::String())
+                       + ", " + juce::String((int) classifyBody.getNumBytesAsUTF8()) + "b").toRawUTF8());
+    }
+
     auto aliveFlag = alive;
     auto latch = armClassifyDeadline(kClassifyBudgetMs, [answer, aliveFlag]
     {
@@ -2286,7 +2314,7 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
         if (*answer) (*answer)(ClassifyResult{});
     });
 
-    postJSON("/api/classify", juce::JSON::toString(juce::var(body.get())),
+    postJSON("/api/classify", classifyBody,
              [answer, latch, aliveFlag, sentChannel = req.channel,
               // Request-side fact, decided at send: the advisory gate depends
               // on the [SAVED CHAINS] marker riding this turn's composed

@@ -236,6 +236,7 @@ ej_add_guard(global_undo_guard        SOURCE tools/global_undo_guard/harness.cpp
 ej_add_guard(groups_guard             SOURCE tools/groups_guard/harness.cpp                   LABEL fast SCRIBBLE)
 ej_add_guard(ui_guard                 SOURCE tools/ui_round_guard/ui_guard.cpp                LABEL fast SCRIBBLE)
 ej_add_guard(history_guard            SOURCE tools/ui_round_guard/history_guard.cpp           LABEL fast)
+ej_add_guard(classify_body_guard      SOURCE tools/classify_body_guard/harness.cpp            LABEL fast)
 ej_add_guard(latch_harness            SOURCE tools/latch_harness/harness.cpp                  LABEL fast)
 ej_add_guard(eq_readback              SOURCE tools/eq_readback/harness.cpp                    LABEL fast)
 ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp               LABEL fast)

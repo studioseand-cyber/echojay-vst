@@ -36,6 +36,23 @@ inline juce::File userStateHome()
     if (stateIsIsolated()) { juce::File r (juce::String::fromUTF8 (stateHomeOverride())); r.createDirectory(); return r; }
     return juce::File::getSpecialLocation (juce::File::userHomeDirectory);
 }
+/// ~/Documents (juce::File::userDocumentsDirectory) for the files the OPERATOR
+/// is meant to find - captures, references, the dev-mode chat-body dumps - or
+/// $ECHOJAY_STATE_HOME/Documents under isolation.
+///
+/// WHY THIS EXISTS (26 Sep 2026). ChainHost::devModeActive() checks an ABSOLUTE
+/// path (/Users/SeanD/.echojay_dev) on purpose, so dev mode is on for every
+/// process on this Mac - harnesses included. The dev-mode body dump wrote through
+/// juce::userDocumentsDirectory, which resolves from the password database and
+/// ignores $HOME, so an isolated harness still landed in the LIVE
+/// ~/Documents/EchoJay, and its rolling 20-file history evicted the dumps from
+/// real sessions. Isolation has to hold for every write the harness can reach,
+/// not only the ones under ~/Library.
+inline juce::File userDocuments()
+{
+    if (stateIsIsolated()) { juce::File r (juce::String::fromUTF8 (stateHomeOverride())); auto d = r.getChildFile ("Documents"); d.createDirectory(); return d; }
+    return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+}
 /// For a harness: abort unless isolated. A test that cannot be isolated must
 /// say so and refuse, never quietly use the user's live state.
 inline void requireIsolationOrDie (const char* harnessName)

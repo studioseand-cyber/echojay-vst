@@ -12,6 +12,7 @@
 #include <mutex>
 #include <vector>
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for fetchDialableIdentities
+#include "EchoJayHistoryTrim.h" // echojay::HistoryTrimResult, in ChatTurns below
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
 namespace LinkShm { struct RackSidecar; }   // Phase R: targeted-injection overload
@@ -472,6 +473,14 @@ public:
         // suppresses the precondition deterministically. Empty on a typed
         // turn, which is what lets the mismatch fire again.
         juce::String answers;
+        // 5a (26 Sep 2026): THE SAME TURNS THE WRITER GETS. The classifier used to
+        // route on a 400-character tail of the prior assistant turn; it now reads the
+        // whole chat for this channel. These are the composer's snapshot arrays - the
+        // very ones fireChatMainCall hands buildChatRequestBody - and classify() runs
+        // them through the SAME builder, so the two bodies cannot carry different
+        // turns. The server strips the injected blocks itself.
+        juce::StringArray historyRoles;
+        juce::StringArray historyContents;
     };
 
     // Mirrors the server's response one field per field. `usable` is the
@@ -1293,6 +1302,27 @@ private:
                                       const juce::StringArray& contents,
                                       const juce::String& systemPrompt,
                                       const juce::String& meterJsonBlob);
+
+    // ONE AUTHOR FOR THE TURNS (5a, 26 Sep 2026). The writer's messages[] and the
+    // classify body's messages[] are the same turns, so they are built in one place
+    // and spliced by each caller - the writer in front of its system message, classify
+    // as it stands. Pure apart from reading the staged explicit-capture flag; the trim
+    // COUNTERS and the trim log stay with the writer, which is the send that happens.
+    struct ChatTurns
+    {
+        juce::String json;            // "[{role,content},...]" - no system message
+        int firstIdx     = 0;         // first history index kept
+        int historyBytes = 0;
+        int newestBytes  = 0;
+        echojay::HistoryTrimResult trim {};
+        std::vector<int> strippedSizes;
+    };
+    ChatTurns buildChatTurns(const juce::StringArray& roles,
+                             const juce::StringArray& contents) const;
+
+    // The /api/classify request body, extracted so a guard can read the bytes that
+    // go on the wire (it cannot observe a POST). classify() sends exactly this.
+    juce::String buildClassifyRequestBody(const ClassifyRequest& req) const;
     // tools/mapfps_test ONLY (CONTRACT_history_resend_pin.md, 21 Aug 2026):
     // the history-resend pin must run THIS function, not a reimplementation
     // — the server's brief suppression counts plugin names in history it
