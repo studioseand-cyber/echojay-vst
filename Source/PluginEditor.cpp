@@ -26355,6 +26355,13 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
                    + "SHORT "   + num (use->shortTerm) + ", "
                    + "SHORTMAX " + (frameHasShortMax (*use) ? juce::String (use->shortTermMax, 1)
                                                                      : juce::String ("no reading")) + ", "
+                   // 21t-f item 5: SHORT90 sits after SHORTMAX, as ruled. It is the p90 of the CLOSED 3 s
+                   // windows since the tally reset - where the programme SITS, as against SHORTMAX's loudest
+                   // moment - and a Link that does not publish it says "no reading" rather than borrowing a
+                   // neighbouring figure. It rides one quantised byte of the frame (0.25 LU), so the printed
+                   // decimal is the value to a quarter of a unit and no finer.
+                   + "SHORT90 " + (frameHasShort90 (*use) ? juce::String (frameShort90Db (*use), 1)
+                                                                   : juce::String ("no reading")) + ", "
                    + "INT "     + num (use->integrated) + ", "
                    + "PEAK "    + num (use->truePeakMax) + ", "
                    // PSR, ruled 25 Sep 2026: PEAK minus SHORTMAX when SHORTMAX is there - a WHOLE-PROGRAMME

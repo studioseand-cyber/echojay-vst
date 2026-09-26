@@ -102,6 +102,11 @@ public:
         // (NaN until 30 hops have closed since that reset). Independent of the integrated stats and of reset().
         float shortTermDb    = std::numeric_limits<float>::quiet_NaN();
         float maxShortTermDb = std::numeric_limits<float>::quiet_NaN();
+        // 21t-f item 5 (26 Sep 2026): SHORT90 - the p90 of the CLOSED short-term windows since the same reset
+        // that clears maxShortTermDb. Not the momentary p90 below: a threshold is set against how loud the
+        // programme SITS over three seconds, and the 400 ms percentiles answer a different question.
+        // NaN until at least one window has closed.
+        float shortTermP90Db = std::numeric_limits<float>::quiet_NaN();
         // 21m item 3 (22 Sep 2026): the TRUE PEAK of each of the last 30 hops (100 ms blocks), oldest first, dBTP; hopTruePeakCount
         // = how many are valid (< 30 until the window has filled since the last resetShortTermMax). The loop's "typical on the
         // hits" = the mean reduction over the top 20 % of these blocks; the single worst block is still reported beside it.
@@ -249,6 +254,12 @@ private:
     int    hopSamples_ = 4800;
     double decayPerHop_ = 1.0;
     BiquadCoeffs k1_ {}, k2_ {};
+    // 21t-f item 5: the closed-short-term-window histogram behind SHORT90. 0.5 LU bins over [-70, 0).
+    static constexpr int    kStP90Bins   = 140;
+    static constexpr double kStP90LoLufs = -70.0;
+    std::array<double, kStP90Bins> stBins_ {};
+    double stBinCount_ = 0.0;
+
     struct Z { double z1 = 0.0, z2 = 0.0; };
     Z zl1_, zr1_, zl2_, zr2_;
     static double biquad (float x, Z& z, const BiquadCoeffs& c) noexcept
@@ -330,7 +341,7 @@ private:
             if (std::isfinite (cf) && hopK > 0.0 && offsetDb() + 10.0 * std::log10 (hopK) > (double) cf) heardAboveHops_ += 1.0;
         }
         {   // 18e: short-term (3 s) window, K-weighted, ungated; the max hold restarts on resetShortTermMax()
-            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; tpRing_.fill (0.0f); hopTp_ = 0.0f; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; }
+            if (stResetRequested_.exchange (false, std::memory_order_relaxed)) { stFill_ = 0; stPos_ = 0; tpRing_.fill (0.0f); hopTp_ = 0.0f; stMaxDb_ = std::numeric_limits<double>::quiet_NaN(); stLastDb_ = stMaxDb_; stBins_.fill (0.0); stBinCount_ = 0.0; }
             tpRing_[(size_t) stPos_] = hopTp_; hopTp_ = 0.0f;   // 21m item 3: the hop's true peak rides the same ring index
             stRing_[(size_t) stPos_] = hopK; stPos_ = (stPos_ + 1) % kStHops; if (stFill_ < kStHops) ++stFill_;
             if (stFill_ == kStHops)
@@ -338,6 +349,13 @@ private:
                 double sp = 0.0; for (auto v : stRing_) sp += v; sp /= (double) kStHops;
                 stLastDb_ = sp > 0.0 ? offsetDb() + 10.0 * std::log10 (sp) : -200.0;
                 if (! std::isfinite (stMaxDb_) || stLastDb_ > stMaxDb_) stMaxDb_ = stLastDb_;
+                // 21t-f item 5: one count per CLOSED window, into 0.5 LU bins over [-70, 0). A window is
+                // counted once and never re-counted, so p90 means "9 in 10 closed windows sat at or below this".
+                {
+                    const int bi = (int) std::floor ((stLastDb_ - kStP90LoLufs) * 2.0);
+                    if (bi >= 0 && bi < kStP90Bins) { stBins_[(size_t) bi] += 1.0; stBinCount_ += 1.0; }
+                    else if (stLastDb_ >= kStP90LoLufs) { stBins_[kStP90Bins - 1] += 1.0; stBinCount_ += 1.0; }
+                }
             }
         }
         ring_[(size_t) ringPos_] = hopK;
@@ -388,6 +406,14 @@ private:
         s.truePeakDb = (float) (tpMax_ > 0.0f ? 20.0 * std::log10 (tpMax_) : -200.0);
         s.shortTermDb    = (float) stLastDb_;     // 18e
         s.maxShortTermDb = (float) stMaxDb_;
+        if (stBinCount_ > 0.0)                    // 21t-f item 5
+        {
+            double acc = 0.0; const double target = 0.90 * stBinCount_;
+            float p = (float) (kStP90LoLufs + kStP90Bins * 0.5 - 0.25);
+            for (int i = 0; i < kStP90Bins; ++i)
+            { acc += stBins_[(size_t) i]; if (acc >= target) { p = (float) (kStP90LoLufs + i * 0.5 + 0.25); break; } }
+            s.shortTermP90Db = p;
+        }
         {   // 21m item 3: the per-hop true peaks, oldest first
             const int n = stFill_; s.hopTruePeakCount = n;
             for (int k = 0; k < n; ++k) { const int idx = ((stPos_ - n + k) % kStHops + kStHops) % kStHops; const float v = tpRing_[(size_t) idx]; s.hopTruePeakDb[(size_t) k] = v > 0.0f ? (float) (20.0 * std::log10 (v)) : -200.0f; }

@@ -1169,6 +1169,7 @@ int main()
                 f.truePeakMax = -3.0f; f.shortTermTP = -7.0f;
                 f.shortTermMax = -11.5f; f.heardSeconds = 42.0f;
                 f.fieldsMask = kFrameHasPreTrim | kFrameHasShortMax | kFrameHasHeard;
+                frameSetShort90 (f, -13.25f);   // 21t-f item 5: on the quantum, so the printed value is exact
                 LinkShm::publishMeterFrame (reg, slot, f);
                 beat();
                 {
@@ -1201,6 +1202,9 @@ int main()
                     check (fb.contains ("PSR 7.0") && fb.contains ("SHORTMAX no reading"),
                            "21t-d. ...and a Link with no SHORTMAX falls back to shortTermTP minus SHORT",
                            fb.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 36));
+                    check (fb.contains ("SHORT90 no reading"),
+                           "21t-f (5). ...and a Link that publishes no SHORT90 says \"no reading\", never a "
+                           "neighbouring figure", fb.fromFirstOccurrenceOf ("SHORT90", true, false).substring (0, 26));
                     A::targetGroup (*ed, {}); proc.removeLinkGroup (gidF);
                     LinkShm::publishMeterFrame (reg, slot, f); beat();
                 }
@@ -1250,6 +1254,11 @@ int main()
                 check (after.contains ("SHORTMAX -11.5") && after.contains ("HEARD 42"),
                        "21t-d (b). ...and SHORTMAX and HEARD are real now, not \"no reading\"",
                        after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 34));
+                // 21t-f item 5: SHORT90 is on the line, AFTER SHORTMAX, with the value the Link published.
+                check (after.contains ("SHORTMAX -11.5, SHORT90 -13.3, INT"),
+                       "21t-f (5). SHORT90 is on the member's line, immediately after SHORTMAX  (RED as it "
+                       "stood: the token did not exist)",
+                       after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 40));
                 {   // the MEMBER LINE must not be marked post-trim (the note still explains what that marking
                     // would mean on an older Link's line, which is why the whole block is not what is checked).
                     juce::StringArray al; al.addLines (after);
@@ -1263,6 +1272,45 @@ int main()
                 proc.removeLinkGroup (gid);
                 LinkShm::releaseSlot (reg, slot);
             }
+        }
+
+        // ---- 21t-f (5): SHORT90 RIDES ONE BYTE, AND THE FRAME DID NOT GROW ----------------------------------
+        {
+            std::printf ("\n== 21t-f (5): SHORT90 in one byte of pad - encoding, absence, and the stride ==\n");
+            check (sizeof (LinkMeterFrame) == 128,
+                   "21t-f (5). the frame is still 128 bytes - the size IS the mapping stride, so a growth would "
+                   "move every frame after slot 0 under any instance that had not been rebuilt",
+                   juce::String ((int) sizeof (LinkMeterFrame)) + " bytes");
+            LinkMeterFrame f {};
+            check (! frameHasShort90 (f) && frameShort90Db (f) < -99.0f,
+                   "21t-f (5). a zero frame - an OLD writer's whole zero pad - reads as ABSENT, never as -60",
+                   juce::String (frameShort90Db (f), 1));
+            frameSetShort90 (f, -13.25f);
+            check (frameHasShort90 (f) && std::abs (frameShort90Db (f) - (-13.25f)) < 0.001f,
+                   "21t-f (5). a value on the quantum round-trips exactly", juce::String (frameShort90Db (f), 2));
+            frameSetShort90 (f, -13.4f);
+            check (std::abs (frameShort90Db (f) - (-13.5f)) <= 0.125f + 0.001f,
+                   "21t-f (5). ...and a value off it lands within half a quantum (0.25 LU steps, stated)",
+                   juce::String (frameShort90Db (f), 2));
+            frameSetShort90 (f, -200.0f);
+            check (std::abs (frameShort90Db (f) - (-60.0f)) < 0.001f,
+                   "21t-f (5). silence clamps to the floor, it does not wrap", juce::String (frameShort90Db (f), 1));
+            frameSetShort90 (f, 12.0f);
+            check (std::abs (frameShort90Db (f) - 0.0f) < 0.001f,
+                   "21t-f (5). ...and the ceiling clamps too", juce::String (frameShort90Db (f), 1));
+            frameSetShort90 (f, std::numeric_limits<float>::quiet_NaN());
+            check (! frameHasShort90 (f) && f.short90Code == 0 && (f.fieldsMask & kFrameHasShort90) == 0,
+                   "21t-f (5). NaN publishes NOTHING and clears the promise - the writer cannot claim a field it "
+                   "has no reading for");
+            // The byte it lives in is the key group's pad, and the key group must still read correctly beside it.
+            LinkMeterFrame k {};
+            k.keyRoot = 7; k.keyIsMinor = 1; k.keyConfidence = 0.8f; k.fieldsMask = kFrameHasKey;
+            frameSetShort90 (k, -18.0f);
+            check (k.keyRoot == 7 && k.keyIsMinor == 1 && std::abs (k.keyConfidence - 0.8f) < 0.001f
+                   && std::abs (frameShort90Db (k) - (-18.0f)) < 0.001f,
+                   "21t-f (5). ...and it does not disturb the key group it shares four bytes with",
+                   "root " + juce::String ((int) k.keyRoot) + " minor " + juce::String ((int) k.keyIsMinor)
+                   + " short90 " + juce::String (frameShort90Db (k), 1));
         }
 
         // ---- 21t-d (c): SHORTMAX is the max of SHORT since the tally started, and resets with it -------------

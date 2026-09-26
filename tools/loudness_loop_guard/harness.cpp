@@ -1114,6 +1114,57 @@ static int guardMain()
         }
     }
 
+    // ---- 21t-f (5): SHORT90 IS THE p90 OF THE CLOSED SHORT-TERM WINDOWS ----------------------------------
+    // The tally already had a p90, over the 400 ms MOMENTARY histogram. SHORT90 is a different quantity and
+    // this leg is what stops the two being confused: it drives a real EchoJayLevelTally with programme that
+    // SITS at one level and spends a little time much louder, and asserts that SHORT90 follows where the
+    // programme sits while SHORTMAX follows the loudest moment. On a tree without the field it does not compile.
+    {
+        std::printf ("\n== 21t-f (5): SHORT90 - where the programme SITS, not its loudest moment ==\n");
+        echojay::LevelTally t { echojay::LevelTally::Weighting::K };
+        t.prepare (48000.0);
+        const int block = 4800;                       // 100 ms hops, the tally's own granularity
+        std::vector<float> L ((size_t) block), R ((size_t) block);
+        auto feed = [&] (float amp, int hops)
+        {
+            for (int h = 0; h < hops; ++h)
+            {
+                for (int i = 0; i < block; ++i)
+                {
+                    const float v = amp * std::sin (2.0f * juce::MathConstants<float>::pi * 1000.0f
+                                                    * (float) ((h * block + i) % 48000) / 48000.0f);
+                    L[(size_t) i] = v; R[(size_t) i] = v;
+                }
+                t.push (L.data(), R.data(), block);
+            }
+        };
+        // 12 s sitting at one level, then 3 s about 10 dB louder: 150 closed windows, 30 of them influenced by
+        // the loud passage - so the p90 sits near the quiet programme and the max hold sits on the loud one.
+        feed (0.05f, 150);
+        const auto quietOnly = t.snapshot();
+        feed (0.16f, 60);
+        const auto both = t.snapshot();
+        check (quietOnly.shortTermP90Db == quietOnly.shortTermP90Db,
+               "21t-f (5). SHORT90 has a reading once windows have closed",
+               juce::String (quietOnly.shortTermP90Db, 2));
+        check (both.maxShortTermDb > both.shortTermP90Db + 3.0f,
+               "21t-f (5). the loudest 3 s window is well above SHORT90 - the loud passage moves SHORTMAX, not "
+               "where the programme sits",
+               "SHORTMAX " + juce::String (both.maxShortTermDb, 1) + " vs SHORT90 "
+               + juce::String (both.shortTermP90Db, 1));
+        check (both.shortTermP90Db >= quietOnly.shortTermP90Db - 0.01f
+               && both.shortTermP90Db <= quietOnly.shortTermP90Db + 6.0f,
+               "21t-f (5). ...and SHORT90 itself moves only as far as the distribution moved it",
+               juce::String (quietOnly.shortTermP90Db, 1) + " -> " + juce::String (both.shortTermP90Db, 1));
+        t.resetShortTermMax();
+        feed (0.05f, 5);                              // fewer than 30 hops: no window has closed since the reset
+        const auto afterReset = t.snapshot();
+        check (! (afterReset.shortTermP90Db == afterReset.shortTermP90Db)
+               && ! (afterReset.maxShortTermDb == afterReset.maxShortTermDb),
+               "21t-f (5). the reset clears SHORT90 with the max hold - both describe the same window, so they "
+               "start together", "SHORT90 " + juce::String (afterReset.shortTermP90Db, 1));
+    }
+
     return failures == 0 ? 0 : 1;
 }
 

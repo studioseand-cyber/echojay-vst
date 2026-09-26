@@ -253,7 +253,22 @@ struct alignas(64) LinkMeterFrame
     // frameHasKey() (mask bit AND a real root), never the raw fields.
     int16_t  keyRoot       = -1;      // 0..11 pitch class (C..B), -1 = none
     uint8_t  keyIsMinor    = 0;       // 0 = major, 1 = minor
-    uint8_t  _keyPad       = 0;
+    // 21t-f item 5 (26 Sep 2026): SHORT90 - the p90 of the short-term (3 s) loudness since the tally reset -
+    // IN ONE BYTE, because the frame has no four bytes left and none can be freed.
+    //
+    // THE OBSERVATION THAT DECIDED THE SHAPE. sizeof is 128 and that IS the mapping stride (kRegSize), so growth
+    // moves every frame after slot 0 under any instance that has not been rebuilt. The pad is spent (21t-d took
+    // the last 8 bytes for shortTermMax/heardSeconds). Freeing a live float - keyTuningHz was the candidate -
+    // would make an OLD writer's value read as a new field in a NEW reader (the mask bit protects that direction)
+    // AND a NEW writer's value read as a tuning reference in an OLD reader (nothing protects that one, and mixed
+    // pairs happen: a 21s Link beside a 21t V2 shipped this month). So the only honest four bytes do not exist.
+    // What does exist is ONE byte of true pad, here, written as zero by every version ever shipped.
+    //
+    // THE ENCODING, stated where it is read: 0 = absent; 1..241 = -60.00 .. 0.00 LUFS in 0.25 LU steps. A p90
+    // short-term below -60 LUFS is silence and clamps; above 0 LUFS cannot happen on a K-weighted programme
+    // window. 0.25 LU is finer than the one decimal the block prints. Gate on kFrameHasShort90 as well as on the
+    // zero, per the cross-version rule: an old writer's zero pad must never read as -60.
+    uint8_t  short90Code   = 0;
     float    keyConfidence = 0.0f;    // 0..1, margin-normalised
     float    keyTuningHz   = 0.0f;    // detected reference pitch, 0 = unknown
     uint32_t keyAgeMs      = 0;       // reading age at publish time
@@ -277,6 +292,8 @@ static_assert(offsetof(LinkMeterFrame, keyConfidence) == 108, "key group offset"
 static_assert(offsetof(LinkMeterFrame, keyAgeMs)      == 116, "key group offset");
 static_assert(offsetof(LinkMeterFrame, shortTermMax)  == 120, "21t-d: shortTermMax sits in the old pad");
 static_assert(offsetof(LinkMeterFrame, heardSeconds)  == 124, "21t-d: heardSeconds sits in the old pad");
+static_assert(offsetof(LinkMeterFrame, short90Code)   == 107, "21t-f: SHORT90 sits in the key group's one pad byte");
+static_assert(sizeof(LinkMeterFrame) == 128, "21t-f: SHORT90 must not have grown the frame - the size IS the stride");
 
 /// fieldsMask bits. A bit promises ONLY that the writer populates the
 /// field group; values still carry their own absent conventions (-100).
@@ -291,6 +308,31 @@ static constexpr uint32_t kFrameHasKey      = 1u << 1;
 static constexpr uint32_t kFrameHasPreTrim  = 1u << 2;
 static constexpr uint32_t kFrameHasShortMax = 1u << 3;
 static constexpr uint32_t kFrameHasHeard    = 1u << 4;
+// 21t-f item 5: SHORT90, quantised into the key group's pad byte (see short90Code for the encoding and why
+// there was no room for a float).
+static constexpr uint32_t kFrameHasShort90  = 1u << 5;
+
+/// SHORT90's codec. ONE writer, ONE reader, both here - a quantised field decoded in two places is a field
+/// that disagrees with itself. frameSetShort90 also sets the bit, so a writer cannot publish the value and
+/// forget the promise.
+inline void frameSetShort90(LinkMeterFrame& f, float lufs) noexcept
+{
+    if (! (lufs == lufs)) { f.short90Code = 0; f.fieldsMask &= ~kFrameHasShort90; return; }   // NaN = absent
+    const float cl = lufs < -60.0f ? -60.0f : (lufs > 0.0f ? 0.0f : lufs);
+    const int code = 1 + (int) ((cl + 60.0f) * 4.0f + 0.5f);      // 0.25 LU steps
+    f.short90Code = (uint8_t) (code < 1 ? 1 : (code > 241 ? 241 : code));
+    f.fieldsMask |= kFrameHasShort90;
+}
+inline bool frameHasShort90(const LinkMeterFrame& f) noexcept
+{
+    return (f.fieldsMask & kFrameHasShort90) != 0 && f.short90Code != 0;
+}
+/// -100.0f when absent, in the same idiom as every other absent dB field in this frame.
+inline float frameShort90Db(const LinkMeterFrame& f) noexcept
+{
+    if (! frameHasShort90(f)) return -100.0f;
+    return -60.0f + (float) (f.short90Code - 1) * 0.25f;
+}
 
 /// THE gate every fast-peak consumer goes through. Pure, testable.
 inline bool frameHasFastPeak(const LinkMeterFrame& f)

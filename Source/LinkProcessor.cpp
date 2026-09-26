@@ -496,6 +496,11 @@ void LinkProcessor::publishMeterFrame()
         { f.shortTermMax = snap.maxShortTermDb; f.fieldsMask |= kFrameHasShortMax; }
         f.heardSeconds = snap.heardSeconds;
         f.fieldsMask |= kFrameHasHeard;
+        // 21t-f item 5: SHORT90, through the codec that owns the encoding (one byte of the key group's pad -
+        // the frame has no four bytes left and none could be freed without lying to an older reader). NaN
+        // until a window has closed, and frameSetShort90 clears the bit in that case rather than publishing a
+        // floor value.
+        frameSetShort90 (f, snap.shortTermP90Db);
         // 21t-e (25 Sep 2026): PEAK COMES FROM THE TALLY, ON THE SAME CLOCK AS EVERYTHING ELSE ON THE LINE.
         // It used to be meterEngine_'s max-hold, which is only ever cleared when the RACK changes - so on
         // 25 Sep two members published -0.1 and -0.0 dBTP beside an INT of -17.0, a 17 dB gap that was a single
