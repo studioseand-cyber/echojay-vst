@@ -125,6 +125,114 @@ struct CalibLoop
         float  minDb = -60.0f, maxDb = 12.0f;
     };
 
+    /** THE WIRE SHAPE, PARSED ONCE (21t-g item 6b, 26 Sep 2026). Both binaries compile this file, so the block is
+        read HERE and nowhere else - a shape parsed in two places is two shapes, and the two would drift the first
+        time the server added a field.
+
+        THE LITERALS, verbatim from the server (CONTRACT_GROUPS):
+          mode      "passive" | "listen"                       - never null; anything else is a violation
+          actuator  "threshold" | "drive"                      - never null; anything else is a violation
+          sense     "lower_is_harder" | "higher_is_harder" | null
+          source    "tally" | "listen"                         - carried for the log, not acted on
+          measure   "short90" | "shortmax" | "int" | null      - carried for the log, not acted on
+          param     a string for one knob, an ARRAY for a pair; start_db applies to every entry
+          start_db  a number, or null (the server heard under 30 s and set nothing)
+          min_db / max_db / gr_target_db: numbers
+
+        A THRESHOLD WITH A NULL SENSE IS A CONTRACT VIOLATION and is NOT dialled: which way a knob makes a
+        compressor work harder is not something to assume from its name. It runs the DRIVE instead and says so.
+        Every rejection is written into `whyOut` so the caller can log it: a block quietly reinterpreted is a
+        block nobody can debug.
+        Returns false when there is no usable block at all (no object, or a slot this rack does not have). */
+    static bool configFromBlock (const juce::var& block, int numSlots, bool busBand,
+                                 const juce::String& pluginName, Config& out, juce::String& whyOut)
+    {
+        auto* o = block.getDynamicObject();
+        if (o == nullptr) return false;                       // no compressor in this chain: no block
+        const int slot = o->hasProperty ("slot") ? ((int) o->getProperty ("slot")) - 1 : -1;   // 1-based on the wire
+        if (slot < 0 || slot >= numSlots)
+        {
+            whyOut << "slot " << juce::String (slot + 1) << " is not in this rack (" << juce::String (numSlots)
+                   << " slot(s)); nothing started. ";
+            return false;
+        }
+        out = Config{};
+        out.slot = slot;
+        out.plugin = pluginName;
+        out.lo = busBand ? 1.0f : 2.0f; out.hi = busBand ? 2.0f : 3.0f;
+        if (auto* band = o->getProperty ("gr_target_db").getArray())
+            if (band->size() == 2)
+            { out.lo = (float) (double) band->getUnchecked (0); out.hi = (float) (double) band->getUnchecked (1); }
+
+        // ---- mode: exactly two strings --------------------------------------------------------------------
+        const auto modeS = o->getProperty ("mode").toString().trim();
+        if (modeS == "listen")        out.mode = Mode::Listen;
+        else if (modeS == "passive")  out.mode = Mode::Passive;
+        else
+        {
+            out.mode = Mode::Passive;      // the quiet default, per the ruling: a block that says nothing is passive
+            whyOut << "mode \"" << modeS << "\" is not \"passive\" or \"listen\" - running PASSIVE. ";
+        }
+
+        // ---- actuator: exactly two strings ----------------------------------------------------------------
+        const auto actS = o->getProperty ("actuator").toString().trim();
+        if (actS == "threshold")   out.actuator = Actuator::Threshold;
+        else if (actS == "drive")  out.actuator = Actuator::Drive;
+        else
+        {
+            out.actuator = Actuator::Drive;
+            whyOut << "actuator \"" << actS << "\" is not \"threshold\" or \"drive\" - running the DRIVE. ";
+        }
+
+        // ---- param: one name, or an array of them (a pair moves together) ---------------------------------
+        {
+            const auto pv = o->getProperty ("param");
+            if (auto* pa = pv.getArray())
+                for (const auto& e : *pa) { const auto n = e.toString().trim(); if (n.isNotEmpty()) out.params.add (n); }
+            else if (pv.toString().trim().isNotEmpty()) out.params.add (pv.toString().trim());
+        }
+
+        // ---- sense: two strings or null, and null with a threshold is a VIOLATION -------------------------
+        const auto senseS = o->getProperty ("sense").toString().trim();
+        const bool senseKnown = (senseS == "lower_is_harder" || senseS == "higher_is_harder");
+        out.senseSign = (senseS == "higher_is_harder") ? 1 : -1;
+        if (out.actuator == Actuator::Threshold && ! senseKnown)
+        {
+            out.actuator = Actuator::Drive;
+            out.params.clear();
+            whyOut << "actuator \"threshold\" with sense \"" << (senseS.isEmpty() ? juce::String ("null") : senseS)
+                   << "\" - which way that knob compresses harder is not ours to guess, so the DRIVE runs instead. ";
+        }
+        if (out.actuator == Actuator::Threshold && out.params.isEmpty())
+        {
+            out.actuator = Actuator::Drive;
+            whyOut << "actuator \"threshold\" names no param - running the DRIVE. ";
+        }
+
+        // ---- start_db: a number, or null (nothing is written) ---------------------------------------------
+        // start_db: a number, or null. NULL IS "UNSET", NEVER ZERO (21t-g, 26 Sep 2026 ruling) - for either
+        // actuator. A drive block with start_db null is an unprofiled compressor whose staging pre-gain the server
+        // has already written on the slot: the loop must OPEN FROM THAT and step from there, because opening from 0
+        // would undo the staging in one move and then spend its six steps climbing back. NaN out means "ask the
+        // host what is on the slot", and the caller does exactly that.
+        const auto startV = o->getProperty ("start_db");
+        const bool haveStart = ! startV.isVoid() && (startV.isDouble() || startV.isInt() || startV.isInt64());
+        out.startDb = haveStart ? (float) (double) startV : std::numeric_limits<float>::quiet_NaN();
+        if (o->hasProperty ("min_db")) out.minDb = (float) (double) o->getProperty ("min_db");
+        if (o->hasProperty ("max_db")) out.maxDb = (float) (double) o->getProperty ("max_db");
+
+        // ---- source and measure: logged, not acted on, and their literals are named so a new one shows ----
+        {
+            const auto src = o->getProperty ("source").toString().trim();
+            const auto mea = o->getProperty ("measure").toString().trim();
+            if (src.isNotEmpty() && src != "tally" && src != "listen")
+                whyOut << "source \"" << src << "\" is not \"tally\" or \"listen\". ";
+            if (mea.isNotEmpty() && mea != "short90" && mea != "shortmax" && mea != "int")
+                whyOut << "measure \"" << mea << "\" is not short90/shortmax/int. ";
+        }
+        return true;
+    }
+
     void begin (const Config& c)
     {
         plugin = c.plugin; slot = c.slot;

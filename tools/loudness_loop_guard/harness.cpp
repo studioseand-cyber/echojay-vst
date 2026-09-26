@@ -1254,6 +1254,123 @@ static int guardMain()
         }
     }
 
+    // ---- 21t-g (6b): THE WIRE SHAPE, FROM JSON TEXT, WITH THE SERVER'S LITERALS --------------------------
+    // The block is parsed by ONE function both binaries compile (CalibLoop::configFromBlock), so this is where the
+    // contract is asserted: the literals B emits and nothing looser, param as a string AND as an array, start_db
+    // present and null, and the threshold-with-no-sense violation that must fall back to the drive.
+    {
+        std::printf ("\n== 21t-g (6b): the calibration block's wire shape, parsed from JSON text ==\n");
+        auto parse = [] (const char* json, int numSlots, echojay::CalibLoop::Config& cfg, juce::String& why)
+        {
+            const auto v = juce::JSON::parse (juce::String (json));
+            return echojay::CalibLoop::configFromBlock (v, numSlots, false, "UnFairchild 670M II", cfg, why);
+        };
+
+        // (i) the full threshold shape, param as a STRING
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"source":"tally","heard_s":120,"measure":"short90","mode":"passive",
+                                       "actuator":"threshold","slot":1,"param":"Thresh","start_db":-13.4,
+                                       "sense":"lower_is_harder","min_db":-15,"max_db":15,"gr_target_db":[2,3]})",
+                                   2, c, why);
+            check (ok && c.mode == echojay::CalibLoop::Mode::Passive
+                   && c.actuator == echojay::CalibLoop::Actuator::Threshold
+                   && c.params.size() == 1 && c.params[0] == "Thresh" && c.senseSign == -1
+                   && std::abs (c.startDb - (-13.4f)) < 0.01f && c.slot == 0
+                   && std::abs (c.minDb - (-15.0f)) < 0.01f && std::abs (c.maxDb - 15.0f) < 0.01f
+                   && std::abs (c.lo - 2.0f) < 0.01f && std::abs (c.hi - 3.0f) < 0.01f && why.isEmpty(),
+                   "21t-g (6b). mode \"passive\", actuator \"threshold\", param \"Thresh\", sense "
+                   "\"lower_is_harder\", start_db -13.4, min/max, gr_target_db - all accepted, nothing flagged",
+                   c.params.joinIntoString (",") + " @ " + juce::String (c.startDb, 1) + " slot "
+                   + juce::String (c.slot) + (why.isEmpty() ? juce::String() : " why: " + why));
+        }
+        // (ii) param as an ARRAY - a pair, start_db applying to both
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"passive","actuator":"threshold","slot":1,
+                                       "param":["Input L","Input R"],"start_db":-18.2,
+                                       "sense":"higher_is_harder","gr_target_db":[2,3]})", 2, c, why);
+            check (ok && c.params.size() == 2 && c.params[0] == "Input L" && c.params[1] == "Input R"
+                   && c.senseSign == 1 && std::abs (c.startDb - (-18.2f)) < 0.01f && why.isEmpty(),
+                   "21t-g (6b). param as an ARRAY is a pair, and start_db applies to every entry; "
+                   "\"higher_is_harder\" reverses the step",
+                   c.params.joinIntoString (" + ") + " @ " + juce::String (c.startDb, 1)
+                   + " sense " + juce::String (c.senseSign));
+        }
+        // (iii) start_db NULL - the server heard under 30 s and set nothing: nothing is written
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"listen","actuator":"threshold","slot":1,"param":"Thresh",
+                                       "start_db":null,"sense":"lower_is_harder","heard_s":12,
+                                       "measure":"int","source":"listen","gr_target_db":[2,3]})", 2, c, why);
+            check (ok && c.mode == echojay::CalibLoop::Mode::Listen && ! (c.startDb == c.startDb) && why.isEmpty(),
+                   "21t-g (6b). start_db null on a LISTEN block parses, and leaves the value unset (NaN) so the "
+                   "opening write is skipped",
+                   juce::String (c.mode == echojay::CalibLoop::Mode::Listen ? "listen" : "passive")
+                   + ", start " + (c.startDb == c.startDb ? juce::String (c.startDb, 1) : juce::String ("unset")));
+        }
+        // (iv) THE VIOLATION: actuator "threshold" with sense null. Not dialled - the drive runs, and it says so.
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"passive","actuator":"threshold","slot":1,"param":"Thresh",
+                                       "start_db":-13.4,"sense":null,"gr_target_db":[2,3]})", 2, c, why);
+            check (ok && c.actuator == echojay::CalibLoop::Actuator::Drive && c.params.isEmpty()
+                   && why.contains ("not ours to guess"),
+                   "21t-g (6b). threshold with sense NULL is a contract violation: the DRIVE runs instead and the "
+                   "reason is written for the log, never a guessed direction",
+                   why.trim().substring (0, 110));
+        }
+        // (iv-b) actuator "drive" with start_db NULL - an unprofiled compressor in passive mode. The parser must
+        // leave the value UNSET (NaN), never 0, so the caller opens from the slot_pre_gain_db staging already
+        // written and steps from there; opening at 0 would undo the staging in one move.
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"passive","actuator":"drive","slot":1,"start_db":null,
+                                       "sense":null,"gr_target_db":[2,3]})", 2, c, why);
+            check (ok && c.actuator == echojay::CalibLoop::Actuator::Drive && ! (c.startDb == c.startDb),
+                   "21t-g (6b/c). drive with start_db null leaves the opening value UNSET, so the caller opens "
+                   "from the staging on the slot and never from 0",
+                   juce::String (c.startDb == c.startDb ? juce::String (c.startDb, 2) : juce::String ("unset"))
+                   + (why.isEmpty() ? juce::String() : ", why: " + why.trim()));
+            // ...and the loop, begun from the staged value, steps FROM THERE.
+            echojay::CalibLoop::Config staged = c; staged.startDb = 4.0f;    // what staging wrote on the slot
+            echojay::CalibLoop loop; loop.begin (staged);
+            echojay::CalibLoop::Window w; w.measured = true; w.grDb = 0.4f; w.inTruePeakDb = -12.0f;
+            const auto st = loop.onWindow (w, 3000.0);
+            check (st.writeDrive && std::abs (st.newPre - 5.0f) < 0.01f,
+                   "21t-g (6b/c). ...and the first step moves ONE dB from the staging, not from zero",
+                   juce::String (st.newPre, 1) + " dB");
+        }
+
+        // (v) a mode or actuator string that is not one of the two is flagged, and the SAFE one is used
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"quiet","actuator":"knob","slot":1,"gr_target_db":[2,3]})", 2, c, why);
+            check (ok && c.mode == echojay::CalibLoop::Mode::Passive
+                   && c.actuator == echojay::CalibLoop::Actuator::Drive
+                   && why.contains ("mode \"quiet\"") && why.contains ("actuator \"knob\""),
+                   "21t-g (6b). a mode or actuator outside the two literals is NAMED in the log and the quiet, "
+                   "safe choice is taken (passive, drive)", why.trim().substring (0, 130));
+        }
+        // (vi) a slot this rack does not have starts nothing
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"passive","actuator":"drive","slot":9,"gr_target_db":[2,3]})", 2, c, why);
+            check (! ok && why.contains ("not in this rack"),
+                   "21t-g (6b). a slot the rack does not have starts nothing, and says which",
+                   why.trim().substring (0, 90));
+        }
+        // (vii) source and measure outside their literals are flagged (they are logged, not acted on)
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"mode":"passive","actuator":"drive","slot":1,"source":"guess",
+                                       "measure":"rms","gr_target_db":[2,3]})", 2, c, why);
+            check (ok && why.contains ("source \"guess\"") && why.contains ("measure \"rms\""),
+                   "21t-g (6b). source and measure outside their literals are named too - a new value shows up in "
+                   "the log instead of passing as one of ours", why.trim().substring (0, 120));
+        }
+    }
+
     // ---- 21t-f (5): SHORT90 IS THE p90 OF THE CLOSED SHORT-TERM WINDOWS ----------------------------------
     // The tally already had a p90, over the 400 ms MOMENTARY histogram. SHORT90 is a different quantity and
     // this leg is what stops the two being confused: it drives a real EchoJayLevelTally with programme that

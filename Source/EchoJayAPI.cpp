@@ -3412,7 +3412,16 @@ juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slo
     // in level, in p90 and peak (what a threshold is set against), out
     // level, and out-in measured (on a compressor this IS the reduction).
     juce::String n;
-    n << "in " << fmt1(lv.in.levelDb) << " dBFS RMS (p90 " << fmt1(lv.in.p90) << ", pk " << fmt1(lv.in.peakDb)
+    // WHICH WINDOWS EACH PERCENTILE IS OVER, because a threshold is set from one of them (21t-g, 26 Sep 2026).
+    // `p90` here is the p90 of the 400 ms MOMENTARY blocks - it always has been, and on real material it sits
+    // ABOVE the 3 s figure, because shorter windows keep more of the peaks. A threshold set from it as if it were
+    // SHORT90 comes out high, which is less compression than was asked for. So the 3 s p90 is published BESIDE it
+    // under its own name (short90, the same quantity [GROUP LEVELS] and [TRACK LEVELS] print), and the momentary
+    // one keeps its name and its meaning rather than being quietly redefined under a parser that already reads it.
+    n << "in " << fmt1(lv.in.levelDb) << " dBFS RMS (p90/400ms " << fmt1(lv.in.p90);
+    if (lv.in.shortTermP90Db == lv.in.shortTermP90Db)
+        n << ", short90/3s " << fmt1(lv.in.shortTermP90Db);
+    n << ", pk " << fmt1(lv.in.peakDb)
       << "), out " << fmt1(lv.out.levelDb) << ", out-in " << fmt1(lv.out.levelDb - lv.in.levelDb) << " dB"
       << ", heard " << formatHeard(lv.in.heardSeconds);
     if (lv.in.windowSeconds < lv.in.heardSeconds - 1.0f)

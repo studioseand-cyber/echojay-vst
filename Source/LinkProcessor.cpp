@@ -2836,10 +2836,17 @@ void LinkProcessor::pollChainCommand()
                        + " with settings_structured").toRawUTF8());
     }
 
+    // 21t-g item 2: THE LOOP STARTS HERE FOR A RACK THIS LINK OWNS. V2 starts it for its own rack and for a
+    // LEASED one, because those are the slots V2 can measure; a parked Link's rack is measured HERE, by the
+    // process that owns it, so the block has to be read on this side too. Same header, same defaults (passive
+    // unless the block says listen), same actuator rules - a loop that behaved differently depending on which
+    // process happened to start it would be two loops.
+    const juce::var calibBlock = v.getProperty("calibration", juce::var());
+
     // ASSISTANT: a build command arriving from the main plugin, which is
     // an EchoJay chain being placed on this channel.
     buildChainFromSpec(std::move(spec), ChainHost::LoadOrigin::Assistant,
-        [this, seq](const juce::StringArray& results, const juce::var& detail)
+        [this, seq, calibBlock](const juce::StringArray& results, const juce::var& detail)
     {
         int failures = 0;
         for (auto& r : results)
@@ -2848,7 +2855,86 @@ void LinkProcessor::pollChainCommand()
                             : failures == 0  ? "ok"
                             : failures == results.size() ? "failed" : "partial";
         writeChainAck(seq, status, results, detail);
+        // AFTER the ack, and only when the chain actually landed: a slot index in the block means nothing until
+        // the build that created it has applied.
+        if (failures == 0) startCalibFromBlock(calibBlock);
     });
+}
+
+// The block is the contract's, read exactly as V2 reads it (CONTRACT_GROUPS, "The calibration block"): mode
+// (passive unless it says listen), actuator, param as a name OR an array, sense, start_db (absent when the server
+// heard under 30 s and set nothing), min_db/max_db, gr_target_db. A chain with no compressor carries no block and
+// starts nothing.
+void LinkProcessor::startCalibFromBlock(const juce::var& block)
+{
+    auto* co = block.getDynamicObject();
+    if (co == nullptr) return;                       // no compressor in this chain: no block, nothing to start
+
+    // EXACTLY ONE LOOP PER BLOCK (21t-g item 6a, 26 Sep 2026). V2 starts the loop for the slots IT hosts - its own
+    // rack and any rack it has LEASED - and the same chain-cmd arrives here. While the rack is leased, the slots
+    // are in V2's borrow host and this process is not the one measuring them, so starting a second loop on the same
+    // block would have two hosts stepping one compressor. It is gated on the LEASE, deliberately, and not on
+    // "getNumSlots() happens to be zero": an empty rack is a coincidence, a lease is the fact.
+    if (rackLeaseActive_ || leaseActive_.load(std::memory_order_relaxed))
+    {
+        EchoJay_NSLog("EJCalib(Link): a calibration block arrived while the rack is LEASED - V2 hosts these slots "
+                      "and runs the loop; not starting a second one here");
+        return;
+    }
+    // ONE PARSER, the shared header's (21t-g item 6b) - the same literals, the same violations, the same
+    // threshold-with-no-sense refusal V2 applies. A Link is a TRACK, so the band default is the track band.
+    echojay::CalibLoop::Config cfg;
+    juce::String why;
+    const int slotFromWire = co->hasProperty("slot") ? ((int) co->getProperty("slot")) - 1 : -1;
+    const juce::String pluginName = (slotFromWire >= 0 && slotFromWire < chainHost.getNumSlots())
+                                      ? chainHost.getSlotInfo(slotFromWire).name : juce::String();
+    if (! echojay::CalibLoop::configFromBlock(block, chainHost.getNumSlots(), false, pluginName, cfg, why))
+    {
+        if (why.isNotEmpty()) EchoJay_NSLog(("EJCalib(Link): block not usable - " + why.trim()).toRawUTF8());
+        return;
+    }
+    if (why.isNotEmpty()) EchoJay_NSLog(("EJCalib(Link): BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
+    const int slot = cfg.slot;
+    // (c) A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING ALREADY ON THE SLOT, never from zero - the same
+    // rule V2 applies, for the same reason: slot_pre_gain_db is already written and opening at 0 would undo it.
+    if (cfg.actuator == echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb))
+    {
+        cfg.startDb = chainHost.getSlotInfo(slot).preTrimDb;
+        EchoJay_NSLog(("EJCalib(Link): start_db was null on a drive block - opening from the staging on the slot ("
+                       + juce::String(cfg.startDb, 2) + " dB)").toRawUTF8());
+    }
+    // "no opening value" is NaN out of the parser (a threshold block the server set nothing for).
+    const bool haveStart = cfg.startDb == cfg.startDb;
+
+    calibLoop_.begin(cfg);
+    const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
+    EchoJay_NSLog(("EJCalib(Link): \"" + cfg.plugin + "\" slot " + juce::String(slot + 1)
+                   + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")
+                   + ", band " + juce::String(cfg.lo, 1) + "-" + juce::String(cfg.hi, 1) + " dB, dialling "
+                   + (threshold ? cfg.params.joinIntoString(" + ") : juce::String("the drive"))
+                   + (haveStart ? " from " + juce::String(cfg.startDb, 1) + " dB"
+                                : juce::String(" (no opening value sent)"))).toRawUTF8());
+    // The opening value is written the same way every later step is.
+    if (threshold)
+    {
+        if (haveStart) chainHost.setSlotControlsToValue(slot, cfg.params, cfg.startDb);
+    }
+    else
+    {
+        chainHost.setSlotPreTrimDb(slot, cfg.startDb);
+        chainHost.setSlotTrimDb   (slot, -cfg.startDb);
+    }
+    // The state rides the sidecar from the FIRST window, so V2 can render and close a loop this side started.
+    // resolvedDir is set on the paths that publish, and a build command can arrive before any of them have run -
+    // the first cut wrote to an empty directory string, which lands nowhere and reads back "no sidecar". Resolve
+    // it here when it is empty rather than assume the order.
+    {
+        if (resolvedDir.isEmpty()) { int e = 0; resolvedDir = LinkShm::resolveDir(e); }
+        auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+        if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
+        rc.calib = calibLoop_.toVar();
+        LinkShm::writeRackSidecar(resolvedDir, rc);
+    }
 }
 
 void LinkProcessor::writeChainAck(int seq, const juce::String& status,

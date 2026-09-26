@@ -3043,6 +3043,19 @@ int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& c
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size() || controls.isEmpty()) return 0;
     auto& s = slots_[(size_t) slotIndex];
+    // A BUILT-IN IS NOT A HOSTED PLUGIN, and this path is the hosted one: it needs a fingerprinted param map and
+    // ends in applySettings, which dynamic_casts the processor to AudioPluginInstance. A built-in deliberately has
+    // no fingerprint and no map (see the builtinPayloadUnmatched branch), so sending one down here asks for a cast
+    // that means nothing - and in the two-process Link harness, where the archive and the harness both carry the
+    // built-in's vtable, that cast crashed. Built-ins carry their own controls through the device apply; the
+    // calibration loop's actuator is a profiled THIRD-PARTY control, which is what the server's block names.
+    if (isBuiltinSlot (slotIndex))
+    {
+        EchoJay_NSLog (("EJCalib: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+                        + "\") is a BUILT-IN - the loop's named controls are profiled third-party ones, so "
+                        + controls.joinIntoString (" + ") + " was NOT written here").toRawUTF8());
+        return 0;
+    }
     // THE MAP IS NOT OPTIONAL. Without it there is no index, no unit and no anchor for the control, and writing a
     // raw normalised guess onto a threshold is how a compressor ends up at -60 dB. No map -> nothing written, and
     // the log says which fingerprint was missing so it can be fetched.

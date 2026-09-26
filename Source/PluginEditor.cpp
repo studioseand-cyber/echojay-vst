@@ -24361,53 +24361,33 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
     auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
     if (host == nullptr) return 0;
 
-    echojay::CalibLoop::Config cfg;
-    cfg.slot = co->hasProperty ("slot") ? ((int) co->getProperty ("slot")) - 1 : -1;   // 1-based on the wire
-    if (cfg.slot < 0 || cfg.slot >= host->getNumSlots()) return 0;
-    cfg.plugin = host->getSlotInfo (cfg.slot).name;
-
-    // A BUS band or a TRACK band, exactly as the ops path decides it, so the two cannot drift.
+    // ONE PARSER, in the shared header both binaries compile (21t-g item 6b): the literals, the param array, the
+    // null start_db and the threshold-with-no-sense violation are decided there, so V2 and the Link cannot read the
+    // same block differently. Everything this function adds is local knowledge: which host, which band, the name.
     const bool bus = uid.isEmpty()
                    && (processorRef.getChannelType() == ChannelType::MasterBus
                        || processorRef.getChannelType() == ChannelType::FullMix);
-    cfg.lo = bus ? 1.0f : 2.0f; cfg.hi = bus ? 2.0f : 3.0f;
-    if (auto* band = co->getProperty ("gr_target_db").getArray())
-        if (band->size() == 2)
-        { cfg.lo = (float) (double) band->getUnchecked (0); cfg.hi = (float) (double) band->getUnchecked (1); }
-
-    const auto modeS = co->getProperty ("mode").toString().trim().toLowerCase();
-    cfg.mode = (modeS == "listen") ? echojay::CalibLoop::Mode::Listen
-                                   : echojay::CalibLoop::Mode::Passive;    // absent = passive, ruled
-    const auto actS = co->getProperty ("actuator").toString().trim().toLowerCase();
-    cfg.actuator = (actS == "threshold") ? echojay::CalibLoop::Actuator::Threshold
-                                         : echojay::CalibLoop::Actuator::Drive;
-
-    // param: ONE name, or an ARRAY of them (paired L/R thresholds, stepped together).
+    echojay::CalibLoop::Config cfg;
+    juce::String why;
+    const int slotFromWire = co->hasProperty ("slot") ? ((int) co->getProperty ("slot")) - 1 : -1;
+    const juce::String pluginName = (slotFromWire >= 0 && slotFromWire < host->getNumSlots())
+                                      ? host->getSlotInfo (slotFromWire).name : juce::String();
+    if (! echojay::CalibLoop::configFromBlock (chain.getProperty ("calibration", juce::var()),
+                                               host->getNumSlots(), bus, pluginName, cfg, why))
     {
-        const auto pv = co->getProperty ("param");
-        if (auto* pa = pv.getArray())
-            for (const auto& e : *pa) { const auto n = e.toString().trim(); if (n.isNotEmpty()) cfg.params.add (n); }
-        else if (pv.toString().trim().isNotEmpty()) cfg.params.add (pv.toString().trim());
+        if (why.isNotEmpty()) EchoJay_NSLog (("EJCalib: block not usable - " + why.trim()).toRawUTF8());
+        return 0;
     }
-    // A threshold actuator with no control to dial is not a threshold actuator. Fall back to the drive rather
-    // than start a loop that would step nothing and then report that it had adjusted something.
-    if (cfg.actuator == echojay::CalibLoop::Actuator::Threshold && cfg.params.isEmpty())
+    if (why.isNotEmpty()) EchoJay_NSLog (("EJCalib: BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
+    // (c) A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING, NOT FROM ZERO. slot_pre_gain_db has already been
+    // written on that slot by the build; opening at 0 would undo it in one move and spend the step budget climbing
+    // back to where it started.
+    if (cfg.actuator == echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb))
     {
-        EchoJay_NSLog ("EJCalib: the block says actuator=threshold but names no param - running the DRIVE instead");
-        cfg.actuator = echojay::CalibLoop::Actuator::Drive;
+        cfg.startDb = host->getSlotInfo (cfg.slot).preTrimDb;
+        EchoJay_NSLog (("EJCalib: start_db was null on a drive block - opening from the staging already on the slot ("
+                        + juce::String (cfg.startDb, 2) + " dB)").toRawUTF8());
     }
-
-    const auto senseS = co->getProperty ("sense").toString().trim().toLowerCase();
-    cfg.senseSign = (senseS == "higher_is_harder") ? 1 : -1;      // a dB threshold falls to compress harder
-
-    const auto startV = co->getProperty ("start_db");
-    const bool haveStart = ! startV.isVoid() && (startV.isDouble() || startV.isInt() || startV.isInt64());
-    cfg.startDb = haveStart ? (float) (double) startV
-                            : (cfg.actuator == echojay::CalibLoop::Actuator::Threshold
-                                   ? std::numeric_limits<float>::quiet_NaN()   // nothing is written
-                                   : 0.0f);
-    if (co->hasProperty ("min_db")) cfg.minDb = (float) (double) co->getProperty ("min_db");
-    if (co->hasProperty ("max_db")) cfg.maxDb = (float) (double) co->getProperty ("max_db");
 
     // WHAT THE SERVER SAID IT SET THIS FROM, logged beside what we do with it: the source, how much it had heard
     // and which measure it used are the three facts that explain a threshold nobody watched being chosen.
@@ -24417,7 +24397,7 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
                     + " mode=" + (cfg.mode == echojay::CalibLoop::Mode::Passive ? "passive" : "listen")
                     + " actuator=" + (cfg.actuator == echojay::CalibLoop::Actuator::Threshold ? "threshold" : "drive")
                     + " param=" + (cfg.params.isEmpty() ? juce::String ("(none)") : cfg.params.joinIntoString (","))
-                    + " start_db=" + (haveStart ? juce::String (cfg.startDb, 2) : juce::String ("(none)"))
+                    + " start_db=" + (cfg.startDb == cfg.startDb ? juce::String (cfg.startDb, 2) : juce::String ("(none)"))
                     + " band=" + juce::String (cfg.lo, 1) + "-" + juce::String (cfg.hi, 1)).toRawUTF8());
 
     processorRef.calibStart (uid, cfg);
@@ -26492,7 +26472,24 @@ juce::String EchoJayEditor::buildTrackLevelsContext (const juce::String& targetU
     juce::String name; float trim = 0.0f;
     const auto tokens = levelsTokensFor (uid, &name, &trim);
     if (tokens.isEmpty() || tokens == "no signal") return {};
-    const auto line = "[TRACK LEVELS - \"" + name + "\"] trim " + juce::String (trim, 1) + " dB, " + tokens;
+    // THE NAME IS THE ONE THE BODY'S `channel` FIELD CARRIES (21t-g, 26 Sep 2026 ruling). The server compares the
+    // two trimmed and case-folded and REFUSES the whole tally on a difference, so they cannot be two strings from
+    // two places: this is the same channelDisplayLabel + channelLabelUsable pair materialContextName() uses. When
+    // that pair rejects the label (a uid passthrough), the body sends no channel field at all and there is nothing
+    // to match - the display name still names the channel for a human, and the uid below is the machine key.
+    {
+        const auto label = channelDisplayLabel (uid);
+        if (echojay::channelLabelUsable (uid.toStdString(), label.toStdString()))
+            name = label;
+    }
+    // THE UID IS IN THE HEADER (21t-g, 26 Sep 2026 ruling). The server matches this block's quoted name against
+    // the request's `channel` field and drops the tally on a mismatch - and the two CAN differ: `channel` is
+    // materialContextName(), which is channelDisplayLabel() and is deliberately EMPTY when that label is only a
+    // uid passthrough, while this name comes from the display list (alias-aware) and falls back to the uid. So the
+    // uid rides along in the same shape the group lines carry it, and the server can match on something that
+    // cannot drift.
+    const auto line = "[TRACK LEVELS - \"" + name + "\" (id " + uid + ")] trim "
+                    + juce::String (trim, 1) + " dB, " + tokens;
     EchoJay_NSLog (("EJTrackLevels: " + line).toRawUTF8());
     return line;
 }

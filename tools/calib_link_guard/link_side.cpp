@@ -23,6 +23,12 @@
 struct EJCalibLinkTestAccess
 {
     static juce::String uid  (LinkProcessor& p) { return p.instanceUid_; }
+    // 21t-g item 2: the Link starts the loop from the response's block for a rack IT owns, so the guard drives
+    // that entry point rather than planting a sidecar - the point is that this side reads the contract.
+    static void startFromBlock (LinkProcessor& p, const juce::var& b) { p.startCalibFromBlock (b); }
+    // 21t-g item 6a: the lease is the fact that decides who runs the loop, so the guard sets it.
+    static void setLeased (LinkProcessor& p, bool on) { p.rackLeaseActive_ = on; }
+    static void clearLoop (LinkProcessor& p) { p.calibLoop_ = echojay::CalibLoop{}; }
     static ChainHost&   host (LinkProcessor& p) { return p.chainHost; }
     static echojay::CalibLoop loop (LinkProcessor& p) { return p.calibLoop_; }
     // 21t-e: the tally is where PEAK must come from - the same window as INT, SHORTMAX and HEARD.
@@ -64,6 +70,75 @@ int main (int argc, char** argv)
         TA::host (*l).insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*comp), 0);
         check (TA::host (*l).getNumSlots() == 1, "link side: the compressor is in the Link's own rack",
                juce::String (TA::host (*l).getNumSlots()));
+
+        int err0 = 0; const auto dir0 = LinkShm::resolveDir (err0);
+        // ---- 21t-g item 2: THIS SIDE READS THE BLOCK -------------------------------------------------------
+        // A build to a PARKED Link is measured here, by the process that owns the rack, so the calibration block
+        // has to start the loop on this side too - with the same defaults (passive unless it says listen) and the
+        // same actuator rules as V2, or the behaviour would depend on which process happened to start it.
+        {
+            // ONE NAMED var FOR THE BLOCK, not a temporary per call. juce::var(DynamicObject*) TAKES A REFERENCE,
+            // so a temporary var destroyed at the end of the statement deletes the object - and the second call
+            // then resurrected a freed pointer, which crashed inside var's own dynamic_cast. The same temporary-var
+            // rule this repo already has for parsed vars, on the writing side of it.
+            auto* b = new juce::DynamicObject();
+            b->setProperty ("source", "tally");
+            b->setProperty ("heard_s", 120);
+            b->setProperty ("measure", "short90");
+            b->setProperty ("slot", 1);                       // 1-based on the wire
+            b->setProperty ("actuator", "threshold");
+            {
+                juce::Array<juce::var> params; params.add ("Threshold");
+                b->setProperty ("param", params);             // the ARRAY form, one entry
+            }
+            b->setProperty ("sense", "lower_is_harder");
+            b->setProperty ("start_db", -18.0);
+            b->setProperty ("min_db", -40.0); b->setProperty ("max_db", 0.0);
+            { juce::Array<juce::var> band; band.add (2.0); band.add (3.0); b->setProperty ("gr_target_db", band); }
+            // (6a) FIRST: WHILE THE RACK IS LEASED, THIS SIDE STARTS NOTHING. V2 hosts those slots and runs the
+            // loop; a second loop here would have two hosts stepping one compressor. Proven on the LEASE, not on
+            // an empty rack - the rack is full at this point, so "nothing started" cannot be a coincidence.
+            TA::clearLoop (*l);
+            TA::setLeased (*l, true);
+            const juce::var blockVar (b);
+            TA::startFromBlock (*l, blockVar);
+            check (! TA::loop (*l).active() && TA::host (*l).getNumSlots() > 0,
+                   "21t-g (6a). a block arriving while the rack is LEASED starts NO loop on this side - V2 hosts "
+                   "those slots (and the rack is not empty, so this is the lease and not a coincidence)",
+                   juce::String (TA::host (*l).getNumSlots()) + " slot(s) in the rack, loop "
+                   + (TA::loop (*l).active() ? "STARTED" : "not started"));
+            TA::setLeased (*l, false);
+
+            TA::startFromBlock (*l, blockVar);
+            const auto started = TA::loop (*l);
+            check (started.active() && started.mode == echojay::CalibLoop::Mode::Passive,
+                   "link side (21t-g). the block starts a PASSIVE loop on the Link's own rack  (RED as it stood: "
+                   "only V2 could start one, and only for a rack it could measure)",
+                   started.active() ? juce::String ("active, passive") : juce::String ("not started"));
+            check (started.actuator == echojay::CalibLoop::Actuator::Threshold
+                   && started.params.size() == 1 && started.params[0] == "Threshold"
+                   && started.senseSign == -1 && std::abs (started.value - (-18.0f)) < 0.01f,
+                   "link side (21t-g). ...with the knob, its sense and its opening value from the block",
+                   started.params.joinIntoString (",") + " @ " + juce::String (started.value, 1)
+                   + " sense " + juce::String (started.senseSign));
+            check (started.card().isEmpty(),
+                   "link side (21t-g). ...and it draws no card, because passive asks the user for nothing",
+                   started.card().isEmpty() ? juce::String ("(silent)") : started.card());
+            // THE FIXTURE'S COMPRESSOR IS A BUILT-IN, and a built-in has no fingerprint and no param map: the
+            // loop's named controls are profiled THIRD-PARTY ones. So the opening write is refused by name here
+            // rather than dialled - which is the honest outcome, and it must not be a crash (it was: the hosted
+            // path's dynamic_cast on a built-in, in a harness that carries the class twice).
+            check (TA::host (*l).setSlotControlsToValue (0, juce::StringArray { "Threshold" }, -18.0f) == 0,
+                   "link side (21t-g). a named control on a BUILT-IN slot is refused, not written - and not a "
+                   "crash on the hosted path's cast");
+            const auto rcRead = LinkShm::readRackSidecar (dir0, uid);
+            const auto side = echojay::CalibLoop::fromVar (rcRead.calib);
+            check (side.mode == echojay::CalibLoop::Mode::Passive
+                   && side.actuator == echojay::CalibLoop::Actuator::Threshold,
+                   "link side (21t-g). ...and the sidecar says so from the first window, so V2 can close it",
+                   juce::String ("valid ") + (rcRead.valid ? "y" : "n") + ", calib "
+                   + juce::JSON::toString (rcRead.calib, true).substring (0, 160).replace ("\n", " "));
+        }
 
         // THE STATE V2 LEFT: a loop two steps in, at +2 dB of drive, band 2-3 dB.
         int err = 0; const auto dir = LinkShm::resolveDir (err);

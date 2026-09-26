@@ -190,6 +190,8 @@ struct EchoJayTabStripTestAccess
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }        // the block itself
     // 21t-g (6): the single-track block, and the composed body it rides in.
     static juce::String trackLevels (EchoJayEditor& e, const juce::String& uid = {}) { return e.buildTrackLevelsContext (uid); }
+    // what the request's `channel` field carries for this turn - materialContextName(), the one the server matches
+    static juce::String materialName (EchoJayEditor& e) { return e.materialContextName (e.mainContextLabel()); }
     static juce::String body (EchoJayEditor& e, const juce::String& msg, const juce::String& uid)
     { juce::StringArray mf; return e.testAssembleChainInjections (msg, uid, &mf); }
     static int calibFromChain (EchoJayEditor& e, const juce::String& uid, const juce::var& chain)
@@ -1367,6 +1369,30 @@ int main()
                     check (tl.startsWith ("[TRACK LEVELS"),
                            "21t-g (6e). the block is there, in the documented shape  (RED as it stood: there was "
                            "no single-track block at all)", tl.substring (0, 60));
+                    // THE WHOLE LINE, PRINTED VERBATIM, because the server runs its parser on exactly this text.
+                    std::printf ("    [TRACK LEVELS] as composed:\n    %s\n", tl.toRawUTF8());
+                    // THE SERVER MATCHES THE BLOCK'S NAME AGAINST THE REQUEST'S `channel` FIELD and drops the
+                    // tally on a mismatch. Both are printed side by side, and the uid is asserted in the header
+                    // because the two strings can differ: `channel` is materialContextName() (channelDisplayLabel,
+                    // deliberately EMPTY when the label is only a uid passthrough) while the block's name comes
+                    // from the display list.
+                    {
+                        const auto bodyChannel = A::materialName (*ed);
+                        const auto blockName   = tl.fromFirstOccurrenceOf ("\"", false, false)
+                                                   .upToFirstOccurrenceOf ("\"", false, false);
+                        std::printf ("    body channel field = \"%s\"   block name = \"%s\"\n",
+                                     bodyChannel.toRawUTF8(), blockName.toRawUTF8());
+                        // The server compares them TRIMMED AND CASE-FOLDED, and refuses the tally with a
+                        // [tally-channel-mismatch] note on any difference - so the guard compares them the same way.
+                        check (bodyChannel.trim().equalsIgnoreCase (blockName.trim()),
+                               "21t-g (6e). the block's quoted name is the same string the body's channel field "
+                               "carries, trimmed and case-folded, so the server's match cannot refuse the tally",
+                               "\"" + bodyChannel + "\" vs \"" + blockName + "\"");
+                        check (tl.contains ("(id " + uid + ")"),
+                               "21t-g (6e). ...and the uid rides in the header too, because those two CAN differ "
+                               "(an unusable label makes the channel field empty)",
+                               tl.upToFirstOccurrenceOf ("]", true, false));
+                    }
                     check (tl.contains ("SHORT90 -14.2") && tl.contains ("INT -17.0")
                            && tl.contains ("PEAK -1.0") && tl.contains ("HEARD 120"),
                            "21t-g (6e). ...carrying this channel's own figures, token for token",

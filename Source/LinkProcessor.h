@@ -660,6 +660,8 @@ private:
     juce::String lastSeenSharedProject_;
     juce::String lastSeenSharedGenre_;
     void pollSessionProjectName();
+    // 21t-g item 2: start the calibration loop from the response's chain-level block, for a rack THIS Link owns.
+    void startCalibFromBlock(const juce::var& block);
     void writeChainAck(int seq, const juce::String& status,
                        const juce::StringArray& results,
                        const juce::var& detail);
