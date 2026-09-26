@@ -929,6 +929,11 @@ ChainHost::~ChainHost()
     if (stateCacheTimer_) stateCacheTimer_->stopTimer();
     if (latencyRebuilder_) { latencyRebuilder_->cancelPendingUpdate(); latencyRebuilder_->stopTimer(); }
     stateCacheEnabled_ = false;
+    // EVERY processor we ever attached to, by node - not by slot index. The index loop that used to be here could
+    // not reach a processor whose slot had been rotated away or erased, and those processors are PARKED and live
+    // for the rest of the process: one of them calling back into this dead object is the execute fault the
+    // scribble leg dies of, right after a hosted latency change.
+    detachAllHostedListeners();
     for (int i = 0; i < (int)slots_.size(); ++i)
         detachHostedListener(i);
     for (auto& n : graveyard_)
@@ -9576,6 +9581,13 @@ void ChainHost::attachHostedListener(int i)
     {
         p->removeListener(this);   // never double-register
         p->addListener(this);
+        // Remember the NODE, not the index: see listenedNodes_ for why an index is not enough.
+        {
+            const auto& n = slots_[(size_t)i].node;
+            bool have = false;
+            for (const auto& k : listenedNodes_) if (k == n) { have = true; break; }
+            if (! have) listenedNodes_.push_back(n);
+        }
         // 21n item 3: the value cache the gesture entries take their "before" from
         const auto& params = p->getParameters();
         for (int k = 0; k < params.size(); ++k) setCachedHostedParam(i, k, params[k]->getValue());
@@ -9585,8 +9597,24 @@ void ChainHost::attachHostedListener(int i)
 void ChainHost::detachHostedListener(int i)
 {
     if (i < 0 || i >= (int)slots_.size() || !slots_[(size_t)i].node) return;
-    if (auto* p = slots_[(size_t)i].node->getProcessor())
+    const auto node = slots_[(size_t)i].node;
+    if (auto* p = node->getProcessor())
         p->removeListener(this);
+    for (size_t k = 0; k < listenedNodes_.size(); ++k)
+        if (listenedNodes_[k] == node) { listenedNodes_.erase(listenedNodes_.begin() + (long) k); break; }
+}
+
+// 21t-g item 1: the one that cannot miss. Called from the destructor, it walks the nodes we attached to rather
+// than the slot vector - which by then may have been rotated, erased or replaced - so no processor is left holding
+// a pointer to a ChainHost that is about to stop existing. Holding Node::Ptr is what makes this safe to call: the
+// processors are guaranteed alive because we are holding them.
+void ChainHost::detachAllHostedListeners()
+{
+    for (const auto& n : listenedNodes_)
+        if (n != nullptr)
+            if (auto* p = n->getProcessor())
+                p->removeListener(this);
+    listenedNodes_.clear();
 }
 
 void ChainHost::stateCacheTick()

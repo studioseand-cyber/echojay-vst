@@ -2553,6 +2553,15 @@ private:
     // all. See attachHostedListener's body.
     void  attachHostedListener(int i);
     void  detachHostedListener(int i);
+    // 21t-g item 1: EVERY PROCESSOR WE HAVE EVER LISTENED TO, held by its NODE so it cannot die while we hold it.
+    // attach/detach are keyed by SLOT INDEX, and slots are rotated (moveSlotTo) and erased - so a detach by index
+    // can unhook the wrong processor and leave us attached to one that is then PARKED in leakedNodeStore and lives
+    // for the rest of the process. That processor then calls audioProcessorChanged on a ChainHost that has been
+    // destroyed: a jump through a freed latencyRebuilder_, which is the execute fault the scribble leg dies of
+    // (EXC_BAD_ACCESS code=2 at a heap address, immediately after "hosted latency changed at runtime").
+    // The destructor walks THIS list, not the slot vector, so nothing can keep a pointer to us.
+    std::vector<juce::AudioProcessorGraph::Node::Ptr> listenedNodes_;
+    void detachAllHostedListeners();
 
     // juce::AudioProcessorListener: the hosted plugins tell us when
     // something moved. Both can arrive on the audio thread during
