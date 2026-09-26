@@ -255,6 +255,8 @@ add_test(NAME probe_plist_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/probe_pli
 set_tests_properties(probe_plist_guard PROPERTIES LABELS "fast" TIMEOUT 600 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME temp_var_grep_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/temp_var_grep_guard/build_and_run.sh)
 set_tests_properties(temp_var_grep_guard PROPERTIES LABELS "fast" TIMEOUT 300 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME state_path_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/state_path_guard/build_and_run.sh)
+set_tests_properties(state_path_guard PROPERTIES LABELS "fast" TIMEOUT 120 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # 21t-d: one process, but the same shape - a real LinkProcessor against the Link archive, so it lives here.
 add_test(NAME calib_link_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/calib_link_guard/build_and_run.sh)
 set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

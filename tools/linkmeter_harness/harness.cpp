@@ -234,42 +234,46 @@ int main()
     std::fprintf(stderr, "  %-16s | %-8s | %-8s | %s\n", "pre-gain line", "(build)", linkPreGain ? "present" : "absent",
                  linkPreGain ? "FILLED" : "UNEXPLAINED");
 
-    // ===== GAIN-PATH ASSERTIONS (a-d) - applied == stated, from the frame =====
-    const float stored   = ed->testPendingLinkPreGainDb();                      // the ONE stored value (int=-20)
+    // ===== GAIN-PATH (a-d), ON THE 21t-e RULE AND IN THE EXIT CODE =====
+    // These four printed PASS/FAIL to stderr and were NOT in the exit code, so when 21t-e
+    // retired the compose-time carry they went on printing FAIL while the test passed - a
+    // stale expectation that could not fail the gate. They now assert the rule that holds and
+    // they count: the figure is MEASURED and PRINTED, it follows the frame, and nothing is
+    // sent to the Link. pregain_readback holds the same rule against the ctrl-cmd directory.
+    const float staged   = ed->testPendingLinkPreGainDb();                      // NaN: nothing staged
     const float expected = juce::jlimit(-24.0f, 24.0f, -18.0f - (-20.0f));      // clamp(-18 - integrated) = +2
-    const bool  statedTxt = linkOut.contains("pre-gain to +2.0 dB");   // 15 Sep wording: "Set the chain's pre-gain to +2.0 dB"              // printed in [CHAIN LEVELS]
-    // 16 Sep 2026: the Build site sends the pre-gain to the LINK as ctrl-cmd {preGainDb, preGainUserSet:false};
-    // "applied" is what that file carries (the pregain_readback harness proves the same send half).
+    const bool  statedTxt = linkOut.contains("pre-gain to +2.0 dB");   // 15 Sep wording: "Set the chain's pre-gain to +2.0 dB"
     auto sentPreGain = [&](bool* userSetOut) -> float
     {
         int e = 0; const String d = LinkShm::resolveDir(e);
         const File f(d + "ctrl-cmd-" + String(kUid) + ".json");
-        if (! f.existsAsFile()) { if (userSetOut) *userSetOut = true; return 0.0f; }
+        if (! f.existsAsFile()) { if (userSetOut) *userSetOut = true; return std::numeric_limits<float>::quiet_NaN(); }
         auto v = JSON::parse(f.loadFileAsString()); auto* o = v.getDynamicObject();
-        if (o == nullptr || ! o->hasProperty("preGainDb")) { if (userSetOut) *userSetOut = true; return 0.0f; }
+        if (o == nullptr || ! o->hasProperty("preGainDb")) { if (userSetOut) *userSetOut = true; return std::numeric_limits<float>::quiet_NaN(); }
         if (userSetOut) *userSetOut = o->hasProperty("preGainUserSet") ? (bool) o->getProperty("preGainUserSet") : true;
         f.deleteFile();   // consumed, like the Link does
         return (float)(double) o->getProperty("preGainDb");
     };
-    ed->applyPendingLinkPreGain();
+    ed->applyPendingLinkPreGain();   // Build's send site, driven as Build drives it
     bool userSet1 = true;
     const float applied = sentPreGain(&userSet1);
-    const bool a = (std::abs(applied - stored) < 0.001f) && statedTxt && ! userSet1;   // sent == stored == stated, AUTO (userSet=false)
-    const bool b = (std::abs(stored - expected) < 0.001f) && (std::abs(applied - 2.0f) < 0.001f);
+    const bool a = ! (staged == staged) && ! (applied == applied);          // nothing staged, nothing sent
+    const bool b = statedTxt && std::abs(expected - 2.0f) < 0.001f;         // the figure is measured and printed
     reseedIntegrated(-8.0f); proc.updateLinkAudioRecency();
     StringArray mfd; const String linkOut2 = ed->testAssembleChainInjections("build me a mastering chain", String(kUid), &mfd);
-    const float stored2 = ed->testPendingLinkPreGainDb();
-    const float expected2 = juce::jlimit(-24.0f, 24.0f, -18.0f - (-8.0f));      // = -10
+    const float staged2 = ed->testPendingLinkPreGainDb();
     ed->applyPendingLinkPreGain();
     bool userSet2 = true;
     const float applied2 = sentPreGain(&userSet2);
-    const bool d = (std::abs(stored2 - expected2) < 0.001f) && (std::abs(applied2 - stored2) < 0.001f)
-                 && (std::abs(applied2 - applied) > 1.0f) && linkOut2.contains("pre-gain to -10.0 dB");
-    std::fprintf(stderr, "\n==== GAIN-PATH (a-d) ====\n");
-    std::fprintf(stderr, "  (a) sent(ctrl-cmd preGainDb) == stored == stated, userSet=false: %s  sent=%.2f stored=%.2f stated-in-text=%s userSet=%s\n", a?"PASS":"FAIL", applied, stored, statedTxt?"yes":"no", userSet1?"true":"false");
-    std::fprintf(stderr, "  (b) == clamp(-18 - integrated)  : %s  stored=%.2f expected=%.2f\n", b?"PASS":"FAIL", stored, expected);
-    std::fprintf(stderr, "  (c) clamp bounds                : [-24.0, +24.0] dB (ChainHost::kPreGainMin/MaxDb)\n");
-    std::fprintf(stderr, "  (d) int=-8 -> sent %.2f (was %.2f), stated -10.0 : %s\n", applied2, applied, d?"PASS":"FAIL");
+    const bool c = linkOut2.contains("pre-gain to -10.0 dB");               // it FOLLOWS the frame (int -8 -> -10)
+    const bool d = ! (staged2 == staged2) && ! (applied2 == applied2);      // and still nothing is staged or sent
+    std::fprintf(stderr, "\n==== GAIN-PATH (a-d), 21t-e: measured and printed, never sent ====\n");
+    std::fprintf(stderr, "  (a) nothing staged, nothing sent   : %s  staged=%.2f sent=%.2f (NaN expected both)\n", a?"PASS":"FAIL", staged, applied);
+    std::fprintf(stderr, "  (b) the figure is printed          : %s  stated-in-text=%s expected=%.2f\n", b?"PASS":"FAIL", statedTxt?"yes":"no", expected);
+    std::fprintf(stderr, "  (c) and it follows the frame       : %s  int=-8 -> \"pre-gain to -10.0 dB\"\n", c?"PASS":"FAIL");
+    std::fprintf(stderr, "  (d) on that frame too, nothing sent: %s  staged=%.2f sent=%.2f\n", d?"PASS":"FAIL", staged2, applied2);
+    const bool gainPathGreen = a && b && c && d;
+    juce::ignoreUnused (userSet1, userSet2);
     reseedIntegrated(-20.0f); proc.updateLinkAudioRecency();
 
     // ===== FOUR OUTCOMES, never silence =====
@@ -307,5 +311,8 @@ int main()
     // Exit: 0 only if the control is green (proves the guard is real). If the
     // control is red the harness is broken and increment 3 must NOT proceed.
     if (! ownGreen) return 2;     // 2 = control failed: STOP condition
-    return linkGreen ? 0 : 1;     // 1 = link red as expected on current binary
+    // (a)-(d) are IN the verdict now (26 Sep 2026): a printed FAIL that cannot fail the gate
+    // is not a check.
+    std::fprintf(stderr, "gain path (a-d): %s\n", gainPathGreen ? "GREEN" : "RED");
+    return (linkGreen && gainPathGreen) ? 0 : 1;   // 1 = link red as expected on current binary
 }

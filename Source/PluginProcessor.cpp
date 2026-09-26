@@ -3951,7 +3951,7 @@ juce::File EchoJayProcessor::getCaptureFolder() const
     // JUCE doesn't give us the DAW project folder directly, so use
     // a subfolder next to wherever the plugin state file would be saved.
     // Fallback: ~/Documents/EchoJay/Captures
-    projectDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    projectDir = echojay::userDocuments()
                      .getChildFile("EchoJay")
                      .getChildFile("Captures");
     return projectDir;

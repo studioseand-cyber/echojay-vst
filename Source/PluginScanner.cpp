@@ -1387,7 +1387,7 @@ void PluginScanner::loadCache()
 
 juce::File PluginScanner::getCustomFoldersFile()
 {
-    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    return echojay::userDocuments()
                .getChildFile("EchoJay").getChildFile("plugin_scan_folders.txt");
 }
 

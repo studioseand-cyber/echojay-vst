@@ -24,12 +24,79 @@ ISO="$(mktemp -d "$BASE/ejguard-$(basename "$BIN").XXXXXX" 2>&1)" || { echo "RUN
 if [ -z "$ISO" ] || [ ! -d "$ISO" ]; then echo "RUNNER REFUSED: no private HOME under $BASE"; exit 2; fi
 export HOME="$ISO" ECHOJAY_STATE_HOME="$ISO" EJ_STATE_TEST_HOME="$ISO" TMPDIR="$ISO"
 mkdir -p "$ISO/Library/Application Support" "$ISO/Documents"
-"$BIN" "$@"; RC=$?
+
+# ---- THE LIVE-STATE SEAL (26 Sep 2026 ruling) -------------------------------------------------------------
+# ISOLATION IS ENFORCED, THEN ASSERTED. A private HOME is not enough: juce::userDocumentsDirectory and
+# userApplicationDataDirectory resolve from the password database and IGNORE $HOME, so a harness reaching them
+# lands in the LIVE folders no matter what this script exports. That is not hypothetical - the dev-mode chat-body
+# dump did exactly that, and its rolling history evicted the dumps from real sessions before anyone noticed.
+#
+# TWO MECHANISMS, and the order matters:
+#
+#  1. THE SANDBOX, which is the one that attributes. Every guard runs under sandbox-exec with file-write DENIED to
+#     the three live folders (reads stay allowed - a guard may legitimately look at them). A harness that tries to
+#     write gets "Operation not permitted" at the syscall, in ITS process, whatever else is running on the Mac.
+#  2. THE FINGERPRINT, as ruled: size+mtime of every file two levels deep in each live folder, before and after.
+#     It is kept because the sandbox could be unavailable, but it CANNOT ATTRIBUTE: the live plugin in a running
+#     host rewrites racklock-*.json, lease-*.json and the rolling log every few seconds, so while a host is live a
+#     difference is not evidence about this guard (observed 26 Sep 2026, Pro Tools open, every guard "guilty").
+#     So a difference is a FAILURE when no EchoJay host is running, and a named, printed inconclusive otherwise.
+REAL_HOME="$(/usr/bin/id -P "$(/usr/bin/id -un)" 2>/dev/null | /usr/bin/cut -d: -f9)"
+[ -n "$REAL_HOME" ] && [ -d "$REAL_HOME" ] || REAL_HOME="/Users/$(/usr/bin/id -un)"
+SEAL_TARGETS=("$REAL_HOME/Documents/EchoJay" "$REAL_HOME/Library/EchoJay" "$REAL_HOME/Library/Application Support/EchoJay" "$REAL_HOME/Library/Logs/EchoJay" "$REAL_HOME/.echojay")
+seal () {  # one line per file/dir: <size> <mtime> <path>
+  local d
+  for d in "${SEAL_TARGETS[@]}"; do
+    if [ -d "$d" ]; then
+      /usr/bin/find "$d" -maxdepth 2 \( -type f -o -type d \) -exec /usr/bin/stat -f '%z %m %N' {} \; 2>/dev/null | LC_ALL=C sort
+    else
+      echo "ABSENT $d"
+    fi
+  done
+}
+SEAL_BEFORE="$ISO/.live_seal_before"; SEAL_AFTER="$ISO/.live_seal_after"
+seal > "$SEAL_BEFORE" 2>/dev/null
+
+# The sandbox profile: allow everything, deny writes into the three live folders.
+PROFILE="$ISO/live_state.sb"
+{
+  echo '(version 1)'
+  echo '(allow default)'
+  echo '(deny file-write*'
+  for d in "${SEAL_TARGETS[@]}"; do echo "  (subpath \"$d\")"; done
+  echo ')'
+} > "$PROFILE"
+SEALED=1
+if ! command -v sandbox-exec >/dev/null 2>&1; then
+  SEALED=0
+  echo "LIVE-STATE SEAL: sandbox-exec is not available, so this run is NOT write-sealed (the fingerprint below is"
+  echo "                 the only check, and it cannot attribute a change while an EchoJay host is running)."
+fi
+run_guard () {  # "$@" = env assignments are pre-applied by the caller's env; runs the guard, sealed if possible
+  if [ $SEALED -eq 1 ]; then sandbox-exec -f "$PROFILE" "$BIN" "$@"; else "$BIN" "$@"; fi
+}
+
+run_guard "$@"; RC=$?
 echo "exit code: $RC  (0 == GREEN, nonzero == RED)"
+
+seal > "$SEAL_AFTER" 2>/dev/null
+if ! /usr/bin/cmp -s "$SEAL_BEFORE" "$SEAL_AFTER"; then
+  HOSTPIDS="$(/usr/bin/pgrep -f "Pro Tools|Logic Pro|AUHostingService|AAXHostService|AAEHostService|EchoJay" 2>/dev/null | tr '\n' ' ')"
+  echo "LIVE-STATE FINGERPRINT CHANGED in $REAL_HOME (Documents/EchoJay, Library/EchoJay, Library/Application Support/EchoJay):"
+  /usr/bin/diff "$SEAL_BEFORE" "$SEAL_AFTER" | /usr/bin/head -20 | /usr/bin/sed 's/^/  /'
+  if [ -n "$HOSTPIDS" ]; then
+    echo "  INCONCLUSIVE, NOT ATTRIBUTED: a live EchoJay host is running (pid(s) $HOSTPIDS) and rewrites its lock,"
+    echo "  lease and rolling log every few seconds. The write seal above is what covers this guard; the"
+    echo "  fingerprint is reported, not charged."
+  else
+    echo "  VIOLATION: nothing else was running, so this guard changed the user's live state. Its result is void."
+    RC=1
+  fi
+fi
 if [ $SCRIBBLE -eq 1 ]; then
   echo "SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ..."
   SLOG="$ISO/scribble.out"
-  MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 "$BIN" "$@" > "$SLOG" 2>&1; SRC=$?
+  MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 run_guard "$@" > "$SLOG" 2>&1; SRC=$?
   # On a failing scribble leg the reason has to be READABLE - a bare exit code is not evidence.
   if [ $SRC -ne 0 ]; then echo "---- scribble leg output (tail) ----"; tail -40 "$SLOG"; echo "---- end scribble leg output ----"; fi
   echo "scribble leg exit code: $SRC  (0 == GREEN, nonzero == RED)"

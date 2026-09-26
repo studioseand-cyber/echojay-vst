@@ -368,7 +368,7 @@ static void recordUpdateDismissal(const juce::String& versionDismissed)
 bool gEjReviewModalDbg = false; // set by applyReviewModalState()
 static void zdbg(const juce::String& msg)
 {
-    static juce::File f = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+    static juce::File f = echojay::userStateHome()
         .getChildFile("Library/Logs/EchoJay/review-zorder.log");
     static bool inited = false;
     if (!inited) { f.getParentDirectory().createDirectory(); inited = true; }
@@ -785,7 +785,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     addChildComponent(dumpMetersBtn);
     dumpMetersBtn.onClick = [this]()
     {
-        auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        auto dir = echojay::userDocuments()
                        .getChildFile("EchoJay");
         dir.createDirectory();
 
@@ -4655,6 +4655,10 @@ void EchoJayEditor::startUpdateDownload()
         if (! leaf.endsWithIgnoreCase(extHint))
             leaf = "EchoJay-v" + EchoJayAPI::latestVersion + "-Installer" + extHint;
     }
+    // NOT REDIRECTED, and the reason is in EJStateRoot.h: this is where the USER's installer
+    // download goes, not EchoJay state. Nothing under Documents/EchoJay, nothing a harness has
+    // any business reaching - and a download that landed inside a test root would be a download
+    // the user cannot find. (The state-path guard allowlists this line by name.)
     auto downloadsDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                             .getChildFile("Downloads");
     if (! downloadsDir.isDirectory())
@@ -4881,7 +4885,7 @@ void EchoJayEditor::filesDropped(const juce::StringArray& files, int, int)
             
             // Copy file to EchoJay folder to avoid sandbox/permission issues.
             // Always overwrite — the source file may have changed.
-            auto destFolder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+            auto destFolder = echojay::userDocuments()
                                   .getChildFile("EchoJay").getChildFile("References");
             destFolder.createDirectory();
             auto destFile = destFolder.getChildFile(file.getFileName());
@@ -13619,7 +13623,7 @@ void EchoJayEditor::loadChatFromWorkspace(const juce::String& chatId)
         processorRef.chatContents.clear();
 
         // Load index.json once for wav path lookups
-        juce::File captureDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        juce::File captureDir = echojay::userDocuments()
                                     .getChildFile("EchoJay").getChildFile("Captures");
         juce::var indexVar;
         {
@@ -14618,7 +14622,7 @@ juce::String EchoJayEditor::createReviewFromCapture(const CaptureSnapshot& snap,
     }
 
     // ---- Write index.json entry ----
-    juce::File captureDir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    juce::File captureDir = echojay::userDocuments()
                                 .getChildFile("EchoJay")
                                 .getChildFile("Captures");
     captureDir.createDirectory();
@@ -16095,7 +16099,7 @@ void EchoJayEditor::paintTonalBalancePanel(juce::Graphics& g, juce::Rectangle<in
 
 void EchoJayEditor::loadSpectrogramMode()
 {
-    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto file = echojay::userDocuments()
                     .getChildFile("EchoJay").getChildFile("spectrogram_mode.txt");
     if (file.existsAsFile())
         spectrogramMode_ = (file.loadFileAsString().trim() == "1");
@@ -16103,7 +16107,7 @@ void EchoJayEditor::loadSpectrogramMode()
 
 void EchoJayEditor::saveSpectrogramMode() const
 {
-    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto folder = echojay::userDocuments()
                       .getChildFile("EchoJay");
     folder.createDirectory();
     folder.getChildFile("spectrogram_mode.txt")
@@ -34516,7 +34520,7 @@ void EchoJayEditor::addCustomChannelToList(const juce::String& name)
 
 void EchoJayEditor::loadCustomChannels()
 {
-    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto file = echojay::userDocuments()
                     .getChildFile("EchoJay").getChildFile("custom_channels.txt");
     if (file.existsAsFile())
     {
@@ -34529,7 +34533,7 @@ void EchoJayEditor::loadCustomChannels()
 
 void EchoJayEditor::saveCustomChannels()
 {
-    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto folder = echojay::userDocuments()
                       .getChildFile("EchoJay");
     folder.createDirectory();
     folder.getChildFile("custom_channels.txt").replaceWithText(customChannelNames.joinIntoString("\n"));
@@ -34691,7 +34695,7 @@ void EchoJayEditor::addCustomGenreToList(const juce::String& name)
 
 void EchoJayEditor::loadCustomGenres()
 {
-    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto file = echojay::userDocuments()
                     .getChildFile("EchoJay").getChildFile("custom_genres.txt");
     if (file.existsAsFile())
     {
@@ -34704,7 +34708,7 @@ void EchoJayEditor::loadCustomGenres()
 
 void EchoJayEditor::saveCustomGenres()
 {
-    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto folder = echojay::userDocuments()
                       .getChildFile("EchoJay");
     folder.createDirectory();
     folder.getChildFile("custom_genres.txt").replaceWithText(customGenreNames.joinIntoString("\n"));
@@ -34750,7 +34754,7 @@ void EchoJayEditor::cycleChatTextScale()
 
 void EchoJayEditor::loadChatTextScale()
 {
-    auto file = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto file = echojay::userDocuments()
                     .getChildFile("EchoJay").getChildFile("chat_text_scale.txt");
     if (file.existsAsFile())
     {
@@ -34762,7 +34766,7 @@ void EchoJayEditor::loadChatTextScale()
 
 void EchoJayEditor::saveChatTextScale()
 {
-    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto folder = echojay::userDocuments()
                       .getChildFile("EchoJay");
     folder.createDirectory();
     folder.getChildFile("chat_text_scale.txt").replaceWithText(juce::String(chatTextScale, 2));
@@ -34774,7 +34778,7 @@ void EchoJayEditor::saveChatTextScale()
 
 juce::File EchoJayEditor::getPresetsFolder()
 {
-    auto folder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto folder = echojay::userDocuments()
                       .getChildFile("EchoJay").getChildFile("Presets");
     folder.createDirectory();
     return folder;
@@ -34887,7 +34891,7 @@ void EchoJayEditor::loadPreset(const juce::String& filePath)
     processorRef.getReferenceAnalyser().clearAll();
     
     // References folder where dropped files are copied
-    auto refsFolder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    auto refsFolder = echojay::userDocuments()
                           .getChildFile("EchoJay").getChildFile("References");
     
     auto refsVar = root->getProperty("references");

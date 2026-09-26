@@ -1,13 +1,23 @@
-// Pre-gain SEND-half harness (16 Sep 2026). The end-to-end readback from the Link's
-// rack sidecar is NOT bench-reachable: LinkProcessor lives only in the EchoJayLink
-// target, and the main + Link are separate plugins with overlapping shared code, so
-// one binary cannot host both real instances (they would double-define). The true
-// end-to-end is IN-HOST (Sean sees the knob move). What IS falsifiable offline is
-// the send half of the fix, against the main lib: on a Link build, the main must
-// write ctrl-cmd-<uid>.json carrying the ONE clamped pre-gain (== stated), and must
-// NOT write its OWN ChainHost pre-gain (the old bug). The Link's CONSUME half
-// (preGainDb ctrl-cmd -> setPreGainDb -> sidecar) is shipping, unchanged behaviour
-// (the mixer's Pre mode) and is verified separately against the Link target.
+// Pre-gain SEND half - INVERTED 26 Sep 2026 (21t-e item 2, Sean's ruling).
+//
+// WHAT THIS GUARD USED TO ASSERT, and why it no longer can: composing for a Link staged a
+// pre-gain from that Link's integrated loudness and Build sent it as
+// ctrl-cmd {preGainDb, preGainUserSet:false}. That is retired. A "harder" turn on a
+// one-slot TUNER chain came back with +4.4 dB of gain nobody asked for, because the carry
+// was keyed on the compose, not on what the chain contains. Gain now moves only from a
+// response that carries it for a compressor chain.
+//
+// So the same fixture asserts the opposite, and the assertions are the same shape: a real
+// registry, a real Link slot, a real frame whose integrated (-20) would have produced
+// exactly +2.0 dB, the real editor's compose path, and the real ctrl-cmd directory.
+// On the pre-21t-e tree every check here fails - it stated +2.0 and wrote the file.
+//
+// The FIGURE is not retired: it is a real reading and [CHAIN LEVELS] still prints it for the
+// model to use. What is retired is carrying it to the Link. linkmeter_harness holds the
+// printed half.
+//
+// End-to-end readback from the Link's sidecar stays IN-HOST: LinkProcessor lives only in the
+// EchoJayLink target, and one binary cannot host both real instances.
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -57,40 +67,48 @@ int main()
     auto* ed = dynamic_cast<EchoJayEditor*>(edBase.get());
     if(!ed){ std::fprintf(stderr,"HARNESS ERROR: no editor\n"); return 2; }
 
-    // Compose for the Link -> pendingLinkPreGain_ set (keyed by uid).
-    StringArray mf; ed->testAssembleChainInjections("build me a mastering chain", String(kUid), &mf);
-    const float stated = ed->testPendingLinkPreGainDb();
-    const float mainPreBefore = proc.getChainHost().getPreGainDb();
-    std::fprintf(stderr,"stated pre-gain=%.2f dB (expect +2.0); main ChainHost pre-gain before=%.2f\n", stated, mainPreBefore);
-    check("pre-gain computed for the Link (== +2.0, one clamp)", std::abs(stated - 2.0f) < 0.01f);
+    // A ctrl-cmd from an earlier run would answer for us; start from nothing.
+    File cmd(dir + "ctrl-cmd-" + String(kUid) + ".json");
+    cmd.deleteFile();
 
-    // THE FIX: send it. Must write ctrl-cmd, must NOT touch the main's ChainHost.
+    // Compose for the Link. On the old tree this staged +2.0 dB for that uid.
+    StringArray mf;
+    const String linkOut = ed->testAssembleChainInjections("build me a mastering chain", String(kUid), &mf);
+    const float staged = ed->testPendingLinkPreGainDb();          // NaN when nothing is staged
+    const float mainPreBefore = proc.getChainHost().getPreGainDb();
+    std::fprintf(stderr,"staged pre-gain=%.2f dB (NaN expected); main ChainHost pre-gain before=%.2f\n", staged, mainPreBefore);
+
+    check("NOTHING is staged for the Link at compose time (the +4.4 dB on a tuner chain)",
+          ! (staged == staged));          // NaN != NaN
+    // The figure itself is still computed and PRINTED - that is the reading, not an action.
+    check("...while [CHAIN LEVELS] still states the figure it measured (+2.0 dB from int -20)",
+          linkOut.contains("pre-gain to +2.0 dB"));
+
+    // Build's send site, driven exactly as Build drives it. Nothing may go out.
     ed->applyPendingLinkPreGain();
 
-    File cmd(dir + "ctrl-cmd-" + String(kUid) + ".json");
-    float sentPreGain = std::numeric_limits<float>::quiet_NaN(); bool sentUserSet = true;
+    bool cmdHasPreGain = false;
+    float sentPreGain = std::numeric_limits<float>::quiet_NaN();
     if (cmd.existsAsFile())
     {
-        var v = JSON::parse(cmd.loadFileAsString());
+        const var v = JSON::parse(cmd.loadFileAsString());
         if (auto* o = v.getDynamicObject())
-        {
-            if (o->hasProperty("preGainDb"))      sentPreGain = (float)(double)o->getProperty("preGainDb");
-            if (o->hasProperty("preGainUserSet")) sentUserSet = (bool)o->getProperty("preGainUserSet");
-        }
+            if (o->hasProperty("preGainDb"))
+            { cmdHasPreGain = true; sentPreGain = (float)(double)o->getProperty("preGainDb"); }
     }
-    std::fprintf(stderr,"ctrl-cmd exists=%d  preGainDb=%.2f  preGainUserSet=%d  |  main ChainHost pre-gain after=%.2f\n",
-                 (int)cmd.existsAsFile(), sentPreGain, (int)sentUserSet, proc.getChainHost().getPreGainDb());
+    std::fprintf(stderr,"ctrl-cmd exists=%d  carries preGainDb=%d (%.2f)  |  main ChainHost pre-gain after=%.2f\n",
+                 (int)cmd.existsAsFile(), (int)cmdHasPreGain, sentPreGain, proc.getChainHost().getPreGainDb());
 
-    check("ctrl-cmd-<uid>.json WRITTEN (routed to the Link, not the main)", cmd.existsAsFile());
-    check("ctrl-cmd preGainDb == stated (== the printed value, one number)", std::abs(sentPreGain - stated) < 0.01f);
-    check("ctrl-cmd preGainUserSet == false (auto, not hand-set)", sentUserSet == false);
-    check("main plugin's OWN ChainHost pre-gain UNTOUCHED (the old bug is gone)",
+    check("no ctrl-cmd preGainDb is written for the Link (RED on the old tree: it carried +2.0)",
+          ! cmdHasPreGain);
+    check("main plugin's OWN ChainHost pre-gain UNTOUCHED (the older bug, still gone)",
           std::abs(proc.getChainHost().getPreGainDb() - mainPreBefore) < 0.001f);
-    check("pendingLinkPreGain_ consumed (fires exactly once)",
-          ! (ed->testPendingLinkPreGainDb() == ed->testPendingLinkPreGainDb()) /*NaN now*/);
+    check("and a second compose does not stage one either (the carry is gone, not consumed)",
+          [&]{ StringArray mf2; ed->testAssembleChainInjections("harder", String(kUid), &mf2);
+               const float again = ed->testPendingLinkPreGainDb(); return ! (again == again); }());
 
-    std::fprintf(stderr,"\n==== PRE-GAIN SEND HALF: %s (%d failed) ====\n", g_fails==0?"GREEN":"RED", g_fails);
-    std::fprintf(stderr,"NOTE: end-to-end sidecar readback is IN-HOST only (Link is a separate target); the Link's\n");
-    std::fprintf(stderr,"      preGainDb consume is shipping behaviour (mixer Pre mode), verified against the Link target.\n");
+    std::fprintf(stderr,"\n==== PRE-GAIN SEND HALF (no compose-time carry): %s (%d failed) ====\n", g_fails==0?"GREEN":"RED", g_fails);
+    std::fprintf(stderr,"NOTE: the Link's preGainDb CONSUME path is untouched and still shipping (the mixer's Pre mode\n");
+    std::fprintf(stderr,"      and a response that carries gain for a compressor chain); what is gone is the compose-time carry.\n");
     return g_fails==0?0:1;
 }

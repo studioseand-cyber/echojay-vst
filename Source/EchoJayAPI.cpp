@@ -2297,8 +2297,13 @@ void EchoJayAPI::classify(const ClassifyRequest& req,
 
     const juce::String classifyBody = buildClassifyRequestBody(req);
     {
+        // The parsed root lives in a NAMED local: getArray() hands back a pointer INTO the
+        // var, and a temporary would be gone before it is read (my own rule, and
+        // temp_var_grep_guard caught this line).
+        const juce::var parsedForLog = juce::JSON::parse(classifyBody);
+        const juce::var msgsForLog   = parsedForLog.getProperty("messages", juce::var());
         int turns = 0;
-        if (auto* arr = juce::JSON::parse(classifyBody).getProperty("messages", juce::var()).getArray())
+        if (auto* arr = msgsForLog.getArray())
             turns = arr->size();
         EchoJay_NSLog(("EJClassify: body -- " + juce::String(turns) + " turn(s) of chat"
                        + (turns == 0 ? juce::String(" (no history from the composer - the server routes on the tail)")
@@ -2696,7 +2701,7 @@ juce::String EchoJayAPI::chatLanguageDisplayName(const juce::String& code)
 
 static juce::File getChatLanguageFile()
 {
-    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+    return echojay::userDocuments()
                .getChildFile("EchoJay").getChildFile("chat_language.txt");
 }
 

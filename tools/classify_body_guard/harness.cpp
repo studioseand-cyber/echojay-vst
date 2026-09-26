@@ -23,9 +23,12 @@ struct EchoJayAPIRequestPin
     { return a.buildClassifyRequestBody (q); }
 };
 
-static juce::Array<juce::var>* turnsOf (const juce::var& body)
+// BY VALUE, NOT A POINTER INTO A TEMPORARY. getProperty returns a var by value, so
+// returning its getArray() would hand back a pointer into an object already destroyed -
+// the rule temp_var_grep_guard enforces on the product, which holds here too.
+static juce::var turnsOf (const juce::var& body)
 {
-    return body.getProperty ("messages", juce::var()).getArray();
+    return body.getProperty ("messages", juce::var());
 }
 
 int main()
@@ -69,10 +72,12 @@ int main()
     const auto chatBody     = EchoJayAPIRequestPin::chat (api, roles, contents, "You're EchoJay.", {});
     const auto classifyText = EchoJayAPIRequestPin::classifyBody (api, req);
 
-    auto chatVar     = juce::JSON::parse (chatBody);
-    auto classifyVar = juce::JSON::parse (classifyText);
-    auto* chatMsgs   = turnsOf (chatVar);
-    auto* clsMsgs    = turnsOf (classifyVar);
+    const juce::var chatVar     = juce::JSON::parse (chatBody);
+    const juce::var classifyVar = juce::JSON::parse (classifyText);
+    const juce::var chatTurnsVar = turnsOf (chatVar);      // the roots stay alive for the
+    const juce::var clsTurnsVar  = turnsOf (classifyVar);  // pointers taken from them
+    auto* chatMsgs = chatTurnsVar.getArray();
+    auto* clsMsgs  = clsTurnsVar.getArray();
 
     check (clsMsgs != nullptr, "the classify body carries messages[]  (RED as it stood: it carried none)",
            clsMsgs == nullptr ? juce::String ("absent") : juce::String (clsMsgs->size()) + " turn(s)");
@@ -127,8 +132,8 @@ int main()
     {
         EchoJayAPI::ClassifyRequest bare;
         bare.message = "make it brighter";
-        const auto body = juce::JSON::parse (EchoJayAPIRequestPin::classifyBody (api, bare));
-        check (turnsOf (body) == nullptr && ! body.hasProperty ("messages"),
+        const juce::var body = juce::JSON::parse (EchoJayAPIRequestPin::classifyBody (api, bare));
+        check (! turnsOf (body).isArray() && ! body.hasProperty ("messages"),
                "no history from the composer -> no messages field at all (not an empty array)");
         check (body.getProperty ("message", {}).toString() == "make it brighter",
                "...and the body is otherwise unchanged");
