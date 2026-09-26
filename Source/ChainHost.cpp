@@ -918,6 +918,11 @@ ChainHost::~ChainHost()
     // 21r item 2(b): a stepped-text sweep may still be running in a child process. It holds a token, not this
     // object; clearing it here is what makes its completion a no-op instead of a write into freed memory.
     if (sweepAlive_ != nullptr) sweepAlive_->store (false);
+    // 21t-g item 1: life_ is RESET HERE, first, not left to member destruction. Every deferred callback in this
+    // class weak-guards on it, and a shared_ptr member dies AFTER the destructor body - so a callback that fired
+    // during the body found the token still valid and called into a half-destroyed object. Resetting it first
+    // makes "this object is going away" true from the first line of the teardown rather than the last.
+    life_.reset();
     *settleAlive_ = false;   // a settle tick that fires after this dies must not touch us
     cancelFlag_.store(true);
     if (scanThread_.joinable()) scanThread_.join();
@@ -5292,9 +5297,16 @@ void ChainHost::fingerprintNext()
     fpAttempted_.addIfNotAlreadyThere(ik);
     saveParamMapsToDisk();
 
+    // THE FINGERPRINT PASS OUTLIVES ITS HOST OTHERWISE (21t-g item 1). asyncCreatePlugin defers the
+    // instantiation to the message loop and the pass unwinds through another callAsync between plugins, so a
+    // ChainHost destroyed mid-pass - which is what a harness creating and destroying racks does constantly, and
+    // what closing a session during a scan does in a DAW - had both of these lambdas call straight into freed
+    // memory. Member calls into a dead object are how you get an EXECUTE fault at a heap address.
+    std::weak_ptr<int> fpAlive = life_;
     asyncCreatePlugin(desc,
-        [this, desc, ik, n](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+        [this, fpAlive, desc, ik, n](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
         {
+            if (fpAlive.expired()) return;   // the rack went away mid-pass: nothing to record, nobody to tell
             if (inst != nullptr)
             {
                 fpAttempted_.removeString(ik);
@@ -5329,7 +5341,7 @@ void ChainHost::fingerprintNext()
             }
             // Unwind before the next load so the message thread breathes
             // between instantiations.
-            juce::MessageManager::callAsync([this] { fingerprintNext(); });
+            juce::MessageManager::callAsync([this, fpAlive] { if (! fpAlive.expired()) fingerprintNext(); });
         });
 }
 
@@ -6317,9 +6329,12 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     {
         // Through asyncCreatePlugin, so the death mark covers this branch
         // (AU, and VST3s already validated) and not only the fp pass.
+        std::weak_ptr<int> loadAlive = life_;   // 21t-g item 1: a rack destroyed while a plugin is still
+                                               // instantiating must not have its load completed into freed memory
         asyncCreatePlugin(fullDesc,
-            [this, callback, fullDesc, origin](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
+            [this, loadAlive, callback, fullDesc, origin](std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err)
             {
+                if (loadAlive.expired()) return;
                 if (!inst)
                 {
                     // Session-scoped feed exclusion only (iLok may simply be
