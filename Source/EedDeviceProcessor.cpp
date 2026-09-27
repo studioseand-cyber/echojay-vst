@@ -143,10 +143,31 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
         // numberFromVar would reject it and the move would vanish; resolving the
         // label first is what makes a selector as settable as a dial. A numeric
         // index still works, because this falls through when the label misses.
+        juce::String aliasWhy;
         if (! spec->choices.empty() && prop.value.isString())
         {
-            const int idx = spec->indexOfChoice (prop.value.toString().toStdString());
-            if (idx >= 0) { raw = (double) idx; have = true; }
+            // 21t-i re-cut: A LADDER THE DEVICE OWNS TAKES PRECEDENCE OVER ITS OWN CHOICE LIST - but only on an
+            // ASSISTANT write, which is the wire. The tuner ladder is the case: "snap" is a rung the choice list
+            // does not spell at all, and "tuned" IS in the list as a softer row while the wire's "tuned" is now an
+            // accepted alias for hard. Consulting the list first resolved "tuned" to that softer row and the alias
+            // never ran. A human picking "tuned" in the editor still gets the row: the editor writes the index.
+            if (src == ParamSource::Assistant)
+            {
+                const int a = aliasChoiceIndex (juce::String (spec->id), prop.value.toString(), aliasWhy);
+                if (a >= 0) { raw = (double) a; have = true; }
+            }
+            if (! have)
+            {
+                const int idx = spec->indexOfChoice (prop.value.toString().toStdString());
+                if (idx >= 0) { raw = (double) idx; have = true; }
+            }
+            if (! have)
+            {
+                // ...and a rung the list cannot spell still resolves on any other source, so a state or a user
+                // write carrying "snap" is not silently skipped either.
+                const int a = aliasChoiceIndex (juce::String (spec->id), prop.value.toString(), aliasWhy);
+                if (a >= 0) { raw = (double) a; have = true; }
+            }
         }
 
         if (! have && ! numberFromVar (prop.value, raw))
@@ -180,6 +201,10 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
         // Report the value that LANDED, not the one that was asked for, so a
         // clamped move reads honestly in the chat log.
         juce::String note = spec->id + " ";
+        // THE CHAIN OF THREE IS ONE CHAIN. The first cut of the alias note spliced an `if` between the choices
+        // branch and its `else if`, which detached the number branch and appended the raw value after the LABEL:
+        // "correction_mode balanced1" went out on [CURRENT CHAIN], where the server reads it. The alias note is
+        // appended AFTER the chain, which is where an annotation belongs.
         if (! spec->choices.empty())
             note += juce::String (spec->choiceLabel (v));
         else if (spec->boolean)
@@ -188,6 +213,7 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
             note += juce::String (v, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
                   + (spec->unit.empty() ? juce::String()
                                         : " " + juce::String (spec->unit));
+        if (aliasWhy.isNotEmpty()) note += " [" + aliasWhy + "]";
         notes.add (note);
     }
 

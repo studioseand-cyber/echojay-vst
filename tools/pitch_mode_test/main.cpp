@@ -2,6 +2,7 @@
 // applyStructured funnel the chain hands settings to.
 #include <JuceHeader.h>
 #include "EedPitchProcessor.h"
+#include "EedRetuneMap.h"   // 21t-i re-cut: snap is the MAP's minimum, computed not typed
 #include "EedPitchEditor.h"
 #include "EedDeviceRegistry.h"
 #include "EedKeyFeed.h"
@@ -77,9 +78,16 @@ int main()
         p.applyStructured (params ({ { "correction_mode", "balanced" } }), EedDeviceProcessor::ParamSource::Assistant);
         check (p.getParamValue ("retune_speed_ms") == 40.0 && p.getParamValue ("flex") == 25.0,
                "balanced matches the spec table (40 / 25 / 30)");
-        p.applyStructured (params ({ { "correction_mode", "tuned" } }), EedDeviceProcessor::ParamSource::Assistant);
+        // 21t-i re-cut (27 Sep 2026, ruled with B): ON THE WIRE, "tuned" IS AN ALIAS FOR HARD. The spec table's
+        // softer `tuned` row is still the device's own third choice and still reachable - by INDEX, which is what
+        // the editor writes when a human picks it - so the row is asserted that way here. Asserting it through an
+        // ASSISTANT string write would be asserting the rung the ruling retired.
+        p.applyStructured (params ({ { "correction_mode", 2.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         check (p.getParamValue ("retune_speed_ms") == 8.0 && p.getParamValue ("flex") == 0.0,
-               "tuned matches the spec table (8 / 0 / 0)");
+               "the tuned ROW still matches the spec table (8 / 0 / 0) when it is selected by index");
+        p.applyStructured (params ({ { "correction_mode", "tuned" } }), EedDeviceProcessor::ParamSource::Assistant);
+        check (p.getParamValue ("retune_speed_ms") == 6.0 && p.getParamValue ("flex") == 0.0,
+               "...and the WIRE's \"tuned\" is hard: retune at the map's minimum, not the 8 ms row");
     }
 
     std::printf ("== a manual move knocks the display to custom ==\n");
@@ -1137,6 +1145,81 @@ int main()
         snap ("front_after_advanced", [] (EedPitchProcessor&, EedPitchEditor& e) { e.showAdvanced (true); e.showAdvanced (false); });
         snap ("front_depth_override", [] (EedPitchProcessor& p, EedPitchEditor& e) { p.setParamValue ("depth", 10.0); e.showAdvanced (false); });
         snap ("advanced_340", [] (EedPitchProcessor&, EedPitchEditor& e) { e.setSize (620, 340); e.showAdvanced (true); });
+    }
+
+    // ===============================================================================================
+    // 21t-i re-cut (27 Sep 2026, ruled with B): THE WIRE LADDER natural -> balanced -> hard -> snap.
+    // "snap" is a new literal, "tuned" stays accepted as an alias for hard, and an unknown rung builds as hard
+    // and says so. Before this change "snap" missed the choice list, failed numberFromVar and was SKIPPED - the
+    // chain built with the tuner untouched, which is the worst of the three possible outcomes.
+    // ===============================================================================================
+    std::printf ("== 21t-i: the wire's tuner ladder (natural, balanced, hard, snap; tuned an alias) ==\n");
+    {
+        auto valuesNow = [] (EedPitchProcessor& d)
+        {
+            return juce::String (d.getParamValue ("retune"), 1) + "/"
+                 + juce::String (d.getParamValue ("retune_speed_ms"), 1) + "/"
+                 + juce::String (d.getParamValue ("depth"), 1) + "/"
+                 + juce::String (d.getParamValue ("flex"), 1) + "/"
+                 + juce::String (d.getParamValue ("humanize"), 1) + "/"
+                 + juce::String (d.getParamValue ("natural_vibrato"), 1);
+        };
+        // THE MAP'S MINIMUM, computed from the map and not typed in: dial 0 is the hardest point RetuneMap has.
+        float mapMinMs = 0.0f, mapFullDepth = 0.0f;
+        echojay::RetuneMap::dialTo (0.0f, mapMinMs, mapFullDepth);
+
+        EedPitchProcessor snapDev; snapDev.prepareToPlay (48000.0, 512);
+        const auto snapNote = snapDev.applyStructured (params ({ { "correction_mode", "snap" } }),
+                                                       EedDeviceProcessor::ParamSource::Assistant);
+        std::printf ("    snap -> %s   [%s]\n", valuesNow (snapDev).toRawUTF8(),
+                     snapNote.substring (0, 120).toRawUTF8());
+        check (std::abs (snapDev.getParamValue ("retune_speed_ms") - (double) mapMinMs) < 0.51,
+               "snap builds with retune at the MAP'S MINIMUM (" + juce::String (mapMinMs, 1) + " ms), computed "
+               "from RetuneMap rather than typed  (RED as it stood: \"snap\" was skipped entirely)");
+        check (std::abs (snapDev.getParamValue ("depth") - 100.0) < 0.51,
+               "...with correction at FULL (depth 100)");
+        check (std::abs (snapDev.getParamValue ("retune")) < 0.51,
+               "...which is dial 0, the hardest position the dial has");
+        check (snapNote.contains ("snap") || snapNote.contains ("map's minimum"),
+               "...and the note says what snap meant, so the chat log is not silent about a new rung");
+
+        // "tuned" STILL BUILDS, and builds as hard - the ruled alias.
+        EedPitchProcessor tunedDev; tunedDev.prepareToPlay (48000.0, 512);
+        const auto tunedNote = tunedDev.applyStructured (params ({ { "correction_mode", "tuned" } }),
+                                                         EedDeviceProcessor::ParamSource::Assistant);
+        EedPitchProcessor hardDev; hardDev.prepareToPlay (48000.0, 512);
+        hardDev.applyStructured (params ({ { "correction_mode", "hard" } }),
+                                 EedDeviceProcessor::ParamSource::Assistant);
+        std::printf ("    tuned -> %s   hard -> %s\n", valuesNow (tunedDev).toRawUTF8(),
+                     valuesNow (hardDev).toRawUTF8());
+        check (valuesNow (tunedDev) == valuesNow (hardDev),
+               "\"tuned\" is the accepted alias for hard and lands on exactly hard's values");
+        check (tunedNote.contains ("alias"),
+               "...and the note says it was taken as an alias, so nobody reads it as the old softer row");
+
+        // AN UNKNOWN RUNG builds as hard and says so.
+        EedPitchProcessor oddDev; oddDev.prepareToPlay (48000.0, 512);
+        const auto oddNote = oddDev.applyStructured (params ({ { "correction_mode", "crunchy" } }),
+                                                     EedDeviceProcessor::ParamSource::Assistant);
+        std::printf ("    crunchy -> %s   [%s]\n", valuesNow (oddDev).toRawUTF8(),
+                     oddNote.substring (0, 140).toRawUTF8());
+        check (valuesNow (oddDev) == valuesNow (hardDev),
+               "an unknown rung builds as HARD rather than leaving the tuner untouched");
+        check (oddNote.contains ("crunchy") && oddNote.contains ("built as hard"),
+               "...and the note NAMES the literal it did not know, so a new server rung shows up in the log");
+
+        // ...and the two soft rungs still land on their own rows: the ladder did not flatten.
+        EedPitchProcessor natDev, balDev;
+        natDev.prepareToPlay (48000.0, 512); balDev.prepareToPlay (48000.0, 512);
+        natDev.applyStructured (params ({ { "correction_mode", "natural" } }), EedDeviceProcessor::ParamSource::Assistant);
+        balDev.applyStructured (params ({ { "correction_mode", "balanced" } }), EedDeviceProcessor::ParamSource::Assistant);
+        check (valuesNow (natDev) != valuesNow (balDev) && valuesNow (balDev) != valuesNow (hardDev)
+               && natDev.getParamValue ("retune_speed_ms") > balDev.getParamValue ("retune_speed_ms")
+               && balDev.getParamValue ("retune_speed_ms") > hardDev.getParamValue ("retune_speed_ms"),
+               "and the ladder is still a ladder: natural softer than balanced, balanced softer than hard  ["
+               + juce::String (natDev.getParamValue ("retune_speed_ms"), 0) + " > "
+               + juce::String (balDev.getParamValue ("retune_speed_ms"), 0) + " > "
+               + juce::String (hardDev.getParamValue ("retune_speed_ms"), 0) + " ms]");
     }
 
     std::printf ("\n%s (%d failure%s)\n", g_fail == 0 ? "ALL PASS" : "FAILURES",

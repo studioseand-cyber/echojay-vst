@@ -226,6 +226,11 @@ ej_add_guard(overlay_liveness_guard   SOURCE tools/overlay_liveness_guard/harnes
 ej_add_guard(wet_rebuild_guard        SOURCE tools/wet_rebuild_guard/harness.cpp              LABEL fast)
 ej_add_guard(slotwet_readback         SOURCE tools/slotwet_readback/slotwet_readback.cpp      LABEL fast LINKSIDE)
 ej_add_guard(slotwet_knobpath         SOURCE tools/slotwet_knobpath/harness.cpp               LABEL fast)
+# 21t-i re-cut (27 Sep 2026): the tuner's WIRE LADDER (natural/balanced/hard/snap, "tuned" an alias) is ruled
+# behaviour, so its test joins the gate. pitch_mode_test has lived outside it since it was written - it also renders
+# editor snapshots under EJ_EDITOR_SNAP - and outside the gate is where a ruled behaviour goes unguarded between
+# rounds. It runs here WITHOUT that variable, so no snapshot is written and the mode/scale assertions are the test.
+ej_add_guard(pitch_mode_test           SOURCE tools/pitch_mode_test/main.cpp                   LABEL fast)
 ej_add_guard(slotwet_nomutation       SOURCE tools/slotwet_nomutation/slotwet_nomutation.cpp  LABEL fast)
 ej_add_guard(overlay_gate_harness     SOURCE tools/overlay_gate_harness/overlay_gate_harness.cpp LABEL fast)
 ej_add_guard(key_gate_harness         SOURCE tools/key_gate_harness/key_gate_harness.cpp      LABEL fast)
@@ -249,10 +254,15 @@ ej_add_guard(latch_harness            SOURCE tools/latch_harness/harness.cpp    
 ej_add_guard(eq_readback              SOURCE tools/eq_readback/harness.cpp                    LABEL fast)
 ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp               LABEL fast)
 # own_diff's verdict is the sha256 of the own-channel text it writes, not its exit code, so it runs through a
-# wrapper that keeps the suite script's check (shasum -a 256 /tmp/own_out.txt against the 19 Sep baseline).
+# wrapper that keeps the suite script's check (shasum -a 256 /tmp/own_out.txt against the baseline).
+# RE-BASELINED 27 Sep 2026 BY RULING, and only after the diff was read: the whole difference from
+# 5f47897e... was the ruled short90 token inserted after p90 on the [CHAIN LEVELS] header line, on one line, with
+# nothing else changed anywhere in the 4,953 bytes. The text itself is OWN_CHANNEL_BASELINE_efdec55.txt, so the next
+# move can be diffed rather than guessed at. The standing rule is unchanged for every future move: if this goes
+# RED, STOP AND REPORT.
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
-             WRAPPER run_own_diff.sh WRAPPER_ARG 5f47897eebef7116c74c35d35ab8b461cfb2333c3014269e339612d5244b25ce)
+             WRAPPER run_own_diff.sh WRAPPER_ARG 07abba366534f8745cf3627719c1468783d84ad0ceccfc48dc5adee5bc1bcc1e)
 
 
 # ---- the guards that are not a single in-process binary -----------------------------------------------------

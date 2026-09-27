@@ -498,6 +498,53 @@ double EedPitchProcessor::getParamValue (const juce::String& id) const
 }
 
 // ---------------------------------------------------------------------------
+// THE WIRE LADDER: natural -> balanced -> hard -> snap  (21t-i re-cut, 27 Sep 2026, ruled with B)
+// ---------------------------------------------------------------------------
+// The server's four rungs are not this device's five choices. `tuned` stays accepted as an alias for hard (an
+// older server must keep working), `snap` is new and means "the hardest this tuner's map allows", and anything
+// else BUILDS AS HARD and says so in the note - the alternative is what the tree did before this change: the
+// literal missed the choice list, failed numberFromVar, and the mode was skipped, so the chain built with the
+// tuner sitting wherever it happened to sit.
+int EedPitchProcessor::wireModeIndex (const juce::String& label, juce::String& whyOut)
+{
+    const auto key = juce::String (echojay::normalizeParamToken (label.toStdString()));
+    if (key == "natural")  return kNatural;
+    if (key == "balanced") return kBalanced;
+    if (key == "hard")     return kHard;
+    if (key == "snap")     return kHard;     // the hardest rung; see wireModeIsSnap for what that forces
+    if (key == "tuned")    return kHard;     // ruled alias, 27 Sep 2026 (it used to be its own softer row)
+    if (key == "custom")   return kCustom;
+    whyOut = "correction_mode \"" + label + "\" is not natural/balanced/hard/snap - built as hard";
+    return kHard;
+}
+
+bool EedPitchProcessor::wireModeIsSnap (const juce::String& label)
+{
+    const auto key = juce::String (echojay::normalizeParamToken (label.toStdString()));
+    return key == "snap";
+}
+
+int EedPitchProcessor::aliasChoiceIndex (const juce::String& canonicalId, const juce::String& label,
+                                        juce::String& whyOut) const
+{
+    if (canonicalId != kMode) return -1;     // only the tuner ladder is ours
+    juce::String why;
+    const int idx = wireModeIndex (label, why);
+    // SNAP FORCES THE EXTREME rather than trusting the table to be at it: the map's minimum retune with correction
+    // at full, whatever the curve's minimum happens to be. hard's row is that point today; if the map ever moves,
+    // snap follows the map and hard keeps its tabled intent.
+    if (wireModeIsSnap (label))
+    {
+        whyOut = "snap: retune at the map's minimum (dial 0), correction full";
+        return idx;
+    }
+    if (why.isNotEmpty()) whyOut = why;
+    else if (juce::String (echojay::normalizeParamToken (label.toStdString())) == "tuned")
+        whyOut = "\"tuned\" is the accepted alias for hard (27 Sep 2026 ruling)";
+    return idx;
+}
+
+// ---------------------------------------------------------------------------
 // correction_mode — a named point in the parameter space, not a hidden branch
 // ---------------------------------------------------------------------------
 // Spec §4: selecting a mode WRITES the visible params. It does not switch to a
@@ -567,8 +614,11 @@ juce::String EedPitchProcessor::applyMode (int mode)
     const auto* spec = schema().find (kMode);
     juce::String name = spec != nullptr ? juce::String (spec->choiceLabel (m)) : juce::String (m);
 
-    pendingModeSummary_ = "which set retune " + juce::String (retuneDial_.load(), 0)
-         + " (retune_speed_ms " + juce::String (correct_.getRetuneMs(), 0) + ", depth " + juce::String (correct_.getDepth() * 100.0f, 0) + " from the curve)"
+    // ROUNDED, because juce::String(float, 0) means "as many digits as it takes", not "no decimals": this line
+    // went out on [CURRENT CHAIN] reading "retune 33.8917 ... depth 50.4892", which is a dial position quoted to a
+    // ten-thousandth of a step. One decimal is the resolution the dial has.
+    pendingModeSummary_ = "which set retune " + juce::String (retuneDial_.load(), 1)
+         + " (retune_speed_ms " + juce::String (correct_.getRetuneMs(), 1) + ", depth " + juce::String (correct_.getDepth() * 100.0f, 1) + " from the curve)"
          + ", flex " + juce::String (p.flex, 0)
          + ", humanize " + juce::String (p.humanize, 0)
          + ", natural_vibrato " + juce::String (p.naturalVib, 0)

@@ -11,6 +11,11 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EchoJayAPI.h"
+#include "ChainHost.h"
+#include "EedDeviceRegistry.h"
+#include "EedCompressorProcessor.h"
+#include "EedPitchProcessor.h"
+#include "SurgicalEqProcessor.h"
 #include "EJCalibLoop.h"      // 21t-i re-cut: the calibration block's field names
 #include "EJLevelRecord.h"   // 21t-i: the record whose tokens() composes both level lines
 #include <cstdio>
@@ -169,6 +174,55 @@ int main()
         check (c3.nudge == 0 && why3.contains ("nudge \"HARDER\""),
                "...and the literals are case-sensitive, like every other literal on this block: a near-miss is "
                "NAMED and ignored, never guessed", why3.trim());
+    }
+
+    // ---- [CURRENT CHAIN] AS THE CLIENT EMITS IT (21t-i re-cut, 27 Sep 2026) --------------------------------
+    // B cannot answer what this block contains, so the block itself is the answer: a real ChainHost with the three
+    // slots the question names - EQ, the tuner in balanced, a compressor - printed VERBATIM by the shipping
+    // formatter. The assertion that matters is the one the ruling asks for: the tuner's RUNG must be readable here,
+    // or the server cannot know which rung of natural/balanced/hard/snap the slot is already in.
+    {
+        // Force-link the three built-ins' registrars, the way every other harness does.
+        { EedCompressorProcessor fc; juce::ignoreUnused (fc); }
+        { EedPitchProcessor fp; juce::ignoreUnused (fp); }
+        { SurgicalEqProcessor fe; juce::ignoreUnused (fe); }
+        ChainHost host (ChainHost::Mode::Primary);
+        host.prepare (48000.0, 512);
+        auto addBuiltin = [&host] (const char* name, int at)
+        {
+            if (const auto* d = BuiltinDeviceRegistry::instance().findByName (name))
+                host.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*d), at);
+        };
+        addBuiltin ("EchoJay EQ", 0);
+        addBuiltin ("EchoJay Pitch", 1);
+        addBuiltin ("EchoJay Compressor", 2);
+        auto pump = [] (double ms)
+        { const double t0 = juce::Time::getMillisecondCounterHiRes();
+          while (juce::Time::getMillisecondCounterHiRes() - t0 < ms)
+          { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); } };
+        for (int i = 0; i < 60 && host.getNumSlots() < 3; ++i) pump (50);
+        check (host.getNumSlots() == 3, "fixture: EQ, tuner and compressor in one rack",
+               juce::String (host.getNumSlots()) + " slot(s)");
+        // THE TUNER IN BALANCED, set the way the server sets it.
+        {
+            auto* o = new juce::DynamicObject(); o->setProperty ("correction_mode", "balanced");
+            auto* outer = new juce::DynamicObject(); outer->setProperty ("params", juce::var (o));
+            const juce::var settings (outer);
+            // The PUBLIC path a build takes: the settings are attached to the slot and the device applies them.
+            host.setSlotStructuredSettings (1, settings);
+            pump (300);
+        }
+        const auto block = EchoJayAPI::buildCurrentChainInjection (host);
+        std::printf ("\n----- [CURRENT CHAIN] VERBATIM, as buildCurrentChainInjection writes it -----\n%s\n"
+                     "----- end -----\n", block.toRawUTF8());
+        check (block.contains ("[CURRENT CHAIN"), "the block marker is \"[CURRENT CHAIN\"",
+               block.substring (0, 40));
+        check (block.contains ("EchoJay Pitch"), "the tuner slot is named in it");
+        check (block.contains ("correction_mode balanced") || block.contains ("correction_mode: balanced")
+               || block.contains ("balanced"),
+               "THE TUNER'S RUNG IS READABLE IN THE BLOCK - the server can see which of natural/balanced/hard/snap "
+               "the slot is already in  (RED as it stood if this fails: the rung was invisible and B had to guess)",
+               block.fromFirstOccurrenceOf ("EchoJay Pitch", true, false).substring (0, 160).replace ("\n", " | "));
     }
 
     std::printf ("\n==== wire_tokens_guard: %s (%d assertion(s) failed) ====\n",

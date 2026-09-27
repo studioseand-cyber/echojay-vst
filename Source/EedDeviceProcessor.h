@@ -127,6 +127,18 @@ protected:
     // 29 Aug 2026 laundered-reference revert). Default: nothing.
     virtual void onStateApplied() {}
 
+    // ---- WIRE LITERALS THAT ARE NOT SCHEMA CHOICES (21t-i re-cut, 27 Sep 2026 ruling) -----------------------
+    // The server's vocabulary for a control can be a LADDER whose rungs are not one-to-one with a device's own
+    // choice list: the tuner ladder is natural -> balanced -> hard -> snap, with "tuned" kept as an accepted alias
+    // and "snap" meaning "the hardest this device's map allows". A device that owns such a ladder resolves the
+    // literal here; -1 means "not mine", and the caller then reports the miss exactly as it always has.
+    //
+    // whyOut is for a literal that was ACCEPTED BY FALLBACK (an unknown rung built as the hardest one): the note
+    // travels to the chat log, because a wire value that silently became a different setting is the class of
+    // failure this whole file exists to prevent.
+    virtual int aliasChoiceIndex (const juce::String& /*canonicalId*/, const juce::String& /*label*/,
+                                  juce::String& /*whyOut*/) const { return -1; }
+
 private:
     bool applyingState_ = false;
 

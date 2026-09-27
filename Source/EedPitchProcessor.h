@@ -188,6 +188,19 @@ public:
     // to the moment any of the params a mode writes is moved by hand.
     enum Mode { kNatural = 0, kBalanced, kTuned, kHard, kCustom, kNumModes };
 
+    // ---- THE WIRE LADDER (21t-i re-cut, ruled with B on 27 Sep 2026) ---------------------------------------
+    // On the wire the ladder is natural -> balanced -> hard -> snap. `tuned` is no longer a rung but REMAINS
+    // ACCEPTED as an alias for hard, so an older server keeps working. `snap` is "the hardest this tuner's map
+    // allows": retune speed at the map's minimum and correction at full. On THIS device that is where `hard`
+    // already sits (its table row is retune 0 ms, which RetuneMap resolves to dial 0 = 6 ms, depth 1.0), so snap
+    // and hard land on the same point here and the difference is only visible on a third-party tuner whose own
+    // map has a softer "hard". An unknown rung builds as hard and says so, rather than leaving the tuner untouched.
+    static int wireModeIndex (const juce::String& label, juce::String& whyOut);
+    /** True when a wire literal named the hardest rung, so a caller can assert the extreme rather than assume it. */
+    static bool wireModeIsSnap (const juce::String& label);
+    int aliasChoiceIndex (const juce::String& canonicalId, const juce::String& label,
+                          juce::String& whyOut) const override;
+
     // Index of `custom` in the scale choices - a DISPLAY state reached by
     // editing a degree, never a mask to write.
     static constexpr int kScaleCustom = 10;

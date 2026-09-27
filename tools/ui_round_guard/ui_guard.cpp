@@ -214,6 +214,10 @@ struct EchoJayTabStripTestAccess
     // 21t-h (3): the REAL reply route, the one a chat turn comes back on.
     static void reply (EchoJayEditor& e, const juce::String& text, const juce::String& chatId = {})
     { e.handleChatReply (text, true, chatId, {}, {}, -1); }
+    // 21t-i re-cut: the same route WITH the turn's target uid, which is what an ops-free calibration needs in order
+    // to reach the rack the turn was about.
+    static void replyFor (EchoJayEditor& e, const juce::String& text, const juce::String& uid)
+    { e.handleChatReply (text, true, {}, uid, {}, -1); }
     static juce::String editDataOf (EchoJayEditor& e, int i)
     { return i >= 0 && i < (int) e.chatMessages.size() ? e.chatMessages[(size_t) i].editData : juce::String(); }
     // ---- 21t-d wiring ----
@@ -1573,6 +1577,88 @@ int main()
                     juce::ignoreUnused (before);
                 }
             }
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed) = savedMsgs;
+            A::knownState (*ed, proc);
+        }
+
+        // ---- 21t-i re-cut: AN OPS-FREE CALIBRATION BLOCK REACHES THE LOOP ------------------------------------
+        // Ruled 27 Sep. The user types "ease off"; the server answers with an empty ops list and a calibration
+        // block carrying the nudge, because there is nothing to edit in the rack - the block IS the instruction.
+        // The 9 Aug "empty-ops edit block = no block" rule dropped the whole thing, so the nudge never arrived and
+        // the knob never moved. There is no card to press either: a card with no ops has no Apply button.
+        {
+            std::printf ("\n== 21t-i re-cut: edit:[] + a calibration carrying a nudge still reaches the loop ==\n");
+            A::knownState (*ed, proc);
+            const auto savedId = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+            const juce::String luid = "lease_n1";
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, luid);
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            { EedCompressorProcessor fc; juce::ignoreUnused (fc); }
+            proc.pendingChannelUid = luid;
+            bh.prepare (48000.0, 512);
+            if (const auto* comp = BuiltinDeviceRegistry::instance().findByName ("EchoJay Compressor"))
+                bh.insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*comp), 0);
+            for (int i = 0; i < 60 && bh.getNumSlots() < 1; ++i) pumpMs (50);
+            check (bh.getNumSlots() == 1, "21t-i (ops-free). fixture: a compressor in the leased rack",
+                   juce::String (bh.getNumSlots()));
+
+            // A loop already running on that slot, as it would be after the build.
+            {
+                echojay::CalibLoop::Config cfg;
+                cfg.plugin = "EchoJay Compressor"; cfg.slot = 0; cfg.lo = 2.0f; cfg.hi = 3.0f;
+                cfg.mode = echojay::CalibLoop::Mode::Passive;
+                cfg.actuator = echojay::CalibLoop::Actuator::Drive;
+                cfg.startDb = -6.0f; cfg.heardS = 110.0f;
+                proc.calibStart (luid, cfg);
+            }
+            const auto before = proc.calibLoad (luid);
+            check (before.active() && before.pendingStep == 0,
+                   "21t-i (ops-free). fixture: the loop is running and owes no step",
+                   juce::String (before.pendingStep));
+
+            // THE REPLY: an EMPTY ops list, and a calibration carrying nudge "softer" with NO band at all.
+            const juce::String reply =
+                "Easing it off a little.\n\n"
+                "<<<ECHOJAY_CHAIN_EDIT>>>\n"
+                "{\"edit\":[],\"calibration\":{\"source\":\"tally\",\"heard_s\":110,\"mode\":\"passive\","
+                "\"actuator\":\"drive\",\"slot\":1,\"sense\":null,\"nudge\":\"softer\"}}\n"
+                "<<<END_CHAIN_EDIT>>>\n";
+            A::replyFor (*ed, reply, luid);
+            pumpMs (200);
+            const auto after = proc.calibLoad (luid);
+            check (after.pendingStep == -1 || after.stepsTaken > before.stepsTaken,
+                   "21t-i (ops-free). the nudge REACHED the loop as a re-target  (RED as it stood: the empty-ops "
+                   "rule cleared the block and the nudge was never seen)",
+                   "pendingStep " + juce::String (after.pendingStep) + ", steps taken "
+                   + juce::String (after.stepsTaken));
+            check (after.active(),
+                   "21t-i (ops-free). ...and the loop is still running, not closed by a block with no ops");
+
+            // AN UNKNOWN NUDGE LITERAL: logged, and nothing owed.
+            {
+                echojay::CalibLoop::Config cfg;
+                cfg.plugin = "EchoJay Compressor"; cfg.slot = 0; cfg.lo = 2.0f; cfg.hi = 3.0f;
+                cfg.mode = echojay::CalibLoop::Mode::Passive;
+                cfg.actuator = echojay::CalibLoop::Actuator::Drive;
+                cfg.startDb = -6.0f; cfg.heardS = 110.0f;
+                proc.calibStart (luid, cfg);            // a clean loop, nothing owed
+                const juce::String odd =
+                    "Trying something.\n\n"
+                    "<<<ECHOJAY_CHAIN_EDIT>>>\n"
+                    "{\"edit\":[],\"calibration\":{\"source\":\"tally\",\"heard_s\":110,\"mode\":\"passive\","
+                    "\"actuator\":\"drive\",\"slot\":1,\"sense\":null,\"nudge\":\"a shade less\"}}\n"
+                    "<<<END_CHAIN_EDIT>>>\n";
+                A::replyFor (*ed, odd, luid);
+                pumpMs (200);
+                const auto odd2 = proc.calibLoad (luid);
+                check (odd2.pendingStep == 0,
+                       "21t-i (ops-free). an unknown nudge literal owes NO step - it is logged and ignored, never "
+                       "guessed in a direction", "pendingStep " + juce::String (odd2.pendingStep));
+            }
+            EchoJayBorrowTestAccess::release (proc);
+            proc.pendingChannelUid.clear();
             A::setChatId (*ed, savedId);
             A::msgs (*ed) = savedMsgs;
             A::knownState (*ed, proc);

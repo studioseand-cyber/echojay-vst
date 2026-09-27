@@ -1623,8 +1623,13 @@ static int guardMain()
         }
 
         // (2) THE QUESTION, after two judged windows, carrying the measured figure.
+        //
+        // 21t-i re-cut: the "set from N s" clause quotes THE BLOCK's heard_s, so the config carries one. The window
+        // figures below are deliberately different (78 s, 80 s): they are the slot tally's age and the sentence must
+        // not quote them.
         {
             auto l = passiveDrive();
+            l.blockHeardS = 80.0f;
             const auto s1 = l.onWindow (win (5.4f, 78.0f), 3000.0);
             check (s1.ask.isEmpty(), "21t-i (2). one judged window says nothing - two are ruled", s1.ask);
             const auto s2 = l.onWindow (win (5.4f, 80.0f), 3000.0);

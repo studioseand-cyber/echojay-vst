@@ -28914,7 +28914,23 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             // not that. Without this term the level-match card was built, its text was shown, and its data was then
             // thrown away one screen later - so Apply had nothing to apply.
             const bool isLevelMatch = eoEB != nullptr && eoEB->hasProperty("level_match");
-            if (! isLevelMatch && (eaEB == nullptr || eaEB->isEmpty())) editJson.clear();
+            // 21t-i re-cut (27 Sep 2026 ruling): A CALIBRATION IS NOT A CONTENTLESS CARD EITHER. The user said
+            // "ease off"; the server answers with an empty ops list and a calibration block carrying the nudge,
+            // because there is nothing to edit in the rack - the instruction IS the block. The 9 Aug rule dropped
+            // the whole thing, so the nudge never reached the loop and the knob never moved.
+            const bool hasCalib = eoEB != nullptr && eoEB->getProperty("calibration").getDynamicObject() != nullptr;
+            if (! isLevelMatch && ! hasCalib && (eaEB == nullptr || eaEB->isEmpty())) editJson.clear();
+            // ...AND AN OPS-FREE CALIBRATION FIRES ON ARRIVAL. There is no card to press: a card with no ops has no
+            // Apply button, so waiting for one would be waiting forever. With ops it stays on the existing path,
+            // which starts the loop after the edit has actually been applied.
+            if (hasCalib && (eaEB == nullptr || eaEB->isEmpty()))
+            {
+                const int started = startCalibrationForEdit (turnTargetUid, editJson);
+                EchoJay_NSLog(("EJThreshold: ops-free calibration block on the reply -> "
+                               + juce::String(started) + " loop(s) started or re-targeted"
+                               + (turnTargetUid.isEmpty() ? juce::String(" (own rack)")
+                                                          : " (uid " + turnTargetUid + ")")).toRawUTF8());
+            }
         }
     }
 

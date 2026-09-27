@@ -8,7 +8,10 @@
 // RE-BASELINED 20 Sep 2026 (18g item 6, commit 75f5654): the own-channel [CHAIN LEVELS] line now carries
 // ", loudest 3 s -X" (the input tally's max short-term) after p90 - the server's opening-gain proxy the
 // ruling named ("the meters' short-term max when present"). The ONLY byte difference against bd4fd9a is
-// those 19 bytes at line 7 (char 1186): OWN_CHANNEL_BASELINE_75f5654.txt, sha 5f4789...b25ce. Every
+// those 19 bytes at line 7 (char 1186): OWN_CHANNEL_BASELINE_75f5654.txt, sha 5f4789...b25ce.
+// RE-BASELINED AGAIN 27 Sep 2026, by ruling and after reading the diff: the whole change was the ruled short90
+// token inserted after p90 on the [CHAIN LEVELS] header, one line, nothing else in 4,953 bytes. The baseline text
+// is now OWN_CHANNEL_BASELINE_efdec55.txt, sha 07abba36...1bcc1e. Every
 // other number (input -18.7, p10/p90 -18.5, peak -20.0, crest 4.8, heard 6s) is identical - the samples
 // did not move, the text did. Sean's HOLD (20 Sep): explained, not re-baselined silently.
 #include <JuceHeader.h>
