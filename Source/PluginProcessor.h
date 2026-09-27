@@ -10,6 +10,7 @@
 #include "WaveformRecorder.h"
 #include "ChainHost.h"
 #include "EJCalibLoop.h"   // 21t-d: the calibration loop (shared with the Link)
+#include "EJLevelRecord.h"  // 21t-i: the stored level record (shared with the Link)
 #include "EchoJayAPI.h"
 #include "DashPoll.h"
 #include "LinkShm.h"
@@ -641,8 +642,21 @@ public:
     juce::String calibTick(const juce::String& uid);
     /** The closing message, handed over exactly once - whoever asks first posts it. */
     juce::String calibTakeClosing(const juce::String& uid);
+    juce::String calibTakeAsk(const juce::String& uid);      // 21t-i: the measure-and-ask line, once
+
+    // ---- the stored level record (21t-i) -------------------------------------------------------------------
+    // uid empty = this instance's own channel (the mix bus). The getter NEVER touches the live frame: a caller
+    // that wants the frame asks for the frame.
+    echojay::LevelRecord levelRecordFor(const juce::String& uid) const;
+    void updateLevelRecordFromFrame(const juce::String& uid, const LinkMeterFrame& f);
+    void updateOwnLevelRecord();                             // from this instance's own chain-in tally
+    // THE ONLY thing that clears one: an explicit user reset, for ONE channel. Returns true if a record went.
+    bool resetLevelRecord(const juce::String& uid);
+    juce::var levelRecordsToVar() const;                     // for getStateInformation
+    void levelRecordsFromVar(const juce::var& v);            // for setStateInformation
     echojay::CalibLoop calibLoad(const juce::String& uid) const;
     void               calibStore(const juce::String& uid, const echojay::CalibLoop& loop);
+    double             calibStallLogMs_ = 0.0;   // 21t-i: rate limit for the "cannot be advanced" line
     void borrowEditorClosed();
     // §3f pin, restored in §5a-R terms (26 Aug 2026 ping-pong): while a
     // session is LIVE its uid is authoritative — a chat activation may
@@ -1585,6 +1599,13 @@ private:
     // per Link seen (~144 bytes), at most kMaxLinkSlots.
     struct LinkGoodFrame { LinkMeterFrame frame {}; juce::uint32 stampMs = 0; bool valid = false; };
     std::map<juce::String, LinkGoodFrame> linkLastGoodFrame_;
+    // ---- THE STORED LEVEL RECORDS (21t-i, 27 Sep 2026 ruling) ----------------------------------------------
+    // One record per Link uid, plus this instance's own (the mix bus, key ""). The live frame feeds the STRIPS;
+    // every chat block is composed from these, which is why a quiet Link is a member with data and "no signal"
+    // means HEARD 0. Kept across transport stop/start and editor close because they are members here, and across
+    // a session save/reopen because they ride this plugin's state. Cleared only by an explicit user reset.
+    std::map<juce::String, echojay::LevelRecord> levelRecordByUid_;
+    echojay::LevelRecord ownLevelRecord_;
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;

@@ -1623,6 +1623,7 @@ void EchoJayProcessor::timerCallback()
     // calls it on its own user actions (a tab switch, an apply) for the list.
     refreshLinkRegistry();
     updateLinkAudioRecency();   // 1 Hz: stamp which Links are passing audio, for the meter-snapshot recency gate
+    updateOwnLevelRecord();     // 21t-i, same tick: this channel's own stored record, from its own chain-in tally
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
     // session key through KeyFeed; when the ONLY publisher was the editor's
@@ -4693,6 +4694,9 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
     state->setProperty("channelType", (int)channelType);
     state->setProperty("customChannelName", customChannelName);
     // §7: key source pin — per instance, survives a session reload
+    // 21t-i: THE STORED LEVEL RECORDS ride the session. A reopened session that lost them would open with every
+    // channel reading "no signal" until each one was played again, which is the defect this round exists to fix.
+    state->setProperty("levelRecords", levelRecordsToVar());
     state->setProperty("keySourcePin", keySourcePin_);
     state->setProperty("keySourcePinLabel", keySourcePinLabel_);
     state->setProperty("keyShowRelative", echojay::KeyDisplayPrefs::showRelative().load());   // COMMIT 4
@@ -4921,6 +4925,9 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
             if (genre.isEmpty()) genre = "hip-hop";
             channelType = static_cast<ChannelType>((int)obj->getProperty("channelType"));
+            // 21t-i: the stored level records, back exactly as they were saved (absent on an older save = none,
+            // and the first frame from each Link starts a fresh record).
+            if (obj->hasProperty("levelRecords")) levelRecordsFromVar(obj->getProperty("levelRecords"));
             // §7: restore the key source pin (absent on older saves = Auto)
             if (obj->hasProperty("keySourcePin"))
             {
@@ -5994,6 +6001,34 @@ void EchoJayProcessor::updateLinkAudioRecency()
             if (f.momentary > -70.0f && anyBand)
                 linkLastGoodFrame_[li.uid] = LinkGoodFrame { f, now, true };
         }
+        // 21t-i: THE STORED RECORD IS FED FROM EVERY FRAME, stale or not, inside or outside the latch's
+        // conditions. This is the line the chat blocks are composed from.
+        LinkMeterFrame fr;
+        if (readLinkMeterFrame(li.regIdx, fr)) updateLevelRecordFromFrame(li.uid, fr);
+        // A LINK'S OWN RECORD IS AUTHORITATIVE, and it is in that rack's sidecar: adopted the first time we see a
+        // uid we have nothing for, which is what covers a session reopened while the channel sits quiet. Read once
+        // per uid, not once per second: a file read per Link per tick would be a cost with no reader.
+        if (levelRecordByUid_.find(li.uid) == levelRecordByUid_.end() || ! levelRecordByUid_[li.uid].valid)
+        {
+            int err = 0; const auto dirS = LinkShm::resolveDir(err);
+            if (dirS.isNotEmpty())
+            {
+                const auto rc = LinkShm::readRackSidecar(dirS, li.uid);
+                if (rc.valid && ! rc.levels.isVoid())
+                {
+                    const auto rec = echojay::LevelRecord::fromVar(rc.levels);
+                    if (rec.valid)
+                    {
+                        levelRecordByUid_[li.uid] = rec;
+                        EchoJay_NSLog(("EJLevelRecord: adopted \"" + li.uid + "\" from its own sidecar - INT "
+                                       + juce::String(rec.intLufs, 1) + ", HEARD "
+                                       + juce::String((int) rec.heardSeconds) + " s, age "
+                                       + juce::String(rec.ageSeconds(juce::Time::currentTimeMillis()))
+                                       + " s").toRawUTF8());
+                    }
+                }
+            }
+        }
     }
     // DROP-ON-DISAPPEAR (belt-and-braces): a uid no longer listed has gone; drop
     // its latch so a future entry cannot inherit a predecessor's frame.
@@ -6020,6 +6055,117 @@ void EchoJayProcessor::updateLinkAudioRecency()
         }
         else ++it;
     }
+}
+
+// ============================================================================
+//  21t-i (27 Sep 2026 ruling): THE STORED LEVEL RECORD
+// ============================================================================
+// The live frame feeds the strips. Every chat block is composed from these records, which is why a Link that has
+// stopped playing is a member WITH figures. Written while audio flows, kept afterwards, cleared only on an
+// explicit user reset. See EJLevelRecord.h for the evidence that made this necessary.
+void EchoJayProcessor::updateLevelRecordFromFrame(const juce::String& uid, const LinkMeterFrame& f)
+{
+    if (uid.isEmpty()) return;
+    auto& r = levelRecordByUid_[uid];
+    bool any = false;
+    auto take = [&any] (float& dst, float v) { if (v > -99.0f) { dst = v; any = true; } };
+    // NO CONDITION ON audioStale, ON momentary OR ON THE BANDS. Those three are what the last-good latch tested,
+    // and testing them is what made the block say "no signal" about a channel whose strip was showing an INT: they
+    // describe audio playing NOW. A field is taken when the frame HAS it, and a field the frame has blanked (the
+    // publisher writes -100.0f into the momentary group while audio is idle) leaves the kept value alone.
+    take(r.momDb,   f.momentary);
+    take(r.shortDb, f.shortTerm);
+    take(r.intLufs, f.integrated);
+    if (frameHasShortMax(f)) take(r.shortMaxDb, f.shortTermMax);
+    if (frameHasShort90(f))  take(r.short90Db,  frameShort90Db(f));
+    take(r.peakDbTp, f.truePeakMax);
+    take(r.shortTpDb, f.shortTermTP);   // PSR's ruled fallback term, for a Link that publishes no SHORTMAX
+    if (frameHasHeard(f))
+    {
+        r.heardKnown = true;
+        if (f.heardSeconds > r.heardSeconds) { r.heardSeconds = f.heardSeconds; any = true; }
+    }
+    r.preTrim = framePreTrim(f);
+    if (any) { r.valid = true; r.updatedMs = juce::Time::currentTimeMillis(); }
+}
+
+void EchoJayProcessor::updateOwnLevelRecord()
+{
+    // This instance's own channel (the mix bus in the case that matters): its chain INPUT tally is the measurement
+    // the [CHAIN LEVELS] header already reports, so the record is fed from exactly that snapshot and the block and
+    // the record cannot disagree.
+    ownLevelRecord_.updateFromTally(getChainHost().getChainInLevels(), juce::Time::currentTimeMillis(), true);
+}
+
+echojay::LevelRecord EchoJayProcessor::levelRecordFor(const juce::String& uid) const
+{
+    if (uid.isEmpty()) return ownLevelRecord_;
+    const auto it = levelRecordByUid_.find(uid);
+    return it != levelRecordByUid_.end() ? it->second : echojay::LevelRecord{};
+}
+
+bool EchoJayProcessor::resetLevelRecord(const juce::String& uid)
+{
+    // AN EXPLICIT USER RESET, FOR ONE CHANNEL. The record goes, and the tally behind it is reset where this
+    // process owns one, so the next reading starts from nothing rather than from a half-cleared history: a record
+    // that says HEARD 0 beside a tally still holding two minutes would come straight back on the next frame.
+    if (uid.isEmpty())
+    {
+        const bool had = ownLevelRecord_.valid;
+        ownLevelRecord_ = {};
+        getChainHost().resetAllLevels();
+        EchoJay_NSLog("EJLevelRecord: own channel reset by the user - record cleared, tallies reset");
+        return had;
+    }
+    const bool had = levelRecordByUid_.erase(uid) > 0;
+    if (auto* host = borrowHostIfActiveFor(uid)) host->resetAllLevels();
+    // THE LINK OWNS THE MEASUREMENT, so the Link is told. Without this the record comes back on the next frame
+    // from a tally that never heard the reset, which is a reset that does not reset.
+    writeLinkCtrlCommand(uid, "resetLevels", true);
+    // THE RECORD IS ALSO IN THE RACK SIDECAR, where the Link wrote it: clearing only our copy would let the next
+    // sidecar read put it straight back.
+    {
+        int err = 0; const auto dir = LinkShm::resolveDir(err);
+        if (dir.isNotEmpty())
+        {
+            auto rc = LinkShm::readRackSidecar(dir, uid);
+            if (rc.valid && ! rc.levels.isVoid())
+            {
+                rc.levels = juce::var();
+                LinkShm::writeRackSidecar(dir, rc);
+            }
+        }
+    }
+    EchoJay_NSLog(("EJLevelRecord: \"" + uid + "\" reset by the user - record cleared"
+                   + juce::String(had ? "" : " (there was none)")).toRawUTF8());
+    return had;
+}
+
+juce::var EchoJayProcessor::levelRecordsToVar() const
+{
+    auto* o = new juce::DynamicObject();
+    if (ownLevelRecord_.valid) o->setProperty("own", ownLevelRecord_.toVar());
+    auto* byUid = new juce::DynamicObject();
+    for (const auto& kv : levelRecordByUid_)
+        if (kv.second.valid) byUid->setProperty(kv.first, kv.second.toVar());
+    o->setProperty("links", juce::var(byUid));
+    return juce::var(o);
+}
+
+void EchoJayProcessor::levelRecordsFromVar(const juce::var& v)
+{
+    auto* o = v.getDynamicObject();
+    if (o == nullptr) return;
+    if (o->hasProperty("own")) ownLevelRecord_ = echojay::LevelRecord::fromVar(o->getProperty("own"));
+    levelRecordByUid_.clear();
+    if (auto* byUid = o->getProperty("links").getDynamicObject())
+        for (const auto& prop : byUid->getProperties())
+        {
+            const auto rec = echojay::LevelRecord::fromVar(prop.value);
+            if (rec.valid) levelRecordByUid_[prop.name.toString()] = rec;
+        }
+    EchoJay_NSLog(("EJLevelRecord: restored from the session - " + juce::String((int) levelRecordByUid_.size())
+                   + " Link record(s)" + (ownLevelRecord_.valid ? " + this channel's own" : "")).toRawUTF8());
 }
 
 juce::uint32 EchoJayProcessor::linkLastFlowingMs(const juce::String& uid) const
@@ -6117,9 +6263,16 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     if (loop.running() && loop.slot == cfg.slot && loop.plugin == cfg.plugin
         && loop.mode == cfg.mode && loop.actuator == cfg.actuator)
     {
-        loop.retarget(cfg.lo, cfg.hi);
+        // 21t-i: A RE-TARGET IS THE USER'S COMPARATIVE. It carries the block's step size, and in measure-and-ask
+        // it is the ONLY thing that buys a move - one step, in the direction the band went.
+        loop.retarget(cfg.lo, cfg.hi, cfg.stepDb);
         EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" re-targeted to " + juce::String(cfg.lo, 1) + "-"
-                       + juce::String(cfg.hi, 1) + " dB, continuing on the same knob").toRawUTF8());
+                       + juce::String(cfg.hi, 1) + " dB, continuing on the same knob"
+                       + (loop.mode == echojay::CalibLoop::Mode::Passive
+                              ? ", one " + juce::String(loop.pendingStep > 0 ? "harder" : "softer") + " step of "
+                                + juce::String(loop.actuator == echojay::CalibLoop::Actuator::Threshold
+                                                   ? loop.stepDb : echojay::CalibLoop::kStepDb, 1) + " dB owed"
+                              : juce::String())).toRawUTF8());
         calibStore(uid, loop);
         return;
     }
@@ -6163,7 +6316,24 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     // is leased here; after deselect the Link advances it from its own chain, and this instance renders the card
     // from the state without touching it.
     ChainHost* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
-    if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots()) return loop.card();
+    if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots())
+    {
+        // 21t-i: A LOOP THAT CANNOT BE ADVANCED SAYS SO, every 5 s, because the alternative is silence - and
+        // silence here is indistinguishable from a loop sitting quietly in band, which is precisely the confusion
+        // Sean hit at 14:44. Rate-limited so a 1 Hz tick cannot flood the log.
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (nowMs - calibStallLogMs_ > 5000.0)
+        {
+            calibStallLogMs_ = nowMs;
+            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" cannot be advanced - "
+                           + (host == nullptr
+                                  ? juce::String(uid.isEmpty() ? "no own chain host" : "this instance does not hold that rack")
+                                  : "slot " + juce::String(loop.slot + 1) + " is not in the rack ("
+                                    + juce::String(host->getNumSlots()) + " slot(s))")
+                           + " - no window can be judged here").toRawUTF8());
+        }
+        return loop.card();
+    }
 
     const auto lv = host->getSlotLevels(loop.slot);
     echojay::CalibLoop::Window w;
@@ -6175,6 +6345,8 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     // 21t-d: the slot's INPUT true peak at the drive this window ran at - what decides whether another dB of
     // drive would clip the input rather than buy gain reduction.
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
+    // 21t-i: "set from N s of this track" is the slot INPUT's gated heard time - the audio the reading is made of.
+    w.heardSeconds = lv.in.heardSeconds;
 
     const double nowMs = juce::Time::getMillisecondCounterHiRes();
     if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
@@ -6199,6 +6371,20 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     }
     calibStore(uid, loop);
     return step.card.isNotEmpty() ? step.card : loop.card();
+}
+
+/** 21t-i: THE MEASURE-AND-ASK LINE, handed to the chat exactly once. The same shape as calibTakeClosing and for
+    the same reason - the flag is cleared before the text is returned, so two ticks cannot both post it - but a
+    separate door, because this one does NOT mean the loop ended. It measures, it reports, it waits for the user. */
+juce::String EchoJayProcessor::calibTakeAsk(const juce::String& uid)
+{
+    auto loop = calibLoad(uid);
+    if (loop.askOwed.isEmpty()) return {};
+    const auto msg = loop.askOwed;
+    loop.askOwed.clear();
+    calibStore(uid, loop);
+    EchoJay_NSLog(("EJThreshold: asked the user: " + msg).toRawUTF8());
+    return msg;
 }
 
 juce::String EchoJayProcessor::calibTakeClosing(const juce::String& uid)

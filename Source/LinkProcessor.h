@@ -3,6 +3,7 @@
 #include "ChainHost.h"
 #include "MeterEngine.h"
 #include "EchoJayLevelTally.h"   // 21t-d: SHORTMAX + HEARD
+#include "EJLevelRecord.h"   // 21t-i: the stored level record
 #include "EJCalibLoop.h"          // 21t-d: the calibration loop - the Link drives it once it owns the rack
 #include "EedKeyEngine.h"   // detected key -> LinkMeterFrame (KEY_DETECTOR_SPEC §9)
 #include "EedKeyWorker.h"
@@ -395,6 +396,24 @@ private:
     // 21t-d: the Link's own gated tally, fed at the SAME pre-trim tap as the meters. K-weighted, because what it
     // publishes (SHORTMAX, HEARD) sits beside LUFS figures and has to mean the same thing they do.
     echojay::LevelTally levelTally_ { echojay::LevelTally::Weighting::K };
+    // 21t-i (27 Sep 2026 ruling): THIS CHANNEL'S STORED LEVEL RECORD. The frame feeds V2's strips; this record is
+    // what every chat block is composed from, so it is kept across transport stop/start (it is a member), across
+    // the editor closing, and across a session save/reopen (it rides this plugin's state). It also rides the rack
+    // sidecar, so V2 can read it while this Link is quiet or parked. Cleared only by an explicit user reset.
+    echojay::LevelRecord levelRecord_;
+    double lastLevelSidecarMs_ = 0.0;   // the record reaches the sidecar on a slow cadence, not every frame
+public:
+    /** An explicit user reset of THIS channel's levels: the record goes and the tally behind it restarts. */
+    void resetLevelRecord()
+    {
+        levelRecord_ = {};
+        levelTally_.reset();
+        levelTally_.resetShortTermMax();
+        EchoJay_NSLog(("EJLevelRecord: \"" + (linkName.isEmpty() ? juce::String("(untitled)") : linkName)
+                       + "\" reset by the user - record cleared, tally restarted").toRawUTF8());
+    }
+    echojay::LevelRecord levelRecord() const { return levelRecord_; }
+private:
     // 21t-d: the calibration loop AS THIS LINK HOLDS IT. V2 runs it while the rack is leased; the moment the
     // lease ends this process owns the tallies, so it owns the loop. The state crosses on the sidecar, which is
     // why it is loaded from there rather than started here.

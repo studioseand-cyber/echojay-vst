@@ -375,6 +375,14 @@ void LinkProcessor::publishRackSidecar()
         const auto existing = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
         if (existing.valid && ! existing.calib.isVoid()) rc.calib = existing.calib;
     }
+    // 21t-i: THE STORED RECORD RIDES THE SIDECAR, so V2 can compose a block about this channel while this Link is
+    // quiet or parked. A publish that happens before anything has been heard must not blank a record already there.
+    if (levelRecord_.valid) rc.levels = levelRecord_.toVar();
+    else
+    {
+        const auto existing = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+        if (existing.valid && ! existing.levels.isVoid()) rc.levels = existing.levels;
+    }
     LinkShm::writeRackSidecar(resolvedDir, rc);
 }
 
@@ -420,7 +428,10 @@ void LinkProcessor::calibTickOwnRack()
     w.silent   = lv.measured && ! lv.in.known;
     w.grDb     = w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f;
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
+    w.heardSeconds = lv.in.heardSeconds;   // 21t-i: the question quotes what was actually heard
 
+    // 21t-i: the measure-and-ask line is left in the STATE (askOwed) rather than posted here - this process has no
+    // chat. V2 hands it to the chat out of the sidecar, from whichever host measured the window.
     const auto step = calibLoop_.onWindow(w, sinceMs);
     if (step.logLine.isNotEmpty()) EchoJay_NSLog(step.logLine.toRawUTF8());
     if (step.writeDrive)
@@ -512,6 +523,39 @@ void LinkProcessor::publishMeterFrame()
         // PSR to 16.6 and 16.3. The tally's true peak is the max over the SAME heard window as INT, SHORTMAX and
         // HEARD, and it resets with them.
         if (snap.truePeakDb > -190.0f) f.truePeakMax = snap.truePeakDb;
+        // 21t-i (27 Sep 2026 ruling): THE STORED RECORD, FROM THIS SAME SNAPSHOT. Fed here so the record and the
+        // frame can never disagree about what was heard: they are one reading, published two ways. The frame goes
+        // to the strips and decays with the programme; the record is kept.
+        levelRecord_.updateFromTally(snap, juce::Time::currentTimeMillis(), true);
+        // MOM and SHORT are the last LIVE values, and they are only taken while audio is flowing - the publisher
+        // blanks them to -100 when it is not, and a record of a blank is not a record of anything.
+        if (! audioStale)
+        {
+            if (md.momentary > -99.0f) levelRecord_.momDb = md.momentary;
+            if (md.shortTerm > -99.0f) levelRecord_.shortDb = md.shortTerm;
+            if (md.shortTermTruePeak > -99.0f) levelRecord_.shortTpDb = md.shortTermTruePeak;   // PSR's fallback term
+        }
+        // INT comes from the meter engine on this side (the frame's own integrated figure), because that is the
+        // number the strip shows and the number Sean read off the strips on 27 Sep.
+        if (md.integrated > -99.0f)
+        { levelRecord_.intLufs = md.integrated; levelRecord_.valid = true;
+          levelRecord_.updatedMs = juce::Time::currentTimeMillis(); }
+    }
+    // 21t-i: THE RECORD TO THE SIDECAR ON A SLOW CADENCE. publishRackSidecar is gated on the rack PICTURE changing,
+    // and a channel that is simply being played changes no slots at all - so waiting for it would leave the record
+    // only in this process. Ten seconds: often enough that a parked Link's figures are current to the minute,
+    // rare enough (0.1 Hz, one small read-modify-write) to cost nothing.
+    if (levelRecord_.valid && (double) tNowMs - lastLevelSidecarMs_ > 10000.0)
+    {
+        lastLevelSidecarMs_ = (double) tNowMs;
+        if (resolvedDir.isEmpty()) { int e = 0; resolvedDir = LinkShm::resolveDir(e); }
+        if (resolvedDir.isNotEmpty() && instanceUid_.isNotEmpty())
+        {
+            auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+            if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
+            rc.levels = levelRecord_.toVar();
+            LinkShm::writeRackSidecar(resolvedDir, rc);
+        }
     }
     f.audioBlocks = blocksNow;
     f.audioStale  = audioStale ? 1u : 0u;
@@ -924,6 +968,25 @@ void LinkProcessor::pollControlCommand()
     // Remote placement declaration (from the monitor row's placement control)
     if (obj->hasProperty("placement"))
         setPlacement((int)obj->getProperty("placement"));
+
+    // 21t-i (27 Sep 2026 ruling): AN EXPLICIT USER RESET OF THIS CHANNEL'S LEVELS. The only thing that clears the
+    // stored record. Additive field, like every other one here: an older Link never sees it, and a V2 that does not
+    // send it changes nothing. The record AND the tally behind it go, or the record would be rebuilt from the same
+    // history within a second and the reset would look like it had not worked.
+    if (obj->hasProperty("resetLevels") && (bool)obj->getProperty("resetLevels"))
+    {
+        EchoJay_NSLog(("EJLevelRecord: remote reset (seq " + juce::String(seq) + ")").toRawUTF8());
+        resetLevelRecord();
+        // The sidecar's copy goes with it, in the same breath: V2 adopts a record from the sidecar for any uid it
+        // has none for, so leaving it there would put the cleared figures straight back.
+        if (resolvedDir.isEmpty()) { int e2 = 0; resolvedDir = LinkShm::resolveDir(e2); }
+        if (resolvedDir.isNotEmpty() && instanceUid_.isNotEmpty())
+        {
+            auto rc = LinkShm::readRackSidecar(resolvedDir, instanceUid_);
+            if (rc.valid && ! rc.levels.isVoid()) { rc.levels = juce::var(); LinkShm::writeRackSidecar(resolvedDir, rc); }
+        }
+        lastLevelSidecarMs_ = 0.0;
+    }
 
     if (obj->hasProperty("alias"))   // 21n item 2: display-only alias from V2; "" clears
     {
@@ -2981,6 +3044,8 @@ void LinkProcessor::getStateInformation(juce::MemoryBlock& dest)
     obj->setProperty("editorW",  editorW);
     obj->setProperty("editorH",  editorH);
     obj->setProperty("instanceUid", instanceUid_);
+    // 21t-i (27 Sep 2026 ruling): the stored level record survives a session save and reopen.
+    if (levelRecord_.valid) obj->setProperty("levelRecord", levelRecord_.toVar());
     {   // the author: this host process run (pid + start time), so a restore can
         // tell a from-disk reopen from a chunk the host re-applied in this run
         const auto& h = ChainHost::getHostIdentity();
@@ -3039,6 +3104,21 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
             else if (linkName.isEmpty())     linkName = n;                                  // ours: fill only
         }
         if (obj->hasProperty("linkOn"))   linkOn.store((bool)obj->getProperty("linkOn"));
+        // 21t-i: the stored level record, back as it was saved. A chunk WITHOUT one leaves any record this instance
+        // has already built alone - a re-applied chunk (Pro Tools does this on a live instance) must not erase what
+        // has been heard since the save.
+        if (obj->hasProperty("levelRecord"))
+        {
+            const auto rec = echojay::LevelRecord::fromVar(obj->getProperty("levelRecord"));
+            if (rec.valid && rec.heardSeconds >= levelRecord_.heardSeconds)
+            {
+                levelRecord_ = rec;
+                EchoJay_NSLog(("EJLevelRecord: restored from the session - INT "
+                               + juce::String(rec.intLufs, 1) + ", SHORTMAX " + juce::String(rec.shortMaxDb, 1)
+                               + ", HEARD " + juce::String((int) rec.heardSeconds) + " s, age "
+                               + juce::String(rec.ageSeconds(juce::Time::currentTimeMillis())) + " s").toRawUTF8());
+            }
+        }
         if (obj->hasProperty("alias"))    displayAlias = obj->getProperty("alias").toString().trim();   // 21n item 2
         if (obj->hasProperty("gainDb"))
             gainDb_.store(juce::jlimit(kGainMinDb, kGainMaxDb,
