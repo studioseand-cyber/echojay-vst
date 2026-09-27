@@ -1,0 +1,27 @@
+# THE OTHER SIDE'S OWN TEXT (21t-h, 27 Sep 2026).
+#
+# Copied VERBATIM from ~/echojay-saas/CONTRACT_GROUPS_2026-09-22.md as it stood at 10:30 on 27 Sep 2026 - after B's
+# 1-BASED ruling, which this file's first block now shows. Comments and all. The wire-shape guard parses THIS FILE
+# rather than JSON the client author wrote, because a leg that parses its own author's idea of the shape proves only
+# that the author is consistent with himself. When B updates the contract, this file is re-copied and the guard says
+# at once whether we still read it.
+#
+# Blocks are separated by a line of three dashes; the // comments are part of the paste and the guard strips them
+# exactly as a human reading the document ignores them.
+"calibration": {
+  "actuator": "threshold",            // or "drive"
+  "slot": 1,                          // WHICH slot, 1-BASED, as [CURRENT CHAIN] numbers them - the first slot is 1
+  "param": "Thresh",                  // the threshold control, as the PROFILE names it
+  "start_db": -13.4,
+  "sense": "lower_is_harder",         // or "higher_is_harder", or null
+  "min_db": -15, "max_db": 15,
+  "gr_target_db": [2, 3]
+}
+---
+"calibration": {
+  "source": "tally",            // or "working_position", or "listen" (only on an asked calibration)
+  "heard_s": 120,
+  "measure": "short90",         // or "shortmax" | "int"
+  "mode": "passive",            // or "listen"
+  "actuator": "threshold", "param": "Thresh", "start_db": -18.2, ...
+}

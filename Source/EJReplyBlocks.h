@@ -107,6 +107,38 @@ inline bool extractChainEditBlock(juce::String& replyInOut, juce::String& editJs
     return true;
 }
 
+// LEVEL_MATCH block (21t-h, 27 Sep 2026). THE SERVER EMITS IT ON EVERY ROUTE by ruling, so the client extracts it
+// on every route - the same tolerant truncation semantics as the others.
+//
+// WHY THIS EXISTS AT ALL: it did not, and on 27 Sep a group turn that arrived on the CHAT route printed the whole
+// block as raw text, with "(sent as a chat, not a build - say 'build' to build)" under it. The apply path for
+// level_match had existed since 21t-c; nothing had ever taken the block OUT of a chat reply, because the only
+// extraction happened where a build card was expected.
+inline bool extractLevelMatchBlock(juce::String& replyInOut, juce::String& lmJsonOut)
+{
+    const juce::String kOpen  = "<<<ECHOJAY_LEVEL_MATCH>>>";
+    const juce::String kClose = "<<<END_LEVEL_MATCH>>>";
+
+    int start = replyInOut.indexOf(kOpen);
+    if (start < 0) return false;
+
+    int jsonStart = start + (int)kOpen.length();
+    int end = replyInOut.indexOf(start, kClose);
+
+    if (end >= 0)
+    {
+        lmJsonOut  = replyInOut.substring(jsonStart, end).trim();
+        replyInOut = replyInOut.substring(0, start).trimEnd()
+                   + replyInOut.substring(end + (int)kClose.length());
+    }
+    else
+    {
+        lmJsonOut  = replyInOut.substring(jsonStart).trim();
+        replyInOut = replyInOut.substring(0, start).trimEnd();
+    }
+    return true;
+}
+
 // CHAIN_RECALL block (saved-chain recall, 14 Aug 2026). Same tolerant
 // truncation semantics as the others: a truncated payload is returned for
 // salvage but the CALLER must never act on it - the recall path acts only

@@ -3973,6 +3973,11 @@ bool EchoJayAPI::extractChainEditBlock(juce::String& replyInOut, juce::String& e
     return EJReplyBlocks::extractChainEditBlock(replyInOut, editJsonOut);
 }
 
+bool EchoJayAPI::extractLevelMatchBlock(juce::String& replyInOut, juce::String& lmJsonOut)
+{
+    return EJReplyBlocks::extractLevelMatchBlock(replyInOut, lmJsonOut);
+}
+
 // ASK question/choices block (CHAIN_AI_BUILD_SPEC Phase 1b). Same tolerant
 // truncation semantics as the chain/gain extractors. Delimiters: keep in
 // sync with api/_blocks.js BLOCK_TYPES.ask (the canonical registry) and

@@ -239,6 +239,12 @@ ej_add_guard(history_guard            SOURCE tools/ui_round_guard/history_guard.
 ej_add_guard(classify_body_guard      SOURCE tools/classify_body_guard/harness.cpp            LABEL fast)
 ej_add_guard(shm_layout_guard         SOURCE tools/shm_layout_guard/harness.cpp               LABEL fast)
 ej_add_guard(wire_tokens_guard        SOURCE tools/wire_tokens_guard/harness.cpp              LABEL fast)
+# 21t-h (27 Sep 2026): linkmixer_test holds the stripSelected truth table and was NOT in the gate at all - it had
+# its own build_and_run.sh and nothing ran it. A pure predicate with a truth table nobody runs is a document. It is
+# registered here through its own script (it lifts the real compile flags and links the shipped SharedCode, which
+# ej_add_guard's single-TU shape cannot do).
+add_test(NAME linkmixer_test COMMAND bash ${CMAKE_SOURCE_DIR}/tools/linkmixer_test/build_and_run.sh)
+set_tests_properties(linkmixer_test PROPERTIES LABELS "fast" TIMEOUT 600 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 ej_add_guard(latch_harness            SOURCE tools/latch_harness/harness.cpp                  LABEL fast)
 ej_add_guard(eq_readback              SOURCE tools/eq_readback/harness.cpp                    LABEL fast)
 ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp               LABEL fast)

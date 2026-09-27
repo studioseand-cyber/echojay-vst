@@ -943,7 +943,7 @@ static int guardMain()
                    "21t-d (1). the closing names what was adjusted in ONE clause, then asks about the chain", closing);
             check (! closing.contains ("More") && ! closing.contains ("Less") && ! closing.contains ("Fine"),
                    "21t-d (1). ...and offers no pills - the user answers in words");
-            check (logs[0].startsWith ("EJCalib: \"EJ Test Compressor\" window 1 gr=") && logs[0].contains ("state="),
+            check (logs[0].startsWith ("EJThreshold: \"EJ Test Compressor\" window 1 gr=") && logs[0].contains ("state="),
                    "21t-d (1). every window logs gr, pre, post and state", logs[0]);
             // never the same closing question twice running
             echojay::CalibLoop l2 = loop; l2.state = echojay::CalibLoop::State::Adjusted;
@@ -1352,12 +1352,93 @@ static int guardMain()
                    "21t-g (6b). a mode or actuator outside the two literals is NAMED in the log and the quiet, "
                    "safe choice is taken (passive, drive)", why.trim().substring (0, 130));
         }
+        // (v-b) 21t-h: THE OTHER SIDE'S OWN TEXT, from a fixture file that is a verbatim paste of
+        // CONTRACT_GROUPS_2026-09-22.md - comments and all. A leg that parses JSON its own author wrote proves the
+        // author agrees with himself; this one proves we read what B actually publishes. When B pastes a new block,
+        // it replaces that file.
+        {
+            auto f = juce::File (__FILE__).getParentDirectory()
+                        .getChildFile ("fixtures").getChildFile ("calibration_blocks_from_contract.txt");
+            check (f.existsAsFile(), "21t-h. fixture: the contract's own blocks are on disk", f.getFileName());
+            if (f.existsAsFile())
+            {
+                juce::StringArray blocks;
+                {
+                    juce::String body;
+                    for (const auto& line : juce::StringArray::fromLines (f.loadFileAsString()))
+                    {
+                        if (line.trim().startsWith ("#")) continue;                 // the provenance note
+                        if (line.trim() == "---") { blocks.add (body); body.clear(); continue; }
+                        auto l = line;
+                        const int c = l.indexOf ("//");                             // the paste's own comments
+                        if (c >= 0) l = l.substring (0, c);
+                        body << l << "\n";
+                    }
+                    if (body.trim().isNotEmpty()) blocks.add (body);
+                }
+                check (blocks.size() == 2, "21t-h. ...both of them", juce::String (blocks.size()) + " block(s)");
+                for (int bi = 0; bi < blocks.size(); ++bi)
+                {
+                    // Each paste is the OBJECT'S BODY ("calibration": { ... }); wrap it so it parses as one object.
+                    const auto wrapped = "{" + blocks[bi].trim().trimCharactersAtEnd (",") + "}";
+                    const auto v = juce::JSON::parse (wrapped);
+                    const auto block = v.getProperty ("calibration", juce::var());
+                    check (block.getDynamicObject() != nullptr,
+                           "21t-h. block " + juce::String (bi + 1) + " from the contract parses as an object",
+                           wrapped.substring (0, 60).replace ("\n", " "));
+                    echojay::CalibLoop::Config c; juce::String why;
+                    const bool ok = echojay::CalibLoop::configFromBlock (block, 2, false, "UnFairchild 670M II", c, why);
+                    std::printf ("    contract block %d -> ok=%d why=\"%s\"\n", bi + 1, (int) ok, why.trim().toRawUTF8());
+                    if (bi == 0)
+                    {
+                        // B'S 1-BASED RULING, in B's own text (CONTRACT_GROUPS as at 10:30 on 27 Sep): "slot": 1
+                        // with the comment "WHICH slot, 1-BASED, as [CURRENT CHAIN] numbers them". This client has
+                        // been 1-based throughout, so the block parses whole - which is the fact that matters after
+                        // Sean's 10:15 rejection, and it is asserted against B's document rather than against mine.
+                        check (ok && c.slot == 0 && c.actuator == echojay::CalibLoop::Actuator::Threshold
+                               && c.params.size() == 1 && c.params[0] == "Thresh" && c.senseSign == -1
+                               && std::abs (c.startDb - (-13.4f)) < 0.01f
+                               && std::abs (c.minDb - (-15.0f)) < 0.01f && std::abs (c.maxDb - 15.0f) < 0.01f,
+                               "21t-h. B's OWN block parses whole: wire slot 1 -> index 0, threshold, Thresh, "
+                               "lower_is_harder, start -13.4, range -15..15",
+                               "slot " + juce::String (c.slot) + ", " + c.params.joinIntoString (",") + " @ "
+                               + juce::String (c.startDb, 1) + (why.isEmpty() ? juce::String() : ", why: " + why));
+                        // ...and a 0-BASED slot - what the server WAS sending at 10:15 - is refused with the WIRE
+                        // value in the line, so a base mismatch is a glance and not a puzzle about an empty rack.
+                        {
+                            auto* z = block.getDynamicObject()->clone().get();
+                            juce::var zeroBased (z); z->setProperty ("slot", 0);
+                            echojay::CalibLoop::Config c0; juce::String why0;
+                            const bool ok0 = echojay::CalibLoop::configFromBlock (zeroBased, 2, false, "x", c0, why0);
+                            check (! ok0 && why0.contains ("wire slot 0") && why0.contains ("rack has 2 slot(s)"),
+                                   "21t-h. ...and the 0-BASED slot the server sent at 10:15 is refused with the WIRE "
+                                   "value named (it used to print the converted number and read like an empty rack)",
+                                   why0.trim());
+                        }
+                    }
+                    else
+                    {
+                        check (ok && c.slot == 0 && c.actuator == echojay::CalibLoop::Actuator::Threshold
+                               && c.params.size() == 1 && c.params[0] == "Thresh" && c.senseSign == -1
+                               && std::abs (c.startDb - (-18.2f)) < 0.01f
+                               && c.mode == echojay::CalibLoop::Mode::Passive,
+                               "21t-h. ...and the tally-source block parses whole: source/heard_s/measure/mode with "
+                               "slot 1 -> index 0, threshold, Thresh, lower_is_harder, start -18.2, passive",
+                               "slot " + juce::String (c.slot) + ", " + c.params.joinIntoString (",") + " @ "
+                               + juce::String (c.startDb, 1));
+                    }
+                }
+            }
+        }
+
         // (vi) a slot this rack does not have starts nothing
         {
             echojay::CalibLoop::Config c; juce::String why;
             const bool ok = parse (R"({"mode":"passive","actuator":"drive","slot":9,"gr_target_db":[2,3]})", 2, c, why);
-            check (! ok && why.contains ("not in this rack"),
-                   "21t-g (6b). a slot the rack does not have starts nothing, and says which",
+            // 21t-h: the wording changed on purpose - the line now names the WIRE value, so the assertion follows
+            // the new text rather than the old.
+            check (! ok && why.contains ("wire slot 9") && why.contains ("rack has 2 slot(s)"),
+                   "21t-g (6b). a slot the rack does not have starts nothing, and says which - by its WIRE value",
                    why.trim().substring (0, 90));
         }
         // (vii) source and measure outside their literals are flagged (they are logged, not acted on)

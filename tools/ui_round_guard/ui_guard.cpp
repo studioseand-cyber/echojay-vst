@@ -196,6 +196,15 @@ struct EchoJayTabStripTestAccess
     { juce::StringArray mf; return e.testAssembleChainInjections (msg, uid, &mf); }
     static int calibFromChain (EchoJayEditor& e, const juce::String& uid, const juce::var& chain)
     { return e.startCalibrationFromChain (uid, chain); }
+    // 21t-h: THE REAL BUILD PATH, the one the button calls. No guard drove it end to end, which is exactly why the
+    // premature start shipped: every leg had called startCalibrationFromChain directly, on a rack already built.
+    static void buildToLink (EchoJayEditor& e, const juce::String& uid, const juce::String& chainJson)
+    { e.sendChainToLink (uid, chainJson); }
+    // 21t-h (3): the REAL reply route, the one a chat turn comes back on.
+    static void reply (EchoJayEditor& e, const juce::String& text, const juce::String& chatId = {})
+    { e.handleChatReply (text, true, chatId, {}, {}, -1); }
+    static juce::String editDataOf (EchoJayEditor& e, int i)
+    { return i >= 0 && i < (int) e.chatMessages.size() ? e.chatMessages[(size_t) i].editData : juce::String(); }
     // ---- 21t-d wiring ----
     static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops); }
     static void calibTick (EchoJayEditor& e, const juce::String& uid) { e.calibTickAndPost (uid); }
@@ -1281,6 +1290,115 @@ int main()
                 proc.removeLinkGroup (gid);
                 LinkShm::releaseSlot (reg, slot);
             }
+        }
+
+        // ---- 21t-h (3): THE LEVEL-MATCH BLOCK IS CONSUMED ON THE CHAT ROUTE ----------------------------------
+        // Sean's 27 Sep session: a group turn came back on the CHAT route and the whole <<<ECHOJAY_LEVEL_MATCH>>>
+        // block was printed to him as raw JSON, with "(sent as a chat, not a build - say 'build' to build)" under
+        // it. The APPLY path for level_match had existed since 21t-c; nothing ever took the block out of a chat
+        // reply, because the only extraction sat where a build card was expected. B emits it on every route by
+        // ruling, so the client consumes it on every route.
+        {
+            std::printf ("\n== 21t-h (3): a level-match block on the CHAT route becomes the card, never raw text ==\n");
+            A::knownState (*ed, proc);
+            const auto savedId = A::chatId (*ed);
+            const auto savedMsgs = A::msgs (*ed);
+            const juce::String replyText =
+                "Here is the levelling for the group.\n\n"
+                "<<<ECHOJAY_LEVEL_MATCH>>>\n"
+                "{\"members\":["
+                "{\"uid\":\"lm_a\",\"name\":\"Main vocal\",\"int_lufs\":-19.4,\"delta_db\":1.4},"
+                "{\"uid\":\"lm_b\",\"name\":\"Main vocal 2\",\"int_lufs\":-17.0,\"delta_db\":-1.0},"
+                "{\"uid\":\"lm_c\",\"name\":\"Main vocal 3\",\"int_lufs\":null,\"delta_db\":0}]}\n"
+                "<<<END_LEVEL_MATCH>>>\n";
+            A::reply (*ed, replyText);
+            pumpMs (120);
+            const auto& M = A::msgs (*ed);
+            juce::String last;
+            for (int i = (int) M.size() - 1; i >= 0; --i)
+                if (M[(size_t) i].role == "assistant") { last = M[(size_t) i].content; break; }
+            check (last.isNotEmpty(), "21t-h (3). fixture: the reply landed as an assistant turn",
+                   last.substring (0, 50).replace ("\n", " "));
+            check (! last.contains ("ECHOJAY_LEVEL_MATCH") && ! last.contains ("delta_db")
+                   && ! last.contains ("int_lufs"),
+                   "21t-h (3). the marker and its JSON are NOT in the bubble  (RED as it stood: the whole block was "
+                   "printed to the user)", last.substring (0, 90).replace ("\n", " | "));
+            check (last.contains ("Main vocal: +1.4 dB") && last.contains ("Main vocal 2: -1.0 dB"),
+                   "21t-h (3). ...and the card names each member and its delta",
+                   last.fromFirstOccurrenceOf ("Level match", true, false).substring (0, 90).replace ("\n", " | "));
+            check (last.contains ("Main vocal 3: no signal - left alone"),
+                   "21t-h (3). ...including the member with no reading, which is left alone rather than moved on a guess",
+                   last.contains ("no signal") ? juce::String ("said") : juce::String ("MISSING"));
+            {
+                // The card is looked up by CONTENT, not by index: the reply route replaces a provisional bubble in
+                // place, so "the last assistant message" is not a safe handle for the turn that carried the block.
+                juce::String ed2;
+                for (int i = (int) M.size() - 1; i >= 0; --i)
+                {
+                    const auto d = A::editDataOf (*ed, i);
+                    if (d.contains ("level_match")) { ed2 = d; break; }
+                }
+                const auto members = juce::JSON::parse (ed2).getProperty ("level_match", juce::var())
+                                        .getProperty ("members", juce::var());
+                check (members.isArray() && members.size() == 3,
+                       "21t-h (3). ...and the card carries the ops in the SHAPE the apply path already reads, so "
+                       "Apply behaves identically on every route",
+                       "editData members: " + juce::String (members.isArray() ? members.size() : -1));
+            }
+            A::setChatId (*ed, savedId);
+            A::msgs (*ed) = savedMsgs;
+            A::knownState (*ed, proc);
+        }
+
+        // ---- 21t-h: THE REAL LEASED BUILD PATH, END TO END ---------------------------------------------------
+        // WHY THIS LEG EXISTS. Sean's 10:15 build: "path=SESSION (borrowed host) adds=1" and, in the SAME second,
+        // "EJThreshold: block not usable - slot 0 is not in this rack (0 slot(s))". The add landed six seconds later.
+        // Every (6) leg so far called startCalibrationFromChain DIRECTLY, on a rack that was already built, so none
+        // of them could see that the Build button starts it one message-loop turn too early. This one goes through
+        // sendChainToLink - the button's own choke point - and waits the way the product waits.
+        {
+            std::printf ("\n== 21t-h: a build to a LEASED rack starts the loop when the build FINISHES ==\n");
+            A::knownState (*ed, proc);
+            const juce::String luid = "lease_h1";
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, luid);
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            { EedCompressorProcessor fc; juce::ignoreUnused (fc); }
+            proc.pendingChannelUid = luid;
+            check (bh.getNumSlots() == 0,
+                   "21t-h. fixture: the leased rack starts EMPTY, which is the state the premature start read",
+                   juce::String (bh.getNumSlots()) + " slot(s)");
+
+            const juce::String chainJson =
+                R"({"chain":[{"name":"EchoJay Compressor","settings_structured":{"params":{}}}],)"
+                R"("calibration":{"source":"tally","heard_s":120,"measure":"short90","mode":"passive",)"
+                R"("actuator":"drive","slot":1,"start_db":2.0,"sense":null,"gr_target_db":[2,3]}})";
+
+            A::buildToLink (*ed, luid, chainJson);
+            // Asynchronous on this path: the adds are queued into the borrowed host and the dial settles after
+            // them. The leg pumps and asserts on the LOOP, never on a timer of its own invention.
+            bool active = false; int slots = 0;
+            for (int i = 0; i < 80 && ! active; ++i)
+            {
+                pumpMs (100);
+                slots = bh.getNumSlots();
+                active = proc.calibLoad (luid).active();
+            }
+            check (slots >= 1,
+                   "21t-h. the build lands its slot in the borrowed host (asynchronously, which is the whole point)",
+                   juce::String (slots) + " slot(s)");
+            check (active,
+                   "21t-h. ...and the loop is RUNNING afterwards  (RED as it stood: the start ran at send time, "
+                   "read 0 slots and rejected the block - Sean's 10:15 log, word for word)",
+                   active ? juce::String ("active") : juce::String ("never started"));
+            {
+                const auto loop = proc.calibLoad (luid);
+                check (! active || (loop.slot == 0 && loop.mode == echojay::CalibLoop::Mode::Passive),
+                       "21t-h. ...on the slot the block named, passive, with the staged drive as its opening value",
+                       "slot " + juce::String (loop.slot) + ", drive " + juce::String (loop.preDb, 1) + " dB");
+            }
+            EchoJayBorrowTestAccess::release (proc);
+            proc.pendingChannelUid.clear();
+            A::knownState (*ed, proc);
         }
 
         // ---- 21t-f (5): SHORT90 RIDES ONE BYTE, AND THE FRAME DID NOT GROW ----------------------------------

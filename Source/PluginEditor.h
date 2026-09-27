@@ -3708,6 +3708,12 @@ private:
     juce::String levelsTokensFor (const juce::String& uid, juce::String* nameOut = nullptr,
                                   float* trimOut = nullptr) const;
     juce::String buildTrackLevelsContext (const juce::String& targetUid = {});
+    /** 21t-h: a reply's <<<ECHOJAY_LEVEL_MATCH>>> block -> the card text (one line per member, with its delta) and
+        the editData the apply path already reads. Empty when the payload names no members. */
+    juce::String levelMatchCardFromBlock (const juce::String& lmJson, juce::String& editDataOut) const;
+    // Carries the card's member lines from the extraction point to the message that is about to be built, on the
+    // same turn. Cleared as it is consumed - it is a hand-off, not state.
+    juce::String levelMatchCardText_;
     /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
     int applyGroupLevelMatch (const juce::var& membersVar);
     // ---- 21t-d: the calibration loop's trigger and its surface ----
@@ -4330,9 +4336,15 @@ private:
         strip (empty uid) would paint selected whenever the main context is
         active (empty == empty). Legacy strips are never selected. */
     static bool stripSelected(bool isBus, const juce::String& entryUid,
-                              const juce::String& effectiveUid)
+                              const juce::String& effectiveUid,
+                              bool groupIsTarget = false)
     {
-        return isBus ? effectiveUid.isEmpty()
+        // 21t-h (27 Sep 2026): THE MIX BUS IS NOT A GROUP MEMBER, and it was lighting up beside all seven of them.
+        // Not the membership test and not the view pin: the bus is painted selected whenever NO CHANNEL is
+        // effective, and a GROUP target is not a channel - effectiveChannelUid() returns empty for it (it reads the
+        // active chat's channel, and a group has no chat of its own), so the bus's own "main context" rule fired.
+        // The fix is one term: while a group is the chat target, the bus is not the context either.
+        return isBus ? (effectiveUid.isEmpty() && ! groupIsTarget)
                      : entryUid.isNotEmpty() && entryUid == effectiveUid;
     }
 

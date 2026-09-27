@@ -73,6 +73,9 @@ struct EchoJayLinkMixerTestAccess
     static bool selected (bool isBus, const juce::String& entryUid,
                           const juce::String& effectiveUid)
     { return Ed::stripSelected (isBus, entryUid, effectiveUid); }
+    // 21t-h: the same predicate WITH a group as the chat target - the row that was missing.
+    static bool selectedWithGroup (bool isBus, const juce::String& entryUid, const juce::String& effectiveUid)
+    { return Ed::stripSelected (isBus, entryUid, effectiveUid, /*groupIsTarget*/ true); }
 
     static float travelTop (juce::Rectangle<int> a)         { return Ed::faderTravelTop (a); }
     static float travelBot (juce::Rectangle<int> a)         { return Ed::faderTravelBot (a); }
@@ -402,8 +405,20 @@ static void testHitPrecedence()
     check (T::hitAt (s, { s.fader.getRight() - 1, s.fader.getCentreY() })
                == Hit::Fader, "the fader wins its own right edge");
     check (T::hitAt (s, s.badge.getCentre()) == Hit::Badge,  "badge centre hits the badge");
-    check (T::hitAt (s, s.active.getCentre()) == Hit::Active,
-           "the merged Active control claims its rect (step 3)");
+    // 21t-h (27 Sep 2026): this row FAILS, and it is pre-existing - this whole test had never been in the gate, so
+    // nothing ran it. The failure says WHICH rect claims the Active centre, because "not Active" is a question and
+    // the name of the winner is an answer: the hit order is fader, clip, meter, badge, mute, solo, active, so an
+    // overlap with any earlier rect takes it. Left RED deliberately rather than quietly de-registered.
+    {
+        const auto h = T::hitAt (s, s.active.getCentre());
+        auto nameOf = [] (Hit x) { return x == Hit::Fader ? "Fader" : x == Hit::Clip ? "Clip"
+                                        : x == Hit::Meter ? "Meter" : x == Hit::Badge ? "Badge"
+                                        : x == Hit::Mute ? "Mute" : x == Hit::Solo ? "Solo"
+                                        : x == Hit::Active ? "Active" : "Background/None"; };
+        std::printf ("    active rect %d,%d %dx%d - its centre hits %s\n",
+                     s.active.getX(), s.active.getY(), s.active.getWidth(), s.active.getHeight(), nameOf (h));
+        check (h == Hit::Active, "the merged Active control claims its rect (step 3)");
+    }
     check (T::hitAt (s, s.name.getCentre())  == Hit::Background,
            "the name area falls through to background, which selects");
     check (T::hitAt (s, s.data.getCentre())  == Hit::Background,
@@ -468,6 +483,15 @@ static void testSelection()
     // selected in main context. Without the isNotEmpty() term, empty == empty
     // would light every legacy strip whenever the bus is selected.
     check (!T::selected (false, "", ""),        "legacy strip never selected (main context)");
+
+    // 21t-h (27 Sep 2026): THE MIX BUS IS NEVER SELECTED WHILE A GROUP IS THE TARGET. Sean's screenshot: the bus
+    // strip lit beside all seven members of "Main vocals". A group is not a channel, so effectiveChannelUid() is
+    // empty for it and the bus's own main-context row fired. These rows are what that fix means, and the guard had
+    // no row for a group target at all - which is why a pure predicate with a full truth table still missed it.
+    check (!T::selectedWithGroup (true,  "", ""),      "BUS not selected while a GROUP is the target (the 27 Sep defect)");
+    check ( T::selectedWithGroup (false, "uid1", "uid1"), "a member's own strip still selects on a uid match");
+    check (!T::selectedWithGroup (false, "uid1", ""),  "a member is not selected by the group target alone (linkSelection_ paints those)");
+    check ( T::selected (true,  "", ""),               "...and with no group, the bus is the main context exactly as before");
     check (!T::selected (false, "", "uid1"),    "legacy strip never selected (channel active)");
 }
 

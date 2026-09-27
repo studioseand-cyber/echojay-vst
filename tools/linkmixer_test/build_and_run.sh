@@ -34,7 +34,11 @@ for a in args[1:]:
     out.append(a)
 cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         'tools/linkmixer_test/linkmixer_test.cpp',
-        'build/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
+        # 21t-h (27 Sep 2026): build-release FIRST. This pointed only at build/, whose archive was from 5 SEPTEMBER -
+        # three weeks of headers newer than the object code it linked, which is a segfault waiting for a layout
+        # change (and got one). The release tree is the one every other harness links and the one the packages are
+        # cut from; build/ stays as a fallback for a machine that only has it.
+        'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a',
         '-framework','Cocoa','-framework','CoreAudio','-framework','CoreMIDI',
         '-framework','AudioToolbox','-framework','Accelerate','-framework','QuartzCore',
         '-framework','IOKit','-framework','Security','-framework','WebKit',
@@ -42,6 +46,12 @@ cmd = (['clang++'] + out + ['-I', os.path.abspath('Source'),
         '-framework','UniformTypeIdentifiers','-framework','AVFoundation',
         '-framework','CoreMedia','-framework','AVKit','-lcurl',
         '-o', f'{scratch}/linkmixer_test'])
+lib = 'build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a'
+if not os.path.exists(lib):
+    print('linkmixer_test: REFUSING TO RUN - ' + lib + ' does not exist. This test links the SHIPPED object code; '
+          'build it (cmake --build build-release --target EchoJay_AAX) rather than have the test link something older '
+          'than the headers it compiles against.')
+    raise SystemExit(2)
 r = subprocess.run(cmd, capture_output=True, text=True)
 if r.returncode:
     print(r.stderr[-3000:])

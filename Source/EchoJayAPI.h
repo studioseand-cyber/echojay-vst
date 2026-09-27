@@ -970,6 +970,9 @@ public:
     // in sync with api/_blocks.js BLOCK_TYPES.chain_edit (canonical) and
     // extractChainEditBlockWeb in public/app.html.
     static bool extractChainEditBlock(juce::String& replyInOut, juce::String& editJsonOut);
+    // 21t-h (27 Sep 2026): the LEVEL_MATCH block, extracted on EVERY route - the server emits it on every route by
+    // ruling, and a route that does not extract it prints the marker to the user.
+    static bool extractLevelMatchBlock(juce::String& replyInOut, juce::String& lmJsonOut);
 
     // Same contract for the ASK question/choices block (Phase 1b): payload
     // {"question","choices":[{"label","detail"}...],"allowFreeText"}.
