@@ -1461,6 +1461,26 @@ static int guardMain()
                    "21t-g (6b). source and measure outside their literals are named too - a new value shows up in "
                    "the log instead of passing as one of ours", why.trim().substring (0, 120));
         }
+        // (viii) ALL FOUR `source` VALUES ARE ACCEPTED SILENTLY. "measured" arrived on 27 Sep (a start from the
+        // turn's own meter reading) and "working_position" the same day; "listen" means an ASKED calibration and
+        // only that. The field is logged, not acted on - but a legitimate value flagged as "NOT AS CONTRACTED"
+        // teaches the reader to ignore the one line that reports real breaks, so each is accepted by name.
+        {
+            const char* sources[] = { "tally", "measured", "working_position", "listen" };
+            juce::String flagged;
+            for (const auto* src : sources)
+            {
+                echojay::CalibLoop::Config c; juce::String why;
+                const juce::String json = juce::String (R"({"mode":"passive","actuator":"drive","slot":1,"source":")")
+                                        + src + R"(","measure":"short90","gr_target_db":[2,3]})";
+                const bool ok = parse (json.toRawUTF8(), 2, c, why);
+                if (! ok || why.isNotEmpty()) flagged << src << " (" << why.trim() << ") ";
+            }
+            check (flagged.isEmpty(),
+                   "21t-g (6b). every `source` the server emits parses with NOTHING flagged: tally, measured, "
+                   "working_position, listen",
+                   flagged.isEmpty() ? juce::String ("all four clean") : flagged);
+        }
     }
 
     // ---- 21t-f (5): SHORT90 IS THE p90 OF THE CLOSED SHORT-TERM WINDOWS ----------------------------------

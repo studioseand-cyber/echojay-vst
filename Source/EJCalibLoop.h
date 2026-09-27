@@ -232,10 +232,16 @@ struct CalibLoop
         {
             const auto src = o->getProperty ("source").toString().trim();
             const auto mea = o->getProperty ("measure").toString().trim();
-            // 21t-h: "working_position" is B's third value as of 27 Sep - the server wrote the slot's working
-            // position rather than measuring a tally. Accepted (this field is logged, not acted on); anything
-            // outside the three is named.
-            if (src.isNotEmpty() && src != "tally" && src != "listen" && src != "working_position")
+            // THE FOUR `source` VALUES, and what each one means about where start_db came from (27 Sep 2026):
+            //   "tally"             the channel's kept figures - the ordinary case, and why the mode is passive
+            //   "measured"          the turn's own meter reading (added 27 Sep, after 21t-h was packaged)
+            //   "working_position"  the slot's working position, written rather than measured
+            //   "listen"            an ASKED calibration, and only that
+            // The field is LOGGED, not acted on: the loop's behaviour comes from `mode` and `actuator`. It is
+            // accepted by name anyway, because a legitimate value flagged as "NOT AS CONTRACTED" trains the reader
+            // to ignore that line - and that line is how a real contract break gets noticed.
+            if (src.isNotEmpty() && src != "tally" && src != "measured"
+                && src != "working_position" && src != "listen")
                 whyOut << "source \"" << src << "\" is not \"tally\" or \"listen\". ";
             if (mea.isNotEmpty() && mea != "short90" && mea != "shortmax" && mea != "int")
                 whyOut << "measure \"" << mea << "\" is not short90/shortmax/int. ";
