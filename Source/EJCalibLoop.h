@@ -90,7 +90,12 @@ struct CalibLoop
     bool   asked        = false;       // the question has been posted for the current figure
     bool   noSignalSaid = false;       // "play it and I'll tell you what it's doing" has been said once
     int    pendingStep  = 0;           // +1 harder / -1 softer, set by a comparative, spent on the next window
-    float  heardS       = 0.0f;        // what the host last reported hearing, for the question's "set from N s"
+    // WHAT THE QUESTION QUOTES: the BLOCK's heard_s, not the slot tally's. The slot's heard time is the age of
+    // that slot's own measurement (it starts when the plugin is inserted), so quoting it would tell the user the
+    // compressor was set from three seconds of the track when the server set it from two minutes of it.
+    float  blockHeardS  = std::numeric_limits<float>::quiet_NaN();
+    bool   fromWorking  = false;       // source "working_position": there is no heard time to quote
+    float  slotHeardS   = 0.0f;        // the slot tally's own heard time. Logged, NEVER quoted in the sentence.
     int    stepsTaken   = 0;           // comparatives honoured, for the log
     juce::String askOwed;              // the one chat line this loop owes, handed out exactly once
 
@@ -142,6 +147,18 @@ struct CalibLoop
         float  startDb = 0.0f;            // the actuator's opening value: the drive, or the threshold
         float  minDb = -60.0f, maxDb = 12.0f;
         float  stepDb = kStepDb;          // the block's "step"; 1 dB unless it says otherwise
+        // 21t-i re-cut (27 Sep 2026 ruling): WHAT THE SENTENCE QUOTES COMES FROM THE BLOCK.
+        //   heardS  the block's own "heard_s" - how much of THIS TRACK the server's figures describe. NaN = absent.
+        //   working true when source is "working_position": there is no heard time to quote, because nothing was
+        //           measured; the compressor was set from where it already sat.
+        float  heardS = std::numeric_limits<float>::quiet_NaN();
+        bool   working = false;
+        // A block may carry a NUDGE instead of (or beside) a band: the user said "ease off" or "more" and the
+        // server passes that through as a direction. 0 = absent.
+        int    nudge = 0;
+        // ...and it may carry no band at all, in which case a re-target keeps the one the loop already has. A
+        // default band silently replacing a ruled one is a different target, not a missing field.
+        bool   haveBand = false;
     };
 
     /** THE WIRE SHAPE, PARSED ONCE (21t-g item 6b, 26 Sep 2026). Both binaries compile this file, so the block is
@@ -188,7 +205,10 @@ struct CalibLoop
         out.lo = busBand ? 1.0f : 2.0f; out.hi = busBand ? 2.0f : 3.0f;
         if (auto* band = o->getProperty ("gr_target_db").getArray())
             if (band->size() == 2)
-            { out.lo = (float) (double) band->getUnchecked (0); out.hi = (float) (double) band->getUnchecked (1); }
+            {
+                out.lo = (float) (double) band->getUnchecked (0); out.hi = (float) (double) band->getUnchecked (1);
+                out.haveBand = true;   // 21t-i re-cut: a re-target with no band keeps the loop's current one
+            }
 
         // ---- mode: exactly two strings --------------------------------------------------------------------
         const auto modeS = o->getProperty ("mode").toString().trim();
@@ -247,6 +267,34 @@ struct CalibLoop
         if (o->hasProperty ("min_db")) out.minDb = (float) (double) o->getProperty ("min_db");
         if (o->hasProperty ("max_db")) out.maxDb = (float) (double) o->getProperty ("max_db");
 
+        // ---- nudge: the user's comparative, passed through (21t-i re-cut, 27 Sep 2026 ruling) --------------
+        // "harder" and "softer" are the two literals. On a re-target this decides the direction on its own, with
+        // or without a band, because it IS what the user said - the band moving is only the server's way of saying
+        // the same thing. Absent means no nudge; anything else is logged and ignored, never guessed at.
+        {
+            const auto nudgeS = o->getProperty ("nudge").toString().trim();
+            if (nudgeS == "harder")      out.nudge = 1;
+            else if (nudgeS == "softer") out.nudge = -1;
+            else if (nudgeS.isNotEmpty())
+                whyOut << "nudge \"" << nudgeS << "\" is not \"harder\" or \"softer\" - ignored. ";
+        }
+
+        // ---- heard_s and source: WHAT THE QUESTION QUOTES --------------------------------------------------
+        // heard_s is how much of the track the server's figures describe, and it is the number the measure-and-ask
+        // sentence says out loud. The slot tally's own heard time is a different quantity (the age of that slot's
+        // measurement) and quoting it would understate the setting's basis by two orders of magnitude on a fresh
+        // insert. source "working_position" means nothing was measured at all, and the sentence says so instead.
+        {
+            const auto hv = o->getProperty ("heard_s");
+            if (! hv.isVoid() && (hv.isDouble() || hv.isInt() || hv.isInt64()))
+            {
+                const float h = (float) (double) hv;
+                if (h >= 0.0f) out.heardS = h;
+                else whyOut << "heard_s " << juce::String (h, 1) << " is negative - ignored. ";
+            }
+            out.working = o->getProperty ("source").toString().trim() == "working_position";
+        }
+
         // ---- step: how far ONE comparative moves the knob (21t-i, 27 Sep 2026 ruling) ----------------------
         // The block says how big a step this control takes; a threshold in 3 dB detents cannot be nudged by 1 dB.
         // Absent, null or nonsensical means 1 dB, which is what every block before this round meant. The DRIVE
@@ -287,8 +335,9 @@ struct CalibLoop
         mode = c.mode; actuator = c.actuator; params = c.params; senseSign = c.senseSign < 0 ? -1 : 1;
         minDb = juce::jmin (c.minDb, c.maxDb); maxDb = juce::jmax (c.minDb, c.maxDb);
         stepDb = (c.stepDb > 0.0f) ? c.stepDb : kStepDb;
-        judged = 0; asked = false; noSignalSaid = false; pendingStep = 0; heardS = 0.0f; stepsTaken = 0;
+        judged = 0; asked = false; noSignalSaid = false; pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0;
         askOwed.clear();
+        blockHeardS = c.heardS; fromWorking = c.working;
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
         value = c.startDb;
@@ -313,7 +362,8 @@ struct CalibLoop
         awaitFresh = false; closingOwed = false; headroomStopped = false;
         headroomLimit = kDriveLimit;
         stepDb = kStepDb; judged = 0; asked = false; noSignalSaid = false;
-        pendingStep = 0; heardS = 0.0f; stepsTaken = 0; askOwed.clear();
+        pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0; askOwed.clear();
+        blockHeardS = std::numeric_limits<float>::quiet_NaN(); fromWorking = false;
         state = State::Listening;
     }
 
@@ -324,17 +374,24 @@ struct CalibLoop
         the server moved the band, and that re-targeted block buys EXACTLY ONE step in the direction the band
         moved - threshold by the block's "step", drive by 1 dB. A block whose band did not move buys no step: a
         write with no comparative behind it is the automatic stepping this round retired. */
-    void retarget (float bandLo, float bandHi, float newStepDb = 0.0f)
+    void retarget (float bandLo, float bandHi, float newStepDb = 0.0f, int nudge = 0, bool haveBand = true)
     {
         const float wasMid = 0.5f * (lo + hi);
-        lo = juce::jmin (bandLo, bandHi); hi = juce::jmax (bandLo, bandHi);
+        // A BLOCK WITH NO BAND KEEPS THE ONE THE LOOP HAS (21t-i re-cut). The server may send only a nudge; a
+        // default band substituted here would be a different target arriving as a missing field.
+        if (haveBand) { lo = juce::jmin (bandLo, bandHi); hi = juce::jmax (bandLo, bandHi); }
         if (newStepDb > 0.0f) stepDb = newStepDb;
         steps = 0; inBandRun = 0; awaitFresh = true; closingOwed = false;
         state = State::Listening;
         if (mode != Mode::Passive) return;
         const float nowMid = 0.5f * (lo + hi);
-        // More gain reduction asked for -> work it HARDER. The comparative is the band's movement, not a guess.
-        pendingStep = (nowMid > wasMid + 1.0e-3f) ? 1 : (nowMid < wasMid - 1.0e-3f ? -1 : 0);
+        // THE NUDGE WINS WHERE THERE IS ONE (ruled): "ease off" and "more" are the user's words passed straight
+        // through, and they mean the same thing whether or not the server also moved the band. Without one, the
+        // band's movement is the comparative, as it has been.
+        pendingStep = (nudge > 0) ? 1
+                    : (nudge < 0) ? -1
+                    : (nowMid > wasMid + 1.0e-3f) ? 1
+                    : (nowMid < wasMid - 1.0e-3f) ? -1 : 0;
         judged = 0; asked = false;
         // AND THE NEXT WINDOW IS JUDGED. awaitFresh exists because a window that straddles a KNOB MOVE is a window
         // about two settings; a re-target on its own has moved nothing yet, so skipping a window here would only
@@ -358,7 +415,7 @@ struct CalibLoop
         Step s;
         ++window;
         if (! running()) { s.card = card(); return s; }
-        if (w.heardSeconds > 0.0f) heardS = w.heardSeconds;
+        if (w.heardSeconds > 0.0f) slotHeardS = w.heardSeconds;
 
         // (1) NOT A MEASUREMENT. Dropped frames mean the host did not see a whole window; that is not evidence of
         // anything and cannot move the drive or the step count. It counts toward the no-signal clock ONLY if it
@@ -517,7 +574,17 @@ struct CalibLoop
         sentence the user reads and the line in the log are traceable to each other. */
     juce::String askMessage() const
     {
-        return plugin + " is on, set from " + juce::String (juce::roundToInt (heardS)) + " s of this track, doing about "
+        // WHERE THE SETTING CAME FROM, in the block's own terms (27 Sep 2026 ruling): the server's heard_s for a
+        // tally or a measured start, and "the working position" when nothing was measured at all. A block with a
+        // tally source and no heard_s says neither rather than inventing a number.
+        // THE CLAUSE IS OMITTED, NOT STUBBED, when there is nothing to say. The first cut substituted the word
+        // "on" and the sentence read "Pro-C 2 is on, on, doing about 2.5 dB" - the guard caught it.
+        const juce::String from = fromWorking
+            ? juce::String (", set from the working position")
+            : (blockHeardS == blockHeardS
+                   ? ", set from " + juce::String (juce::roundToInt (blockHeardS)) + " s of this track"
+                   : juce::String());
+        return plugin + " is on" + from + ", doing about "
              + grText() + " dB of gain reduction on the loud phrases."
              + " How's that sounding? Say 'ease off' or 'more'.";
     }
@@ -614,7 +681,9 @@ struct CalibLoop
         o->setProperty ("asked", asked);
         o->setProperty ("noSignalSaid", noSignalSaid);
         o->setProperty ("pendingStep", pendingStep);
-        o->setProperty ("heardS", (double) heardS);
+        o->setProperty ("slotHeardS", (double) slotHeardS);
+        o->setProperty ("blockHeardS", (blockHeardS == blockHeardS) ? juce::var ((double) blockHeardS) : juce::var());
+        o->setProperty ("fromWorking", fromWorking);
         o->setProperty ("stepsTaken", stepsTaken);
         o->setProperty ("askOwed", askOwed);
         return juce::var (o);
@@ -660,7 +729,13 @@ struct CalibLoop
         c.asked = (bool) o->getProperty ("asked");
         c.noSignalSaid = (bool) o->getProperty ("noSignalSaid");
         c.pendingStep = (int) o->getProperty ("pendingStep");
-        c.heardS = (float) (double) o->getProperty ("heardS");
+        c.slotHeardS = (float) (double) o->getProperty ("slotHeardS");
+        {   // A handover must not lose what the sentence quotes. An older sidecar has neither key: no heard time to
+            // quote (NaN) and not a working-position start, which is what a pre-re-cut loop was.
+            const auto bh = o->getProperty ("blockHeardS");
+            c.blockHeardS = bh.isVoid() ? std::numeric_limits<float>::quiet_NaN() : (float) (double) bh;
+            c.fromWorking = (bool) o->getProperty ("fromWorking");
+        }
         c.stepsTaken = (int) o->getProperty ("stepsTaken");
         c.askOwed = o->getProperty ("askOwed").toString();
         return c;

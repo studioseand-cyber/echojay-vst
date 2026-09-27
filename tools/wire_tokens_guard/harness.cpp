@@ -11,6 +11,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EchoJayAPI.h"
+#include "EJCalibLoop.h"      // 21t-i re-cut: the calibration block's field names
 #include "EJLevelRecord.h"   // 21t-i: the record whose tokens() composes both level lines
 #include <cstdio>
 
@@ -142,6 +143,32 @@ int main()
         check (! hdr.contains ("AGE "),
                "the [CHAIN LEVELS] header carries NO AGE token, even when it was composed from a record",
                hdr.fromFirstOccurrenceOf ("heard ", true, false).substring (0, 40));
+    }
+
+    // ---- THE CALIBRATION BLOCK'S FIELD NAMES AND LITERALS, pinned like every other wire spelling -----------
+    // 21t-i re-cut: "nudge" joins them. These are names B writes and this parser reads; a rename in either place
+    // reads as ABSENT, which for a nudge means the user's "ease off" quietly does nothing.
+    {
+        auto parse = [] (const char* json, echojay::CalibLoop::Config& c, juce::String& why)
+        { return echojay::CalibLoop::configFromBlock (juce::JSON::parse (juce::String (json)), 1, false, "X", c, why); };
+        echojay::CalibLoop::Config c; juce::String why;
+        const bool ok = parse (R"({"source":"tally","heard_s":120,"measure":"short90","mode":"passive",
+                                  "actuator":"drive","slot":1,"start_db":-3.0,"sense":null,"step":1,
+                                  "nudge":"harder","gr_target_db":[2,3]})", c, why);
+        check (ok && why.isEmpty(),
+               "every field name on the calibration block parses with nothing flagged: source, heard_s, measure, "
+               "mode, actuator, slot, start_db, sense, step, nudge, gr_target_db", why.isEmpty() ? "clean" : why);
+        check (c.nudge == 1, "\"nudge\": \"harder\" is +1", juce::String (c.nudge));
+        juce::String why2; echojay::CalibLoop::Config c2;
+        parse (R"({"mode":"passive","actuator":"drive","slot":1,"nudge":"softer"})", c2, why2);
+        check (c2.nudge == -1 && ! c2.haveBand,
+               "\"nudge\": \"softer\" is -1, and a block with no gr_target_db carries NO band",
+               juce::String (c2.nudge) + ", haveBand " + juce::String ((int) c2.haveBand));
+        juce::String why3; echojay::CalibLoop::Config c3;
+        parse (R"({"mode":"passive","actuator":"drive","slot":1,"nudge":"HARDER"})", c3, why3);
+        check (c3.nudge == 0 && why3.contains ("nudge \"HARDER\""),
+               "...and the literals are case-sensitive, like every other literal on this block: a near-miss is "
+               "NAMED and ignored, never guessed", why3.trim());
     }
 
     std::printf ("\n==== wire_tokens_guard: %s (%d assertion(s) failed) ====\n",

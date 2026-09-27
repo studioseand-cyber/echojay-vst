@@ -1704,6 +1704,139 @@ static int guardMain()
                    juce::String (writes) + " write(s) -> " + juce::String (landed, 1) + " dB");
         }
 
+        // (7) WHAT THE SENTENCE QUOTES (21t-i re-cut ruling): the BLOCK's heard_s, never the slot tally's heard
+        // time. The slot's figure is the age of that slot's own measurement - it starts when the plugin is
+        // inserted - so a compressor set by the server from two minutes of the track would have been described to
+        // the user as set from three seconds of it.
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "NEOLD U2A"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = -6.0f; c.heardS = 120.0f;
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (5.4f, 3.0f), 3000.0);          // the slot has heard 3 s...
+            const auto st = l.onWindow (win (5.4f, 6.0f), 3000.0);   // ...and now 6 s
+            check (st.ask.contains ("set from 120 s of this track"),
+                   "21t-i (7). the question quotes the BLOCK's heard_s  (RED as it stood: it quoted the slot "
+                   "tally's heard time, which is the age of the slot)", st.ask);
+            check (! st.ask.contains (" 3 s ") && ! st.ask.contains (" 6 s "),
+                   "21t-i (7). ...and never the slot's own figure", st.ask);
+        }
+        // ...and a WORKING POSITION start has no heard time to quote, so it says so.
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "Tube-Tech CL 1B"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = 0.0f; c.working = true;
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (2.5f, 40.0f), 3000.0);
+            const auto st = l.onWindow (win (2.5f, 43.0f), 3000.0);
+            check (st.ask.contains ("set from the working position") && ! st.ask.contains (" s of this track"),
+                   "21t-i (7). source \"working_position\": the sentence says where it came from instead of "
+                   "quoting a measurement nobody made", st.ask);
+        }
+        // ...and a tally block with NO heard_s quotes nothing rather than inventing a number.
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "Pro-C 2"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = 0.0f;                                  // heardS left NaN
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (2.5f, 55.0f), 3000.0);
+            const auto st = l.onWindow (win (2.5f, 58.0f), 3000.0);
+            check (st.ask.startsWith ("Pro-C 2 is on, doing about")
+                   && ! st.ask.contains ("set from") && st.ask.contains ("gain reduction"),
+                   "21t-i (7). a block with no heard_s and no working-position flag omits the clause entirely - it "
+                   "quotes no figure and does not read as a stutter",
+                   st.ask);
+        }
+
+        // (8) THE NUDGE (21t-i re-cut): "harder"/"softer" on the block decides the direction on its own, with the
+        // band unchanged or absent entirely.
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "NEOLD U2A"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = -6.0f; c.heardS = 90.0f;
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (5.4f, 90.0f), 3000.0);
+            l.onWindow (win (5.4f, 93.0f), 3000.0);            // asked
+            l.retarget (2.0f, 3.0f, c.stepDb, -1, true);        // THE SAME BAND, nudge "softer"
+            int writes = 0; float landed = 0.0f;
+            for (int i = 0; i < 4; ++i)
+            {
+                const auto st = l.onWindow (win (5.4f, 96.0f), 3000.0);
+                if (st.writeDrive) { ++writes; landed = st.newPre; }
+            }
+            check (writes == 1 && std::abs (landed - (-7.0f)) < 0.001f,
+                   "21t-i (8). a re-target with the SAME band and nudge \"softer\" buys exactly one softer step  "
+                   "(RED as it stood: an unmoved band bought nothing)",
+                   juce::String (writes) + " write(s) -> " + juce::String (landed, 2) + " dB");
+        }
+        // ...and with NO band at all, the loop keeps the band it has and still takes the step.
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "NEOLD U2A"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = -6.0f;
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (5.4f, 90.0f), 3000.0);
+            l.onWindow (win (5.4f, 93.0f), 3000.0);
+            l.retarget (0.0f, 0.0f, 0.0f, 1, false);            // no band on the block
+            int writes = 0; float landed = 0.0f;
+            for (int i = 0; i < 3; ++i)
+            {
+                const auto st = l.onWindow (win (5.4f, 96.0f), 3000.0);
+                if (st.writeDrive) { ++writes; landed = st.newPre; }
+            }
+            check (writes == 1 && std::abs (landed - (-5.0f)) < 0.001f
+                   && std::abs (l.lo - 2.0f) < 0.001f && std::abs (l.hi - 3.0f) < 0.001f,
+                   "21t-i (8). ...and a block with no band keeps the loop's band and still takes the nudge's step",
+                   juce::String (writes) + " write(s) -> " + juce::String (landed, 2) + " dB, band "
+                   + juce::String (l.lo, 1) + "-" + juce::String (l.hi, 1));
+        }
+        // ...and the wire literals: "harder"/"softer" parse, anything else is named in the log and ignored.
+        {
+            echojay::CalibLoop::Config c1, c2, c3; juce::String w1, w2, w3;
+            const auto mk = [] (const char* json) { return juce::JSON::parse (juce::String (json)); };
+            echojay::CalibLoop::configFromBlock (mk (R"({"mode":"passive","actuator":"drive","slot":1,
+                                                         "nudge":"harder","gr_target_db":[2,3]})"), 1, false, "X", c1, w1);
+            echojay::CalibLoop::configFromBlock (mk (R"({"mode":"passive","actuator":"drive","slot":1,
+                                                         "nudge":"softer","gr_target_db":[2,3]})"), 1, false, "X", c2, w2);
+            echojay::CalibLoop::configFromBlock (mk (R"({"mode":"passive","actuator":"drive","slot":1,
+                                                         "nudge":"a bit less","gr_target_db":[2,3]})"), 1, false, "X", c3, w3);
+            check (c1.nudge == 1 && w1.isEmpty() && c2.nudge == -1 && w2.isEmpty(),
+                   "21t-i (8). \"harder\" and \"softer\" parse clean, nothing flagged",
+                   "harder=" + juce::String (c1.nudge) + " softer=" + juce::String (c2.nudge));
+            check (c3.nudge == 0 && w3.contains ("nudge \"a bit less\""),
+                   "21t-i (8). ...and an unknown nudge literal is NAMED in the log and ignored, never guessed",
+                   w3.trim());
+        }
+        // ...and heard_s / source / nudge together, off the wire, in one block.
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const auto v = juce::JSON::parse (juce::String (
+                R"({"source":"measured","heard_s":84,"measure":"short90","mode":"passive","actuator":"drive",
+                    "slot":1,"start_db":-3.0,"sense":null,"nudge":"harder","step":2,"gr_target_db":[2,3]})"));
+            const bool ok = echojay::CalibLoop::configFromBlock (v, 1, false, "NEOLD U2A", c, why);
+            check (ok && std::abs (c.heardS - 84.0f) < 0.01f && ! c.working && c.nudge == 1 && c.haveBand
+                   && std::abs (c.stepDb - 2.0f) < 0.01f && why.isEmpty(),
+                   "21t-i (8). heard_s, source \"measured\", nudge and step all parse off one block with nothing "
+                   "flagged",
+                   "heard_s " + juce::String (c.heardS, 0) + ", nudge " + juce::String (c.nudge)
+                   + ", step " + juce::String (c.stepDb, 1) + (why.isEmpty() ? juce::String() : " why: " + why));
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (5.4f, 9.0f), 3000.0);
+            const auto st = l.onWindow (win (5.4f, 12.0f), 3000.0);
+            check (st.ask.contains ("set from 84 s of this track"),
+                   "21t-i (8). ...and the sentence quotes that block's 84 s, with the slot only 12 s old", st.ask);
+        }
+
         // (6) NOTHING HEARD: after 30 s of silence the loop asks for playback, once, and never quotes a figure
         // it does not have.
         {

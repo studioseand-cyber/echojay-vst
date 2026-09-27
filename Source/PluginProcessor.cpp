@@ -6008,7 +6008,8 @@ void EchoJayProcessor::updateLinkAudioRecency()
         // A LINK'S OWN RECORD IS AUTHORITATIVE, and it is in that rack's sidecar: adopted the first time we see a
         // uid we have nothing for, which is what covers a session reopened while the channel sits quiet. Read once
         // per uid, not once per second: a file read per Link per tick would be a cost with no reader.
-        if (levelRecordByUid_.find(li.uid) == levelRecordByUid_.end() || ! levelRecordByUid_[li.uid].valid)
+        if ((levelRecordByUid_.find(li.uid) == levelRecordByUid_.end() || ! levelRecordByUid_[li.uid].valid)
+            && levelRecordSidecarTried_.insert(li.uid).second)
         {
             int err = 0; const auto dirS = LinkShm::resolveDir(err);
             if (dirS.isNotEmpty())
@@ -6034,6 +6035,11 @@ void EchoJayProcessor::updateLinkAudioRecency()
     // its latch so a future entry cannot inherit a predecessor's frame.
     for (auto it = linkLastGoodFrame_.begin(); it != linkLastGoodFrame_.end();)
         if (seen.find(it->first) == seen.end()) it = linkLastGoodFrame_.erase(it);
+        else ++it;
+    // 21t-i re-cut: a uid that has gone forgets that we tried its sidecar, so a Link that comes back (or a rack
+    // re-registered under the same uid) is read once more rather than never again.
+    for (auto it = levelRecordSidecarTried_.begin(); it != levelRecordSidecarTried_.end();)
+        if (seen.find(*it) == seen.end()) it = levelRecordSidecarTried_.erase(it);
         else ++it;
     // COMMIT 1 (17 Sep 2026): a Link that has DISAPPEARED from the registry
     // takes its kept suggestions with it - same drop-on-disappear test as the
@@ -6118,6 +6124,7 @@ bool EchoJayProcessor::resetLevelRecord(const juce::String& uid)
         return had;
     }
     const bool had = levelRecordByUid_.erase(uid) > 0;
+    levelRecordSidecarTried_.erase(uid);   // after a reset, one more look is right: the Link may publish afresh
     if (auto* host = borrowHostIfActiveFor(uid)) host->resetAllLevels();
     // THE LINK OWNS THE MEASUREMENT, so the Link is told. Without this the record comes back on the next frame
     // from a tally that never heard the reset, which is a reset that does not reset.
@@ -6265,10 +6272,11 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     {
         // 21t-i: A RE-TARGET IS THE USER'S COMPARATIVE. It carries the block's step size, and in measure-and-ask
         // it is the ONLY thing that buys a move - one step, in the direction the band went.
-        loop.retarget(cfg.lo, cfg.hi, cfg.stepDb);
+        loop.retarget(cfg.lo, cfg.hi, cfg.stepDb, cfg.nudge, cfg.haveBand);
         EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" re-targeted to " + juce::String(cfg.lo, 1) + "-"
                        + juce::String(cfg.hi, 1) + " dB, continuing on the same knob"
-                       + (loop.mode == echojay::CalibLoop::Mode::Passive
+                       + (cfg.haveBand ? juce::String() : juce::String(" (no band on the block: the loop keeps its own)"))
+                       + (loop.mode == echojay::CalibLoop::Mode::Passive && loop.pendingStep != 0
                               ? ", one " + juce::String(loop.pendingStep > 0 ? "harder" : "softer") + " step of "
                                 + juce::String(loop.actuator == echojay::CalibLoop::Actuator::Threshold
                                                    ? loop.stepDb : echojay::CalibLoop::kStepDb, 1) + " dB owed"
@@ -6284,6 +6292,9 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
                    + ", band " + juce::String(cfg.lo, 1) + "-" + juce::String(cfg.hi, 1) + " dB, dialling "
                    + (threshold ? cfg.params.joinIntoString(" + ") : juce::String("the drive"))
                    + " from " + juce::String(cfg.startDb, 1) + " dB"
+                   + ", quoting " + (cfg.working ? juce::String("the working position")
+                                     : (cfg.heardS == cfg.heardS ? juce::String(cfg.heardS, 0) + " s heard"
+                                                                 : juce::String("no heard time")))
                    + (threshold ? ", range " + juce::String(cfg.minDb, 1) + ".." + juce::String(cfg.maxDb, 1)
                                   + " dB, " + (cfg.senseSign < 0 ? "lower is harder" : "higher is harder")
                                 : juce::String())).toRawUTF8());

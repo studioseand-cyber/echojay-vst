@@ -1612,6 +1612,10 @@ private:
     // a session save/reopen because they ride this plugin's state. Cleared only by an explicit user reset.
     std::map<juce::String, echojay::LevelRecord> levelRecordByUid_;
     echojay::LevelRecord ownLevelRecord_;
+    // 21t-i re-cut: the uids whose OWN sidecar record we have already looked for. A Link that publishes none (an
+    // older binary, or one that has heard nothing yet) would otherwise be re-read from disk once a second for the
+    // life of the session - a file open per Link per tick with no reader. Tried once; the frame feed keeps working.
+    std::set<juce::String> levelRecordSidecarTried_;
 
     // Registry mapping (message thread)
     void*  linkRegMap = nullptr;
