@@ -69,7 +69,25 @@ static LinkMeterFrame restartFrame()
 }
 // Never-good frame: short-window never valid from the start (integrated valid,
 // so a pre-latch binary would still emit measurements - which is the RED).
+// NEVER HEARD, as of 21t-i (27 Sep 2026 ruling). This frame used to carry integrated -20 with no valid short
+// window: the LATCH refused it (momentary floored, no bands) and the block said "LINK NEVER HEARD". Every chat
+// block is now composed from the stored level RECORD, and an integrated LUFS figure only exists if audio was
+// gated in - so a frame carrying INT -20 is a channel that HAS been heard, and claiming otherwise beside that
+// figure is the exact contradiction this round exists to remove (a strip holding a figure while the block said
+// no signal). "Never heard" therefore means a frame with NO figure at all, which is what this now is.
 static LinkMeterFrame neverGoodFrame()
+{
+    LinkMeterFrame f {};
+    f.momentary=-100.0f; f.shortTerm=-100.0f; f.integrated=-100.0f;
+    f.truePeakMax=-100.0f; f.shortTermTP=-100.0f;
+    for (int i=0;i<6;++i) f.bandRel[i]=0.0f;
+    f.audioBlocks=100; f.audioStale=0;
+    return f;
+}
+
+// ...and the frame that used to be "never good": no short window, but an INTEGRATED figure. It is a MEASUREMENT
+// now, and state 4b asserts the block reports it instead of denying it.
+static LinkMeterFrame intOnlyFrame()
 {
     LinkMeterFrame f {};
     f.momentary=-100.0f; f.shortTerm=-100.0f; f.integrated=-20.0f;
@@ -173,6 +191,16 @@ int main()
     check("says 'LINK NEVER HEARD'",              s4.contains("LINK NEVER HEARD"));
     check("NO momentary figure emitted",          ! s4.contains("momentary "));
     check("NO 'input -20' measurement emitted",   ! s4.contains("input -20") && ! s4.contains("Input -20"));
+
+    // ---- STATE 4b (21t-i): a frame with an INT and no valid short window is a channel that HAS been heard ----
+    // The record keeps what was measured, so the block reports the figure rather than denying the channel.
+    writeFrameAt(slot02, intOnlyFrame());
+    pump(proc);
+    const String s4b = assemble("TLINK02");
+    std::fprintf(stderr, "STATE 4b  int-only frame (21t-i: the record has a figure):\n");
+    check("NOT 'LINK NEVER HEARD' - an integrated figure means audio was gated in",
+          ! s4b.contains("LINK NEVER HEARD"));
+    check("the figure is reported: input -20", s4b.contains("input -20") || s4b.contains("Input -20"));
 
     std::fprintf(stderr, "\n==== LATCH HARNESS: %s (%d assertion(s) failed) ====\n",
                  g_fails==0 ? "GREEN" : "RED", g_fails);

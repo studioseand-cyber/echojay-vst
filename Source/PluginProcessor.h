@@ -615,6 +615,7 @@ public:
     std::map<juce::String, std::vector<BorrowPendingPush>> borrowParkedPushes_;
     // 21t-d: the loop for THIS instance's own rack (the mix bus case); a Link rack's loop lives on its sidecar.
     echojay::CalibLoop ownCalib_;
+    juce::String calibLastLogLine_;   // 21t-i: the last EJThreshold window line, for the guard and for diagnostics
     double calibLastWindowMs_ = 0.0;
     bool  borrowPushInFlight_ = false;
     int   borrowPendingCount() const { return (int) borrowPendingPushes_.size(); }
@@ -643,6 +644,11 @@ public:
     /** The closing message, handed over exactly once - whoever asks first posts it. */
     juce::String calibTakeClosing(const juce::String& uid);
     juce::String calibTakeAsk(const juce::String& uid);      // 21t-i: the measure-and-ask line, once
+    // 21t-i: the last window line this process emitted, kept as well as logged. A guard that reads the rolling log
+    // FILE is asserting about the environment's logging as much as about the product - under the suite's sandbox
+    // seal the file was unreadable and a judged, logged window looked identical to a silent one. The line itself is
+    // the ruled behaviour, so the line is observable.
+    juce::String calibLastLogLine() const { return calibLastLogLine_; }
 
     // ---- the stored level record (21t-i) -------------------------------------------------------------------
     // uid empty = this instance's own channel (the mix bus). The getter NEVER touches the live frame: a caller

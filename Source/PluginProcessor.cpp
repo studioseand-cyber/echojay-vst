@@ -6355,7 +6355,9 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     calibLastWindowMs_ = nowMs;
 
     const auto step = loop.onWindow(w, sinceMs);
-    if (step.logLine.isNotEmpty()) EchoJay_NSLog(step.logLine.toRawUTF8());
+    // KEPT AS WELL AS LOGGED (21t-i): one statement, two destinations, so what the log says and what a guard can
+    // read cannot drift apart.
+    if (step.logLine.isNotEmpty()) { calibLastLogLine_ = step.logLine; EchoJay_NSLog(step.logLine.toRawUTF8()); }
     if (step.writeDrive)
     {
         host->setSlotPreTrimDb(loop.slot, step.newPre);

@@ -1447,18 +1447,25 @@ int main()
                    "loop never saw a window - Sean's 14:44 log, word for word)",
                    juce::String (windowsBefore) + " -> " + juce::String (after.window) + " window(s)");
             {
+                // THE LINE ITSELF, from the processor that emitted it. Reading the rolling log FILE asserted about
+                // the environment's logging as much as about the product: under the suite's sandbox seal the file
+                // was unreadable, so a judged and logged window looked exactly like a silent one and this leg went
+                // RED on working code. The product keeps the line on the same statement that logs it.
+                const auto line = proc.calibLastLogLine();
                 const juce::File cur (juce::String (echojay::FileLog::instance().currentPath()));
                 const auto fresh = cur.loadFileAsString().substring (logStart);
-                juce::StringArray lines;
+                int inFile = 0;
                 for (const auto& l : juce::StringArray::fromLines (fresh))
-                    if (l.contains ("EJThreshold: \"EchoJay Compressor\" window")) lines.add (l);
-                check (! lines.isEmpty(),
+                    if (l.contains ("EJThreshold: \"EchoJay Compressor\" window")) ++inFile;
+                std::printf ("    window lines in the rolling log file: %d (the file is %s here)\n",
+                             inFile, cur.existsAsFile() ? "readable" : "NOT readable");
+                check (line.contains ("EJThreshold: \"EchoJay Compressor\" window"),
                        "21t-i. ...and EVERY judged window printed its line, whether it moved anything or not - a "
                        "stalled loop and a quiet in-band loop must not look the same",
-                       lines.isEmpty() ? juce::String ("no window line") : lines[0].fromFirstOccurrenceOf ("EJThreshold", true, false).substring (0, 110));
-                check (lines.isEmpty() || (lines[0].contains ("gr=") && lines[0].contains ("mode=")),
+                       line.isEmpty() ? juce::String ("no window line") : line.substring (0, 110));
+                check (line.contains ("gr=") && line.contains ("mode="),
                        "21t-i. ...with the reduction, the knob and the mode on it",
-                       lines.isEmpty() ? juce::String ("(none)") : lines[0].fromFirstOccurrenceOf ("window", true, false).substring (0, 80));
+                       line.isEmpty() ? juce::String ("(none)") : line.fromFirstOccurrenceOf ("window", true, false).substring (0, 80));
             }
             EchoJayBorrowTestAccess::release (proc);
             A::knownState (*ed, proc);
