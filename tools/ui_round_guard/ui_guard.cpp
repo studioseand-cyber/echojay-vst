@@ -1650,9 +1650,10 @@ int main()
             check (lineA != "no signal" && lineB != "no signal",
                    "21t-i (record). ...and neither is \"no signal\", which now means HEARD 0 and nothing else",
                    lineA.substring (0, 20) + " / " + lineB.substring (0, 20));
-            check (lineA.contains ("AGE ") && lineB.contains ("AGE "),
-                   "21t-i (record). ...each line carrying the record's age, so a kept figure cannot read as a "
-                   "fresh one", lineA.fromFirstOccurrenceOf ("AGE", true, false));
+            check (lineA.contains (", AGE ") && lineB.contains (", AGE ")
+                   && ! lineA.endsWith ("s") && lineA.fromLastOccurrenceOf ("AGE ", false, false).containsOnly ("0123456789"),
+                   "21t-i (record). ...each line carrying the record's age after HEARD, as the ruled integer with "
+                   "no unit suffix", lineA.fromFirstOccurrenceOf ("AGE", true, false));
             // A CHANNEL NOBODY HAS PLAYED is the only "no signal" there is.
             check (A::levelTokens (*ed, "lrecC") == "no signal",
                    "21t-i (record). a channel with no record at all reads \"no signal\"",

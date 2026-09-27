@@ -1768,8 +1768,9 @@ static int guardMain()
         const auto line = back.tokens (back.updatedMs + 7000);
         check (line.contains ("INT ") && line.contains ("SHORTMAX ") && line.contains ("SHORT90 ")
                && line.contains ("PEAK ") && line.contains ("PSR ") && line.contains ("HEARD ")
-               && line.contains ("AGE 7s"),
-               "21t-i (record). the line carries every ruled token plus the record's AGE in seconds", line);
+               && line.contains ("AGE 7") && ! line.contains ("AGE 7s"),
+               "21t-i (record). the line carries every ruled token, and AGE as the ruled integer with NO unit "
+               "suffix (27 Sep ruling: \"AGE <seconds>\")", line);
     }
 
     return failures == 0 ? 0 : 1;

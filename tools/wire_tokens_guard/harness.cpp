@@ -11,6 +11,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "EchoJayAPI.h"
+#include "EJLevelRecord.h"   // 21t-i: the record whose tokens() composes both level lines
 #include <cstdio>
 
 int main()
@@ -99,6 +100,48 @@ int main()
                track.upToFirstOccurrenceOf ("]", true, false));
         check (member.contains ("(id ") && track.contains ("(id "),
                "...and both carry (id <uid>), which is what the server can match on when a label is unusable");
+    }
+
+    // ---- AGE, RULED 27 Sep 2026: "AGE <seconds>" after HEARD, on the member lines and [TRACK LEVELS] --------
+    // Pinned against the PRODUCT'S composer, not a hand-written shape: LevelRecord::tokens() is the one function
+    // both those lines are built from, so this is the byte sequence the server will read. An integer count of
+    // seconds, no unit suffix, no minutes or hours form - B parses it from its next deploy.
+    {
+        echojay::LevelRecord r;
+        r.valid = true; r.heardKnown = true;
+        r.momDb = -13.0f; r.shortDb = -14.0f; r.shortMaxDb = -12.0f; r.short90Db = -14.2f;
+        r.intLufs = -17.0f; r.peakDbTp = -1.0f; r.heardSeconds = 120.0f;
+        r.updatedMs = 1000000;
+        const auto line = r.tokens (r.updatedMs + 42000);      // 42 seconds old, exactly
+        std::printf ("    the record's line as composed:\n    %s\n", line.toRawUTF8());
+        check (line.contains ("HEARD 120, AGE 42"),
+               "\"AGE <seconds>\" comes immediately after HEARD, separated by \", \" like every other token",
+               line.fromFirstOccurrenceOf ("HEARD", true, false));
+        check (! line.contains ("AGE 42s") && ! line.contains ("AGE 42 s"),
+               "...with NO unit suffix: there is nothing to parse but the integer",
+               line.fromFirstOccurrenceOf ("AGE", true, false));
+        check (line.endsWith ("AGE 42"),
+               "...and it is LAST, so a parser that does not know it yet reads every token before it unchanged",
+               line.substring (juce::jmax (0, line.length() - 24)));
+        const auto older = r.tokens (r.updatedMs + 7200000);   // two hours
+        check (older.contains ("AGE 7200") && ! older.contains ("2h"),
+               "...and an old record counts seconds too - no hours form", older.fromFirstOccurrenceOf ("AGE", true, false));
+        // A record whose age cannot be known (no timestamp) reads 0 rather than a negative or a fabricated age.
+        echojay::LevelRecord noStamp = r; noStamp.updatedMs = 0;
+        check (noStamp.tokens (1000000).contains ("AGE 0"),
+               "...a record with no timestamp reads AGE 0, never a negative or a guess",
+               noStamp.tokens (1000000).fromFirstOccurrenceOf ("AGE", true, false));
+        // AND NOT ON THE [CHAIN LEVELS] HEADER. The ruling names the member lines and [TRACK LEVELS]; the header's
+        // tokens are ones B already parses, and an unruled token on a parsed line is the p90 mistake again.
+        EchoJayAPI::ChainLevelsData dh;
+        dh.inKnown = true; dh.havePercentiles = true;
+        dh.inLevelDb = -18.2f; dh.inP10 = -24.0f; dh.inP90 = -12.5f; dh.inShort90Db = -14.2f;
+        dh.inPeakDb = -1.2f; dh.inCrestDb = 9.4f; dh.inHeardS = 120.0f; dh.inWindowS = 120.0f;
+        dh.recordAgeS = 42;
+        const auto hdr = EchoJayAPI::buildChainLevelsInjectionCore (dh);
+        check (! hdr.contains ("AGE "),
+               "the [CHAIN LEVELS] header carries NO AGE token, even when it was composed from a record",
+               hdr.fromFirstOccurrenceOf ("heard ", true, false).substring (0, 40));
     }
 
     std::printf ("\n==== wire_tokens_guard: %s (%d assertion(s) failed) ====\n",

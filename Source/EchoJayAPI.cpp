@@ -3551,11 +3551,10 @@ juce::String EchoJayAPI::buildChainLevelsInjectionCore(const ChainLevelsData& d)
       << formatHeard(d.inHeardS);
     if (d.inWindowS < d.inHeardS - 1.0f)
         b << " (~" << formatHeard(d.inWindowS) << " described)";
-    // 21t-i: THE RECORD'S AGE, on the line, in whole seconds. A figure kept across a transport stop must not read
-    // as a figure measured a moment ago. Same token and same spelling as the [GROUP LEVELS] and [TRACK LEVELS]
-    // lines carry, and omitted entirely when the block was not composed from a record.
-    if (d.recordAgeS >= 0)
-        b << ", AGE " << juce::String(d.recordAgeS) << "s";
+    // 21t-i: NO AGE TOKEN ON THIS LINE. The 27 Sep ruling places "AGE <seconds>" after HEARD on the [GROUP LEVELS]
+    // member lines and on [TRACK LEVELS], and says nothing about the [CHAIN LEVELS] header - whose tokens B already
+    // parses. An unruled token on a parsed line is how the p90 rename broke two rules at once. The record's age
+    // still reaches this block: it sets measurementAgeMs, which the prose already states in words.
     // Pre-chain gain and the resulting operating level. Own: shown only when a
     // trim is in effect. Link: ALWAYS stated (computed from input toward the
     // operating level), because its absence is what let the level jump.

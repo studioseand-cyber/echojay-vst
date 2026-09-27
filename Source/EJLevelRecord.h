@@ -112,9 +112,11 @@ struct LevelRecord
         across a transport stop cannot be read as a figure measured a moment ago. It sits last in the machine list,
         additively, which is how short90 was added and why an older parser is unaffected.
 
-        NOTE FOR B: the AGE token's spelling is "AGE <n>s" - always seconds, one unit, no minutes or hours form, so
-        there is nothing to parse but an integer. This was chosen unilaterally because the ruling asked for it in
-        the same round it was ruled; it needs confirming. */
+        AGE IS RULED (27 Sep 2026): "AGE <seconds>", an integer count of seconds since the record was last updated,
+        appended after HEARD on every [GROUP LEVELS] member line and on [TRACK LEVELS]. No unit suffix and no
+        minutes or hours form - there is nothing to parse but the integer. B parses it from its next deploy, and
+        wire_tokens_guard pins the spelling. It is NOT added to the [CHAIN LEVELS] header, which the ruling does
+        not cover and whose tokens B already parses. */
     juce::String tokens (juce::int64 nowMs) const
     {
         auto num = [] (float v) { return v > -99.0f ? juce::String (v, 1) : juce::String ("no reading"); };
@@ -127,7 +129,7 @@ struct LevelRecord
              + "PSR "      + num (psrDb()) + ", "
              + "HEARD "    + (heardKnown ? juce::String ((int) (heardSeconds + 0.5f))
                                             : juce::String ("no reading")) + ", "
-             + "AGE "      + juce::String (ageSeconds (nowMs)) + "s"
+             + "AGE "      + juce::String (ageSeconds (nowMs))
              + (preTrim ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"));
     }
 
