@@ -232,7 +232,10 @@ struct CalibLoop
         {
             const auto src = o->getProperty ("source").toString().trim();
             const auto mea = o->getProperty ("measure").toString().trim();
-            if (src.isNotEmpty() && src != "tally" && src != "listen")
+            // 21t-h: "working_position" is B's third value as of 27 Sep - the server wrote the slot's working
+            // position rather than measuring a tally. Accepted (this field is logged, not acted on); anything
+            // outside the three is named.
+            if (src.isNotEmpty() && src != "tally" && src != "listen" && src != "working_position")
                 whyOut << "source \"" << src << "\" is not \"tally\" or \"listen\". ";
             if (mea.isNotEmpty() && mea != "short90" && mea != "shortmax" && mea != "int")
                 whyOut << "measure \"" << mea << "\" is not short90/shortmax/int. ";

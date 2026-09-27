@@ -1336,6 +1336,8 @@ int main()
                 for (int i = (int) M.size() - 1; i >= 0; --i)
                 {
                     const auto d = A::editDataOf (*ed, i);
+                    std::printf ("    msg %d role=%s editData=%s\n", i, M[(size_t) i].role.toRawUTF8(),
+                                 d.isEmpty() ? "(empty)" : d.substring (0, 60).toRawUTF8());
                     if (d.contains ("level_match")) { ed2 = d; break; }
                 }
                 const auto members = juce::JSON::parse (ed2).getProperty ("level_match", juce::var())

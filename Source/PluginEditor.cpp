@@ -28868,7 +28868,13 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             auto evEB = juce::JSON::parse(editJson);
             auto* eoEB = evEB.getDynamicObject();
             const juce::Array<juce::var>* eaEB = (eoEB != nullptr) ? eoEB->getProperty("edit").getArray() : nullptr;
-            if (eaEB == nullptr || eaEB->isEmpty()) editJson.clear();
+            // 21t-h: A LEVEL-MATCH CARD HAS NO "edit" ARRAY and is not contentless - it carries members with their
+            // deltas, and the apply path reads it by name. This guard exists to drop a card with an EMPTY ops list
+            // (the XTComp decline that rendered as an empty bubble); a card whose payload is a different SHAPE is
+            // not that. Without this term the level-match card was built, its text was shown, and its data was then
+            // thrown away one screen later - so Apply had nothing to apply.
+            const bool isLevelMatch = eoEB != nullptr && eoEB->hasProperty("level_match");
+            if (! isLevelMatch && (eaEB == nullptr || eaEB->isEmpty())) editJson.clear();
         }
     }
 

@@ -1372,6 +1372,11 @@ static int guardMain()
                         auto l = line;
                         const int c = l.indexOf ("//");                             // the paste's own comments
                         if (c >= 0) l = l.substring (0, c);
+                        // ...and the paste's own ELLIPSIS. B's second block ends "start_db": -18.2, ... which is
+                        // documentation shorthand for "and the rest", not a wire sample. Stripped exactly as the
+                        // comments are, and named here so nobody mistakes it for the server sending "...".
+                        const int e = l.indexOf ("...");
+                        if (e >= 0) l = l.substring (0, e).trimEnd().trimCharactersAtEnd (",");
                         body << l << "\n";
                     }
                     if (body.trim().isNotEmpty()) blocks.add (body);
@@ -1406,10 +1411,15 @@ static int guardMain()
                         // ...and a 0-BASED slot - what the server WAS sending at 10:15 - is refused with the WIRE
                         // value in the line, so a base mismatch is a glance and not a puzzle about an empty rack.
                         {
-                            auto* z = block.getDynamicObject()->clone().get();
-                            juce::var zeroBased (z); z->setProperty ("slot", 0);
+                            // THE 0-BASED VARIANT BY TEXT, not by cloning the object. Two attempts at cloning it
+                            // segfaulted this guard on both legs (a DynamicObject::clone() Ptr released before the
+                            // var took its reference), and there is nothing to be gained here from object surgery:
+                            // the block is text on the wire, so the variant is made the way it arrives.
+                            const auto zeroText = wrapped.replace ("\"slot\": 1", "\"slot\": 0");
+                            const auto zeroVar = juce::JSON::parse (zeroText);
                             echojay::CalibLoop::Config c0; juce::String why0;
-                            const bool ok0 = echojay::CalibLoop::configFromBlock (zeroBased, 2, false, "x", c0, why0);
+                            const bool ok0 = echojay::CalibLoop::configFromBlock (
+                                                 zeroVar.getProperty ("calibration", juce::var()), 2, false, "x", c0, why0);
                             check (! ok0 && why0.contains ("wire slot 0") && why0.contains ("rack has 2 slot(s)"),
                                    "21t-h. ...and the 0-BASED slot the server sent at 10:15 is refused with the WIRE "
                                    "value named (it used to print the converted number and read like an empty rack)",
@@ -1418,14 +1428,15 @@ static int guardMain()
                     }
                     else
                     {
-                        check (ok && c.slot == 0 && c.actuator == echojay::CalibLoop::Actuator::Threshold
-                               && c.params.size() == 1 && c.params[0] == "Thresh" && c.senseSign == -1
-                               && std::abs (c.startDb - (-18.2f)) < 0.01f
-                               && c.mode == echojay::CalibLoop::Mode::Passive,
-                               "21t-h. ...and the tally-source block parses whole: source/heard_s/measure/mode with "
-                               "slot 1 -> index 0, threshold, Thresh, lower_is_harder, start -18.2, passive",
-                               "slot " + juce::String (c.slot) + ", " + c.params.joinIntoString (",") + " @ "
-                               + juce::String (c.startDb, 1));
+                        // B'S SECOND BLOCK CARRIES NO "slot" - the field is in the first example, and this one shows
+                        // the four tally fields beside the actuator. A block with no slot must therefore be REFUSED
+                        // (there is nothing to start a loop on), and the refusal says "(absent)" rather than
+                        // inventing an index. That is the assertion; the earlier one assumed a slot this paste does
+                        // not have, which was me asserting my own idea of B's text again.
+                        check (! ok && why.contains ("wire slot (absent)"),
+                               "21t-h. ...and B's tally-source block, which carries NO slot, starts nothing - the "
+                               "refusal says the slot was absent rather than inventing one",
+                               why.trim().substring (0, 80));
                     }
                 }
             }
