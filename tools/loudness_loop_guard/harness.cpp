@@ -13,6 +13,7 @@
 #include "EchoJayFileLog.h"
 #include "EchoJayReadingGate.h"
 #include "EJCalibLoop.h"   // 21t-d: the calibration loop under test
+#include "EJLevelRecord.h" // 21t-i: the stored level record under test
 #include <cstdio>
 #include <memory>
 #include <cmath>
@@ -1142,8 +1143,12 @@ static int guardMain()
             check (anyCard.isEmpty(),
                    "21t-g (6a). ...and none while it steps - no \"Listening\", no \"play the loudest part\"",
                    anyCard.isEmpty() ? juce::String ("(silent)") : anyCard);
-            check (loop.steps > 0 && loop.mode == echojay::CalibLoop::Mode::Passive,
-                   "21t-g (6a). ...while it IS working: the drive moved toward the band",
+            // 21t-i (27 Sep 2026 ruling): PASSIVE NO LONGER STEPS. This assertion said "the drive moved toward the
+            // band" and it was right until the ruling retired that path; what is asserted now is the opposite, and
+            // the stepping it used to cover is asserted in LISTEN mode at (c) and in the 21t-i legs below.
+            check (loop.steps == 0 && loop.mode == echojay::CalibLoop::Mode::Passive
+                   && std::abs (loop.preDb - cfg.startDb) < 0.001f,
+                   "21t-g (6a) as re-ruled. ...and it moves NOTHING: set once at build, measure and ask after",
                    juce::String (loop.steps) + " step(s), drive " + juce::String (loop.preDb, 1));
             // Silence in passive is silent too: no "Waiting for playback" prompt.
             echojay::CalibLoop::Window quiet; quiet.measured = true; quiet.silent = true;
@@ -1151,14 +1156,19 @@ static int guardMain()
             check (loop.card().isEmpty(),
                    "21t-g (6a). ...and 30 s of silence asks for nothing either (the listen pass would prompt)",
                    loop.card().isEmpty() ? juce::String ("(silent)") : loop.card());
-            // Two in-band windows end it, and THEN one line, naming what moved. No question in passive.
+            // 21t-i: THERE IS NO CLOSING LINE IN PASSIVE. Two in-band windows used to end the loop and post
+            // "Adjusted the ... drive to N dB"; the ruling replaced that with the measure-and-ask question, and the
+            // loop does not end at all - it waits for the user. Both facts are asserted.
             const auto s1 = loop.onWindow (inBand(), 3000.0);
             const auto s2 = loop.onWindow (inBand(), 3000.0);
             const auto s3 = loop.onWindow (inBand(), 3000.0);
             const juce::String closing = s1.closing + s2.closing + s3.closing;
-            check (closing.startsWith ("Adjusted the EJ Test Compressor drive to")
-                   && ! closing.containsChar ('?'),
-                   "21t-g (6a). ...and the ONLY message is one closing line, with no question attached", closing);
+            check (closing.isEmpty() && loop.closingMessage().isEmpty(),
+                   "21t-g (6a) as re-ruled. ...and it never posts a closing line",
+                   closing.isEmpty() ? juce::String ("(none)") : closing);
+            check (loop.running(),
+                   "21t-g (6a) as re-ruled. ...and it does not close itself: the next word is the user's",
+                   loop.running() ? juce::String ("still listening") : juce::String ("CLOSED"));
         }
 
         // (b) PASSIVE and already in band: nothing moved, so nothing is said at all.
@@ -1168,12 +1178,17 @@ static int guardMain()
             echojay::CalibLoop loop; loop.begin (cfg);
             juce::String said;
             for (int i = 0; i < 3; ++i) { const auto st = loop.onWindow (inBand(), 3000.0); said += st.closing; }
-            check (! loop.running() && loop.steps == 0,
-                   "21t-g (6b). a compressor already in band finishes without a step",
-                   juce::String (loop.steps) + " step(s)");
+            // 21t-i: a compressor already in band is the ordinary case, and it is now also the case the ruling
+            // cares most about: nothing moves, and the user is TOLD what it is doing rather than left guessing.
+            check (loop.running() && loop.steps == 0,
+                   "21t-g (6b) as re-ruled. a compressor already in band moves nothing and stays measuring",
+                   juce::String (loop.steps) + " step(s), " + (loop.running() ? "running" : "CLOSED"));
             check (said.isEmpty() && loop.closingMessage().isEmpty(),
-                   "21t-g (6b). ...and says NOTHING - there is nothing to report and a report would be noise",
+                   "21t-g (6b). ...and there is no closing line - the only line it ever posts is the question",
                    said.isEmpty() ? juce::String ("(silent)") : said);
+            check (loop.askOwed.isNotEmpty() && loop.askOwed.contains ("gain reduction"),
+                   "21t-g (6b) as re-ruled. ...and after two judged windows it says what it measured and asks",
+                   loop.askOwed);
         }
 
         // (c) LISTEN is exactly what it was: a card, a prompt, and a closing line with a question.
@@ -1200,6 +1215,9 @@ static int guardMain()
             echojay::CalibLoop::Config cfg;
             cfg.plugin = "UnFairchild 670M II"; cfg.slot = 0; cfg.lo = 2.0f; cfg.hi = 3.0f;
             cfg.actuator = echojay::CalibLoop::Actuator::Threshold;
+            // 21t-i: LISTEN, because automatic stepping is what this leg is about and LISTEN is where the ruling
+            // keeps it. The passive side of the same actuator is asserted below, and in the 21t-i legs.
+            cfg.mode = echojay::CalibLoop::Mode::Listen;
             cfg.params.add ("Thresh L"); cfg.params.add ("Thresh R");   // paired: stepped as one
             cfg.senseSign = -1;                                          // lower_is_harder, the dB case
             cfg.startDb = -18.0f; cfg.minDb = -40.0f; cfg.maxDb = 0.0f;
@@ -1227,26 +1245,36 @@ static int guardMain()
                    "21t-g (6d). ...and the profile's own range stops it rather than dialling past the control",
                    juce::String (e1.finished ? "finished" : "still running")
                    + ", threshold left at " + juce::String (loop2.value, 1));
-            // AND IT STILL SAYS NOTHING, because nothing moved. The first cut of this leg asserted a closing line
-            // here and was wrong: "only if something moved" is the ruling, and a pass that hit the control's floor
-            // on its first window moved nothing. The LISTEN mode is where that fact gets a sentence.
-            check (e1.closing.isEmpty(),
-                   "21t-g (6d). ...silently, in passive: it moved nothing, so there is nothing to report",
-                   e1.closing.isEmpty() ? juce::String ("(silent)") : e1.closing);
+            check (e1.closing.contains ("could not get") && e1.closing.contains ("UnFairchild 670M II"),
+                   "21t-g (6d). ...and a LISTEN pass says the band was not reached, and names the figure it did "
+                   "measure", e1.closing.substring (0, 110));
+            // 21t-i: THE SAME RANGE, IN PASSIVE, binds the one step a comparative buys - and binding it moves
+            // nothing at all, rather than ending a loop that in this mode does not end.
             {
-                echojay::CalibLoop::Config say = edge; say.mode = echojay::CalibLoop::Mode::Listen;
-                echojay::CalibLoop loop3; loop3.begin (say);
-                const auto l1 = loop3.onWindow (tooLittle(), 3000.0);
-                check (l1.finished && l1.closing.contains ("could not get")
-                       && l1.closing.contains ("UnFairchild 670M II"),
-                       "21t-g (6d). ...while a LISTEN pass says the band was not reached, and names the figure it "
-                       "did measure", l1.closing.substring (0, 110));
+                echojay::CalibLoop::Config edgeP = edge; edgeP.mode = echojay::CalibLoop::Mode::Passive;
+                echojay::CalibLoop loop4; loop4.begin (edgeP);
+                loop4.onWindow (tooLittle(), 3000.0);
+                loop4.onWindow (tooLittle(), 3000.0);
+                loop4.retarget (5.0f, 6.0f);                 // the user asked for more; the floor is one step away
+                int writes = 0;
+                for (int i = 0; i < 4; ++i)
+                {
+                    const auto st4 = loop4.onWindow (tooLittle(), 3000.0);
+                    if (st4.writeParams || st4.writeDrive) ++writes;
+                }
+                check (writes == 1 && std::abs (loop4.value - (-40.0f)) < 0.001f && loop4.running(),
+                       "21t-i (6d). ...in passive the comparative's step is CLAMPED to the profile's floor and the "
+                       "loop stays alive",
+                       juce::String (writes) + " write(s), threshold " + juce::String (loop4.value, 1)
+                       + ", " + (loop4.running() ? "running" : "CLOSED"));
+                check (loop4.closingMessage().isEmpty(),
+                       "21t-i (6d). ...and it still posts no closing line", loop4.closingMessage());
             }
             // A handover carries the knob: the state that rides the sidecar must not turn a threshold pass into a
             // drive pass halfway through.
             const auto back = echojay::CalibLoop::fromVar (loop.toVar());
             check (back.actuator == echojay::CalibLoop::Actuator::Threshold
-                   && back.params.size() == 2 && back.mode == echojay::CalibLoop::Mode::Passive
+                   && back.params.size() == 2 && back.mode == echojay::CalibLoop::Mode::Listen
                    && std::abs (back.value - loop.value) < 0.001f,
                    "21t-g (6d). ...and the mode, the knob and its value survive the sidecar round trip",
                    back.params.joinIntoString (" + ") + " @ " + juce::String (back.value, 1)
@@ -1332,14 +1360,26 @@ static int guardMain()
                    "from the staging on the slot and never from 0",
                    juce::String (c.startDb == c.startDb ? juce::String (c.startDb, 2) : juce::String ("unset"))
                    + (why.isEmpty() ? juce::String() : ", why: " + why.trim()));
-            // ...and the loop, begun from the staged value, steps FROM THERE.
+            // ...and the loop, begun from the staged value, moves FROM THERE when a comparative asks it to.
+            // 21t-i: the first WINDOW no longer moves anything (set once at build); the ruling's subject here is
+            // still that the opening value is the staging and not zero, so the step is driven the way the product
+            // now drives it - by a re-targeted block - and asserted against the staged value.
             echojay::CalibLoop::Config staged = c; staged.startDb = 4.0f;    // what staging wrote on the slot
             echojay::CalibLoop loop; loop.begin (staged);
             echojay::CalibLoop::Window w; w.measured = true; w.grDb = 0.4f; w.inTruePeakDb = -12.0f;
+            w.heardSeconds = 90.0f;
+            const auto first = loop.onWindow (w, 3000.0);
+            check (! first.writeDrive && std::abs (loop.preDb - 4.0f) < 0.01f,
+                   "21t-i (6b/c). the first judged window moves nothing: the drive stays on the staging",
+                   juce::String (loop.preDb, 1) + " dB");
+            loop.onWindow (w, 3000.0);                   // the question is posted here
+            loop.retarget (5.0f, 6.0f);                  // the user said "more"
+            // THE VERY NEXT JUDGED WINDOW spends it. Nothing has moved yet, so there is no straddled window to
+            // throw away, and the user should not wait another three seconds for the answer to "more".
             const auto st = loop.onWindow (w, 3000.0);
             check (st.writeDrive && std::abs (st.newPre - 5.0f) < 0.01f,
-                   "21t-g (6b/c). ...and the first step moves ONE dB from the staging, not from zero",
-                   juce::String (st.newPre, 1) + " dB");
+                   "21t-g (6b/c). ...and the ONE step a comparative buys moves ONE dB from the staging, not from "
+                   "zero, on the first judged window after it", juce::String (st.newPre, 1) + " dB");
         }
 
         // (v) a mode or actuator string that is not one of the two is flagged, and the SAFE one is used
@@ -1538,10 +1578,205 @@ static int guardMain()
                "start together", "SHORT90 " + juce::String (afterReset.shortTermP90Db, 1));
     }
 
+    // ===============================================================================================
+    // 21t-i (27 Sep 2026 ruling): MEASURE AND ASK. No automatic stepping after a build. The compressor is set
+    // ONCE, from the block; after two judged windows the loop reports what it measured and asks; a comparative
+    // arrives as a re-targeted block and buys exactly ONE step. One leg per clause of the ruling.
+    // ===============================================================================================
+    {
+        std::printf ("\n== 21t-i: set once, then measure and ask ==\n");
+        auto win = [] (float gr, float heard)
+        {
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false; w.grDb = gr; w.inTruePeakDb = -12.0f; w.heardSeconds = heard;
+            return w;
+        };
+        auto passiveDrive = [] ()
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "NEOLD U2A"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = -6.0f;
+            echojay::CalibLoop l; l.begin (c); return l;
+        };
+
+        // (1) SET ONCE: twelve judged windows a long way out of band, and NOT ONE write. Before this round the
+        // same twelve windows walked the drive six times and closed the loop.
+        {
+            auto l = passiveDrive();
+            int writes = 0, lines = 0;
+            for (int i = 0; i < 12; ++i)
+            {
+                const auto st = l.onWindow (win (20.0f, 30.0f + (float) i * 3.0f), 3000.0);
+                if (st.writeDrive || st.writeParams) ++writes;
+                if (st.logLine.isNotEmpty()) ++lines;
+            }
+            check (writes == 0, "21t-i (1). SET ONCE: twelve judged windows 17 dB out of band move nothing",
+                   juce::String (writes) + " write(s)");
+            check (lines == 12, "21t-i (1). ...and every judged window still prints its line, so a loop sitting "
+                   "in band and a loop that has stalled cannot look the same",
+                   juce::String (lines) + " line(s) of 12");
+            check (std::abs (l.preDb - (-6.0f)) < 0.001f,
+                   "21t-i (1). ...and the knob is exactly where the build put it",
+                   juce::String (l.preDb, 2) + " dB");
+        }
+
+        // (2) THE QUESTION, after two judged windows, carrying the measured figure.
+        {
+            auto l = passiveDrive();
+            const auto s1 = l.onWindow (win (5.4f, 78.0f), 3000.0);
+            check (s1.ask.isEmpty(), "21t-i (2). one judged window says nothing - two are ruled", s1.ask);
+            const auto s2 = l.onWindow (win (5.4f, 80.0f), 3000.0);
+            check (s2.ask.isNotEmpty(), "21t-i (2). the SECOND judged window posts the question", s2.ask);
+            check (s2.ask.contains ("NEOLD U2A") && s2.ask.contains ("80 s")
+                   && s2.ask.contains ("5.4 dB of gain reduction")
+                   && s2.ask.contains ("ease off") && s2.ask.contains ("more"),
+                   "21t-i (2). ...naming the plugin, what it was set from, the MEASURED figure, and the two words",
+                   s2.ask);
+            const auto s3 = l.onWindow (win (5.4f, 83.0f), 3000.0);
+            check (s3.ask.isEmpty(), "21t-i (2). ...and it asks ONCE, not on every window after",
+                   s3.ask.isEmpty() ? juce::String ("silent") : s3.ask);
+            check (l.closingMessage().isEmpty(),
+                   "21t-i (2). ...and there is no closing line in this mode at all", l.closingMessage());
+        }
+
+        // (3) ONE STEP PER COMPARATIVE: the band moves up (the user said "more"), and exactly one 1 dB step lands.
+        {
+            auto l = passiveDrive();
+            l.onWindow (win (5.4f, 78.0f), 3000.0);
+            l.onWindow (win (5.4f, 80.0f), 3000.0);
+            l.retarget (5.0f, 6.0f);
+            int writes = 0; float landed = 0.0f;
+            for (int i = 0; i < 6; ++i)
+            {
+                const auto st = l.onWindow (win (5.4f, 84.0f + (float) i * 3.0f), 3000.0);
+                if (st.writeDrive) { ++writes; landed = st.newPre; }
+            }
+            check (writes == 1, "21t-i (3). a comparative buys EXACTLY ONE step over six more windows",
+                   juce::String (writes) + " write(s)");
+            check (std::abs (landed - (-5.0f)) < 0.001f,
+                   "21t-i (3). ...one dB harder than the build set, and no further",
+                   juce::String (landed, 2) + " dB");
+            check (l.askOwed.isNotEmpty() && l.askOwed.contains ("gain reduction"),
+                   "21t-i (3). ...and two windows later it reports the new figure and asks again", l.askOwed);
+        }
+
+        // (4) NO STEP WITHOUT ONE: a block whose band did NOT move is not a comparative, and buys nothing.
+        {
+            auto l = passiveDrive();
+            l.onWindow (win (5.4f, 78.0f), 3000.0);
+            l.onWindow (win (5.4f, 80.0f), 3000.0);
+            l.retarget (2.0f, 3.0f);
+            int writes = 0;
+            for (int i = 0; i < 6; ++i)
+            {
+                const auto st = l.onWindow (win (5.4f, 84.0f), 3000.0);
+                if (st.writeDrive || st.writeParams) ++writes;
+            }
+            check (writes == 0, "21t-i (4). a re-target that did not move the band moves no knob",
+                   juce::String (writes) + " write(s)");
+        }
+
+        // (5) THE THRESHOLD ACTUATOR takes the BLOCK's step size, and the drive always takes 1 dB.
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const auto v = juce::JSON::parse (juce::String (
+                R"({"mode":"passive","actuator":"threshold","slot":1,"param":"Thresh","start_db":-14.0,
+                    "sense":"lower_is_harder","step":3,"min_db":-40,"max_db":0,"gr_target_db":[2,3]})"));
+            const bool ok = echojay::CalibLoop::configFromBlock (v, 1, false, "Pro-C 2", c, why);
+            check (ok && std::abs (c.stepDb - 3.0f) < 0.001f,
+                   "21t-i (5). \"step\" on the wire is read as the threshold's step size",
+                   juce::String (c.stepDb, 1) + " dB" + (why.isEmpty() ? juce::String() : " why: " + why));
+            echojay::CalibLoop l; l.begin (c);
+            l.onWindow (win (1.0f, 60.0f), 3000.0);
+            l.onWindow (win (1.0f, 63.0f), 3000.0);
+            l.retarget (4.0f, 5.0f, c.stepDb);
+            float landed = -999.0f; int writes = 0;
+            for (int i = 0; i < 4; ++i)
+            {
+                const auto st = l.onWindow (win (1.0f, 66.0f), 3000.0);
+                if (st.writeParams) { ++writes; landed = st.paramValue; }
+            }
+            check (writes == 1 && std::abs (landed - (-17.0f)) < 0.001f,
+                   "21t-i (5). ...and one comparative moves the threshold by THREE dB, once, in the harder "
+                   "direction (lower is harder)",
+                   juce::String (writes) + " write(s) -> " + juce::String (landed, 1) + " dB");
+        }
+
+        // (6) NOTHING HEARD: after 30 s of silence the loop asks for playback, once, and never quotes a figure
+        // it does not have.
+        {
+            auto l = passiveDrive();
+            echojay::CalibLoop::Window silent; silent.measured = true; silent.silent = true;
+            juce::StringArray asks;
+            for (int i = 0; i < 20; ++i)
+            {
+                const auto st = l.onWindow (silent, 3000.0);
+                if (st.ask.isNotEmpty()) asks.add (st.ask);
+            }
+            check (asks.size() == 1, "21t-i (6). 30 s with nothing heard asks for playback, ONCE",
+                   juce::String (asks.size()) + " line(s)");
+            check (asks.size() == 1 && asks[0].contains ("play it and I'll tell you what it's doing"),
+                   "21t-i (6). ...in the ruled words", asks.isEmpty() ? juce::String ("(none)") : asks[0]);
+        }
+    }
+
+    // ===============================================================================================
+    // 21t-i (27 Sep 2026 ruling): THE STORED LEVEL RECORD, at the level of the object every block is composed
+    // from. The two-Link, session-reload and reset legs live in ui_guard, where there is a processor.
+    // ===============================================================================================
+    {
+        std::printf ("\n== 21t-i: the stored level record ==\n");
+        echojay::LevelTally t (echojay::LevelTally::Weighting::K);
+        t.prepare (48000.0);
+        auto feed = [&t] (float amp, int hops)
+        {
+            std::vector<float> buf (4800, 0.0f);
+            for (int h = 0; h < hops; ++h)
+            {
+                for (size_t i = 0; i < buf.size(); ++i)
+                    buf[i] = amp * std::sin (6.2831853f * 440.0f * (float) i / 48000.0f);
+                t.push (buf.data(), buf.data(), (int) buf.size());
+            }
+        };
+        feed (0.25f, 80);
+        echojay::LevelRecord rec;
+        rec.updateFromTally (t.snapshot(), 1000000, true);
+        check (rec.valid && rec.heardAnything(),
+               "21t-i (record). a record made from a tally that has heard audio is valid and has HEARD",
+               "HEARD " + juce::String (rec.heardSeconds, 1) + " s, INT " + juce::String (rec.intLufs, 1));
+        const auto kept = rec;
+        rec.updateFromTally (t.snapshot(), 1100000, true);
+        check (std::abs (rec.intLufs - kept.intLufs) < 0.01f && rec.heardSeconds >= kept.heardSeconds,
+               "21t-i (record). the transport stopping loses nothing",
+               juce::String (rec.intLufs, 1) + " LUFS, HEARD " + juce::String (rec.heardSeconds, 1) + " s");
+        t.reset(); t.resetShortTermMax(); feed (0.0005f, 2);
+        rec.updateFromTally (t.snapshot(), 1200000, true);
+        check (std::abs (rec.intLufs - kept.intLufs) < 0.01f,
+               "21t-i (record). a tally that has just been reset cannot erase a figure the record already holds",
+               juce::String (rec.intLufs, 1) + " LUFS");
+        const auto back = echojay::LevelRecord::fromVar (rec.toVar());
+        check (back.valid && std::abs (back.intLufs - rec.intLufs) < 0.01f
+               && std::abs (back.heardSeconds - rec.heardSeconds) < 0.01f
+               && back.updatedMs == rec.updatedMs,
+               "21t-i (record). it survives the round trip through var, figure for figure, with its timestamp",
+               "INT " + juce::String (back.intLufs, 1) + ", HEARD " + juce::String (back.heardSeconds, 1)
+               + " s, updated " + juce::String (back.updatedMs));
+        check (! echojay::LevelRecord{}.heardAnything(),
+               "21t-i (record). an empty record is the ONLY thing that reads as no signal", "empty");
+        const auto line = back.tokens (back.updatedMs + 7000);
+        check (line.contains ("INT ") && line.contains ("SHORTMAX ") && line.contains ("SHORT90 ")
+               && line.contains ("PEAK ") && line.contains ("PSR ") && line.contains ("HEARD ")
+               && line.contains ("AGE 7s"),
+               "21t-i (record). the line carries every ruled token plus the record's AGE in seconds", line);
+    }
+
     return failures == 0 ? 0 : 1;
 }
 
 int main()
+
 {
 #if defined(EJ_UNDER_ASAN)
     pthread_attr_t attr;

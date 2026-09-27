@@ -53,6 +53,7 @@ struct CalibLoop
     static constexpr float kDriveLimit  = 12.0f;   // +/- , ruled
     static constexpr int   kMaxSteps    = 6;       // ruled
     static constexpr int   kInBandRuns  = 2;       // two CONSECUTIVE windows in the band
+    static constexpr int   kAskAfter    = 2;       // 21t-i: two JUDGED windows, then it reports and asks (ruled)
     static constexpr double kNoSignalMs = 30000.0; // ruled
     static constexpr float kCeilingDbTp = -3.0f;   // the input ceiling the drive may not push past (21p item 3)
 
@@ -80,6 +81,18 @@ struct CalibLoop
     bool   closingOwed = false;        // the loop ended and nobody has posted the message yet
     bool   headroomStopped = false;    // it stopped because the INPUT ran out of headroom, not the step budget
     float  headroomLimit = kDriveLimit; // the drive at which the slot input would reach -3 dBTP, last computed
+    // ---- MEASURE AND ASK (21t-i, 27 Sep 2026 ruling) ---------------------------------------------------------
+    // PASSIVE NO LONGER STEPS ON ITS OWN. The compressor is set ONCE, at build, from the block; after two judged
+    // windows the loop REPORTS what it measured and asks. A comparative comes back as a re-targeted block and buys
+    // exactly ONE step, then two more windows and the same question again. No card, no closing line, no step budget.
+    float  stepDb       = kStepDb;     // the block's "step" for a threshold; the drive always moves 1 dB
+    int    judged       = 0;           // judged windows since the last report or step
+    bool   asked        = false;       // the question has been posted for the current figure
+    bool   noSignalSaid = false;       // "play it and I'll tell you what it's doing" has been said once
+    int    pendingStep  = 0;           // +1 harder / -1 softer, set by a comparative, spent on the next window
+    float  heardS       = 0.0f;        // what the host last reported hearing, for the question's "set from N s"
+    int    stepsTaken   = 0;           // comparatives honoured, for the log
+    juce::String askOwed;              // the one chat line this loop owes, handed out exactly once
 
     // ---- one 3 s window, as the host measured it ----
     struct Window
@@ -91,6 +104,8 @@ struct CalibLoop
         // a fixed +12: it is whatever drive brings this figure to -3 dBTP, because past that the loop would be
         // buying gain reduction with a clipped input. -200 = the host could not read it (then +12 alone applies).
         float inTruePeakDb = -200.0f;
+        // 21t-i: what the host has heard on this slot so far, in seconds - the figure the question quotes.
+        float heardSeconds = 0.0f;
     };
 
     // ---- what the host should do about it ----
@@ -107,7 +122,10 @@ struct CalibLoop
         juce::String card;          // what the card says now
         juce::String logLine;       // EJThreshold: ... , one per window
         bool  finished   = false;   // the loop ended on this window
-        juce::String closing;       // the closing message, when it ended
+        juce::String closing;       // the closing message, when it ended (LISTEN mode only, since 21t-i)
+        // 21t-i: the measure-and-ask line. ONE chat line, posted as it stands - the report of what was measured and
+        // the question that invites a comparative. Empty on every window that is not a reporting one.
+        juce::String ask;
     };
 
     /** Everything the response's calibration block can say. Defaults are the ruled defaults: PASSIVE, the drive
@@ -123,6 +141,7 @@ struct CalibLoop
         int    senseSign = -1;            // "lower_is_harder" (the dB threshold case) unless told otherwise
         float  startDb = 0.0f;            // the actuator's opening value: the drive, or the threshold
         float  minDb = -60.0f, maxDb = 12.0f;
+        float  stepDb = kStepDb;          // the block's "step"; 1 dB unless it says otherwise
     };
 
     /** THE WIRE SHAPE, PARSED ONCE (21t-g item 6b, 26 Sep 2026). Both binaries compile this file, so the block is
@@ -228,6 +247,18 @@ struct CalibLoop
         if (o->hasProperty ("min_db")) out.minDb = (float) (double) o->getProperty ("min_db");
         if (o->hasProperty ("max_db")) out.maxDb = (float) (double) o->getProperty ("max_db");
 
+        // ---- step: how far ONE comparative moves the knob (21t-i, 27 Sep 2026 ruling) ----------------------
+        // The block says how big a step this control takes; a threshold in 3 dB detents cannot be nudged by 1 dB.
+        // Absent, null or nonsensical means 1 dB, which is what every block before this round meant. The DRIVE
+        // always moves 1 dB - it is our own gain stage, not the plugin's control, and the ruling fixes it there.
+        {
+            const auto stepV = o->getProperty ("step");
+            const bool haveStep = ! stepV.isVoid() && (stepV.isDouble() || stepV.isInt() || stepV.isInt64());
+            const float st = haveStep ? std::abs ((float) (double) stepV) : 0.0f;
+            if (haveStep && st > 0.0f) out.stepDb = st;
+            else if (haveStep) whyOut << "step \"" << stepV.toString() << "\" is not a usable size - stepping 1 dB. ";
+        }
+
         // ---- source and measure: logged, not acted on, and their literals are named so a new one shows ----
         {
             const auto src = o->getProperty ("source").toString().trim();
@@ -255,6 +286,9 @@ struct CalibLoop
         lo = juce::jmin (c.lo, c.hi); hi = juce::jmax (c.lo, c.hi);
         mode = c.mode; actuator = c.actuator; params = c.params; senseSign = c.senseSign < 0 ? -1 : 1;
         minDb = juce::jmin (c.minDb, c.maxDb); maxDb = juce::jmax (c.minDb, c.maxDb);
+        stepDb = (c.stepDb > 0.0f) ? c.stepDb : kStepDb;
+        judged = 0; asked = false; noSignalSaid = false; pendingStep = 0; heardS = 0.0f; stepsTaken = 0;
+        askOwed.clear();
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
         value = c.startDb;
@@ -278,16 +312,34 @@ struct CalibLoop
         lastGr = std::numeric_limits<float>::quiet_NaN();
         awaitFresh = false; closingOwed = false; headroomStopped = false;
         headroomLimit = kDriveLimit;
+        stepDb = kStepDb; judged = 0; asked = false; noSignalSaid = false;
+        pendingStep = 0; heardS = 0.0f; stepsTaken = 0; askOwed.clear();
         state = State::Listening;
     }
 
     /** A NEW target while the loop is running restarts it FROM THE CURRENT DRIVE (ruled): the band changed, the
-        drive it has already found has not. */
-    void retarget (float bandLo, float bandHi)
+        drive it has already found has not.
+
+        21t-i: in MEASURE AND ASK this is the ONLY thing that moves the knob. The user said "ease off" or "more",
+        the server moved the band, and that re-targeted block buys EXACTLY ONE step in the direction the band
+        moved - threshold by the block's "step", drive by 1 dB. A block whose band did not move buys no step: a
+        write with no comparative behind it is the automatic stepping this round retired. */
+    void retarget (float bandLo, float bandHi, float newStepDb = 0.0f)
     {
+        const float wasMid = 0.5f * (lo + hi);
         lo = juce::jmin (bandLo, bandHi); hi = juce::jmax (bandLo, bandHi);
+        if (newStepDb > 0.0f) stepDb = newStepDb;
         steps = 0; inBandRun = 0; awaitFresh = true; closingOwed = false;
         state = State::Listening;
+        if (mode != Mode::Passive) return;
+        const float nowMid = 0.5f * (lo + hi);
+        // More gain reduction asked for -> work it HARDER. The comparative is the band's movement, not a guess.
+        pendingStep = (nowMid > wasMid + 1.0e-3f) ? 1 : (nowMid < wasMid - 1.0e-3f ? -1 : 0);
+        judged = 0; asked = false;
+        // AND THE NEXT WINDOW IS JUDGED. awaitFresh exists because a window that straddles a KNOB MOVE is a window
+        // about two settings; a re-target on its own has moved nothing yet, so skipping a window here would only
+        // make the user wait another three seconds for the answer to "more".
+        if (pendingStep != 0) awaitFresh = false;
     }
 
     /** The rack moved to the other host. The step count is UNCHANGED - the work already done is not undone by
@@ -306,6 +358,7 @@ struct CalibLoop
         Step s;
         ++window;
         if (! running()) { s.card = card(); return s; }
+        if (w.heardSeconds > 0.0f) heardS = w.heardSeconds;
 
         // (1) NOT A MEASUREMENT. Dropped frames mean the host did not see a whole window; that is not evidence of
         // anything and cannot move the drive or the step count. It counts toward the no-signal clock ONLY if it
@@ -313,14 +366,14 @@ struct CalibLoop
         if (! w.measured)
         {
             if (w.silent) noSignalMs += windowMs;
-            if (noSignalMs >= kNoSignalMs) state = State::Waiting;
+            if (noSignalMs >= kNoSignalMs) { state = State::Waiting; askNoSignal (s); }
             s.card = card(); s.logLine = log (w.silent ? "waiting" : "listening");
             return s;
         }
         if (w.silent)
         {
             noSignalMs += windowMs;
-            if (noSignalMs >= kNoSignalMs) state = State::Waiting;
+            if (noSignalMs >= kNoSignalMs) { state = State::Waiting; askNoSignal (s); }
             s.card = card(); s.logLine = log ("waiting");
             return s;
         }
@@ -334,7 +387,13 @@ struct CalibLoop
         // change, and a decision taken on it would be a decision about two different racks.
         if (awaitFresh) { awaitFresh = false; s.card = card(); s.logLine = log ("listening"); return s; }
 
-        // (3) IN THE BAND, twice running, ends it.
+        // (3) MEASURE AND ASK (passive, 27 Sep 2026 ruling). The knob was set ONCE, at build; from here the loop
+        // only MEASURES and REPORTS. Two judged windows and it posts one line saying what it measured and asks;
+        // a comparative comes back as a re-targeted block and buys exactly one step, then it asks again. THE
+        // AUTOMATIC STEPPING BELOW IS THE LISTEN PATH ONLY - passive never reaches it.
+        if (mode == Mode::Passive) return measureAndAsk (w, s);
+
+        // (4) IN THE BAND, twice running, ends it.
         if (w.grDb >= lo && w.grDb <= hi)
         {
             if (++inBandRun >= kInBandRuns)
@@ -349,7 +408,7 @@ struct CalibLoop
         }
         inBandRun = 0;
 
-        // (4) OUT OF THE BAND: one step toward it, unless the budget, the range or the HEADROOM says stop.
+        // (5) OUT OF THE BAND: one step toward it, unless the budget, the range or the HEADROOM says stop.
         //
         // THE THRESHOLD ACTUATOR takes the simpler road: a threshold costs the slot's input no headroom, so the
         // only limits are the step budget and the profile's own range. Which way is "harder" comes from the
@@ -401,6 +460,78 @@ struct CalibLoop
         return s;
     }
 
+    /** ONE judged window in measure-and-ask. Nothing here decides to move the knob: either a comparative already
+        bought a step and this window spends it, or the window is measured, reported and left alone. */
+    Step& measureAndAsk (const Window& w, Step& s)
+    {
+        ++judged;
+
+        // THE ONE STEP A COMPARATIVE BUYS. Spent on the first judged window after the re-target, so the move is
+        // made against a reading this host actually took, and counted so the log can say how many there have been.
+        if (pendingStep != 0)
+        {
+            const bool harder = pendingStep > 0;
+            pendingStep = 0;
+            if (actuator == Actuator::Threshold)
+            {
+                const float want = juce::jlimit (minDb, maxDb,
+                                        value + (harder ? (float) senseSign : -(float) senseSign) * stepDb);
+                if (std::abs (want - value) > 1.0e-4f)
+                {
+                    value = want; ++steps; ++stepsTaken;
+                    s.writeParams = true; s.paramNames = params; s.paramValue = value;
+                }
+            }
+            else
+            {
+                const float want = juce::jlimit (-kDriveLimit, kDriveLimit, preDb + (harder ? kStepDb : -kStepDb));
+                if (std::abs (want - preDb) > 1.0e-4f)
+                {
+                    preDb = want; value = preDb; ++steps; ++stepsTaken;
+                    s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
+                }
+            }
+            judged = 0; asked = false; awaitFresh = true;
+            s.card = card();
+            s.logLine = log ((s.writeDrive || s.writeParams) ? "stepped" : "at-the-limit");
+            return s;
+        }
+
+        // TWO JUDGED WINDOWS, THEN IT SPEAKS. Once. The next word comes from the user, or from the next block.
+        if (judged >= kAskAfter && ! asked)
+        {
+            asked = true;
+            askOwed = askMessage();
+            s.ask = askOwed;
+            s.card = card();
+            s.logLine = log ("asked");
+            return s;
+        }
+        s.card = card();
+        s.logLine = log (asked ? "holding" : "measuring");
+        return s;
+    }
+
+    /** The measure-and-ask line, verbatim to the ruling: what is on, what it was set from, what it is doing, and
+        the two words that move it. The gain-reduction figure is the same one decimal the log line prints, so the
+        sentence the user reads and the line in the log are traceable to each other. */
+    juce::String askMessage() const
+    {
+        return plugin + " is on, set from " + juce::String (juce::roundToInt (heardS)) + " s of this track, doing about "
+             + grText() + " dB of gain reduction on the loud phrases."
+             + " How's that sounding? Say 'ease off' or 'more'.";
+    }
+
+    /** Nothing heard in 30 s: it cannot report a figure it does not have, so it asks for the one thing that would
+        give it one. Said once - repeating it every 30 s of silence would be nagging about a chat nobody opened. */
+    void askNoSignal (Step& s)
+    {
+        if (mode != Mode::Passive || noSignalSaid) return;
+        noSignalSaid = true;
+        askOwed = plugin + " is on - play it and I'll tell you what it's doing.";
+        s.ask = askOwed;
+    }
+
     juce::String card() const
     {
         // PASSIVE SAYS NOTHING WHILE IT RUNS. No card, so no "Listening... play the loudest part" and no
@@ -424,13 +555,9 @@ struct CalibLoop
         server's follow-up rule routes it. */
     juce::String closingMessage()
     {
-        // PASSIVE: one line, and only if something actually moved. A compressor that was already in band needed
-        // nothing, and a message saying so is noise in a chat the user did not ask a question in.
-        if (mode == Mode::Passive)
-        {
-            if (steps == 0) return {};
-            return "Adjusted the " + plugin + " " + knobText() + " to " + driveText() + " dB.";
-        }
+        // PASSIVE HAS NO CLOSING LINE (27 Sep 2026 ruling). It does not close: it measures, reports and waits for
+        // the user. The only lines it ever posts are the measure-and-ask ones, and those go out through askOwed.
+        if (mode == Mode::Passive) return {};
         static const char* kQuestions[] = {
             "How does the chain sound now?",
             "Does that sit better with the rest of the mix?",
@@ -480,6 +607,16 @@ struct CalibLoop
         o->setProperty ("value", (double) value);
         o->setProperty ("minDb", (double) minDb);
         o->setProperty ("maxDb", (double) maxDb);
+        // 21t-i: the measure-and-ask state. A handover that lost pendingStep would drop the user's comparative on
+        // the floor; one that lost askOwed would swallow the only line the loop ever says.
+        o->setProperty ("stepDb", (double) stepDb);
+        o->setProperty ("judged", judged);
+        o->setProperty ("asked", asked);
+        o->setProperty ("noSignalSaid", noSignalSaid);
+        o->setProperty ("pendingStep", pendingStep);
+        o->setProperty ("heardS", (double) heardS);
+        o->setProperty ("stepsTaken", stepsTaken);
+        o->setProperty ("askOwed", askOwed);
         return juce::var (o);
     }
     static CalibLoop fromVar (const juce::var& v)
@@ -515,6 +652,17 @@ struct CalibLoop
         c.value = o->hasProperty ("value") ? (float) (double) o->getProperty ("value") : c.preDb;
         c.minDb = o->hasProperty ("minDb") ? (float) (double) o->getProperty ("minDb") : -60.0f;
         c.maxDb = o->hasProperty ("maxDb") ? (float) (double) o->getProperty ("maxDb") : 12.0f;
+        // 21t-i. An older sidecar has none of these; the defaults are a loop that has measured nothing and owes
+        // nothing, which is what a loop written before this round was.
+        c.stepDb = o->hasProperty ("stepDb") ? (float) (double) o->getProperty ("stepDb") : kStepDb;
+        if (! (c.stepDb > 0.0f)) c.stepDb = kStepDb;
+        c.judged = (int) o->getProperty ("judged");
+        c.asked = (bool) o->getProperty ("asked");
+        c.noSignalSaid = (bool) o->getProperty ("noSignalSaid");
+        c.pendingStep = (int) o->getProperty ("pendingStep");
+        c.heardS = (float) (double) o->getProperty ("heardS");
+        c.stepsTaken = (int) o->getProperty ("stepsTaken");
+        c.askOwed = o->getProperty ("askOwed").toString();
         return c;
     }
     bool active() const { return state != State::Idle; }
