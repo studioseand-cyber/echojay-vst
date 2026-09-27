@@ -1274,6 +1274,10 @@ struct RackSidecar {
     // host owns the per-slot tallies, read by the other host and by V2's editor, so a lease handover continues
     // the loop instead of ending it. Void = no loop on this rack.
     juce::var calib;
+    // 21t-i (27 Sep 2026 ruling): THE LINK'S STORED LEVEL RECORD (EJLevelRecord::toVar). Written by the Link that
+    // owns the channel, read by V2 when that Link is quiet or parked, so a chat block can be composed from what
+    // was heard rather than from what is playing. Void = this Link publishes no record (an older binary).
+    juce::var levels;
     juce::String uid, name;
     bool  ackPerSeq = false;   // v9 Link: answers also written to ctrl-ack-<uid>-<seq>.json
     int   revision = -1;
@@ -1970,6 +1974,7 @@ inline void writeRackSidecar(const juce::String& dir, const RackSidecar& rc)
     if (rc.inContextCapable) obj->setProperty("inContextCapable", true);
     if (rc.ackPerSeq) obj->setProperty("ackPerSeq", true);
     if (! rc.calib.isVoid()) obj->setProperty("calib", rc.calib);   // 21t-d
+    if (! rc.levels.isVoid()) obj->setProperty("levels", rc.levels); // 21t-i: the stored level record
     if (rc.publisherPid > 0)
     {
         obj->setProperty("publisherPid", rc.publisherPid);
@@ -2042,6 +2047,7 @@ inline RackSidecar readRackSidecar(const juce::String& dir, const juce::String& 
     rc.preGainUserSet   = obj->hasProperty("preGainUserSet") && (bool)obj->getProperty("preGainUserSet");
     rc.preGainInputKnown = obj->hasProperty("preGainInputKnown") && (bool)obj->getProperty("preGainInputKnown");
     if (obj->hasProperty("calib")) rc.calib = obj->getProperty("calib");   // 21t-d
+    if (obj->hasProperty("levels")) rc.levels = obj->getProperty("levels"); // 21t-i
     rc.borrowCapable     = obj->hasProperty("borrowCapable") && (bool)obj->getProperty("borrowCapable");
     rc.structureEditCapable = obj->hasProperty("structureEditCapable") && (bool)obj->getProperty("structureEditCapable");
     rc.inContextCapable = obj->hasProperty("inContextCapable") && (bool)obj->getProperty("inContextCapable");

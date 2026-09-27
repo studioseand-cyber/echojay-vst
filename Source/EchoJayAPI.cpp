@@ -3429,7 +3429,7 @@ juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slo
 // and render through the ONE renderer. Output is byte-identical to the previous
 // direct implementation (own path leaves havePercentiles/haveOutput true and
 // sourceLabel empty), which the acceptance byte-diff verifies.
-juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
+juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost, const echojay::LevelRecord* rec)
 {
     const auto in  = chainHost.getChainInLevels();
     const auto out = chainHost.getChainOutLevels();
@@ -3442,6 +3442,24 @@ juce::String EchoJayAPI::buildChainLevelsInjection(const ChainHost& chainHost)
     d.inHeardS = in.heardSeconds; d.inWindowS = in.windowSeconds;
     d.preGainDb = chainHost.getPreGainDb();
     d.outKnown = out.known; d.outLevelDb = out.levelDb; d.numSlots = chainHost.getNumSlots();
+    // 21t-i (27 Sep 2026 ruling): THE CHANNEL'S FIGURES COME FROM THE STORED RECORD. The per-slot lines below are
+    // about slots and stay on the live slot tallies; the block HEADER describes this channel, and a channel's
+    // figures are now a record that survives a transport stop. A field is overridden only when the record HAS it,
+    // so a record with (say) no closed 3 s window cannot blank a figure the tally is holding.
+    if (rec != nullptr && rec->valid)
+    {
+        using R = echojay::LevelRecord;
+        d.inKnown = rec->heardAnything();
+        if (R::has (rec->intLufs))    d.inLevelDb = rec->intLufs;
+        if (R::has (rec->p10))        d.inP10 = rec->p10;
+        if (R::has (rec->p90))        d.inP90 = rec->p90;
+        if (R::has (rec->short90Db))  d.inShort90Db = rec->short90Db;
+        if (R::has (rec->shortMaxDb)) d.inMaxShortTermDb = rec->shortMaxDb;
+        if (R::has (rec->peakDbTp))   d.inPeakDb = rec->peakDbTp;
+        if (R::has (rec->crestDb))    d.inCrestDb = rec->crestDb;
+        if (rec->heardSeconds > d.inHeardS) d.inHeardS = rec->heardSeconds;
+        d.recordAgeS = rec->ageSeconds (juce::Time::currentTimeMillis());
+    }
     // havePercentiles / haveOutput default true; sourceLabel empty -> own path.
     return buildChainLevelsInjectionCore(d);
 }
@@ -3533,6 +3551,11 @@ juce::String EchoJayAPI::buildChainLevelsInjectionCore(const ChainLevelsData& d)
       << formatHeard(d.inHeardS);
     if (d.inWindowS < d.inHeardS - 1.0f)
         b << " (~" << formatHeard(d.inWindowS) << " described)";
+    // 21t-i: THE RECORD'S AGE, on the line, in whole seconds. A figure kept across a transport stop must not read
+    // as a figure measured a moment ago. Same token and same spelling as the [GROUP LEVELS] and [TRACK LEVELS]
+    // lines carry, and omitted entirely when the block was not composed from a record.
+    if (d.recordAgeS >= 0)
+        b << ", AGE " << juce::String(d.recordAgeS) << "s";
     // Pre-chain gain and the resulting operating level. Own: shown only when a
     // trim is in effect. Link: ALWAYS stated (computed from input toward the
     // operating level), because its absence is what let the level jump.

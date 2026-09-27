@@ -12,6 +12,7 @@
 #include <mutex>
 #include <vector>
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for fetchDialableIdentities
+#include "EJLevelRecord.h"      // 21t-i: the stored level record, the source of every block's figures
 #include "EchoJayHistoryTrim.h" // echojay::HistoryTrimResult, in ChatTurns below
 
 class ChainHost;   // buildCurrentChainInjection reads the live rack
@@ -289,7 +290,16 @@ public:
     static bool shouldRenderStreamedReply (const juce::var& doneFrame, const juce::String& proseSoFar);
     // The quiet line appended to a re-sent chat reply.
     static juce::String rerouteQuietLine() { return juce::String::fromUTF8 ("(sent as a chat, not a build \xe2\x80\x94 say 'build' to build)"); }
-    static juce::String renderRerouteReply (const juce::String& reply) { return reply.trim() + "\n\n" + rerouteQuietLine(); }
+    // 21t-i (27 Sep 2026 ruling): A REPLY CARRYING A LEVEL-MATCH BLOCK NEVER GETS THE QUIET LINE. The line tells
+    // the user nothing was built and to say "build" - and a level-match turn has an actionable card sitting right
+    // above it, so the line contradicts the only control on the screen. Deciding it HERE, in the pure renderer,
+    // keeps it out of the reroute path's local knowledge: whoever renders a re-sent reply gets the same answer.
+    // The extractor STRIPS the block from the text it is handed, so the test runs on a copy: this is a question
+    // about the reply, not an edit of it.
+    static bool replyCarriesLevelMatch (const juce::String& reply)
+    { juce::String r = reply, lm; return extractLevelMatchBlock (r, lm) && lm.isNotEmpty(); }
+    static juce::String renderRerouteReply (const juce::String& reply)
+    { return replyCarriesLevelMatch (reply) ? reply.trim() : reply.trim() + "\n\n" + rerouteQuietLine(); }
     std::shared_ptr<ChatStreamHandle> streamChat(const juce::StringArray& roles,
                                                  const juce::StringArray& contents,
                                                  const juce::String& systemPrompt,
@@ -886,6 +896,9 @@ public:
         // untouched. NaN until a 3 s window has closed, and then the token is simply absent.
         float inShort90Db = std::numeric_limits<float>::quiet_NaN();
         float inHeardS = 0.0f, inWindowS = 0.0f;
+        // 21t-i (27 Sep 2026 ruling): the STORED RECORD's age, in whole seconds, when this block was composed from
+        // a record (which the bus path now always is). -1 = not from a record, and the AGE token is omitted.
+        int recordAgeS = -1;
         float preGainDb = 0.0f;
         bool  outKnown = false; float outLevelDb = 0.0f; int numSlots = 0;
         bool  havePercentiles = true;   // false for a Link (p10/p90 not published)
@@ -894,7 +907,11 @@ public:
         juce::String sourceLabel;       // "" own channel; the Link name for a target
         juce::uint32 measurementAgeMs = 0;  // age of the MEASUREMENT that produced the printed numbers (the last-good latched frame), NOT the age of the read; 0 = own/session-scoped
     };
-    static juce::String buildChainLevelsInjection(const ChainHost& chainHost);      // own-channel wrapper
+    // 21t-i: the record is the SOURCE of the channel's figures when one is passed (the ruling: every chat block is
+    // composed from the record, never from the live frame). nullptr keeps the pre-21t-i behaviour, which is what
+    // the guards' known-good runs and any caller without a record needs.
+    static juce::String buildChainLevelsInjection(const ChainHost& chainHost,
+                                                 const echojay::LevelRecord* rec = nullptr);      // own-channel wrapper
     static juce::String buildChainLevelsInjectionCore(const ChainLevelsData& d);    // the one renderer
     //   buildMeterSnapshotInjection: the "[METER SNAPSHOT v2: ...]" marker
     //     carrying psr / plr / oversCount / macroBands / bandCrest on a CHAIN
