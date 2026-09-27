@@ -2593,12 +2593,16 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
                 appendLocalResultBubble(chainLockStateText(processorRef.rackLockState(), processorRef.borrowHostIfActiveFor(uid) != nullptr));
                 return;
             }
-            sendChainToLink(uid, chainBuildJsons[(size_t)i]);
-            // A LEASED rack's slots live in this process, so the loop runs here. Without a lease the chain is the
-            // Link's own and so is the loop - it compiles the same header and continues from the sidecar; nothing
-            // is started here for a rack this process cannot measure.
-            if (processorRef.borrowHostIfActiveFor(uid) != nullptr)
-                startCalibrationFromChain(uid, juce::JSON::parse(chainBuildJsons[(size_t)i])); };
+            // 21t-h (27 Sep 2026): THE LOOP IS NOT STARTED HERE. It was, and on the LEASED path that is one
+            // message-loop turn too early: sendChainToLink queues the adds into the borrowed host and returns, so
+            // the rack still read ZERO slots and the block was rejected -
+            //   10:15:00  path=SESSION (borrowed host) removes=0 adds=1
+            //   10:15:00  EJThreshold: block not usable - slot 0 is not in this rack (0 slot(s)); nothing started.
+            //   10:15:06  EJDial: slot 0 ("SPL IRON") ...        <- the add landed SIX SECONDS later
+            // It now starts from the build's COMPLETION on that path (the dial-settle inside finishCb, where the
+            // adds are in AND the param map has arrived, which the opening threshold write needs), exactly as the
+            // local edit path starts after its ops land. An unleased Link starts its own loop from its chain-cmd.
+            sendChainToLink(uid, chainBuildJsons[(size_t)i]); };
             // RETIRED (21t-e, 25 Sep 2026): the compose-time pre-gain.
             // It carried a level-match figure computed from the channel's own loudness and applied it to WHATEVER
             // was built. On 25 Sep that put +4.4 dB in front of a one-slot TUNER chain - a pitch corrector that
@@ -10288,7 +10292,8 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
     const bool selected = inSelection || stripSelected(isBus,
                                         entry != nullptr ? entry->info.uid
                                                          : juce::String(),
-                                        effectiveChannelUid());
+                                        effectiveChannelUid(),
+                                        processorRef.chatTargetGroupId.isNotEmpty());
     // Legacy-tap refusal flash (see linkStripMouseDown): coral, brief, and
     // only on the strip that was tapped.
     const bool refusing = !isBus && sg.addr == linkLegacyFlashAddr_
@@ -24375,23 +24380,23 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
     if (! echojay::CalibLoop::configFromBlock (chain.getProperty ("calibration", juce::var()),
                                                host->getNumSlots(), bus, pluginName, cfg, why))
     {
-        if (why.isNotEmpty()) EchoJay_NSLog (("EJCalib: block not usable - " + why.trim()).toRawUTF8());
+        if (why.isNotEmpty()) EchoJay_NSLog (("EJThreshold: block not usable - " + why.trim()).toRawUTF8());
         return 0;
     }
-    if (why.isNotEmpty()) EchoJay_NSLog (("EJCalib: BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
+    if (why.isNotEmpty()) EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
     // (c) A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING, NOT FROM ZERO. slot_pre_gain_db has already been
     // written on that slot by the build; opening at 0 would undo it in one move and spend the step budget climbing
     // back to where it started.
     if (cfg.actuator == echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb))
     {
         cfg.startDb = host->getSlotInfo (cfg.slot).preTrimDb;
-        EchoJay_NSLog (("EJCalib: start_db was null on a drive block - opening from the staging already on the slot ("
+        EchoJay_NSLog (("EJThreshold: start_db was null on a drive block - opening from the staging already on the slot ("
                         + juce::String (cfg.startDb, 2) + " dB)").toRawUTF8());
     }
 
     // WHAT THE SERVER SAID IT SET THIS FROM, logged beside what we do with it: the source, how much it had heard
     // and which measure it used are the three facts that explain a threshold nobody watched being chosen.
-    EchoJay_NSLog (("EJCalib: block source=" + co->getProperty ("source").toString()
+    EchoJay_NSLog (("EJThreshold: block source=" + co->getProperty ("source").toString()
                     + " heard_s=" + co->getProperty ("heard_s").toString()
                     + " measure=" + co->getProperty ("measure").toString()
                     + " mode=" + (cfg.mode == echojay::CalibLoop::Mode::Passive ? "passive" : "listen")
@@ -24472,6 +24477,52 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
 // Link trim, before and after are logged per member, and a member the server marked no-signal (int_lufs null,
 // delta 0) is LEFT ALONE: a channel nobody could hear must not be moved on a guess.
 // Returns how many trims were written.
+// 21t-h (27 Sep 2026): THE LEVEL-MATCH BLOCK, ON EVERY ROUTE.
+//
+// The server emits <<<ECHOJAY_LEVEL_MATCH>>> on every route by ruling. The client had an APPLY path for level_match
+// since 21t-c and no EXTRACTOR outside the build card, so a group turn that came back on the chat route printed the
+// whole block as raw JSON with "(sent as a chat, not a build - say 'build' to build)" under it. This function is
+// the one place a reply's block becomes a card: it wraps the payload in the exact shape applyChainEditFromMsg
+// already reads (`{"level_match": {...}}`), so Apply behaves identically on every route, and it returns the human
+// lines - one per member, with its delta - so the card says what it will do before anybody presses anything.
+juce::String EchoJayEditor::levelMatchCardFromBlock (const juce::String& lmJson, juce::String& editDataOut) const
+{
+    const auto payload = juce::JSON::parse (lmJson);
+    auto members = payload.getProperty ("members", juce::var());
+    if (! members.isArray()) members = payload.getProperty ("level_match", juce::var()).getProperty ("members", juce::var());
+    if (! members.isArray()) return {};
+
+    // The card's data, in the shape the apply path reads. One shape, so the two routes cannot diverge.
+    auto* lm = new juce::DynamicObject();
+    lm->setProperty ("members", members);
+    auto* wrap = new juce::DynamicObject();
+    wrap->setProperty ("level_match", juce::var (lm));
+    editDataOut = juce::JSON::toString (juce::var (wrap));
+
+    juce::StringArray lines;
+    if (auto* arr = members.getArray())
+        for (const auto& mv : *arr)
+        {
+            auto* mo = mv.getDynamicObject();
+            if (mo == nullptr) continue;
+            const auto uid = mo->getProperty ("uid").toString();
+            juce::String name = mo->getProperty ("name").toString();
+            if (name.isEmpty()) name = channelDisplayLabel (uid);
+            if (name.isEmpty()) name = uid;
+            const auto intV = mo->getProperty ("int_lufs");
+            const double delta = (double) mo->getProperty ("delta_db");
+            const bool noSignal = intV.isVoid() || ! (intV.isDouble() || intV.isInt() || intV.isInt64());
+            // THE SAME THREE OUTCOMES THE APPLY REPORTS, said in advance: a move, no move needed, or no reading.
+            lines.add (noSignal ? ("  " + name + ": no signal - left alone")
+                     : std::abs (delta) < 0.005 ? ("  " + name + ": already matched (no change)")
+                     : ("  " + name + ": " + (delta > 0 ? "+" : "") + juce::String (delta, 1)
+                        + " dB (INT " + juce::String ((double) intV, 1) + ")"));
+        }
+    if (lines.isEmpty()) return {};
+    return "Level match, " + juce::String (lines.size())
+         + (lines.size() == 1 ? " channel:\n" : " channels:\n") + lines.joinIntoString ("\n");
+}
+
 int EchoJayEditor::applyGroupLevelMatch(const juce::var& membersVar)
 {
     auto* arr = membersVar.getArray();
@@ -28754,6 +28805,31 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         }
         if (EchoJayAPI::extractChainEditBlock(visibleReply, editJson))
             EchoJay_NSLog("EJChat: CHAIN_EDIT block received");
+        // 21t-h: THE LEVEL-MATCH BLOCK, ON THIS ROUTE TOO. It is taken OUT of the visible reply either way - a
+        // marker the user can read is a bug whatever we then do with it - and turned into the same card the build
+        // route shows, with one line per member and its delta. Where a CHAIN_EDIT block also arrived, that one wins
+        // the card (a turn carrying both is the server changing a chain AND levelling; the levels then ride the
+        // edit card's own ops, which is where the apply path finds them).
+        {
+            juce::String lmJson;
+            if (EchoJayAPI::extractLevelMatchBlock(visibleReply, lmJson))
+            {
+                EchoJay_NSLog(("EJLevelMatch: block received on the chat route (" + juce::String(lmJson.length())
+                               + " ch) - rendering the card").toRawUTF8());
+                if (editJson.isEmpty())
+                {
+                    juce::String lmEditData;
+                    const auto card = levelMatchCardFromBlock(lmJson, lmEditData);
+                    if (card.isNotEmpty())
+                    {
+                        editJson = lmEditData;                 // the card the apply path reads
+                        levelMatchCardText_ = card;            // ...and what it says before it is pressed
+                    }
+                    else
+                        EchoJay_NSLog("EJLevelMatch: the block named no members - nothing carded, nothing applied");
+                }
+            }
+        }
         // CHAIN_RECALL (14 Aug 2026): a COMPLETE block (the extractor
         // returns false on a truncated one, and the stream parser never
         // surfaces one) hands off to handleChainRecall. Deferred a tick so
@@ -28941,6 +29017,14 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
         ChatMsg cm;
         cm.role      = "assistant";
         cm.content   = visibleReply;
+        // 21t-h: the level-match card's own lines go UNDER the reply, so the card says what it will do to each
+        // member before Apply is pressed. The marker itself was removed from visibleReply by the extractor.
+        if (levelMatchCardText_.isNotEmpty())
+        {
+            cm.content = cm.content.trimEnd();
+            cm.content << (cm.content.isEmpty() ? "" : "\n\n") << levelMatchCardText_;
+            levelMatchCardText_.clear();
+        }
         cm.chainData = chainJson;   // empty if model didn't return a chain block
         cm.gainData  = gainJson;    // empty if no gain proposal block
         cm.askData   = askJson;     // empty if no ask block
@@ -30393,6 +30477,12 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                 // Item 3 (17 Sep 2026 ruling): substitute the noMap slots with built-ins, keep the
                 // session's name-only identities in step, and say so in normal text.
                 safeThis->finishSessionBuild(linkUid, chainJsonForBubble, settled);
+                // 21t-h: AND THE CALIBRATION LOOP, HERE, because here is where the build is actually finished on
+                // this path - the adds are in the borrowed host and the dial has settled (or its bound expired,
+                // which `settled` says). Starting it at send time read a rack with no slots in it.
+                const int started = safeThis->startCalibrationFromChain(linkUid, juce::JSON::parse(chainJsonForBubble));
+                EchoJay_NSLog(("EJThreshold: leased build settled (dial " + juce::String(settled ? "settled" : "bound expired")
+                               + ") -> " + juce::String(started) + " loop(s) started").toRawUTF8());
             });
             juce::Timer::callAfterDelay(6000, [safeThis, linkUid]
             {

@@ -2877,7 +2877,7 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     // "getNumSlots() happens to be zero": an empty rack is a coincidence, a lease is the fact.
     if (rackLeaseActive_ || leaseActive_.load(std::memory_order_relaxed))
     {
-        EchoJay_NSLog("EJCalib(Link): a calibration block arrived while the rack is LEASED - V2 hosts these slots "
+        EchoJay_NSLog("EJThreshold(Link): a calibration block arrived while the rack is LEASED - V2 hosts these slots "
                       "and runs the loop; not starting a second one here");
         return;
     }
@@ -2890,17 +2890,17 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
                                       ? chainHost.getSlotInfo(slotFromWire).name : juce::String();
     if (! echojay::CalibLoop::configFromBlock(block, chainHost.getNumSlots(), false, pluginName, cfg, why))
     {
-        if (why.isNotEmpty()) EchoJay_NSLog(("EJCalib(Link): block not usable - " + why.trim()).toRawUTF8());
+        if (why.isNotEmpty()) EchoJay_NSLog(("EJThreshold(Link): block not usable - " + why.trim()).toRawUTF8());
         return;
     }
-    if (why.isNotEmpty()) EchoJay_NSLog(("EJCalib(Link): BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
+    if (why.isNotEmpty()) EchoJay_NSLog(("EJThreshold(Link): BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
     const int slot = cfg.slot;
     // (c) A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING ALREADY ON THE SLOT, never from zero - the same
     // rule V2 applies, for the same reason: slot_pre_gain_db is already written and opening at 0 would undo it.
     if (cfg.actuator == echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb))
     {
         cfg.startDb = chainHost.getSlotInfo(slot).preTrimDb;
-        EchoJay_NSLog(("EJCalib(Link): start_db was null on a drive block - opening from the staging on the slot ("
+        EchoJay_NSLog(("EJThreshold(Link): start_db was null on a drive block - opening from the staging on the slot ("
                        + juce::String(cfg.startDb, 2) + " dB)").toRawUTF8());
     }
     // "no opening value" is NaN out of the parser (a threshold block the server set nothing for).
@@ -2908,7 +2908,7 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
 
     calibLoop_.begin(cfg);
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
-    EchoJay_NSLog(("EJCalib(Link): \"" + cfg.plugin + "\" slot " + juce::String(slot + 1)
+    EchoJay_NSLog(("EJThreshold(Link): \"" + cfg.plugin + "\" slot " + juce::String(slot + 1)
                    + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")
                    + ", band " + juce::String(cfg.lo, 1) + "-" + juce::String(cfg.hi, 1) + " dB, dialling "
                    + (threshold ? cfg.params.joinIntoString(" + ") : juce::String("the drive"))

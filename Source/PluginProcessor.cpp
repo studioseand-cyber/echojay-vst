@@ -6089,14 +6089,14 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
     if (loop.running() && loop.slot == slot && loop.plugin == pluginName)
     {
         loop.retarget(bandLo, bandHi);
-        EchoJay_NSLog(("EJCalib: \"" + pluginName + "\" re-targeted to " + juce::String(bandLo, 1) + "-"
+        EchoJay_NSLog(("EJThreshold: \"" + pluginName + "\" re-targeted to " + juce::String(bandLo, 1) + "-"
                        + juce::String(bandHi, 1) + " dB, continuing from " + juce::String(loop.preDb, 1)
                        + " dB of drive").toRawUTF8());
     }
     else
     {
         loop.begin(pluginName, slot, bandLo, bandHi, openingDrive);
-        EchoJay_NSLog(("EJCalib: \"" + pluginName + "\" slot " + juce::String(slot + 1) + " listening, band "
+        EchoJay_NSLog(("EJThreshold: \"" + pluginName + "\" slot " + juce::String(slot + 1) + " listening, band "
                        + juce::String(bandLo, 1) + "-" + juce::String(bandHi, 1) + " dB, opening drive "
                        + juce::String(openingDrive, 1) + " dB").toRawUTF8());
         // The opening drive is written the same way every later step is: pre-gain set, post-trim mirrored.
@@ -6118,7 +6118,7 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
         && loop.mode == cfg.mode && loop.actuator == cfg.actuator)
     {
         loop.retarget(cfg.lo, cfg.hi);
-        EchoJay_NSLog(("EJCalib: \"" + cfg.plugin + "\" re-targeted to " + juce::String(cfg.lo, 1) + "-"
+        EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" re-targeted to " + juce::String(cfg.lo, 1) + "-"
                        + juce::String(cfg.hi, 1) + " dB, continuing on the same knob").toRawUTF8());
         calibStore(uid, loop);
         return;
@@ -6126,7 +6126,7 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
 
     loop.begin(cfg);
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
-    EchoJay_NSLog(("EJCalib: \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
+    EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
                    + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")
                    + ", band " + juce::String(cfg.lo, 1) + "-" + juce::String(cfg.hi, 1) + " dB, dialling "
                    + (threshold ? cfg.params.joinIntoString(" + ") : juce::String("the drive"))
@@ -6210,6 +6210,6 @@ juce::String EchoJayProcessor::calibTakeClosing(const juce::String& uid)
     loop.closingOwed = false;
     const auto msg = loop.closingMessage();
     calibStore(uid, loop);
-    EchoJay_NSLog(("EJCalib: closing message handed to the chat: " + msg).toRawUTF8());
+    EchoJay_NSLog(("EJThreshold: closing message handed to the chat: " + msg).toRawUTF8());
     return msg;
 }

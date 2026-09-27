@@ -105,7 +105,7 @@ struct CalibLoop
         juce::StringArray paramNames;
         float paramValue  = 0.0f;
         juce::String card;          // what the card says now
-        juce::String logLine;       // EJCalib: ... , one per window
+        juce::String logLine;       // EJThreshold: ... , one per window
         bool  finished   = false;   // the loop ended on this window
         juce::String closing;       // the closing message, when it ended
     };
@@ -149,11 +149,18 @@ struct CalibLoop
     {
         auto* o = block.getDynamicObject();
         if (o == nullptr) return false;                       // no compressor in this chain: no block
-        const int slot = o->hasProperty ("slot") ? ((int) o->getProperty ("slot")) - 1 : -1;   // 1-based on the wire
+        // THE WIRE IS 1-BASED and this converts; the REJECTION PRINTS THE WIRE VALUE VERBATIM (21t-h, 27 Sep
+        // 2026). The first cut printed the converted number, so a 0-based sender - which is what the server was
+        // doing on 27 Sep - produced "slot 0 is not in this rack", a line that reads like an empty rack and hides
+        // the base mismatch completely. Printing both numbers makes it a glance: "wire slot 0, rack has 1 slot(s)".
+        const bool haveSlot = o->hasProperty ("slot");
+        const int wireSlot = haveSlot ? (int) o->getProperty ("slot") : -1;
+        const int slot = haveSlot ? wireSlot - 1 : -1;                        // 1-based on the wire
         if (slot < 0 || slot >= numSlots)
         {
-            whyOut << "slot " << juce::String (slot + 1) << " is not in this rack (" << juce::String (numSlots)
-                   << " slot(s)); nothing started. ";
+            whyOut << "wire slot " << (haveSlot ? juce::String (wireSlot) : juce::String ("(absent)"))
+                   << " (1-based, so slot index " << juce::String (slot) << "), rack has "
+                   << juce::String (numSlots) << " slot(s); nothing started. ";
             return false;
         }
         out = Config{};
@@ -507,7 +514,7 @@ struct CalibLoop
     {
         // The log names the MODE and the KNOB, because "the loop moved something" is not readable a week later
         // without them - a passive threshold pass and a listen drive pass look identical otherwise.
-        return "EJCalib: \"" + plugin + "\" window " + juce::String (window)
+        return "EJThreshold: \"" + plugin + "\" window " + juce::String (window)
              + " gr=" + grText()
              + (actuator == Actuator::Threshold
                     ? " " + knobText() + "=" + signed1 (value)

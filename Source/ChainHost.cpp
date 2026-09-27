@@ -3051,7 +3051,7 @@ int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& c
     // calibration loop's actuator is a profiled THIRD-PARTY control, which is what the server's block names.
     if (isBuiltinSlot (slotIndex))
     {
-        EchoJay_NSLog (("EJCalib: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+        EchoJay_NSLog (("EJThreshold: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
                         + "\") is a BUILT-IN - the loop's named controls are profiled third-party ones, so "
                         + controls.joinIntoString (" + ") + " was NOT written here").toRawUTF8());
         return 0;
@@ -3062,7 +3062,7 @@ int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& c
     auto it = paramMaps_.find (s.fp);
     if (it == paramMaps_.end())
     {
-        EchoJay_NSLog (("EJCalib: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
+        EchoJay_NSLog (("EJThreshold: slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name
                         + "\") has no param map for fp=" + s.fp.substring (0, 12)
                         + " - the threshold was NOT written").toRawUTF8());
         return 0;
@@ -3076,7 +3076,7 @@ int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& c
     const auto report = applyStructuredSettings (slotIndex, juce::var (settings.get()), it->second);
     int written = 0;
     for (const auto& r : report) if (r.applied) ++written;
-    EchoJay_NSLog (("EJCalib: wrote " + controls.joinIntoString (" + ") + " = " + juce::String (value, 2)
+    EchoJay_NSLog (("EJThreshold: wrote " + controls.joinIntoString (" + ") + " = " + juce::String (value, 2)
                     + " on slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name + "\") - "
                     + juce::String (written) + " of " + juce::String (controls.size())
                     + " control(s) landed").toRawUTF8());
