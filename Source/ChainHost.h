@@ -921,6 +921,10 @@ public:
         float wetPct = -1.0f;
         juce::String name;      // add/replace: name from AVAILABLE PLUGINS
         juce::String settings;  // prose settings for the slot tile (display)
+        // 21t-i (27 Sep 2026): a level_match op is a GROUP move, not a rack edit - it carries members, not a
+        // slot. Only the COUNT is kept here, because this struct is the rack sequencer's vocabulary and the
+        // member list belongs to the apply path that reads the block by name. The count is what the card says.
+        int memberCount = 0;
         // ---- OP TARGETS v1 (4 Sep 2026): the op names what it is aiming at.
         // Until now every op addressed its target by NUMBER alone, and every
         // surface that appeared to confirm that number in words (the card,

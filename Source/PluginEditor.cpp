@@ -20637,6 +20637,24 @@ int EchoJayEditor::measureChatContentHeight()
 void EchoJayEditor::timerCallback()
 {
     processorRef.serviceCaptureStop();   // the transport-stop capture end, off the audio thread (8 Sep 2026)
+
+    // 21t-i (27 Sep 2026): THE LOOP IS ADVANCED HERE, and until now nothing advanced it at all.
+    // calibTickAndPost was written, guarded and never called - the same gap the TRIGGER had before 21t-h, one step
+    // further down the same path. Sean's 14:44 log shows the consequence exactly: "leased build settled -> 1
+    // loop(s) started", the block read (tally, 80 s, passive, drive, Peak Reduction), and then not one
+    // EJThreshold window line while the song played. The loop existed, the audio ran, and nobody asked it to judge
+    // a window.
+    //
+    // WHICH uids: this instance's own rack (empty uid) and the rack it has LEASED, because those are the two whose
+    // per-slot tallies live in this process. A parked Link advances its own loop from its own chain and V2 renders
+    // the card from the sidecar; calibTick returns early for a uid this instance cannot measure, so calling it is
+    // safe either way. calibTick itself is rate-limited to one decision per 3 s window, so a 1 Hz tick costs two
+    // early returns a second and nothing else.
+    {
+        calibTickAndPost ({});                                      // the mix bus / own rack
+        const auto leased = processorRef.borrowUid();
+        if (leased.isNotEmpty()) calibTickAndPost (leased);          // the rack this instance is holding
+    }
     // Target pill appears/disappears with Link connectivity — relayout on
     // change (no height change; the composer row is fixed). The ACTIVE
     // chat's target flipping live<->offline is ALSO a relayout, not a
@@ -24467,6 +24485,10 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
     const auto card = processorRef.calibTick (uid);
     if (card.isNotEmpty() && chainListPanel.statusText != card)
     { chainListPanel.statusText = card; chainListPanel.repaint(); }
+    // 21t-i: the measure-and-ask line goes into the chat as the loop's own turn. It is not a closing message -
+    // the loop is still running and the next thing that moves the knob is the user's answer to this question.
+    const auto ask = processorRef.calibTakeAsk (uid);
+    if (ask.isNotEmpty()) appendLocalResultBubble (ask);
     const auto closing = processorRef.calibTakeClosing (uid);
     if (closing.isNotEmpty()) appendLocalResultBubble (closing);
 }
@@ -24492,11 +24514,21 @@ juce::String EchoJayEditor::levelMatchCardFromBlock (const juce::String& lmJson,
     if (! members.isArray()) members = payload.getProperty ("level_match", juce::var()).getProperty ("members", juce::var());
     if (! members.isArray()) return {};
 
-    // The card's data, in the shape the apply path reads. One shape, so the two routes cannot diverge.
+    // The card's data, in the shape the apply path reads - AND in the shape the card LAYOUT reads (21t-i,
+    // 27 Sep 2026). 21t-h wired the payload by name only, so Apply could find it; but the card's height, and
+    // therefore its Apply BUTTON, comes from parseChainEditOps counting rows in an "edit" array, and a payload
+    // with no array has no rows. Sean's screenshot: the lines rendered and there was nothing to press. So the
+    // block goes out BOTH ways - `level_match` by name for the apply path, and one `level_match` OP in the edit
+    // array for the layout - which is the same shape the build route carries and the reason it had a button.
     auto* lm = new juce::DynamicObject();
     lm->setProperty ("members", members);
+    auto* op = new juce::DynamicObject();
+    op->setProperty ("op", "level_match");
+    op->setProperty ("members", members);
+    juce::Array<juce::var> ops; ops.add (juce::var (op));
     auto* wrap = new juce::DynamicObject();
     wrap->setProperty ("level_match", juce::var (lm));
+    wrap->setProperty ("edit", juce::var (ops));
     editDataOut = juce::JSON::toString (juce::var (wrap));
 
     juce::StringArray lines;
@@ -24619,6 +24651,37 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 repaint();
                 return;
             }
+        }
+    }
+
+    // 21t-i (27 Sep 2026 ruling): "reset the levels on this channel". A record is cleared by an explicit user
+    // reset and by nothing else, so the user's words have to reach it: the server sends the op, the client clears
+    // the record and tells the Link to restart its tally.
+    //
+    // NOTE FOR B: the op name is "reset_levels", with an optional "uid" (absent = the channel this turn is on).
+    // Chosen here because the ruling named the words and not the wire; it needs confirming.
+    {
+        auto ev = juce::JSON::parse(cm.editData);
+        juce::String resetUid; bool haveReset = false;
+        if (auto* eo = ev.getDynamicObject())
+        {
+            if (auto* ea = eo->getProperty("edit").getArray())
+                for (const auto& opv : *ea)
+                    if (opv.getProperty("op", juce::var()).toString() == "reset_levels")
+                    { haveReset = true; resetUid = opv.getProperty("uid", juce::var()).toString().trim(); break; }
+            if (! haveReset && eo->hasProperty("reset_levels"))
+            { haveReset = true; resetUid = eo->getProperty("reset_levels").getProperty("uid", juce::var()).toString().trim(); }
+        }
+        if (haveReset)
+        {
+            if (resetUid.isEmpty()) resetUid = cm.editTargetUid;   // the card's own target, set when the turn was made
+            const auto label = resetUid.isEmpty() ? juce::String ("this channel") : channelDisplayLabel (resetUid);
+            processorRef.resetLevelRecord (resetUid);
+            cm.editApplied = true;
+            appendLocalResultBubble ("Cleared the kept levels on " + (label.isEmpty() ? resetUid : label)
+                                     + ". It will read no signal until it is played again.");
+            repaint();
+            return;
         }
     }
 
@@ -26456,54 +26519,31 @@ void EchoJayEditor::maybeSyncParamIdentities(ChainHost& ch)
 // Returns an empty string when the channel is not a Link we can read at all; "no signal" when there is no frame.
 juce::String EchoJayEditor::levelsTokensFor (const juce::String& uid, juce::String* nameOut, float* trimOut) const
 {
-    auto num = [] (float v) { return v > -99.0f ? juce::String (v, 1) : juce::String ("no reading"); };
-
-    juce::String name; int regIdx = -1; float trim = 0.0f; bool known = false;
+    juce::String name; float trim = 0.0f;
     for (const auto& e : processorRef.getLinkDisplayList())
-        if (e.info.uid == uid) { name = e.displayName; regIdx = e.info.regIdx; trim = e.info.gainDb; known = true; break; }
+        if (e.info.uid == uid) { name = e.displayName; trim = e.info.gainDb; break; }
     if (name.isEmpty()) name = channelDisplayLabel (uid);
     if (name.isEmpty()) name = uid;
     if (nameOut != nullptr) *nameOut = name;
     if (trimOut != nullptr) *trimOut = trim;
 
-    LinkMeterFrame f;
-    const bool live = known && regIdx >= 0 && processorRef.readLinkMeterFrame (regIdx, f);
-    LinkMeterFrame good; juce::uint32 ageMs = 0;
-    const bool latched = processorRef.linkLastGoodFrame (uid, good, ageMs);
-    const bool liveUsable = live && (f.momentary > -99.0f || f.shortTerm > -99.0f || f.integrated > -99.0f);
-    const LinkMeterFrame* use = liveUsable ? &f : (latched ? &good : nullptr);
+    // 21t-i (27 Sep 2026 ruling): COMPOSED FROM THE STORED RECORD, NEVER FROM THE LIVE OR LAST-GOOD FRAME.
+    //
+    // The live frame feeds the strips. It used to feed this line too, through a "last good frame" latch whose
+    // conditions were audioStale == 0, momentary above -70 dB and at least one macro band present - all three of
+    // which say "audio is playing right now". A strip, by contrast, holds its last smoothed value for as long as
+    // no fresh frame arrives (LinkStripState::smInt, advanced only when fresh). So on 27 Sep at 15:30 every strip
+    // showed an INT and the [GROUP LEVELS] block sent on "balance these vocal channels" reported two of those same
+    // members as having no signal. One surface had a hold and the other had a latch.
+    //
+    // Now there is one source, and it is a RECORD: written while audio flowed, kept across transport stop and
+    // start, the editor closing and the session being saved and reopened, and cleared only by an explicit reset.
+    const auto rec = processorRef.levelRecordFor (uid);
 
-    // "no signal" means exactly one thing: there is NO FRAME for this channel. Not "quiet", not "zero".
-    if (use == nullptr) return "no signal";
-
-    // 21t-d: the figures are the Link's PRE-TRIM measurement when it says so, which is what levelling needs -
-    // moving one channel's trim must not rewrite the number the next one is judged against. An older Link
-    // publishes post-trim figures and no bit; the line says so rather than pretending.
-    const bool pre = framePreTrim (*use);
-    return juce::String ("MOM ")  + num (use->momentary) + ", "
-         + "SHORT "   + num (use->shortTerm) + ", "
-         + "SHORTMAX " + (frameHasShortMax (*use) ? juce::String (use->shortTermMax, 1)
-                                                  : juce::String ("no reading")) + ", "
-         // 21t-f item 5: SHORT90 sits after SHORTMAX, as ruled - the p90 of the CLOSED 3 s windows since the
-         // tally reset, where the programme SITS as against SHORTMAX's loudest moment. It rides one quantised
-         // byte of the frame (0.25 LU), so the printed decimal is the value to a quarter of a unit and no finer.
-         + "SHORT90 " + (frameHasShort90 (*use) ? juce::String (frameShort90Db (*use), 1)
-                                                : juce::String ("no reading")) + ", "
-         + "INT "     + num (use->integrated) + ", "
-         + "PEAK "    + num (use->truePeakMax) + ", "
-         // PSR, ruled 25 Sep 2026: PEAK minus SHORTMAX when SHORTMAX is there - a WHOLE-PROGRAMME figure, which
-         // is what the server's transient rule asks about. The 3 s pair (shortTermTP - shortTerm) is the fallback
-         // for a Link that does not publish SHORTMAX: the same quantity over the last window instead of over
-         // everything heard.
-         + "PSR "     + (frameHasShortMax (*use) && use->truePeakMax > -99.0f
-                             ? juce::String (use->truePeakMax - use->shortTermMax, 1)
-                             : ((use->shortTermTP > -99.0f && use->shortTerm > -99.0f)
-                                    ? juce::String (use->shortTermTP - use->shortTerm, 1)
-                                    : juce::String ("no reading"))) + ", "
-         + "HEARD "   + (frameHasHeard (*use) ? juce::String ((int) (use->heardSeconds + 0.5f))
-                                              : juce::String ("no reading"))
-         + (pre ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"))
-         + (liveUsable ? juce::String() : " (last heard " + juce::String ((int) (ageMs / 1000)) + " s ago)");
+    // "NO SIGNAL" MEANS HEARD 0 (ruled). Not quiet. Not stopped. Not parked. If a record carries gated seconds,
+    // this channel has data and the line says what it is.
+    if (! rec.heardAnything()) return "no signal";
+    return rec.tokens (juce::Time::currentTimeMillis());
 }
 
 // [TRACK LEVELS] (21t-g item 2, CONTRACT_GROUPS "The calibration SOURCE"): the SAME tokens, for one channel, so a
@@ -29278,7 +29318,12 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
                                     int provisionalId, const juce::StringArray& roles, const juce::StringArray& contents)
 {
     EchoJay_NSLog("EJStream: reroute -> re-sending the turn to /api/chat (rendered as a chat reply, quiet line appended)");
-    setStageStatus(juce::String::fromUTF8("Answering as a chat\xe2\x80\xa6"));
+    // 21t-i (27 Sep 2026 ruling): ON A GROUP TURN THE PLACEHOLDER SAYS "Working...". A group turn that comes back
+    // with a level-match card IS work - the user is about to press Apply - and "Answering as a chat" told them the
+    // opposite while the card was being built.
+    setStageStatus (processorRef.chatTargetGroupId.isNotEmpty()
+                        ? juce::String::fromUTF8 ("Working\xe2\x80\xa6")
+                        : juce::String::fromUTF8 ("Answering as a chat\xe2\x80\xa6"));
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
@@ -31393,7 +31438,12 @@ EchoJayEditor::MeasuredContext EchoJayEditor::measuredContextTargetLink(const ju
     LinkMeterFrame g; juce::uint32 goodAgeMs = 0;
     const bool haveGood  = processorRef.linkLastGoodFrame(targetLinkUid, g, goodAgeMs);
     const bool liveCumOk = f.integrated > -70.0f;   // is the LIVE cumulative valid?
-    if (! haveGood)
+    // 21t-i (27 Sep 2026 ruling): THE RECORD DECIDES WHETHER THIS CHANNEL HAS BEEN HEARD, and the record's figures
+    // are what the block carries. The latch above is still read for the short-window fields the record does not
+    // keep (correlation, width, the macro bands), which describe a moment and belong to the live frame - but
+    // "never heard" is now a statement about the RECORD, which outlives the latch, the transport and the session.
+    const auto rec = processorRef.levelRecordFor(targetLinkUid);
+    if (! haveGood && ! rec.heardAnything())
     {
         // NO LATCH AT ALL is the only true "never heard" (CATCH E): a latch
         // existing is PROOF audio flowed, so it can never coincide with this
@@ -31438,6 +31488,25 @@ EchoJayEditor::MeasuredContext EchoJayEditor::measuredContextTargetLink(const ju
     d.havePercentiles = false; d.haveOutput = false;
     d.cumulativeFromLatch = ! liveCumOk;
     d.preGainDb = pg; d.sourceLabel = label; d.measurementAgeMs = c.measurementAgeMs;
+    // 21t-i: AND THE RECORD OVERRIDES THEM, figure by figure, wherever it has one. A Link that stopped playing
+    // five minutes ago has a record and a decayed frame, and this block is about the channel, not about the last
+    // three seconds of it. The pre-gain above is deliberately left on the cumulative frame it was computed from:
+    // it is applied as well as printed, and one number applied is worth more than two numbers agreeing.
+    {
+        using R = echojay::LevelRecord;
+        if (rec.heardAnything())
+        {
+            if (R::has (rec.intLufs))  d.inLevelDb = rec.intLufs;
+            if (R::has (rec.peakDbTp)) d.inPeakDb  = rec.peakDbTp;
+            if (R::has (rec.crestDb))  d.inCrestDb = rec.crestDb;
+            if (R::has (rec.short90Db))  d.inShort90Db = rec.short90Db;
+            if (R::has (rec.shortMaxDb)) d.inMaxShortTermDb = rec.shortMaxDb;
+            d.inHeardS = rec.heardSeconds;
+            d.recordAgeS = rec.ageSeconds (juce::Time::currentTimeMillis());
+            c.measurementAgeMs = (juce::uint32) juce::jmax (0, d.recordAgeS) * 1000u;
+            d.measurementAgeMs = c.measurementAgeMs;
+        }
+    }
 
     // [METER SNAPSHOT]: LRA/PLR from the cumulative source; momentary/shortTerm/
     // correlation/width/PSR/macro bands from the latch g.
@@ -31464,7 +31533,9 @@ juce::String EchoJayEditor::renderMeasuredContext(const MeasuredContext& ctx, ju
         auto& chainHost = processorRef.getChainHost();
         const bool useMean = processorRef.spectrumUsesAverage();
         juce::String out;
-        out += EchoJayAPI::buildChainLevelsInjection(chainHost);
+        // 21t-i: the bus block's figures come from THIS instance's stored record (ruled), not from the live tally.
+        const auto ownRec = processorRef.levelRecordFor ({});
+        out += EchoJayAPI::buildChainLevelsInjection(chainHost, &ownRec);
         out += EchoJayAPI::buildMoveLogInjection(chainHost);
         out += EchoJayAPI::buildMeterSnapshotInjection(
                    processorRef.getMeterEngine().getMeterDataJSON(),
@@ -32019,12 +32090,30 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
         m.addSeparator();
         m.addItem(12, juce::String::fromUTF8("Group\xe2\x80\xa6") + " (" + juce::String(sel.size()) + " Links)", sel.size() >= 2);
     }
+    {   // 21t-i (27 Sep 2026 ruling): THE USER'S RESET of this channel's kept levels - the only thing that clears
+        // the stored record. It says what it will lose, because the record is the whole session's listening.
+        const auto rec = processorRef.levelRecordFor (linkAddr);
+        m.addSeparator();
+        m.addItem (13, rec.heardAnything()
+                           ? "Reset kept levels (" + juce::String ((int) rec.heardSeconds) + " s heard)"
+                           : juce::String ("Reset kept levels"),
+                   rec.heardAnything());
+    }
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     m.showMenuAsync(juce::PopupMenu::Options().withParentComponent(this),
         [safeThis, linkAddr, name](int r)
         {
             if (safeThis == nullptr || r == 0) return;
             if (r == 11) { safeThis->processorRef.setLinkAlias(linkAddr, {}); safeThis->repaint(); return; }
+            if (r == 13)
+            {
+                safeThis->processorRef.resetLevelRecord (linkAddr);
+                safeThis->appendLocalResultBubble ("Cleared the kept levels on "
+                                                  + (name.isEmpty() ? juce::String ("this channel") : name)
+                                                  + ". It will read no signal until it is played again.");
+                safeThis->repaint();
+                return;
+            }
             if (r == 12) { juce::StringArray sel; for (const auto& u : safeThis->linkSelection_) sel.add(u); sel.addIfNotAlreadyThere(linkAddr); safeThis->promptGroupName(sel); return; }   // 21n item 4
             if (r == 10)
             {

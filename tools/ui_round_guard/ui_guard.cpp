@@ -63,8 +63,19 @@ struct EchoJayLinkFrameTestAccess
         f.momentary = mom; f.shortTerm = sht; f.integrated = integ;
         f.truePeakMax = tpMax; f.shortTermTP = shortTP;
         p.linkLastGoodFrame_[uid] = EchoJayProcessor::LinkGoodFrame { f, juce::Time::getMillisecondCounter(), true };
+        // 21t-i: ...and THE STORED RECORD, through the product's own frame feed. Every block line is composed from
+        // the record now, so a fixture that seeds only the latch is seeding the surface that no longer composes
+        // anything. Same frame, both places, one call - the way the 1 Hz tick does it.
+        p.updateLevelRecordFromFrame (uid, f);
     }
-    static void clear (EchoJayProcessor& p) { p.linkLastGoodFrame_.clear(); }
+    static void clear (EchoJayProcessor& p)
+    {
+        p.linkLastGoodFrame_.clear();
+        // The RECORDS go with it: "known state in, known state out" has to include the thing the blocks read, or
+        // one leg's figures become the next leg's fixture.
+        for (const auto& kv : std::map<juce::String, echojay::LevelRecord> (p.levelRecordByUid_))
+            p.levelRecordByUid_.erase (kv.first);
+    }
 };
 
 struct EchoJayBorrowTestAccess
@@ -208,6 +219,9 @@ struct EchoJayTabStripTestAccess
     // ---- 21t-d wiring ----
     static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops); }
     static void calibTick (EchoJayEditor& e, const juce::String& uid) { e.calibTickAndPost (uid); }
+    // 21t-i: THE EDITOR'S OWN TICK. The old legs called calibTickAndPost directly, which is exactly why none of
+    // them could see that nothing in the product called it.
+    static void tick (EchoJayEditor& e) { e.timerCallback(); }
     static juce::String panelStatus (EchoJayEditor& e) { return e.chainListPanel.statusText; }
     // ---- 21t-d ----
     static LinkMeterFrame stripFrame (EchoJayEditor& e, const juce::String& addr, int regIdx)
@@ -233,6 +247,17 @@ struct EchoJayTabStripTestAccess
     }
     static bool stripSelected (EchoJayEditor& e, const juce::String& addr) { return e.linkSelection_.count (addr) > 0; }
     static juce::TextButton& applyBtn (EchoJayEditor& e, int i) { return e.editApplyBtns[(size_t) i]; }
+    // ---- 21t-i: the EDIT-CARD Apply buttons, by the message they belong to --------------------------------
+    // The card's height decides whether the button is laid out at all, so the guard reads BOTH: a card with no
+    // height is the defect Sean hit (the level-match lines rendered and there was nothing to press).
+    static int editCardH (EchoJayEditor& e, int i)
+    { return i >= 0 && i < (int) e.chatMessages.size() ? e.editCardHeight (e.chatMessages[(size_t) i]) : -1; }
+    static int applyBtnCount (EchoJayEditor& e) { return e.activeEditApplyBtns; }
+    static int applyBtnMsg (EchoJayEditor& e, int i) { return e.editApplyMsgIdx[(size_t) i]; }
+    static int msgCount (EchoJayEditor& e) { return (int) e.chatMessages.size(); }
+    // ---- 21t-i: the stored level record ------------------------------------------------------------------
+    static juce::String levelTokens (EchoJayEditor& e, const juce::String& uid)
+    { juce::String n; float t = 0.0f; return e.levelsTokensFor (uid, &n, &t); }
     static juce::TextButton& undoHdr (EchoJayEditor& e) { return e.undoHdrBtn; }
     static juce::TextButton& redoHdr (EchoJayEditor& e) { return e.redoHdrBtn; }
     static juce::TextButton& collapseBtn (EchoJayEditor& e) { return e.chatCollapseBtn; }
@@ -809,6 +834,7 @@ int main()
                    "H3. ...and V2's own rack is untouched", juce::String (own.getMasterWet(), 3));
             EchoJayBorrowTestAccess::release (proc);
             proc.pendingChannelUid.clear();
+            proc.pendingChannelUid.clear();
             A::setChatId (*ed, savedId);
             juce::File (dir + "ctrl-cmd-lnk_01.json").deleteFile();
             // OWED (recorded, not claimed): the other half of H3 - the borrowed host seeded from the rack's own
@@ -1179,7 +1205,10 @@ int main()
                 // A slot whose heartbeat never moves is SKIPPED by refreshLinkRegistry (liveness is observed in
                 // time, not assumed) - so the fixture beats it like a Link would, and refreshes twice so the
                 // observer sees an advance.
-                auto beat = [&] { LinkShm::bumpHeartbeat (reg, slot); proc.refreshLinkRegistry(); };
+                // 21t-i: ...and the 1 Hz RECORD FEED, because every block line is composed from the stored record
+                // now and the record is fed exactly here, from whatever frame the registry shows.
+                auto beat = [&] { LinkShm::bumpHeartbeat (reg, slot); proc.refreshLinkRegistry();
+                                  proc.updateLinkAudioRecency(); };
                 beat(); beat();
                 LinkMeterFrame f;
                 f.momentary = -12.0f; f.shortTerm = -14.0f; f.integrated = -16.0f;
@@ -1212,18 +1241,37 @@ int main()
 
                 // ...and a frame WITHOUT the bit is untouched: an older Link still means what it always meant.
                 {   // ...and a frame WITHOUT SHORTMAX falls back to the 3 s pair: -7.0 - (-14.0) = 7.0.
-                    LinkMeterFrame noMax = f; noMax.fieldsMask = kFrameHasPreTrim | kFrameHasHeard; noMax.seq = 0;
-                    LinkShm::publishMeterFrame (reg, slot, noMax); beat();
-                    const auto gidF = proc.createLinkGroup ("Fallback set", juce::StringArray { uid });
-                    A::targetGroup (*ed, gidF);
-                    const auto fb = A::groupLevels (*ed);
-                    check (fb.contains ("PSR 7.0") && fb.contains ("SHORTMAX no reading"),
-                           "21t-d. ...and a Link with no SHORTMAX falls back to shortTermTP minus SHORT",
-                           fb.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 36));
-                    check (fb.contains ("SHORT90 no reading"),
-                           "21t-f (5). ...and a Link that publishes no SHORT90 says \"no reading\", never a "
-                           "neighbouring figure", fb.fromFirstOccurrenceOf ("SHORT90", true, false).substring (0, 26));
-                    A::targetGroup (*ed, {}); proc.removeLinkGroup (gidF);
+                    //
+                    // 21t-i: ON ITS OWN uid. Every block line is composed from the stored RECORD now, and a record
+                    // KEEPS what was heard - so publishing a reduced frame for a uid that published a full one a
+                    // moment ago would be asserting that the record forgets, which is the opposite of the ruling.
+                    // What is under test is that a figure is never INVENTED from a neighbouring field, and that
+                    // needs a Link which has never published one.
+                    const juce::String uidNo = "nomax1";
+                    const int slotNo = LinkShm::claimSlot (reg, "Fallback Link", "nomax.wav", uidNo, 48000.0f, 2);
+                    check (slotNo >= 0, "21t-i. fixture: a second Link that publishes no SHORTMAX and no SHORT90",
+                           juce::String (slotNo));
+                    if (slotNo >= 0)
+                    {
+                        LinkShm::setSlotActive (reg, slotNo, true);
+                        LinkShm::setSlotGain (reg, slotNo, -6.0f);
+                        LinkMeterFrame noMax = f; noMax.fieldsMask = kFrameHasPreTrim | kFrameHasHeard; noMax.seq = 0;
+                        LinkShm::publishMeterFrame (reg, slotNo, noMax);
+                        auto beatNo = [&] { LinkShm::bumpHeartbeat (reg, slotNo); proc.refreshLinkRegistry();
+                                            proc.updateLinkAudioRecency(); };
+                        beatNo(); beatNo();
+                        const auto gidF = proc.createLinkGroup ("Fallback set", juce::StringArray { uidNo });
+                        A::targetGroup (*ed, gidF);
+                        const auto fb = A::groupLevels (*ed);
+                        check (fb.contains ("PSR 7.0") && fb.contains ("SHORTMAX no reading"),
+                               "21t-d. ...and a Link with no SHORTMAX falls back to shortTermTP minus SHORT",
+                               fb.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 36));
+                        check (fb.contains ("SHORT90 no reading"),
+                               "21t-f (5). ...and a Link that publishes no SHORT90 says \"no reading\", never a "
+                               "neighbouring figure", fb.fromFirstOccurrenceOf ("SHORT90", true, false).substring (0, 26));
+                        A::targetGroup (*ed, {}); proc.removeLinkGroup (gidF);
+                        LinkShm::releaseSlot (reg, slotNo);
+                    }
                     LinkShm::publishMeterFrame (reg, slot, f); beat();
                 }
                 LinkMeterFrame old = f; old.fieldsMask = 0; old.seq = 0;
@@ -1292,6 +1340,130 @@ int main()
             }
         }
 
+        // ---- 21t-i: THE LOOP IS ADVANCED, EVERY WINDOW, ON A LEASED RACK -------------------------------------
+        // Sean's 14:44 log: "leased build settled -> 1 loop(s) started", the block read, and then NOT ONE
+        // EJThreshold window line while the song played. calibTickAndPost had been written and guarded and NEVER
+        // CALLED - the same gap the trigger had before 21t-h, one step further down the same path. This leg drives
+        // the editor's own tick (not calibTickAndPost directly, which is what the old legs did and why they could
+        // not see this) and asserts the loop actually judges windows.
+        {
+            std::printf ("\n== 21t-i: the editor's tick advances a LEASED rack's loop, and every window logs ==\n");
+            A::knownState (*ed, proc);
+            const juce::String luid = "lease_i1";
+            auto& bh = EchoJayBorrowTestAccess::engage (proc, luid);
+            while (bh.getNumSlots() > 0) bh.removeSlot (0);
+            { EedCompressorProcessor fc; juce::ignoreUnused (fc); }
+            proc.pendingChannelUid = luid;
+            // PREPARED FIRST, as the product prepares it (prepareToPlay, and again when the lease engages): a graph
+            // that is already prepared prepares each node as it is ADDED, and an unprepared LevelTally silently
+            // drops every push - which is exactly what the diagnostic showed (chain-in heard 3.70 s, the slot 0.00).
+            bh.prepare (48000.0, 512);
+            // THE RACK IS BUILT THE WAY THE PRODUCT BUILDS IT, through sendChainToLink - not by inserting a node
+            // into the host by hand. The first cut of this leg did insert by hand, and the diagnostic said why that
+            // is not the same thing: the borrowed host's chain-in and chain-out tallies heard 3.70 s of audio while
+            // the SLOT's own tallies heard 0.00 s, so the node was in the slot list and not in the render sequence.
+            // A leg that measures a graph the product never assembles measures nothing about the product.
+            const juce::String chainJson =
+                R"({"chain":[{"name":"EchoJay Compressor","settings_structured":{"params":{}}}],)"
+                R"("calibration":{"source":"tally","heard_s":120,"measure":"short90","mode":"passive",)"
+                R"("actuator":"drive","slot":1,"start_db":0.0,"sense":null,"gr_target_db":[2,3]}})";
+            A::buildToLink (*ed, luid, chainJson);
+            bool built = false;
+            for (int i = 0; i < 80 && ! built; ++i) { pumpMs (100); built = bh.getNumSlots() >= 1; }
+            bh.prepare (48000.0, 512);
+            check (bh.getNumSlots() == 1, "21t-i. fixture: a compressor in the leased rack, built through the "
+                   "product's own path", juce::String (bh.getNumSlots()));
+
+            // REAL AUDIO through the borrowed host, so its per-slot tallies close real windows - the question
+            // "does getSlotLevels report measured=true while audio runs" is answered by running audio, not by
+            // asserting a flag somebody set.
+            juce::AudioBuffer<float> buf (2, 512);
+            auto pushSeconds = [&] (double seconds, float amp)
+            {
+                const int blocks = (int) (seconds * 48000.0 / 512.0);
+                for (int b = 0; b < blocks; ++b)
+                {
+                    for (int ch = 0; ch < 2; ++ch)
+                        for (int i = 0; i < 512; ++i)
+                            buf.setSample (ch, i, amp * std::sin (2.0f * juce::MathConstants<float>::pi * 220.0f
+                                                                 * (float) ((b * 512 + i) % 48000) / 48000.0f));
+                    juce::MidiBuffer mb;
+                    bh.process (buf, mb);
+                }
+            };
+            pumpMs (200);                 // the product always has a running message loop; an async insert needs one
+            pushSeconds (4.0, 0.25f);
+            {
+                // WHERE THE AUDIO GOT TO, before any conclusion about the slot. The chain-in tally is fed at the
+                // TOP of ChainHost::process, before the graph and before the try-lock branch, so it separates
+                // "nothing reached this host" from "the host ran but the slot did not".
+                const auto ci = bh.getChainInLevels();
+                const auto co = bh.getChainOutLevels();
+                std::printf ("    borrowed host after 4 s: chain-in heard=%.2f s (%.1f), chain-out heard=%.2f s\n",
+                             ci.heardSeconds, ci.levelDb, co.heardSeconds);
+                const auto lv = bh.getSlotLevels (0);
+                // THE NUMBERS FIRST. "in unknown" can mean the tally heard nothing, or heard less than the 3 s
+                // floor, or was never pushed at all, and those are three different defects.
+                std::printf ("    slot levels after 4 s of audio: measured=%d  in heard=%.2f s known=%d level=%.1f"
+                             "  out heard=%.2f s known=%d level=%.1f  slots=%d\n",
+                             (int) lv.measured, lv.in.heardSeconds, (int) lv.in.known, lv.in.levelDb,
+                             lv.out.heardSeconds, (int) lv.out.known, lv.out.levelDb, bh.getNumSlots());
+                check (lv.measured && lv.in.known && lv.out.known,
+                       "21t-i. getSlotLevels on the BORROWED host reports measured=true with audio running - both "
+                       "legs known, which is what a window needs",
+                       juce::String ("measured ") + (lv.measured ? "y" : "n") + ", in "
+                       + (lv.in.known ? "known" : "unknown") + ", out " + (lv.out.known ? "known" : "unknown"));
+            }
+
+            // THE BUILD STARTS THE LOOP (21t-h's fix): the block rode the chain, so by the time the dial has
+            // settled there is a loop on that slot. Started by hand only if the build's own start has not landed
+            // yet, so this leg is about the TICK and not about the start.
+            for (int i = 0; i < 40 && ! proc.calibLoad (luid).active(); ++i) pumpMs (100);
+            if (! proc.calibLoad (luid).active())
+            {
+                echojay::CalibLoop::Config cfg;
+                cfg.plugin = "EchoJay Compressor"; cfg.slot = 0; cfg.lo = 2.0f; cfg.hi = 3.0f;
+                cfg.mode = echojay::CalibLoop::Mode::Passive;
+                cfg.actuator = echojay::CalibLoop::Actuator::Drive;
+                cfg.startDb = 0.0f;
+                proc.calibStart (luid, cfg);
+            }
+            check (proc.calibLoad (luid).active(), "21t-i. fixture: the loop is running on the leased uid");
+
+            const auto logStart = juce::File (juce::String (echojay::FileLog::instance().currentPath()))
+                                     .loadFileAsString().length();
+            // THE EDITOR'S OWN TICK, and audio between ticks, exactly as a playing session has it. The loop decides
+            // once per 3 s window, so this covers several.
+            const int windowsBefore = proc.calibLoad (luid).window;
+            // THE 3 s WINDOW IS WALL CLOCK, not a count of ticks: calibTick refuses to judge twice inside one
+            // window and it reads the millisecond counter to know. The first cut pushed audio and ticked eight
+            // times inside about a second and a half of real time, so the gate never opened once - a leg that
+            // measures its own loop speed, not the product. Four windows' worth of real time, with audio through
+            // the rack before each tick, is what a playing session looks like.
+            for (int t = 0; t < 4; ++t) { pushSeconds (1.2, 0.25f); pumpMs (1600); A::tick (*ed); pumpMs (40); }
+            const auto after = proc.calibLoad (luid);
+            check (after.window > windowsBefore,
+                   "21t-i. the tick JUDGED windows  (RED as it stood: nothing called calibTickAndPost, so a running "
+                   "loop never saw a window - Sean's 14:44 log, word for word)",
+                   juce::String (windowsBefore) + " -> " + juce::String (after.window) + " window(s)");
+            {
+                const juce::File cur (juce::String (echojay::FileLog::instance().currentPath()));
+                const auto fresh = cur.loadFileAsString().substring (logStart);
+                juce::StringArray lines;
+                for (const auto& l : juce::StringArray::fromLines (fresh))
+                    if (l.contains ("EJThreshold: \"EchoJay Compressor\" window")) lines.add (l);
+                check (! lines.isEmpty(),
+                       "21t-i. ...and EVERY judged window printed its line, whether it moved anything or not - a "
+                       "stalled loop and a quiet in-band loop must not look the same",
+                       lines.isEmpty() ? juce::String ("no window line") : lines[0].fromFirstOccurrenceOf ("EJThreshold", true, false).substring (0, 110));
+                check (lines.isEmpty() || (lines[0].contains ("gr=") && lines[0].contains ("mode=")),
+                       "21t-i. ...with the reduction, the knob and the mode on it",
+                       lines.isEmpty() ? juce::String ("(none)") : lines[0].fromFirstOccurrenceOf ("window", true, false).substring (0, 80));
+            }
+            EchoJayBorrowTestAccess::release (proc);
+            A::knownState (*ed, proc);
+        }
+
         // ---- 21t-h (3): THE LEVEL-MATCH BLOCK IS CONSUMED ON THE CHAT ROUTE ----------------------------------
         // Sean's 27 Sep session: a group turn came back on the CHAT route and the whole <<<ECHOJAY_LEVEL_MATCH>>>
         // block was printed to him as raw JSON, with "(sent as a chat, not a build - say 'build' to build)" under
@@ -1347,8 +1519,163 @@ int main()
                        "Apply behaves identically on every route",
                        "editData members: " + juce::String (members.isArray() ? members.size() : -1));
             }
+            // ---- 21t-i: THE CARD HAS AN APPLY BUTTON ON THIS ROUTE ---------------------------------------
+            // Sean, 27 Sep: "the level-match card on the chat route renders its lines but has NO Apply button, so
+            // it cannot be applied - the (3) fix wired the data and not the control". The button's existence is
+            // decided by the CARD'S HEIGHT, and the height is the number of rows parseChainEditOps finds in an
+            // "edit" array. 21t-h's payload had the block by name and no array, so: rows 0, height 0, no button.
+            {
+                int lmIdx = -1;
+                for (int i = (int) M.size() - 1; i >= 0; --i)
+                    if (A::editDataOf (*ed, i).contains ("level_match")) { lmIdx = i; break; }
+                check (lmIdx >= 0, "21t-i (apply). fixture: the card's message is found",
+                       "msg " + juce::String (lmIdx));
+                check (lmIdx >= 0 && A::editCardH (*ed, lmIdx) > 0,
+                       "21t-i (apply). the card HAS HEIGHT, so an Apply button can be laid out at all  (RED as it "
+                       "stood: the level-match payload produced no rows, so height was 0 and no button existed)",
+                       "height " + juce::String (lmIdx >= 0 ? A::editCardH (*ed, lmIdx) : -1) + " px");
+                // The buttons are positioned in the paint pass, exactly as on the build route.
+                juce::ignoreUnused (ed->createComponentSnapshot (ed->getLocalBounds(), false, 1.0f));
+                pumpMs (60);
+                int btn = -1;
+                for (int i = 0; i < A::applyBtnCount (*ed); ++i)
+                    if (A::applyBtnMsg (*ed, i) == lmIdx) { btn = i; break; }
+                check (btn >= 0, "21t-i (apply). ...and the paint pass gives THAT message an Apply button",
+                       "button " + juce::String (btn) + " of " + juce::String (A::applyBtnCount (*ed)));
+                check (btn >= 0 && A::applyBtn (*ed, btn).getButtonText().isNotEmpty(),
+                       "21t-i (apply). ...with a label on it",
+                       btn >= 0 ? A::applyBtn (*ed, btn).getButtonText() : juce::String ("(none)"));
+                // AND PRESSING IT MOVES THE TRIMS. Through the button's OWN onClick, not by calling the apply
+                // function: the wiring between the two is the thing that was missing.
+                if (btn >= 0)
+                {
+                    const auto before = A::editDataOf (*ed, lmIdx);
+                    A::applyBtn (*ed, btn).onClick();
+                    pumpMs (120);
+                    juce::String result;
+                    const auto& M2 = A::msgs (*ed);
+                    for (int i = (int) M2.size() - 1; i >= 0; --i)
+                        if (M2[(size_t) i].role == "assistant"
+                            && (M2[(size_t) i].content.contains ("level")
+                                || M2[(size_t) i].content.contains ("matched")
+                                || M2[(size_t) i].content.contains ("moved")))
+                        { result = M2[(size_t) i].content; break; }
+                    check (result.isNotEmpty(),
+                           "21t-i (apply). pressing the button runs the level-match apply and says what it did",
+                           result.substring (0, 90));
+                    juce::ignoreUnused (before);
+                }
+            }
             A::setChatId (*ed, savedId);
             A::msgs (*ed) = savedMsgs;
+            A::knownState (*ed, proc);
+        }
+
+        // ---- 21t-i: A RE-SENT CHAT REPLY CARRYING A LEVEL-MATCH BLOCK GETS NO "not a build" FOOTER ------------
+        // Ruled 27 Sep. The line tells the user nothing was built and to say "build"; a level-match turn has an
+        // actionable card right above it, so the line contradicts the only control on the screen.
+        {
+            std::printf ("\n== 21t-i: the reroute footer, and the block that suppresses it ==\n");
+            const juce::String plain = "Rolled off some low end.";
+            const juce::String withLm =
+                "Here is the levelling for the group.\n\n"
+                "<<<ECHOJAY_LEVEL_MATCH>>>\n{\"members\":[{\"uid\":\"lm_a\",\"name\":\"A\",\"int_lufs\":-19.4,"
+                "\"delta_db\":1.4}]}\n<<<END_LEVEL_MATCH>>>\n";
+            const auto renderedPlain = EchoJayAPI::renderRerouteReply (plain);
+            const auto renderedLm    = EchoJayAPI::renderRerouteReply (withLm);
+            check (renderedPlain.contains ("sent as a chat"),
+                   "21t-i (footer). an ordinary re-sent reply still carries the quiet line - it is true there",
+                   renderedPlain.fromFirstOccurrenceOf ("(", true, false));
+            check (! renderedLm.contains ("sent as a chat") && ! renderedLm.contains ("say 'build'"),
+                   "21t-i (footer). a reply carrying a LEVEL_MATCH block does NOT  (RED as it stood: the footer "
+                   "printed under the card and told the user to say \"build\")",
+                   renderedLm.contains ("sent as a chat") ? juce::String ("footer still there")
+                                                          : juce::String ("no footer"));
+            check (EchoJayAPI::replyCarriesLevelMatch (withLm) && ! EchoJayAPI::replyCarriesLevelMatch (plain),
+                   "21t-i (footer). ...and the test that decides it is a question about the reply, answered the "
+                   "same way wherever it is asked", "block seen / not seen");
+        }
+
+        // ---- 21t-i: THE STORED LEVEL RECORD IS WHAT THE BLOCKS ARE COMPOSED FROM ------------------------------
+        // Sean, 27 Sep 15:30: after a full play-through every strip showed an INT (v3_2 -18.9, Main vocal 6 -19.4)
+        // and the [GROUP LEVELS] block sent on "balance these vocal channels" carried those two as having no
+        // signal. A strip HOLDS its last smoothed value; the block read the live frame through a latch whose
+        // conditions all mean "audio is playing now". These legs reproduce that shape exactly: a record present,
+        // the frame gone.
+        {
+            std::printf ("\n== 21t-i: two Links, played in turn, transport off - the block still has both ==\n");
+            A::knownState (*ed, proc);
+            const juce::String uidA = "lrecA", uidB = "lrecB";
+            auto frameFor = [] (float intLufs, float heard)
+            {
+                LinkMeterFrame f;
+                f.momentary = intLufs + 3.0f; f.shortTerm = intLufs + 1.0f; f.integrated = intLufs;
+                f.truePeakMax = -1.2f; f.shortTermTP = -3.0f; f.shortTermMax = intLufs + 4.0f;
+                f.heardSeconds = heard;
+                f.fieldsMask = kFrameHasPreTrim | kFrameHasShortMax | kFrameHasHeard;
+                frameSetShort90 (f, intLufs + 2.0f);
+                return f;
+            };
+            // A PLAYS, AND STOPS. The record is fed from the frame, exactly as the 1 Hz tick feeds it.
+            proc.updateLevelRecordFromFrame (uidA, frameFor (-18.9f, 95.0f));
+            // B PLAYS, AND STOPS.
+            proc.updateLevelRecordFromFrame (uidB, frameFor (-19.4f, 60.0f));
+            // TRANSPORT OFF: the publisher blanks the momentary group and V2 sees an audioStale frame. Under the
+            // old rule this was the moment the figures vanished from the block.
+            {
+                auto stale = frameFor (-18.9f, 95.0f);
+                stale.momentary = -100.0f; stale.shortTerm = -100.0f; stale.shortTermTP = -100.0f;
+                stale.audioStale = 1u;
+                proc.updateLevelRecordFromFrame (uidA, stale);
+                auto staleB = frameFor (-19.4f, 60.0f);
+                staleB.momentary = -100.0f; staleB.shortTerm = -100.0f; staleB.shortTermTP = -100.0f;
+                staleB.audioStale = 1u;
+                proc.updateLevelRecordFromFrame (uidB, staleB);
+            }
+            const auto lineA = A::levelTokens (*ed, uidA);
+            const auto lineB = A::levelTokens (*ed, uidB);
+            std::printf ("    A: %s\n    B: %s\n", lineA.toRawUTF8(), lineB.toRawUTF8());
+            check (lineA.contains ("INT -18.9") && lineA.contains ("HEARD 95"),
+                   "21t-i (record). with the transport OFF, the first Link's line carries its INT and HEARD  (RED "
+                   "as it stood: the line read \"no signal\")", lineA);
+            check (lineB.contains ("INT -19.4") && lineB.contains ("HEARD 60"),
+                   "21t-i (record). ...and so does the second one", lineB);
+            check (lineA != "no signal" && lineB != "no signal",
+                   "21t-i (record). ...and neither is \"no signal\", which now means HEARD 0 and nothing else",
+                   lineA.substring (0, 20) + " / " + lineB.substring (0, 20));
+            check (lineA.contains ("AGE ") && lineB.contains ("AGE "),
+                   "21t-i (record). ...each line carrying the record's age, so a kept figure cannot read as a "
+                   "fresh one", lineA.fromFirstOccurrenceOf ("AGE", true, false));
+            // A CHANNEL NOBODY HAS PLAYED is the only "no signal" there is.
+            check (A::levelTokens (*ed, "lrecC") == "no signal",
+                   "21t-i (record). a channel with no record at all reads \"no signal\"",
+                   A::levelTokens (*ed, "lrecC"));
+
+            // THE SESSION IS SAVED AND REOPENED. The records ride the plugin's state.
+            {
+                juce::MemoryBlock mb;
+                proc.getStateInformation (mb);
+                check (proc.resetLevelRecord (uidA) || true, "21t-i (record). fixture: A is cleared in memory");
+                proc.resetLevelRecord (uidB);
+                check (A::levelTokens (*ed, uidA) == "no signal",
+                       "21t-i (record). fixture: cleared means cleared", A::levelTokens (*ed, uidA));
+                proc.setStateInformation (mb.getData(), (int) mb.getSize());
+                const auto backA = A::levelTokens (*ed, uidA);
+                const auto backB = A::levelTokens (*ed, uidB);
+                std::printf ("    reloaded A: %s\n    reloaded B: %s\n", backA.toRawUTF8(), backB.toRawUTF8());
+                check (backA.contains ("INT -18.9") && backA.contains ("HEARD 95"),
+                       "21t-i (record). the figures survive a session save and reload", backA);
+                check (backB.contains ("INT -19.4") && backB.contains ("HEARD 60"),
+                       "21t-i (record). ...for every channel that had a record", backB);
+            }
+            // A RESET CLEARS ONE LINK ONLY.
+            {
+                proc.resetLevelRecord (uidA);
+                check (A::levelTokens (*ed, uidA) == "no signal",
+                       "21t-i (record). an explicit reset clears THAT channel", A::levelTokens (*ed, uidA));
+                check (A::levelTokens (*ed, uidB).contains ("INT -19.4"),
+                       "21t-i (record). ...and only that channel", A::levelTokens (*ed, uidB));
+            }
             A::knownState (*ed, proc);
         }
 
@@ -1468,7 +1795,10 @@ int main()
                     // refreshLinkRegistry lists), so this leg tests the BLOCK and not my fixture.
                     LinkShm::setSlotActive (reg, slot, true);
                     LinkShm::setSlotGain (reg, slot, -3.0f);
-                    auto beat = [&] { LinkShm::bumpHeartbeat (reg, slot); proc.refreshLinkRegistry(); };
+                    // 21t-i: ...and the 1 Hz RECORD FEED, because every block line is composed from the stored
+                    // record now and the record is fed exactly here, from whatever frame the registry shows.
+                    auto beat = [&] { LinkShm::bumpHeartbeat (reg, slot); proc.refreshLinkRegistry();
+                                      proc.updateLinkAudioRecency(); };
                     beat(); beat();
                     LinkMeterFrame f;
                     f.momentary = -13.0f; f.shortTerm = -14.0f; f.integrated = -17.0f;

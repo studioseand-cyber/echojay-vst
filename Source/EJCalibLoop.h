@@ -690,7 +690,12 @@ struct CalibLoop
 
 private:
     static juce::String signed1 (float v)
-    { return (v >= 0.0f ? "+" : "") + juce::String (v, 1); }
+    {
+        // NEGATIVE ZERO reads as a defect in the number: the mirrored post-trim of a drive at 0.0 printed
+        // "post=+-0.0" in the window line. -0.0f is >= 0.0f, so the sign prefix was right and the value was not.
+        const float w = (v == 0.0f) ? 0.0f : v;
+        return (w >= 0.0f ? "+" : "") + juce::String (w, 1);
+    }
     juce::String grText() const
     { return (lastGr == lastGr) ? juce::String (lastGr, 1) : juce::String ("--"); }
     // The number the closing line quotes: whichever knob this loop is dialling.

@@ -1686,6 +1686,10 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
                 EchoJay_NSLog(("EJEdit: wet_pct on op \"" + op.op + "\" is not a number ("
                                + wv.toString() + "); ignored").toRawUTF8());
         }
+        // 21t-i: level_match carries members. Counted here so the card can SAY what it will do and, more to the
+        // point, so this op produces a ROW - a card with no rows has no height, and a card with no height gets no
+        // Apply button. That is exactly why the chat-route level-match card could be read and not applied.
+        if (auto* mem = eo->getProperty("members").getArray()) op.memberCount = mem->size();
         if (auto* nsObj = eo->getProperty("no_such").getDynamicObject())
         {
             op.noSuchTerm = nsObj->getProperty("term").toString();
@@ -1820,6 +1824,16 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
              + slotName(op.slot) + " (slot " + juce::String(op.slot + 1) + ")"
              + (detail.isNotEmpty() ? ": " + detail : juce::String()) + why;
     }
+    // 21t-i: "reset the levels on this channel" - the row the user consents to before a session's listening is
+    // thrown away.
+    if (op.op == "reset_levels")
+        return juce::String::fromUTF8 ("\xe2\x86\xba reset the kept levels on this channel");
+    // 21t-i: the level-match row. One line, the count, and the direction of the work - the per-member deltas are
+    // printed in the card text above it, which is where the numbers belong.
+    if (op.op == "level_match")
+        return juce::String::fromUTF8 ("\xe2\x87\x85 match levels across ")
+             + juce::String (juce::jmax (0, op.memberCount))
+             + (op.memberCount == 1 ? " channel" : " channels");
     return "? unknown op: " + op.op;
 }
 
