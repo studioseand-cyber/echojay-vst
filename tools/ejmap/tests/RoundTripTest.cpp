@@ -58,6 +58,7 @@
 #include "EjmapExposure.h"
 #include "EjmapFixtureUnit.h"
 #include "EjmapFixtureRange.h"
+#include "EjmapFixtureReadout.h"
 
 namespace
 {
@@ -3738,6 +3739,65 @@ void testFixtureRangeRule()
            "range: UAD 1176AE Ratio -> flat at 2 (the missing end borrows the middle)");
 }
 
+//==============================================================================
+/** ITEM 12, THE READOUT FIELDS (EjmapFixtureReadout.h). Two groups, kept apart so a
+    single mutation reddens exactly ONE pin:
+      P1-P7  the TRANSFORM (applySchema) on a measured fixture;
+      P8-P10 the CHECKER (checkEmission) on a HAND-BUILT emitted fixture, never on the
+             transform's output, so a transform bug cannot also redden a checker pin.
+    Mutating applySchema to drop readoutCheck reddens P1 alone; mutating it to keep the
+    first sample instead of null reddens P3 alone. The case is Shadow Hills Class A's
+    VU Meters as measured on 28 Sep.
+*/
+void testFixtureReadoutEmission()
+{
+    namespace fr = ejmap::fixturereadout;
+    const auto measured = juce::JSON::parse (R"({"identity":"AudioUnit|704f4855|1.4.1","controls":[
+        {"index":40,"name":"VU Meter L","defaultOnInstantiate":{"normalised":0.0,"display":"","declaredDefault":1.0,"note":"n"}},
+        {"index":41,"name":"VU Meter R","defaultOnInstantiate":{"normalised":0.189068,"display":"","declaredDefault":1.0,"note":"n"}}]})");
+    const std::vector<fr::Moved> moved { { 41, 0.189068, 0.186410, "", "" } };
+    auto ctl = [] (const juce::var& fx, int i) { return fx.getProperty ("controls", juce::var())[i]; };
+    auto has = [] (const juce::var& v, const char* k) { return v.getDynamicObject() != nullptr && v.getDynamicObject()->hasProperty (k); };
+
+    const auto e = fr::applySchema (measured, moved, true);
+    const auto rc = e.getProperty ("readoutCheck", juce::var());
+    check (rc.getProperty ("method", "") == "instantiate_twice" && (int) rc.getProperty ("instances", 0) == 2,
+           "readout P1: a checked fixture carries readoutCheck {instantiate_twice, 2}");
+    const auto s = ctl (e, 1).getProperty ("readout", juce::var()).getProperty ("samples", juce::var());
+    check (! has (ctl (e, 0), "readout") && s.size() == 2 && (double) s[0] == 0.189068 && (double) s[1] == 0.186410,
+           "readout P2: readout only on the control that moved, with both samples");
+    check (ctl (e, 1).getProperty ("defaultOnInstantiate", juce::var()).getProperty ("normalised", 0).isVoid(),
+           "readout P3: a readout's normalised is NULL, not its first sample");
+    check (ctl (e, 1).getProperty ("defaultOnInstantiate", juce::var()).getProperty ("display", 0).isVoid(),
+           "readout P4: a readout's display is null");
+    check ((double) ctl (e, 1).getProperty ("defaultOnInstantiate", juce::var()).getProperty ("declaredDefault", -1) == 1.0,
+           "readout P5: declaredDefault survives on a readout");
+    check ((double) ctl (e, 0).getProperty ("defaultOnInstantiate", juce::var()).getProperty ("normalised", -1) == 0.0
+           && ctl (e, 0).getProperty ("defaultOnInstantiate", juce::var()).getProperty ("note", "") == "n",
+           "readout P6: a control that did not move is untouched");
+    check (! has (fr::applySchema (measured, {}, false), "readoutCheck"),
+           "readout P7: an unchecked fixture carries NO readoutCheck (absence = never checked)");
+
+    const auto expected = juce::JSON::parse (R"({"identity":"AudioUnit|704f4855|1.4.1",
+        "readoutCheck":{"method":"instantiate_twice","instances":2},"controls":[
+        {"index":40,"name":"VU Meter L","defaultOnInstantiate":{"normalised":0.0,"display":"","declaredDefault":1.0,"note":"n"}},
+        {"index":41,"name":"VU Meter R","readout":{"samples":[0.189068,0.186410],"displays":["",""]},
+         "defaultOnInstantiate":{"normalised":null,"display":null,"declaredDefault":1.0,
+         "note":"a readout: its value moved between two fresh instances, so it has no instantiate value"}}]})");
+    check (fr::checkEmission (expected, measured, moved, true).isEmpty(),
+           "readout P8: the checker accepts a correctly emitted fixture");
+    auto noCheck = expected.clone();
+    noCheck.getDynamicObject()->removeProperty ("readoutCheck");
+    const auto f9 = fr::checkEmission (noCheck, measured, moved, true);
+    check (f9.size() == 1 && f9[0].startsWith ("C1"), "readout P9: dropping readoutCheck reddens exactly one check (C1)");
+    auto firstSample = expected.clone();
+    if (auto* d = ctl (firstSample, 1).getProperty ("defaultOnInstantiate", juce::var()).getDynamicObject())
+        d->setProperty ("normalised", 0.189068);
+    const auto f10 = fr::checkEmission (firstSample, measured, moved, true);
+    check (f10.size() == 1 && f10[0].startsWith ("C3"),
+           "readout P10: keeping the first sample instead of null reddens exactly one check (C3)");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -3781,6 +3841,7 @@ int main (int, char**)
     testUnfinishedAttemptRule();
     testFixtureUnitRule();
     testFixtureRangeRule();
+    testFixtureReadoutEmission();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

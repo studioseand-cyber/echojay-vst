@@ -64,6 +64,29 @@ Concretely:
   installed plugin, so it is the one check that covers the whole set. It proves the
   derivation code, not the measurements.
 
+**WHAT "REPRODUCED N OF 15" COMPARES, AND WHAT IT DOES NOT.** Read this before
+quoting the number.
+- **It compares:** every top-level field (`identity`, `product`, `format`, `uid`,
+  `version`, `certified`, `note`, `listParamsRc`, `textAtRc`) and, on every control,
+  `index`, `name`, `unit`, `displayAt`, `numSteps`, `discrete`, `range`, `direction` and
+  `defaultOnInstantiate`, taken from the MEASURED form: the fixture composed exactly as
+  it was before item 12.
+- **It excludes provenance:** `sampledAt`, `probe`, `defaultsSampledAt` and
+  `defaultsProbe`. These record when and with what a fixture was made, so they differ by
+  construction.
+- **It excludes the item-12 readout fields:** `readoutCheck`, `readout`, and the `null`
+  that replaces a readout's `normalised` and `display`. The score is computed on the
+  measured form, so these fields never enter it. This is deliberate. The pushed fixtures
+  predate item 12 and carry none of them, so comparing the emitted form would score the
+  schema change, not the measurement. Excluding them keeps the number comparable to the
+  14 of 15 measured before the change, and it is the ONLY evidence the driver reproduces
+  measurements.
+- **So it says nothing about whether the readout fields are right.** That is a separate
+  line, "emitted the readout fields correctly on N of 15". It is asserted by checks C1-C5
+  (`EjmapFixtureReadout.h` checkEmission) against the measured form, because no pushed
+  fixture exists to compare it to. The two lines answer different questions and are never
+  merged.
+
 The 10 PACE-wrapped products join when step 2 closes. The 49 at other versions or not
 installed are out of reach on this machine. A run on a machine that has them is what
 reaches them.
@@ -201,13 +224,28 @@ assumed delay or block count:
 Measured cost on the bridge: about 45-70 ms per write to confirm, plus about 21 ms
 where the text is needed. Position-outer (16 writes), that is about 1-1.5 s per plugin.
 
-## 6. Readouts: item 12 on the mismatch list, AGREED 28 Sep (not yet emitted)
+## 6. Readouts: item 12 on the mismatch list, AGREED and EMITTED 28 Sep
 
 **AGREED as written below, with `null` chosen over the first sample.** The reason:
 `defaultOnInstantiate` means "the value the plugin holds on instantiate", and a meter has
 no such value. Null is the truthful encoding. The first sample is a number that looks like
-a measurement and is not. The fixture composer does not emit the field yet; that is its
-own change.
+a measurement and is not.
+
+**EMITTED since 28 Sep.** `applySchema` (`EjmapFixtureReadout.h`) turns the measured form
+into this shape, and that is what the driver writes. It is checked by `checkEmission`,
+which never calls `applySchema`. There are five checks, and each reports at most one line,
+so one defect reddens one check:
+- **C1:** `readoutCheck` is present with the agreed content exactly when the check ran.
+- **C2:** `readout` is on exactly the controls that moved, carrying their samples.
+- **C3:** `normalised` and `display` are null on exactly those controls.
+- **C4:** `declaredDefault` survives on them.
+- **C5:** every other control's `defaultOnInstantiate` is untouched.
+
+Pinned in `testFixtureReadoutEmission` (10 checks). Mutating `applySchema` to drop
+`readoutCheck` reddens exactly one pin (P1). Mutating it to keep the first sample instead
+of null reddens exactly one pin (P3). The checker's own pins run on a hand-built fixture,
+never on the transform's output, so they cannot share a failure with it. How the emission
+line relates to the reproduction score is set out in section 0.
 
 A control whose value differs between two FRESH instances is a READOUT, and its
 `defaultOnInstantiate` is meaningless. Ruled 28 Sep:

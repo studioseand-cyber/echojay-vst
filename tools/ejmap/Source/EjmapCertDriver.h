@@ -43,6 +43,7 @@
 #include "EchoJayAuRegistry.h"
 #include "EjmapFixtureUnit.h"
 #include "EjmapFixtureRange.h"
+#include "EjmapFixtureReadout.h"
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <libproc.h>
@@ -694,9 +695,9 @@ inline int runCertDefaults (const Options& opt)
     // Sufficient, not necessary: a meter that happens to read the same twice (a gain
     // reduction meter sitting at 0 in silence) is NOT caught.
     struct Readout { int index; juce::String name; double a, b; juce::String ta, tb; };
-    struct Row { const Subject* s; juce::String outcome; juce::StringArray diffs, diffsOnReadouts; bool reproduced = false,
-                 retried = false, readoutChecked = false; int captured = 0, onList = 0; std::vector<Readout> readouts;
-                 juce::String readoutNote; };
+    struct Row { const Subject* s; juce::String outcome; juce::StringArray diffs, diffsOnReadouts, emissionFails;
+                 bool reproduced = false, retried = false, readoutChecked = false, emitted = false;
+                 int captured = 0, onList = 0; std::vector<Readout> readouts; juce::String readoutNote; };
     std::vector<Row> rows;
     for (const auto& s : subjects)
     {
@@ -738,8 +739,18 @@ inline int runCertDefaults (const Options& opt)
                 }
             }
 
+            // TWO FORMS, TWO QUESTIONS. `regen` is the MEASURED form, composed exactly as
+            // before item 12; it is what the reproduction score compares, so that score stays
+            // comparable to the 14 of 15 measured before the schema change and never contains
+            // the new fields. `emittedFixture` is item 12's shape; it is what gets written, and
+            // it is checked separately by checkEmission. Never merge the two.
             const auto regen = composeFixture (s, list, text, lp.code, ta.code, probeLabel, date);
-            opt.out.getChildFile (s.fixtureFile.getFileName()).replaceWithText (juce::JSON::toString (regen, false));
+            std::vector<fixturereadout::Moved> moved;
+            for (const auto& ro : row.readouts) moved.push_back ({ ro.index, ro.a, ro.b, ro.ta, ro.tb });
+            const auto emittedFixture = fixturereadout::applySchema (regen, moved, row.readoutChecked);
+            opt.out.getChildFile (s.fixtureFile.getFileName()).replaceWithText (juce::JSON::toString (emittedFixture, false));
+            row.emissionFails = fixturereadout::checkEmission (emittedFixture, regen, moved, row.readoutChecked);
+            row.emitted = row.readoutChecked && row.emissionFails.isEmpty();
             for (const auto& d : compareFixtures (regen, s.pushed))
             {
                 // A difference in a DETECTED readout's defaultOnInstantiate is the known,
@@ -789,7 +800,7 @@ inline int runCertDefaults (const Options& opt)
     std::map<Subject::Reach, juce::StringArray> byReach;
     for (const auto& s : subjects) byReach[s.reach].add (s.product + (s.detail.isNotEmpty() ? "  (" + s.detail + ")" : ""));
     const int reachable = (int) rows.size();
-    int reproduced = 0, differs = 0, onlyReadouts = 0, failed = 0, readoutControls = 0, readoutChecked = 0;
+    int reproduced = 0, differs = 0, onlyReadouts = 0, failed = 0, readoutControls = 0, readoutChecked = 0, emitted = 0;
     for (const auto& r : rows)
     {
         if (r.reproduced) ++reproduced;
@@ -798,6 +809,7 @@ inline int runCertDefaults (const Options& opt)
         else ++failed;
         readoutControls += (int) r.readouts.size();
         if (r.readoutChecked) ++readoutChecked;
+        if (r.emitted) ++emitted;
     }
 
     juce::String rep;
@@ -809,18 +821,24 @@ inline int runCertDefaults (const Options& opt)
     for (auto r : { Subject::Reach::reachable, Subject::Reach::reachableNoVersion, Subject::Reach::heldPace,
                     Subject::Reach::versionMismatch, Subject::Reach::notInstalled, Subject::Reach::ambiguous })
         rep << "  " << reachName (r).paddedRight (' ', 58) << byReach[r].size() << "\n";
-    rep << "\nRESULT: reproduced " << reproduced << " of " << reachable << " reachable, of " << (int) subjects.size()
-        << " fixtures  |  differ only on detected readouts " << onlyReadouts << "  |  differ " << differs
+    // TWO LINES, NEVER ONE: they answer different questions.
+    rep << "\nREPRODUCTION (the MEASURED form vs the pushed fixture; item-12 fields are not in it): reproduced "
+        << reproduced << " of " << reachable << " reachable, of " << (int) subjects.size() << " fixtures"
+        << "  |  differ only on detected readouts " << onlyReadouts << "  |  differ " << differs
         << "  |  not reproduced (named) " << failed << "\n"
+        << "SCHEMA EMISSION (item 12, checked separately, C1-C5): emitted the readout fields correctly on "
+        << emitted << " of " << reachable << " reachable\n"
         << "READOUTS: checked on " << readoutChecked << " of " << reachable << " (two fresh instances each); "
-        << readoutControls << " control(s) moved between instances. NOT written into any fixture: the shape is\n"
-        << "          agreed (item 12, null default) but the composer does not emit it yet. They are in readouts.json.\n\n"
-        << "PER REACHABLE PRODUCT\n";
+        << readoutControls << " control(s) moved between instances (also in readouts.json)\n\n"
+        << "PER REACHABLE PRODUCT (reproduction | emission)\n";
     for (const auto& r : rows)
     {
         rep << "  " << r.s->product.paddedRight (' ', 38) << r.outcome
+            << "  |  emission " << (r.emitted ? juce::String ("OK")
+                                              : r.readoutChecked ? "FAILED" : "not checked: " + r.readoutNote)
             << (r.onList > 0 ? "   controls " + juce::String (r.captured) + " / " + juce::String (r.onList) : juce::String())
             << (r.retried ? "   RETRIED" : "") << "\n";
+        for (const auto& f : r.emissionFails) rep << "      EMISSION " << f << "\n";
         for (const auto& d : r.diffs) rep << "      " << d << "\n";
         for (const auto& d : r.diffsOnReadouts) rep << "      " << d << "   (on a detected readout)\n";
         for (const auto& ro : r.readouts)
@@ -839,7 +857,7 @@ inline int runCertDefaults (const Options& opt)
            "reproduced and is never a pass. Every attempt is in run.jsonl beside this report.\n";
     opt.out.getChildFile ("report.txt").replaceWithText (rep);
     std::cout << "\n" << rep << std::endl;
-    return (differs == 0 && onlyReadouts == 0 && failed == 0) ? 0 : 1;
+    return (differs == 0 && onlyReadouts == 0 && failed == 0 && emitted == reachable) ? 0 : 1;
 }
 
 //==============================================================================
