@@ -643,7 +643,13 @@ public:
     juce::String calibTick(const juce::String& uid);
     /** The closing message, handed over exactly once - whoever asks first posts it. */
     juce::String calibTakeClosing(const juce::String& uid);
-    juce::String calibTakeAsk(const juce::String& uid);      // 21t-i: the measure-and-ask line, once
+    // 21t-i/21t-j: the loop's one chat line, handed out exactly once. replacesOpeningOut says whether it REPLACES
+    // the opening line in place (the settle completing) rather than being a new message.
+    juce::String calibTakeAsk(const juce::String& uid, bool* replacesOpeningOut = nullptr);
+    /** 21t-j (28 Sep 2026 ruling): CANCEL A PENDING SETTLE on that slot - any user or chat edit to it, or the
+        plugin being removed or replaced. The line closes with the setting as it stands; it does not vanish and it
+        does not keep promising to land something nobody is landing. Returns true if a settle was pending. */
+    bool calibCancelSettle(const juce::String& uid, int slot, const juce::String& why);
     // 21t-i: the last window line this process emitted, kept as well as logged. A guard that reads the rolling log
     // FILE is asserting about the environment's logging as much as about the product - under the suite's sandbox
     // seal the file was unreadable and a judged, logged window looked identical to a silent one. The line itself is
@@ -1534,8 +1540,18 @@ public:
     // offsetDb (21r item 4, 24 Sep 2026): the group's own level offset, like a VCA - it applies to the members,
     // it stays where it was put, and it is saved with the group.
     struct LinkGroup { juce::String id, name, bus; juce::StringArray members; float offsetDb = 0.0f; };
+    // 21t-j (28 Sep 2026 ruling): THE CAPS, raised. Sixteen members was the wrong size for a session where "every
+    // channel" is the group that matters: a 22-strip selection came back as a group of 16, silently, because the
+    // store truncated. 64 members and 16 groups, on both sides (B changes the contract doc and its parser).
+    // NOT a shared-memory change: groups live here, in V2's own state and on the wire; LinkShm has no group table,
+    // so RegistrySlot and LinkMeterFrame keep their frozen layouts and the shm version does not move.
+    static constexpr int kMaxGroupMembers = 64;
+    static constexpr int kMaxGroups       = 16;
     const std::vector<LinkGroup>& linkGroups() const { return linkGroups_; }
-    juce::String createLinkGroup(const juce::String& name, const juce::StringArray& members, const juce::String& bus = {});   // returns the id
+    /** 21t-j: `refusedOut` names the members that could NOT be taken, with the reason - a group holds exactly the
+        selection, and anything it cannot hold is said out loud rather than dropped. */
+    juce::String createLinkGroup(const juce::String& name, const juce::StringArray& members,
+                                 const juce::String& bus = {}, juce::StringArray* refusedOut = nullptr);   // returns the id
     void removeLinkGroup(const juce::String& id);
     void setLinkGroupBus(const juce::String& id, const juce::String& busUid);
     void setLinkGroupMembers(const juce::String& id, const juce::StringArray& members);

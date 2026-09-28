@@ -5459,17 +5459,41 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
 }
 
 // ===== 21n item 4: link groups =====
-juce::String EchoJayProcessor::createLinkGroup(const juce::String& name, const juce::StringArray& members, const juce::String& bus)
+juce::String EchoJayProcessor::createLinkGroup(const juce::String& name, const juce::StringArray& members,
+                                              const juce::String& bus, juce::StringArray* refusedOut)
 {
     if (members.isEmpty()) return {};
     LinkGroup g; g.id = "grp_" + juce::String::toHexString((int) (juce::Time::currentTimeMillis() & 0x7fffffff)) + juce::String(linkGroups_.size());
     g.name = name.trim().isNotEmpty() ? name.trim() : "Group " + juce::String((int) linkGroups_.size() + 1);
     for (const auto& u : members) if (u.isNotEmpty()) g.members.addIfNotAlreadyThere(u);
     g.bus = bus;
-    if ((int) linkGroups_.size() >= 12) { EchoJay_NSLog("EJGroup: 12 groups already (the contract's cap) - not created"); return {}; }
-    while (g.members.size() > 16) g.members.remove(g.members.size() - 1);   // the contract's member cap
+    if ((int) linkGroups_.size() >= kMaxGroups)
+    {
+        EchoJay_NSLog(("EJGroup: " + juce::String(kMaxGroups) + " groups already (the contract's cap) - not created").toRawUTF8());
+        if (refusedOut != nullptr)
+            refusedOut->add("there are already " + juce::String(kMaxGroups) + " groups, which is the limit");
+        return {};
+    }
+    // 21t-j (28 Sep 2026 ruling): A GROUP HOLDS EXACTLY THE SELECTION, and anything it cannot hold is NAMED.
+    // Sean selected 22 strips and got a group of 16: this loop threw the last six away without a word, in the
+    // store, so the menu's "(22 Links)" and the group's "(16)" were both honest about different things. The cap is
+    // 64 now and will not be reached in practice; when it is, the refusal says so and the caller shows it.
+    while (g.members.size() > kMaxGroupMembers)
+    {
+        const auto dropped = g.members[g.members.size() - 1];
+        g.members.remove(g.members.size() - 1);
+        const auto label = resolveLinkDisplayName(dropped);
+        if (refusedOut != nullptr)
+            refusedOut->add((label.isNotEmpty() ? label : dropped) + " - " + juce::String(members.size())
+                            + " selected, the limit is " + juce::String(kMaxGroupMembers));
+        EchoJay_NSLog(("EJGroup: \"" + (label.isNotEmpty() ? label : dropped) + "\" NOT taken into \"" + g.name
+                       + "\" - " + juce::String(members.size()) + " selected, the limit is "
+                       + juce::String(kMaxGroupMembers)).toRawUTF8());
+    }
     linkGroups_.push_back(g);
-    EchoJay_NSLog(("EJGroup: created \"" + g.name + "\" id=" + g.id + " members=" + g.members.joinIntoString(",") + (g.bus.isNotEmpty() ? " bus=" + g.bus : juce::String())).toRawUTF8());
+    EchoJay_NSLog(("EJGroup: created \"" + g.name + "\" id=" + g.id + " with " + juce::String(g.members.size())
+                   + " of " + juce::String(members.size()) + " selected, members=" + g.members.joinIntoString(",")
+                   + (g.bus.isNotEmpty() ? " bus=" + g.bus : juce::String())).toRawUTF8());
     markStateDirty();
     return g.id;
 }
@@ -6460,15 +6484,29 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
 /** 21t-i: THE MEASURE-AND-ASK LINE, handed to the chat exactly once. The same shape as calibTakeClosing and for
     the same reason - the flag is cleared before the text is returned, so two ticks cannot both post it - but a
     separate door, because this one does NOT mean the loop ended. It measures, it reports, it waits for the user. */
-juce::String EchoJayProcessor::calibTakeAsk(const juce::String& uid)
+juce::String EchoJayProcessor::calibTakeAsk(const juce::String& uid, bool* replacesOpeningOut)
 {
     auto loop = calibLoad(uid);
     if (loop.askOwed.isEmpty()) return {};
     const auto msg = loop.askOwed;
+    // 21t-j (a): a line posted while the settle has LANDED is the completion of the opening one, and the editor
+    // rewrites that message rather than adding another.
+    if (replacesOpeningOut != nullptr) *replacesOpeningOut = loop.landed;
     loop.askOwed.clear();
     calibStore(uid, loop);
     EchoJay_NSLog(("EJThreshold: asked the user: " + msg).toRawUTF8());
     return msg;
+}
+
+bool EchoJayProcessor::calibCancelSettle(const juce::String& uid, int slot, const juce::String& why)
+{
+    auto loop = calibLoad(uid);
+    if (! loop.active() || (slot >= 0 && loop.slot != slot)) return false;
+    const auto line = loop.cancelSettle(why);
+    if (line.isEmpty()) return false;            // nothing was pending
+    EchoJay_NSLog(line.toRawUTF8());
+    calibStore(uid, loop);
+    return true;
 }
 
 juce::String EchoJayProcessor::calibTakeClosing(const juce::String& uid)

@@ -29,6 +29,8 @@ struct EchoJayTabStripTestAccess
     static std::vector<juce::String> rows (EchoJayEditor& e) { return e.rosterAddresses(); }
     static int groupStrips (EchoJayEditor& e) { int n = 0; for (const auto& a : e.rosterAddresses()) if (a.startsWith ("grp:")) ++n; return n; }
     static juce::String groupStripId (EchoJayEditor& e) { for (const auto& a : e.rosterAddresses()) if (a.startsWith ("grp:")) return a.fromFirstOccurrenceOf ("grp:", false, false); return {}; }
+    // 21t-j: the block the server actually reads, composed by the shipping code.
+    static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }
 };
 using A = EchoJayTabStripTestAccess;
 namespace {
@@ -87,7 +89,60 @@ int main()
       check (b1 == 1 && A::lastUids (*ed).size() == 1 && A::lastLine (*ed).startsWith ("Built on "), "G5. {bus}: ONE build, on the bus Link", A::lastLine (*ed));
       { std::vector<EchoJayProcessor::LinkSlotInfo> off = links; off[0].connected = false; EchoJayAlignTestAccess::setLinks (p, off);
         const int b2 = A::targetsBuild (*ed, juce::StringArray { "lnk_01", "lnk_02" }, chain, true);
-        check (b2 == 1 && A::lastLine (*ed).contains ("Not built:") && A::lastLine (*ed).contains ("offline"), "G5. an absent member is skipped and NAMED, the rest are built", A::lastLine (*ed)); } }
+        check (b2 == 1 && A::lastLine (*ed).contains ("Not built:") && A::lastLine (*ed).contains ("offline"), "G5. an absent member is skipped and NAMED, the rest are built", A::lastLine (*ed)); }
+      // ---- 21t-j (28 Sep 2026 ruling): THE CAP IS 64 MEMBERS AND 16 GROUPS -----------------------------------
+      // Sean selected 22 strips and the group held 16, silently: a `while (members.size() > 16) remove (last)`
+      // with nothing said. The cap rises to 64 members and 16 groups, and whatever a cap does leave out is NAMED.
+      {
+        std::printf ("\n== 21t-j: the group cap, and the refusal that names what it left out ==\n");
+        std::vector<EchoJayProcessor::LinkSlotInfo> many; juce::StringArray uids;
+        for (int i = 0; i < 22; ++i)
+        {
+            EchoJayProcessor::LinkSlotInfo li;
+            li.uid = "lnk_2" + juce::String (i + 10); li.name = "Vox " + juce::String (i + 1);
+            li.active = true; li.connected = true; li.gainDb = -3.0f; li.channels = 2;
+            many.push_back (li); uids.add (li.uid);
+        }
+        EchoJayAlignTestAccess::setLinks (p, many);
+        juce::StringArray refused;
+        const auto g22 = p.createLinkGroup ("the twenty two", uids, {}, &refused);
+        const auto* got = p.linkGroupById (g22);
+        check (got != nullptr && got->members.size() == 22 && refused.isEmpty(),
+               "21t-j. 22 Links selected make a group of 22  (RED as it stood: 16, with nothing said)",
+               juce::String (got != nullptr ? got->members.size() : 0) + " member(s)"
+               + (refused.isEmpty() ? juce::String() : ", refused: " + refused.joinIntoString ("; ")));
+        p.chatTargetGroupId = g22;
+        EchoJayAlignTestAccess::setLinks (p, many);
+        const auto blk = A::groupLevels (*ed);
+        int memberLines = 0;
+        { juce::StringArray ls; ls.addLines (blk);
+          for (const auto& l : ls) if (l.startsWith ("  ") && l.contains ("(id lnk_2")) ++memberLines; }
+        check (memberLines == 22,
+               "21t-j. ...and the [GROUP LEVELS] block the server reads carries 22 member lines",
+               juce::String (memberLines) + " line(s) of 22");
+        // ...and the cap that IS there names what it left out, rather than truncating in silence.
+        juce::StringArray tooMany, refused2;
+        for (int i = 0; i < 70; ++i) tooMany.add ("lnk_3" + juce::String (i + 10));
+        const auto g70 = p.createLinkGroup ("seventy", tooMany, {}, &refused2);
+        const auto* got70 = p.linkGroupById (g70);
+        // THE NUMBER IS PINNED TO THE RULING (64), not to whatever the constant happens to say: a leg written
+        // against the constant passes on a tree where the cap was moved, which is the fault it is here to catch.
+        check (got70 != nullptr && got70->members.size() == 64 && EchoJayProcessor::kMaxGroupMembers == 64
+               && EchoJayProcessor::kMaxGroups == 16
+               && refused2.size() >= 1 && refused2.joinIntoString ("; ").contains ("70")
+               && refused2.joinIntoString ("; ").contains ("64"),
+               "21t-j. 70 selected keeps 64 and SAYS SO, naming the count and the limit (64 members, 16 groups, "
+               "as ruled)",
+               juce::String (got70 != nullptr ? got70->members.size() : 0) + " kept, cap "
+               + juce::String (EchoJayProcessor::kMaxGroupMembers) + "/" + juce::String (EchoJayProcessor::kMaxGroups)
+               + "; first refusal: " + refused2[0]);
+        // THIS LEG LEAVES THE STATE AS IT FOUND IT (ruled): the persistence check below asserts on the ONE group
+        // the earlier legs made, and a guard that changes what the next leg measures is not a guard.
+        p.chatTargetGroupId.clear();
+        p.removeLinkGroup (g22); p.removeLinkGroup (g70);
+        check (p.linkGroups().size() == 1, "21t-j. ...and the leg leaves the state as it found it",
+               juce::String ((int) p.linkGroups().size()) + " group(s) left");
+      } }
     // the persistence check runs LAST: a second EchoJayProcessor constructed (and destroyed) before the editor aborts the
     // editor's construction in this process ("mutex lock failed") - the same one-editor-per-process condition the ui_guard hit
     { juce::MemoryBlock mb; p.getStateInformation (mb); auto p2 = std::make_unique<EchoJayProcessor>(); p2->prepareToPlay (48000.0, 512); p2->setStateInformation (mb.getData(), (int) mb.getSize());
