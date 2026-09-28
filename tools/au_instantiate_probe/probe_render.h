@@ -102,13 +102,9 @@ inline void printLayoutSupport (juce::AudioPluginInstance& p)
     }
 }
 
-// The render. Returns nothing: every result is printed, and a crash is attributed by the last flushed stage line.
-inline void runRenderTest (juce::AudioPluginInstance& p, const RenderSpec& s = {})
+// CONFIGURE AND PREPARE, the one place the SIDECHAIN POLICY is applied, so every mode that renders gets it.
+inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec& s)
 {
-    std::printf ("render\tproto\t1\n");
-    printBuses (p, "declared");
-    printLayoutSupport (p);
-
     stage ("configure");
     // NOT setPlayConfigDetails: it ends in an unconditional disableNonMainBuses(). See SIDECHAIN POLICY above.
     const bool allEnabled = p.enableAllBuses();
@@ -123,12 +119,27 @@ inline void runRenderTest (juce::AudioPluginInstance& p, const RenderSpec& s = {
 
     stage ("prepare");
     p.prepareToPlay (s.sampleRate, s.block);
+}
+
+// The number of main-bus input channels the stimulus drives (0 when there is no enabled main input).
+inline int mainInputChannels (juce::AudioPluginInstance& p)
+{
+    return p.getBusCount (true) > 0 && p.getBus (true, 0) != nullptr && p.getBus (true, 0)->isEnabled()
+             ? p.getBus (true, 0)->getNumberOfChannels() : 0;
+}
+
+// The render. Returns nothing: every result is printed, and a crash is attributed by the last flushed stage line.
+inline void runRenderTest (juce::AudioPluginInstance& p, const RenderSpec& s = {})
+{
+    std::printf ("render\tproto\t1\n");
+    printBuses (p, "declared");
+    printLayoutSupport (p);
+    configureAndPrepare (p, s);
 
     const int totalIn  = p.getTotalNumInputChannels();
     const int totalOut = p.getTotalNumOutputChannels();
     const int chans    = juce::jmax (2, totalIn, totalOut);
-    const int mainIn   = p.getBusCount (true) > 0 && p.getBus (true, 0) != nullptr && p.getBus (true, 0)->isEnabled()
-                           ? p.getBus (true, 0)->getNumberOfChannels() : 0;
+    const int mainIn   = mainInputChannels (p);
     std::printf ("config\tin\t%d\tout\t%d\tbuffer\t%d\tmain_in\t%d\tsr\t%.0f\tblock\t%d\tlatency\t%d\n",
                  totalIn, totalOut, chans, mainIn, s.sampleRate, s.block, p.getLatencySamples());
     juce::String driven;

@@ -13,6 +13,7 @@
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
 #include "probe_render.h"                    // feat/ejmap-cert: --render-test (the whole mode lives there)
+#include "probe_write.h"                     // feat/ejmap-cert: --write-test (the whole mode lives there)
 #include <set>
 #include <vector>
 #include <cstdio>
@@ -78,7 +79,8 @@ int main (int argc, char** argv)
     // feat/ejmap-cert (28 Sep 2026): "--render-test" = RENDER MODE, EJ Map certification's instrument. Same rules as
     // the other list modes (no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>"); see probe_render.h.
     const bool renderTest = argc >= 5 && juce::String (argv[4]) == "--render-test";
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest;
+    const bool writeTest  = argc >= 9 && juce::String (argv[4]) == "--write-test";   // <index> <from> <to> <arm>
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -120,6 +122,12 @@ int main (int argc, char** argv)
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
         if (renderTest) { ejprobe::runRenderTest (*inst); std::fflush (stdout); std::_Exit (0); }
+        if (writeTest)
+        {
+            ejprobe::runWriteTest (*inst, atoi (argv[5]), (float) atof (argv[6]), (float) atof (argv[7]),
+                                   juce::String::fromUTF8 (argv[8]));
+            std::fflush (stdout); std::_Exit (0);
+        }
         // ONE sweep, shared by --sample-text (one control) and --sample-stepped (every control). Returns the number
         // of distinct texts, or 0 when the control is not a named one. THE TEXT IS READ AT 256 CHARACTERS
         // (ruling of 24 Sep 2026: at least 64, so a name is never truncated BY US - when it still comes back

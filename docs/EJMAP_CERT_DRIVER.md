@@ -108,7 +108,30 @@ but a `flat` with an enabled-and-silent sidechain has to be readable as "maybe
 keyed externally", not blamed on the threshold. Never report one without the
 other.
 
-## 5. The fixture unit rule is EJ Map's
+## 5. Every write is confirmed; no delay is ever assumed
+
+Spec section 4.3 sets a position and then renders. On a bridged plugin a write lands
+**34-69 ms after it is made** (measured 28 Sep on API-2500, whether the host pumps,
+renders or sleeps), and a read taken straight after the write returns the OLD value.
+Offline rendering runs at about 200x realtime, so "a few blocks later" can still be
+before the write lands. The full measurement is in the header of
+`tools/au_instantiate_probe/probe_write.h`.
+
+So the sweep uses the probe's three-step verify for EVERY position, and never an
+assumed delay or block count:
+1. Confirm the property: pump until `getValue()` matches, bounded at 500 ms (the
+   longest seen was 70 ms). On timeout, record `write_unlanded` and skip that position.
+   The property never lagged the audio, so a confirmed read means the next block
+   reflects the write.
+2. Only where display text is the evidence (the §4.6 dB-threshold row): wait for a
+   stable read, two reads 20 ms apart, bounded at 300 ms (measured 21-22 ms).
+3. After the 1.5 s hold, re-read `getValue()` and the text. If either moved, discard
+   and re-render that position.
+
+Measured cost on the bridge: about 45-70 ms per write to confirm, plus about 21 ms
+where the text is needed. Position-outer (16 writes), that is about 1-1.5 s per plugin.
+
+## 6. The fixture unit rule is EJ Map's
 
 The 74 compressor-profile fixtures derived `unit` in an uncommitted sampling
 pass. The rule is now written down and pinned:
