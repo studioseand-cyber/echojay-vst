@@ -662,6 +662,33 @@ static int guardMain()
         std::printf ("  O2 measure: typical %.1f dB, worst %.1f dB over %d blocks | %s\n", hm.typicalDb, hm.worstDb, hm.blocks, prop.toRawUTF8());
         check (prop.contains ("is as loud as this goes with the limiter working <=6 dB. Push to -8.0 anyway?") && r.loop.lastPills().joinIntoString ("|").startsWith ("Push it anyway|Leave it"), "O2. hits typically above the cap -> capped with the capped-proposal wording", prop);
     }
+    // ---- 21t-k item 3 (28 Sep 2026 ruling): THE LEVEL SENSOR MEASURES THE PLUGIN, NOT THE STAGING ---------
+    // Sean's Zip build: pre -15 on EchoJay's own staging, a plugin doing nothing, and the sensor reported
+    // "the slot was 15.0 dB quieter out than in" - so the hold tried to put 15 dB back and clamped at +12. The
+    // in tap now sits AFTER the pre-trim and the out tap BEFORE the slot output gain, so a unity plugin reads
+    // ZERO whatever the staging is.
+    std::printf ("== 21t-k item 3: the level sensor measures the PLUGIN ==\n");
+    {
+        Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (0.0f);
+        calibrate (r.proc, r.prog, -18.0f);
+        feed (r.proc, r.prog, 400, false, nullptr, nullptr);
+        const auto flat = r.h.getSlotLevels (1);
+        check (flat.measured && std::abs (flat.out.shortTermDb - flat.in.shortTermDb) < 0.35f,
+               "21t-k 3. a UNITY slot with no staging reads a level change of 0",
+               f1 (flat.out.shortTermDb - flat.in.shortTermDb) + " dB");
+        // ...and now the staging Sean's build wrote: -15 in, +15 back on the slot's own output gain.
+        r.h.setSlotPreTrimDb (1, -15.0f);
+        r.h.setSlotOutGainDb (1, 15.0f);
+        r.h.resetSlotShortTermStats (1, "the leg set the staging");
+        feed (r.proc, r.prog, 600, false, nullptr, nullptr);
+        const auto staged = r.h.getSlotLevels (1);
+        check (staged.measured && std::abs (staged.out.shortTermDb - staged.in.shortTermDb) < 0.35f,
+               "21t-k 3. ...and the SAME unity slot with pre -15 / output +15 still reads 0  (RED as it stood: "
+               "\"the slot was 15.0 dB quieter out than in\", which is EchoJay's own staging, not the plugin)",
+               f1 (staged.out.shortTermDb - staged.in.shortTermDb) + " dB");
+        r.h.setSlotPreTrimDb (1, 0.0f); r.h.setSlotOutGainDb (1, 0.0f);
+    }
+
     std::printf ("== P. 22 Sep 2026 (21m ruling 2): gain staging - each slot's unity trim, measured at Listen, applied inside its blend node ==\n");
     {
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
@@ -1421,6 +1448,29 @@ static int guardMain()
                    "settle left it, not from zero and not twice",
                    juce::String (writes) + " write(s), " + juce::String (settled, 1) + " -> "
                    + juce::String (after, 1) + " dB");
+        }
+
+        // (iv-c) 21t-k item 3 (28 Sep 2026 ruling): A DRIVE BLOCK WITH A PARAM AND A START IS CONTRADICTORY.
+        // Sean's Zip build: actuator "drive", param "Threshold", start_db -15.00 from the working position. The
+        // kind won, so the -15 landed on EchoJay's own staging pre-gain instead of the plugin's Threshold, a
+        // -35 dB vocal reached the detector at -50, and the compressor did nothing for eighteen windows.
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = parse (R"({"source":"working_position","mode":"passive","actuator":"drive","slot":1,
+                                       "param":"Threshold","start_db":-15.0,"measure":"short90",
+                                       "gr_target_db":[2,3]})", 2, c, why);
+            check (ok && ! (c.startDb == c.startDb) && ! c.startFromBlock,
+                   "21t-k 3. a drive block carrying a param AND a start is refused: the start is IGNORED and the "
+                   "drive opens at the staging  (RED as it stood: -15.0 went onto the staging pre-gain and the "
+                   "plugin never compressed)",
+                   c.startDb == c.startDb ? juce::String (c.startDb, 2) + " dB taken" : juce::String ("unset"));
+            check (why.contains ("a drive block carries a param and a start"),
+                   "21t-k 3. ...and the log says so, in the ruled words", why.trim().substring (0, 130));
+            // ...and the loop opened from the staging moves FROM THERE, not from the block's number.
+            echojay::CalibLoop::Config staged = c; staged.startDb = -3.0f;   // what the slot actually carries
+            echojay::CalibLoop l; l.begin (staged);
+            check (std::abs (l.preDb - (-3.0f)) < 0.001f,
+                   "21t-k 3. ...so the pre-slot gain stays at the staging", juce::String (l.preDb, 2) + " dB");
         }
 
         // (v) a mode or actuator string that is not one of the two is flagged, and the SAFE one is used

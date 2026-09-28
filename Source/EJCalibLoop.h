@@ -125,8 +125,13 @@ struct CalibLoop
     int    settleSteps = 0;
     float  settleHeardS = 0.0f;
     float  settleStartHeardS = -1.0f;
+    // 21t-k item 3 (28 Sep 2026 ruling, superseding the 15 s cap): THE BUDGET IS THREE STEPS, each judged on
+    // TWO fresh windows, with a 45 s heard CEILING as the backstop. The 15 s cap ended Sean's Zip settle after
+    // ONE step, because every write waits for fresh windows before the next judgement and three of those spend
+    // the whole budget: 3 steps x 2 fresh windows x 3 s is 18 s of heard audio before the third step is judged.
+    // A cap shorter than the machine's own cadence is not a budget, it is a stop.
     static constexpr int   kSettleMaxSteps  = 3;      // ruled
-    static constexpr float kSettleMaxHeardS = 15.0f;  // ruled, in HEARD seconds
+    static constexpr float kSettleMaxHeardS = 45.0f;  // ruled, in HEARD seconds - the backstop, not the budget
     // The output/makeup control, when the block named one, and what the loop last wrote to it.
     juce::StringArray senseParams;     // the plugin's own GR meter, when the block named one
     bool   grReadable = false;         // ...and whether the block says it reads as dB
@@ -142,9 +147,11 @@ struct CalibLoop
     float  outMin = -24.0f, outMax = 0.0f;
     float  levelChangeDb = 0.0f;       // what the slot last measured itself adding (out - in)
     float  slotGainDb = 0.0f;          // EchoJay's own per-slot output gain, where the hold goes with no control
-    float  levelTrimmedDb = 0.0f;      // how much this loop has taken off the output to hold the level
+    float  levelTrimmedDb = 0.0f;      // what the hold ACTUALLY wrote (21t-k: not what it wanted to write)
+    bool   levelHoldClamped = false;   // ...and true when the control ran out before the level was held
+    float  levelHoldLimitDb = 0.0f;    // where it stopped
     bool   levelHeld = false;          // the hold has been applied for the current actuator position
-    static constexpr int kFreshAfterWrite = 3;   // ruled
+    static constexpr int kFreshAfterWrite = 2;   // 21t-k item 3 (ruled 28 Sep 2026): two fresh windows per step
 
     // ---- one 3 s window, as the host measured it ----
     struct Window
@@ -366,6 +373,20 @@ struct CalibLoop
         const bool haveStart = ! startV.isVoid() && (startV.isDouble() || startV.isInt() || startV.isInt64());
         out.startDb = haveStart ? (float) (double) startV : std::numeric_limits<float>::quiet_NaN();
         out.startFromBlock = haveStart;
+        // 21t-k item 3 (28 Sep 2026 ruling): A DRIVE BLOCK THAT CARRIES A PARAM AND A START IS CONTRADICTORY,
+        // AND IS REFUSED. Sean's Zip build arrived as actuator "drive" with param "Threshold" and start_db
+        // -15.00 taken from the working position; the kind won, so the -15 went onto EchoJay's own staging
+        // pre-gain instead of the plugin's Threshold, a -35 dB vocal reached the detector at -50, and the
+        // compressor did nothing for eighteen windows. The client cannot tell which half the server meant, so
+        // it follows the kind and IGNORES THE START: the drive opens at the staging already on the slot.
+        if (out.actuator == Actuator::Drive && ! out.params.isEmpty() && haveStart)
+        {
+            out.startDb = std::numeric_limits<float>::quiet_NaN();
+            out.startFromBlock = false;
+            whyOut << "a drive block carries a param and a start - contradictory: the param is \"" << out.params[0]
+                   << "\" and start_db " << juce::String ((float) (double) startV, 2)
+                   << " is IGNORED; the drive opens at the staging already on the slot. ";
+        }
         // ---- min_db / max_db, and what NULL means (21t-j, 28 Sep 2026, B's contract note) -------------------
         // B now sends min_db null for a control whose low end prints "-inf" (the MC 77's Input reads "-inf dB" at
         // normalised 0). TODAY'S PARSER WOULD READ THAT AS 0.0: juce::var(null) converts to 0.0, so the range
@@ -496,6 +517,7 @@ struct CalibLoop
         outParams = c.outputParams; outValue = c.outputStartDb;
         outMin = juce::jmin (c.outputMinDb, c.outputMaxDb); outMax = juce::jmax (c.outputMinDb, c.outputMaxDb);
         levelChangeDb = 0.0f; levelTrimmedDb = 0.0f; levelHeld = false; slotGainDb = 0.0f;
+        levelHoldClamped = false; levelHoldLimitDb = 0.0f;
         blockHeardS = c.heardS; fromWorking = c.working;
         // THE BUILD OPENS THE SETTLE (28 Sep 2026 ruling) and says so in ONE line, which the completion edits in
         // place. No ask state, no timer: the build is not complete until the slot has heard the vocal and landed.
@@ -837,8 +859,16 @@ struct CalibLoop
         // reopens it - a slot that drifts out of level later is not something the product quietly corrects.
         if (! landed && ! levelHeld && std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
         {
-            slotGainDb = juce::jlimit (-24.0f, 12.0f, slotGainDb - levelChangeDb);
-            levelTrimmedDb = -levelChangeDb;
+            // 21t-k item 3 (28 Sep 2026 ruling): THE REPLY REPORTS WHAT THE HOLD WROTE. Sean's Zip line said
+            // "Output trimmed 15.0 dB to hold the level" while the control had landed at +12.0, its limit - the
+            // slot was still 3 dB down and the sentence claimed it was level. levelTrimmedDb is now the MOVE
+            // that actually happened, and levelHoldClamped records that the control ran out.
+            const float wantGain = slotGainDb - levelChangeDb;
+            const float wasGain  = slotGainDb;
+            slotGainDb = juce::jlimit (-24.0f, 12.0f, wantGain);
+            levelTrimmedDb = slotGainDb - wasGain;
+            levelHoldClamped = std::abs (wantGain - slotGainDb) > 0.05f;
+            levelHoldLimitDb = slotGainDb;
             levelHeld = true;
             freshWanted = kFreshAfterWrite;
             judged = 0;
@@ -976,7 +1006,11 @@ struct CalibLoop
         if (gr == gr)
             out += " Doing about " + juce::String (gr, 1) + " dB of gain reduction" + bandNote() + ".";
         if (std::abs (levelTrimmedDb) > 0.05f)
-            out += " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
+            out += levelHoldClamped
+                     ? " Output " + signed1 (levelHoldLimitDb) + " dB, its limit - the slot is still "
+                       + juce::String (std::abs (levelChangeDb) - std::abs (levelTrimmedDb), 1)
+                       + " dB down and I cannot hold the rest."
+                     : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
         else if (std::abs (levelChangeDb) > 1.0f)
             out += " It is " + juce::String (std::abs (levelChangeDb), 1) + " dB "
                  + (levelChangeDb > 0.0f ? "louder" : "quieter") + " through the plugin and I could not hold it.";
@@ -999,7 +1033,11 @@ struct CalibLoop
         // the level moved and nothing here can hold it, because no output control was named.
         juce::String level;
         if (std::abs (levelTrimmedDb) > 0.05f)
-            level = " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
+            level = levelHoldClamped
+                      ? " Output " + signed1 (levelHoldLimitDb) + " dB, its limit - the slot is still "
+                        + juce::String (std::abs (levelChangeDb) - std::abs (levelTrimmedDb), 1)
+                        + " dB down and I cannot hold the rest."
+                      : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
         else if (std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
             level = " It is " + juce::String (std::abs (levelChangeDb), 1) + " dB "
                   + (levelChangeDb > 0.0f ? "louder" : "quieter")
@@ -1221,7 +1259,12 @@ struct CalibLoop
              + " mode=" + juce::String (mode == Mode::Passive ? "passive" : "listen")
              + (settling || landed
                     ? " settle=" + juce::String (settleSteps) + "/" + juce::String (kSettleMaxSteps)
-                      + " heard=" + juce::String (settleHeardS, 1) + "s"
+                      // 21t-k item 3: BOTH figures, because one of them jumped. `heard` is the settle's own budget
+                      // (slot heard MINUS where the settle opened) and the slot's is the tally's gated total;
+                      // Sean's Zip log read 0.0 s for ten windows and then 15.1 s, which is the slot's counter
+                      // reporting nothing until its in leg bound and then reporting all of it at once. With both
+                      // printed, that is readable in the line instead of inferred from it.
+                      + " heard=" + juce::String (settleHeardS, 1) + "s (slot " + juce::String (slotHeardS, 1) + "s)"
                     : juce::String())
              + " state=" + stateWord;
     }

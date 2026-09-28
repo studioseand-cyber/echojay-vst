@@ -2055,6 +2055,8 @@ private:
         // plugin's input can be held under -3 dBTP while the dry tap the blend mixes stays untouched at unity.
         float                                    preTrimDb = 0.0f;
         std::shared_ptr<std::atomic<float>>      preTrimShared;
+        // 21t-k item 3: the slot's IN tally, filled by SlotPreTrim (after the pre-trim) and read by the blend.
+        std::shared_ptr<echojay::LevelTally>     inTallyShared;
         juce::AudioProcessorGraph::Node::Ptr     preTrimNode;
         SlotPicture                              picture;   // 21p item 2: filled at Listen, kept in state
         juce::AudioProcessorGraph::Node::Ptr     blendNode;

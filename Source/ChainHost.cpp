@@ -679,13 +679,20 @@ juce::PluginDescription ChainHost::findVst3Alternative(const juce::String& plugi
 class SlotPreTrim : public juce::AudioProcessor
 {
 public:
-    explicit SlotPreTrim (std::shared_ptr<std::atomic<float>> trimDb)
+    // 21t-k item 3 (28 Sep 2026 ruling): THE IN TAP SITS HERE, AFTER THE PRE-TRIM. It used to ride the blend's
+    // DRY leg, which is the signal before this node, so the level sensor measured EchoJay's own staging as if
+    // the plugin had done it: Sean's Zip build read "15.0 dB quieter out than in" with pre -15 and a plugin
+    // doing nothing at all. The sensor must measure the PLUGIN, so the in tally is taken from the signal the
+    // plugin actually hears.
+    explicit SlotPreTrim (std::shared_ptr<std::atomic<float>> trimDb,
+                          std::shared_ptr<echojay::LevelTally> inTally = nullptr)
         : juce::AudioProcessor (BusesProperties()
               .withInput ("In", juce::AudioChannelSet::stereo(), true)
               .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
-          trimDb_ (std::move (trimDb)) {}
+          trimDb_ (std::move (trimDb)), inTally_ (std::move (inTally)) {}
     void prepareToPlay (double sampleRate, int) override
-    { smooth_.reset (sampleRate, 0.05); smooth_.setCurrentAndTargetValue (gainNow()); }
+    { smooth_.reset (sampleRate, 0.05); smooth_.setCurrentAndTargetValue (gainNow());
+      if (inTally_) inTally_->prepare (sampleRate); }
     void releaseResources() override {}
     void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
     {
@@ -696,6 +703,10 @@ public:
                 const float g = smooth_.getNextValue();
                 for (int ch = 0; ch < juce::jmin (2, b.getNumChannels()); ++ch) b.getWritePointer (ch)[i] *= g;
             }
+        // ...and the in tally, from what the plugin is about to hear.
+        if (inTally_ && b.getNumChannels() >= 1)
+            inTally_->push (b.getReadPointer (0), b.getNumChannels() >= 2 ? b.getReadPointer (1) : nullptr,
+                            b.getNumSamples());
     }
     const juce::String getName() const override { return "EchoJay Slot Pre-Trim"; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -713,6 +724,7 @@ public:
 private:
     float gainNow() const { return trimDb_ ? juce::Decibels::decibelsToGain (trimDb_->load (std::memory_order_relaxed)) : 1.0f; }
     std::shared_ptr<std::atomic<float>> trimDb_;
+    std::shared_ptr<echojay::LevelTally> inTally_;
     juce::LinearSmoothedValue<float> smooth_ { 1.0f };
 };
 
@@ -723,7 +735,8 @@ public:
     // compare device from now on - it exists so the two sides of an A/B are level-matched - so it is applied ONLY
     // while a compare is active. The PRE trim is not affected: it protects a slot's input and is always in the path.
     explicit SlotWetBlend(std::shared_ptr<std::atomic<float>> wet, std::shared_ptr<std::atomic<float>> trimDb = nullptr,
-                          std::shared_ptr<std::atomic<bool>> compareActive = nullptr)
+                          std::shared_ptr<std::atomic<bool>> compareActive = nullptr,
+                          std::shared_ptr<echojay::LevelTally> inTally = nullptr)
         : juce::AudioProcessor(BusesProperties()
               .withInput("Wet", juce::AudioChannelSet::stereo(), true)
               .withInput("Dry", juce::AudioChannelSet::stereo(), true)
@@ -754,7 +767,7 @@ public:
         if (sampleRate != tallySr_)
         {
             tallySr_ = sampleRate;
-            inTally_.prepare(sampleRate);
+            if (inTally_) inTally_->prepare(sampleRate);
             outTally_.prepare(sampleRate);
         }
     }
@@ -764,15 +777,18 @@ public:
     // input (the dry tap), inputs 0/1 the plugin's output. Measured before
     // the fully-wet early-out below, so a slot at 100% is measured too.
     // Cost is a few flops per sample; see EchoJayLevelTally.h.
-    const echojay::LevelTally& inTally()  const { return inTally_; }
+    // 21t-k item 3: the IN tally is owned by the slot and filled by SlotPreTrim (after the pre-trim); the blend
+    // only reads it, so every caller that already asks the blend keeps working.
+    const echojay::LevelTally& inTally()  const { return inTally_ ? *inTally_ : emptyTally_; }
     const echojay::LevelTally& outTally() const { return outTally_; }
-    void resetTallies() { inTally_.reset(); outTally_.reset(); }
+    void resetTallies() { if (inTally_) inTally_->reset(); outTally_.reset(); }
     // 21t-j (28 Sep 2026 ruling): BOTH LEGS TOGETHER. SHORTMAX and SHORT90 are since-reset figures, so the crest
     // difference is only a measurement of ONE setting if both legs start counting at the same instant. Reset at the
     // build and after every write to the actuator, the output control or the slot gain; until a window closes on
     // each leg the figures are NaN, which is what makes a sample from before the write impossible.
-    void resetShortTermStats() { inTally_.resetShortTermMax(); outTally_.resetShortTermMax(); }
-    void restoreTallies(const juce::var& in, const juce::var& out) { inTally_.fromVar(in); outTally_.fromVar(out); }
+    void resetShortTermStats() { if (inTally_) inTally_->resetShortTermMax(); outTally_.resetShortTermMax(); }
+    void restoreTallies(const juce::var& in, const juce::var& out)
+    { if (inTally_) inTally_->fromVar(in); outTally_.fromVar(out); }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
     {
@@ -794,7 +810,16 @@ public:
             }
             else trimSmooth_.setCurrentAndTargetValue(1.0f);
         }
-        {   // 21t-j: THE SLOT'S OWN OUTPUT GAIN, before the out tally so the hold is measured after it lands.
+        {   // 21t-k item 3 (28 Sep 2026 ruling): THE OUT TAP SITS HERE, BEFORE THE SLOT'S OWN OUTPUT GAIN.
+            // 21t-j deliberately put it AFTER, "so the hold is measured after it lands" - and that is exactly
+            // what makes the sensor chase its own tail: the hold writes +12, the next window reads the slot 12
+            // dB louder, and the gap it is trying to close moves with it. The sensor measures the PLUGIN; what
+            // the hold wrote is reported from what the hold wrote.
+            const int nchOut = buffer.getNumChannels();
+            if (nchOut >= 1)
+                outTally_.push(buffer.getReadPointer(0), nchOut >= 2 ? buffer.getReadPointer(1) : nullptr, n);
+        }
+        {
             const float odb = outGainDb_.load(std::memory_order_relaxed);
             outSmooth_.setTargetValue(juce::Decibels::decibelsToGain(odb));
             if (outSmooth_.isSmoothing() || std::abs(odb) > 0.001f)
@@ -805,13 +830,8 @@ public:
             }
             else outSmooth_.skip(n);
         }
-        {
-            const int nch = buffer.getNumChannels();
-            if (nch >= 1)
-                outTally_.push(buffer.getReadPointer(0), nch >= 2 ? buffer.getReadPointer(1) : nullptr, n);
-            if (nch >= 3)
-                inTally_.push(buffer.getReadPointer(2), nch >= 4 ? buffer.getReadPointer(3) : nullptr, n);
-        }
+        // (the IN tally is filled by SlotPreTrim, after the pre-trim; the dry leg on channels 2/3 is the
+        //  blend's dry signal and is no longer a measurement tap)
         // Fully wet and settled: output channels 0/1 already hold the wet
         // signal in-place — nothing to do (zero cost at the default setting).
         if (!smooth_.isSmoothing() && target >= 0.9995f)
@@ -855,8 +875,9 @@ private:
     // detector sees, and out minus in cancels any weighting anyway.
     std::atomic<float>                  outGainDb_ { 0.0f };     // 21t-j: the slot's own output gain (the hold)
     juce::LinearSmoothedValue<float>    outSmooth_ { 1.0f };
-    echojay::LevelTally                 inTally_  { echojay::LevelTally::Weighting::Plain };
+    std::shared_ptr<echojay::LevelTally> inTally_;                      // owned by the slot, filled by SlotPreTrim
     echojay::LevelTally                 outTally_ { echojay::LevelTally::Weighting::Plain };
+    echojay::LevelTally                 emptyTally_ { echojay::LevelTally::Weighting::Plain };   // a slot with no pre-trim node
     double                              tallySr_ = 0.0;
 };
 
@@ -1021,6 +1042,12 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     sampleRate_ = sampleRate;
     blockSize_  = blockSize;
     prepared_   = true;
+    // 21t-k item 3: every slot's IN tally is prepared here. It is filled by SlotPreTrim (after the pre-trim) and
+    // read by the blend, and an unprepared LevelTally drops every push on the floor - which is exactly what the
+    // first cut of this change did: the node ran, the pointer was live, and every slot still read "no level
+    // known", because nothing had told the tally its sample rate.
+    for (auto& s : slots_)
+        if (s.inTallyShared) s.inTallyShared->prepare(sampleRate);
 
     // Master wet/dry resources — dry copy scratch + latency-alignment ring
     dryScratch_.setSize(2, juce::jmax(blockSize, 16));
@@ -2884,7 +2911,11 @@ ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
     if (s.bypassed || !s.blendNode) return out;   // not in circuit: not measured
     if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
     {
-        out.in  = b->inTally().snapshot();
+        // 21t-k item 3: THE IN LEG IS THE SLOT'S, NOT THE BLEND'S. The blend node is cached for the slot's life
+        // and can outlive the shared tally it was built with, which is how the first cut read an empty tally
+        // while the pre-trim node was filling a live one ("same=NO" in the debug run). The slot owns it; every
+        // reader takes it from the slot.
+        out.in  = s.inTallyShared ? s.inTallyShared->snapshot() : b->inTally().snapshot();
         out.out = b->outTally().snapshot();
         out.measured = true;
     }
@@ -2896,9 +2927,12 @@ void ChainHost::resetAllLevels()
     chainInTally_.reset();
     chainOutTally_.reset();
     for (auto& s : slots_)
+    {
         if (s.blendNode)
             if (auto* b = dynamic_cast<SlotWetBlend*>(s.blendNode->getProcessor()))
                 b->resetTallies();
+        if (s.inTallyShared) s.inTallyShared->reset();   // 21t-k: the IN leg lives on the slot
+    }
     pendingSlotLevels_.clear();
     EchoJay_NSLog("EJLevels: all level tallies reset");
 }
@@ -3025,7 +3059,7 @@ juce::var ChainHost::getLevelsStateVar(const juce::String& trackName) const
         if (b == nullptr) continue;   // never in circuit: nothing measured, nothing saved
         auto* so = new juce::DynamicObject();
         so->setProperty("n",   i + 1);   // the slot number chainSlotsXml writes it as
-        so->setProperty("in",  b->inTally().toVar());
+        so->setProperty("in",  s.inTallyShared ? s.inTallyShared->toVar() : b->inTally().toVar());
         so->setProperty("out", b->outTally().toVar());
         arr.add(juce::var(so));
     }
@@ -3095,6 +3129,8 @@ void ChainHost::resetSlotShortTermStats (int slotIndex, const juce::String& why)
     if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor()))
     {
         b->resetShortTermStats();
+        if (slots_[(size_t) slotIndex].inTallyShared)
+            slots_[(size_t) slotIndex].inTallyShared->resetShortTermMax();   // 21t-k: the IN leg lives on the slot
         EchoJay_NSLog (("EJThreshold: slot " + juce::String (slotIndex + 1) + " both legs reset - SHORTMAX and "
                         "SHORT90 start again on each (" + (why.isNotEmpty() ? why : juce::String ("no reason given"))
                         + "); no window from before this can enter a sample").toRawUTF8());
@@ -6608,9 +6644,19 @@ void ChainHost::rebuildGraph()
             // a fresh atomic on every rebuild would leave the blend node reading the OLD one.
             if (s.trimShared == nullptr) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);
             if (s.preTrimShared == nullptr) s.preTrimShared = std::make_shared<std::atomic<float>>(s.preTrimDb);   // 21p item 3
-            if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared));
+            // 21t-k item 3: ONE in tally per slot, for the slot's life, filled by the pre-trim node and read by
+            // the blend. Created here at most once, like trimShared - a fresh one on a rebuild would leave the
+            // blend reading a tally nothing fills, which is the shape of "no level known" forever.
+            if (s.inTallyShared == nullptr)
+                s.inTallyShared = std::make_shared<echojay::LevelTally>(echojay::LevelTally::Weighting::Plain);
+            // PREPARED HERE, not only in the node. A LevelTally that was never prepared drops every push on the
+            // floor, and the node's own prepareToPlay is the graph's to call, not ours - the first cut of this
+            // change relied on it and every slot read "no level known": loudness_loop_guard went from 0 failures
+            // to 14, all of them "nan" and "-200 dBTP". The host knows the sample rate; it prepares the tally.
+            if (prepared_ && sampleRate_ > 0.0) s.inTallyShared->prepare(sampleRate_);
+            if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared, s.inTallyShared));
             if (!s.blendNode)
-                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.trimShared, compareActive_));
+                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.trimShared, compareActive_, s.inTallyShared));
             active.push_back({ s.node->nodeID, s.blendNode->nodeID, s.preTrimNode->nodeID });
         }
 
