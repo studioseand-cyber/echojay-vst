@@ -26909,6 +26909,18 @@ juce::String EchoJayEditor::buildGroupLevelsContext()
         // THE LINE FORMAT IS THE CONTRACT (ruled 25 Sep 2026): the token names are literal and in this order, so
         // the server parses one shape and the guard asserts the tokens themselves. The head is what makes it a
         // MEMBER line; [TRACK LEVELS] prints the same tokens with no head.
+        // 21t-k item 1b (29 Sep 2026 ruling): A MEMBER THAT CANNOT BE BOUND IS NEVER PRINTED AS A UID. Sean's
+        // block carried seven lines like "2647d73e9f (id 2647d73e9f): trim 0.0 dB, no signal" - the uid stood in
+        // for the name because there was no live Link to take one from. It now reads as what it is.
+        bool memberLive = false;
+        for (const auto& li : processorRef.getLinkSlotInfos()) if (li.uid == uid) { memberLive = true; break; }
+        if (! memberLive)
+        {
+            const auto lastKnown = processorRef.groupMemberName (gid, uid);
+            lines.add ("  " + (lastKnown.isNotEmpty() ? lastKnown : juce::String ("a channel"))
+                       + " - not in this session");
+            continue;
+        }
         lines.add ("  " + name + " (id " + uid + "): trim " + juce::String (trim, 1) + " dB, "
                    + (tokens.isEmpty() ? juce::String ("no signal") : tokens));
     }

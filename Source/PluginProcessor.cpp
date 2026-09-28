@@ -1623,6 +1623,18 @@ void EchoJayProcessor::timerCallback()
     // calls it on its own user actions (a tab switch, an apply) for the list.
     refreshLinkRegistry();
     updateLinkAudioRecency();   // 1 Hz: stamp which Links are passing audio, for the meter-snapshot recency gate
+    // 21t-k item 1b: THE REPAIR RUNS ONCE, after a load, and only once the registry has been read - a repair
+    // that ran before the Links registered would find nothing live to rebind to and would spend its one chance.
+    // It is armed by setStateInformation and disarmed here whatever it finds, so it can never loop.
+    if (groupRepairArmed_)
+    {
+        static constexpr int kRepairTicksToWait = 3;   // the Links need a moment to register
+        if (++groupRepairTicks_ >= kRepairTicksToWait)
+        {
+            groupRepairArmed_ = false;
+            repairGroupsByName();
+        }
+    }
     updateOwnLevelRecord();     // 21t-i, same tick: this channel's own stored record, from its own chain-in tally
 
     // Keep the KeyFeed alive without an editor. EchoJay Pitch follows the
@@ -4714,7 +4726,17 @@ void EchoJayProcessor::getStateInformation(juce::MemoryBlock& destData)
         {
             auto* o = new juce::DynamicObject(); o->setProperty("id", g.id); o->setProperty("name", g.name); o->setProperty("bus", g.bus);
             o->setProperty("offsetDb", (double) g.offsetDb);   // 21r item 4: the fader stays where it was put
-            juce::Array<juce::var> m; for (const auto& u : g.members) m.add(u); o->setProperty("members", m); ga.add(juce::var(o));
+            juce::Array<juce::var> m; for (const auto& u : g.members) m.add(u); o->setProperty("members", m);
+            // 21t-k item 1b: the members' last known NAMES ride with them, so a group can say what it lost.
+            juce::Array<juce::var> mn;
+            for (int i = 0; i < g.members.size(); ++i)
+            {
+                const auto live = resolveLinkDisplayName (g.members[i]);
+                const auto stored = i < g.memberNames.size() ? g.memberNames[i] : juce::String();
+                mn.add (live.isNotEmpty() && live != g.members[i] ? live : stored);   // a live name wins, a rename follows
+            }
+            o->setProperty("memberNames", mn);
+            ga.add(juce::var(o));
         }
         state->setProperty("linkGroups", juce::var(ga));
     }
@@ -4955,12 +4977,17 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                               : (channelTypePromptDismissed || channelType != ChannelType::FullMix);
             if (auto* ga = obj->getProperty("linkGroups").getArray())   // 21n item 4
             {
+                groupRepairArmed_ = true; groupRepairTicks_ = 0;   // 21t-k item 1b: armed by a load, run once
                 linkGroups_.clear();
                 for (const auto& gv : *ga)
                     if (auto* o = gv.getDynamicObject())
                     {
                         LinkGroup g; g.id = o->getProperty("id").toString(); g.name = o->getProperty("name").toString(); g.bus = o->getProperty("bus").toString();
                         if (auto* m = o->getProperty("members").getArray()) for (const auto& u : *m) g.members.addIfNotAlreadyThere(u.toString());
+                        // 21t-k item 1b: names, when the state has them. An older state has none, and the
+                        // repair below says so rather than guessing.
+                        if (auto* mn = o->getProperty("memberNames").getArray())
+                            for (const auto& n : *mn) g.memberNames.add (n.toString());
                         g.offsetDb = (float) (double) o->getProperty("offsetDb");   // 21r item 4; absent in an older state = 0.0
                         if (g.id.isNotEmpty() && ! g.members.isEmpty()) linkGroups_.push_back(g);
                     }
@@ -5494,7 +5521,11 @@ juce::String EchoJayProcessor::createLinkGroup(const juce::String& name, const j
                                 "select it again in a moment");
             continue;
         }
-        g.members.addIfNotAlreadyThere(u.trim());
+        if (! g.members.contains (u.trim()))
+        {
+            g.members.add (u.trim());
+            g.memberNames.add (resolveLinkDisplayName (u.trim()));   // 21t-k item 1b: the name, as of now
+        }
     }
     if (g.members.isEmpty())
     {
@@ -5584,12 +5615,66 @@ juce::StringArray EchoJayProcessor::uidsForScopeRole(const juce::String& roleIn,
     return out;
 }
 
+juce::String EchoJayProcessor::groupMemberName(const juce::String& groupId, const juce::String& memberUid) const
+{
+    if (const auto* g = linkGroupById (groupId))
+        for (int i = 0; i < g->members.size(); ++i)
+            if (g->members[i] == memberUid)
+                return i < g->memberNames.size() ? g->memberNames[i] : juce::String();
+    return {};
+}
+
+// ---- 21t-k item 1b (29 Sep 2026 ruling): THE ONE-TIME REPAIR ----------------------------------------------
+// Groups broken by the retired "authored in this host run" re-mint hold uids no Link carries any more. With the
+// uid stable from this round on, no NEW group can break this way - so this is a MIGRATION, run once on load,
+// and every rebind is logged. It matches on the member's last known NAME, which is the only thing that survived
+// the re-mint, and it only ever rebinds to a LIVE Link that no other group member already claims.
+int EchoJayProcessor::repairGroupsByName()
+{
+    int rebound = 0, unmatched = 0, nameless = 0;
+    for (auto& g : linkGroups_)
+    {
+        for (int i = 0; i < g.members.size(); ++i)
+        {
+            const auto uid = g.members[i];
+            bool live = false;
+            for (const auto& li : getLinkSlotInfos()) if (li.uid == uid) { live = true; break; }
+            if (live) continue;
+            const auto want = i < g.memberNames.size() ? g.memberNames[i].trim() : juce::String();
+            if (want.isEmpty()) { ++nameless; continue; }
+            juce::String found;
+            for (const auto& li : getLinkSlotInfos())
+            {
+                if (li.uid.isEmpty() || g.members.contains (li.uid)) continue;   // never steal another member's Link
+                if (resolveLinkDisplayName (li.uid).trim().equalsIgnoreCase (want)) { found = li.uid; break; }
+            }
+            if (found.isEmpty()) { ++unmatched; continue; }
+            EchoJay_NSLog(("EJGroupRepair: \"" + g.name + "\" member \"" + want + "\" was " + uid
+                           + ", which no Link carries - rebound to the live " + found).toRawUTF8());
+            g.members.set (i, found);
+            ++rebound;
+        }
+    }
+    if (rebound > 0) markStateDirty();
+    if (rebound > 0 || unmatched > 0 || nameless > 0)
+        EchoJay_NSLog(("EJGroupRepair: " + juce::String (rebound) + " member(s) rebound by name, "
+                       + juce::String (unmatched) + " with a name but no live Link, "
+                       + juce::String (nameless) + " with no stored name (a group saved before names were kept "
+                       "has nothing to match on)").toRawUTF8());
+    return rebound;
+}
+
 void EchoJayProcessor::removeLinkGroup(const juce::String& id)
 { linkGroups_.erase(std::remove_if(linkGroups_.begin(), linkGroups_.end(), [&](const LinkGroup& g) { return g.id == id; }), linkGroups_.end()); markStateDirty(); }
 void EchoJayProcessor::setLinkGroupBus(const juce::String& id, const juce::String& busUid)
 { for (auto& g : linkGroups_) if (g.id == id) { g.bus = busUid; markStateDirty(); } }
 void EchoJayProcessor::setLinkGroupMembers(const juce::String& id, const juce::StringArray& members)
-{ for (auto& g : linkGroups_) if (g.id == id) { g.members.clear(); for (const auto& u : members) if (u.isNotEmpty()) g.members.addIfNotAlreadyThere(u); markStateDirty(); } }
+{ for (auto& g : linkGroups_) if (g.id == id)
+  { g.members.clear(); g.memberNames.clear();
+    for (const auto& u : members)
+        if (u.isNotEmpty() && ! g.members.contains (u))
+        { g.members.add (u); g.memberNames.add (resolveLinkDisplayName (u)); }   // 21t-k item 1b
+    markStateDirty(); } }
 void EchoJayProcessor::renameLinkGroup(const juce::String& id, const juce::String& name)
 { for (auto& g : linkGroups_) if (g.id == id && name.trim().isNotEmpty()) { g.name = name.trim(); markStateDirty(); } }
 const EchoJayProcessor::LinkGroup* EchoJayProcessor::linkGroupById(const juce::String& id) const

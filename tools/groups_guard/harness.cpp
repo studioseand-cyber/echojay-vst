@@ -213,6 +213,78 @@ int main()
             A::setKeySrc (*ed, {});
         }
 
+        // ---- 21t-k item 1b (29 Sep 2026 ruling): THE ONE-TIME REPAIR, AND THE LINE THAT NEVER PRINTS A UID --
+        // Groups broken by the retired re-mint rule hold uids no Link carries. The repair rebinds them by their
+        // last known NAME, once, on load, logged; a member it cannot bind is printed as "<name> - not in this
+        // session", never as a uid (Sean's block carried seven of those).
+        {
+            std::printf ("\n== 21t-k item 1b: the repair, and the line that never prints a uid ==\n");
+            const char* nm[3] = { "Main vocal", "Main vocal 2", "Main vocal 3" };
+            auto rig = [&nm] (const char* prefix)
+            {
+                std::vector<EchoJayProcessor::LinkSlotInfo> v;
+                for (int i = 0; i < 3; ++i)
+                {
+                    EchoJayProcessor::LinkSlotInfo li;
+                    li.uid = juce::String (prefix) + juce::String (i + 1); li.name = nm[i];
+                    li.active = true; li.connected = true; li.channels = 2; li.placement = 2;
+                    v.push_back (li);
+                }
+                return v;
+            };
+            // (1) THE SESSION AS IT WAS: three live Links, grouped. The names are captured with the members.
+            EchoJayAlignTestAccess::setLinks (p, rig ("old_uid_"));
+            const auto gBroken = p.createLinkGroup ("Main vocals",
+                                                    juce::StringArray { "old_uid_1", "old_uid_2", "old_uid_3" });
+            check (p.groupMemberName (gBroken, "old_uid_2") == "Main vocal 2",
+                   "21t-k 1b. a group records each member's name as it is added",
+                   p.groupMemberName (gBroken, "old_uid_2"));
+            // (2) THE RE-MINT: the same three inserts come back under NEW uids with the same names.
+            EchoJayAlignTestAccess::setLinks (p, rig ("new_uid_"));
+            p.chatTargetGroupId = gBroken;
+            {
+                const auto blk = A::groupLevels (*ed);
+                juce::StringArray bl; bl.addLines (blk);
+                int uidLines = 0, named = 0;
+                for (const auto& l : bl)
+                {
+                    if (! l.startsWith ("  ")) continue;
+                    if (l.contains ("old_uid_")) ++uidLines;
+                    if (l.contains ("not in this session") && l.contains ("Main vocal")) ++named;
+                    std::printf ("    %s\n", l.trim().toRawUTF8());
+                }
+                check (uidLines == 0,
+                       "21t-k 1b. a member that cannot be bound is NEVER printed as a uid  (RED as it stood: "
+                       "\"2647d73e9f (id 2647d73e9f): trim 0.0 dB, no signal\" x7)",
+                       juce::String (uidLines) + " uid line(s)");
+                check (named == 3,
+                       "21t-k 1b. ...it reads \"<last known name> - not in this session\"",
+                       juce::String (named) + " named line(s) of 3");
+            }
+            // (3) THE REPAIR, once, by name.
+            const int rebound = p.repairGroupsByName();
+            check (rebound == 3, "21t-k 1b. the repair rebinds every member whose name matches a LIVE Link",
+                   juce::String (rebound) + " rebound");
+            const auto* fixed = p.linkGroupById (gBroken);
+            check (fixed != nullptr && fixed->members.contains ("new_uid_1")
+                   && fixed->members.contains ("new_uid_2") && fixed->members.contains ("new_uid_3"),
+                   "21t-k 1b. ...to the uids the Links carry now",
+                   fixed != nullptr ? fixed->members.joinIntoString (",") : juce::String ("(gone)"));
+            {
+                const auto blk = A::groupLevels (*ed);
+                juce::StringArray bl; bl.addLines (blk);
+                int member = 0; for (const auto& l : bl) if (l.startsWith ("  ") && l.contains ("(id new_uid_")) ++member;
+                check (member == 3, "21t-k 1b. ...and the block carries all three again, by name and with figures",
+                       juce::String (member) + " member line(s)");
+            }
+            // ...and it is idempotent: a second run has nothing to do.
+            check (p.repairGroupsByName() == 0,
+                   "21t-k 1b. ...and running it again rebinds nothing - it is a migration, not a policy");
+            p.chatTargetGroupId.clear();
+            p.removeLinkGroup (gBroken);
+            EchoJayAlignTestAccess::setLinks (p, links);
+        }
+
         // ---- 21t-k item 4 (28 Sep 2026): THE HEADROOM OP, THE SCOPE AND THE ROSTER ------------------------
         {
             std::printf ("\n== 21t-k item 4: the headroom op, scope by role, the roster ==\n");

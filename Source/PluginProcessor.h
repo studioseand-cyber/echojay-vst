@@ -1539,12 +1539,21 @@ public:
     // {instanceId, name, gainDb} whenever at least one group exists (omitting them = today's behaviour, per the contract).
     // offsetDb (21r item 4, 24 Sep 2026): the group's own level offset, like a VCA - it applies to the members,
     // it stays where it was put, and it is saved with the group.
-    struct LinkGroup { juce::String id, name, bus; juce::StringArray members; float offsetDb = 0.0f; };
+    // 21t-k item 1b (29 Sep 2026 ruling): A MEMBER CARRIES ITS LAST KNOWN NAME, parallel to `members`. Two
+    // rulings need it and neither can be kept without it: the [GROUP LEVELS] line must read "<last known name> -
+    // not in this session" instead of a bare uid, and the one-time repair for groups broken by the retired
+    // re-mint rule rebinds a dead uid to the live Link carrying the same name. Written at create/set time, saved
+    // with the group, and refreshed whenever the Link is live - so it follows a rename.
+    struct LinkGroup { juce::String id, name, bus; juce::StringArray members, memberNames; float offsetDb = 0.0f; };
     // 21t-j (28 Sep 2026 ruling): THE CAPS, raised. Sixteen members was the wrong size for a session where "every
     // channel" is the group that matters: a 22-strip selection came back as a group of 16, silently, because the
     // store truncated. 64 members and 16 groups, on both sides (B changes the contract doc and its parser).
     // NOT a shared-memory change: groups live here, in V2's own state and on the wire; LinkShm has no group table,
     // so RegistrySlot and LinkMeterFrame keep their frozen layouts and the shm version does not move.
+    // 21t-k item 1b: the one-time repair, armed by a state load and spent on the third tick after it.
+    bool groupRepairArmed_ = false;
+    int  groupRepairTicks_ = 0;
+public:
     static constexpr int kMaxGroupMembers = 64;
     static constexpr int kMaxGroups       = 16;
     const std::vector<LinkGroup>& linkGroups() const { return linkGroups_; }
@@ -1561,6 +1570,13 @@ public:
     /** The live uids a scope selects. role "" = every DECLARED Link (channels and buses, never unset).
         `excludedOut` names what the scope left out and why, one entry per Link, for the card and the log. */
     juce::StringArray uidsForScopeRole(const juce::String& role, juce::StringArray* excludedOut = nullptr) const;
+    /** 21t-k item 1b: the last known name of a member, for the line that must not print a uid. Empty when the
+        group was saved before names were kept. */
+    juce::String groupMemberName(const juce::String& groupId, const juce::String& memberUid) const;
+    /** ONE-TIME REPAIR, on load: a member uid no live Link carries is rebound to the live Link whose name
+        matches the one stored for it. Returns how many were rebound; every one is logged. Groups saved before
+        names were kept have nothing to match on, and that is logged too. */
+    int repairGroupsByName();
     void setLinkGroupBus(const juce::String& id, const juce::String& busUid);
     void setLinkGroupMembers(const juce::String& id, const juce::StringArray& members);
     void renameLinkGroup(const juce::String& id, const juce::String& name);
