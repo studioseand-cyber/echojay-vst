@@ -1633,58 +1633,43 @@ void LinkProcessor::claimRegistrySlot()
         else
         {
             uidGateHolder_ = -1;
-            // NO HOLDER (6 Sep 2026, L5): a chunk this host process run authored,
-            // whose uid no slot holds, is a seed from an instance that has since
-            // gone - not a reopen from disk. Re-mint; the invariant below drops
-            // its names.
-            if (chunkAuthoredHere_ && chunkUid_.isNotEmpty() && instanceUid_ == chunkUid_)
-            {
-                instanceUid_ = juce::String::toHexString(
-                    juce::Random::getSystemRandom().nextInt64()).removeCharacters("-").substring(0, 10);
-                EchoJay_NSLog(("EJLinkState: uid " + chunkUid_ + " came from a chunk authored in THIS host run "
-                    "and no slot holds it (a seed from a gone instance) -> regenerated " + instanceUid_).toRawUTF8());
-            }
+            // NO HOLDER: THE UID IS KEPT. (28 Sep 2026 ruling, superseding 6 Sep's L5.)
+            //
+            // The retired rule re-minted whenever the chunk had been authored by THIS host process run and no
+            // slot held the uid, on the reasoning that such a chunk must be a seed from a sibling that had gone.
+            // It cannot tell that case from a REOPEN: Pro Tools re-instantiates every insert from its chunk when
+            // a session is opened in a process that already had one open, and ejlog_lm2.txt shows the result -
+            // 44 of 47 regenerations on that arm, every typed name dropped with them, and a "Main vocals (7)"
+            // level match at 21:08 addressing seven uids that had been re-minted at 21:05:24.
+            //
+            // A uid that NOBODY HOLDS is free, and taking it back is what makes a Link the same Link across a
+            // reopen - which is what every group, every stored level record and every chat target is keyed on.
+            // The only case that still mints is a PROVEN-LIVE holder, handled by the gate above: that is a real
+            // duplicate, and two instances cannot share one identity.
+            if (chunkUid_.isNotEmpty() && instanceUid_ == chunkUid_)
+                EchoJay_NSLog(("EJLinkState: uid " + chunkUid_ + " is free (no slot holds it) - KEPT, so this "
+                    "Link is the same Link it was before the reopen").toRawUTF8());
         }
     }
-    // THE INVARIANT (6 Sep 2026 ruling): the seeded names survive only when this
-    // instance continues the chunk's identity. Whatever arm ran above - re-mint
-    // against a live holder, re-mint with no holder, or any arm nobody has
-    // thought of - if the uid this instance ends up with is NOT the uid that
-    // arrived in the chunk, no field from that chunk answers "which Link is
-    // this": drop the host track name and the typed name. AdoptGhost and a plain
-    // restore keep the uid, so they keep the names. Checked BEFORE claimSlot
-    // reads effectiveDisplayName(), so the row publishes what is true.
+    // THE NAMES TRAVEL WITH THE CHUNK (28 Sep 2026 ruling, superseding the 6 Sep invariant).
+    //
+    // The retired rule dropped the seeded typed name and host name whenever this instance ended up with a uid
+    // other than the chunk's, on the reasoning that no field of a foreign chunk answers "which Link is this".
+    // With the re-mint arm above reduced to the PROVEN-LIVE duplicate, the only chunk that still arrives under a
+    // new uid is a COPY - and a copy keeps the name it was copied with, exactly as every other setting in the
+    // chunk does. The user renames it if they want two different names; the product does not silently blank a
+    // track's name to tell them apart. Sean's log shows what the old rule cost: "seeded names dropped (typed
+    // \"Main vocal 2\")" on every Link of a reopened session.
     if (chunkUid_.isNotEmpty() && instanceUid_ != chunkUid_)
-    {
-        // PROVENANCE (6 Sep 2026 ruling; corrected 7 Sep): only a PROVISIONAL
-        // (seeded) name is dropped here. A name the host delivered or the user
-        // typed is authoritative and survives - but ONLY because the seeding
-        // branches above no longer overwrite an authoritative name when a
-        // FOREIGN chunk arrives AFTER the delivery. The earlier text claimed
-        // survival "whether it arrived before or after this point" while the
-        // seeding branch reset the flag on every foreign chunk; the ordering it
-        // was blind to is Pro Tools' actual one - deliver the name to the fresh
-        // instance, THEN apply a gone sibling's chunk, THEN re-mint - and the
-        // P20 legs never modelled it (they applied the seed before the delivery
-        // or after the re-mint). Leg: link_capacity_test foreign / foreign20.
-        juce::String droppedTyped, droppedHost, keptHost;
-        {
-            const juce::ScopedLock sl(hostNameLock_);
-            if (hostNameFromHost_) keptHost = hostTrackName_;
-            else { droppedHost = hostTrackName_; hostTrackName_.clear(); appliedHostName_.clear(); }
-        }
-        if (typedNameFromUser_) { /* keep */ } else { droppedTyped = linkName; linkName.clear(); }
         EchoJay_NSLog(("EJLinkState: chunk uid " + chunkUid_ + " != this instance " + instanceUid_
-            + ": seeded names dropped (typed \"" + droppedTyped + "\", host \"" + droppedHost
-            + "\"); authoritative kept (host \"" + keptHost + "\", typed " + (typedNameFromUser_ ? "\"" + linkName + "\"" : juce::String("none")) + ")").toRawUTF8());
-    }
+            + " (a proven-live duplicate): the names TRAVEL - typed \"" + linkName + "\", host \""
+            + getHostTrackName() + "\"").toRawUTF8());
     // From here on this instance IS its identity: no chunk is pending. Both
     // fields are cleared, because updateShmState releases and re-claims the
     // slot on every publish (a rename, a host-name arrival) and a re-claim
     // that still saw "authored here, uid == chunk uid" would re-mint AGAIN -
     // seen as three re-mints in a row in the first run of L5.
     chunkUid_.clear();
-    chunkAuthoredHere_ = false;
     const juce::String audioFilename = "audio_" + effectiveFilePart() + ".bin";
 
     regSlotIdx = LinkShm::claimSlot(regMap,
@@ -3259,7 +3244,7 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         // current chunk (212 setState lines for ~40 instances in one session).
         // A chunk carrying the uid THIS instance already holds a registry slot
         // for is not a seed and not a restore: it is us. Identity stays settled
-        // (no re-arm of chunkUid_/chunkAuthoredHere_ - the next re-claim would
+        // (no re-arm of chunkUid_ - the next re-claim would
         // find no holder for our own uid and re-mint, which burned 89 identities
         // in twenty minutes and dropped every host-delivered name), and name
         // PROVENANCE is not downgraded: a host-delivered or user-typed name
@@ -3312,11 +3297,10 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
         {
             if (chunkUidIn.isNotEmpty()) instanceUid_ = chunkUidIn;
             chunkUid_ = instanceUid_;
-            const auto& h = ChainHost::getHostIdentity();
-            chunkAuthoredHere_ = obj->hasProperty("authorPid")
-                && (int) obj->getProperty("authorPid") == (int) ::getpid()
-                && (juce::int64)(double) obj->getProperty("authorStartSec")  == h.startSec
-                && (juce::int64)(double) obj->getProperty("authorStartUsec") == h.startUsec;
+            // 28 Sep 2026: THE "AUTHORED IN THIS HOST RUN" TEST IS RETIRED. It used to be computed here from
+            // authorPid / authorStartSec / authorStartUsec and read by the claim path to decide a re-mint; it
+            // could not tell a gone sibling's seed from a session REOPEN, and re-minted both. The three fields
+            // are still WRITTEN into the chunk as provenance a log reader can use; nothing decides on them.
         }
         // ownChunk: identity untouched, nothing re-armed
         if (obj->hasProperty("muteUser"))

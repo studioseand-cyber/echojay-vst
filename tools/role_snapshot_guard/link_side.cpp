@@ -97,6 +97,54 @@ int main (int argc, char** argv)
            "(B) a COPIED INSERT carries the role in its restored state, with no picker touched",
            roleName (b->getPlacement()));
 
+    // ---- 28 Sep 2026 RULING: THE UID IS STABLE -----------------------------------------------------------
+    // A Link that is saved, destroyed and re-created from ITS OWN CHUNK in the same process is a REOPEN, and it
+    // must come back as the same Link: same uid, same typed name. The retired rule re-minted it because the
+    // chunk had been authored in this host run and no slot held the uid - which is exactly what a reopen looks
+    // like. ejlog_lm2.txt: 44 of 47 regenerations on that arm, every typed name dropped, and a seven-member
+    // group addressing seven dead uids four minutes later.
+    {
+        auto c = std::make_unique<LinkProcessor>();
+        c->linkName = "Nafe Lead Vocal"; c->markTypedNameAuthoritative(); c->prepareToPlay (48000.0, 512);
+        juce::String uidC;
+        for (int k = 0; k < 400 && uidC.isEmpty(); ++k) { uidC = TA::uid (*c); if (uidC.isEmpty()) pumpMs (10); }
+        feed (*c, 1.0, 0.2f); pumpMs (200);
+        juce::MemoryBlock chunk; c->getStateInformation (chunk);
+        const juce::String nameC = c->effectiveDisplayName();
+        c.reset();                       // the insert goes away, as it does on a session close
+        pumpMs (400);
+
+        // (a) THE REOPEN: the same chunk, in the same process, with nobody holding the uid.
+        auto again = std::make_unique<LinkProcessor>();
+        again->prepareToPlay (48000.0, 512);
+        for (int k = 0; k < 400 && TA::uid (*again).isEmpty(); ++k) pumpMs (10);
+        again->setStateInformation (chunk.getData(), (int) chunk.getSize());
+        for (int k = 0; k < 200; ++k) { pumpMs (25); feed (*again, 0.05, 0.2f); }
+        check (TA::uid (*again) == uidC,
+               "(id) a Link re-created from its OWN chunk with nobody holding the uid KEEPS it  (RED as it "
+               "stood: \"a seed from a gone instance\" re-minted it, and every reopen killed every group)",
+               uidC + " -> " + TA::uid (*again));
+        check (again->effectiveDisplayName() == nameC,
+               "(id) ...and keeps its typed name", "\"" + nameC + "\" -> \"" + again->effectiveDisplayName() + "\"");
+
+        // (b) THE COPY: the same chunk again while (a) is LIVE. That is a real duplicate, so it mints a new uid -
+        // and, since 28 Sep, it still keeps the name it was copied with.
+        auto copy = std::make_unique<LinkProcessor>();
+        copy->prepareToPlay (48000.0, 512);
+        for (int k = 0; k < 400 && TA::uid (*copy).isEmpty(); ++k) pumpMs (10);
+        copy->setStateInformation (chunk.getData(), (int) chunk.getSize());
+        for (int k = 0; k < 400; ++k) { pumpMs (25); feed (*copy, 0.05, 0.2f); if (TA::uid (*copy) != uidC && k > 80) break; }
+        check (TA::uid (*copy) != uidC && TA::uid (*copy).isNotEmpty(),
+               "(id) a SECOND Link from the same chunk while the first is live gets a NEW uid - two instances "
+               "cannot share one identity", uidC + " vs " + TA::uid (*copy));
+        check (copy->effectiveDisplayName() == nameC,
+               "(id) ...and KEEPS the name it was copied with  (RED as it stood: the seeded names were dropped)",
+               "\"" + nameC + "\" -> \"" + copy->effectiveDisplayName() + "\"");
+        check (TA::uid (*again) == uidC,
+               "(id) ...and the ORIGINAL is untouched by the copy", uidC + " -> " + TA::uid (*again));
+        copy.reset(); again.reset(); pumpMs (200);
+    }
+
     // Hand the V2 side both uids: it reads the ROWS, which is where the role has to arrive.
     {
         auto* o = new juce::DynamicObject();
@@ -125,7 +173,69 @@ int main (int argc, char** argv)
     { auto* o = new juce::DynamicObject(); o->setProperty ("trimB", (double) b->getGainDb());
       o->setProperty ("done", true);
       juce::File (H + "/link_done.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
-    waitFile (juce::File (H + "/v2_done.json"), 20000);
+
+    // ---- A GROUP OF THREE SURVIVES THE DESTROY-AND-RECREATE (28 Sep 2026 ruling) -------------------------
+    // Three real Links, grouped by the V2 side, then all three destroyed and re-created from their own chunks -
+    // a session reopen, in the shape the product actually meets it. Their uids must come back unchanged, or the
+    // group on the other side is pointing at nothing, which is what "Main vocals (7)" was doing.
+    {
+        struct Three { std::unique_ptr<LinkProcessor> l; juce::String uid, name; juce::MemoryBlock chunk; };
+        std::vector<Three> g (3);
+        const char* names[3] = { "Vox A", "Vox B", "Vox C" };
+        for (int i = 0; i < 3; ++i)
+        {
+            g[(size_t) i].l = std::make_unique<LinkProcessor>();
+            g[(size_t) i].l->linkName = names[i];
+            g[(size_t) i].l->markTypedNameAuthoritative();
+            g[(size_t) i].l->prepareToPlay (48000.0, 512);
+        }
+        for (int k = 0; k < 400; ++k)
+        { bool all = true; for (auto& o : g) { o.uid = TA::uid (*o.l); if (o.uid.isEmpty()) all = false; } if (all) break; pumpMs (10); }
+        for (auto& o : g) { o.name = o.l->effectiveDisplayName(); feed (*o.l, 4.0, 0.2f); }
+        pumpMs (300);
+        {
+            auto* o = new juce::DynamicObject();
+            for (int i = 0; i < 3; ++i)
+            {
+                auto* e = new juce::DynamicObject();
+                e->setProperty ("uid", g[(size_t) i].uid); e->setProperty ("name", g[(size_t) i].name);
+                o->setProperty (juce::Identifier ("m" + juce::String (i + 1)), juce::var (e));
+            }
+            juce::File (H + "/link_group3.json").replaceWithText (juce::JSON::toString (juce::var (o), true));
+        }
+        check (waitFile (juce::File (H + "/v2_grouped.json"), 40000),
+               "(group) the V2 side made a group of the three (v2_grouped.json)");
+
+        // THE REOPEN: save all three chunks, destroy every instance, re-create from the chunks.
+        for (auto& o : g) { o.l->getStateInformation (o.chunk); o.l.reset(); }
+        pumpMs (600);
+        for (int i = 0; i < 3; ++i)
+        {
+            g[(size_t) i].l = std::make_unique<LinkProcessor>();
+            g[(size_t) i].l->prepareToPlay (48000.0, 512);
+            for (int k = 0; k < 400 && TA::uid (*g[(size_t) i].l).isEmpty(); ++k) pumpMs (10);
+            g[(size_t) i].l->setStateInformation (g[(size_t) i].chunk.getData(), (int) g[(size_t) i].chunk.getSize());
+        }
+        for (int k = 0; k < 200; ++k) { for (auto& o : g) feed (*o.l, 0.05, 0.2f); pumpMs (20); }
+        int kept = 0, namesKept = 0;
+        for (auto& o : g)
+        {
+            if (TA::uid (*o.l) == o.uid) ++kept;
+            if (o.l->effectiveDisplayName() == o.name) ++namesKept;
+        }
+        check (kept == 3, "(group) all THREE Links come back from their own chunks with the SAME uid  (RED as it "
+               "stood: every one re-minted, and the group on the other side pointed at nothing)",
+               juce::String (kept) + " of 3 kept");
+        check (namesKept == 3, "(group) ...and with their typed names", juce::String (namesKept) + " of 3");
+        {
+            auto* o = new juce::DynamicObject();
+            for (int i = 0; i < 3; ++i)
+                o->setProperty (juce::Identifier ("m" + juce::String (i + 1)), TA::uid (*g[(size_t) i].l));
+            juce::File (H + "/link_regrouped.json").replaceWithText (juce::JSON::toString (juce::var (o), true));
+        }
+        check (waitFile (juce::File (H + "/v2_done.json"), 40000), "(group) the V2 side read the group back");
+        for (auto& o : g) o.l.reset();
+    }
     b.reset(); a.reset();
     }
     std::printf ("\n==== role_snapshot_guard (link side): %s (%d assertion(s) failed) ====\n",

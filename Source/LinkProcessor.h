@@ -515,7 +515,7 @@ private:
     // host run re-mints too and drops typed names (the identity was destroyed
     // in this process and the reopen is indistinguishable from a seed).
     juce::String chunkUid_;
-    bool         chunkAuthoredHere_ = false;
+
     // NAME PROVENANCE (6 Sep 2026 ruling): a seeded name is PROVISIONAL, a
     // host-delivered or user-typed name is AUTHORITATIVE. The invariant's clear
     // discards only a provisional name, whatever order the host's

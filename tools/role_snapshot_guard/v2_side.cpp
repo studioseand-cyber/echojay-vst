@@ -9,8 +9,15 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include "LinkShm.h"
 #include <cstdio>
+// The editor door this guard needs for the block, borrowed from the friend the other guards use.
+struct EchoJayTabStripTestAccess
+{
+    static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }
+};
+using A = EchoJayTabStripTestAccess;
 namespace {
 int failures = 0;
 void check (bool ok, const juce::String& w, const juce::String& d = {})
@@ -81,6 +88,82 @@ int main()
            "(4) the trim V2 sent is what the ROW reports after the heartbeats, not the value it had before",
            "asked " + juce::String (wantTrim, 2) + ", row reads " + juce::String (rb.gainDb, 2) + " dB");
     check (rb.placement == 1, "(4) ...and the role is still on the row", roleName (rb.placement));
+
+    // ---- A GROUP OF THREE SURVIVES THE REOPEN (28 Sep 2026 ruling) ---------------------------------------
+    // The group is made HERE, in V2's own state, from three live Links; the link side then destroys and
+    // re-creates all three from their chunks. The group must still resolve every member - by the uid it stored,
+    // because the uid is now stable - and the [GROUP LEVELS] block must carry their NAMES and figures rather
+    // than seven bare uids and "no signal", which is what Sean's session produced.
+    {
+        if (! waitFile (juce::File (H + "/link_group3.json"), 60000))
+        { std::printf ("v2 side: the link side never published its three\n"); return 2; }
+        const auto three = juce::JSON::parse (juce::File (H + "/link_group3.json").loadFileAsString());
+        juce::StringArray uids, names;
+        for (int i = 1; i <= 3; ++i)
+        {
+            const auto m = three.getProperty (juce::Identifier ("m" + juce::String (i)), juce::var());
+            uids.add (m.getProperty ("uid", juce::var()).toString());
+            names.add (m.getProperty ("name", juce::var()).toString());
+        }
+        for (int k = 0; k < 120; ++k)
+        { pumpMs (100); int seen = 0; for (const auto& li : proc.getLinkSlotInfos()) if (uids.contains (li.uid)) ++seen; if (seen == 3) break; }
+        const auto gid = proc.createLinkGroup ("Vox", uids);
+        check (proc.linkGroupById (gid) != nullptr && proc.linkGroupById (gid)->members.size() == 3,
+               "(group) V2 made a group of the three live Links", gid);
+        { auto* o = new juce::DynamicObject(); o->setProperty ("gid", gid);
+          juce::File (H + "/v2_grouped.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
+
+        if (! waitFile (juce::File (H + "/link_regrouped.json"), 60000))
+        { std::printf ("v2 side: the link side never re-created its three\n"); return 2; }
+        const auto back = juce::JSON::parse (juce::File (H + "/link_regrouped.json").loadFileAsString());
+        juce::StringArray nowUids;
+        for (int i = 1; i <= 3; ++i) nowUids.add (back.getProperty (juce::Identifier ("m" + juce::String (i)), juce::var()).toString());
+        check (nowUids == uids, "(group) ...and the three come back under the SAME uids, so the group still "
+               "points at them", nowUids.joinIntoString (",") + " vs " + uids.joinIntoString (","));
+
+        int bound = 0;
+        for (int k = 0; k < 200; ++k)
+        {
+            pumpMs (100);
+            bound = 0;
+            for (const auto& li : proc.getLinkSlotInfos())
+                if (uids.contains (li.uid) && li.connected) ++bound;
+            if (bound == 3) break;
+        }
+        check (bound == 3, "(group) every member of the group is a LIVE row again after the reopen",
+               juce::String (bound) + " of 3");
+        // ...and the block the server reads: names and figures, never a bare uid.
+        {
+            proc.chatTargetGroupId = gid;
+            std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+            auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get());
+            if (ed != nullptr)
+            {
+                ed->setSize (1400, 900);
+                for (int k = 0; k < 40; ++k) pumpMs (50);
+                const auto blk = A::groupLevels (*ed);
+                juce::StringArray lines; lines.addLines (blk);
+                int member = 0, byName = 0, bareUid = 0;
+                for (const auto& l : lines)
+                {
+                    if (! l.startsWith ("  ") || ! l.contains ("(id ")) continue;
+                    ++member;
+                    const auto shown = l.trim().upToFirstOccurrenceOf (" (id ", false, false);
+                    if (names.contains (shown)) ++byName;
+                    if (uids.contains (shown)) ++bareUid;
+                }
+                for (const auto& l : lines) if (l.startsWith ("  ") && l.contains ("(id ")) std::printf ("    %s\n", l.trim().toRawUTF8());
+                check (member == 3, "(group) the [GROUP LEVELS] block carries all three members after the reopen",
+                       juce::String (member) + " line(s)");
+                check (byName == 3 && bareUid == 0,
+                       "(group) ...each named, never printed as a bare uid  (RED as it stood: \"2647d73e9f (id "
+                       "2647d73e9f): trim 0.0 dB, no signal\" x7)",
+                       juce::String (byName) + " by name, " + juce::String (bareUid) + " by uid");
+            }
+            else std::printf ("    (no editor in this process - block legs skipped)\n");
+            proc.chatTargetGroupId.clear();
+        }
+    }
 
     { auto* o = new juce::DynamicObject(); o->setProperty ("done", true);
       juce::File (H + "/v2_done.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
