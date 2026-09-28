@@ -283,7 +283,9 @@ set_tests_properties(calib_link_guard PROPERTIES LABELS "fast" TIMEOUT 900 RUN_S
 # 21t-j (28 Sep 2026): the Apply path in two processes - three real Links and a real V2. Ruled to be the guard for
 # test 4 ("a card with three deltas, Apply, trims read back moved, card text counts them"), because a registry
 # fixture cannot refuse, ack or move a trim.
-foreach(TWO alias_mirror_guard lease_id_guard level_match_guard)
+# 21t-j (28 Sep 2026): role_snapshot_guard joins them - registration is a full snapshot, proven with a real Link
+# handed another's saved state (a copied insert) and a real V2 reading the row.
+foreach(TWO alias_mirror_guard lease_id_guard level_match_guard role_snapshot_guard)
     add_test(NAME ${TWO} COMMAND bash ${CMAKE_SOURCE_DIR}/tools/${TWO}/build_and_run.sh)
     set_tests_properties(${TWO} PROPERTIES LABELS "fast" TIMEOUT 900 RUN_SERIAL TRUE WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endforeach()

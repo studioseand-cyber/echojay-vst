@@ -114,7 +114,18 @@ public:
     /// (leased to the main plugin), -1 = none. Editor reads it on rebuild.
     int controlledSlot0() const
         { return leaseActive_.load(std::memory_order_relaxed) ? leaseSlot0_ : -1; }
-    void setPlacement(int p);   // message thread: store, mirror, dirty-mark, notify
+    void setPlacement(int p);
+    /** 21t-j (28 Sep 2026 ruling): REGISTRATION IS A FULL SNAPSHOT of this Link's current state - uid, name, role,
+        trim, dial capability - written from the state itself and never from a change event. Called at registration,
+        after every setStateInformation, after a uid regeneration, and on every heartbeat.
+
+        WHY. The role reached the registry from ONE place: the picker's change handler. A copied insert restores its
+        role through setStateInformation, which stored it in memory and published nothing, so V2 read the claim-time
+        default and drew "SET?" on every copied Link while the Link's own picker showed BUS or CHANNEL. Toggling
+        inactive/active fixed them all at once because that path calls updateShmState, which does publish it - the
+        only accidental publisher. A reopened session restores through the same setStateInformation, so it had the
+        same fault by construction. */
+    void publishRegistrySnapshot (const char* why);   // message thread: store, mirror, dirty-mark, notify
 
     // Session project name (no UI here): adopted from the shared
     // session_project.json when this instance has none of its own, follows

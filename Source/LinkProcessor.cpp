@@ -120,6 +120,10 @@ void LinkProcessor::timerCallback()
         if (regSlotIdx >= 0)
         {
             LinkShm::bumpHeartbeat(regMap, regSlotIdx);
+            // 21t-j: ...and the snapshot rides the heartbeat, so a row that somehow missed a publish is corrected
+            // within a second rather than staying wrong until someone clicks something. Once per second, four
+            // stores into shared memory.
+            publishRegistrySnapshot ("heartbeat");
             // Mirror current heartbeat into diag for the editor to read
             if (regMap)
                 diag.heartbeat = LinkShm::loadRelaxed(
@@ -464,9 +468,13 @@ void LinkProcessor::calibTickOwnRack()
     }
     // 21t-g item 2: the threshold actuator, the same write on this side - the loop is one header and a handover
     // must not change which knob is being dialled.
+    // 21t-j: BRACED. Appending a second statement to an unbraced `if` made the reset UNCONDITIONAL, so a
+    // Link-hosted slot reset both legs on every window and could never close one - the sample would never form.
     if (step.writeParams)
+    {
         chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
-        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the actuator");   // 21t-j: both legs start again
+        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the actuator");   // both legs start again
+    }
     // 21t-j: the level hold, on this side too - one header, one behaviour, whichever host owns the tallies.
     if (step.writeOutput)
     {
@@ -478,7 +486,7 @@ void LinkProcessor::calibTickOwnRack()
     // 21t-j: ...and the hold through EchoJay's own per-slot output gain, when the plugin named no output control.
     if (step.writeSlotGain)
     {
-        (&chainHost)->setSlotOutGainDb(calibLoop_.slot, step.slotGainValue);
+        chainHost.setSlotOutGainDb(calibLoop_.slot, step.slotGainValue);
         chainHost.resetSlotShortTermStats(calibLoop_.slot, "the hold moved EchoJay's slot output gain");   // 21t-j: both legs start again
         EchoJay_NSLog(("EJThreshold: level hold - EchoJay's slot output gain = " + juce::String(step.slotGainValue, 2)
                        + " dB on slot " + juce::String(calibLoop_.slot + 1) + " (the slot was "
@@ -1682,6 +1690,11 @@ void LinkProcessor::claimRegistrySlot()
     }
     diag.regFull = (regSlotIdx < 0);
     diag.slotIdx = regSlotIdx;
+    // 21t-j (28 Sep 2026 ruling): REGISTRATION IS A FULL SNAPSHOT. claimSlot writes the uid, the name, the sample
+    // rate and the channel count; the role and the trim were left at their claim-time defaults and reached V2 only
+    // if some later event happened to publish them. A copied insert has no such event, which is why every copied
+    // Link drew "SET?" while its own picker showed BUS or CHANNEL.
+    publishRegistrySnapshot ("registered");
 }
 
 void LinkProcessor::releaseRegistrySlot()
@@ -1792,11 +1805,10 @@ void LinkProcessor::updateShmState()
         claimRegistrySlot();
     }
     LinkShm::setSlotActive(regMap, regSlotIdx, on);
-    // Re-publish gain + placement into the (possibly freshly claimed) slot so
-    // the monitor shows the real values immediately, not the claim-time 0
-    LinkShm::setSlotGain(regMap, regSlotIdx, gainDb_.load(std::memory_order_relaxed));
-    LinkShm::setSlotPlacement(regMap, regSlotIdx,
-                              (uint8_t) placement_.load(std::memory_order_relaxed));
+    // 21t-j: ONE AUTHOR for what the registry row says about this Link, from the state and not from whatever event
+    // happened to run. This path was the accidental publisher of the role: toggling a Link fixed a role that a
+    // copied chunk had restored and never published.
+    publishRegistrySnapshot ("state changed");
     // THIS binary reads settings_structured and applies it (see
     // buildChainFromSpec), so it may say so. Published beside gain and
     // placement because it is the same kind of claim: a fact about this
@@ -2114,6 +2126,25 @@ void LinkProcessor::setGainDb(float db, bool snapSmoothing)
     if (onLinkStateChanged) onLinkStateChanged();   // open editor slider sync
 }
 
+void LinkProcessor::publishRegistrySnapshot (const char* why)
+{
+    if (regMap == nullptr || regSlotIdx < 0) return;
+    const int place = placement_.load (std::memory_order_relaxed);
+    LinkShm::setSlotGain      (regMap, regSlotIdx, gainDb_.load (std::memory_order_relaxed));
+    LinkShm::setSlotPlacement (regMap, regSlotIdx, (uint8_t) place);
+    LinkShm::setSlotDialCapable (regMap, regSlotIdx, true);
+    LinkShm::setSlotActive    (regMap, regSlotIdx, linkOn.load (std::memory_order_acquire));
+    // THE LINE THAT WAS MISSING. There was no registration line carrying a role at all, so "the role did not
+    // reach V2" could not be seen in a log - only inferred from what the strip drew. Every snapshot says what it
+    // published and why, so the next copied insert answers the question in one grep.
+    EchoJay_NSLog (("EJLinkState: registry snapshot (" + juce::String (why) + ") uid=" + instanceUid_
+                    + " name=\"" + effectiveDisplayName() + "\" role="
+                    + juce::String (place == PlacementBus ? "bus" : place == PlacementInsert ? "channel"
+                                    : place == PlacementSend ? "send" : "UNSET")
+                    + " trim=" + juce::String (gainDb_.load (std::memory_order_relaxed), 2)
+                    + " dB active=" + juce::String ((int) linkOn.load (std::memory_order_acquire))).toRawUTF8());
+}
+
 void LinkProcessor::setPlacement(int p)
 {
     // Clamp to the LAST enum value. This clamped to PlacementInsert from
@@ -2122,8 +2153,7 @@ void LinkProcessor::setPlacement(int p)
     // The restore path (setStateInformation) already clamps to Send.
     p = juce::jlimit((int) PlacementUnset, (int) PlacementSend, p);
     placement_.store(p, std::memory_order_relaxed);
-    if (regMap != nullptr && regSlotIdx >= 0)
-        LinkShm::setSlotPlacement(regMap, regSlotIdx, (uint8_t) p);
+    publishRegistrySnapshot ("the picker was set");   // 21t-j: the whole snapshot, from the state
     updateHostDisplay(ChangeDetails{}.withNonParameterStateChanged(true));
     if (onLinkStateChanged) onLinkStateChanged();
     EchoJay_NSLog(("EJLinkState: placement set to "
@@ -3110,6 +3140,7 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     {
         chainHost.setSlotPreTrimDb(slot, cfg.startDb);
         chainHost.setSlotTrimDb   (slot, -cfg.startDb);
+        chainHost.resetSlotShortTermStats(slot, "the build set the drive");   // 21t-j: reset point 1, drive side
     }
     // The state rides the sidecar from the FIRST window, so V2 can render and close a loop this side started.
     // resolvedDir is set on the paths that publish, and a build command can arrive before any of them have run -
@@ -3331,6 +3362,11 @@ void LinkProcessor::setStateInformation(const void* data, int sizeInBytes)
     // registration immediately. If prepareToPlay comes later, the prepareToPlay
     // callAsync above will also call updateShmState — both are idempotent.
     juce::MessageManager::callAsync([this] { updateShmState(); });
+    // 21t-j (28 Sep 2026 ruling): A RESTORED ROLE IS PUBLISHED. This function had stored placement_ in memory and
+    // published nothing, so a copied insert (and a reopened session, which restores through this same function)
+    // carried its role only inside the plugin. The snapshot goes out from here too, from the state this restore
+    // just put in place.
+    publishRegistrySnapshot ("state restored");
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() { return new LinkProcessor(); }
