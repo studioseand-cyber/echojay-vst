@@ -217,6 +217,12 @@ struct CalibLoop
         juce::StringArray params;         // param, or every entry of a param array
         int    senseSign = -1;            // "lower_is_harder" (the dB threshold case) unless told otherwise
         float  startDb = 0.0f;            // the actuator's opening value: the drive, or the threshold
+        // 21t-j (28 Sep 2026): DID THE BLOCK ITSELF CARRY start_db? The caller fills startDb from the slot's
+        // staging when a drive block sends null, which is right - opening at 0 would undo the staging - but it
+        // makes a substituted value indistinguishable from one the server sent. The "a block carrying start_db
+        // IS the step" rule then read every nudge-only block as already-moved and bought nothing: "ease off" did
+        // nothing at all. This flag is the wire's own answer and the only thing that rule may consult.
+        bool   startFromBlock = false;
         float  minDb = -60.0f, maxDb = 12.0f;
         float  stepDb = kStepDb;          // the block's "step"; 1 dB unless it says otherwise
         // 21t-i re-cut (27 Sep 2026 ruling): WHAT THE SENTENCE QUOTES COMES FROM THE BLOCK.
@@ -359,6 +365,7 @@ struct CalibLoop
         const auto startV = o->getProperty ("start_db");
         const bool haveStart = ! startV.isVoid() && (startV.isDouble() || startV.isInt() || startV.isInt64());
         out.startDb = haveStart ? (float) (double) startV : std::numeric_limits<float>::quiet_NaN();
+        out.startFromBlock = haveStart;
         // ---- min_db / max_db, and what NULL means (21t-j, 28 Sep 2026, B's contract note) -------------------
         // B now sends min_db null for a control whose low end prints "-inf" (the MC 77's Input reads "-inf dB" at
         // normalised 0). TODAY'S PARSER WOULD READ THAT AS 0.0: juce::var(null) converts to 0.0, so the range

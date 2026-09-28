@@ -1309,6 +1309,10 @@ static int guardMain()
                                        "actuator":"threshold","slot":1,"param":"Thresh","start_db":-13.4,
                                        "sense":"lower_is_harder","min_db":-15,"max_db":15,"gr_target_db":[2,3]})",
                                    2, c, why);
+            check (ok && c.startFromBlock,
+                   "21t-j. ...and a block that DID carry start_db says so, which is the only thing the "
+                   "\"a block carrying start_db is the step\" rule may consult",
+                   c.startFromBlock ? "carried" : "NOT carried");
             check (ok && c.mode == echojay::CalibLoop::Mode::Passive
                    && c.actuator == echojay::CalibLoop::Actuator::Threshold
                    && c.params.size() == 1 && c.params[0] == "Thresh" && c.senseSign == -1
@@ -1372,9 +1376,11 @@ static int guardMain()
             echojay::CalibLoop::Config c; juce::String why;
             const bool ok = parse (R"({"mode":"passive","actuator":"drive","slot":1,"start_db":null,
                                        "sense":null,"gr_target_db":[2,3]})", 2, c, why);
-            check (ok && c.actuator == echojay::CalibLoop::Actuator::Drive && ! (c.startDb == c.startDb),
-                   "21t-g (6b/c). drive with start_db null leaves the opening value UNSET, so the caller opens "
-                   "from the staging on the slot and never from 0",
+            check (ok && c.actuator == echojay::CalibLoop::Actuator::Drive && ! (c.startDb == c.startDb)
+                   && ! c.startFromBlock,
+                   "21t-g (6b/c). drive with start_db null leaves the opening value UNSET and says the BLOCK did "
+                   "not carry one, so the caller can open from the staging without that substitution being read "
+                   "later as a move the server already made",
                    juce::String (c.startDb == c.startDb ? juce::String (c.startDb, 2) : juce::String ("unset"))
                    + (why.isEmpty() ? juce::String() : ", why: " + why.trim()));
             // ...and the loop, begun from the staged value, moves FROM THERE. 28 Sep 2026: the settle moves it

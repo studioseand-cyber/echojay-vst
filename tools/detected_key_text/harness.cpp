@@ -31,7 +31,12 @@ void check (bool ok, const juce::String& what, const juce::String& detail = {})
 }
 juce::String keyBlockOf (const juce::String& all)
 {
-    const int a = all.indexOf ("[DETECTED KEY");
+    // 21t-j (28 Sep 2026): THE MARKER IS "[KEY", not "[DETECTED KEY". B asked for the block to be split into
+    // [KEY] - the one selected source, the authority - and [KEY CANDIDATES] - other channels' readings, for
+    // context only - and it was, this round. This guard was still slicing on the old marker and so was reading
+    // an EMPTY string and failing every assertion about its contents. The em dash pins the [KEY] block itself,
+    // because "[KEY CANDIDATES" also begins with "[KEY".
+    const int a = all.indexOf (juce::String::fromUTF8 ("[KEY \xe2\x80\x94"));
     if (a < 0) return {};
     const int b = all.indexOf (a, "analyse:1 while audio plays.]");
     return b < 0 ? all.substring (a) : all.substring (a, b + 29);
@@ -76,14 +81,24 @@ int main()
     check (offBlock.contains ("key: A minor"), "OFF: the prompt states \"key: A minor\"");
     check (onBlock.contains ("key: C major"),  "ON:  the prompt states \"key: C major\" (exactly as displayed)");
     check (onBlock.contains ("alternate: A minor"), "ON:  the alternate follows the same helper (C major -> A minor)");
-    // COMMIT 4b (17 Sep 2026): the model must never see the confidence number.
-    check (! offBlock.contains ("confidence:"), "4b: no \"confidence:\" field on the key line");
+    // COMMIT 4b (17 Sep 2026) said the model must never see the confidence number. SUPERSEDED, 27 Sep 2026
+    // (the 21t-i re-cut ruling): the block names ONE source and calls it the authority, and a server told to use
+    // one reading and nothing else needs to know how good that reading is. What 4b was really protecting against
+    // was a MENU of readings to choose from, and that is what [KEY CANDIDATES] now carries separately.
+    check (offBlock.contains ("confidence:"),
+           "21t-i re-cut: the selected source's confidence IS carried (4b's rule superseded)",
+           offBlock.fromFirstOccurrenceOf ("confidence:", true, false).substring (0, 18).trim());
     check (offBlock.contains ("alternate: C major\n"), "4b: the alternate line is the NAME only (no score)");
-    check (! offBlock.contains ("0.31") && ! offBlock.contains ("0.29"), "4b: no confidence number anywhere in the block");
-    check (offBlock.contains ("detected_tuning:") && offBlock.contains ("root_hz:") && offBlock.contains ("source:") && offBlock.contains ("age:"),
-           "4b: key, detected_tuning, root_hz, source, age kept");
-    check (! offBlock.containsIgnoreCase ("unreliable") && ! offBlock.contains ("0.5") && ! offBlock.contains ("treat the key as unknown"),
-           "no confidence / 0.5 / unreliable clause remains");
+    // 21t-j: the field is "ref_hz:" now, with the cents clause B asked for; "detected_tuning:" was its name
+    // before the [KEY] split.
+    check (offBlock.contains ("ref_hz:") && offBlock.contains ("cents from A=440")
+           && offBlock.contains ("root_hz:") && offBlock.contains ("source:") && offBlock.contains ("age:"),
+           "21t-j: key, ref_hz (with cents), root_hz, source, age kept",
+           offBlock.fromFirstOccurrenceOf ("ref_hz:", true, false).substring (0, 40).trim());
+    check (! offBlock.containsIgnoreCase ("unreliable") && ! offBlock.containsIgnoreCase ("treat the key as unknown"),
+           "no \"unreliable\" or \"treat the key as unknown\" clause on a usable reading");
+    check (offBlock.contains ("THIS IS THE AUTHORITY for key, scale and reference"),
+           "21t-i re-cut: ...and the block says in one line that this source is the authority");
     check (offBlock.contains ("exactly what EchoJay displays"), "the rule line is present");
 
     // persisted in both plugins: the storage key is "keyShowRelative"

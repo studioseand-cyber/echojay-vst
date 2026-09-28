@@ -6310,7 +6310,10 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
         // it is the ONLY thing that buys a move - one step, in the direction the band went.
         // 21t-j: a block that CARRIES start_db has already moved the knob through the edit path, so the loop's
         // position becomes that value and it owes no step of its own.
-        const bool carriedStart = cfg.startDb == cfg.startDb;   // not NaN
+        // 21t-j (28 Sep 2026): THE WIRE'S OWN ANSWER, not the value's. The editor fills startDb from the slot's
+        // staging when a drive block sends null, so a NaN test here called every nudge-only block "already
+        // moved" and cancelled its step - "ease off" did nothing, which is what ui_guard's ops-free leg caught.
+        const bool carriedStart = cfg.startFromBlock && cfg.startDb == cfg.startDb;
         if (carriedStart && loop.actuatorWrittenTo(cfg.startDb))
             EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" position taken from the block's start_db "
                            + juce::String(cfg.startDb, 2) + " dB - the edit already wrote it, so no step is "

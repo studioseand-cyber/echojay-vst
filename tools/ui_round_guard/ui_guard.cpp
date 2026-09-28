@@ -1287,17 +1287,23 @@ int main()
                 LinkShm::publishMeterFrame (reg, slot, f);   // back to the pre-trim frame
                 beat();
 
-                // (b) THE BLOCK REPORTS THE MEASUREMENT, NOT THE TRIM: on a LIVE frame, moving the trim moves
-                // the trim it prints and nothing else.
+                // (b) RE-RULED 21t-i (27 Sep 2026) and asserted here 28 Sep: THE BLOCK REPORTS WHAT IS HEARD.
+                // It used to report the frame's own pre-trim figures, and Sean read the block's INT beside the
+                // strip's INT and found them differing by exactly the trim - six for six. The record is taken
+                // AFTER the trim now, the same point the strip meter is, so moving the trim MOVES the figures
+                // with it. What does not move is the measurement underneath and any DIFFERENCE taken from it:
+                // PSR is asserted unchanged a few lines below, on the same pair of blocks.
                 const auto gid = proc.createLinkGroup ("Levelling set", juce::StringArray { uid });
                 A::targetGroup (*ed, gid);
                 const auto before = A::groupLevels (*ed);
                 LinkShm::setSlotGain (reg, slot, -12.0f);
                 beat();
                 const auto after = A::groupLevels (*ed);
-                check (before.contains ("INT -16.0") && after.contains ("INT -16.0"),
-                       "21t-d (b). the block's INT does not move when the member's trim moves  (a live frame, "
-                       "not a latch)", after.fromFirstOccurrenceOf ("INT", true, false).substring (0, 24));
+                check (before.contains ("INT -22.0") && after.contains ("INT -28.0"),
+                       "21t-d (b) as re-ruled. the block's INT is the figure AS HEARD, so a 6 dB trim move moves "
+                       "it 6 dB  (the frame reads INT -16.0 throughout)",
+                       "before " + before.fromFirstOccurrenceOf ("INT", true, false).substring (0, 8)
+                       + " -> after " + after.fromFirstOccurrenceOf ("INT", true, false).substring (0, 8));
                 check (before.contains ("trim -6.0 dB") && after.contains ("trim -12.0 dB"),
                        "21t-d (b). ...and the trim it prints DOES move",
                        after.fromFirstOccurrenceOf ("trim", true, false).substring (0, 16));
@@ -1314,20 +1320,24 @@ int main()
                            "21t-e (4). every member of the block is logged beside it  (RED as it stood: the block "
                            "was sent and never appeared anywhere a reader could check it)",
                            logs.fromLastOccurrenceOf ("EJGroupLevels:", true, false).upToFirstOccurrenceOf ("\n", false, false).substring (0, 120));
-                    check (logs.contains ("PEAK -1.2") || logs.contains ("PEAK -3.0"),
-                           "21t-e (4). ...with the same PEAK the block carried");
+                    // The logged line and the block are the SAME text, so the PEAK in the log is the as-heard
+                    // one the block carries (-3.0 published, -12.0 of trim).
+                    check (logs.contains ("PEAK -15.0") && after.contains ("PEAK -15.0"),
+                           "21t-e (4) as re-ruled. ...with the same PEAK the block carried, as heard",
+                           after.fromFirstOccurrenceOf ("PEAK", true, false).substring (0, 10));
                 }
                 check (after.contains ("PSR 8.5"),
                        "21t-d. PSR is PEAK minus SHORTMAX when SHORTMAX is there - whole programme, not the "
                        "last 3 s  (the 3 s pair would have read 7.0)",
                        after.fromFirstOccurrenceOf ("PSR", true, false).substring (0, 20));
-                check (after.contains ("SHORTMAX -11.5") && after.contains ("HEARD 42"),
-                       "21t-d (b). ...and SHORTMAX and HEARD are real now, not \"no reading\"",
+                check (after.contains ("SHORTMAX -23.5") && after.contains ("HEARD 42"),
+                       "21t-d (b) as re-ruled. ...and SHORTMAX and HEARD are real now, not \"no reading\" "
+                       "(SHORTMAX as heard: -11.5 published, -12.0 of trim)",
                        after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 34));
                 // 21t-f item 5: SHORT90 is on the line, AFTER SHORTMAX, with the value the Link published.
-                check (after.contains ("SHORTMAX -11.5, SHORT90 -13.5, INT"),
-                       "21t-f (5). SHORT90 is on the member's line, immediately after SHORTMAX  (RED as it "
-                       "stood: the token did not exist)",
+                check (after.contains ("SHORTMAX -23.5, SHORT90 -25.5, INT"),
+                       "21t-f (5) as re-ruled. SHORT90 is on the member's line, immediately after SHORTMAX, both "
+                       "as heard  (RED as it stood: the token did not exist)",
                        after.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 40));
                 {   // the MEMBER LINE must not be marked post-trim (the note still explains what that marking
                     // would mean on an older Link's line, which is why the whole block is not what is checked).
@@ -1937,9 +1947,12 @@ int main()
                                "(an unusable label makes the channel field empty)",
                                tl.upToFirstOccurrenceOf ("]", true, false));
                     }
-                    check (tl.contains ("SHORT90 -14.2") && tl.contains ("INT -17.0")
-                           && tl.contains ("PEAK -1.0") && tl.contains ("HEARD 120"),
-                           "21t-g (6e). ...carrying this channel's own figures, token for token",
+                    // 21t-i, asserted here 28 Sep: AS HEARD. The frame publishes SHORT90 -14.25, INT -17.0 and
+                    // PEAK -1.0; this Link's trim is -3.0, and the block reports what a listener hears.
+                    check (tl.contains ("SHORT90 -17.2") && tl.contains ("INT -20.0")
+                           && tl.contains ("PEAK -4.0") && tl.contains ("HEARD 120"),
+                           "21t-g (6e) as re-ruled. ...carrying this channel's own figures as heard, token for "
+                           "token (the frame's -14.25 / -17.0 / -1.0 under a -3.0 trim)",
                            tl.fromFirstOccurrenceOf ("SHORTMAX", true, false).substring (0, 60));
                     const auto composed = A::body (*ed, "make it harder", uid);
                     check (composed.contains ("[TRACK LEVELS"),
