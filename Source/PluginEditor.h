@@ -4908,6 +4908,12 @@ public:
         "Main vocal 2" among "Main vocal *" becomes "MV 2", "Main vocal" becomes "MV". The name is returned
         unchanged when nothing is shared; the full name still paints in a wide strip and in the tooltip. */
     static juce::String collapsedStripLabel (const juce::String& name, const juce::StringArray& siblings);
+    /** 21t-k item 7 (28/29 Sep 2026 ruling): THE LABEL A STRIP ACTUALLY DRAWS. One line, ellipsised when the
+        name does not fit, and the strip's INDEX NUMBER instead when even the ellipsis would leave fewer than
+        four characters - at that width a truncated name identifies nothing, and a number at least identifies
+        the strip. The name never overflows: the returned string is measured to fit. `index` is 1-based. */
+    static juce::String stripNameLabel (const juce::String& name, const juce::Font& font, int widthPx, int index);
+    static constexpr int kStripLabelMinChars = 4;   // ruled
 private:
     void groupMuteSoloClick(const juce::String& groupId, bool isSolo);
 public:

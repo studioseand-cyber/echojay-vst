@@ -10445,9 +10445,14 @@ void EchoJayEditor::paintLinkStrip(juce::Graphics& g, const StripGeom& sg,
         g.setColour(LinkConsole::value);
         g.setFont(juce::Font(juce::FontOptions(wide ? 12.0f : 10.5f,
                                                juce::Font::bold)));
-        // Ellipsise, never squash: glyphs keep their shape and the tail
-        // elides (the full name lives in the tooltip), Logic's behaviour.
-        g.drawText(name, sg.name, juce::Justification::centred, true);
+        // 21t-k item 7: the label is DECIDED, not left to the renderer - one line, ellipsised to fit, or the
+        // strip's index when even the ellipsis would leave fewer than four characters. The full name lives in
+        // the tooltip either way (linkStripTooltip).
+        int idx = 1;
+        for (size_t si = 0; si < linkStripGeom_.size(); ++si)
+            if (linkStripGeom_[si].addr == sg.addr) { idx = (int) si + 1; break; }
+        g.drawText(stripNameLabel (name, g.getCurrentFont(), sg.name.getWidth(), idx),
+                   sg.name, juce::Justification::centred, true);
     }
 
     // ---- Placement badge: ONE element, three labels (BUS / CHANNEL / SET?),
@@ -26679,6 +26684,31 @@ void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
 // characters seven times, which names nothing. The shared leading words collapse to their initials and the rest
 // is kept whole: "Main vocal 2" -> "MV 2". The full name still paints in a wide strip and in the tooltip, so
 // nothing is lost, only shortened where there is no room for it.
+// 21t-k item 7 (28/29 Sep 2026 ruling): ONE LINE, ELLIPSIS, OR THE INDEX. A name that does not fit is
+// ellipsised from the tail; when what survives is shorter than four characters the strip draws its INDEX
+// instead, because three letters of a name identify nothing while a number at least identifies the strip.
+// Measured against the SAME font the painter uses, so "it fits" is not an estimate.
+juce::String EchoJayEditor::stripNameLabel (const juce::String& name, const juce::Font& font, int widthPx, int index)
+{
+    const auto trimmed = name.trim();
+    const auto indexLabel = juce::String (juce::jmax (1, index));
+    if (widthPx <= 0) return indexLabel;
+    auto fits = [&font, widthPx] (const juce::String& t)
+    { return juce::GlyphArrangement::getStringWidth (font, t) <= (float) widthPx; };
+    if (trimmed.isEmpty()) return indexLabel;
+    if (fits (trimmed)) return trimmed;
+    // Ellipsise from the tail, keeping whole characters, until it fits.
+    const juce::String ell = juce::String::fromUTF8 ("\xe2\x80\xa6");
+    for (int keep = trimmed.length() - 1; keep >= 1; --keep)
+    {
+        const auto cand = trimmed.substring (0, keep) + ell;
+        if (! fits (cand)) continue;
+        // ...and the ruled floor: fewer than four characters of the NAME is not a name.
+        return keep < kStripLabelMinChars ? indexLabel : cand;
+    }
+    return indexLabel;
+}
+
 juce::String EchoJayEditor::collapsedStripLabel (const juce::String& name, const juce::StringArray& siblings)
 {
     if (name.isEmpty() || siblings.size() < 2) return name;

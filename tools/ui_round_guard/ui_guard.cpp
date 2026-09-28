@@ -462,6 +462,36 @@ int main()
             }
             ed->clearRosterSelection();
         }
+        // ---- 21t-k item 7 (28/29 Sep 2026 ruling): STRIP LABELS - one line, ellipsis, or the index ---------
+        {
+            std::printf ("== 21t-k item 7: strip labels never overflow ==\n");
+            const juce::Font f (juce::FontOptions (10.5f, juce::Font::bold));
+            auto w = [&f] (const juce::String& t) { return juce::GlyphArrangement::getStringWidth (f, t); };
+            const juce::String longName ("Aitch Lead Vocal Double Left");
+            const int wide = (int) w (longName) + 10;
+            check (EchoJayEditor::stripNameLabel (longName, f, wide, 3) == longName,
+                   "21t-k 7. a name that FITS is drawn whole",
+                   EchoJayEditor::stripNameLabel (longName, f, wide, 3));
+            const int narrow = (int) w ("Aitch Lead") ;
+            const auto elided = EchoJayEditor::stripNameLabel (longName, f, narrow, 3);
+            std::printf ("    %d px -> \"%s\"\n", narrow, elided.toRawUTF8());
+            check (elided != longName && w (elided) <= (float) narrow,
+                   "21t-k 7. a name that does not fit is ELLIPSISED, and what is drawn fits the strip",
+                   elided + "  (" + juce::String (w (elided), 1) + " px of " + juce::String (narrow) + ")");
+            check (elided.endsWith (juce::String::fromUTF8 ("\xe2\x80\xa6")),
+                   "21t-k 7. ...with the ellipsis on the tail", elided);
+            const int tiny = (int) w ("Ai\xe2\x80\xa6");
+            const auto idx = EchoJayEditor::stripNameLabel (longName, f, tiny, 7);
+            std::printf ("    %d px -> \"%s\"\n", tiny, idx.toRawUTF8());
+            check (idx == "7",
+                   "21t-k 7. ...and below four characters of the NAME the strip draws its INDEX instead, because "
+                   "three letters identify nothing", idx);
+            check (w (idx) <= (float) tiny,
+                   "21t-k 7. ...which also fits", idx + " (" + juce::String (w (idx), 1) + " px)");
+            check (EchoJayEditor::stripNameLabel ({}, f, 100, 2) == "2",
+                   "21t-k 7. a Link with no name yet draws its index, never an empty strip",
+                   EchoJayEditor::stripNameLabel ({}, f, 100, 2));
+        }
         // ---- (12b) group strip parity ----
         const auto gid = proc.createLinkGroup ("the BVs", juce::StringArray { "lnk_01", "lnk_02", "lnk_03" });
         A::toLinkTab (*ed);
