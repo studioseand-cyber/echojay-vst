@@ -1553,6 +1553,14 @@ public:
     juce::String createLinkGroup(const juce::String& name, const juce::StringArray& members,
                                  const juce::String& bus = {}, juce::StringArray* refusedOut = nullptr);   // returns the id
     void removeLinkGroup(const juce::String& id);
+    /** 21t-k item 4 (28 Sep 2026): THE ROSTER, counted from the same role the strip prints. `unset` is excluded
+        from every scope and SAID, because a Link nobody has declared is not a channel the op can be about. */
+    struct RosterCounts { int channels = 0; int buses = 0; int unset = 0; };
+    RosterCounts linkRosterCounts() const;
+    juce::String linkRosterSentence() const;   // "N channels, M buses, K unset"
+    /** The live uids a scope selects. role "" = every DECLARED Link (channels and buses, never unset).
+        `excludedOut` names what the scope left out and why, one entry per Link, for the card and the log. */
+    juce::StringArray uidsForScopeRole(const juce::String& role, juce::StringArray* excludedOut = nullptr) const;
     void setLinkGroupBus(const juce::String& id, const juce::String& busUid);
     void setLinkGroupMembers(const juce::String& id, const juce::StringArray& members);
     void renameLinkGroup(const juce::String& id, const juce::String& name);

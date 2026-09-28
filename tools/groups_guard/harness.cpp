@@ -213,6 +213,85 @@ int main()
             A::setKeySrc (*ed, {});
         }
 
+        // ---- 21t-k item 4 (28 Sep 2026): THE HEADROOM OP, THE SCOPE AND THE ROSTER ------------------------
+        {
+            std::printf ("\n== 21t-k item 4: the headroom op, scope by role, the roster ==\n");
+            // Three declared Links and one that has not declared a role.
+            std::vector<EchoJayProcessor::LinkSlotInfo> mix;
+            const char* nm[4] = { "Vox", "Drums", "MUSIC", "Nameless" };
+            const int   pl[4] = { 2, 2, 1, 0 };   // channel, channel, bus, unset
+            for (int i = 0; i < 4; ++i)
+            {
+                EchoJayProcessor::LinkSlotInfo li;
+                li.uid = "lnk_4" + juce::String (i + 10); li.name = nm[i];
+                li.active = true; li.connected = true; li.channels = 2; li.placement = pl[i];
+                mix.push_back (li);
+            }
+            EchoJayAlignTestAccess::setLinks (p, mix);
+            check (p.linkRosterSentence() == "2 channels, 1 bus, 1 unset",
+                   "21t-k 4. the roster sentence counts channels, buses and unset, as the contract names them",
+                   p.linkRosterSentence());
+            juce::StringArray left;
+            const auto chans = p.uidsForScopeRole ("channel", &left);
+            check (chans.size() == 2 && chans.contains ("lnk_410") && chans.contains ("lnk_411"),
+                   "21t-k 4. scope role \"channel\" selects the channels and NOTHING else",
+                   chans.joinIntoString (","));
+            check (left.joinIntoString ("; ").contains ("no role declared"),
+                   "21t-k 4. ...and what it left out is NAMED, the undeclared one included",
+                   left.joinIntoString ("; "));
+            const auto buses = p.uidsForScopeRole ("bus");
+            check (buses.size() == 1 && buses[0] == "lnk_412",
+                   "21t-k 4. scope role \"bus\" selects the bus", buses.joinIntoString (","));
+            const auto any = p.uidsForScopeRole ({});
+            check (any.size() == 3 && ! any.contains ("lnk_413"),
+                   "21t-k 4. no scope = every DECLARED Link, and an unset one is never taken",
+                   any.joinIntoString (","));
+            // ...and the op itself, in both ruled shapes.
+            {
+                const juce::String rel =
+                    "{\"edit\":[{\"op\":\"headroom\",\"mode\":\"relative\",\"delta_db\":-10,"
+                    "\"scope\":{\"role\":\"channel\"}}]}";
+                auto ops = ChainHost::parseChainEditOps (rel, nullptr);
+                check (ops.size() == 1 && ops[0].op == "headroom" && ops[0].headroomMode == "relative"
+                       && std::abs (ops[0].headroomDeltaDb + 10.0f) < 0.01f && ops[0].scopeRole == "channel",
+                       "21t-k 4. the RELATIVE headroom op parses with its delta and its scope",
+                       ops.empty() ? juce::String ("(none)")
+                                   : ops[0].op + " " + ops[0].headroomMode + " "
+                                     + juce::String (ops[0].headroomDeltaDb, 1) + " scope " + ops[0].scopeRole);
+                check (! ops.empty() && ChainHost::describeEditOp (ops[0], {}).contains ("headroom: -10.0 dB on every channel"),
+                       "21t-k 4. ...and says what it will do, on a row that gives the card its height",
+                       ops.empty() ? juce::String() : ChainHost::describeEditOp (ops[0], {}));
+            }
+            {
+                const juce::String tgt =
+                    "{\"edit\":[{\"op\":\"headroom\",\"mode\":\"target\",\"target_short_max_lufs\":-18,"
+                    "\"target_tp_db\":-6,\"scope\":{\"role\":\"bus\"}}]}";
+                auto ops = ChainHost::parseChainEditOps (tgt, nullptr);
+                check (ops.size() == 1 && ops[0].headroomMode == "target"
+                       && std::abs (ops[0].headroomShortMax + 18.0f) < 0.01f
+                       && std::abs (ops[0].headroomTruePeak + 6.0f) < 0.01f && ops[0].scopeRole == "bus",
+                       "21t-k 4. the TARGET headroom op parses with both figures and its scope",
+                       ops.empty() ? juce::String ("(none)")
+                                   : ops[0].headroomMode + " " + juce::String (ops[0].headroomShortMax, 1)
+                                     + " LUFS / " + juce::String (ops[0].headroomTruePeak, 1) + " dBTP");
+                check (! ops.empty() && ChainHost::describeEditOp (ops[0], {}).contains ("-18.0 LUFS / -6.0 dBTP on every bus"),
+                       "21t-k 4. ...and says so", ops.empty() ? juce::String() : ChainHost::describeEditOp (ops[0], {}));
+            }
+            // ...and a uid-pending Link is REFUSED from grouping, by name, not skipped in silence.
+            {
+                juce::StringArray refused;
+                const auto gp = p.createLinkGroup ("Pending", juce::StringArray { "lnk_410", "", "lnk_411" }, {}, &refused);
+                const auto* got = p.linkGroupById (gp);
+                check (got != nullptr && got->members.size() == 2 && refused.size() == 1
+                       && refused[0].contains ("still registering"),
+                       "21t-k 4. a Link whose uid has not landed is REFUSED from the group, in one named line",
+                       juce::String (got != nullptr ? got->members.size() : -1) + " member(s); refused: "
+                       + refused.joinIntoString ("; "));
+                p.removeLinkGroup (gp);
+            }
+            EchoJayAlignTestAccess::setLinks (p, links);
+        }
+
         // THIS LEG LEAVES THE STATE AS IT FOUND IT (ruled): the persistence check below asserts on the ONE group
         // the earlier legs made, and a guard that changes what the next leg measures is not a guard.
         p.chatTargetGroupId.clear();

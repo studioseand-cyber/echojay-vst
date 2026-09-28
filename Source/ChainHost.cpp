@@ -1748,6 +1748,37 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         // Apply button. That is exactly why the chat-route level-match card could be read and not applied.
         if (auto* mem = eo->getProperty("members").getArray()) op.memberCount = mem->size();
         op.members = eo->getProperty("members");   // 21t-j: the deltas travel with the op
+        // 21t-k item 4: THE HEADROOM OP and the SCOPE that selects what it acts on. Both are read here, where
+        // every op is read, so no apply path has to parse JSON of its own. A number that is not a number is
+        // ABSENT, never zero - the same rule wet_pct follows above, and for the same reason.
+        {
+            auto num = [eo] (const char* key, float& into)
+            {
+                const auto v = eo->getProperty (key);
+                if (v.isDouble() || v.isInt() || v.isInt64()) into = (float) (double) v;
+            };
+            if (op.op == "headroom")
+            {
+                op.headroomMode = eo->getProperty ("mode").toString().trim().toLowerCase();
+                num ("delta_db", op.headroomDeltaDb);
+                num ("target_short_max_lufs", op.headroomShortMax);
+                num ("target_tp_db", op.headroomTruePeak);
+                if (op.headroomMode != "relative" && op.headroomMode != "target")
+                {
+                    EchoJay_NSLog (("EJEdit: headroom op mode \"" + op.headroomMode
+                                    + "\" is not \"relative\" or \"target\" - the op is dropped").toRawUTF8());
+                    op.headroomMode.clear();
+                }
+            }
+            if (auto* sc = eo->getProperty ("scope").getDynamicObject())
+            {
+                const auto r = sc->getProperty ("role").toString().trim().toLowerCase();
+                if (r == "channel" || r == "bus") op.scopeRole = r;
+                else if (r.isNotEmpty())
+                    EchoJay_NSLog (("EJEdit: scope role \"" + r + "\" is not \"channel\" or \"bus\" - ignored, "
+                                    "the op is about every declared Link").toRawUTF8());
+            }
+        }
         if (auto* nsObj = eo->getProperty("no_such").getDynamicObject())
         {
             op.noSuchTerm = nsObj->getProperty("term").toString();
@@ -1892,6 +1923,25 @@ juce::String ChainHost::describeEditOp(const ChainEditOp& op,
         return juce::String::fromUTF8 ("\xe2\x87\x85 match levels across ")
              + juce::String (juce::jmax (0, op.memberCount))
              + (op.memberCount == 1 ? " channel" : " channels");
+    // 21t-k item 4: the headroom row, in the two ruled shapes.
+    if (op.op == "headroom")
+    {
+        const juce::String who = op.scopeRole == "channel" ? " on every channel"
+                               : op.scopeRole == "bus"     ? " on every bus"
+                                                           : " on every declared Link";
+        if (op.headroomMode == "relative" && op.headroomDeltaDb == op.headroomDeltaDb)
+            return juce::String::fromUTF8 ("\xe2\x86\x93 headroom: ")
+                 + juce::String (op.headroomDeltaDb, 1) + " dB" + who;
+        if (op.headroomMode == "target")
+        {
+            juce::String t;
+            if (op.headroomShortMax == op.headroomShortMax) t << juce::String (op.headroomShortMax, 1) << " LUFS";
+            if (op.headroomTruePeak == op.headroomTruePeak)
+            { if (t.isNotEmpty()) t << " / "; t << juce::String (op.headroomTruePeak, 1) << " dBTP"; }
+            return juce::String::fromUTF8 ("\xe2\x86\x93 headroom: aim for ") + t + who;
+        }
+        return juce::String::fromUTF8 ("\xe2\x86\x93 headroom: the op names no usable mode - nothing to do");
+    }
     return "? unknown op: " + op.op;
 }
 

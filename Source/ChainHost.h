@@ -5,6 +5,7 @@
 #include "EchoJayParamApply.h"   // 21 Sep 2026: the settle job keeps echojay::ApplyResult between message-loop ticks
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
+#include <limits>   // 21t-k item 4: the headroom op's absent-not-zero figures
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
 #include <atomic>
 #include <map>
@@ -929,6 +930,15 @@ public:
         // level_match op reached the Link there was no delta left to apply - the op arrived carrying nothing it
         // could act on. The array rides as a var: this struct does not interpret it, the Link does.
         juce::var members;
+        // ---- 21t-k item 4 (28 Sep 2026): THE HEADROOM OP. One common offset for every declared channel, in the
+        // two shapes the contract names: relative ("everything down 10 dB") and target (a SHORTMAX and a true
+        // peak to aim at). It is a GROUP-SHAPED op like level_match - it carries no slot - and the scope says
+        // which Links it is about. The client resolves the scope from the same role it prints on the strip.
+        juce::String headroomMode;        // "relative" | "target" | "" (not a headroom op)
+        float headroomDeltaDb   = std::numeric_limits<float>::quiet_NaN();   // relative
+        float headroomShortMax  = std::numeric_limits<float>::quiet_NaN();   // target: LUFS
+        float headroomTruePeak  = std::numeric_limits<float>::quiet_NaN();   // target: dBTP
+        juce::String scopeRole;           // "channel" | "bus" | "" (every declared Link)
         // ---- OP TARGETS v1 (4 Sep 2026): the op names what it is aiming at.
         // Until now every op addressed its target by NUMBER alone, and every
         // surface that appeared to confirm that number in words (the card,

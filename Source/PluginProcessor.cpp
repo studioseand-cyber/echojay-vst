@@ -5465,7 +5465,27 @@ juce::String EchoJayProcessor::createLinkGroup(const juce::String& name, const j
     if (members.isEmpty()) return {};
     LinkGroup g; g.id = "grp_" + juce::String::toHexString((int) (juce::Time::currentTimeMillis() & 0x7fffffff)) + juce::String(linkGroups_.size());
     g.name = name.trim().isNotEmpty() ? name.trim() : "Group " + juce::String((int) linkGroups_.size() + 1);
-    for (const auto& u : members) if (u.isNotEmpty()) g.members.addIfNotAlreadyThere(u);
+    // 21t-k item 4 (28 Sep 2026 ruling): A UID-PENDING LINK IS REFUSED FROM GROUPING, WITH ONE NAMED LINE. A
+    // Link whose uid has not landed yet cannot be a member: the group would store an empty string, the block
+    // would print a blank line, and when the uid did land nothing would rebind it. It is a real hazard and it is
+    // now a refusal rather than a silent skip (the empty-string filter that used to do it said nothing).
+    for (const auto& u : members)
+    {
+        if (u.trim().isEmpty())
+        {
+            EchoJay_NSLog("EJGroup: a selected Link has no uid yet (still registering) - NOT grouped");
+            if (refusedOut != nullptr)
+                refusedOut->add("a Link that is still registering - it has no id yet, so it cannot be grouped; "
+                                "select it again in a moment");
+            continue;
+        }
+        g.members.addIfNotAlreadyThere(u.trim());
+    }
+    if (g.members.isEmpty())
+    {
+        EchoJay_NSLog("EJGroup: every selected Link was still registering - no group created");
+        return {};
+    }
     g.bus = bus;
     if ((int) linkGroups_.size() >= kMaxGroups)
     {
@@ -5497,6 +5517,58 @@ juce::String EchoJayProcessor::createLinkGroup(const juce::String& name, const j
     markStateDirty();
     return g.id;
 }
+// ---- 21t-k item 4 (28 Sep 2026): THE ROSTER AND THE SCOPE --------------------------------------------------
+// One place counts roles, and one place resolves a scope, so the sentence the server is told and the set the op
+// acts on cannot disagree. PlacementSend is neither channel nor bus (recorded in the 21t-k list): it is DECLARED,
+// so it is not "unset", but no role scope selects it.
+EchoJayProcessor::RosterCounts EchoJayProcessor::linkRosterCounts() const
+{
+    RosterCounts r;
+    for (const auto& li : getLinkSlotInfos())
+    {
+        if (li.uid.isEmpty()) continue;                 // a Link whose uid has not landed is not on the roster
+        if      (li.placement == 1) ++r.buses;
+        else if (li.placement == 2) ++r.channels;
+        else if (li.placement == 3) { /* send: declared, but no role scope takes it */ }
+        else                        ++r.unset;
+    }
+    return r;
+}
+
+juce::String EchoJayProcessor::linkRosterSentence() const
+{
+    const auto r = linkRosterCounts();
+    return juce::String (r.channels) + (r.channels == 1 ? " channel, " : " channels, ")
+         + juce::String (r.buses)    + (r.buses == 1 ? " bus, " : " buses, ")
+         + juce::String (r.unset)    + " unset";
+}
+
+juce::StringArray EchoJayProcessor::uidsForScopeRole(const juce::String& roleIn, juce::StringArray* excludedOut) const
+{
+    const auto role = roleIn.trim().toLowerCase();
+    juce::StringArray out;
+    for (const auto& li : getLinkSlotInfos())
+    {
+        if (li.uid.isEmpty()) continue;
+        const bool isBus = (li.placement == 1), isCh = (li.placement == 2), isSend = (li.placement == 3);
+        const bool take = role == "bus"     ? isBus
+                        : role == "channel" ? isCh
+                                            : (isBus || isCh);
+        if (take) { out.add (li.uid); continue; }
+        if (excludedOut != nullptr)
+            excludedOut->add (resolveLinkDisplayName (li.uid) + " - "
+                              + (isSend ? juce::String ("a send: neither channel nor bus")
+                                        : (isBus || isCh) ? juce::String ("a ") + (isBus ? "bus" : "channel")
+                                                            + ", and this op is about " + role + "s"
+                                                          : juce::String ("no role declared - not taken by any scope")));
+    }
+    EchoJay_NSLog(("EJScope: role \"" + (role.isEmpty() ? juce::String ("(any declared)") : role) + "\" selects "
+                   + juce::String (out.size()) + " Link(s) of " + linkRosterSentence()
+                   + (excludedOut != nullptr && ! excludedOut->isEmpty()
+                          ? " - left out: " + excludedOut->joinIntoString ("; ") : juce::String())).toRawUTF8());
+    return out;
+}
+
 void EchoJayProcessor::removeLinkGroup(const juce::String& id)
 { linkGroups_.erase(std::remove_if(linkGroups_.begin(), linkGroups_.end(), [&](const LinkGroup& g) { return g.id == id; }), linkGroups_.end()); markStateDirty(); }
 void EchoJayProcessor::setLinkGroupBus(const juce::String& id, const juce::String& busUid)
