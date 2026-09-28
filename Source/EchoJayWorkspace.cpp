@@ -311,6 +311,25 @@ void EchoJayWorkspace::markAskAnswered(const juce::String& chatId,
     }
 }
 
+// 21t-j (a): the settle's line, completed in place. The LAST matching assistant message wins, as with the gain
+// json above: a reply's text can repeat across a session and the most recent one is the one on screen.
+void EchoJayWorkspace::updateAssistantText(const juce::String& chatId,
+                                           const juce::String& matchContent,
+                                           const juce::String& newContent)
+{
+    if (matchContent.isEmpty() || newContent.isEmpty()) return;
+    for (auto& c : chats)
+        if (c.id == chatId)
+        {
+            for (auto it = c.messages.rbegin(); it != c.messages.rend(); ++it)
+                if (it->role == "assistant" && it->content == matchContent)
+                { it->content = newContent; break; }
+            c.updatedAt = isoUtcNow();
+            requestMutationSync();
+            return;
+        }
+}
+
 void EchoJayWorkspace::updateAssistantGainJson(const juce::String& chatId,
                                                const juce::String& matchContent,
                                                const juce::String& gainJson)

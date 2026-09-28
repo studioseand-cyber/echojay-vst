@@ -280,6 +280,12 @@ public:
     // survives reload.
     void markAskAnswered(const juce::String& chatId,
                          const juce::String& matchContent);
+    // 21t-j (a): REWRITE an assistant message's text in place - the settle's one line, completed. Same
+    // content-match rule as the calls above, so the stored copy follows the display and a reload shows the
+    // finished line rather than the promise.
+    void updateAssistantText(const juce::String& chatId,
+                             const juce::String& matchContent,
+                             const juce::String& newContent);
     // Mark an assistant CHAIN_EDIT message applied and store the outcome
     // summary (Phase 1c) — same content-match rule.
     // Clear a persisted Suggest-an-alternative prompt on ANY assistant

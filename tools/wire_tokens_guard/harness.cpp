@@ -215,6 +215,30 @@ int main()
         const auto block = EchoJayAPI::buildCurrentChainInjection (host);
         std::printf ("\n----- [CURRENT CHAIN] VERBATIM, as buildCurrentChainInjection writes it -----\n%s\n"
                      "----- end -----\n", block.toRawUTF8());
+        // 21t-j: ...and the TUNER SLOT LINE on its own, after a mode EDIT, which is the line B asked for. The edit
+        // goes through the same path a dial edit takes, so what prints here is what the server will read.
+        {
+            auto* o2 = new juce::DynamicObject(); o2->setProperty ("correction_mode", "hard");
+            auto* outer2 = new juce::DynamicObject(); outer2->setProperty ("params", juce::var (o2));
+            host.setSlotStructuredSettings (1, juce::var (outer2));
+            pump (300);
+            const auto after = EchoJayAPI::buildCurrentChainInjection (host);
+            juce::String tunerLine, next;
+            const auto lines = juce::StringArray::fromLines (after);
+            for (int i = 0; i < lines.size(); ++i)
+                if (lines[i].contains ("EchoJay Pitch"))
+                { tunerLine = lines[i]; if (i + 1 < lines.size()) next = lines[i + 1]; break; }
+            std::printf ("\n----- THE TUNER SLOT LINE after a mode EDIT to \"hard\", verbatim (two lines) -----\n"
+                         "%s\n%s\n----- end -----\n", tunerLine.toRawUTF8(), next.toRawUTF8());
+            check (next.contains ("correction_mode hard"),
+                   "21t-j: the tuner slot line reads the mode the plugin is in NOW, after an edit  (RED as it "
+                   "stood: it still carried the build's wording two mode edits later)",
+                   next.substring (0, 90));
+            check (next.contains ("retune ") && next.contains ("flex ") && next.contains ("humanize ")
+                   && next.contains ("key ") && next.contains ("scale ") && next.contains ("ref "),
+                   "21t-j: ...in the ruled field order - mode, retune, flex, humanize, key, scale, ref",
+                   next.substring (0, 120));
+        }
         check (block.contains ("[CURRENT CHAIN"), "the block marker is \"[CURRENT CHAIN\"",
                block.substring (0, 40));
         check (block.contains ("EchoJay Pitch"), "the tuner slot is named in it");
