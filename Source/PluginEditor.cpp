@@ -7177,7 +7177,11 @@ void EchoJayEditor::linkStripCells(const LinkStripState& st, const LinkStripDeri
         { "PSR",   st.smPsr,   d.psrValid,
           st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
         { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::value },
-        { "LRA",   st.smLra,   true,                LinkConsole::value },
+        // 21t-j (Sean's ruling on the first cut, 28 Sep 2026): LRA IS GATED BY INT. Not gating it was right in
+        // principle - a range in LU is not a loudness figure - and wrong in fact: a strip whose integrated
+        // loudness is below the absolute gate has no programme to have a range OF, and every silent strip drew
+        // "LRA 0.0". The range answers to the measurement it is a range of.
+        { "LRA",   st.smLra,   st.smInt > kLufsAbsGate, LinkConsole::value },
     };
     for (int i = 0; i < 6; ++i) out[i] = all[i];
 }

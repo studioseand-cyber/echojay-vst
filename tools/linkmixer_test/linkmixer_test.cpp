@@ -414,22 +414,55 @@ static void testHitPrecedence()
     check (T::hitAt (s, { s.fader.getRight() - 1, s.fader.getCentreY() })
                == Hit::Fader, "the fader wins its own right edge");
     check (T::hitAt (s, s.badge.getCentre()) == Hit::Badge,  "badge centre hits the badge");
-    // 21t-h (27 Sep 2026): this row FAILS, and it is pre-existing - this whole test had never been in the gate, so
-    // nothing ran it. The failure says WHICH rect claims the Active centre, because "not Active" is a question and
-    // the name of the winner is an answer: the hit order is fader, clip, meter, badge, mute, solo, active, so an
-    // overlap with any earlier rect takes it. Left RED deliberately rather than quietly de-registered.
+    // 21t-h (27 Sep 2026) asserted that s.active.getCentre() hits Active, and it FAILED: the centre hits Mute.
+    // RE-RULED 28 Sep 2026 (Sean asked whether it is live). IT IS A STALE ASSERTION, NOT A DEFECT, and the
+    // layout code says so in as many words: "sg.active stays the row-wide Active click target in both modes
+    // (Mute/Solo are tested first in the hit order)". In WIDE, the tick + M + S are laid out as ONE GROUP
+    // CENTRED on the Active row, so the row's centre is where the M lamp deliberately sits - 88 px wide, a
+    // 60 px group, a 14 px margin, tick at +14, M at +35..53, and the centre at +44 is inside M by
+    // construction. The control the user aims at is the TICK, and the test now asserts that instead. In NARROW
+    // the M/S pair has its own row above, so the Active row holds only the tick and its centre IS the tick.
     {
-        const auto h = T::hitAt (s, s.active.getCentre());
         auto nameOf = [] (Hit x) { return x == Hit::Fader ? "Fader" : x == Hit::Clip ? "Clip"
                                         : x == Hit::Meter ? "Meter" : x == Hit::Badge ? "Badge"
                                         : x == Hit::Mute ? "Mute" : x == Hit::Solo ? "Solo"
                                         : x == Hit::Active ? "Active" : "Background/None"; };
-        std::printf ("    active rect %d,%d %dx%d - its centre hits %s\n",
-                     s.active.getX(), s.active.getY(), s.active.getWidth(), s.active.getHeight(), nameOf (h));
-        check (h == Hit::Active, "the merged Active control claims its rect (step 3)");
+        std::printf ("    WIDE: active row %d,%d %dx%d - centre hits %s, tick centre hits %s\n",
+                     s.active.getX(), s.active.getY(), s.active.getWidth(), s.active.getHeight(),
+                     nameOf (T::hitAt (s, s.active.getCentre())), nameOf (T::hitAt (s, s.tick.getCentre())));
+        check (T::hitAt (s, s.tick.getCentre()) == Hit::Active,
+               "21t-j re-ruled: THE TICK is the Active control, and clicking it lands on Active");
+        check (T::hitAt (s, s.mute.getCentre()) == Hit::Mute && T::hitAt (s, s.solo.getCentre()) == Hit::Solo,
+               "21t-j re-ruled: ...and M and S claim their own lamps");
+        check (! s.mute.intersects (s.tick) && ! s.solo.intersects (s.tick),
+               "21t-j re-ruled: ...with no lamp overlapping the tick, which is what would make a mis-click");
+        // The rest of the row still belongs to Active: the lamps sit inside it, and everything else falls to it.
+        check (T::hitAt (s, { s.active.getRight() - 2, s.active.getCentreY() }) == Hit::Active,
+               "21t-j re-ruled: ...and the row clear of the lamps is still the Active target");
     }
     check (T::hitAt (s, s.name.getCentre())  == Hit::Background,
            "the name area falls through to background, which selects");
+    // 21t-j (28 Sep 2026): SEAN'S QUESTION, ANSWERED IN NARROW - "does clicking a strip's active tick land on
+    // Mute?" In NARROW the M/S pair is on its own row above Active, so the Active row holds the tick alone.
+    {
+        Geom nbus; std::vector<Geom> nlinks;
+        T::layOut (band, T::wNarrow(), addrs (4), nbus, nlinks);
+        if (! nlinks.empty())
+        {
+            const auto& n = nlinks[1];
+            auto nameOf = [] (Hit x) { return x == Hit::Mute ? "Mute" : x == Hit::Solo ? "Solo"
+                                            : x == Hit::Active ? "Active" : "something else"; };
+            std::printf ("    NARROW: active row %d,%d %dx%d - centre hits %s, tick centre hits %s\n",
+                         n.active.getX(), n.active.getY(), n.active.getWidth(), n.active.getHeight(),
+                         nameOf (T::hitAt (n, n.active.getCentre())), nameOf (T::hitAt (n, n.tick.getCentre())));
+            check (T::hitAt (n, n.tick.getCentre()) == Hit::Active,
+                   "21t-j: in NARROW, clicking the Active TICK lands on Active, not on Mute");
+            check (T::hitAt (n, n.active.getCentre()) == Hit::Active,
+                   "21t-j: ...and so does the centre of the Active row, because M/S have their own row there");
+            check (! n.mute.intersects (n.active) && ! n.solo.intersects (n.active),
+                   "21t-j: ...and neither lamp overlaps the Active row at all in NARROW");
+        }
+    }
     check (T::hitAt (s, s.data.getCentre())  == Hit::Background,
            "the data area falls through to background, which selects");
 
@@ -1145,17 +1178,21 @@ static void testFloorIsNotAReading()
         st.frame.truePeakMax = -78.9f;    // ...but the loudness it would be divided against IS
         const auto d = settle (st);
         T::Cell c[6]; T::cells (st, d, c);
-        std::printf ("  empty bus strip draws: MOM %s  SHORT %s  INT %s  PSR %s  PLR %s\n",
+        std::printf ("  empty bus strip draws: MOM %s  SHORT %s  INT %s  PSR %s  PLR %s  LRA %s\n",
                      find (c, "MOM").valid   ? "a figure" : "--",
                      find (c, "SHORT").valid ? "a figure" : "--",
                      find (c, "INT").valid   ? "a figure" : "--",
                      find (c, "PSR").valid   ? "a figure" : "--",
-                     find (c, "PLR").valid   ? "a figure" : "--");
+                     find (c, "PLR").valid   ? "a figure" : "--",
+                     find (c, "LRA").valid   ? "a figure" : "--");
         check (! find (c, "MOM").valid,   "MOM below the absolute gate draws --");
         check (! find (c, "SHORT").valid, "SHORT below the absolute gate draws --");
         check (! find (c, "INT").valid,   "INT below the absolute gate draws --");
         check (! find (c, "PSR").valid,   "PSR is not derived from a gated-out short-term window");
         check (! find (c, "PLR").valid,   "PLR is not derived from a gated-out integrated figure");
+        // Sean's ruling on the first cut: a strip whose INT is gated out has no programme to have a range of,
+        // and every silent strip drew "LRA 0.0". The range answers to the measurement it is a range of.
+        check (! find (c, "LRA").valid,   "LRA draws -- whenever INT is gated out");
     }
 
     // (2) THE OTHER DIRECTION: a strip with real programme on it still prints every figure. A gate that
@@ -1178,6 +1215,7 @@ static void testFloorIsNotAReading()
                "a strip with programme on it still prints MOM, SHORT and INT");
         check (find (c, "PSR").valid && find (c, "PLR").valid,
                "...and still derives PSR and PLR");
+        check (find (c, "LRA").valid, "...and still prints its LRA");
     }
 
     // (3) THE EDGE, either side of the gate by a tenth: the line is the gate itself, not "somewhere near it".
