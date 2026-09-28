@@ -3,7 +3,7 @@
 # ONE process - a real LinkProcessor against the Link archive, with real audio through processBlock so the slot's
 # own tallies close real 3 s windows. A stand-in writing sidecar state would prove nothing about the Link.
 set -u; cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-S=${EJ_SCRATCH:-/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad}
+S=${EJ_SCRATCH:-$(mktemp -d /tmp/echojay-guard-scratch.XXXXXX)}   # 21t-j: no session path baked in
 ISO=$(mktemp -d /tmp/echojay-calib-home.XXXXXX); export HOME=$ISO EJ_STATE_TEST_HOME=$ISO ECHOJAY_STATE_HOME=$ISO
 H=$ISO/calib; mkdir -p "$H"; echo "isolated home $ISO"
 echo "-- compile link side"; rm -f $S/calib_link_bin

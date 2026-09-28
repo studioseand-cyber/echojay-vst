@@ -429,6 +429,14 @@ void LinkProcessor::calibTickOwnRack()
     w.grDb     = w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f;
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
     w.heardSeconds = lv.in.heardSeconds;   // 21t-i: the question quotes what was actually heard
+    // 21t-j (B's note 1): THE PLUGIN'S OWN GR METER, when the block named one. Read as the plugin prints it; a
+    // control whose text is not a number publishes no figure, and then the reply carries none.
+    if (! calibLoop_.senseParams.isEmpty() && calibLoop_.grReadable)
+    {
+        float grFromPlugin = 0.0f;
+        if (chainHost.readControlDb (calibLoop_.slot, calibLoop_.senseParams[0], grFromPlugin))
+            w.sensedGrDb = std::abs (grFromPlugin);
+    }
 
     // 21t-i: the measure-and-ask line is left in the STATE (askOwed) rather than posted here - this process has no
     // chat. V2 hands it to the chat out of the sidecar, from whichever host measured the window.
@@ -443,6 +451,13 @@ void LinkProcessor::calibTickOwnRack()
     // must not change which knob is being dialled.
     if (step.writeParams)
         chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
+    // 21t-j: the level hold, on this side too - one header, one behaviour, whichever host owns the tallies.
+    if (step.writeOutput)
+    {
+        chainHost.setSlotControlsToValue(calibLoop_.slot, step.outputNames, step.outputValue);
+        EchoJay_NSLog(("EJThreshold: level hold - wrote " + step.outputNames.joinIntoString(" + ") + " = "
+                       + juce::String(step.outputValue, 2) + " on slot " + juce::String(calibLoop_.slot + 1)).toRawUTF8());
+    }
     // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
     // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing
     // else. Written directly rather than through publishRackSidecar, which is rate-limited on the rack picture
@@ -2804,6 +2819,76 @@ void LinkProcessor::pollChainCommand()
         if (ops.empty())
         { failChain("editOps empty or malformed"); return; }
 
+        // ---- 21t-j (28 Sep 2026 ruling): LEVEL MATCH IS THIS LINK'S OWN TRIM, NOT A RACK EDIT ----------------
+        // Sean's 10:10:34 log: five Links answered "applied level_match count=0->0 ... ABORTED applied=0/1". Why,
+        // from the code: parseChainEditOps built an op with op="level_match", slot=-1 and (since 21t-i) a member
+        // COUNT but no members; ChainHost::applyChainEdits then dry-runs every op against a simulated RACK and
+        // ends `else return bad("unknown operation ...")` - level_match is none of add/remove/replace/move/
+        // bypass/set/set_wet - so the batch aborted before a single op ran. It never looked anything up, because
+        // the thing it had to move is not a rack slot at all: it is gainDb_, this plugin's own trim.
+        //
+        // So the op is taken OUT of the rack batch and applied here, by this Link, to itself: find this instance's
+        // uid among the members and move the trim by that member's delta. The rack sequencer's vocabulary is
+        // unchanged - a level match was never a rack edit.
+        int lmMoved = 0, lmSeen = 0; juce::String lmWhy; juce::StringArray lmResults;
+        {
+            std::vector<ChainHost::ChainEditOp> rest;
+            for (auto& op : ops)
+            {
+                if (op.op != "level_match") { rest.push_back (op); continue; }
+                ++lmSeen;
+                auto* arr = op.members.getArray();
+                if (arr == nullptr) { lmWhy = "the level_match op carries no members"; continue; }
+                bool mine = false;
+                for (const auto& mv : *arr)
+                {
+                    auto* mo = mv.getDynamicObject();
+                    if (mo == nullptr) continue;
+                    if (mo->getProperty ("uid").toString().trim() != instanceUid_) continue;
+                    mine = true;
+                    const double delta = (double) mo->getProperty ("delta_db");
+                    const auto intV = mo->getProperty ("int_lufs");
+                    if (intV.isVoid() || std::abs (delta) < 0.005)
+                    {
+                        lmWhy = intV.isVoid() ? "no reading for this channel, so nothing to match it to"
+                                              : "delta 0.0 dB";
+                        lmResults.add ("level_match: left alone (" + lmWhy + ")");
+                        break;
+                    }
+                    const float before = gainDb_.load (std::memory_order_relaxed);
+                    const float after  = juce::jlimit (kGainMinDb, kGainMaxDb, (float) (before + delta));
+                    setGainDb (after);
+                    ++lmMoved;
+                    lmResults.add ("level_match: trim " + juce::String (before, 2) + " -> "
+                                   + juce::String (after, 2) + " dB");
+                    EchoJay_NSLog(("EJLink: level_match moved THIS Link's trim " + juce::String (before, 2)
+                                   + " -> " + juce::String (after, 2) + " dB (delta " + juce::String (delta, 2)
+                                   + ", seq " + juce::String (seq) + ")").toRawUTF8());
+                    break;
+                }
+                if (! mine)
+                {
+                    lmWhy = "this Link (" + instanceUid_ + ") is not named in the members";
+                    lmResults.add ("level_match: not for this channel");
+                    EchoJay_NSLog(("EJLink: level_match carried " + juce::String ((int) arr->size())
+                                   + " member(s), none of them this Link (" + instanceUid_ + ")").toRawUTF8());
+                }
+            }
+            ops.swap (rest);
+        }
+        // NOTHING BUT LEVEL MATCH: answer here. An abort is not a staleness, and a move is not a rack change.
+        if (lmSeen > 0 && ops.empty())
+        {
+            updateShmState();                      // the new trim reaches the registry, which is what V2 reads back
+            const juce::String status = lmMoved > 0 ? "ok" : "not_applied";
+            EchoJay_NSLog(("EJLink: applied level_match count=" + juce::String (chainHost.getNumSlots()) + "->"
+                           + juce::String (chainHost.getNumSlots()) + " seq=" + juce::String (seq)
+                           + " moved=" + juce::String (lmMoved) + "/" + juce::String (lmSeen)
+                           + (lmMoved > 0 ? juce::String() : " (" + lmWhy + ")")).toRawUTF8());
+            writeChainAck (seq, status, lmResults, lmMoved > 0 ? juce::String() : lmWhy);
+            return;
+        }
+
         if (onChainAboutToChange) onChainAboutToChange();   // editors close first
         auto self = this;   // processor outlives message-thread callbacks in-session
         juce::Timer::callAfterDelay(80, [self, ops, baseSlots, seq, cmdId]() mutable
@@ -2830,9 +2915,20 @@ void LinkProcessor::pollChainCommand()
                 EchoJay_NSLog(("EJLink: applied " + opNames + " count=" + juce::String(countBefore) + "->" + juce::String(self->chainHost.getNumSlots())
                                + " model=" + juce::String((int) self->chainModel.size()) + " lease=" + juce::String((int) self->rackLeaseActive_)
                                + " seq=" + juce::String(seq) + (aborted ? " ABORTED" : "") + " applied=" + juce::String(applied) + "/" + juce::String(results.size())).toRawUTF8());
-                juce::String status = aborted ? "stale"
+                // 21t-j (28 Sep 2026 ruling): AN ABORT IS NOT A STALENESS. "stale" means the rack moved under the
+                // edit, and the line above it in Sean's log said the staleness guards had PASSED - so the one word
+                // the reader had contradicted the one before it. An aborted batch is `not_applied`, and the reason
+                // the sequencer already produced travels with it instead of an empty string.
+                juce::String status = aborted ? "not_applied"
                                     : (applied == results.size() ? "ok" : "partial");
-                self->writeChainAck(seq, status, results, {});
+                const juce::String why = aborted
+                    ? (results.isEmpty() ? juce::String ("the edit was refused before any op ran")
+                                         : results.joinIntoString ("; "))
+                    : juce::String();
+                // THE REASON IS THE FIFTH ARGUMENT. The fourth is a per-plugin ARRAY and a string handed to it is
+                // dropped without a word - which is how the first cut of this fix acked not_applied with an empty
+                // reason, and the guard caught it.
+                self->writeChainAck(seq, status, results, juce::var(), why);
             });
         });
         return;
@@ -3002,7 +3098,8 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
 
 void LinkProcessor::writeChainAck(int seq, const juce::String& status,
                                   const juce::StringArray& results,
-                                  const juce::var& detail)
+                                  const juce::var& detail,
+                                  const juce::String& reason)
 {
     // PHASE 1b instrumentation: every chain ack says what it answered.
     EchoJay_NSLog(("EJChainAck[" + juce::String(seq) + "] link: status="
@@ -3020,6 +3117,7 @@ void LinkProcessor::writeChainAck(int seq, const juce::String& status,
     obj->setProperty("perPluginResults", juce::var(arr));
     if (detail.isArray())
         obj->setProperty("perPluginDetail", detail);
+    if (reason.isNotEmpty()) obj->setProperty("reason", reason);   // 21t-j: why, in words, for a refusal
 
     juce::File(resolvedDir + "chain-ack-" + id + ".json")
         .replaceWithText(juce::JSON::toString(juce::var(obj), true));

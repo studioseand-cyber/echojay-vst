@@ -524,6 +524,27 @@ bool EedPitchProcessor::wireModeIsSnap (const juce::String& label)
     return key == "snap";
 }
 
+juce::String EedPitchProcessor::readbackSummary() const
+{
+    const auto* mspec = schema().find (kMode);
+    const int m = juce::jlimit (0, (int) kNumModes - 1, modeIndex_.load());
+    const auto* sspec = schema().find (kScale);
+    const int sc = juce::jlimit (0, (int) (sspec != nullptr ? sspec->choices.size() - 1 : 0),
+                                 (int) std::lround (getParamValue (kScale)));
+    static const char* kRoots[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    const int root = juce::jlimit (0, 11, (int) std::lround (getParamValue (kKeyRoot)));
+    // THE FIELDS THE RULING NAMES, read off the device, in that order.
+    juce::String out;
+    out << "correction_mode " << (mspec != nullptr ? juce::String (mspec->choiceLabel ((double) m)) : juce::String (m))
+        << ", retune " << juce::String (getParamValue (kRetune), 1)
+        << ", flex " << juce::String (getParamValue (kFlex), 0)
+        << ", humanize " << juce::String (getParamValue (kHumanize), 0)
+        << ", key " << kRoots[root]
+        << ", scale " << (sspec != nullptr ? juce::String (sspec->choiceLabel ((double) sc)) : juce::String (sc))
+        << ", ref " << juce::String (getParamValue (kReferenceHz), 1) << " Hz";
+    return out;
+}
+
 int EedPitchProcessor::aliasChoiceIndex (const juce::String& canonicalId, const juce::String& label,
                                         juce::String& whyOut) const
 {

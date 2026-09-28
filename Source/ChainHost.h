@@ -925,6 +925,10 @@ public:
         // slot. Only the COUNT is kept here, because this struct is the rack sequencer's vocabulary and the
         // member list belongs to the apply path that reads the block by name. The count is what the card says.
         int memberCount = 0;
+        // 21t-j (28 Sep 2026): ...and the MEMBERS THEMSELVES. 21t-i kept only the count, so by the time a
+        // level_match op reached the Link there was no delta left to apply - the op arrived carrying nothing it
+        // could act on. The array rides as a var: this struct does not interpret it, the Link does.
+        juce::var members;
         // ---- OP TARGETS v1 (4 Sep 2026): the op names what it is aiming at.
         // Until now every op addressed its target by NUMBER alone, and every
         // surface that appeared to confirm that number in words (the card,
@@ -1391,6 +1395,19 @@ public:
         a pair left at two values is a different device, so they move together.
         Returns how many controls were actually written. Message thread. */
     int setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value);
+    /** 21t-j (28 Sep 2026, B's contract note 3): LAND A dB TARGET BY READBACK SEARCH.
+        The MC 77's Input profiles as three sampled points ("-inf" / -24.0 / 0.0), so a start around -30 cannot be
+        placed from a curve that has no points below -24 - the map clamps it to the anchor and the control lands
+        at -24. This walks the control itself: bisection on the normalised value, reading the plugin's own display
+        text at each step, until the text parses within toleranceDb of the target or the step budget runs out.
+        Refuses when the text is not a dB number or the control is not monotonic, because a search needs an order.
+        Returns true when it landed; landedDbOut / positionOut report where. */
+    bool landControlAtDb (int slotIndex, const juce::String& controlName, float targetDb,
+                          float* landedDbOut = nullptr, float* positionOut = nullptr,
+                          float toleranceDb = 0.5f, int maxSteps = 12);
+    /** 21t-j (B's note 1): read a named METER control on a slot, as the plugin prints it. Returns false when the
+        control is not there or its text is not a number - a figure nobody published is never invented. */
+    bool readControlDb (int slotIndex, const juce::String& controlName, float& outDb) const;
 
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
@@ -2158,6 +2175,8 @@ private:
     // ROUTING/cast failure, while a device that resolved neither of its two
     // accepted shapes is a PAYLOAD failure. Without this the cast failure
     // hides behind the payload one.
+
+
     juce::String applyStructuredToBuiltinSlot (int slotIndex, const juce::var& structured,
                                                int* appliedOut = nullptr,
                                                int* skippedOut = nullptr,

@@ -6074,24 +6074,36 @@ void EchoJayProcessor::updateLevelRecordFromFrame(const juce::String& uid, const
     if (uid.isEmpty()) return;
     auto& r = levelRecordByUid_[uid];
     bool any = false;
+    // 21t-j (28 Sep 2026 ruling): THE RECORD IS WHAT THE BUS HEARS - taken AFTER the trim, the same point as the
+    // strip meter. A 21t-d Link meters BEFORE its gain stage, so every figure on the frame describes the signal
+    // arriving at the trim; the strips add the trim back at ingest and the record did not, which is why every
+    // [GROUP LEVELS] figure sat above its own strip by exactly that channel's trim, six for six (V2_2 INT -17.6
+    // against a strip of -20.2 at trim -2.6). ONE conversion, the same helper the strip calls.
+    float trim = 0.0f;
+    for (const auto& li : getLinkSlotInfos())
+        if (li.uid == uid) { trim = li.gainDb; break; }
+    auto heard = [&f, trim] (float v) { return frameLoudnessAsHeard (v, trim, f); };
     auto take = [&any] (float& dst, float v) { if (v > -99.0f) { dst = v; any = true; } };
     // NO CONDITION ON audioStale, ON momentary OR ON THE BANDS. Those three are what the last-good latch tested,
     // and testing them is what made the block say "no signal" about a channel whose strip was showing an INT: they
     // describe audio playing NOW. A field is taken when the frame HAS it, and a field the frame has blanked (the
     // publisher writes -100.0f into the momentary group while audio is idle) leaves the kept value alone.
-    take(r.momDb,   f.momentary);
-    take(r.shortDb, f.shortTerm);
-    take(r.intLufs, f.integrated);
-    if (frameHasShortMax(f)) take(r.shortMaxDb, f.shortTermMax);
-    if (frameHasShort90(f))  take(r.short90Db,  frameShort90Db(f));
-    take(r.peakDbTp, f.truePeakMax);
-    take(r.shortTpDb, f.shortTermTP);   // PSR's ruled fallback term, for a Link that publishes no SHORTMAX
+    take(r.momDb,   heard (f.momentary));
+    take(r.shortDb, heard (f.shortTerm));
+    take(r.intLufs, heard (f.integrated));
+    if (frameHasShortMax(f)) take(r.shortMaxDb, heard (f.shortTermMax));
+    if (frameHasShort90(f))  take(r.short90Db,  heard (frameShort90Db(f)));
+    take(r.peakDbTp, heard (f.truePeakMax));
+    take(r.shortTpDb, heard (f.shortTermTP));   // PSR's ruled fallback term, for a Link that publishes no SHORTMAX
     if (frameHasHeard(f))
     {
         r.heardKnown = true;
         if (f.heardSeconds > r.heardSeconds) { r.heardSeconds = f.heardSeconds; any = true; }
     }
-    r.preTrim = framePreTrim(f);
+    // CONVERTED, by the line above: whatever the frame carried, this record now describes the signal at the point
+    // the strip meters. The flag says that and is named for it (asHeard), so nothing downstream has to reason about
+    // which side of the trim a stored figure came from.
+    r.asHeard = true;
     if (any) { r.valid = true; r.updatedMs = juce::Time::currentTimeMillis(); }
 }
 
@@ -6272,7 +6284,14 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     {
         // 21t-i: A RE-TARGET IS THE USER'S COMPARATIVE. It carries the block's step size, and in measure-and-ask
         // it is the ONLY thing that buys a move - one step, in the direction the band went.
-        loop.retarget(cfg.lo, cfg.hi, cfg.stepDb, cfg.nudge, cfg.haveBand);
+        // 21t-j: a block that CARRIES start_db has already moved the knob through the edit path, so the loop's
+        // position becomes that value and it owes no step of its own.
+        const bool carriedStart = cfg.startDb == cfg.startDb;   // not NaN
+        if (carriedStart && loop.actuatorWrittenTo(cfg.startDb))
+            EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" position taken from the block's start_db "
+                           + juce::String(cfg.startDb, 2) + " dB - the edit already wrote it, so no step is "
+                           "owed").toRawUTF8());
+        loop.retarget(cfg.lo, cfg.hi, cfg.stepDb, cfg.nudge, cfg.haveBand, carriedStart);
         EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" re-targeted to " + juce::String(cfg.lo, 1) + "-"
                        + juce::String(cfg.hi, 1) + " dB, continuing on the same knob"
                        + (cfg.haveBand ? juce::String() : juce::String(" (no band on the block: the loop keeps its own)"))
@@ -6358,6 +6377,14 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
     // 21t-i: "set from N s of this track" is the slot INPUT's gated heard time - the audio the reading is made of.
     w.heardSeconds = lv.in.heardSeconds;
+    // 21t-j (B's note 1): THE PLUGIN'S OWN GR METER, when the block named one. Read as the plugin prints it; a
+    // control whose text is not a number publishes no figure, and then the reply carries none.
+    if (! loop.senseParams.isEmpty() && loop.grReadable)
+    {
+        float grFromPlugin = 0.0f;
+        if (host->readControlDb (loop.slot, loop.senseParams[0], grFromPlugin))
+            w.sensedGrDb = std::abs (grFromPlugin);
+    }
 
     const double nowMs = juce::Time::getMillisecondCounterHiRes();
     if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
@@ -6381,6 +6408,16 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     {
         host->setSlotControlsToValue(loop.slot, step.paramNames, step.paramValue);
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
+    }
+    // 21t-j: THE LEVEL HOLD, a write to a DIFFERENT control from the actuator, through the same map-keyed apply.
+    if (step.writeOutput)
+    {
+        host->setSlotControlsToValue(loop.slot, step.outputNames, step.outputValue);
+        if (uid.isNotEmpty()) republishBorrowedRackSidecar();
+        EchoJay_NSLog(("EJThreshold: level hold - wrote " + step.outputNames.joinIntoString(" + ") + " = "
+                       + juce::String(step.outputValue, 2) + " on slot " + juce::String(loop.slot + 1)
+                       + " (the slot was " + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
+                       + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
     }
     calibStore(uid, loop);
     return step.card.isNotEmpty() ? step.card : loop.card();

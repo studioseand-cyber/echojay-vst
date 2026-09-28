@@ -3,12 +3,12 @@
 # LinkProcessor + LinkEditor against the Link archive) shows it, keeps its identity, and clears it on Reset name.
 # Two processes, as link_state_guard: EJ_LINK_LIB / EJ_LIB + EJ_SRC_ROOT pair a RED run with the pre-round archives + headers.
 set -u; cd "$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
-S=${EJ_SCRATCH:-/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad}
+S=${EJ_SCRATCH:-$(mktemp -d /tmp/echojay-guard-scratch.XXXXXX)}   # 21t-j: no session path baked in
 ISO=$(mktemp -d /tmp/echojay-lig-home.XXXXXX); export HOME=$ISO EJ_STATE_TEST_HOME=$ISO ECHOJAY_STATE_HOME=$ISO
 H=$ISO/lig; mkdir -p $H; echo "isolated home $ISO"
 echo "-- compile link side"; LOK=0; rm -f $S/lig_link_bin; bash tools/merge_gate_tests/compile_link_harness.sh tools/lease_id_guard/link_side.cpp $S/lig_link_bin 2>&1 | grep -E "error:|compiled" | head -5; [ -x $S/lig_link_bin ] && LOK=1
-echo "-- compile v2 side"; rm -f $S/v2_side_bin; python3 tools/harness_build.py tools/lease_id_guard/v2_side.cpp 2>&1 | grep -E "COMPILE FAILED|error:|compiled ->|v2 side: compiled" | head -6
-V2BIN=$S/v2_side_bin; V2OK=0; [ -x "$V2BIN" ] && V2OK=1
+echo "-- compile v2 side"; V2OUT=$(python3 tools/harness_build.py tools/lease_id_guard/v2_side.cpp 2>&1 | tee /dev/stderr | grep -E "^compiled -> " | tail -1 | sed 's/^compiled -> //')
+V2BIN="$V2OUT"; V2OK=0; [ -n "$V2BIN" ] && [ -x "$V2BIN" ] && V2OK=1   # 21t-j: the path the builder printed, not an assumed one
 if [ $LOK = 0 ]; then echo "  FAIL  link side does not compile on this tree ((link side)) - RED by construction"; echo "==== lease_id_guard: RED ===="; exit 1; fi
 $S/lig_link_bin $H > $H/link.log 2>&1 & LP=$!
 for i in $(seq 1 120); do [ -f $H/link_ready.json ] && break; sleep 0.5; done

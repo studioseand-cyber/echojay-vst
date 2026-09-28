@@ -3714,6 +3714,17 @@ private:
     // Carries the card's member lines from the extraction point to the message that is about to be built, on the
     // same turn. Cleared as it is consumed - it is a hand-off, not state.
     juce::String levelMatchCardText_;
+    // ---- 21t-j (28 Sep 2026 ruling): "TOOK THE CHANGE" IS A READBACK, NOT A WRITE --------------------------
+    // A written command is not a taken change. Each member's requested trim is held here until the Link's own
+    // gain reads back within 0.1 dB of it, or the deadline passes; then ONE bubble reports per member, naming
+    // the ones that did not answer. The 28 Sep test reported six of six taken while the six Links were refusing
+    // the command outright.
+    struct PendingTrim { juce::String uid, name; float want = 0.0f, before = 0.0f; bool verified = false; };
+    std::vector<PendingTrim> trimVerify_;
+    double trimVerifyDeadlineMs_ = 0.0;
+    juce::String trimVerifyWhat_;              // what to call them in the sentence ("channels in \"Lead Vocals\"")
+    void beginTrimVerification (const juce::String& what, double timeoutMs = 3000.0);
+    void pollTrimVerification();               // called from the 1 Hz tick; posts the bubble when it can
     /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
     int applyGroupLevelMatch (const juce::var& membersVar);
     // ---- 21t-d: the calibration loop's trigger and its surface ----

@@ -1690,6 +1690,7 @@ std::vector<ChainHost::ChainEditOp> ChainHost::parseChainEditOps(
         // point, so this op produces a ROW - a card with no rows has no height, and a card with no height gets no
         // Apply button. That is exactly why the chat-route level-match card could be read and not applied.
         if (auto* mem = eo->getProperty("members").getArray()) op.memberCount = mem->size();
+        op.members = eo->getProperty("members");   // 21t-j: the deltas travel with the op
         if (auto* nsObj = eo->getProperty("no_such").getDynamicObject())
         {
             op.noSuchTerm = nsObj->getProperty("term").toString();
@@ -3053,6 +3054,94 @@ void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& cu
                    + " track=\"" + savedTrack + "\"").toRawUTF8());
 }
 
+// ---- 21t-j (28 Sep 2026): the readback search -------------------------------------------------------------
+// "-inf dB" is not a number and must not read as one; everything else is taken from the leading numeric token of
+// the plugin's own display text, which is the only dB the plugin has published.
+static bool parseDisplayDb (const juce::String& text, double& outDb)
+{
+    const auto t = text.trim();
+    if (t.containsIgnoreCase ("inf")) { outDb = t.startsWithChar ('-') ? -1.0e9 : 1.0e9; return true; }
+    const auto num = t.retainCharacters ("0123456789+-.eE");
+    if (num.isEmpty() || ! juce::CharacterFunctions::isDigit (num.getLastCharacter())) 
+    { if (num.isEmpty()) return false; }
+    const double v = num.getDoubleValue();
+    if (v == 0.0 && ! num.startsWithChar ('0') && ! num.startsWith ("-0") && ! num.startsWith ("+0")) return false;
+    outDb = v;
+    return true;
+}
+
+bool ChainHost::readControlDb (int slotIndex, const juce::String& controlName, float& outDb) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    auto* proc = const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex);
+    if (proc == nullptr) return false;
+    const auto want = controlName.trim().toLowerCase();
+    for (auto* p : proc->getParameters())
+        if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want)
+        {
+            double db = 0.0;
+            if (! parseDisplayDb (p->getText (p->getValue(), 256), db)) return false;
+            if (db <= -1.0e8 || db >= 1.0e8) return false;   // "-inf" is not a reading
+            outDb = (float) db;
+            return true;
+        }
+    return false;
+}
+
+bool ChainHost::landControlAtDb (int slotIndex, const juce::String& controlName, float targetDb,
+                                 float* landedDbOut, float* positionOut, float toleranceDb, int maxSteps)
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    auto* proc = getSlotProcessor (slotIndex);
+    if (proc == nullptr) return false;
+    juce::AudioProcessorParameter* q = nullptr;
+    const auto want = controlName.trim().toLowerCase();
+    for (auto* p : proc->getParameters())
+        if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want) { q = p; break; }
+    if (q == nullptr) return false;
+
+    auto readAt = [q] (float norm, double& db) { return parseDisplayDb (q->getText (norm, 256), db); };
+    double at0 = 0.0, at1 = 0.0;
+    if (! readAt (0.0f, at0) || ! readAt (1.0f, at1))
+    {
+        EchoJay_NSLog (("EJThreshold: \"" + controlName + "\" does not print a dB number at its ends - no readback "
+                        "search possible (text \"" + q->getText (0.0f, 64) + "\" / \"" + q->getText (1.0f, 64)
+                        + "\")").toRawUTF8());
+        return false;
+    }
+    const bool ascending = at1 > at0;
+    if (std::abs (at1 - at0) < 1.0e-6)
+    {
+        EchoJay_NSLog (("EJThreshold: \"" + controlName + "\" reads the same at both ends - not a monotonic dB "
+                        "control, nothing searched").toRawUTF8());
+        return false;
+    }
+    float lo = 0.0f, hi = 1.0f, best = q->getValue();
+    double bestDb = 0.0; bool haveBest = false;
+    for (int i = 0; i < maxSteps; ++i)
+    {
+        const float mid = 0.5f * (lo + hi);
+        double db = 0.0;
+        if (! readAt (mid, db)) break;
+        if (! haveBest || std::abs (db - (double) targetDb) < std::abs (bestDb - (double) targetDb))
+        { best = mid; bestDb = db; haveBest = true; }
+        if (std::abs (db - (double) targetDb) <= (double) toleranceDb) break;
+        const bool tooLow = ascending ? (db < (double) targetDb) : (db > (double) targetDb);
+        if (tooLow) lo = mid; else hi = mid;
+    }
+    if (! haveBest) return false;
+    const bool landed = std::abs (bestDb - (double) targetDb) <= (double) toleranceDb;
+    q->setValueNotifyingHost (best);
+    double readBack = 0.0; readAt (best, readBack);
+    if (landedDbOut != nullptr) *landedDbOut = (float) readBack;
+    if (positionOut != nullptr) *positionOut = best;
+    EchoJay_NSLog (("EJThreshold: readback search on \"" + controlName + "\" asked "
+                    + juce::String (targetDb, 2) + " dB -> position " + juce::String (best, 4) + " reads \""
+                    + q->getText (best, 64).trim() + "\" (" + juce::String (readBack, 2) + " dB)"
+                    + (landed ? juce::String() : " - OUTSIDE the 0.5 dB tolerance, nearest the control has")).toRawUTF8());
+    return landed;
+}
+
 int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value)
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size() || controls.isEmpty()) return 0;
@@ -3081,9 +3170,30 @@ int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& c
                         + " - the threshold was NOT written").toRawUTF8());
         return 0;
     }
+    // 21t-j (B's note 3): THE READBACK SEARCH FIRST. The map places a value from its sampled anchors, and the
+    // MC 77's Input has three of them ("-inf" / -24.0 / 0.0) - so a target of -30 has no curve to sit on and the
+    // map clamps it to the anchor at -24. Walking the control's own display text finds the position that actually
+    // reads -30. A control whose text is not a dB number falls through to the map path unchanged.
+    juce::StringArray searched;
+    int landedBySearch = 0;
+    for (const auto& name : controls)
+    {
+        float landedDb = 0.0f, pos = 0.0f;
+        if (name.isNotEmpty() && landControlAtDb (slotIndex, name, value, &landedDb, &pos))
+        { ++landedBySearch; searched.add (name); }
+    }
     juce::DynamicObject::Ptr ctrls = new juce::DynamicObject();
     for (const auto& name : controls)
-        if (name.isNotEmpty()) ctrls->setProperty (juce::Identifier (name), (double) value);
+        if (name.isNotEmpty() && ! searched.contains (name)) ctrls->setProperty (juce::Identifier (name), (double) value);
+    if (searched.size() == controls.size())
+    {
+        EchoJay_NSLog (("EJThreshold: wrote " + controls.joinIntoString (" + ") + " = " + juce::String (value, 2)
+                        + " on slot " + juce::String (slotIndex + 1) + " (\"" + s.desc.name + "\") by readback "
+                        "search - " + juce::String (landedBySearch) + " of " + juce::String (controls.size())
+                        + " control(s) landed").toRawUTF8());
+        bumpChainValue();
+        return landedBySearch;
+    }
     juce::DynamicObject::Ptr settings = new juce::DynamicObject();
     settings->setProperty ("controls", juce::var (ctrls.get()));
 
@@ -4798,7 +4908,12 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         // applies zero BANDS and is a complete success.
         if (summary.isNotEmpty())
         {
-            s.settings   = "Applied automatically\n" + summary;
+            // 21t-j: the READBACK, not the apply's own narration. A mode's summary describes what it wrote at the
+            // moment it was selected; the knobs are what the chain line and the card must report.
+            const auto back = [this, slotIndex]() -> juce::String
+            { if (auto* dev = dynamic_cast<EedDeviceProcessor*> (getSlotProcessor (slotIndex))) return dev->readbackSummaryForHost();
+              return {}; }();
+            s.settings   = "Applied automatically\n" + (back.isNotEmpty() ? back : summary);
             clearModelTiers(s);   // built-in: no map, no tiering
             // Honest verdict, same contract as the mapped path: anything the
             // device could not place (the EQ was full, an id was unknown) is
@@ -4835,6 +4950,19 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                        + juce::String(applied) + " band(s), "
                        + juce::String(skipped) + " skipped").toRawUTF8());
 
+        // 21t-j (28 Sep 2026 ruling): THE SLOT'S TEXT IS THE LANDED STATE, read back from the device. This path -
+        // the one a dial EDIT takes - never rewrote it, so after "harder" and "even harder" the [CURRENT CHAIN]
+        // line still carried the BUILD's wording ("natural correction") while the plugin was in balanced, and the
+        // Suggested Settings line printed the mode's derived flex 25 / humanize 30 over knobs at 0.
+        if (auto* dev = dynamic_cast<EedDeviceProcessor*> (getSlotProcessor (slotIndex)))
+        {
+            const auto back = dev->readbackSummaryForHost();
+            if (back.isNotEmpty())
+            {
+                s.settings = "Applied automatically\n" + back;
+                EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " readback -> " + back).toRawUTF8());
+            }
+        }
         if (onSlotSettingsChanged) onSlotSettingsChanged();
         return;
     }

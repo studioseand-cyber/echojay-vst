@@ -62,7 +62,12 @@ struct LevelRecord
     // there is a SHORTMAX, and the 3 s pair (shortTermTP minus SHORT) for a Link that does not publish one. The
     // record has to carry both terms or the fallback would disappear with the frame it used to be computed from.
     float shortTpDb = kNone;
-    bool  preTrim = true;              // the figures were measured BEFORE the owner's gain stage
+    // 21t-j (28 Sep 2026): RENAMED, because what it means changed. It used to say "these figures were measured
+    // BEFORE the owner's gain stage", and its only downstream use was the "(POST-TRIM...)" warning on a block line
+    // for an older Link that metered after its gain. Since the record is now taken AFTER the trim in every case
+    // (through frameLoudnessAsHeard, the same conversion the strip uses), the honest name is what it now asserts:
+    // the figures are as-heard, the conversion has been applied, and no reader has to think about the trim again.
+    bool  asHeard = true;
     juce::int64 updatedMs = 0;         // juce::Time::currentTimeMillis() of the last update
 
     /** PSR is DERIVED, never stored twice: PEAK minus SHORTMAX, the whole-programme figure the server's transient
@@ -101,7 +106,7 @@ struct LevelRecord
         take (crestDb, s.crestDb);
         if (s.heardSeconds > heardSeconds) { heardSeconds = s.heardSeconds; any = true; }
         heardKnown = true;                     // a tally always knows how long it has heard
-        preTrim = measuredPreTrim;
+        asHeard = measuredPreTrim;   // a tally-fed record is as-heard when its owner says the tap is post-trim
         if (any) { valid = true; updatedMs = nowMs; }
     }
 
@@ -130,7 +135,11 @@ struct LevelRecord
              + "HEARD "    + (heardKnown ? juce::String ((int) (heardSeconds + 0.5f))
                                             : juce::String ("no reading")) + ", "
              + "AGE "      + juce::String (ageSeconds (nowMs))
-             + (preTrim ? juce::String() : juce::String (" (POST-TRIM: this Link measures after its gain)"));
+             // The only downstream use: a record that has NOT been converted says so on the line, so a reader can
+             // see that this one figure is not as-heard. Every record this build writes is converted, so the
+             // clause is now the absence-case only - and a guard asserts it never appears.
+             + (asHeard ? juce::String() : juce::String (" (NOT AS HEARD: this record was not converted to the "
+                                                        "point the strip meters)"));
     }
 
     juce::var toVar() const
@@ -145,7 +154,7 @@ struct LevelRecord
         o->setProperty ("p10", (double) p10); o->setProperty ("p50", (double) p50); o->setProperty ("p90", (double) p90);
         o->setProperty ("crest", (double) crestDb);
         o->setProperty ("shortTp", (double) shortTpDb);
-        o->setProperty ("preTrim", preTrim);
+        o->setProperty ("asHeard", asHeard);
         o->setProperty ("updatedMs", updatedMs);
         return juce::var (o);
     }
@@ -164,7 +173,10 @@ struct LevelRecord
         r.p10 = get ("p10", kNone); r.p50 = get ("p50", kNone); r.p90 = get ("p90", kNone);
         r.crestDb = get ("crest", kNone);
         r.shortTpDb = get ("shortTp", kNone);
-        r.preTrim = o->hasProperty ("preTrim") ? (bool) o->getProperty ("preTrim") : true;
+        // An older sidecar carries "preTrim" and means the opposite question; a record from it is NOT known to be
+        // converted, so it is read as not-as-heard and the line says so rather than assuming.
+        r.asHeard = o->hasProperty ("asHeard") ? (bool) o->getProperty ("asHeard")
+                                               : ! o->hasProperty ("preTrim");
         r.updatedMs = o->hasProperty ("updatedMs") ? (juce::int64) o->getProperty ("updatedMs") : 0;
         // A stored record is valid if it carries ANY figure or any heard time. "valid" is not stored: it is a
         // statement about the contents, and computing it here means a hand-edited or truncated node cannot claim

@@ -139,6 +139,24 @@ protected:
     virtual int aliasChoiceIndex (const juce::String& /*canonicalId*/, const juce::String& /*label*/,
                                   juce::String& /*whyOut*/) const { return -1; }
 
+    // ---- 21t-j (28 Sep 2026 ruling): A MODE WRITES OTHER CONTROLS, SO IT GOES FIRST ------------------------
+    // A device whose mode selection writes its other params names that key here. Everything else in the payload is
+    // applied AFTER it, so a turn carrying correction_mode together with flat flex/humanize keys lands the flats on
+    // top of the mode rather than under it - which is what "even harder" did: the mode wrote flex 25 / humanize 30
+    // and the flats' 0 / 0 arrived first, so the reported summary and the knobs disagreed.
+    virtual juce::String modeKeyId() const { return {}; }
+
+    /** THE LANDED STATE, in the device's own words, read back from the device. The chain line and the settings card
+        report THIS, never the prose a mode wrote when it was selected: after an edit dials a mode, the derived
+        values are what the knobs hold and the wording of the build is a fortnight out of date. Default: every
+        dialable id and its value. */
+    virtual juce::String readbackSummary() const;
+
+public:
+    /** The readback, for a HOST that has to report the slot's landed state (ChainHost writes it into the slot's
+        settings text). Public because the caller is not the device and not a subclass: it is the rack. */
+    juce::String readbackSummaryForHost() const { return readbackSummary(); }
+
 private:
     bool applyingState_ = false;
 

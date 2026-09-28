@@ -200,6 +200,13 @@ public:
     static bool wireModeIsSnap (const juce::String& label);
     int aliasChoiceIndex (const juce::String& canonicalId, const juce::String& label,
                           juce::String& whyOut) const override;
+    // 21t-j (28 Sep 2026 ruling): the mode writes retune/flex/humanize/natural_vibrato, so it is applied first and
+    // any flat key in the same payload lands on top of it.
+    juce::String modeKeyId() const override { return kMode; }
+    /** THE LANDED STATE, in the ruled field order: mode, retune, flex, humanize, key, scale, ref. This is what the
+        [CURRENT CHAIN] line and the settings card report for a tuner slot - never the build's wording, which is how
+        a chain line still read "natural correction" two mode edits later. */
+    juce::String readbackSummary() const override;
 
     // Index of `custom` in the scale choices - a DISPLAY state reached by
     // editing a degree, never a mask to write.

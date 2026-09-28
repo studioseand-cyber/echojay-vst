@@ -683,7 +683,12 @@ private:
     void startCalibFromBlock(const juce::var& block);
     void writeChainAck(int seq, const juce::String& status,
                        const juce::StringArray& results,
-                       const juce::var& detail);
+                       const juce::var& detail,
+                       // 21t-j (28 Sep 2026): WHY, as a string the reader can print. An aborted edit acks
+                       // "not_applied" and the reason the sequencer produced travels here; the older `detail`
+                       // argument is a per-plugin ARRAY and silently dropped a string, which is how the first
+                       // cut of this fix lost its own reason.
+                       const juce::String& reason = {});
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LinkProcessor)
 };

@@ -7179,7 +7179,11 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
         { "MOM",   st.smMom,   st.smMom   > -99.0f,
           st.smMom > -6.0f ? coral : LinkConsole::value },
         { "SHORT", st.smShort, st.smShort > -99.0f, LinkConsole::value },
-        { "INT",   st.smInt,   st.smInt   > -99.0f, LinkConsole::value },
+        // 21t-j (28 Sep 2026): A FIGURE AT THE FLOOR IS NOT A READING. The publisher blanks to -100 and the
+        // strip's smoother crawls toward it, so a channel with nothing to say printed "-98.8" - which reads as a
+        // measurement of near-silence rather than as the absence of one. An integrated loudness below -90 LUFS is
+        // not something anyone dials against: it draws "--", like every other absent field on this strip.
+        { "INT",   st.smInt,   st.smInt   > -90.0f, LinkConsole::value },
         { "PSR",   st.smPsr,   d.psrValid,
           st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
         { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::value },
@@ -20651,7 +20655,8 @@ void EchoJayEditor::timerCallback()
     // safe either way. calibTick itself is rate-limited to one decision per 3 s window, so a 1 Hz tick costs two
     // early returns a second and nothing else.
     {
-        calibTickAndPost ({});                                      // the mix bus / own rack
+        pollTrimVerification();                                     // 21t-j: has the Link's gain answered yet?
+    calibTickAndPost ({});                                      // the mix bus / own rack
         const auto leased = processorRef.borrowUid();
         if (leased.isNotEmpty()) calibTickAndPost (leased);          // the rack this instance is holding
     }
@@ -24594,6 +24599,9 @@ int EchoJayEditor::applyGroupLevelMatch(const juce::var& membersVar)
         }
         const float after = juce::jlimit(-24.0f, 12.0f, (float) (before + delta));
         sendLinkGainCommand(uid, after);
+        // 21t-j: WHAT WAS ASKED FOR, kept for the readback. The count this function returns is WRITES; whether the
+        // Link took them is a question only its own gain can answer.
+        trimVerify_.push_back({ uid, name, after, before, false });
         ++moved;
         EchoJay_NSLog(("EJLevelMatch: \"" + name + "\" (" + uid + ") INT " + intV.toString()
                        + " LUFS, delta " + juce::String(delta, 2) + " dB: trim "
@@ -24603,6 +24611,71 @@ int EchoJayEditor::applyGroupLevelMatch(const juce::var& membersVar)
     EchoJay_NSLog(("EJLevelMatch: " + juce::String(moved) + " member trim(s) written, "
                    + juce::String(skipped) + " left alone").toRawUTF8());
     return moved;
+}
+
+// ---- 21t-j (28 Sep 2026 ruling): the readback that decides what "took the change" means ---------------------
+// A ctrl-cmd is consumed on the Link's own 30 Hz timer, so the answer is not instant and cannot be waited for on
+// the message thread. The requested values sit in trimVerify_ and the 1 Hz tick checks the REGISTRY's gain for
+// each one: within 0.1 dB is taken, anything else is not, and the bubble names who did not answer. The deadline
+// bounds it - a Link that never answers must produce a sentence, not silence.
+void EchoJayEditor::beginTrimVerification (const juce::String& what, double timeoutMs)
+{
+    if (trimVerify_.empty()) return;
+    trimVerifyWhat_ = what;
+    trimVerifyDeadlineMs_ = juce::Time::getMillisecondCounterHiRes() + timeoutMs;
+    EchoJay_NSLog(("EJLevelMatch: verifying " + juce::String((int) trimVerify_.size())
+                   + " trim(s) by readback, within 0.1 dB, deadline " + juce::String((int) timeoutMs)
+                   + " ms").toRawUTF8());
+}
+
+void EchoJayEditor::pollTrimVerification()
+{
+    if (trimVerify_.empty()) return;
+    int verified = 0;
+    for (auto& t : trimVerify_)
+    {
+        if (t.verified) { ++verified; continue; }
+        for (const auto& li : processorRef.getLinkSlotInfos())
+            if (li.uid == t.uid)
+            {
+                if (std::abs (li.gainDb - t.want) <= 0.1f)
+                {
+                    t.verified = true; ++verified;
+                    EchoJay_NSLog(("EJLevelMatch: \"" + t.name + "\" (" + t.uid + ") TOOK IT - asked "
+                                   + juce::String(t.want, 2) + " dB, reads " + juce::String(li.gainDb, 2)
+                                   + " dB").toRawUTF8());
+                }
+                break;
+            }
+    }
+    const bool timedOut = juce::Time::getMillisecondCounterHiRes() >= trimVerifyDeadlineMs_;
+    if (verified < (int) trimVerify_.size() && ! timedOut) return;   // still within the window: keep waiting
+
+    juce::StringArray missed;
+    for (const auto& t : trimVerify_)
+        if (! t.verified)
+        {
+            float now = 0.0f; bool known = false;
+            for (const auto& li : processorRef.getLinkSlotInfos())
+                if (li.uid == t.uid) { now = li.gainDb; known = true; break; }
+            // NAME THE FAILURE IN THE TERMS THE USER CAN ACT ON: gone from the registry, or still where it was.
+            missed.add (t.name + (known ? " is still at " + juce::String(now, 1) + " dB, not "
+                                          + juce::String(t.want, 1)
+                                        : juce::String(" did not answer")));
+            EchoJay_NSLog(("EJLevelMatch: \"" + t.name + "\" (" + t.uid + ") DID NOT TAKE IT - asked "
+                           + juce::String(t.want, 2) + " dB, reads "
+                           + (known ? juce::String(now, 2) + " dB" : juce::String("nothing (not in the registry)"))
+                           ).toRawUTF8());
+        }
+    juce::String line = juce::String(verified) + " of " + juce::String((int) trimVerify_.size()) + " "
+                      + (trimVerifyWhat_.isNotEmpty() ? trimVerifyWhat_ : juce::String("channels"))
+                      + " took the change.";
+    if (! missed.isEmpty()) line += " " + missed.joinIntoString ("; ") + ".";
+    EchoJay_NSLog(("EJLevelMatch: verdict - " + line).toRawUTF8());
+    appendLocalResultBubble (line);
+    trimVerify_.clear();
+    trimVerifyWhat_.clear();
+    repaint();
 }
 
 void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
@@ -24621,6 +24694,39 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
         {
             juce::StringArray baseSlots;
             auto ops = ChainHost::parseChainEditOps (cm.editData, &baseSlots);
+            // 21t-j (28 Sep 2026): WHAT THIS BRANCH SENT, AND WHAT IT CLAIMED. Sean's test 4: Apply on a
+            // six-member level-match card said "6 of 6 channels took the change" and not one trim moved. The ops
+            // DO travel to each member here, and since the Link now applies a level_match op to its own trim that
+            // is the right road - but the sentence counted COMMANDS WRITTEN, and it was painted at 10:10:34.251,
+            // 184 ms before the first ack arrived. A written command is not a taken change.
+            //
+            // So: the expected trim per member is computed from the card BEFORE sending, and the sentence comes
+            // from the READBACK (pollTrimVerification), within 0.1 dB, naming any member that did not answer.
+            const bool groupLevelMatch = std::any_of (ops.begin(), ops.end(),
+                                                      [] (const ChainHost::ChainEditOp& o) { return o.op == "level_match"; });
+            if (groupLevelMatch)
+            {
+                juce::var members;
+                for (const auto& o : ops) if (o.op == "level_match" && o.members.isArray()) { members = o.members; break; }
+                if (auto* arr = members.getArray())
+                    for (const auto& mv : *arr)
+                    {
+                        auto* mo = mv.getDynamicObject();
+                        if (mo == nullptr) continue;
+                        const auto muid = mo->getProperty ("uid").toString().trim();
+                        const auto intV = mo->getProperty ("int_lufs");
+                        const double delta = (double) mo->getProperty ("delta_db");
+                        if (muid.isEmpty() || intV.isVoid() || std::abs (delta) < 0.005) continue;
+                        float before = 0.0f; bool known = false;
+                        for (const auto& li : processorRef.getLinkSlotInfos())
+                            if (li.uid == muid) { before = li.gainDb; known = true; break; }
+                        if (! known) continue;
+                        juce::String mname = mo->getProperty ("name").toString();
+                        if (mname.isEmpty()) mname = channelDisplayLabel (muid);
+                        trimVerify_.push_back ({ muid, mname,
+                                                 juce::jlimit (-24.0f, 12.0f, (float) (before + delta)), before, false });
+                    }
+            }
             if (! ops.empty())
             {
                 int sent = 0, applied = 0;
@@ -24646,8 +24752,13 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 EchoJay_NSLog (("EJGroupEdit: \"" + g->name + "\" - sent to " + juce::String (sent) + " of "
                                 + juce::String (g->members.size()) + " member(s), " + juce::String (applied)
                                 + " applied in session").toRawUTF8());
-                appendLocalResultBubble (juce::String (sent) + " of " + juce::String (g->members.size())
-                                         + " channels in \"" + g->name + "\" took the change.");
+                // 21t-j: a level-match card's sentence waits for the readback; any other edit keeps the old
+                // report, which is about commands reaching members and says so.
+                if (! trimVerify_.empty())
+                    beginTrimVerification ("channels in \"" + g->name + "\"");
+                else
+                    appendLocalResultBubble (juce::String (sent) + " of " + juce::String (g->members.size())
+                                             + " channels in \"" + g->name + "\" were sent the change.");
                 repaint();
                 return;
             }
@@ -24702,9 +24813,12 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
         {
             const int moved = applyGroupLevelMatch(members);
             cm.editApplied = true;
-            appendLocalResultBubble(moved == 0
-                ? juce::String("Nothing was moved - no member had a reading to match.")
-                : juce::String(moved) + (moved == 1 ? " channel's level was matched." : " channels' levels were matched."));
+            // 21t-j: the count above is WRITES. The sentence waits for the readback (beginTrimVerification), so
+            // "took the change" means the Link's own gain matches what was asked within 0.1 dB.
+            if (moved == 0)
+                appendLocalResultBubble("Nothing was moved - no member had a reading to match.");
+            else
+                beginTrimVerification (moved == 1 ? "channel" : "channels");
             repaint();
             return;
         }

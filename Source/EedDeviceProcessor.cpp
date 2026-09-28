@@ -121,8 +121,23 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
     juce::StringArray unknown;    // ids this device does not publish
     int applied = 0, skipped = 0;
 
-    for (const auto& prop : obj->getProperties())
+    // 21t-j: THE MODE FIRST. Two passes over the same object: the key the device names as its mode (if the payload
+    // carries it), then everything else. One ordering, so a mode and the flats it writes cannot race by JSON order.
+    juce::Array<juce::Identifier> order;
     {
+        const auto modeId = juce::String (paramSchema().find (modeKeyId().toStdString()) != nullptr
+                                              ? modeKeyId() : juce::String());
+        if (modeId.isNotEmpty())
+            for (const auto& prop : obj->getProperties())
+                if (echojay::ParamSchema::normalizeId (prop.name.toString().toStdString())
+                    == echojay::ParamSchema::normalizeId (modeId.toStdString()))
+                    order.add (prop.name);
+        for (const auto& prop : obj->getProperties())
+            if (! order.contains (prop.name)) order.add (prop.name);
+    }
+    for (const auto& propName : order)
+    {
+        struct { juce::Identifier name; juce::var value; } prop { propName, obj->getProperty (propName) };
         const juce::String id = prop.name.toString();
 
         // The schema is the gate. An id outside it is reported, never guessed
@@ -232,6 +247,23 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
     }
 
     return summary;
+}
+
+// 21t-j: the default readback - every dialable id and the value it holds, choices by label.
+juce::String EedDeviceProcessor::readbackSummary() const
+{
+    juce::StringArray parts;
+    for (const auto& p : paramSchema().params())
+    {
+        const double v = getParamValue (juce::String (p.id));
+        juce::String one (p.id); one << " ";
+        if (! p.choices.empty())      one << juce::String (p.choiceLabel (v));
+        else if (p.boolean)           one << (v >= 0.5 ? "on" : "off");
+        else                          one << juce::String (v, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
+                                          << (p.unit.empty() ? juce::String() : " " + juce::String (p.unit));
+        parts.add (one);
+    }
+    return parts.joinIntoString (", ");
 }
 
 void EedDeviceProcessor::resetParamsToDefaults()
