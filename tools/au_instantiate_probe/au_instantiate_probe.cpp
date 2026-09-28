@@ -14,6 +14,7 @@
 #include <JuceHeader.h>
 #include <set>
 #include <vector>
+#include "probe_points.h"   // 21t-j: the point set, in a header a guard can assert
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -69,10 +70,15 @@ int main (int argc, char** argv)
     // this once per identity the first time a plugin is racked, in the background, and the names ride the fp map.
     // One launch, not one per control: instantiating a UAD plugin costs ~5 s, sweeping a control costs ~2.
     const bool sampleAll = argc >= 5 && juce::String (argv[4]) == "--sample-stepped";
-    // 21s-b (24 Sep 2026): "--text-at <index>" = THREE READS, at normalised 0.0, 0.5 and 1.0. A CONTINUOUS control
-    // is exactly what --sample-text refuses (it is not a named control), so a fixture had a unit and no range.
-    // This is the smallest honest answer: what the plugin PRINTS at the two ends and the middle, which is where a
-    // numeric range comes from when the text parses as a number.
+    // 21s-b (24 Sep 2026): "--text-at <index>" = reads of what the plugin PRINTS along a CONTINUOUS control,
+    // which is exactly what --sample-text refuses (it is not a named control), and where a numeric range comes
+    // from when the text parses as a number.
+    //
+    // 21t-j (28 Sep 2026 ruling): TWENTY-ONE POINTS, NOT THREE - normalised 0.00 to 1.00 at 0.05 - and on a
+    // DISCRETE control, every detent instead. Three points could not answer the questions this mode was built
+    // for: the MC 77's Input range was read as -24..0 off a midpoint that happened to print -24, and Detune's
+    // blank sat at 0.5 with no neighbour to bound it. THE OUTPUT SHAPE IS UNCHANGED - the same
+    // "at<TAB><norm><TAB><text>" rows, only more of them - so nothing downstream has to change to read it.
     const bool textAt = argc >= 6 && juce::String (argv[4]) == "--text-at";
     const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
@@ -171,7 +177,11 @@ int main (int argc, char** argv)
                 // default is not always what it opens at, and conflating the two would be a guess.
                 std::printf ("def\t%.6f\t%s\tdefault\t%.6f\n", before,
                              clean (q->getText (before, 256).trim()).toRawUTF8(), q->getDefaultValue());
-                for (float nrm : { 0.0f, 0.5f, 1.0f })
+                // THE POINTS: every detent on a discrete control, 0.05 steps on a continuous one. A discrete
+                // control sampled on a 0.05 grid reads the same text several times and misses detents between
+                // them, so the control's own step count is used where it has one.
+                const auto points = echojay::probeTextAtPoints (q->getNumSteps(), q->isDiscrete());
+                for (float nrm : points)
                 {
                     q->setValueNotifyingHost (nrm);
                     for (int k = 0; k < 6; ++k) { juce::Timer::callPendingTimersSynchronously(); CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.01, false); }

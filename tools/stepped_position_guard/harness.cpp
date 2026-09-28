@@ -9,6 +9,7 @@
 #include "ChainHost.h"        // 21r item 2(b): the sampled-text store lives on the host that processes audio
 #include "EchoJayParamMaps.h"
 #include "EJPaceCheck.h"
+#include "../au_instantiate_probe/probe_points.h"   // 21t-j: the probe's --text-at point set
 #include <cstdio>
 namespace {
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
@@ -413,6 +414,42 @@ int main()
         host->applySampledStepped (fp, ik, sampled);
         check (host->steppedTextFor (fp).getDynamicObject() != nullptr,
                "(2b) ...and a sweep that found something is stored against the fp");
+    }
+
+    // ---- 21t-j (28 Sep 2026 ruling): THE PROBE'S --text-at POINT SET ---------------------------------------
+    // The probe itself can only run with a real AU in front of it, so the ruled part - WHERE it reads - lives in
+    // a header and is asserted here, against the same function the probe calls.
+    {
+        std::printf ("\n== 21t-j: the probe's --text-at points ==\n");
+        const auto cont = echojay::probeTextAtPoints (0, false);
+        check (cont.size() == 21,
+               "21t-j. a CONTINUOUS control is read at 21 points  (RED as it stood: three - 0.0, 0.5, 1.0, which "
+               "is how the MC 77's Input range became -24..0 off a midpoint)",
+               juce::String ((int) cont.size()) + " point(s)");
+        check (cont.size() == 21 && std::abs (cont.front()) < 1.0e-6f && std::abs (cont.back() - 1.0f) < 1.0e-6f,
+               "21t-j. ...endpoints included, so the range is still read at both ends",
+               juce::String (cont.front(), 2) + " .. " + juce::String (cont.back(), 2));
+        bool spaced = true, ascending = true;
+        for (size_t i = 1; i < cont.size(); ++i)
+        {
+            if (std::abs ((cont[i] - cont[i - 1]) - 0.05f) > 1.0e-5f) spaced = false;
+            if (! (cont[i] > cont[i - 1])) ascending = false;
+        }
+        check (spaced && ascending, "21t-j. ...at 0.05, ascending, with no repeats");
+        // A DISCRETE control reads its own detents: a 0.05 grid would read the same text several times and miss
+        // detents between the lines.
+        const auto d5 = echojay::probeTextAtPoints (5, true);
+        check (d5.size() == 5 && std::abs (d5[0]) < 1.0e-6f && std::abs (d5[2] - 0.5f) < 1.0e-6f
+               && std::abs (d5[4] - 1.0f) < 1.0e-6f,
+               "21t-j. a DISCRETE control is read at EVERY detent, not on the 0.05 grid",
+               juce::String ((int) d5.size()) + " point(s), mid " + juce::String (d5.size() > 2 ? d5[2] : -1.0f, 3));
+        const auto d200 = echojay::probeTextAtPoints (200, true);
+        check (d200.size() == 21,
+               "21t-j. ...and a control claiming 200 detents is a curve, not a set of detents: back to the grid",
+               juce::String ((int) d200.size()) + " point(s)");
+        const auto d1 = echojay::probeTextAtPoints (1, true);
+        check (d1.size() == 21, "21t-j. ...as is a control claiming fewer than two",
+               juce::String ((int) d1.size()) + " point(s)");
     }
 
     std::printf ("\n==== stepped_position_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
