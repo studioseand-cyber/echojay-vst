@@ -36,6 +36,9 @@ struct EchoJayTabStripTestAccess
     static void setKeySrc (EchoJayEditor& e, const juce::String& s) { e.lastKeySourceLabel_ = s; }
     static juce::String stampJson (EchoJayEditor& e, const juce::String& json)
     { return e.stampKeySourceIntoChainJson (json); }
+    // 21t-k item 2(a): the LINK build path, the one Sean's 21:24 build took.
+    static void sendChain (EchoJayEditor& e, const juce::String& uid, const juce::String& json)
+    { e.sendChainToLink (uid, json); }
 };
 using A = EchoJayTabStripTestAccess;
 namespace {
@@ -181,6 +184,32 @@ int main()
             A::setKeySrc (*ed, "the Music Bus");
             check (A::stampJson (*ed, "not json at all") == "not json at all",
                    "21t-j. ...and a document that does not parse is returned unchanged, never half-rewritten");
+            A::setKeySrc (*ed, {});
+        }
+
+        // ---- 21t-k item 2(a): THE LINK BUILD CARRIES THE ATTRIBUTION TOO -----------------------------------
+        // The stamp lived in the own-rack build and in Apply; a build sent to a LINK went through neither, so
+        // the wire carried no key_source and the plugin said "(by hand)". This drives the real transport and
+        // reads the chain-cmd the Link would consume.
+        {
+            std::printf ("\n== 21t-k item 2(a): a LINK build carries key_source ==\n");
+            const juce::String luid = "lnk_01";
+            int e2 = 0; const juce::String dir = LinkShm::resolveDir (e2);
+            juce::File (dir + "chain-cmd-" + luid + ".json").deleteFile();
+            A::setKeySrc (*ed, "the Mix Bus (Link \u0027MUSIC\u0027)");
+            const juce::String build =
+                "{\"chain\":[{\"name\":\"EchoJay Pitch\",\"role\":\"tuner\",\"settings_structured\":"
+                "{\"params\":{\"key_root\":5,\"scale\":\"major\",\"reference_hz\":438.9}}}]}";
+            A::sendChain (*ed, luid, build);
+            pumpMs (400);
+            juce::String sent = juce::File (dir + "chain-cmd-" + luid + ".json").loadFileAsString();
+            if (sent.isEmpty()) sent = juce::File (dir + "chain-cmd-last-sent.json").loadFileAsString();
+            std::printf ("    chain-cmd payload: %s\n", sent.substring (0, 220).toRawUTF8());
+            check (sent.contains ("key_source") && sent.contains ("the Mix Bus"),
+                   "21t-k 2(a). a chain built on a LINK carries key_source on the wire  (RED as it stood: the "
+                   "readback came back \"...key F, scale major, ref 438.9 Hz\" with no key_source and the plugin "
+                   "said \"(by hand)\")",
+                   sent.isEmpty() ? juce::String ("(nothing was sent)") : sent.substring (0, 160));
             A::setKeySrc (*ed, {});
         }
 

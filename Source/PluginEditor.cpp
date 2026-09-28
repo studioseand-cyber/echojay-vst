@@ -30716,8 +30716,15 @@ bool EchoJayEditor::chainEditGateRefusesFor(const juce::String& uid)
 bool EchoJayEditor::chainEditGateRefuses() { return chainEditGateRefusesFor(chainViewUid()); }
 
 void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
-                                    const juce::String& chainJson)
+                                    const juce::String& chainJsonRaw)
 {
+    // 21t-k item 2(a) (28 Sep 2026): THE ATTRIBUTION IS STAMPED AT THIS CHOKE POINT. It was stamped in
+    // loadChainFromJson (the own-rack build) and in applyChainEditFromMsg (Apply), and a LINK build goes
+    // through neither: the borrowed-host arm below parses chainJson straight into add-ops, and the wire arm
+    // writes it into chain-cmd. Sean's 21:24 build proved it - the readback line came back
+    // "correction_mode natural, retune 78.6, ... ref 438.9 Hz" with no key_source, and the plugin said
+    // "(by hand)" for a key the [KEY] block had just attributed to the Mix Bus. One choke point, both arms.
+    const juce::String chainJson = stampKeySourceIntoChainJson(chainJsonRaw);
     switchToTab(Tab::Chain);   // Round C (17 Sep 2026): select the Chain tab before the build starts (Link arm)
     // COMMIT 1 (17 Sep 2026): a (re)build for this uid supersedes any kept
     // suggestions for it - cleared for BOTH arms below (session build and
