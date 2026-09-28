@@ -122,3 +122,64 @@ plugin-specific. Zero clean bug reports is fully explained.
 ejmap's own maps are unaffected as artifacts: labels and anchors are
 set-read-verified truth. Only the shipping consumer's verification step
 mis-reads them on the bridge.
+
+---
+
+## CORRECTION, 28 Sep 2026: what makes a bridged write land
+
+*Appended; nothing above is rewritten. The 31 Jul measurements stand as recorded.*
+
+**SUPERSEDED:** the 10 Aug statement that "bridge parameter traffic flushes with render
+cycles; a host that never renders never sees its writes land". It was never written in
+this filing; it lives in four places that this correction answers:
+- commit 389f78c's message (10 Aug)
+- the comment at `tools/bridged_readback_test/bridged_readback_test.cpp:122-124` ("a
+  harness that never renders never sees its writes land (measured: 3 s of pumped stable
+  reads stayed stale)")
+- `docs/EJMAP_MERGE_QUEUE.md:47` on `feat/ejmap`
+- session memory
+
+As a general statement it is FALSE. A non-rendering host does see its writes land.
+
+**STILL TRUE, and confirmed again:** the other 10 Aug fact, that an in-stack `getValue()`
+is also pre-write on the bridge. On 28 Sep the read taken straight after the write took
+31-40 ms and returned the OLD value in every run.
+
+**THE 28 SEP MEASUREMENT.** Branch `feat/ejmap-cert`, commit ec4a1cb, the signed
+EchoJayProbe `--write-test`. Bridged API-2500 (m), `Thresh` 0.2 <-> 0.9 at a -12 dBFS
+tone (the two states are 5.1 dB apart in the audio). 30+ fresh-process runs, both
+directions, each arm isolating one mechanism:
+- **No pumping, rendering only, or sleeping only:** the write lands **34-69 ms after it
+  was made, median 46**. It makes no difference whether the host renders or sleeps. In 3
+  runs it had not landed when the log ended, at 44-58 ms.
+- **With message-loop pumping:** it lands at about the same total, around 38-41 ms after
+  the write. Pumping is neither required nor measurably faster.
+- **Before any render at all:** setup writes made right after `prepareToPlay` confirmed
+  in 49-70 ms. This directly falsifies "never renders, never lands".
+- **Audio and property land TOGETHER:** the same block in 22 of 26 runs, and in the other
+  4 `getValue()` shows the new value one block before the audio. The property never lags
+  the audio.
+
+**WALL TIME IS THE VARIABLE.** The 2 Aug finding (M9 Task 0-B: "with zero pumping the
+write never leaves the host process") and the 10 Aug finding are the same mechanism seen
+from hosts with different elapsed-time profiles:
+- An offline render that starts immediately has only milliseconds elapsed, so it renders
+  before the write lands. 2 Aug's >= 50 ms of pumping supplied the time.
+- A DAW's render cycles run at realtime, 10.7 ms per 512-sample block, so a few cycles
+  supply the time, and it looks as if render cycles flush the write.
+- Offline, 46 blocks can take under 50 ms, so "N render cycles later" promises nothing.
+
+**UNEXPLAINED, and left open:** the 10 Aug harness's own observation of 3 s of pumped,
+non-rendering reads that stayed stale is NOT reproduced here. The two harnesses differ at
+least in instantiation (synchronous `createPluginInstance` at 44.1 kHz there,
+`createPluginInstanceAsync` at 48 kHz in the probe) and in how the write was issued.
+Which difference matters is unmeasured.
+
+**CONSEQUENCE FOR ANY VERIFY ON THE BRIDGE:** never assume a write has landed after some
+number of blocks or milliseconds. Confirm it: poll `getValue()` until it matches, bounded
+at 500 ms (the longest seen was 70 ms), and only then render or read the display.
+
+This correction does NOT re-assess the report-only mitigation shipped on 10 Aug
+(389f78c); its code was not re-read for it. That commit's message uses the render-cycle
+premise only to argue that "in the shipping plugin audio always runs, so settles happen
+naturally". The wall-time finding predicts the same outcome, for a different reason.
