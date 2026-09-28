@@ -4047,6 +4047,9 @@ private:
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
+        // 21t-k item 6 (28/29 Sep 2026 ruling): a DOUBLE-CLICK on a fader resets it to 0.0 dB, and the reset is
+        // itself undoable - it goes through the same command path a drag does, so it records the same entry.
+        void mouseDoubleClick(const juce::MouseEvent& e) override;
         /** Vertical wheel over a scrollable rack list scrolls THAT list;
             anything else falls through to the Viewport, which scrolls the
             mixer horizontally (JUCE maps a vertical wheel onto a

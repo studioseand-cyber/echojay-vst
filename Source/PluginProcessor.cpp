@@ -5454,6 +5454,21 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
     }
     if (e.kind == "alias") { setLinkAlias(e.target, v.toString()); return true; }
     if (e.kind == "loop")  { if (loudnessLoop_.levelSlot() < 0) return false; loudnessLoop_.writeGainDb((float)(double) v); return true; }
+    // 21t-k item 6 (28/29 Sep 2026 ruling): THE GROUP FADER IS ONE GESTURE, ONE STEP, AND IT IS A VCA. The undo
+    // re-sends the INVERSE DELTA through moveLinkGroup rather than a list of absolute member gains, so members
+    // keep the offsets they had - which is what "relative, a VCA" means - and a member that has since moved or
+    // gone is handled by that one function instead of by a stale number stored per target.
+    if (e.kind == "groupGain")
+    {
+        if (linkGroupById (e.target) == nullptr) return false;
+        const double want = (double) v;                    // the delta this direction asks for
+        if (std::abs (want) < 0.005) return true;          // nothing to undo
+        const auto r = moveLinkGroup (e.target, (float) want, true);
+        EchoJay_NSLog(("EJUndo: group \"" + resolveLinkDisplayName (e.target) + "\" moved " + juce::String (r.applied, 2)
+                       + " dB (asked " + juce::String (want, 2) + ")"
+                       + (r.limitingMember.isNotEmpty() ? " - limited by " + r.limitingMember : juce::String())).toRawUTF8());
+        return std::abs (r.applied) >= 0.005f;
+    }
     if (e.kind == "group") { return false; }   // item 4 fills this in
     return false;
 }
@@ -5643,6 +5658,18 @@ EchoJayProcessor::GroupMove EchoJayProcessor::moveLinkGroup(const juce::String& 
     }
     r.applied = applied;
     if (std::abs(applied) < 0.05f) return r;
+    // 21t-k item 6: ONE undo entry for the whole gesture, carrying the delta that was actually applied. Pushed
+    // only when this call is really moving the Links (sendCommands), so a dry-run proposal records nothing.
+    if (sendCommands)
+    {
+        echojay::UndoEntry ue;
+        ue.kind = "groupGain"; ue.target = id;
+        ue.label = "Group fader " + (g->name.isNotEmpty() ? g->name : juce::String ("group"));
+        ue.before = (double) -applied;      // undo: move it back
+        ue.after  = (double)  applied;      // redo: move it again
+        ue.coalesceKey = "groupGain:" + id; // a drag is one step, like a Link fader's
+        undoHistory_.push (std::move (ue));
+    }
     for (const auto& u : g->members)
     {
         bool present = false; const float cur = gainOf(u, present); if (! present) continue;

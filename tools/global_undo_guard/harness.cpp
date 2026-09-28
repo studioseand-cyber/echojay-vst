@@ -115,6 +115,46 @@ int main()
     // ---- not recorded: session load ----
     { const int n = U.undoDepth(); juce::MemoryBlock mb; p.getStateInformation (mb); p.setStateInformation (mb.getData(), (int) mb.getSize()); pumpMs (200);
       check (U.undoDepth() == n, "9. a session load records nothing", juce::String (U.undoDepth() - n)); }
+    // ---- 21t-k item 6 (28/29 Sep 2026 ruling): THE GROUP FADER IS ONE GESTURE, ONE STEP, AND A VCA --------
+    // Every other Link Mixer write was already an undo entry - a fader drag through sendLinkGainCommand
+    // (coalesced per Link), the level-match trims through the same function, Active, alias, keep-level. The
+    // GROUP fader was not: moveLinkGroup wrote each member's ctrl-cmd directly and recorded nothing. The entry
+    // carries the DELTA, not a list of absolute gains, so undo puts the members back where they were while they
+    // keep the offsets they have - which is what "relative, a VCA" means.
+    {
+        std::vector<EchoJayProcessor::LinkSlotInfo> three;
+        for (int i = 0; i < 3; ++i)
+        {
+            EchoJayProcessor::LinkSlotInfo li;
+            li.uid = "lnk_6" + juce::String (i + 10); li.name = "G" + juce::String (i + 1);
+            li.active = true; li.connected = true; li.channels = 2;
+            li.gainDb = (i == 1) ? -6.0f : -2.0f;      // the members keep DIFFERENT trims: that is the point
+            three.push_back (li);
+        }
+        EchoJayAlignTestAccess::setLinks (p, three);
+        const auto gid = p.createLinkGroup ("the VCA", juce::StringArray { "lnk_610", "lnk_611", "lnk_612" });
+        const int n = U.undoDepth();
+        const auto r = p.moveLinkGroup (gid, -3.0f, true);
+        check (U.undoDepth() == n + 1 && U.top() != nullptr && U.top()->kind == "groupGain",
+               "21t-k 6. a group fader move is ONE undo entry  (RED as it stood: it wrote every member's command "
+               "and recorded nothing)", juce::String (U.undoDepth() - n) + " entry(ies), kind "
+               + (U.top() != nullptr ? U.top()->kind : juce::String ("(none)")));
+        check (U.undoLabel().contains ("the VCA"),
+               "21t-k 6. ...labelled with the group, so the header button says what it will undo", U.undoLabel());
+        check (std::abs (r.applied + 3.0f) < 0.01f,
+               "21t-k 6. ...and the move is RELATIVE: every member goes down by the same 3 dB",
+               f1 (r.applied));
+        // The undo re-sends the inverse delta through the same VCA path.
+        const bool undone = U.undo();
+        check (undone, "21t-k 6. the undo applies", juce::String ((int) undone));
+        // ...and a group that has gone is refused rather than half-applied.
+        p.removeLinkGroup (gid);
+        { echojay::UndoEntry ghost; ghost.kind = "groupGain"; ghost.target = gid; ghost.before = 3.0; ghost.after = -3.0;
+          check (! p.applyUndoEntry (ghost, true),
+                 "21t-k 6. ...and an undo for a group that no longer exists is REFUSED, never half-applied"); }
+        EchoJayAlignTestAccess::setLinks (p, {});
+    }
+
     // ---- depth 50 ----
     { for (int k = 0; k < 60; ++k) h.setSlotKeepLevel (1, (k % 2) == 0); check (U.undoDepth() == 50, "10. the history is bounded at 50 (60 keep toggles)", juce::String (U.undoDepth())); }
     std::printf ("\n==== global_undo_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);

@@ -11231,6 +11231,38 @@ void EchoJayEditor::LinkMixerView::mouseUp(const juce::MouseEvent&)
     repaint();
 }
 
+// 21t-k item 6 (28/29 Sep 2026 ruling): DOUBLE-CLICK A FADER TO RESET IT TO 0.0 dB. It goes through the same
+// command path a drag's release does, so it records the same undo entry and needs no case of its own in the
+// dispatcher. A double-click anywhere else on the strip is left alone.
+void EchoJayEditor::LinkMixerView::mouseDoubleClick(const juce::MouseEvent& e)
+{
+    if (owner == nullptr) return;
+    for (const auto& sg : owner->linkStripGeom_)
+    {
+        if (! sg.fader.contains (e.getPosition())) continue;
+        if (sg.addr.startsWith ("grp:"))
+        {   // the GROUP fader resets to no offset, which is a move of -offset through the same VCA path.
+            const juce::String gid = sg.addr.fromFirstOccurrenceOf ("grp:", false, false);
+            const auto* gr = owner->processorRef.linkGroupById (gid);
+            const float off = gr != nullptr ? gr->offsetDb : 0.0f;
+            if (std::abs (off) < 0.05f) return;
+            const auto r = owner->processorRef.moveLinkGroup (gid, -off, true);
+            owner->processorRef.setLinkGroupOffsetDb (gid, off + r.applied);
+            EchoJay_NSLog (("EJMixer: double-click reset the group fader to 0.0 dB (moved "
+                            + juce::String (r.applied, 2) + " dB)").toRawUTF8());
+        }
+        else
+        {
+            EchoJay_NSLog (("EJMixer: double-click reset " + sg.addr + "'s fader to 0.0 dB").toRawUTF8());
+            if (owner->linkFaderModeIsPre()) owner->sendLinkPreGainCommand (sg.addr, 0.0f);
+            else                             owner->sendLinkGainCommand    (sg.addr, 0.0f);
+        }
+        dragAddr = {}; dragValue = 0.0f;
+        repaint(); owner->repaint();
+        return;
+    }
+}
+
 void EchoJayEditor::paintLinkMonitorPanel(juce::Graphics& g, juce::Rectangle<int> area)
 {
     // CONSUMES what measureLinkStrips() stored. This painter MEASURES NOTHING:
