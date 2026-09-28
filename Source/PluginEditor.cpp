@@ -28114,14 +28114,43 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     // this source is the authority for key, scale and reference; when the build comes back and sets them, the
     // plugin should be able to say where they came from in the same words the user saw here.
     lastKeySourceLabel_ = srcLabel (*p);
-    c << "key: " << keyText (p->root, p->minor)
-      << "   scale: " << (p->minor ? "minor" : "major")
-      << "   ref_hz: " << tuningText (p->tuningHz) << "\n"
-      << "root_hz: " << rootHzText (p->rootHz) << "\n"
+    // 21t-k item 2(c) (28 Sep 2026 ruling): THE CONFIDENCE GATE, CARRIED INTO THE BLOCK TEXT. A reading of 0.06
+    // was headed "THIS IS THE AUTHORITY" in Sean's session. At or above 0.2 the live reading is shown and
+    // REMEMBERED; below it, the key, scale and reference lines show the last stable reading instead, and one
+    // ADDITIVE line after the source line says so. Header wording, line order and every existing line are
+    // unchanged, so B's parser reads exactly what it read before and ignores the new line.
+    const bool liveStable = (p->conf >= kKeyStableConf);
+    if (liveStable)
+    {
+        lastStableKey_.have = true;   lastStableKey_.root = p->root;   lastStableKey_.minor = p->minor;
+        lastStableKey_.tuningHz = p->tuningHz; lastStableKey_.rootHz = p->rootHz; lastStableKey_.conf = p->conf;
+        lastStableKey_.atMs = juce::Time::currentTimeMillis() - (juce::int64) p->ageMs;
+    }
+    const bool useStable = (! liveStable) && lastStableKey_.have;
+    const int   showRoot  = useStable ? lastStableKey_.root     : p->root;
+    const bool  showMinor = useStable ? lastStableKey_.minor    : p->minor;
+    const float showTune  = useStable ? lastStableKey_.tuningHz : p->tuningHz;
+    const float showRoot2 = useStable ? lastStableKey_.rootHz   : p->rootHz;
+    c << "key: " << keyText (showRoot, showMinor)
+      << "   scale: " << (showMinor ? "minor" : "major")
+      << "   ref_hz: " << tuningText (showTune) << "\n"
+      << "root_hz: " << rootHzText (showRoot2) << "\n"
       << "source: " << srcLabel (*p)
       << (sources.userSelected ? " (USER-SELECTED)" : "")
       << "   confidence: " << juce::String (p->conf, 2)
       << "   age: " << ageStr (p->ageMs) << "\n"
+      << (liveStable ? juce::String()
+                     : useStable
+                         ? "stability: unstable (live " + juce::String (p->conf, 2) + " below "
+                           + juce::String (kKeyStableConf, 1) + ") - values above are the last stable reading, "
+                           "confidence " + juce::String (lastStableKey_.conf, 2) + ", age "
+                           + ageStr ((juce::uint32) juce::jmax ((juce::int64) 0,
+                                     juce::Time::currentTimeMillis() - lastStableKey_.atMs)) + "\n"
+                         // NO STABLE READING YET: the ruling does not name this case, so the line says exactly
+                         // that rather than implying a remembered value exists. Decision recorded in MERGE.
+                         : "stability: unstable (live " + juce::String (p->conf, 2) + " below "
+                           + juce::String (kKeyStableConf, 1) + ") - no stable reading yet, the values above are "
+                           "the live one\n")
       << "THIS IS THE AUTHORITY for key, scale and reference on every tuner build and edit on this channel. Use "
          "these three values and no others; do not choose a different key from the candidates block below.\n";
     // §7.2: a deliberate pin overrides the poisoning rule, but the warning

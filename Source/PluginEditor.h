@@ -3707,6 +3707,20 @@ private:
     // into the settings a build or an edit carries, so the plugin can say "key F# minor from the Music Bus"
     // instead of "(by hand)". Empty when this turn carried no [KEY] block - and then nothing is stamped.
     juce::String lastKeySourceLabel_;
+    // 21t-k item 2(c) (28 Sep 2026 ruling): THE LAST STABLE KEY READING. A live reading below 0.2 confidence is
+    // not something to call "THE AUTHORITY" - Sean's block did exactly that with 0.06 - so the block shows the
+    // last reading that WAS stable and says so on one additive line. Session-scoped and deliberately not
+    // persisted: a stable reading from a previous session describes audio this session has not heard.
+    struct StableKeyReading
+    {
+        bool  have = false;
+        int   root = 0;
+        bool  minor = false;
+        float tuningHz = 0.0f, rootHz = 0.0f, conf = 0.0f;
+        juce::int64 atMs = 0;
+    };
+    StableKeyReading lastStableKey_;
+    static constexpr float kKeyStableConf = 0.2f;   // ruled
     /** Adds "key_source" to a slot's settings_structured when it sets the key, the scale or the reference.
         Returns true when it stamped. */
     bool stampKeySourceIntoStructured (juce::var& structured) const;

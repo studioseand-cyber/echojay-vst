@@ -101,6 +101,40 @@ int main()
            "21t-i re-cut: ...and the block says in one line that this source is the authority");
     check (offBlock.contains ("exactly what EchoJay displays"), "the rule line is present");
 
+    // ---- 21t-k item 2(c) (28 Sep 2026 ruling): THE CONFIDENCE GATE IN THE BLOCK TEXT ---------------------
+    // Sean's session sent a 0.06 reading under the header "THIS IS THE AUTHORITY". Below 0.2 the key, scale and
+    // reference lines must show the LAST STABLE reading and one additive line must say so. The first capture
+    // above (A minor, 440.0 Hz, confidence 0.31) is the stable one; this pushes a newer, weaker reading.
+    {
+        std::printf ("\n== 21t-k item 2(c): the confidence gate ==\n");
+        CaptureSnapshot w;
+        w.id = "cap-2"; w.name = "Mix capture 2"; w.timestamp = juce::Time::currentTimeMillis();
+        w.durationSeconds = 12.0f; w.channelType = ChannelType::Other;
+        w.keyValid = true; w.keyRoot = 2; w.keyMinor = false; w.keyConfidence = 0.06f;   // D major, unstable
+        w.keyTuningHz = 431.0f; w.keyTuningCents = -35.0f; w.keySourceName = "Music Bus"; w.keySourcePlacement = 1;
+        w.keyAltRoot = 0; w.keyAltMinor = false; w.keyAltScore = 0.05f;
+        EchoJayAlignTestAccess::pushCapture (proc, w);
+        juce::StringArray mf2;
+        const auto weak = keyBlockOf (ed->testAssembleChainInjections ("what key is this in", {}, &mf2));
+        std::printf ("%s\n", weak.toRawUTF8());
+        check (weak.contains ("stability: unstable (live 0.06 below 0.2)"),
+               "21t-k 2(c). a live reading under 0.2 is declared UNSTABLE on its own additive line  (RED as it "
+               "stood: 0.06 was sent under \"THIS IS THE AUTHORITY\" with nothing said)",
+               weak.contains ("stability:") ? weak.fromFirstOccurrenceOf ("stability:", true, false)
+                                                  .upToFirstOccurrenceOf ("\n", false, false) : juce::String ("(no line)"));
+        check (weak.contains ("key: A minor") && weak.contains ("ref_hz: 440.0"),
+               "21t-k 2(c). ...and the key / scale / ref lines show the LAST STABLE reading, not the weak one",
+               weak.fromFirstOccurrenceOf ("key:", true, false).upToFirstOccurrenceOf ("\n", false, false));
+        check (weak.contains ("values above are the last stable reading, confidence 0.31"),
+               "21t-k 2(c). ...naming that reading's own confidence",
+               weak.fromFirstOccurrenceOf ("last stable reading", true, false).substring (0, 40));
+        check (weak.contains ("confidence: 0.06"),
+               "21t-k 2(c). ...while the source line still carries the LIVE confidence, unchanged",
+               weak.fromFirstOccurrenceOf ("source:", true, false).upToFirstOccurrenceOf ("\n", false, false));
+        check (weak.contains ("THIS IS THE AUTHORITY for key, scale and reference"),
+               "21t-k 2(c). ...and the header wording and line order are untouched");
+    }
+
     // persisted in both plugins: the storage key is "keyShowRelative"
     juce::MemoryBlock mb; proc.setKeyShowRelative (true); proc.getStateInformation (mb); proc.setKeyShowRelative (false);
     const juce::String st = juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize());
