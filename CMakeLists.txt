@@ -290,3 +290,7 @@ endif()
 # Build it in build-ejmap, never build/.
 # ============================================================================
 add_subdirectory(tools/ejmap)
+
+# EchoJayProbe: the signed out-of-process instrument EJ Map certification
+# drives. Standalone on this branch; see its own CMakeLists.txt for why.
+add_subdirectory(tools/au_instantiate_probe)
