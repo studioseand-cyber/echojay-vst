@@ -56,6 +56,7 @@
 #include <sys/stat.h>
 #include "EchoJayParamMaps.h"   // identityKeyForDescription
 #include "EjmapExposure.h"
+#include "EjmapFixtureUnit.h"
 
 namespace
 {
@@ -3627,6 +3628,55 @@ void testMapperIdentity()
     root.deleteRecursively(); root2.deleteRecursively();
 }
 
+//==============================================================================
+/** THE FIXTURE UNIT RULE (EjmapFixtureUnit.h), pinned on the measured cases.
+    Every text below is verbatim from a pushed compressor-profile fixture, and
+    every expected unit is what that fixture records. The labels are the ones
+    the signed probe read on 28 Sep (all empty on the 13 products measured).
+    Each case is one a simpler rule got wrong, so simplifying the rule turns
+    one of these red.
+*/
+void testFixtureUnitRule()
+{
+    using ejmap::fixtureunit::unitFor;
+    const juce::String minus = juce::CharPointer_UTF8 ("\xe2\x88\x92");    // U+2212
+    const juce::String narrow = juce::CharPointer_UTF8 ("\xe2\x80\xaf");   // U+202F
+
+    // The 0.0 point decides when it starts with a number.
+    check (unitFor ("", "-20.0 dB", "0.0 dB") == "dB", "unit: XLA-3 Level Trim -> dB");
+    check (unitFor ("", "20 Hz", "2.0 kHz") == "Hz",
+           "unit: AMEK Mono Maker Freq -> Hz (the 0.0 point, not the last or the majority)");
+    check (unitFor ("", "400mS", "AUTO") == "mS",
+           "unit: Neve 2254 Comp Rcvr -> mS (majority over 400mS / 1.5S / AUTO would say S)");
+    check (unitFor ("", "1/64T", "2B") == "/64T", "unit: H-Comp ReleaseBPM -> /64T");
+    check (unitFor ("", "1.2:1", "Flood") == ":1", "unit: Shadow Hills Discrete Ratio -> :1");
+
+    // A word at 0.0 falls through to the 1.0 point.
+    check (unitFor ("", "-oo dB", "-60.0 dB") == "dB", "unit: XLA-3 Noise Level -> dB (-oo is a word)");
+    check (unitFor ("", "Off", "2.0 kHz") == "kHz",
+           "unit: MC 77 Monomaker Freq -> kHz (the middle point's Hz is never read)");
+
+    // THE FOUR EXCEPTIONS: a unit visible somewhere, and the fixture records none.
+    check (unitFor ("", ".1 s", "AUTO").isEmpty(),
+           "unit: SSL G3 Low/Mid/High Release -> none. BUG-COMPATIBLE: '.1 s' is seconds, but "
+           "the fixtures were built reading '.1' as not-a-number. Fix the rule only TOGETHER "
+           "with re-sampling those three fixtures, never alone (EjmapFixtureUnit.h)");
+    check (unitFor ("", "Bypass", "NUKE").isEmpty(),
+           "unit: Mike-E Ratio -> none: the 4:1 is at the middle point, which is never read");
+
+    // A label wins over the text.
+    check (unitFor ("", "0.00", "48.00").isEmpty(), "unit: APB C-18 Output text alone -> none");
+    check (unitFor ("dB", "0.00", "48.00") == "dB", "unit: ...and its label supplies dB");
+    check (unitFor ("", "-10.0 N", "12.0") == "N", "unit: C1 Floor text alone would say N");
+    check (unitFor ("dB", "-10.0 N", "12.0") == "dB", "unit: ...the label overrides it");
+
+    // The two choices the 1,783 controls do not decide, pinned so a change is deliberate.
+    check (unitFor ("", minus + "40.00" + narrow + "dB", "Max") == "dB",
+           "unit: U+2212 is a minus sign, and U+202F is a space (kHs Compressor's text)");
+    check (unitFor ("", "0.00", "48 dB").isEmpty(),
+           "unit: an empty remainder at 0.0 means no unit; it does not fall back to 1.0");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -3668,6 +3718,7 @@ int main (int, char**)
     testUnsetEndpointNotDerived();
     testPerStepWorkIsNotRepeated();
     testUnfinishedAttemptRule();
+    testFixtureUnitRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
