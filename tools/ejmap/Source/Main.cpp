@@ -583,6 +583,8 @@ namespace
             auto cwdFile = [] (const juce::String& p) { return juce::File::getCurrentWorkingDirectory().getChildFile (p); };
             if (a == "--cert-rederive" && i + 1 < argc)
                 return ejmap::cert::runRederive (cwdFile (argAt (argc, argv, i + 1)));
+            if (a == "--cert-watch-selftest" && i + 1 < argc)
+                return ejmap::cert::runWatchSelfTest (cwdFile (argAt (argc, argv, i + 1)));
             if (a == "--cert-defaults")
             {
                 ejmap::cert::Options o;

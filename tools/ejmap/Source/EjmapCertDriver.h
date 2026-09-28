@@ -44,6 +44,8 @@
 #include "EjmapFixtureUnit.h"
 #include "EjmapFixtureRange.h"
 
+#include <CoreGraphics/CoreGraphics.h>
+#include <libproc.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <poll.h>
@@ -51,6 +53,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <map>
+#include <set>
 #include <vector>
 #include <iostream>
 
@@ -63,10 +66,16 @@ namespace ejmap::cert
 // A CHILD PROCESS WITH A DEADLINE, AND ITS EXACT WAIT STATUS.
 struct ChildResult
 {
-    enum class Kind { exited, signaled, timedOut, spawnFailed } kind = Kind::spawnFailed;
+    // uiShown: a window belonging to the child's process tree came on screen, and
+    // the driver killed the run at once. The probe never shows a window of its own
+    // (LSBackgroundOnly, no editor), so any window in its tree is a plugin's or a
+    // licence wrapper's - e.g. PACE's "Software Activation" (PACEEdenExperience),
+    // a child of the probe, seen 28 Sep on Eiosis E2Deesser.
+    enum class Kind { exited, signaled, timedOut, uiShown, spawnFailed } kind = Kind::spawnFailed;
     int code = 0;             // exit code when exited
     int signal = 0;           // terminating signal when signaled
     juce::String out;         // stdout and stderr, interleaved
+    juce::StringArray windowsInTree;   // owner names of on-screen windows the child's tree showed
     double ms = 0.0;
 
     bool cleanExit (int wanted = 0) const { return kind == Kind::exited && code == wanted; }
@@ -78,13 +87,59 @@ struct ChildResult
             case Kind::signaled:    return "killed by signal " + juce::String (signal)
                                            + (signal == SIGTERM ? " (SIGTERM: a caller's timeout, not a refusal)" : "");
             case Kind::timedOut:    return "timed out after " + juce::String (ms / 1000.0, 1) + " s (killed by the driver)";
+            case Kind::uiShown:     return "SHOWED A WINDOW (" + windowsInTree.joinIntoString (", ")
+                                           + ") after " + juce::String (ms / 1000.0, 1) + " s; killed by the driver";
             case Kind::spawnFailed: return "could not be started";
         }
         return "?";
     }
 };
 
-inline ChildResult runChild (const juce::StringArray& args, int timeoutMs)
+//==============================================================================
+// WINDOW WATCHING (docs/EJMAP_CERT_DRIVER.md section 3: a precondition before any
+// PACE subject joins). An activation dialog blocks instantiation, so without this
+// it can only ever surface as a timeout, indistinguishable from a hang.
+inline pid_t parentOf (pid_t pid)
+{
+    proc_bsdinfo info {};
+    return proc_pidinfo (pid, PROC_PIDTBSDINFO, 0, &info, sizeof info) == (int) sizeof info ? (pid_t) info.pbi_ppid : 0;
+}
+
+inline bool inTreeOf (pid_t pid, pid_t root)
+{
+    for (int depth = 0; pid > 1 && depth < 16; ++depth, pid = parentOf (pid))
+        if (pid == root) return true;
+    return false;
+}
+
+// Owner names of windows owned by `root` or any descendant. onScreenOnly is the
+// production setting: a dialog is a window the user can SEE. The option is a
+// parameter so the attribution and the kill path can be tested with an off-screen
+// window, without flashing anything on the user's desktop.
+inline juce::StringArray windowsOwnedByTree (pid_t root, bool onScreenOnly = true)
+{
+    juce::StringArray owners;
+    const CGWindowListOption opt = onScreenOnly ? kCGWindowListOptionOnScreenOnly : kCGWindowListOptionAll;
+    CFArrayRef list = CGWindowListCopyWindowInfo (opt, kCGNullWindowID);
+    if (list == nullptr) return owners;
+    for (CFIndex i = 0; i < CFArrayGetCount (list); ++i)
+    {
+        auto w = (CFDictionaryRef) CFArrayGetValueAtIndex (list, i);
+        auto pidRef = (CFNumberRef) CFDictionaryGetValue (w, kCGWindowOwnerPID);
+        int pid = 0;
+        if (pidRef == nullptr || ! CFNumberGetValue (pidRef, kCFNumberIntType, &pid)) continue;
+        if (! inTreeOf ((pid_t) pid, root)) continue;
+        auto name = (CFStringRef) CFDictionaryGetValue (w, kCGWindowOwnerName);
+        owners.addIfNotAlreadyThere ((name != nullptr ? juce::String::fromCFString (name) : juce::String ("?"))
+                                     + " [pid " + juce::String (pid) + "]");
+    }
+    CFRelease (list);
+    return owners;
+}
+
+struct WatchOptions { bool watchWindows = true; bool onScreenOnly = true; int pollMs = 250; };
+
+inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {})
 {
     ChildResult r;
     int fds[2];
@@ -112,36 +167,56 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs)
     fcntl (fds[0], F_SETFL, O_NONBLOCK);
     juce::MemoryOutputStream collected;
     int status = 0;
-    bool reaped = false, killed = false;
+    bool reaped = false, killed = false, uiKilled = false;
+    double lastWindowPoll = 0.0;
     char buf[8192];
+    auto drain = [&] { for (;;) { const ssize_t n = read (fds[0], buf, sizeof buf); if (n > 0) collected.write (buf, (size_t) n); else break; } };
     for (;;)
     {
         pollfd p { fds[0], POLLIN, 0 };
         poll (&p, 1, 20);
-        for (;;)
-        {
-            const ssize_t n = read (fds[0], buf, sizeof buf);
-            if (n > 0) collected.write (buf, (size_t) n); else break;
-        }
+        drain();
         if (! reaped && waitpid (pid, &status, WNOHANG) == pid) reaped = true;
-        if (reaped)
+        if (reaped) { drain(); break; }
+        const double now = juce::Time::getMillisecondCounterHiRes();
+        if (watch.watchWindows && now - lastWindowPoll >= watch.pollMs)
         {
-            for (;;) { const ssize_t n = read (fds[0], buf, sizeof buf); if (n > 0) collected.write (buf, (size_t) n); else break; }
-            break;
+            lastWindowPoll = now;
+            const auto shown = windowsOwnedByTree (pid, watch.onScreenOnly);
+            if (! shown.isEmpty())
+            {
+                r.windowsInTree = shown;
+                // The whole tree goes: the wrapper's UI process is a child of the probe.
+                for (int k = 0; k < 16; ++k)
+                {
+                    bool any = false;
+                    int n = proc_listchildpids (pid, nullptr, 0);
+                    std::vector<pid_t> kids ((size_t) juce::jmax (0, n) + 8);
+                    n = proc_listchildpids (pid, kids.data(), (int) (kids.size() * sizeof (pid_t)));
+                    for (int c = 0; c < n; ++c) if (kids[(size_t) c] > 1) { kill (kids[(size_t) c], SIGKILL); any = true; }
+                    if (! any) break;
+                }
+                kill (pid, SIGKILL);
+                waitpid (pid, &status, 0);
+                uiKilled = reaped = true;
+                drain();
+                break;
+            }
         }
-        if (juce::Time::getMillisecondCounterHiRes() - t0 > timeoutMs)
+        if (now - t0 > timeoutMs)
         {
             kill (pid, SIGKILL);
             waitpid (pid, &status, 0);
             killed = reaped = true;
-            for (;;) { const ssize_t n = read (fds[0], buf, sizeof buf); if (n > 0) collected.write (buf, (size_t) n); else break; }
+            drain();
             break;
         }
     }
     close (fds[0]);
     r.ms  = juce::Time::getMillisecondCounterHiRes() - t0;
     r.out = collected.toString();
-    if (killed)                  r.kind = ChildResult::Kind::timedOut;
+    if (uiKilled)                r.kind = ChildResult::Kind::uiShown;
+    else if (killed)             r.kind = ChildResult::Kind::timedOut;
     else if (WIFEXITED (status))   { r.kind = ChildResult::Kind::exited;   r.code = WEXITSTATUS (status); }
     else if (WIFSIGNALED (status)) { r.kind = ChildResult::Kind::signaled; r.signal = WTERMSIG (status); }
     return r;
@@ -597,7 +672,10 @@ inline int runCertDefaults (const Options& opt)
         opt.out.getChildFile ("raw").createDirectory();
         auto r = runChild (args, opt.timeoutMs);
         logAttempt (s, mode, 1, r); keep (1, r);
-        if (! r.cleanExit() && ! (r.kind == ChildResult::Kind::exited && r.code == 3))
+        // Not retried: a refusal (exit 3) is the plugin's answer, and a window is a
+        // licence or activation event - a retry would only put it on the desktop again.
+        if (! r.cleanExit() && ! (r.kind == ChildResult::Kind::exited && r.code == 3)
+            && r.kind != ChildResult::Kind::uiShown)
         {
             retried = true;
             r = runChild (args, opt.timeoutMs);
@@ -606,8 +684,19 @@ inline int runCertDefaults (const Options& opt)
         return r;
     };
 
-    struct Row { const Subject* s; juce::String outcome; juce::StringArray diffs; bool reproduced = false, retried = false;
-                 int captured = 0, onList = 0; };
+    // READOUT DETECTION (schema change, item 12: shape AGREED 28 Sep with a null default -
+    // a meter has no instantiate value, so null is the truthful encoding - but NOT yet
+    // emitted by composeFixture; that is its own change).
+    // A control whose value differs between two FRESH instances is a readout, and its
+    // defaultOnInstantiate is meaningless: one sample of something moving. Found on
+    // Shadow Hills Class A's "VU Meter R" (five instances, five values). It is a
+    // derivation from two measurements, so it lives here and the probe is unchanged.
+    // Sufficient, not necessary: a meter that happens to read the same twice (a gain
+    // reduction meter sitting at 0 in silence) is NOT caught.
+    struct Readout { int index; juce::String name; double a, b; juce::String ta, tb; };
+    struct Row { const Subject* s; juce::String outcome; juce::StringArray diffs, diffsOnReadouts; bool reproduced = false,
+                 retried = false, readoutChecked = false; int captured = 0, onList = 0; std::vector<Readout> readouts;
+                 juce::String readoutNote; };
     std::vector<Row> rows;
     for (const auto& s : subjects)
     {
@@ -624,22 +713,92 @@ inline int runCertDefaults (const Options& opt)
             const auto text = parseTextAt (ta.out);
             for (const auto& kv : list) if (kv.second.automatable && ! kv.second.meta) ++row.onList;
             row.captured = (int) text.size();
+
+            // THE SECOND INSTANCE. One extra instantiation per product.
+            auto tb = runProbe (s, "--text-at all (second instance)", { "--text-at", "all" }, row.retried);
+            std::map<int, int> positionOf;                      // control index -> position in controls[]
+            for (size_t i = 0; i < text.size(); ++i) positionOf[text[i].index] = (int) i;
+            std::set<int> readoutPositions;
+            if (! tb.cleanExit()) row.readoutNote = "readout check incomplete: second instance " + tb.describe();
+            else
+            {
+                const auto second = parseTextAt (tb.out);
+                std::map<int, const TextAtRow*> byIndex;
+                for (const auto& t : second) byIndex[t.index] = &t;
+                row.readoutChecked = true;
+                for (const auto& t : text)
+                {
+                    auto it = byIndex.find (t.index);
+                    if (it == byIndex.end()) { row.readoutNote = "second instance lacks control " + juce::String (t.index); row.readoutChecked = false; break; }
+                    if (it->second->defNorm != t.defNorm || it->second->defText != t.defText)
+                    {
+                        row.readouts.push_back ({ t.index, t.name, t.defNorm, it->second->defNorm, t.defText, it->second->defText });
+                        readoutPositions.insert (positionOf[t.index]);
+                    }
+                }
+            }
+
             const auto regen = composeFixture (s, list, text, lp.code, ta.code, probeLabel, date);
             opt.out.getChildFile (s.fixtureFile.getFileName()).replaceWithText (juce::JSON::toString (regen, false));
-            row.diffs = compareFixtures (regen, s.pushed);
-            row.reproduced = row.diffs.isEmpty();
-            row.outcome = row.reproduced ? "REPRODUCED" : "DIFFERS in " + juce::String (row.diffs.size()) + " field(s)";
+            for (const auto& d : compareFixtures (regen, s.pushed))
+            {
+                // A difference in a DETECTED readout's defaultOnInstantiate is the known,
+                // recorded condition, reported apart from real differences.
+                const int pos = d.startsWith (".controls[") ? d.fromFirstOccurrenceOf ("[", false, false).getIntValue() : -1;
+                const bool onReadoutDefault = pos >= 0 && readoutPositions.count (pos) > 0
+                                              && d.contains ("].defaultOnInstantiate.");
+                (onReadoutDefault ? row.diffsOnReadouts : row.diffs).add (d);
+            }
+            row.reproduced = row.diffs.isEmpty() && row.diffsOnReadouts.isEmpty();
+            row.outcome = row.reproduced ? "REPRODUCED"
+                        : row.diffs.isEmpty() ? "DIFFERS ONLY on " + juce::String (row.diffsOnReadouts.size())
+                                                + " detected-readout default(s)"
+                                              : "DIFFERS in " + juce::String (row.diffs.size()) + " field(s)";
         }
         std::cout << " " << row.outcome << std::endl;
         rows.push_back (row);
+    }
+
+    // The readouts, in a SIDECAR. Not written into any fixture until the schema field
+    // is agreed (it is item 12 on the mismatch list).
+    {
+        juce::Array<juce::var> side;
+        for (const auto& r : rows)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("fixture", r.s->fixtureFile.getFileName());
+            o->setProperty ("product", r.s->product);
+            o->setProperty ("readoutCheck", r.readoutChecked ? juce::var ("instantiate_twice") : juce::var());
+            if (r.readoutNote.isNotEmpty()) o->setProperty ("note", r.readoutNote);
+            juce::Array<juce::var> list;
+            for (const auto& ro : r.readouts)
+            {
+                auto* x = new juce::DynamicObject();
+                x->setProperty ("index", ro.index); x->setProperty ("name", ro.name);
+                x->setProperty ("samples", juce::Array<juce::var> { ro.a, ro.b });
+                x->setProperty ("displays", juce::Array<juce::var> { ro.ta, ro.tb });
+                list.add (juce::var (x));
+            }
+            o->setProperty ("readouts", list);
+            side.add (juce::var (o));
+        }
+        opt.out.getChildFile ("readouts.json").replaceWithText (juce::JSON::toString (juce::var (side), false));
     }
 
     // 3. THE REPORT. Coverage first, always.
     std::map<Subject::Reach, juce::StringArray> byReach;
     for (const auto& s : subjects) byReach[s.reach].add (s.product + (s.detail.isNotEmpty() ? "  (" + s.detail + ")" : ""));
     const int reachable = (int) rows.size();
-    int reproduced = 0, differs = 0, failed = 0;
-    for (const auto& r : rows) { if (r.reproduced) ++reproduced; else if (! r.diffs.isEmpty()) ++differs; else ++failed; }
+    int reproduced = 0, differs = 0, onlyReadouts = 0, failed = 0, readoutControls = 0, readoutChecked = 0;
+    for (const auto& r : rows)
+    {
+        if (r.reproduced) ++reproduced;
+        else if (! r.diffs.isEmpty()) ++differs;
+        else if (! r.diffsOnReadouts.isEmpty()) ++onlyReadouts;
+        else ++failed;
+        readoutControls += (int) r.readouts.size();
+        if (r.readoutChecked) ++readoutChecked;
+    }
 
     juce::String rep;
     rep << "EJ MAP CERT DRIVER - regenerate compressor-profile fixtures - " << juce::Time::getCurrentTime().toISO8601 (true) << "\n"
@@ -651,7 +810,11 @@ inline int runCertDefaults (const Options& opt)
                     Subject::Reach::versionMismatch, Subject::Reach::notInstalled, Subject::Reach::ambiguous })
         rep << "  " << reachName (r).paddedRight (' ', 58) << byReach[r].size() << "\n";
     rep << "\nRESULT: reproduced " << reproduced << " of " << reachable << " reachable, of " << (int) subjects.size()
-        << " fixtures  |  differ " << differs << "  |  not reproduced (named) " << failed << "\n\n"
+        << " fixtures  |  differ only on detected readouts " << onlyReadouts << "  |  differ " << differs
+        << "  |  not reproduced (named) " << failed << "\n"
+        << "READOUTS: checked on " << readoutChecked << " of " << reachable << " (two fresh instances each); "
+        << readoutControls << " control(s) moved between instances. NOT written into any fixture: the shape is\n"
+        << "          agreed (item 12, null default) but the composer does not emit it yet. They are in readouts.json.\n\n"
         << "PER REACHABLE PRODUCT\n";
     for (const auto& r : rows)
     {
@@ -659,6 +822,11 @@ inline int runCertDefaults (const Options& opt)
             << (r.onList > 0 ? "   controls " + juce::String (r.captured) + " / " + juce::String (r.onList) : juce::String())
             << (r.retried ? "   RETRIED" : "") << "\n";
         for (const auto& d : r.diffs) rep << "      " << d << "\n";
+        for (const auto& d : r.diffsOnReadouts) rep << "      " << d << "   (on a detected readout)\n";
+        for (const auto& ro : r.readouts)
+            rep << "      readout [" << ro.index << "] " << ro.name << ": " << juce::String (ro.a, 6) << " then "
+                << juce::String (ro.b, 6) << " on instantiate\n";
+        if (r.readoutNote.isNotEmpty()) rep << "      " << r.readoutNote << "\n";
     }
     rep << "\nOUT OF REACH OR HELD, BY NAME\n";
     for (auto r : { Subject::Reach::heldPace, Subject::Reach::versionMismatch, Subject::Reach::notInstalled, Subject::Reach::ambiguous })
@@ -671,7 +839,30 @@ inline int runCertDefaults (const Options& opt)
            "reproduced and is never a pass. Every attempt is in run.jsonl beside this report.\n";
     opt.out.getChildFile ("report.txt").replaceWithText (rep);
     std::cout << "\n" << rep << std::endl;
-    return (differs == 0 && failed == 0) ? 0 : 1;
+    return (differs == 0 && onlyReadouts == 0 && failed == 0) ? 0 : 1;
+}
+
+//==============================================================================
+// SELF-TEST OF THE WINDOW WATCH (--cert-watch-selftest <helper>). The helper orders
+// in one 10x10 borderless window 20,000 px off every display and waits 20 s. It is
+// invisible to the user, but CoreGraphics lists it as ON SCREEN (measured 28 Sep),
+// so the test runs the PRODUCTION setting. Three cases:
+//   - the helper as the direct child: caught, killed at once, not a timeout
+//   - the helper as a GRANDCHILD (via /bin/sh, forced to fork): PACE's activation
+//     UI is a child of the probe, one level below what the driver spawns
+//   - a child that shows no window: must exit cleanly, untouched
+inline int runWatchSelfTest (const juce::File& helper)
+{
+    auto direct = runChild ({ helper.getFullPathName() }, 15000);
+    std::cout << "direct child:     " << direct.describe() << std::endl;
+    auto grand = runChild ({ "/bin/sh", "-c", "'" + helper.getFullPathName() + "'; true" }, 15000);
+    std::cout << "grandchild:       " << grand.describe() << std::endl;
+    auto quiet = runChild ({ "/bin/sleep", "1" }, 15000);
+    std::cout << "no window (ctrl): " << quiet.describe() << std::endl;
+    const bool ok = direct.kind == ChildResult::Kind::uiShown && direct.ms < 5000.0
+                 && grand.kind == ChildResult::Kind::uiShown && grand.ms < 5000.0 && quiet.cleanExit();
+    std::cout << (ok ? "WATCH SELFTEST: GREEN" : "WATCH SELFTEST: RED") << std::endl;
+    return ok ? 0 : 1;
 }
 
 } // namespace ejmap::cert

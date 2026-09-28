@@ -134,6 +134,17 @@ signed standalone probe with `--list-params`:
 - **Fatal wrapper bootstrap error.** Seen 21 Sep with an UNSIGNED harness (df407ab).
   Not seen with the signed probe.
 
+**WINDOW WATCHING IS NOW IN THE DRIVER (28 Sep), and it is the precondition for any
+PACE subject joining.** Every probe run is polled every 250 ms for ON-SCREEN windows
+owned by the probe or any descendant, found by walking parent pids. PACE's activation
+UI is a child of the probe. On the first such window the driver kills the whole tree
+and records `SHOWED A WINDOW (<owner>)`. That result is not retried: a retry would only
+put the dialog up again. `--cert-watch-selftest <helper>` proves it with a helper that
+orders in a 10x10 window 20,000 px off every display. The user never sees it, but
+CoreGraphics counts it as on screen, so the PRODUCTION setting is what gets tested. It
+was caught and killed in 0.3 s as a direct child and as a grandchild, and a child with no
+window was left alone. GREEN.
+
 So a licence problem can present as an empty instance, a hang behind an
 activation window, or an exit. The driver cannot tell these from real defects by
 the probe's output alone. It therefore needs an independent "is this licensed
@@ -190,7 +201,95 @@ assumed delay or block count:
 Measured cost on the bridge: about 45-70 ms per write to confirm, plus about 21 ms
 where the text is needed. Position-outer (16 writes), that is about 1-1.5 s per plugin.
 
-## 6. The fixture unit rule is EJ Map's
+## 6. Readouts: item 12 on the mismatch list, AGREED 28 Sep (not yet emitted)
+
+**AGREED as written below, with `null` chosen over the first sample.** The reason:
+`defaultOnInstantiate` means "the value the plugin holds on instantiate", and a meter has
+no such value. Null is the truthful encoding. The first sample is a number that looks like
+a measurement and is not. The fixture composer does not emit the field yet; that is its
+own change.
+
+A control whose value differs between two FRESH instances is a READOUT, and its
+`defaultOnInstantiate` is meaningless. Ruled 28 Sep:
+- The Shadow Hills Class A fixture records one sample of a moving meter, and no run can
+  reproduce it.
+- It is not one control. Nobody knows how many of the 1,783 are readouts, and every one
+  carries the same defect silently.
+- It protects the sweep. A meter that gets a role would be swept, and the measurement
+  would be of the meter wandering, not of anything that was set.
+
+It is a SCHEMA change, because the server will read it.
+
+**Measured (28 Sep, the driver's third run):** checked on 15 of 15 reachable products,
+two fresh instances each. 1 control moved: Shadow Hills Class A "VU Meter R", 0.189068
+then 0.186410, which is also the one field that stopped that fixture reproducing. The
+driver writes readouts only to `readouts.json` beside its report, never into a fixture,
+until the shape below is agreed. The 74 pushed fixtures are NOT re-sampled. Any meter
+samples they contain are a known, recorded condition, corrected when a machine that has
+the plugin re-runs them.
+
+**THE RULE'S LIMIT, stated with it:** it is sufficient, not necessary. A meter that
+reads the same in both instances is NOT caught. Shadow Hills' "GR Meter" and "Eye
+Meter" both read 0.000 twice. So "no readout flag" means "did not move between two
+instances", never "is a control".
+
+**THE SHAPE** (agreed; not yet emitted by the composer):
+
+```json
+"readoutCheck": { "method": "instantiate_twice", "instances": 2 },
+"controls": [
+  {
+    "index": 41, "name": "VU Meter R", "...": "...",
+    "readout": { "samples": [0.189068, 0.186410], "displays": ["", ""] },
+    "defaultOnInstantiate": {
+      "normalised": null, "display": null, "declaredDefault": 1.0,
+      "note": "a readout: its value moved between two fresh instances, so it has no instantiate value"
+    }
+  }
+]
+```
+
+- `readoutCheck` sits at fixture level, and its PRESENCE says the check ran. The 74
+  existing fixtures lack it, which reads "never checked", not "no readouts". (An
+  absence needs its presence condition.)
+- `readout` appears only on a control that moved, carrying both samples as evidence.
+- On a readout, `defaultOnInstantiate.normalised` and `.display` become `null`, and
+  `declaredDefault` stays: what the plugin CALLS its default is still a fact. The
+  alternative is to keep the first sample, which is backward-compatible but silently
+  wrong for any reader that ignores `readout`. **Recommended: null.** A reader that has
+  not learned the new field then cannot mistake a meter sample for a default, but the
+  server must handle a null `normalised`. That is the server-side change this item needs.
+- Consumer rules the server half would adopt: never give a role to a control with
+  `readout`, and never apply the threshold working-position rule to one.
+
+**LOGGED, NOT BUILT (28 Sep): a stronger readout detector.** Render mode makes it
+cheap: feed a tone and read the control afterwards. A meter moves with signal; a
+parameter does not. That would catch the meters the two-instance rule cannot, such as
+Shadow Hills' GR Meter and Eye Meter sitting at 0.000 in silence. It is deferred
+because an uncaught meter degrades gracefully: the sweep writes to it, the audio does
+not respond, and it lands in `flat` and then `uncertifiable`. Worth having; not worth
+the scope yet.
+
+## 7. What the SERVER half must handle (so it is not discovered later)
+
+The fixture schema is the contract between EJ Map and the server. These are the
+server-side obligations the Mac-side work has created so far:
+- **A null `defaultOnInstantiate.normalised` (and `.display`).** That is how a readout is
+  encoded (item 12). A reader that assumes a number must not crash on null, and must not
+  substitute a default for it.
+- **Never give a role to a control carrying `readout`.** A roled meter would be swept, and
+  the sweep would measure the meter wandering.
+- **Never apply the threshold working-position rule to a control carrying `readout`.** The
+  rule reads `defaultOnInstantiate`, which a readout does not have.
+- **Read `readoutCheck`'s ABSENCE as "never checked"**, not "no readouts". All 74 existing
+  fixtures lack it and may hold meter samples. That is a known condition, corrected per
+  product when a machine that has the plugin re-runs it, not in a bulk pass.
+- Earlier items on the same list, for completeness: `defaultOnInstantiate` and `range`
+  are OBJECTS (items 8 and 11; the spec is amended, not the fixtures); roles are absent on
+  every control (item 9, a prerequisite for the sweep); identity keyed on the XOR uid is its
+  own migration task (item 10).
+
+## 8. The fixture unit rule is EJ Map's
 
 The 74 compressor-profile fixtures derived `unit` in an uncommitted sampling
 pass. The rule is now written down and pinned:
