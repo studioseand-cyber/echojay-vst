@@ -1143,13 +1143,17 @@ static int guardMain()
             check (anyCard.isEmpty(),
                    "21t-g (6a). ...and none while it steps - no \"Listening\", no \"play the loudest part\"",
                    anyCard.isEmpty() ? juce::String ("(silent)") : anyCard);
-            // 21t-i (27 Sep 2026 ruling): PASSIVE NO LONGER STEPS. This assertion said "the drive moved toward the
-            // band" and it was right until the ruling retired that path; what is asserted now is the opposite, and
-            // the stepping it used to cover is asserted in LISTEN mode at (c) and in the 21t-i legs below.
-            check (loop.steps == 0 && loop.mode == echojay::CalibLoop::Mode::Passive
-                   && std::abs (loop.preDb - cfg.startDb) < 0.001f,
-                   "21t-g (6a) as re-ruled. ...and it moves NOTHING: set once at build, measure and ask after",
-                   juce::String (loop.steps) + " step(s), drive " + juce::String (loop.preDb, 1));
+            // 28 Sep 2026 supersedes the 21t-i reading of this leg: THE BUILD LANDS IT. Passive steps again, but
+            // only as the tail of the build and only inside the settle's budget - at most three steps - and it
+            // still does all of it without a card or a prompt, which is what the two assertions above pin.
+            check (loop.steps >= 1 && loop.steps <= echojay::CalibLoop::kSettleMaxSteps
+                   && loop.mode == echojay::CalibLoop::Mode::Passive
+                   && std::abs (loop.preDb - (cfg.startDb + (float) loop.steps)) < 0.001f,
+                   "21t-g (6a) as re-ruled twice. ...and it steps TOWARD THE BAND, one dB at a time and never "
+                   "more than the settle's three, silently",
+                   juce::String (loop.steps) + " step(s) of at most "
+                   + juce::String (echojay::CalibLoop::kSettleMaxSteps)
+                   + ", drive " + juce::String (loop.preDb, 1));
             // Silence in passive is silent too: no "Waiting for playback" prompt.
             echojay::CalibLoop::Window quiet; quiet.measured = true; quiet.silent = true;
             for (int i = 0; i < 11; ++i) loop.onWindow (quiet, 3000.0);   // past the 30 s clock
@@ -1262,11 +1266,14 @@ static int guardMain()
                     const auto st4 = loop4.onWindow (tooLittle(), 3000.0);
                     if (st4.writeParams || st4.writeDrive) ++writes;
                 }
-                check (writes == 1 && std::abs (loop4.value - (-40.0f)) < 0.001f && loop4.running(),
-                       "21t-i (6d). ...in passive the comparative's step is CLAMPED to the profile's floor and the "
-                       "loop stays alive",
-                       juce::String (writes) + " write(s), threshold " + juce::String (loop4.value, 1)
-                       + ", " + (loop4.running() ? "running" : "CLOSED"));
+                // 28 Sep 2026: the settle's own first step already took the half dB the floor allows and CLAMPED
+                // there, so the comparative that follows moves nothing at all. Both halves are the point: the
+                // profile's floor binds automatic movement and the user's word alike, and neither ends the loop.
+                check (writes == 0 && std::abs (loop4.value - (-40.0f)) < 0.001f && loop4.running(),
+                       "21t-i (6d) as re-ruled. ...in passive the floor CLAMPS the settle, and the comparative "
+                       "that follows moves nothing rather than dialling past the control",
+                       juce::String (writes) + " write(s) after the comparative, threshold "
+                       + juce::String (loop4.value, 1) + ", " + (loop4.running() ? "running" : "CLOSED"));
                 check (loop4.closingMessage().isEmpty(),
                        "21t-i (6d). ...and it still posts no closing line", loop4.closingMessage());
             }
@@ -1318,12 +1325,17 @@ static int guardMain()
             const bool ok = parse (R"({"mode":"passive","actuator":"threshold","slot":1,
                                        "param":["Input L","Input R"],"start_db":-18.2,
                                        "sense":"higher_is_harder","gr_target_db":[2,3]})", 2, c, why);
+            // 28 Sep 2026 (21t-j): THE KIND DECIDES THE SENSE. This block says actuator "threshold", so the step
+            // is lower-is-harder whatever the wire's `sense` claims; the contradiction is NAMED in the log and not
+            // followed. What survives from the old reading is the pair: two params, one start_db.
             check (ok && c.params.size() == 2 && c.params[0] == "Input L" && c.params[1] == "Input R"
-                   && c.senseSign == 1 && std::abs (c.startDb - (-18.2f)) < 0.01f && why.isEmpty(),
-                   "21t-g (6b). param as an ARRAY is a pair, and start_db applies to every entry; "
-                   "\"higher_is_harder\" reverses the step",
+                   && c.senseSign == -1 && std::abs (c.startDb - (-18.2f)) < 0.01f
+                   && why.contains ("contradicts actuator"),
+                   "21t-g (6b) as re-ruled. param as an ARRAY is a pair and start_db applies to every entry; a "
+                   "\"sense\" that contradicts the actuator KIND is named and not followed",
                    c.params.joinIntoString (" + ") + " @ " + juce::String (c.startDb, 1)
-                   + " sense " + juce::String (c.senseSign));
+                   + " sense " + juce::String (c.senseSign)
+                   + (why.isEmpty() ? juce::String (" (nothing flagged)") : " why: " + why.trim()));
         }
         // (iii) start_db NULL - the server heard under 30 s and set nothing: nothing is written
         {
@@ -1337,16 +1349,20 @@ static int guardMain()
                    juce::String (c.mode == echojay::CalibLoop::Mode::Listen ? "listen" : "passive")
                    + ", start " + (c.startDb == c.startDb ? juce::String (c.startDb, 1) : juce::String ("unset")));
         }
-        // (iv) THE VIOLATION: actuator "threshold" with sense null. Not dialled - the drive runs, and it says so.
+        // (iv) actuator "threshold" with sense null. 28 Sep 2026 (21t-j): NOT a violation any more - the KIND
+        // supplies the direction, so a threshold stays a threshold and the log says where the sense came from.
+        // Before the general compressor rule this fell back to the drive, which is what wrote Input -22.2.
         {
             echojay::CalibLoop::Config c; juce::String why;
             const bool ok = parse (R"({"mode":"passive","actuator":"threshold","slot":1,"param":"Thresh",
                                        "start_db":-13.4,"sense":null,"gr_target_db":[2,3]})", 2, c, why);
-            check (ok && c.actuator == echojay::CalibLoop::Actuator::Drive && c.params.isEmpty()
-                   && why.contains ("not ours to guess"),
-                   "21t-g (6b). threshold with sense NULL is a contract violation: the DRIVE runs instead and the "
-                   "reason is written for the log, never a guessed direction",
-                   why.trim().substring (0, 110));
+            check (ok && c.actuator == echojay::CalibLoop::Actuator::Threshold
+                   && c.params.size() == 1 && c.params[0] == "Thresh"
+                   && c.senseSign == -1 && why.contains ("from the kind"),
+                   "21t-g (6b) as re-ruled. threshold with sense NULL stays a THRESHOLD - lower-is-harder comes "
+                   "from the kind - and the log says so rather than the direction being guessed",
+                   juce::String (c.params.joinIntoString (" + ")) + " sense " + juce::String (c.senseSign)
+                   + " why: " + why.trim().substring (0, 110));
         }
         // (iv-b) actuator "drive" with start_db NULL - an unprofiled compressor in passive mode. The parser must
         // leave the value UNSET (NaN), never 0, so the caller opens from the slot_pre_gain_db staging already
@@ -1360,26 +1376,44 @@ static int guardMain()
                    "from the staging on the slot and never from 0",
                    juce::String (c.startDb == c.startDb ? juce::String (c.startDb, 2) : juce::String ("unset"))
                    + (why.isEmpty() ? juce::String() : ", why: " + why.trim()));
-            // ...and the loop, begun from the staged value, moves FROM THERE when a comparative asks it to.
-            // 21t-i: the first WINDOW no longer moves anything (set once at build); the ruling's subject here is
-            // still that the opening value is the staging and not zero, so the step is driven the way the product
-            // now drives it - by a re-targeted block - and asserted against the staged value.
+            // ...and the loop, begun from the staged value, moves FROM THERE. 28 Sep 2026: the settle moves it
+            // first, as the tail of the build, and a comparative moves it again afterwards - both from the
+            // staging. Opening at 0 would undo the staging in one move, which is what this leg has always been
+            // about; what changed is only WHO takes the first step.
             echojay::CalibLoop::Config staged = c; staged.startDb = 4.0f;    // what staging wrote on the slot
             echojay::CalibLoop loop; loop.begin (staged);
-            echojay::CalibLoop::Window w; w.measured = true; w.grDb = 0.4f; w.inTruePeakDb = -12.0f;
-            w.heardSeconds = 90.0f;
-            const auto first = loop.onWindow (w, 3000.0);
-            check (! first.writeDrive && std::abs (loop.preDb - 4.0f) < 0.01f,
-                   "21t-i (6b/c). the first judged window moves nothing: the drive stays on the staging",
-                   juce::String (loop.preDb, 1) + " dB");
-            loop.onWindow (w, 3000.0);                   // the question is posted here
+            float heard = 90.0f;
+            auto next = [&heard]
+            {
+                echojay::CalibLoop::Window w; w.measured = true; w.grDb = 0.4f; w.inTruePeakDb = -12.0f;
+                heard += 3.0f; w.heardSeconds = heard;   // heard time must advance or the window is stale
+                return w;
+            };
+            const auto first = loop.onWindow (next(), 3000.0);
+            check (first.writeDrive && std::abs (first.newPre - 5.0f) < 0.01f
+                   && std::abs (loop.preDb - 5.0f) < 0.01f,
+                   "21t-i (6b/c) as re-ruled. the settle's FIRST step moves one dB from the staging, never from "
+                   "zero", juce::String (first.newPre, 1) + " dB");
+            // Let the settle spend its budget and land.
+            for (int i = 0; i < 20 && ! loop.landed; ++i) loop.onWindow (next(), 3000.0);
+            const float settled = loop.preDb;
+            check (loop.landed && settled > 4.0f + 0.5f && loop.steps <= echojay::CalibLoop::kSettleMaxSteps,
+                   "21t-i (6b/c) as re-ruled. ...and the settle lands having stepped UP FROM THE STAGING, inside "
+                   "its budget, never from zero",
+                   juce::String (loop.steps) + " step(s), 4.0 -> " + juce::String (settled, 1) + " dB, "
+                   + (loop.landed ? "landed" : "STILL SETTLING"));
             loop.retarget (5.0f, 6.0f);                  // the user said "more"
-            // THE VERY NEXT JUDGED WINDOW spends it. Nothing has moved yet, so there is no straddled window to
-            // throw away, and the user should not wait another three seconds for the answer to "more".
-            const auto st = loop.onWindow (w, 3000.0);
-            check (st.writeDrive && std::abs (st.newPre - 5.0f) < 0.01f,
-                   "21t-g (6b/c). ...and the ONE step a comparative buys moves ONE dB from the staging, not from "
-                   "zero, on the first judged window after it", juce::String (st.newPre, 1) + " dB");
+            int writes = 0; float after = settled;
+            for (int i = 0; i < 20; ++i)
+            {
+                const auto st = loop.onWindow (next(), 3000.0);
+                if (st.writeDrive) { ++writes; after = st.newPre; }
+            }
+            check (writes == 1 && std::abs (after - (settled + 1.0f)) < 0.01f,
+                   "21t-g (6b/c) as re-ruled. ...and the ONE step a comparative buys moves ONE dB from where the "
+                   "settle left it, not from zero and not twice",
+                   juce::String (writes) + " write(s), " + juce::String (settled, 1) + " -> "
+                   + juce::String (after, 1) + " dB");
         }
 
         // (v) a mode or actuator string that is not one of the two is flagged, and the SAFE one is used
@@ -1612,14 +1646,24 @@ static int guardMain()
                 if (st.writeDrive || st.writeParams) ++writes;
                 if (st.logLine.isNotEmpty()) ++lines;
             }
-            check (writes == 0, "21t-i (1). SET ONCE: twelve judged windows 17 dB out of band move nothing",
+            // 28 Sep 2026 (the settle ruling) SUPERSEDES "set once": the BUILD lands it, taking at most three
+            // steps within 15 s of heard audio. What survives of the older ruling is the part after landing, and
+            // that is what this leg asserts now: the settle spends its budget and then nothing moves at all.
+            check (writes <= 3, "21t-i (1) as re-ruled. the settle takes AT MOST THREE steps, however far out",
                    juce::String (writes) + " write(s)");
+            int afterLanding = 0;
+            for (int i = 0; i < 12; ++i)
+            { const auto st = l.onWindow (win (20.0f, 200.0f + (float) i * 3.0f), 3000.0);
+              if (st.writeDrive || st.writeParams || st.writeSlotGain) ++afterLanding; }
+            check (l.landed && afterLanding == 0,
+                   "21t-i (1) as re-ruled. ...and AFTER LANDING twelve judged windows 17 dB out of band move "
+                   "nothing", juce::String (afterLanding) + " write(s) after landing");
             check (lines == 12, "21t-i (1). ...and every judged window still prints its line, so a loop sitting "
                    "in band and a loop that has stalled cannot look the same",
                    juce::String (lines) + " line(s) of 12");
-            check (std::abs (l.preDb - (-6.0f)) < 0.001f,
-                   "21t-i (1). ...and the knob is exactly where the build put it",
-                   juce::String (l.preDb, 2) + " dB");
+            check (l.settleSteps <= 3,
+                   "21t-i (1) as re-ruled. ...and the knob moved only inside the settle's budget",
+                   juce::String (l.settleSteps) + " step(s), drive " + juce::String (l.preDb, 2) + " dB");
         }
 
         // (2) THE QUESTION, after two judged windows, carrying the measured figure.
@@ -1630,18 +1674,22 @@ static int guardMain()
         {
             auto l = passiveDrive();
             l.blockHeardS = 80.0f;
-            const auto s1 = l.onWindow (win (5.4f, 78.0f), 3000.0);
-            check (s1.ask.isEmpty(), "21t-i (2). one judged window says nothing - two are ruled", s1.ask);
-            const auto s2 = l.onWindow (win (5.4f, 80.0f), 3000.0);
-            check (s2.ask.isNotEmpty(), "21t-i (2). the SECOND judged window posts the question", s2.ask);
-            check (s2.ask.contains ("NEOLD U2A") && s2.ask.contains ("80 s")
-                   && s2.ask.contains ("5.4 dB of gain reduction")
-                   && s2.ask.contains ("ease off") && s2.ask.contains ("more"),
-                   "21t-i (2). ...naming the plugin, what it was set from, the MEASURED figure, and the two words",
-                   s2.ask);
-            const auto s3 = l.onWindow (win (5.4f, 83.0f), 3000.0);
-            check (s3.ask.isEmpty(), "21t-i (2). ...and it asks ONCE, not on every window after",
-                   s3.ask.isEmpty() ? juce::String ("silent") : s3.ask);
+            // 28 Sep 2026: THERE IS NO ASK STATE. The build's own line completes in place when the settle lands,
+            // and that line carries the plugin, what it was set from, the measured figure and the two words.
+            juce::String completion; float h = 78.0f;
+            for (int i = 0; i < 12 && completion.isEmpty(); ++i)
+            { h += 3.0f; const auto st = l.onWindow (win (2.5f, h), 3000.0); if (st.ask.isNotEmpty()) completion = st.ask; }
+            check (completion.isNotEmpty(), "21t-i (2) as re-ruled. the settle completes the build's line", completion);
+            check (completion.contains ("NEOLD U2A") && completion.contains ("80 s")
+                   && completion.contains ("2.5 dB of gain reduction")
+                   && completion.contains ("ease off") && completion.contains ("more"),
+                   "21t-i (2) as re-ruled. ...naming the plugin, what it was set from, the MEASURED figure, and "
+                   "the two words", completion);
+            juce::String after;
+            for (int i = 0; i < 6; ++i)
+            { h += 3.0f; const auto st = l.onWindow (win (2.5f, h), 3000.0); if (st.ask.isNotEmpty()) after = st.ask; }
+            check (after.isEmpty(), "21t-i (2) as re-ruled. ...and it says it ONCE, not on every window after",
+                   after.isEmpty() ? juce::String ("silent") : after);
             check (l.closingMessage().isEmpty(),
                    "21t-i (2). ...and there is no closing line in this mode at all", l.closingMessage());
         }
@@ -1651,20 +1699,25 @@ static int guardMain()
             auto l = passiveDrive();
             l.onWindow (win (5.4f, 78.0f), 3000.0);
             l.onWindow (win (5.4f, 80.0f), 3000.0);
+            // 28 Sep 2026: the build has already taken its own step by here, so the comparative is measured
+            // against WHERE THE SETTLE LEFT IT, not against the value the block opened with. One word, one move.
+            const float before = l.preDb;
             l.retarget (5.0f, 6.0f);
-            int writes = 0; float landed = 0.0f;
-            for (int i = 0; i < 6; ++i)
+            int writes = 0; float landed = before; juce::String completion;
+            for (int i = 0; i < 12; ++i)
             {
                 const auto st = l.onWindow (win (5.4f, 84.0f + (float) i * 3.0f), 3000.0);
                 if (st.writeDrive) { ++writes; landed = st.newPre; }
+                if (st.ask.isNotEmpty()) completion = st.ask;
             }
-            check (writes == 1, "21t-i (3). a comparative buys EXACTLY ONE step over six more windows",
+            check (writes == 1, "21t-i (3). a comparative buys EXACTLY ONE step over twelve more windows",
                    juce::String (writes) + " write(s)");
-            check (std::abs (landed - (-5.0f)) < 0.001f,
-                   "21t-i (3). ...one dB harder than the build set, and no further",
-                   juce::String (landed, 2) + " dB");
-            check (l.askOwed.isNotEmpty() && l.askOwed.contains ("gain reduction"),
-                   "21t-i (3). ...and two windows later it reports the new figure and asks again", l.askOwed);
+            check (std::abs (landed - (before + 1.0f)) < 0.001f,
+                   "21t-i (3) as re-ruled. ...one dB harder than WHERE THE SETTLE LEFT IT, and no further",
+                   juce::String (before, 2) + " -> " + juce::String (landed, 2) + " dB");
+            check (completion.isNotEmpty() && completion.contains ("gain reduction"),
+                   "21t-i (3) as re-ruled. ...and the line completes again in place with the new figure",
+                   completion.isEmpty() ? juce::String ("(no completion)") : completion);
         }
 
         // (4) NO STEP WITHOUT ONE: a block whose band did NOT move is not a comparative, and buys nothing.
@@ -1694,19 +1747,28 @@ static int guardMain()
                    "21t-i (5). \"step\" on the wire is read as the threshold's step size",
                    juce::String (c.stepDb, 1) + " dB" + (why.isEmpty() ? juce::String() : " why: " + why));
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (1.0f, 60.0f), 3000.0);
-            l.onWindow (win (1.0f, 63.0f), 3000.0);
+            // 28 Sep 2026: the settle takes the block's step too, so the first move off -14.0 is three dB, and the
+            // heard time has to ADVANCE on every window or the loop rejects it as stale.
+            float heard = 60.0f;
+            auto step3 = [&heard, &win] { heard += 3.0f; return win (1.0f, heard); };
+            const auto s1 = l.onWindow (step3(), 3000.0);
+            check (s1.writeParams && std::abs (s1.paramValue - (-17.0f)) < 0.001f,
+                   "21t-i (5) as re-ruled. ...and the SETTLE moves the threshold by the block's three dB, in the "
+                   "harder direction (lower is harder)", juce::String (s1.paramValue, 1) + " dB");
+            for (int i = 0; i < 20 && ! l.landed; ++i) l.onWindow (step3(), 3000.0);
+            const float settled = l.value;
             l.retarget (4.0f, 5.0f, c.stepDb);
             float landed = -999.0f; int writes = 0;
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < 12; ++i)
             {
-                const auto st = l.onWindow (win (1.0f, 66.0f), 3000.0);
+                const auto st = l.onWindow (step3(), 3000.0);
                 if (st.writeParams) { ++writes; landed = st.paramValue; }
             }
-            check (writes == 1 && std::abs (landed - (-17.0f)) < 0.001f,
-                   "21t-i (5). ...and one comparative moves the threshold by THREE dB, once, in the harder "
-                   "direction (lower is harder)",
-                   juce::String (writes) + " write(s) -> " + juce::String (landed, 1) + " dB");
+            check (writes == 1 && std::abs (landed - (settled - 3.0f)) < 0.001f,
+                   "21t-i (5) as re-ruled. ...and one comparative moves it by THREE dB, once, from where the "
+                   "settle left it",
+                   juce::String (writes) + " write(s), " + juce::String (settled, 1) + " -> "
+                   + juce::String (landed, 1) + " dB");
         }
 
         // (7) WHAT THE SENTENCE QUOTES (21t-i re-cut ruling): the BLOCK's heard_s, never the slot tally's heard
@@ -1720,8 +1782,12 @@ static int guardMain()
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f; c.heardS = 120.0f;
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (5.4f, 3.0f), 3000.0);          // the slot has heard 3 s...
-            const auto st = l.onWindow (win (5.4f, 6.0f), 3000.0);   // ...and now 6 s
+            // 28 Sep 2026: the sentence arrives when the SETTLE LANDS rather than after two windows. What it
+            // quotes is unchanged and is what this leg is about.
+            juce::String ask; float h = 0.0f;
+            for (int i = 0; i < 20 && ask.isEmpty(); ++i)
+            { h += 3.0f; const auto w = l.onWindow (win (5.4f, h), 3000.0); ask = w.ask; }
+            echojay::CalibLoop::Step st; st.ask = ask;
             check (st.ask.contains ("set from 120 s of this track"),
                    "21t-i (7). the question quotes the BLOCK's heard_s  (RED as it stood: it quoted the slot "
                    "tally's heard time, which is the age of the slot)", st.ask);
@@ -1736,8 +1802,10 @@ static int guardMain()
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = 0.0f; c.working = true;
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (2.5f, 40.0f), 3000.0);
-            const auto st = l.onWindow (win (2.5f, 43.0f), 3000.0);
+            juce::String ask; float h = 40.0f;
+            for (int i = 0; i < 20 && ask.isEmpty(); ++i)
+            { h += 3.0f; const auto w = l.onWindow (win (2.5f, h), 3000.0); ask = w.ask; }
+            echojay::CalibLoop::Step st; st.ask = ask;
             check (st.ask.contains ("set from the working position") && ! st.ask.contains (" s of this track"),
                    "21t-i (7). source \"working_position\": the sentence says where it came from instead of "
                    "quoting a measurement nobody made", st.ask);
@@ -1750,9 +1818,13 @@ static int guardMain()
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = 0.0f;                                  // heardS left NaN
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (2.5f, 55.0f), 3000.0);
-            const auto st = l.onWindow (win (2.5f, 58.0f), 3000.0);
-            check (st.ask.startsWith ("Pro-C 2 is on, doing about")
+            juce::String ask; float h = 55.0f;
+            for (int i = 0; i < 20 && ask.isEmpty(); ++i)
+            { h += 3.0f; const auto w = l.onWindow (win (2.5f, h), 3000.0); ask = w.ask; }
+            echojay::CalibLoop::Step st; st.ask = ask;
+            // The completed line's shape, ruled 28 Sep: "<plugin> on." then the figure. The clause is still
+            // OMITTED rather than stubbed, which is the whole of this leg.
+            check (st.ask.startsWith ("Pro-C 2 on. Doing about")
                    && ! st.ask.contains ("set from") && st.ask.contains ("gain reduction"),
                    "21t-i (7). a block with no heard_s and no working-position flag omits the clause entirely - it "
                    "quotes no figure and does not read as a stutter",
@@ -1768,19 +1840,22 @@ static int guardMain()
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f; c.heardS = 90.0f;
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (5.4f, 90.0f), 3000.0);
-            l.onWindow (win (5.4f, 93.0f), 3000.0);            // asked
+            float h = 90.0f;
+            auto w = [&h, &win] (float gr) { h += 3.0f; return win (gr, h); };
+            for (int i = 0; i < 20 && ! l.landed; ++i) l.onWindow (w (5.4f), 3000.0);   // the build lands first
+            const float before = l.preDb;
             l.retarget (2.0f, 3.0f, c.stepDb, -1, true);        // THE SAME BAND, nudge "softer"
-            int writes = 0; float landed = 0.0f;
-            for (int i = 0; i < 4; ++i)
+            int writes = 0; float landed = before;
+            for (int i = 0; i < 12; ++i)
             {
-                const auto st = l.onWindow (win (5.4f, 96.0f), 3000.0);
+                const auto st = l.onWindow (w (5.4f), 3000.0);
                 if (st.writeDrive) { ++writes; landed = st.newPre; }
             }
-            check (writes == 1 && std::abs (landed - (-7.0f)) < 0.001f,
-                   "21t-i (8). a re-target with the SAME band and nudge \"softer\" buys exactly one softer step  "
-                   "(RED as it stood: an unmoved band bought nothing)",
-                   juce::String (writes) + " write(s) -> " + juce::String (landed, 2) + " dB");
+            check (writes == 1 && std::abs (landed - (before - 1.0f)) < 0.001f,
+                   "21t-i (8) as re-ruled. a re-target with the SAME band and nudge \"softer\" buys exactly one "
+                   "softer step from where the settle left it  (RED as it stood: an unmoved band bought nothing)",
+                   juce::String (writes) + " write(s), " + juce::String (before, 2) + " -> "
+                   + juce::String (landed, 2) + " dB");
         }
         // ...and with NO band at all, the loop keeps the band it has and still takes the step.
         {
@@ -1790,19 +1865,23 @@ static int guardMain()
             c.actuator = echojay::CalibLoop::Actuator::Drive;
             c.startDb = -6.0f;
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (5.4f, 90.0f), 3000.0);
-            l.onWindow (win (5.4f, 93.0f), 3000.0);
+            float h = 90.0f;
+            auto w = [&h, &win] (float gr) { h += 3.0f; return win (gr, h); };
+            for (int i = 0; i < 20 && ! l.landed; ++i) l.onWindow (w (5.4f), 3000.0);
+            const float before = l.preDb;
             l.retarget (0.0f, 0.0f, 0.0f, 1, false);            // no band on the block
-            int writes = 0; float landed = 0.0f;
-            for (int i = 0; i < 3; ++i)
+            int writes = 0; float landed = before;
+            for (int i = 0; i < 12; ++i)
             {
-                const auto st = l.onWindow (win (5.4f, 96.0f), 3000.0);
+                const auto st = l.onWindow (w (5.4f), 3000.0);
                 if (st.writeDrive) { ++writes; landed = st.newPre; }
             }
-            check (writes == 1 && std::abs (landed - (-5.0f)) < 0.001f
+            check (writes == 1 && std::abs (landed - (before + 1.0f)) < 0.001f
                    && std::abs (l.lo - 2.0f) < 0.001f && std::abs (l.hi - 3.0f) < 0.001f,
-                   "21t-i (8). ...and a block with no band keeps the loop's band and still takes the nudge's step",
-                   juce::String (writes) + " write(s) -> " + juce::String (landed, 2) + " dB, band "
+                   "21t-i (8) as re-ruled. ...and a block with no band keeps the loop's band and still takes the "
+                   "nudge's step",
+                   juce::String (writes) + " write(s), " + juce::String (before, 2) + " -> "
+                   + juce::String (landed, 2) + " dB, band "
                    + juce::String (l.lo, 1) + "-" + juce::String (l.hi, 1));
         }
         // ...and the wire literals: "harder"/"softer" parse, anything else is named in the log and ignored.
@@ -1836,8 +1915,10 @@ static int guardMain()
                    "heard_s " + juce::String (c.heardS, 0) + ", nudge " + juce::String (c.nudge)
                    + ", step " + juce::String (c.stepDb, 1) + (why.isEmpty() ? juce::String() : " why: " + why));
             echojay::CalibLoop l; l.begin (c);
-            l.onWindow (win (5.4f, 9.0f), 3000.0);
-            const auto st = l.onWindow (win (5.4f, 12.0f), 3000.0);
+            juce::String ask; float h = 6.0f;
+            for (int i = 0; i < 20 && ask.isEmpty(); ++i)
+            { h += 3.0f; const auto wnd = l.onWindow (win (5.4f, h), 3000.0); ask = wnd.ask; }
+            echojay::CalibLoop::Step st; st.ask = ask;
             check (st.ask.contains ("set from 84 s of this track"),
                    "21t-i (8). ...and the sentence quotes that block's 84 s, with the slot only 12 s old", st.ask);
         }
@@ -1857,6 +1938,146 @@ static int guardMain()
                    juce::String (asks.size()) + " line(s)");
             check (asks.size() == 1 && asks[0].contains ("play it and I'll tell you what it's doing"),
                    "21t-i (6). ...in the ruled words", asks.isEmpty() ? juce::String ("(none)") : asks[0]);
+        }
+    }
+
+    // ===============================================================================================
+    // 21t-j (28 Sep 2026 ruling): THE SETTLE IS THE TAIL OF THE BUILD. One build, one line: the build posts the
+    // opening line, the settle completes THAT line in place, at most three steps within 15 s of HEARD audio, and
+    // after landing nothing moves except on a comparative.
+    // ===============================================================================================
+    {
+        std::printf ("\n== 21t-j: the settle is the tail of the build ==\n");
+        // A window with the two ruled sensors on it: the crest difference and the level change.
+        auto win = [] (float gr, float levelChange, float heard)
+        {
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false;
+            w.grDb = gr; w.levelChangeDb = levelChange; w.heardSeconds = heard; w.inTruePeakDb = -12.0f;
+            return w;
+        };
+        auto buildLoop = [] ()
+        {
+            echojay::CalibLoop::Config c;
+            c.plugin = "Mock Comp"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+            c.mode = echojay::CalibLoop::Mode::Passive;
+            c.actuator = echojay::CalibLoop::Actuator::Drive;
+            c.startDb = 0.0f; c.heardS = 90.0f;
+            echojay::CalibLoop l; l.begin (c); return l;
+        };
+        {   // THE OPENING LINE, at the build, before any audio.
+            auto l = buildLoop();
+            check (l.askOwed.contains ("Mock Comp on") && l.askOwed.contains ("landing it as it plays"),
+                   "21t-j (settle). the BUILD posts one line and it promises what the product then does",
+                   l.askOwed);
+            check (! l.askOwed.contains ("How's that sounding"),
+                   "21t-j (settle). ...and it asks for nothing: there is no ask state any more", l.askOwed);
+            check (l.settling && ! l.landed, "21t-j (settle). ...and the settle is open");
+        }
+        {   // IT LANDS, and the SAME line completes in place.
+            auto l = buildLoop();
+            l.askOwed.clear();
+            float heard = 90.0f;
+            juce::String completion; bool replaces = false; int writes = 0;
+            for (int i = 0; i < 12 && completion.isEmpty(); ++i)
+            {
+                heard += 3.0f;
+                const auto st = l.onWindow (win (2.5f, 0.2f, heard), 3000.0);
+                if (st.writeDrive || st.writeParams || st.writeSlotGain) ++writes;
+                if (st.ask.isNotEmpty()) { completion = st.ask; replaces = st.askReplacesOpening; }
+            }
+            check (completion.isNotEmpty() && replaces,
+                   "21t-j (settle). the settle completes the SAME line in place, not a second message", completion);
+            check (completion.contains ("2.5 dB of gain reduction"),
+                   "21t-j (settle). ...quoting the MEASURED crest difference, positive", completion);
+            check (l.landed && ! l.settling, "21t-j (settle). ...and it has landed");
+            check (l.settleSteps == 0 && writes == 0,
+                   "21t-j (settle). ...with no step at all, because it was already in band",
+                   juce::String (l.settleSteps) + " step(s), " + juce::String (writes) + " write(s)");
+        }
+        {   // OUT OF BAND: at most three steps, and it lands anyway.
+            auto l = buildLoop();
+            l.askOwed.clear();
+            float heard = 90.0f; int writes = 0; juce::String completion;
+            for (int i = 0; i < 30 && completion.isEmpty(); ++i)
+            {
+                heard += 3.0f;
+                const auto st = l.onWindow (win (0.2f, 0.2f, heard), 3000.0);
+                if (st.writeDrive) ++writes;
+                if (st.ask.isNotEmpty()) completion = st.ask;
+            }
+            check (l.settleSteps <= 3 && writes <= 3,
+                   "21t-j (settle). NEVER MORE THAN THREE STEPS, however far out of band it is",
+                   juce::String (l.settleSteps) + " step(s), " + juce::String (writes) + " write(s)");
+            check (completion.isNotEmpty() && l.landed,
+                   "21t-j (settle). ...and it still lands, and still says what it landed on", completion);
+            check (completion.contains ("less than the 2-3 I'm after"),
+                   "21t-j (settle). ...naming the band when the figure is outside it", completion);
+        }
+        {   // A BUILD WITH NO AUDIO: one line, no second write, no state change.
+            auto l = buildLoop();
+            const auto opening = l.askOwed; l.askOwed.clear();
+            echojay::CalibLoop::Window silent; silent.measured = true; silent.silent = true;
+            int writes = 0; juce::String said;
+            for (int i = 0; i < 40; ++i)
+            {
+                const auto st = l.onWindow (silent, 3000.0);
+                if (st.writeDrive || st.writeParams || st.writeSlotGain) ++writes;
+                if (st.ask.isNotEmpty()) said = st.ask;
+            }
+            check (writes == 0 && ! l.landed,
+                   "21t-j (settle). a build with NO AUDIO moves nothing and does not land - it waits, for as long "
+                   "as it takes", juce::String (writes) + " write(s)");
+            check (opening.contains ("landing it as it plays"),
+                   "21t-j (settle). ...and the line it posted still says what it is waiting for", opening);
+            // ...and audio arriving much later completes THE SAME line, one line not two.
+            float heard = 90.0f; juce::String completion;
+            for (int i = 0; i < 12 && completion.isEmpty(); ++i)
+            { heard += 3.0f; const auto st = l.onWindow (win (2.4f, 0.1f, heard), 3000.0);
+              if (st.ask.isNotEmpty()) completion = st.ask; }
+            check (completion.isNotEmpty() && l.landed,
+                   "21t-j (settle). audio arriving later completes the same line - one line, not two", completion);
+        }
+        {   // THE HEARD-AUDIO BUDGET, not the clock: 15 s of heard audio ends the settle.
+            auto l = buildLoop();
+            l.askOwed.clear();
+            float heard = 90.0f; juce::String completion;
+            for (int i = 0; i < 40 && completion.isEmpty(); ++i)
+            { heard += 3.0f; const auto st = l.onWindow (win (0.1f, 0.0f, heard), 3000.0);
+              if (st.ask.isNotEmpty()) completion = st.ask; }
+            // The figure counts ALL heard audio inside the settle, including the windows spent waiting for three
+            // fresh ones after each write - which is what "15 s of heard audio" means for a settle that is
+            // allowed to step. What matters is that the budget ENDS it: it landed, and it did not run on.
+            check (l.landed && l.settleHeardS >= 15.0f && completion.isNotEmpty(),
+                   "21t-j (settle). the budget is HEARD seconds, and spending it lands the line",
+                   juce::String (l.settleHeardS, 1) + " s heard, " + juce::String (l.settleSteps) + " step(s)");
+        }
+        {   // A USER EDIT CANCELS IT: the line closes with the setting as it stands.
+            auto l = buildLoop();
+            l.askOwed.clear();
+            l.onWindow (win (0.2f, 0.0f, 93.0f), 3000.0);
+            const auto line = l.cancelSettle ("an edit moved slot 1");
+            check (line.isNotEmpty() && l.landed && ! l.settling,
+                   "21t-j (settle). a user edit CANCELS the settle", line.substring (0, 80));
+            check (l.askOwed.contains ("Mock Comp on") && ! l.askOwed.contains ("landing it as it plays"),
+                   "21t-j (settle). ...and the line closes with the setting as it stands", l.askOwed);
+        }
+        {   // AFTER LANDING nothing moves for a long run of windows.
+            auto l = buildLoop();
+            l.askOwed.clear();
+            float heard = 90.0f; juce::String completion;
+            for (int i = 0; i < 12 && completion.isEmpty(); ++i)
+            { heard += 3.0f; const auto st = l.onWindow (win (2.5f, 0.1f, heard), 3000.0);
+              if (st.ask.isNotEmpty()) completion = st.ask; }
+            int writes = 0, lines = 0;
+            for (int i = 0; i < 40; ++i)     // 120 s of windows after landing
+            { heard += 3.0f; const auto st = l.onWindow (win (0.1f, 4.0f, heard), 3000.0);
+              if (st.writeDrive || st.writeParams || st.writeSlotGain) ++writes;
+              if (st.ask.isNotEmpty()) ++lines; }
+            check (writes == 0 && lines == 0,
+                   "21t-j (settle). AFTER LANDING nothing moves and nothing is said, for 120 s of windows, even "
+                   "with the figures well out of band", juce::String (writes) + " write(s), "
+                   + juce::String (lines) + " line(s)");
         }
     }
 

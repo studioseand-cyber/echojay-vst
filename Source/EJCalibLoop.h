@@ -115,6 +115,18 @@ struct CalibLoop
     //               for 190 windows through transport stops and a 2.8 dB actuator move.
     int    freshWanted = 0;
     float  lastHeardS  = -1.0f;
+    // ---- THE SETTLE IS THE TAIL OF THE BUILD (28 Sep 2026 ruling) -------------------------------------------
+    // One build, one chat line. The build is not complete until the slot has heard the vocal and landed, and the
+    // SAME line completes in place. No ask state, no "check it", no timer: a build waits for audio as long as it
+    // takes, HEARD time counts rather than clock time, and a stop pauses the settle while play resumes it. At most
+    // three steps within 15 s of heard audio; after landing nothing moves except on a comparative.
+    bool   settling   = false;
+    bool   landed     = false;
+    int    settleSteps = 0;
+    float  settleHeardS = 0.0f;
+    float  settleStartHeardS = -1.0f;
+    static constexpr int   kSettleMaxSteps  = 3;      // ruled
+    static constexpr float kSettleMaxHeardS = 15.0f;  // ruled, in HEARD seconds
     // The output/makeup control, when the block named one, and what the loop last wrote to it.
     juce::StringArray senseParams;     // the plugin's own GR meter, when the block named one
     bool   grReadable = false;         // ...and whether the block says it reads as dB
@@ -174,6 +186,10 @@ struct CalibLoop
         // 21t-i: the measure-and-ask line. ONE chat line, posted as it stands - the report of what was measured and
         // the question that invites a comparative. Empty on every window that is not a reporting one.
         juce::String ask;
+        // 21t-j (a): TRUE when this line REPLACES the opening one in place, rather than being a new message. The
+        // transcript carries the line's current text only - the opening line while pending, the completed line
+        // once landed, never both.
+        bool  askReplacesOpening = false;
         // 21t-j: the level hold. A second write, to a DIFFERENT control from the actuator, and reported in words.
         bool  writeOutput = false;
         juce::StringArray outputNames;
@@ -414,8 +430,9 @@ struct CalibLoop
                 const auto omx = o->getProperty ("output_max_db");
                 out.outputMaxDb = omx.isVoid() ? 0.0f : (float) (double) omx;
             }
-            if (out.outputParams.isEmpty())
-                whyOut << "no output_param on the block: the level change can be measured and reported but not held. ";
+            // NO NOTE when the block names no output control: since 21t-j the hold falls back to EchoJay's own
+            // per-slot output gain, so this is a choice of actuator, not a deficiency. Which one was used is
+            // logged at the moment the hold is written, where it can be checked against the audio.
         }
 
         // ---- step: how far ONE comparative moves the knob (21t-i, 27 Sep 2026 ruling) ----------------------
@@ -467,6 +484,10 @@ struct CalibLoop
         outMin = juce::jmin (c.outputMinDb, c.outputMaxDb); outMax = juce::jmax (c.outputMinDb, c.outputMaxDb);
         levelChangeDb = 0.0f; levelTrimmedDb = 0.0f; levelHeld = false; slotGainDb = 0.0f;
         blockHeardS = c.heardS; fromWorking = c.working;
+        // THE BUILD OPENS THE SETTLE (28 Sep 2026 ruling) and says so in ONE line, which the completion edits in
+        // place. No ask state, no timer: the build is not complete until the slot has heard the vocal and landed.
+        settling = true; landed = false; settleSteps = 0; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        askOwed = openingLine();
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
         value = c.startDb;
@@ -493,6 +514,7 @@ struct CalibLoop
         stepDb = kStepDb; judged = 0; asked = false; noSignalSaid = false;
         pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0; askOwed.clear();
         freshWanted = 0; lastHeardS = -1.0f;
+        settling = false; landed = false; settleSteps = 0; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
         blockHeardS = std::numeric_limits<float>::quiet_NaN(); fromWorking = false;
         state = State::Listening;
     }
@@ -548,6 +570,13 @@ struct CalibLoop
         // further, or the user gets two moves for one word - which is exactly what -24.0 then -21.2 was.
         if (blockCarriedStart) pendingStep = 0;
         judged = 0; asked = false;
+        // A COMPARATIVE REOPENS THE LINE (ruled): the user asked for a change, so the same shape runs again - the
+        // step, then the completed line in place. A chain_edit carrying start_db is the user's own move and starts
+        // no settle: pendingStep is already 0 there, and landing is immediate on the next judged window.
+        // THE COMPARATIVE'S OWN STEP IS THE SETTLE'S STEP. The budget opens SPENT, so the next judged window
+        // after the move lands and completes the line in place; leaving a step in the budget would give the user
+        // two moves for one word, which is the -24.0-then-21.2 fault this round closed.
+        if (pendingStep != 0) { landed = false; settling = true; settleSteps = kSettleMaxSteps; settleHeardS = 0.0f; settleStartHeardS = -1.0f; }
         // AND THE NEXT WINDOW IS JUDGED. awaitFresh exists because a window that straddles a KNOB MOVE is a window
         // about two settings; a re-target on its own has moved nothing yet, so skipping a window here would only
         // make the user wait another three seconds for the answer to "more".
@@ -564,6 +593,17 @@ struct CalibLoop
     }
 
     bool running() const { return state == State::Listening || state == State::Waiting; }
+    /** 21t-j (28 Sep 2026 ruling): THE PENDING BUILD IS CANCELLED by any user or chat edit to that slot, or by the
+        plugin being removed or replaced. The line closes with the setting AS IT STANDS - it does not vanish, and it
+        does not keep promising to land something that nobody is landing any more. */
+    juce::String cancelSettle (const juce::String& why)
+    {
+        if (! settling || landed) return {};
+        settling = false; landed = true; asked = true;
+        askOwed = completedLine();
+        return log (("cancelled: " + why).toRawUTF8());
+    }
+
     /** True when this loop moves a NAMED control on the plugin rather than EchoJay's own gain stage. */
     bool writesNamedParam() const { return actuator == Actuator::Threshold || actuator == Actuator::Input; }
     /** The sense, from the KIND and nothing else (ruled 28 Sep 2026): -1 = lower is harder, +1 = higher. */
@@ -741,7 +781,9 @@ struct CalibLoop
         // 21t-j (ruled): WITH NO OUTPUT CONTROL NAMED, the hold goes to EchoJay's own per-slot output gain, which
         // every slot has after this cut. "The slot's output equals its input within 1 dB" is then a promise the
         // product keeps on any plugin, not one that depends on what the plugin publishes.
-        if (! levelHeld && std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
+        // 21t-j (ruled): the hold belongs to the SETTLE. After landing nothing moves at all until a comparative
+        // reopens it - a slot that drifts out of level later is not something the product quietly corrects.
+        if (! landed && ! levelHeld && std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
         {
             slotGainDb = juce::jlimit (-24.0f, 12.0f, slotGainDb - levelChangeDb);
             levelTrimmedDb = -levelChangeDb;
@@ -752,7 +794,7 @@ struct CalibLoop
             s.card = card(); s.logLine = log ("level-hold-slot");
             return s;
         }
-        if (! levelHeld && std::abs (levelChangeDb) > 1.0f && ! outParams.isEmpty() && outValue == outValue)
+        if (! landed && ! levelHeld && std::abs (levelChangeDb) > 1.0f && ! outParams.isEmpty() && outValue == outValue)
         {
             const float want = juce::jlimit (outMin, outMax, outValue - levelChangeDb);
             const float moved = want - outValue;
@@ -770,18 +812,62 @@ struct CalibLoop
             levelHeld = true;   // at the control's limit: nothing more to give, and the reply will say so
         }
 
-        // TWO JUDGED WINDOWS, THEN IT SPEAKS. Once. The next word comes from the user, or from the next block.
-        if (judged >= kAskAfter && ! asked)
+        // ---- THE SETTLE: the tail of the build (28 Sep 2026 ruling) ----------------------------------------
+        // HEARD time counts, not clock time: a stop mid-settle simply stops adding to it, and playing resumes it.
+        if (settleStartHeardS < 0.0f) settleStartHeardS = slotHeardS;
+        settleHeardS = juce::jmax (0.0f, slotHeardS - settleStartHeardS);
+
+        if (settling && ! landed)
         {
-            asked = true;
-            askOwed = askMessage();
+            const float gr = measuredGrDb();
+            const bool inBand = (gr == gr) && gr >= lo - 0.05f && gr <= hi + 0.05f;
+            const bool budget = settleSteps < kSettleMaxSteps && settleHeardS <= kSettleMaxHeardS;
+            if (! inBand && budget && gr == gr)
+            {
+                // ONE STEP TOWARD THE BAND. This is the only automatic movement the product makes, it belongs to
+                // the build, and it is bounded by both a step count and HEARD audio.
+                const bool harder = gr < lo;
+                ++settleSteps;
+                if (writesNamedParam())
+                {
+                    const float want = juce::jlimit (minDb, maxDb,
+                                            value + (harder ? (float) senseSign : -(float) senseSign) * stepDb);
+                    if (std::abs (want - value) > 1.0e-4f)
+                    {
+                        value = want; ++steps;
+                        s.writeParams = true; s.paramNames = params; s.paramValue = value;
+                    }
+                }
+                else
+                {
+                    const float want = juce::jlimit (-kDriveLimit, kDriveLimit, preDb + (harder ? kStepDb : -kStepDb));
+                    if (std::abs (want - preDb) > 1.0e-4f)
+                    {
+                        preDb = want; value = preDb; ++steps;
+                        s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
+                    }
+                }
+                if (s.writeParams || s.writeDrive) { freshWanted = kFreshAfterWrite; levelHeld = false; }
+                awaitFresh = true;
+                s.card = card();
+                s.logLine = log (s.writeParams || s.writeDrive ? "settling" : "settle-at-the-limit");
+                if (s.writeParams || s.writeDrive) return s;
+            }
+            // LANDED: in the band, or the step budget or the heard-audio budget is spent. The SAME line completes
+            // in place - not a second message (ruled (a)).
+            landed = true; settling = false; asked = true;
+            askOwed = completedLine();
             s.ask = askOwed;
+            s.askReplacesOpening = true;
             s.card = card();
-            s.logLine = log ("asked");
+            s.logLine = log (inBand ? "landed" : (settleSteps >= kSettleMaxSteps ? "landed-step-budget"
+                                                                                 : "landed-heard-budget"));
             return s;
         }
+
+        // AFTER LANDING nothing moves except on a comparative, and nothing is said.
         s.card = card();
-        s.logLine = log (asked ? "holding" : "measuring");
+        s.logLine = log (landed ? "holding" : "measuring");
         return s;
     }
 
@@ -811,6 +897,38 @@ struct CalibLoop
         if (mag < lo - 0.05f)
             return " - less than the " + juce::String (lo, 0) + "-" + juce::String (hi, 0) + " I'm after";
         return {};
+    }
+
+    /** THE OPENING LINE (ruled): posted by the build itself and edited in place when the settle lands. It promises
+        exactly what the product then does - land it as it plays - and asks for nothing. */
+    juce::String openingLine() const
+    {
+        const juce::String from = fromWorking
+            ? juce::String (", set from the working position")
+            : (blockHeardS == blockHeardS
+                   ? ", set from " + juce::String (juce::roundToInt (blockHeardS)) + " s of this track"
+                   : juce::String());
+        return plugin + " on" + from + ", landing it as it plays...";
+    }
+
+    /** THE COMPLETED LINE: the same line, finished. Every figure in it is a meter sample. */
+    juce::String completedLine() const
+    {
+        const juce::String from = fromWorking
+            ? juce::String (", set from the working position")
+            : (blockHeardS == blockHeardS
+                   ? ", set from " + juce::String (juce::roundToInt (blockHeardS)) + " s of this track"
+                   : juce::String());
+        juce::String out = plugin + " on" + from + ".";
+        const float gr = measuredGrDb();
+        if (gr == gr)
+            out += " Doing about " + juce::String (gr, 1) + " dB of gain reduction" + bandNote() + ".";
+        if (std::abs (levelTrimmedDb) > 0.05f)
+            out += " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
+        else if (std::abs (levelChangeDb) > 1.0f)
+            out += " It is " + juce::String (std::abs (levelChangeDb), 1) + " dB "
+                 + (levelChangeDb > 0.0f ? "louder" : "quieter") + " through the plugin and I could not hold it.";
+        return out + " Say 'ease off' or 'more'.";
     }
 
     juce::String askMessage() const
@@ -950,6 +1068,11 @@ struct CalibLoop
         o->setProperty ("levelTrimmedDb", (double) levelTrimmedDb);
         o->setProperty ("levelChangeDb", (double) levelChangeDb);
         o->setProperty ("slotGainDb", (double) slotGainDb);
+        o->setProperty ("settling", settling);
+        o->setProperty ("landed", landed);
+        o->setProperty ("settleSteps", settleSteps);
+        o->setProperty ("settleHeardS", (double) settleHeardS);
+        o->setProperty ("settleStartHeardS", (double) settleStartHeardS);
         o->setProperty ("levelHeld", levelHeld);
         o->setProperty ("senseParams", senseParams.joinIntoString ("\n"));
         o->setProperty ("grReadable", grReadable);
@@ -1017,6 +1140,12 @@ struct CalibLoop
           c.levelTrimmedDb = (float) (double) o->getProperty ("levelTrimmedDb");
           c.levelChangeDb = (float) (double) o->getProperty ("levelChangeDb");
           c.slotGainDb = (float) (double) o->getProperty ("slotGainDb");
+          c.settling = (bool) o->getProperty ("settling");
+          c.landed = (bool) o->getProperty ("landed");
+          c.settleSteps = (int) o->getProperty ("settleSteps");
+          c.settleHeardS = (float) (double) o->getProperty ("settleHeardS");
+          c.settleStartHeardS = o->hasProperty ("settleStartHeardS")
+                                  ? (float) (double) o->getProperty ("settleStartHeardS") : -1.0f;
           c.levelHeld = (bool) o->getProperty ("levelHeld");
           const auto sp = o->getProperty ("senseParams").toString();
           if (sp.isNotEmpty()) c.senseParams.addLines (sp);
@@ -1038,6 +1167,10 @@ struct CalibLoop
                     ? " " + knobText() + "=" + signed1 (value)
                     : " pre=" + signed1 (preDb) + " post=" + signed1 (-preDb))
              + " mode=" + juce::String (mode == Mode::Passive ? "passive" : "listen")
+             + (settling || landed
+                    ? " settle=" + juce::String (settleSteps) + "/" + juce::String (kSettleMaxSteps)
+                      + " heard=" + juce::String (settleHeardS, 1) + "s"
+                    : juce::String())
              + " state=" + stateWord;
     }
 
