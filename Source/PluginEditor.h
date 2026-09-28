@@ -3724,6 +3724,14 @@ private:
     double trimVerifyDeadlineMs_ = 0.0;
     juce::String trimVerifyWhat_;              // what to call them in the sentence ("channels in \"Lead Vocals\"")
     void beginTrimVerification (const juce::String& what, double timeoutMs = 3000.0);
+    // ---- 21t-j (a): ONE BUBBLE FOR THE SETTLE, EDITED IN PLACE ----------------------------------------------
+    // The build posts its opening line and the settle completes THAT line, never a second message. The transcript
+    // carries the line's current text only - the opening line while pending, the completed line once landed - so a
+    // request that goes out mid-settle carries the opening line and one that goes out after carries the finished
+    // one. Keyed by the rack the settle belongs to ("" = this instance's own).
+    std::map<juce::String, int> settleMsgIdx_;
+    /** Post the settle's line, or rewrite the one already posted for that rack. */
+    void postOrReplaceSettleLine (const juce::String& uid, const juce::String& text, bool replacesOpening);
     void pollTrimVerification();               // called from the 1 Hz tick; posts the bubble when it can
     /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
     int applyGroupLevelMatch (const juce::var& membersVar);
@@ -4465,6 +4473,14 @@ private:
         once per strip per paint, from paintLinkStrip; renderers consume. */
     struct LinkStripDerived { bool psrValid = false, plrValid = false; };
     static LinkStripDerived advanceLinkStripSmoothing(LinkStripState& st, bool fresh);
+    /** 21t-j (28 Sep 2026 ruling): THE ABSOLUTE GATE. -70 LUFS is the level BS.1770 itself uses to decide a
+        block is not programme at all; below it there is no loudness reading to draw, and no ratio to derive
+        from one. Every loudness figure the UI prints answers to this one number. */
+    static constexpr float kLufsAbsGate = -70.0f;
+    /** ONE cell table for the numbers renderer, so the gate cannot be applied in the painter and forgotten in
+        a test (or the other way round). The painter draws exactly what this returns. */
+    struct StripCell { const char* label; float v; bool valid; juce::Colour col; };
+    static void linkStripCells(const LinkStripState& st, const LinkStripDerived& d, StripCell (&out)[6]);
     /** The numbers renderer: loudness-suite cells stacked vertically in the
         strip's data area. Cells that do not fit the height are DROPPED whole
         (LRA first, then PLR), never crammed or half-drawn.

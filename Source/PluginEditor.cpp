@@ -7111,8 +7111,11 @@ EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
     // once per strip per paint, because a double advance doubles the attack.
     const auto& mf = st.frame;
     LinkStripDerived d;
-    d.psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > -90.0f;
-    d.plrValid = mf.truePeakMax > -90.0f && mf.integrated > -90.0f;
+    // 21t-j (28 Sep 2026 ruling): A RATIO OFF A GATED-OUT WINDOW IS NOT A READING. PSR and PLR are a true peak
+    // minus a LOUDNESS figure, so when that loudness figure is below the -70 LUFS absolute gate there is nothing
+    // to subtract from and the cell draws "--". The VOCALS bus strip read PSR 6.7 in amber off MOM/SHORT -85.6.
+    d.psrValid = mf.shortTermTP > -90.0f && mf.shortTerm > kLufsAbsGate;
+    d.plrValid = mf.truePeakMax > -90.0f && mf.integrated > kLufsAbsGate;
     const float psrRaw = d.psrValid ? mf.shortTermTP - mf.shortTerm : 0.0f;
     const float plrRaw = d.plrValid ? mf.truePeakMax - mf.integrated : 0.0f;
     if (fresh)
@@ -7143,6 +7146,42 @@ EchoJayEditor::advanceLinkStripSmoothing(LinkStripState& st, bool fresh)
     return d;
 }
 
+/** THE CELL TABLE, and the ONE place the absolute gate is applied to what the strip draws.
+
+    21t-j (28 Sep 2026 ruling): A FIGURE AT THE FLOOR IS NOT A READING, and the line is the -70 LUFS ABSOLUTE
+    GATE - the same gate BS.1770 uses to decide a block is not programme at all. The publisher blanks to -100
+    and the strip's smoother crawls toward it, so a channel with nothing to say printed "-98.8", and the VOCALS
+    bus with nothing on it printed MOM -85.6, SHORT -85.6 and a PSR of 6.7 in amber. All of those read as a
+    measurement of near silence rather than as the absence of one.
+
+    It is a function, not a table inside the painter, so a guard asserts on the SAME cells the painter draws.
+    LRA is deliberately not gated here: it is a range in LU, not a loudness figure, and it has its own gating
+    inside the measurement. */
+void EchoJayEditor::linkStripCells(const LinkStripState& st, const LinkStripDerived& d, StripCell (&out)[6])
+{
+    const auto coral = juce::Colour(0xffff6d5a);
+    const auto amber = juce::Colour(0xfff59e0b);
+
+    // Same values, validity gates and zone colours as the horizontal cells;
+    // SHORT labels because 38px is the narrow inner width. Display order
+    // puts LRA last then PLR, so dropping from the end reproduces the old
+    // width-budget priority (LRA goes first, then PLR).
+    // Console pass: readings are grey; colour appears only where it MEANS
+    // level (MOM hot in coral, PSR zones with green for healthy, since cyan
+    // is reserved for selection in this tab).
+    const StripCell all[6] = {
+        { "MOM",   st.smMom,   st.smMom   > kLufsAbsGate,
+          st.smMom > -6.0f ? coral : LinkConsole::value },
+        { "SHORT", st.smShort, st.smShort > kLufsAbsGate, LinkConsole::value },
+        { "INT",   st.smInt,   st.smInt   > kLufsAbsGate, LinkConsole::value },
+        { "PSR",   st.smPsr,   d.psrValid,
+          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
+        { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::value },
+        { "LRA",   st.smLra,   true,                LinkConsole::value },
+    };
+    for (int i = 0; i < 6; ++i) out[i] = all[i];
+}
+
 void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
                                           juce::Rectangle<int> area,
                                           LinkStripState& st,
@@ -7164,31 +7203,8 @@ void EchoJayEditor::paintLinkStripNumbers(juce::Graphics& g,
     // dim already carries the audioStale treatment (decided ONCE in
     // paintLinkStrip); d carries the caller's single smoothing advance.
 
-    const auto coral = juce::Colour(0xffff6d5a);
-    const auto amber = juce::Colour(0xfff59e0b);
-
-    // Same values, validity gates and zone colours as the horizontal cells;
-    // SHORT labels because 38px is the narrow inner width. Display order
-    // puts LRA last then PLR, so dropping from the end reproduces the old
-    // width-budget priority (LRA goes first, then PLR).
-    // Console pass: readings are grey; colour appears only where it MEANS
-    // level (MOM hot in coral, PSR zones with green for healthy, since cyan
-    // is reserved for selection in this tab).
-    struct Cell { const char* label; float v; bool valid; juce::Colour col; };
-    const Cell all[6] = {
-        { "MOM",   st.smMom,   st.smMom   > -99.0f,
-          st.smMom > -6.0f ? coral : LinkConsole::value },
-        { "SHORT", st.smShort, st.smShort > -99.0f, LinkConsole::value },
-        // 21t-j (28 Sep 2026): A FIGURE AT THE FLOOR IS NOT A READING. The publisher blanks to -100 and the
-        // strip's smoother crawls toward it, so a channel with nothing to say printed "-98.8" - which reads as a
-        // measurement of near-silence rather than as the absence of one. An integrated loudness below -90 LUFS is
-        // not something anyone dials against: it draws "--", like every other absent field on this strip.
-        { "INT",   st.smInt,   st.smInt   > -90.0f, LinkConsole::value },
-        { "PSR",   st.smPsr,   d.psrValid,
-          st.smPsr < 5.0f ? coral : st.smPsr < 8.0f ? amber : C::green },
-        { "PLR",   st.smPlr,   d.plrValid,          LinkConsole::value },
-        { "LRA",   st.smLra,   true,                LinkConsole::value },
-    };
+    StripCell all[6];
+    linkStripCells(st, d, all);
 
     // Whole cells only: what does not fit is dropped, never half-drawn.
     // Narrow stacks label over value; wide puts them on one line.
@@ -8840,7 +8856,21 @@ void EchoJayEditor::promptGroupName(const juce::StringArray& members)
     w->enterModalState(true, juce::ModalCallbackFunction::create([safeThis, members, w](int res)
     {
         if (safeThis == nullptr || res != 1) return;
-        safeThis->processorRef.createLinkGroup(w->getTextEditorContents("name"), members);
+        // 21t-j (ruled): a member that cannot be taken is NAMED - on the dialog and in the chat card - never
+        // dropped silently. The 22-strip group came back holding 16 and said nothing anywhere.
+        juce::StringArray refused;
+        const auto gid = safeThis->processorRef.createLinkGroup(w->getTextEditorContents("name"), members, {}, &refused);
+        if (! refused.isEmpty())
+        {
+            safeThis->appendLocalResultBubble ("Some channels were not taken into the group: "
+                                               + refused.joinIntoString ("; ") + ".");
+            juce::NativeMessageBox::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+                                                         "Not every channel was taken",
+                                                         refused.joinIntoString ("\n"), safeThis.getComponent());
+        }
+        else if (gid.isNotEmpty())
+            EchoJay_NSLog (("EJGroup: the group holds all " + juce::String (members.size())
+                            + " selected channel(s)").toRawUTF8());
         safeThis->linkSelection_.clear(); safeThis->measureLinkStrips(); safeThis->repaint();
     }), true);
 }
@@ -15091,8 +15121,9 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
     // PSR / PLR from the same fields the serialiser uses — absent inputs
     // show a dim placeholder, never 0
     float tpMax = juce::jmax(md.truePeakMaxL, md.truePeakMaxR);
-    bool  psrValid = (md.shortTermTruePeak > -90.0f && md.shortTerm > -90.0f);
-    bool  plrValid = (tpMax > -90.0f && md.integrated > -90.0f);
+    // 21t-j (28 Sep 2026 ruling), the same gate as the Link strips: no ratio off a gated-out loudness figure.
+    bool  psrValid = (md.shortTermTruePeak > -90.0f && md.shortTerm > kLufsAbsGate);
+    bool  plrValid = (tpMax > -90.0f && md.integrated > kLufsAbsGate);
     float psr = psrValid ? md.shortTermTruePeak - md.shortTerm : 0.0f;
     float plr = plrValid ? tpMax - md.integrated : 0.0f;
 
@@ -15161,6 +15192,8 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
     // 4 big numbers: Momentary, Short Term, Integrated, LRA
     struct LufsItem { const char* label; float val; const char* unit; juce::Colour col; float maxVal; };
     LufsItem items[] = {
+        // 21t-j: the three LUFS figures answer to the absolute gate; LRA is a range in LU, not a loudness
+        // figure, and keeps the -99 floor it has always had.
         { "Momentary",  md.momentary,     "LUFS", md.momentary > -6 ? C::red : C::green, md.momentaryMax },
         { "Short Term", md.shortTerm,     "LUFS", C::blue2, md.shortTermMax },
         { "Integrated", md.integrated,    "LUFS", C::green, -100.0f },
@@ -15175,7 +15208,9 @@ void EchoJayEditor::paintLoudnessPanel(juce::Graphics& g, juce::Rectangle<int> a
         // Big value
         g.setColour(items[i].col);
         g.setFont(juce::Font(juce::FontOptions(26.0f, juce::Font::bold)));
-        g.drawText(ff(items[i].val), cx, y + 14, cellW, 32, juce::Justification::centred);
+        const bool lufsCell = (i < 3);
+        g.drawText(lufsCell && ! (items[i].val > kLufsAbsGate) ? juce::String("--") : ff(items[i].val),
+                   cx, y + 14, cellW, 32, juce::Justification::centred);
         // Unit
         g.setColour(C::text3);
         g.setFont(juce::Font(juce::FontOptions(9.0f)));
@@ -24492,8 +24527,10 @@ void EchoJayEditor::calibTickAndPost (const juce::String& uid)
     { chainListPanel.statusText = card; chainListPanel.repaint(); }
     // 21t-i: the measure-and-ask line goes into the chat as the loop's own turn. It is not a closing message -
     // the loop is still running and the next thing that moves the knob is the user's answer to this question.
-    const auto ask = processorRef.calibTakeAsk (uid);
-    if (ask.isNotEmpty()) appendLocalResultBubble (ask);
+    // 21t-j (a): the settle's ONE line - posted once, completed in place.
+    bool replaces = false;
+    const auto ask = processorRef.calibTakeAsk (uid, &replaces);
+    if (ask.isNotEmpty()) postOrReplaceSettleLine (uid, ask, replaces);
     const auto closing = processorRef.calibTakeClosing (uid);
     if (closing.isNotEmpty()) appendLocalResultBubble (closing);
 }
@@ -24618,6 +24655,40 @@ int EchoJayEditor::applyGroupLevelMatch(const juce::var& membersVar)
 // the message thread. The requested values sit in trimVerify_ and the 1 Hz tick checks the REGISTRY's gain for
 // each one: within 0.1 dB is taken, anything else is not, and the bubble names who did not answer. The deadline
 // bounds it - a Link that never answers must produce a sentence, not silence.
+// ---- 21t-j (a): the settle's one bubble -------------------------------------------------------------------
+// A build's line and its completion are ONE message. The first call posts it and remembers where it landed; a call
+// with replacesOpening rewrites that message's text in place, and the transcript entry beside it, so the history
+// the server sees carries the line's current text and never both versions.
+void EchoJayEditor::postOrReplaceSettleLine (const juce::String& uid, const juce::String& text, bool replacesOpening)
+{
+    if (text.isEmpty()) return;
+    const auto it = settleMsgIdx_.find (uid);
+    const bool haveOne = it != settleMsgIdx_.end() && it->second >= 0
+                      && it->second < (int) chatMessages.size()
+                      && chatMessages[(size_t) it->second].role == "assistant";
+    if (replacesOpening && haveOne)
+    {
+        const int i = it->second;
+        const auto was = chatMessages[(size_t) i].content;
+        chatMessages[(size_t) i].content = text;
+        // THE TRANSCRIPT CARRIES THE CURRENT TEXT ONLY (ruled (a)). chatRoles/chatContents are what becomes
+        // messages[] on the wire; the entry is found by its text, because the two lists are appended in lockstep
+        // but a chat can be reloaded between the two calls.
+        for (int k = processorRef.chatContents.size() - 1; k >= 0; --k)
+            if (processorRef.chatContents[k] == was) { processorRef.chatContents.set (k, text); break; }
+        for (auto& h : processorRef.chatHistory) if (h.content == was) { h.content = text; break; }
+        workspace.updateAssistantText (currentChatId, was, text);
+        EchoJay_NSLog (("EJThreshold: settle line completed in place (msg " + juce::String (i) + "): "
+                        + text).toRawUTF8());
+        repaint();
+        return;
+    }
+    appendLocalResultBubble (text);
+    settleMsgIdx_[uid] = (int) chatMessages.size() - 1;
+    EchoJay_NSLog (("EJThreshold: settle line opened (msg " + juce::String ((int) chatMessages.size() - 1) + "): "
+                    + text).toRawUTF8());
+}
+
 void EchoJayEditor::beginTrimVerification (const juce::String& what, double timeoutMs)
 {
     if (trimVerify_.empty()) return;
@@ -25222,6 +25293,13 @@ void EchoJayEditor::applyChainEditToLink(int msgIdx)
         EchoJay_NSLog(("EJEdit: apply target uid=" + uid + "  path=SESSION (borrowed host) ops="
                        + juce::String((int) ops.size()) + " base=" + juce::String(baseSlots.size())
                        + " live=" + juce::String(bh->getNumSlots())).toRawUTF8());
+        // 21t-j (ruled): AN EDIT TO THAT SLOT CANCELS A PENDING SETTLE. The user (or the server on their behalf)
+        // has moved the thing the settle was landing, so the line closes with the setting as it stands rather than
+        // going on promising to land it. An edit carrying start_db is the user's own move, and the same applies.
+        for (const auto& o : ops)
+            if (o.slot >= 0 && processorRef.calibCancelSettle (uid, o.slot, "an edit moved slot "
+                                                              + juce::String (o.slot + 1)))
+                break;
         setStageStatus("Applying to \"" + label + juce::String::fromUTF8("\"\xe2\x80\xa6"));
         juce::Timer::callAfterDelay(80, [safeThis, uid, key, chatIdAtApply, label, ops, opsForAlt, baseSlots]() mutable
         {
@@ -26919,7 +26997,13 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
 
             if (rack.valid && !rack.slots.empty())
             {
-                out += EchoJayAPI::buildCurrentChainInjection(rack, label);
+                {
+                    const auto block = EchoJayAPI::buildCurrentChainInjection(rack, label);
+                    out += block;
+                    for (const auto& l : juce::StringArray::fromLines (block.trim()))
+                        if (l.trim().isNotEmpty() && ! l.startsWith ("[CURRENT CHAIN"))
+                            EchoJay_NSLog (("EJChainBlock: " + l.trim()).toRawUTF8());
+                }
                 EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached (Link \"" + label + "\", from "
                                + src + ") -- " + juce::String((int)rack.slots.size())
                                + " slots, rev " + juce::String(rack.revision)).toRawUTF8());
@@ -27014,7 +27098,15 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         out += mainChannelDeclaration();
         if (chainHost.getNumSlots() > 0)
         {
-            out += EchoJayAPI::buildCurrentChainInjection(chainHost);
+            {
+                // [CURRENT CHAIN] is about the RACK, not the channel's levels: no record here.
+                const auto block = EchoJayAPI::buildCurrentChainInjection(chainHost);
+                out += block;
+                // 21t-j: the slot lines verbatim (the heading is a paragraph of instructions, not data).
+                for (const auto& l : juce::StringArray::fromLines (block.trim()))
+                    if (l.trim().isNotEmpty() && ! l.startsWith ("[CURRENT CHAIN"))
+                        EchoJay_NSLog (("EJChainBlock: " + l.trim()).toRawUTF8());
+            }
             EchoJay_NSLog(("EJChat: CURRENT CHAIN injection attached -- "
                            + juce::String(chainHost.getNumSlots()) + " slots, rev "
                            + juce::String(chainHost.getChainRevision())).toRawUTF8());
@@ -27079,7 +27171,11 @@ juce::String EchoJayEditor::standardChainInjections(const juce::String& typedMsg
         if (keyBlock.isNotEmpty())
         {
             out += keyBlock;
-            EchoJay_NSLog("EJChat: DETECTED KEY injection attached");
+            // 21t-j (28 Sep 2026 ruling): THE BLOCK ITSELF IN THE LOG. "injection attached" could not answer a
+            // single question about what the server received - not which source, not which numbers - so the two
+            // blocks that decide a tuner build now print verbatim, one line each, exactly as [TRACK LEVELS] does.
+            for (const auto& l : juce::StringArray::fromLines (keyBlock.trim()))
+                if (l.trim().isNotEmpty()) EchoJay_NSLog (("EJKeyBlock: " + l.trim()).toRawUTF8());
         }
     }
     // [GROUP LEVELS] (21t-c, 25 Sep 2026): THE MEMBERS' OWN READINGS.
@@ -27916,7 +28012,7 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         for (const auto& s : sources.all)
             if (s.poisoned && s.hasReading) { pr = &s; break; }
         if (pr == nullptr) return {};       // only existence entries: nothing measured
-        c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 UNUSABLE]:\n")
+        c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 UNUSABLE]:\n")
           << "A Key Detector in this chain reads " << keyText (pr->root, pr->minor)
           << " - but this channel is a "
              "VOCAL. A vocal is monophonic, sliding and often pitch-corrected: "
@@ -27931,37 +28027,42 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     switch (p->kind)
     {
         case KeySourceReading::Kind::Capture:
-            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 from a "
+            c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source: a "
                  "stored CAPTURE, analysed offline; the KEY OF THE MUSIC]:\n");
             break;
         case KeySourceReading::Kind::BusLink:
-            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+            c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source, measured by "
                  "EchoJay on another channel; the KEY OF THE MUSIC]:\n");
             break;
         case KeySourceReading::Kind::SelfBus:
-            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+            c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source, measured by "
                  "EchoJay from THIS channel, whose declared role is the music "
                  "bus; the KEY OF THE MUSIC]:\n");
             break;
         case KeySourceReading::Kind::ChannelLink:
-            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 measured by "
+            c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source, measured by "
                  "EchoJay from a SINGLE STEM on another channel \xe2\x80\x94 "
                  "weaker than a mix reading]:\n");
             break;
         case KeySourceReading::Kind::LocalChain:
-            c << juce::String::fromUTF8("\n\n[DETECTED KEY \xe2\x80\x94 from EchoJay "
+            c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source, from EchoJay "
                  "Key Detector in the chain; measured from the live signal]:\n");
             break;
     }
 
-    // COMMIT 4b (17 Sep 2026): the model never sees the confidence number -
-    // no confidence field, no scores; the key is stated exactly as displayed.
+    // 21t-j (28 Sep 2026 ruling): THE SELECTED SOURCE IS THE SINGLE AUTHORITY, and the block says so in one place.
+    // Confidence IS carried now (the ruling names it), because a server told to use one source and nothing else
+    // needs to know how good that one reading is; what it must not have is a menu of readings to choose from.
     c << "key: " << keyText (p->root, p->minor)
-      << "   detected_tuning: " << tuningText (p->tuningHz) << "\n"
+      << "   scale: " << (p->minor ? "minor" : "major")
+      << "   ref_hz: " << tuningText (p->tuningHz) << "\n"
       << "root_hz: " << rootHzText (p->rootHz) << "\n"
       << "source: " << srcLabel (*p)
       << (sources.userSelected ? " (USER-SELECTED)" : "")
-      << "   age: " << ageStr (p->ageMs) << "\n";
+      << "   confidence: " << juce::String (p->conf, 2)
+      << "   age: " << ageStr (p->ageMs) << "\n"
+      << "THIS IS THE AUTHORITY for key, scale and reference on every tuner build and edit on this channel. Use "
+         "these three values and no others; do not choose a different key from the candidates block below.\n";
     // §7.2: a deliberate pin overrides the poisoning rule, but the warning
     // stays exactly as strict — chosen is not the same as trustworthy.
     if (sources.userSelected && p->poisoned)
@@ -27979,20 +28080,32 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
         c << "analysed: " << juce::String (p->analysedSeconds, 1)
           << " s of playback, " << (p->committed ? "committed" : "continuous") << "\n";
 
-    // ---- the other sources, each named and aged ----------------------------
-    for (const auto& s : sources.all)
+    // ---- 21t-j: THE OTHER READINGS GO IN THEIR OWN BLOCK ------------------------------------------------
+    // They used to sit under the same heading as the chosen one, as "also measured:" lines, and that is how a
+    // reference of 438.3 could be proposed while the selected source read 439.0 and the plugin held 439.2. They are
+    // context, not a menu, and the block that carries them says so in its own first line.
     {
-        if (&s == p) continue;
-        if (! s.hasReading) continue;          // §7 existence entries: menu only
-        if (s.poisoned)
+        juce::String cand;
+        for (const auto& s : sources.all)
         {
-            c << "IGNORED: " << srcLabel (s) << " reads " << keyText (s.root, s.minor)
-              << " - measured from the "
-                 "VOCAL this chain sits on; never use a vocal-derived key.\n";
-            continue;
+            if (&s == p) continue;
+            if (! s.hasReading) continue;          // §7 existence entries: menu only
+            if (s.poisoned)
+            {
+                cand << "ignored: " << srcLabel (s) << ": " << keyText (s.root, s.minor)
+                     << " - measured from the VOCAL this chain sits on; never a key source\n";
+                continue;
+            }
+            cand << "candidate: " << srcLabel (s) << ": " << keyText (s.root, s.minor)
+                 << "   scale: " << (s.minor ? "minor" : "major")
+                 << "   ref_hz: " << tuningText (s.tuningHz)
+                 << "   confidence: " << juce::String (s.conf, 2)
+                 << "   age: " << ageStr (s.ageMs) << "\n";
         }
-        c << "also measured: " << srcLabel (s) << ": " << keyText (s.root, s.minor)
-          << " (age " << ageStr (s.ageMs) << ")\n";   // COMMIT 4b: no score
+        if (cand.isNotEmpty())
+            c << "\n[KEY CANDIDATES - other channels' own readings, for context only. DO NOT CHOOSE A KEY, SCALE OR "
+                 "REFERENCE FROM THIS BLOCK: the selected source in [KEY] above is the authority. These are here so "
+                 "you can say when channels disagree, nothing more.]\n" << cand;
     }
 
     if (sources.disagree)

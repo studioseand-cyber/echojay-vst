@@ -117,6 +117,15 @@ struct EchoJayLinkMixerTestAccess
                         juce::Rectangle<int>& b, juce::Rectangle<int>& x)
     { Ed::blockCtrlRects (block, b, x); }
 
+    // 21t-j: the numbers renderer's own cell table and the absolute gate it applies.
+    using StripState = Ed::LinkStripState;
+    using StripDer   = Ed::LinkStripDerived;
+    using Cell       = Ed::StripCell;
+    static StripDer advance (StripState& st, bool fresh) { return Ed::advanceLinkStripSmoothing (st, fresh); }
+    static void cells (const StripState& st, const StripDer& d, Cell (&out)[6])
+    { Ed::linkStripCells (st, d, out); }
+    static float absGate() { return Ed::kLufsAbsGate; }
+
     using ChainState = Ed::ChainDisplayState;
     static ChainState chainState (bool valid, int n)
     { return Ed::chainDisplayState (valid, n); }
@@ -1101,6 +1110,87 @@ static void testContentMigration()
            "garbage above range becomes Numbers");
 }
 
+/** 21t-j (28 Sep 2026 ruling), from Sean's Link Mixer session: THE FLOOR DRAWN AS A READING.
+
+    The VOCALS bus strip, with nothing routed through it, read "MOM -85.6, SHORT -85.6" and a PSR of 6.7 in
+    amber - a ratio derived from two figures that are not measurements of anything. The ruling: any loudness
+    figure below the -70 LUFS absolute gate draws "--", and no ratio is derived from a gated-out window.
+
+    This asserts on the SAME table the painter draws (EchoJayEditor::linkStripCells), not on a copy of the
+    rule, and it runs both directions: gated-out draws nothing, a real reading still draws its figures. */
+static void testFloorIsNotAReading()
+{
+    auto settle = [] (T::StripState& st)
+    {
+        T::StripDer d {};
+        for (int i = 0; i < 200; ++i) d = T::advance (st, true);   // the smoother crawls; let it arrive
+        return d;
+    };
+    auto find = [] (T::Cell (&c)[6], const char* label) -> const T::Cell&
+    {
+        for (int i = 0; i < 6; ++i) if (std::strcmp (c[i].label, label) == 0) return c[i];
+        return c[0];
+    };
+
+    check (std::abs (T::absGate() - (-70.0f)) < 0.001f, "the absolute gate is -70 LUFS");
+
+    // (1) THE DEFECT, with Sean's own figures: an empty bus.
+    {
+        T::StripState st;
+        st.has = true;
+        st.frame.momentary  = -85.6f;
+        st.frame.shortTerm  = -85.6f;
+        st.frame.integrated = -85.6f;
+        st.frame.shortTermTP = -78.9f;    // the true peak is a dBTP figure and is not itself gated...
+        st.frame.truePeakMax = -78.9f;    // ...but the loudness it would be divided against IS
+        const auto d = settle (st);
+        T::Cell c[6]; T::cells (st, d, c);
+        std::printf ("  empty bus strip draws: MOM %s  SHORT %s  INT %s  PSR %s  PLR %s\n",
+                     find (c, "MOM").valid   ? "a figure" : "--",
+                     find (c, "SHORT").valid ? "a figure" : "--",
+                     find (c, "INT").valid   ? "a figure" : "--",
+                     find (c, "PSR").valid   ? "a figure" : "--",
+                     find (c, "PLR").valid   ? "a figure" : "--");
+        check (! find (c, "MOM").valid,   "MOM below the absolute gate draws --");
+        check (! find (c, "SHORT").valid, "SHORT below the absolute gate draws --");
+        check (! find (c, "INT").valid,   "INT below the absolute gate draws --");
+        check (! find (c, "PSR").valid,   "PSR is not derived from a gated-out short-term window");
+        check (! find (c, "PLR").valid,   "PLR is not derived from a gated-out integrated figure");
+    }
+
+    // (2) THE OTHER DIRECTION: a strip with real programme on it still prints every figure. A gate that
+    // blanked a working strip would be the same defect facing the other way.
+    {
+        T::StripState st;
+        st.has = true;
+        st.frame.momentary  = -18.2f;
+        st.frame.shortTerm  = -20.4f;
+        st.frame.integrated = -22.0f;
+        st.frame.shortTermTP = -11.0f;
+        st.frame.truePeakMax = -9.5f;
+        const auto d = settle (st);
+        T::Cell c[6]; T::cells (st, d, c);
+        std::printf ("  a strip with programme draws: MOM %.1f  SHORT %.1f  INT %.1f  PSR %s  PLR %s\n",
+                     find (c, "MOM").v, find (c, "SHORT").v, find (c, "INT").v,
+                     find (c, "PSR").valid ? "a figure" : "--",
+                     find (c, "PLR").valid ? "a figure" : "--");
+        check (find (c, "MOM").valid && find (c, "SHORT").valid && find (c, "INT").valid,
+               "a strip with programme on it still prints MOM, SHORT and INT");
+        check (find (c, "PSR").valid && find (c, "PLR").valid,
+               "...and still derives PSR and PLR");
+    }
+
+    // (3) THE EDGE, either side of the gate by a tenth: the line is the gate itself, not "somewhere near it".
+    {
+        T::StripState st; st.has = true;
+        st.frame.momentary = -69.9f; st.frame.shortTerm = -70.1f; st.frame.integrated = -69.9f;
+        const auto d = settle (st);
+        T::Cell c[6]; T::cells (st, d, c);
+        check (find (c, "MOM").valid,    "-69.9 LUFS is above the gate and prints");
+        check (! find (c, "SHORT").valid, "-70.1 LUFS is below the gate and draws --");
+    }
+}
+
 static void testDegenerate()
 {
     std::printf ("degenerate inputs leave nothing behind\n");
@@ -1185,6 +1275,7 @@ int main()
     testSidecarToSlotInfo();
     testElideMiddle();
     testContentMigration();
+    testFloorIsNotAReading();
     testDegenerate();
 
     std::printf (failures == 0 ? "EJLinkMixer selftest: PASS\n"
