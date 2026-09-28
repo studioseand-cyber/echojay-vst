@@ -186,7 +186,11 @@ public:
 
     // correction_mode indices. `custom` is LAST and is what the display falls
     // to the moment any of the params a mode writes is moved by hand.
-    enum Mode { kNatural = 0, kBalanced, kTuned, kHard, kCustom, kNumModes };
+    // 21t-j (28 Sep 2026 ruling): SNAP IS A RUNG OF ITS OWN, and it is APPENDED so that `custom` keeps index 4.
+    // A session saved by any earlier build stores correction_mode 4 for custom; inserting snap before it would
+    // reopen those sessions in a mode nobody chose. The wire ladder is natural -> balanced -> hard -> snap;
+    // `tuned` is an exact alias of hard ON INPUT and is never stored (the row survives for a human's own choice).
+    enum Mode { kNatural = 0, kBalanced, kTuned, kHard, kCustom, kSnap, kNumModes };
 
     // ---- THE WIRE LADDER (21t-i re-cut, ruled with B on 27 Sep 2026) ---------------------------------------
     // On the wire the ladder is natural -> balanced -> hard -> snap. `tuned` is no longer a rung but REMAINS

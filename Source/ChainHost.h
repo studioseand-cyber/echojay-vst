@@ -1409,6 +1409,15 @@ public:
         control is not there or its text is not a number - a figure nobody published is never invented. */
     bool readControlDb (int slotIndex, const juce::String& controlName, float& outDb) const;
 
+    /** 21t-j (28 Sep 2026 general compressor rule): THE SLOT'S OWN OUTPUT GAIN. The level hold writes the profile's
+        output control when the block names one, and this when it does not - which is most plugins. It sits on the
+        plugin's output before the slot's out tally, so the sensor sees the held level. Not the compare trim. */
+    /** 21t-j (28 Sep 2026 ruling): reset BOTH of a slot's legs together, so the crest difference measures one
+        setting. The reason is logged: a reset nobody can account for is a measurement nobody can trust. */
+    void  resetSlotShortTermStats (int slotIndex, const juce::String& why);
+    void  setSlotOutGainDb (int slotIndex, float db);
+    float getSlotOutGainDb (int slotIndex) const;
+
     std::vector<ApplyReport> applyStructuredSettings (int slotIndex,
                                                       const juce::var& structuredSettings,
                                                       const juce::var& map);

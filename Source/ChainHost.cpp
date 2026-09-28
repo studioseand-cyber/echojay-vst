@@ -2,6 +2,7 @@
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "EchoJayBridgedAU.h"   // FIRST: pulls CoreFoundation before JUCE (Point ambiguity)
 #include "ChainHost.h"
+#include "EJReadbackSearch.h"   // 21t-j: landing a dB target by readback
 #include "EedLimiterProcessor.h"   // 21p item 2: the one plugin that publishes its own GR
 #include "EedLatencyLog.h"
 #include "EJVariantPreference.h"
@@ -729,12 +730,23 @@ public:
               .withOutput("Out", juce::AudioChannelSet::stereo(), true)),
           wet_(std::move(wet)), trimDb_(std::move(trimDb)), compareActive_(std::move(compareActive)) {}
 
+    // 21t-j (28 Sep 2026 general compressor rule): EVERY SLOT HAS AN OUTPUT GAIN. The level hold writes the
+    // profile's own output control when the block names one; when it does not - and most compressors do not
+    // publish one we can address - it writes THIS instead, so "the slot's output equals its input within 1 dB" is
+    // a promise the product can keep on any plugin. It sits on the plugin's output BEFORE the out tally, so the
+    // sensor sees the held level and the loop closes. Distinct from trimDb_, which is the COMPARE trim and is only
+    // in circuit while an A/B is running.
+    void setOutGainDb (float db) { outGainDb_.store (db, std::memory_order_relaxed); }
+    float outGainDb() const { return outGainDb_.load (std::memory_order_relaxed); }
+
     void prepareToPlay(double sampleRate, int) override
     {
         smooth_.reset(sampleRate, 0.05);
         smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
         trimSmooth_.reset(sampleRate, 0.05);
         trimSmooth_.setCurrentAndTargetValue(trimDb_ ? juce::Decibels::decibelsToGain(trimDb_->load(std::memory_order_relaxed)) : 1.0f);
+        outSmooth_.reset(sampleRate, 0.05);
+        outSmooth_.setCurrentAndTargetValue(juce::Decibels::decibelsToGain(outGainDb_.load(std::memory_order_relaxed)));
         // The tallies clear ONLY on a sample-rate change (a new source, or a
         // re-prepare that changes what a sample means). Hosts re-prepare on
         // buffer-size changes and transport events too, and a tally that
@@ -755,6 +767,11 @@ public:
     const echojay::LevelTally& inTally()  const { return inTally_; }
     const echojay::LevelTally& outTally() const { return outTally_; }
     void resetTallies() { inTally_.reset(); outTally_.reset(); }
+    // 21t-j (28 Sep 2026 ruling): BOTH LEGS TOGETHER. SHORTMAX and SHORT90 are since-reset figures, so the crest
+    // difference is only a measurement of ONE setting if both legs start counting at the same instant. Reset at the
+    // build and after every write to the actuator, the output control or the slot gain; until a window closes on
+    // each leg the figures are NaN, which is what makes a sample from before the write impossible.
+    void resetShortTermStats() { inTally_.resetShortTermMax(); outTally_.resetShortTermMax(); }
     void restoreTallies(const juce::var& in, const juce::var& out) { inTally_.fromVar(in); outTally_.fromVar(out); }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
@@ -776,6 +793,17 @@ public:
                 for (int i = 0; i < n; ++i) { const float g = trimSmooth_.getNextValue(); for (int ch = 0; ch < juce::jmin(2, nch); ++ch) buffer.getWritePointer(ch)[i] *= g; }
             }
             else trimSmooth_.setCurrentAndTargetValue(1.0f);
+        }
+        {   // 21t-j: THE SLOT'S OWN OUTPUT GAIN, before the out tally so the hold is measured after it lands.
+            const float odb = outGainDb_.load(std::memory_order_relaxed);
+            outSmooth_.setTargetValue(juce::Decibels::decibelsToGain(odb));
+            if (outSmooth_.isSmoothing() || std::abs(odb) > 0.001f)
+            {
+                const int nch = juce::jmin(2, buffer.getNumChannels());
+                for (int i = 0; i < n; ++i)
+                { const float g = outSmooth_.getNextValue(); for (int ch = 0; ch < nch; ++ch) buffer.getWritePointer(ch)[i] *= g; }
+            }
+            else outSmooth_.skip(n);
         }
         {
             const int nch = buffer.getNumChannels();
@@ -825,6 +853,8 @@ private:
     juce::SmoothedValue<float>          smooth_;
     // Plain (dBFS RMS) on the slot legs: a threshold is set in the units the
     // detector sees, and out minus in cancels any weighting anyway.
+    std::atomic<float>                  outGainDb_ { 0.0f };     // 21t-j: the slot's own output gain (the hold)
+    juce::LinearSmoothedValue<float>    outSmooth_ { 1.0f };
     echojay::LevelTally                 inTally_  { echojay::LevelTally::Weighting::Plain };
     echojay::LevelTally                 outTally_ { echojay::LevelTally::Weighting::Plain };
     double                              tallySr_ = 0.0;
@@ -3054,20 +3084,44 @@ void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& cu
                    + " track=\"" + savedTrack + "\"").toRawUTF8());
 }
 
-// ---- 21t-j (28 Sep 2026): the readback search -------------------------------------------------------------
-// "-inf dB" is not a number and must not read as one; everything else is taken from the leading numeric token of
-// the plugin's own display text, which is the only dB the plugin has published.
-static bool parseDisplayDb (const juce::String& text, double& outDb)
+// ---- 21t-j (28 Sep 2026): the readback search ---------------------------------------------------------------
+// The search itself lives in EJReadbackSearch.h so a guard can drive the SAME code against a control whose only
+// sampled points are "-inf" / -24 / 0, which is the shape that made this necessary.
+void ChainHost::resetSlotShortTermStats (int slotIndex, const juce::String& why)
 {
-    const auto t = text.trim();
-    if (t.containsIgnoreCase ("inf")) { outDb = t.startsWithChar ('-') ? -1.0e9 : 1.0e9; return true; }
-    const auto num = t.retainCharacters ("0123456789+-.eE");
-    if (num.isEmpty() || ! juce::CharacterFunctions::isDigit (num.getLastCharacter())) 
-    { if (num.isEmpty()) return false; }
-    const double v = num.getDoubleValue();
-    if (v == 0.0 && ! num.startsWithChar ('0') && ! num.startsWith ("-0") && ! num.startsWith ("+0")) return false;
-    outDb = v;
-    return true;
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return;
+    auto& s = slots_[(size_t) slotIndex];
+    if (s.blendNode == nullptr) return;
+    if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor()))
+    {
+        b->resetShortTermStats();
+        EchoJay_NSLog (("EJThreshold: slot " + juce::String (slotIndex + 1) + " both legs reset - SHORTMAX and "
+                        "SHORT90 start again on each (" + (why.isNotEmpty() ? why : juce::String ("no reason given"))
+                        + "); no window from before this can enter a sample").toRawUTF8());
+    }
+}
+
+void ChainHost::setSlotOutGainDb (int slotIndex, float db)
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return;
+    auto& s = slots_[(size_t) slotIndex];
+    if (s.blendNode == nullptr) return;
+    if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor()))
+    {
+        b->setOutGainDb (juce::jlimit (-24.0f, 12.0f, db));
+        EchoJay_NSLog (("EJThreshold: slot " + juce::String (slotIndex + 1) + " output gain set to "
+                        + juce::String (b->outGainDb(), 2) + " dB (EchoJay's own, the plugin named no output "
+                        "control)").toRawUTF8());
+    }
+}
+
+float ChainHost::getSlotOutGainDb (int slotIndex) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return 0.0f;
+    const auto& s = slots_[(size_t) slotIndex];
+    if (s.blendNode == nullptr) return 0.0f;
+    if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor())) return b->outGainDb();
+    return 0.0f;
 }
 
 bool ChainHost::readControlDb (int slotIndex, const juce::String& controlName, float& outDb) const
@@ -3080,7 +3134,7 @@ bool ChainHost::readControlDb (int slotIndex, const juce::String& controlName, f
         if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want)
         {
             double db = 0.0;
-            if (! parseDisplayDb (p->getText (p->getValue(), 256), db)) return false;
+            if (! echojay::parseDisplayDb (p->getText (p->getValue(), 256), db)) return false;
             if (db <= -1.0e8 || db >= 1.0e8) return false;   // "-inf" is not a reading
             outDb = (float) db;
             return true;
@@ -3100,46 +3154,20 @@ bool ChainHost::landControlAtDb (int slotIndex, const juce::String& controlName,
         if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want) { q = p; break; }
     if (q == nullptr) return false;
 
-    auto readAt = [q] (float norm, double& db) { return parseDisplayDb (q->getText (norm, 256), db); };
-    double at0 = 0.0, at1 = 0.0;
-    if (! readAt (0.0f, at0) || ! readAt (1.0f, at1))
+    const auto r = echojay::searchForDb (*q, targetDb, toleranceDb, maxSteps);
+    if (r.refusal.isNotEmpty())
     {
-        EchoJay_NSLog (("EJThreshold: \"" + controlName + "\" does not print a dB number at its ends - no readback "
-                        "search possible (text \"" + q->getText (0.0f, 64) + "\" / \"" + q->getText (1.0f, 64)
-                        + "\")").toRawUTF8());
+        EchoJay_NSLog (("EJThreshold: no readback search on \"" + controlName + "\" - " + r.refusal).toRawUTF8());
         return false;
     }
-    const bool ascending = at1 > at0;
-    if (std::abs (at1 - at0) < 1.0e-6)
-    {
-        EchoJay_NSLog (("EJThreshold: \"" + controlName + "\" reads the same at both ends - not a monotonic dB "
-                        "control, nothing searched").toRawUTF8());
-        return false;
-    }
-    float lo = 0.0f, hi = 1.0f, best = q->getValue();
-    double bestDb = 0.0; bool haveBest = false;
-    for (int i = 0; i < maxSteps; ++i)
-    {
-        const float mid = 0.5f * (lo + hi);
-        double db = 0.0;
-        if (! readAt (mid, db)) break;
-        if (! haveBest || std::abs (db - (double) targetDb) < std::abs (bestDb - (double) targetDb))
-        { best = mid; bestDb = db; haveBest = true; }
-        if (std::abs (db - (double) targetDb) <= (double) toleranceDb) break;
-        const bool tooLow = ascending ? (db < (double) targetDb) : (db > (double) targetDb);
-        if (tooLow) lo = mid; else hi = mid;
-    }
-    if (! haveBest) return false;
-    const bool landed = std::abs (bestDb - (double) targetDb) <= (double) toleranceDb;
-    q->setValueNotifyingHost (best);
-    double readBack = 0.0; readAt (best, readBack);
-    if (landedDbOut != nullptr) *landedDbOut = (float) readBack;
-    if (positionOut != nullptr) *positionOut = best;
+    q->setValueNotifyingHost (r.position);            // the ONE write, after the search
+    if (landedDbOut != nullptr) *landedDbOut = r.landedDb;
+    if (positionOut != nullptr) *positionOut = r.position;
     EchoJay_NSLog (("EJThreshold: readback search on \"" + controlName + "\" asked "
-                    + juce::String (targetDb, 2) + " dB -> position " + juce::String (best, 4) + " reads \""
-                    + q->getText (best, 64).trim() + "\" (" + juce::String (readBack, 2) + " dB)"
-                    + (landed ? juce::String() : " - OUTSIDE the 0.5 dB tolerance, nearest the control has")).toRawUTF8());
-    return landed;
+                    + juce::String (targetDb, 2) + " dB -> position " + juce::String (r.position, 4) + " reads \""
+                    + q->getText (r.position, 64).trim() + "\" (" + juce::String (r.landedDb, 2) + " dB)"
+                    + (r.landed ? juce::String() : " - OUTSIDE the 0.5 dB tolerance, nearest the control has")).toRawUTF8());
+    return r.landed;
 }
 
 int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value)

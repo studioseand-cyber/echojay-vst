@@ -231,6 +231,8 @@ ej_add_guard(slotwet_knobpath         SOURCE tools/slotwet_knobpath/harness.cpp 
 # editor snapshots under EJ_EDITOR_SNAP - and outside the gate is where a ruled behaviour goes unguarded between
 # rounds. It runs here WITHOUT that variable, so no snapshot is written and the mode/scale assertions are the test.
 ej_add_guard(pitch_mode_test           SOURCE tools/pitch_mode_test/main.cpp                   LABEL fast)
+# 21t-j: landing a dB target by readback on a control sampled only at -inf / -24 / 0 (B's contract note 3).
+ej_add_guard(readback_search_guard     SOURCE tools/readback_search_guard/harness.cpp          LABEL fast)
 ej_add_guard(slotwet_nomutation       SOURCE tools/slotwet_nomutation/slotwet_nomutation.cpp  LABEL fast)
 ej_add_guard(overlay_gate_harness     SOURCE tools/overlay_gate_harness/overlay_gate_harness.cpp LABEL fast)
 ej_add_guard(key_gate_harness         SOURCE tools/key_gate_harness/key_gate_harness.cpp      LABEL fast)

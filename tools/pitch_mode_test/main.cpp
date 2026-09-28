@@ -12,8 +12,10 @@
 #include <algorithm>
 #include <vector>
 static int g_fail = 0;
-static void check (bool c, const juce::String& w)
-{ std::printf ("  [%s] %s\n", c ? "PASS" : "FAIL", w.toRawUTF8()); if (! c) ++g_fail; }
+// 21t-j: an optional DETAIL, so a failure prints the figures it failed on rather than only its claim.
+static void check (bool c, const juce::String& w, const juce::String& detail = {})
+{ std::printf ("  [%s] %s%s\n", c ? "PASS" : "FAIL", w.toRawUTF8(),
+               detail.isNotEmpty() ? ("  [" + detail + "]").toRawUTF8() : ""); if (! c) ++g_fail; }
 
 static juce::var params (std::initializer_list<std::pair<const char*, juce::var>> kv)
 {
@@ -1180,6 +1182,10 @@ int main()
                "...with correction at FULL (depth 100)");
         check (std::abs (snapDev.getParamValue ("retune")) < 0.51,
                "...which is dial 0, the hardest position the dial has");
+        // 28 Sep 2026 ruling: the control that SEPARATES snap from hard.
+        check (std::abs (snapDev.getParamValue ("natural_vibrato")) < 0.51,
+               "snap takes the vibrato away: natural_vibrato 0",
+               juce::String (snapDev.getParamValue ("natural_vibrato"), 0));
         check (snapNote.contains ("snap") || snapNote.contains ("map's minimum"),
                "...and the note says what snap meant, so the chat log is not silent about a new rung");
 
@@ -1193,7 +1199,27 @@ int main()
         std::printf ("    tuned -> %s   hard -> %s\n", valuesNow (tunedDev).toRawUTF8(),
                      valuesNow (hardDev).toRawUTF8());
         check (valuesNow (tunedDev) == valuesNow (hardDev),
-               "\"tuned\" is the accepted alias for hard and lands on exactly hard's values");
+               "\"tuned\" is an EXACT alias of hard on input and lands on exactly hard's values",
+               valuesNow (tunedDev));
+        check (std::abs (hardDev.getParamValue ("natural_vibrato") - 40.0) < 0.51,
+               "hard keeps some of the singer's own wobble: natural_vibrato 40 (28 Sep ruling)",
+               juce::String (hardDev.getParamValue ("natural_vibrato"), 0));
+        // THE RULED GUARD: every rung differs from the one beside it in at least one LANDED control.
+        {
+            EedPitchProcessor a, b, c2, d;
+            for (auto* dv : { &a, &b, &c2, &d }) dv->prepareToPlay (48000.0, 512);
+            a.applyStructured (params ({ { "correction_mode", "natural"  } }), EedDeviceProcessor::ParamSource::Assistant);
+            b.applyStructured (params ({ { "correction_mode", "balanced" } }), EedDeviceProcessor::ParamSource::Assistant);
+            c2.applyStructured (params ({ { "correction_mode", "hard"    } }), EedDeviceProcessor::ParamSource::Assistant);
+            d.applyStructured (params ({ { "correction_mode", "snap"    } }), EedDeviceProcessor::ParamSource::Assistant);
+            const auto va = valuesNow (a), vb = valuesNow (b), vc = valuesNow (c2), vd = valuesNow (d);
+            std::printf ("    the ladder: natural %s | balanced %s | hard %s | snap %s\n",
+                         va.toRawUTF8(), vb.toRawUTF8(), vc.toRawUTF8(), vd.toRawUTF8());
+            check (va != vb && vb != vc && vc != vd,
+                   "EACH RUNG DIFFERS FROM ITS NEIGHBOUR in at least one landed control  (RED as it stood: hard "
+                   "and snap landed identically, so \"harder\" from hard bought nothing audible)",
+                   vc == vd ? juce::String ("hard == snap") : juce::String ("all four distinct"));
+        }
         check (tunedNote.contains ("alias"),
                "...and the note says it was taken as an alias, so nobody reads it as the old softer row");
 

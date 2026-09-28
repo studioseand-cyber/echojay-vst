@@ -426,7 +426,21 @@ void LinkProcessor::calibTickOwnRack()
     echojay::CalibLoop::Window w;
     w.measured = lv.measured && lv.in.known && lv.out.known;
     w.silent   = lv.measured && ! lv.in.known;
-    w.grDb     = w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f;
+    // 21t-j (28 Sep 2026, the general compressor rule): THE TWO SENSORS, from this slot's own taps.
+    //   GR   = (in SHORTMAX - in SHORT90) - (out SHORTMAX - out SHORT90): the crest the compressor took off the
+    //          loud phrases. Makeup gain shifts both output terms together and cancels out of the difference.
+    //   LEVEL= out SHORT90 - in SHORT90 (INT when SHORT90 has not closed a window yet): what the slot is adding.
+    // A window missing any of the four is NOT a sample: nothing is derived from a figure that is not there.
+    {
+        const auto& I = lv.in; const auto& O = lv.out;
+        const bool haveCrest = I.maxShortTermDb == I.maxShortTermDb && I.shortTermP90Db == I.shortTermP90Db
+                            && O.maxShortTermDb == O.maxShortTermDb && O.shortTermP90Db == O.shortTermP90Db;
+        const bool have90 = I.shortTermP90Db == I.shortTermP90Db && O.shortTermP90Db == O.shortTermP90Db;
+        w.grDb = haveCrest ? ((I.maxShortTermDb - I.shortTermP90Db) - (O.maxShortTermDb - O.shortTermP90Db)) : 0.0f;
+        w.levelChangeDb = have90 ? (O.shortTermP90Db - I.shortTermP90Db)
+                                 : ((I.known && O.known) ? (O.levelDb - I.levelDb) : 0.0f);
+        if (! haveCrest) w.measured = false;   // no crest pair, no sample
+    }
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
     w.heardSeconds = lv.in.heardSeconds;   // 21t-i: the question quotes what was actually heard
     // 21t-j (B's note 1): THE PLUGIN'S OWN GR METER, when the block named one. Read as the plugin prints it; a
@@ -446,17 +460,30 @@ void LinkProcessor::calibTickOwnRack()
     {
         chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
         chainHost.setSlotTrimDb   (calibLoop_.slot, step.newPost);
+        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the drive");   // 21t-j: both legs start again
     }
     // 21t-g item 2: the threshold actuator, the same write on this side - the loop is one header and a handover
     // must not change which knob is being dialled.
     if (step.writeParams)
         chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
+        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the actuator");   // 21t-j: both legs start again
     // 21t-j: the level hold, on this side too - one header, one behaviour, whichever host owns the tallies.
     if (step.writeOutput)
     {
         chainHost.setSlotControlsToValue(calibLoop_.slot, step.outputNames, step.outputValue);
+        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the hold moved the plugin output");   // 21t-j: both legs start again
         EchoJay_NSLog(("EJThreshold: level hold - wrote " + step.outputNames.joinIntoString(" + ") + " = "
                        + juce::String(step.outputValue, 2) + " on slot " + juce::String(calibLoop_.slot + 1)).toRawUTF8());
+    }
+    // 21t-j: ...and the hold through EchoJay's own per-slot output gain, when the plugin named no output control.
+    if (step.writeSlotGain)
+    {
+        (&chainHost)->setSlotOutGainDb(calibLoop_.slot, step.slotGainValue);
+        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the hold moved EchoJay's slot output gain");   // 21t-j: both legs start again
+        EchoJay_NSLog(("EJThreshold: level hold - EchoJay's slot output gain = " + juce::String(step.slotGainValue, 2)
+                       + " dB on slot " + juce::String(calibLoop_.slot + 1) + " (the slot was "
+                       + juce::String(std::abs(calibLoop_.levelChangeDb), 1) + " dB "
+                       + (calibLoop_.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
     }
     // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
     // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing
@@ -3077,6 +3104,7 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     if (threshold)
     {
         if (haveStart) chainHost.setSlotControlsToValue(slot, cfg.params, cfg.startDb);
+        chainHost.resetSlotShortTermStats(slot, "the build set the actuator");   // 21t-j: reset point 1
     }
     else
     {

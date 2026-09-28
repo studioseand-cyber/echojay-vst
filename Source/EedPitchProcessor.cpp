@@ -36,7 +36,9 @@ const echojay::ParamSchema& EedPitchProcessor::schema()
           "targeting_ignores_vibrato) so you can see what it did and adjust "
           "from there; moving any of them by hand shows custom",
           false,
-          { "natural", "balanced", "tuned", "hard", "custom" } },
+          // 21t-j: "snap" is LAST so `custom` keeps index 4 and every session saved before this build reopens in
+          // the mode it was saved in. The wire's ladder is natural -> balanced -> hard -> snap.
+          { "natural", "balanced", "tuned", "hard", "custom", "snap" } },
 
         // ---- P2: the musical layer ------------------------------------
         { EedPitchProcessor::kCorrect, "", 0.0, 1.0, 1.0,
@@ -511,8 +513,8 @@ int EedPitchProcessor::wireModeIndex (const juce::String& label, juce::String& w
     if (key == "natural")  return kNatural;
     if (key == "balanced") return kBalanced;
     if (key == "hard")     return kHard;
-    if (key == "snap")     return kHard;     // the hardest rung; see wireModeIsSnap for what that forces
-    if (key == "tuned")    return kHard;     // ruled alias, 27 Sep 2026 (it used to be its own softer row)
+    if (key == "snap")     return kSnap;     // its own rung: hard's knobs with the vibrato gone (28 Sep ruling)
+    if (key == "tuned")    return kHard;     // an EXACT alias of hard on input, and never stored as kTuned
     if (key == "custom")   return kCustom;
     whyOut = "correction_mode \"" + label + "\" is not natural/balanced/hard/snap - built as hard";
     return kHard;
@@ -556,7 +558,7 @@ int EedPitchProcessor::aliasChoiceIndex (const juce::String& canonicalId, const 
     // snap follows the map and hard keeps its tabled intent.
     if (wireModeIsSnap (label))
     {
-        whyOut = "snap: retune at the map's minimum (dial 0), correction full";
+        whyOut = "snap: dial 0 with natural_vibrato 0 - hard's knobs with the vibrato gone";
         return idx;
     }
     if (why.isNotEmpty()) whyOut = why;
@@ -600,11 +602,16 @@ juce::String EedPitchProcessor::applyMode (int mode)
     // vibrato sits on a semitone boundary, and that is true no matter how
     // hard the retune - Antares keeps its equivalent independent of retune
     // speed, and with it on the device matches Auto-Tune audibly.
-    static const Preset kPresets[4] = {
+    // 21t-j (28 Sep 2026 ruling): the ladder's landed values. HARD keeps a little of the singer's own wobble
+    // (natural_vibrato 40); SNAP takes it away. That one control is what separates them - both sit at dial 0 with
+    // flex and humanize at zero, so without it "harder" from hard would buy nothing audible.
+    static const Preset kPresets[kNumModes] = {
         { 120.0f, 55.0f, 60.0f, 100.0f, true },    // natural
         {  40.0f, 25.0f, 30.0f, 100.0f, true },    // balanced
-        {   8.0f,  0.0f,  0.0f,  40.0f, true },    // tuned
-        {   0.0f,  0.0f,  0.0f,   0.0f, true },    // hard
+        {   8.0f,  0.0f,  0.0f,  40.0f, true },    // tuned   (the row a human can still pick; the wire aliases it to hard)
+        {   0.0f,  0.0f,  0.0f,  40.0f, true },    // hard     <- natural_vibrato 40, as ruled
+        {   0.0f,  0.0f,  0.0f,   0.0f, true },    // custom   (never applied: kCustom returns above)
+        {   0.0f,  0.0f,  0.0f,   0.0f, true },    // snap     <- the same knobs, vibrato gone
     };
     const Preset& p = kPresets[m];
 

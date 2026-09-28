@@ -6333,6 +6333,9 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
                 host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
                 host->setSlotTrimDb   (cfg.slot, -cfg.startDb);
             }
+            // RESET POINT 1 of 4 (21t-j): THE BUILD. Both legs start counting here, so the first crest difference
+            // describes the setting this build just made and nothing before it.
+            host->resetSlotShortTermStats(cfg.slot, "the build set the actuator");
         }
     calibStore(uid, loop);
 }
@@ -6371,7 +6374,21 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     // or out of circuit, and while no full window has closed - neither is evidence, and neither may move a drive.
     w.measured = lv.measured && lv.in.known && lv.out.known;
     w.silent   = lv.measured && ! lv.in.known;   // a window that closed with nothing above the gate
-    w.grDb     = (w.measured ? lv.in.shortTermDb - lv.out.shortTermDb : 0.0f);
+    // 21t-j (28 Sep 2026, the general compressor rule): THE TWO SENSORS, from this slot's own taps.
+    //   GR   = (in SHORTMAX - in SHORT90) - (out SHORTMAX - out SHORT90): the crest the compressor took off the
+    //          loud phrases. Makeup gain shifts both output terms together and cancels out of the difference.
+    //   LEVEL= out SHORT90 - in SHORT90 (INT when SHORT90 has not closed a window yet): what the slot is adding.
+    // A window missing any of the four is NOT a sample: nothing is derived from a figure that is not there.
+    {
+        const auto& I = lv.in; const auto& O = lv.out;
+        const bool haveCrest = I.maxShortTermDb == I.maxShortTermDb && I.shortTermP90Db == I.shortTermP90Db
+                            && O.maxShortTermDb == O.maxShortTermDb && O.shortTermP90Db == O.shortTermP90Db;
+        const bool have90 = I.shortTermP90Db == I.shortTermP90Db && O.shortTermP90Db == O.shortTermP90Db;
+        w.grDb = haveCrest ? ((I.maxShortTermDb - I.shortTermP90Db) - (O.maxShortTermDb - O.shortTermP90Db)) : 0.0f;
+        w.levelChangeDb = have90 ? (O.shortTermP90Db - I.shortTermP90Db)
+                                 : ((I.known && O.known) ? (O.levelDb - I.levelDb) : 0.0f);
+        if (! haveCrest) w.measured = false;   // no crest pair, no sample
+    }
     // 21t-d: the slot's INPUT true peak at the drive this window ran at - what decides whether another dB of
     // drive would clip the input rather than buy gain reduction.
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
@@ -6400,6 +6417,8 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     {
         host->setSlotPreTrimDb(loop.slot, step.newPre);
         host->setSlotTrimDb   (loop.slot, step.newPost);
+        // RESET POINT 2 of 4: a write to the ACTUATOR (EchoJay's own staging gain here).
+        host->resetSlotShortTermStats(loop.slot, "the loop moved the drive");
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
     }
     // 21t-g item 2: the THRESHOLD actuator writes the compressor's own control instead, through the same
@@ -6407,16 +6426,31 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     if (step.writeParams)
     {
         host->setSlotControlsToValue(loop.slot, step.paramNames, step.paramValue);
+        // RESET POINT 2 of 4: a write to the ACTUATOR (the plugin's own named control).
+        host->resetSlotShortTermStats(loop.slot, "the loop moved " + step.paramNames.joinIntoString(" + "));
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
     }
     // 21t-j: THE LEVEL HOLD, a write to a DIFFERENT control from the actuator, through the same map-keyed apply.
     if (step.writeOutput)
     {
         host->setSlotControlsToValue(loop.slot, step.outputNames, step.outputValue);
+        // RESET POINT 3 of 4: a write to the plugin's OUTPUT control.
+        host->resetSlotShortTermStats(loop.slot, "the hold moved " + step.outputNames.joinIntoString(" + "));
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
         EchoJay_NSLog(("EJThreshold: level hold - wrote " + step.outputNames.joinIntoString(" + ") + " = "
                        + juce::String(step.outputValue, 2) + " on slot " + juce::String(loop.slot + 1)
                        + " (the slot was " + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
+                       + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
+    }
+    // 21t-j: ...and the hold through EchoJay's own per-slot output gain, when the plugin named no output control.
+    if (step.writeSlotGain)
+    {
+        host->setSlotOutGainDb(loop.slot, step.slotGainValue);
+        // RESET POINT 4 of 4: a write to ECHOJAY'S OWN per-slot output gain.
+        host->resetSlotShortTermStats(loop.slot, "the hold moved EchoJay's slot output gain");
+        EchoJay_NSLog(("EJThreshold: level hold - EchoJay's slot output gain = " + juce::String(step.slotGainValue, 2)
+                       + " dB on slot " + juce::String(loop.slot + 1) + " (the slot was "
+                       + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
                        + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
     }
     calibStore(uid, loop);

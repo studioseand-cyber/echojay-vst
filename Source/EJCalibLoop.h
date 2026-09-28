@@ -123,6 +123,7 @@ struct CalibLoop
     float  outValue = std::numeric_limits<float>::quiet_NaN();
     float  outMin = -24.0f, outMax = 0.0f;
     float  levelChangeDb = 0.0f;       // what the slot last measured itself adding (out - in)
+    float  slotGainDb = 0.0f;          // EchoJay's own per-slot output gain, where the hold goes with no control
     float  levelTrimmedDb = 0.0f;      // how much this loop has taken off the output to hold the level
     bool   levelHeld = false;          // the hold has been applied for the current actuator position
     static constexpr int kFreshAfterWrite = 3;   // ruled
@@ -132,7 +133,18 @@ struct CalibLoop
     {
         bool  measured = false;   // a full window with no dropped frames
         bool  silent   = false;   // below the gate: nothing was playing
-        float grDb     = 0.0f;    // slot-in LUFS minus slot-out LUFS
+        // 21t-j (28 Sep 2026, the general compressor rule): TWO SENSORS, BOTH FROM THE SLOT'S OWN TAPS, and no
+        // product knowledge in either.
+        //   grDb           GAIN REDUCTION as a CREST DIFFERENCE:
+        //                    (in SHORTMAX - in SHORT90) - (out SHORTMAX - out SHORT90)
+        //                  A compressor pulls the loud phrases down toward where the programme sits, so the crest
+        //                  shrinks; makeup gain moves both output terms together and cancels. It needs no meter
+        //                  parameter and works on any plugin.
+        //   levelChangeDb  THE LEVEL CHANGE: out minus in on SHORT90 (INT when SHORT90 has not closed). It drives
+        //                  the hold, and it is NOT gain reduction - reading it as one is what reported a vocal
+        //                  getting 7.6 dB LOUDER as "-7.6 dB of gain reduction".
+        float grDb     = 0.0f;
+        float levelChangeDb = 0.0f;
         // 21t-d: the slot's INPUT true peak, as measured at the drive this window ran at. The drive limit is not
         // a fixed +12: it is whatever drive brings this figure to -3 dBTP, because past that the loop would be
         // buying gain reduction with a clipped input. -200 = the host could not read it (then +12 alone applies).
@@ -166,6 +178,9 @@ struct CalibLoop
         bool  writeOutput = false;
         juce::StringArray outputNames;
         float outputValue = 0.0f;
+        // 21t-j: the hold through EchoJay's own per-slot output gain, for a plugin that publishes no output control.
+        bool  writeSlotGain = false;
+        float slotGainValue = 0.0f;
     };
 
     /** Everything the response's calibration block can say. Defaults are the ruled defaults: PASSIVE, the drive
@@ -450,7 +465,7 @@ struct CalibLoop
         sensedGrDb = std::numeric_limits<float>::quiet_NaN();
         outParams = c.outputParams; outValue = c.outputStartDb;
         outMin = juce::jmin (c.outputMinDb, c.outputMaxDb); outMax = juce::jmax (c.outputMinDb, c.outputMaxDb);
-        levelChangeDb = 0.0f; levelTrimmedDb = 0.0f; levelHeld = false;
+        levelChangeDb = 0.0f; levelTrimmedDb = 0.0f; levelHeld = false; slotGainDb = 0.0f;
         blockHeardS = c.heardS; fromWorking = c.working;
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
@@ -722,7 +737,21 @@ struct CalibLoop
         // 21t-j (ruled): LEVEL-NEUTRAL, BEFORE IT SPEAKS. The slot's own out-minus-in IS what the chain is adding
         // at this point; holding it within 1 dB is what makes a compressor build level-neutral. Written ONCE per
         // actuator position, to the control the block named, and said out loud in the reply.
-        levelChangeDb = -w.grDb;           // gr is in - out, so the slot's contribution is its negation
+        levelChangeDb = w.levelChangeDb;   // out minus in on SHORT90: the slot's own contribution, as ruled
+        // 21t-j (ruled): WITH NO OUTPUT CONTROL NAMED, the hold goes to EchoJay's own per-slot output gain, which
+        // every slot has after this cut. "The slot's output equals its input within 1 dB" is then a promise the
+        // product keeps on any plugin, not one that depends on what the plugin publishes.
+        if (! levelHeld && std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
+        {
+            slotGainDb = juce::jlimit (-24.0f, 12.0f, slotGainDb - levelChangeDb);
+            levelTrimmedDb = -levelChangeDb;
+            levelHeld = true;
+            freshWanted = kFreshAfterWrite;
+            judged = 0;
+            s.writeSlotGain = true; s.slotGainValue = slotGainDb;
+            s.card = card(); s.logLine = log ("level-hold-slot");
+            return s;
+        }
         if (! levelHeld && std::abs (levelChangeDb) > 1.0f && ! outParams.isEmpty() && outValue == outValue)
         {
             const float want = juce::jlimit (outMin, outMax, outValue - levelChangeDb);
@@ -766,12 +795,17 @@ struct CalibLoop
         levelNote() is where that gets said. */
     juce::String grPositiveText() const
     { return (lastGr == lastGr) ? juce::String (std::abs (lastGr), 1) : juce::String ("--"); }
+    /** THE FIGURE THE REPLY QUOTES (28 Sep 2026 general rule): the MEASURED crest difference, always positive. A
+        plugin's own GR meter, when the block names one and it prints dB, is logged beside this as a cross-check
+        and is never the reply's number. */
+    float measuredGrDb() const
+    { return (lastGr == lastGr) ? std::abs (lastGr) : std::numeric_limits<float>::quiet_NaN(); }
 
     /** ...and on a track, a figure outside the band gets a clause of its own, in the user's terms. */
     juce::String bandNote() const
     {
-        if (! (sensedGrDb == sensedGrDb)) return {};
-        const float mag = sensedGrDb;
+        if (! (lastGr == lastGr)) return {};
+        const float mag = std::abs (lastGr);
         if (mag > hi + 0.05f)
             return " - more than the " + juce::String (lo, 0) + "-" + juce::String (hi, 0) + " I'm after";
         if (mag < lo - 0.05f)
@@ -802,15 +836,14 @@ struct CalibLoop
                   + " through the plugin and I have no output control for it here, so the level is not held.";
         // 21t-j (ruled): NO FIGURE THE PLUGIN DID NOT PUBLISH. A GR figure is quoted only from the plugin's own
         // meter (sense_param, gr_readable); the slot's in-vs-out pair is a level change and is reported as one.
-        if (sensedGrDb == sensedGrDb)
-            return plugin + " is on" + from + ", doing about " + juce::String (sensedGrDb, 1)
+        // EVERY FIGURE IN A REPLY IS A METER SAMPLE (ruled). The crest difference is measured on this slot's own
+        // taps, so there is one to quote as soon as a window has been judged.
+        const float gr = measuredGrDb();
+        if (gr == gr)
+            return plugin + " is on" + from + ", doing about " + juce::String (gr, 1)
                  + " dB of gain reduction on the loud phrases" + bandNote() + "." + level
                  + " How's that sounding? Say 'ease off' or 'more'.";
-        juce::String levelPhrase;
-        if (std::abs (levelChangeDb) > 0.5f)
-            levelPhrase = ", and it is adding " + juce::String (std::abs (levelChangeDb), 1) + " dB";
-        return plugin + " is on" + from + levelPhrase + "." + level
-             + " How's that sounding? Say 'ease off' or 'more'.";
+        return plugin + " is on" + from + "." + level + " How's that sounding? Say 'ease off' or 'more'.";
     }
 
     /** Nothing heard in 30 s: it cannot report a figure it does not have, so it asks for the one thing that would
@@ -916,6 +949,7 @@ struct CalibLoop
         o->setProperty ("outMin", (double) outMin); o->setProperty ("outMax", (double) outMax);
         o->setProperty ("levelTrimmedDb", (double) levelTrimmedDb);
         o->setProperty ("levelChangeDb", (double) levelChangeDb);
+        o->setProperty ("slotGainDb", (double) slotGainDb);
         o->setProperty ("levelHeld", levelHeld);
         o->setProperty ("senseParams", senseParams.joinIntoString ("\n"));
         o->setProperty ("grReadable", grReadable);
@@ -982,6 +1016,7 @@ struct CalibLoop
           if (o->hasProperty ("outMax")) c.outMax = (float) (double) o->getProperty ("outMax");
           c.levelTrimmedDb = (float) (double) o->getProperty ("levelTrimmedDb");
           c.levelChangeDb = (float) (double) o->getProperty ("levelChangeDb");
+          c.slotGainDb = (float) (double) o->getProperty ("slotGainDb");
           c.levelHeld = (bool) o->getProperty ("levelHeld");
           const auto sp = o->getProperty ("senseParams").toString();
           if (sp.isNotEmpty()) c.senseParams.addLines (sp);
