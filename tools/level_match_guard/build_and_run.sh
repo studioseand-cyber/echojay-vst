@@ -15,6 +15,10 @@ bash tools/merge_gate_tests/compile_link_harness.sh tools/level_match_guard/link
 [ -x $S/lmg_link_bin ] && LOK=1
 echo "-- compile v2 side"; V2OUT=$(python3 tools/harness_build.py tools/level_match_guard/v2_side.cpp 2>&1 | tee /dev/stderr | grep -E "^compiled -> " | tail -1 | sed 's/^compiled -> //')
 V2BIN="$V2OUT"; V2OK=0; [ -n "$V2BIN" ] && [ -x "$V2BIN" ] && V2OK=1   # 21t-j: the path the builder printed, not an assumed one
+# 28 Sep 2026: ...AND IT MUST BE THIS GUARD'S OWN BINARY. Five guards have a v2_side.cpp and they all
+# compiled to one path, so this runner once launched another guard's V2 side and read its silence as a
+# product failure. The name is now unique; this line makes a future collision stop the run instead.
+case "$V2BIN" in *level_match_guard*) : ;; *) echo "  FAIL  the compiled v2 binary is not this guard's: $V2BIN"; V2OK=0 ;; esac
 if [ $LOK = 0 ]; then echo "  FAIL  link side does not compile on this tree - RED by construction"; echo "==== level_match_guard: RED ===="; exit 1; fi
 if [ $V2OK = 0 ]; then echo "  FAIL  v2 side does not compile on this tree - RED by construction"; echo "==== level_match_guard: RED ===="; exit 1; fi
 $S/lmg_link_bin $H > $H/link.log 2>&1 & LP=$!

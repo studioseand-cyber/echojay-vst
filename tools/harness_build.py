@@ -8,8 +8,17 @@ ROOT = "/Users/SeanD/echojay-vst"
 CC   = os.path.join(ROOT, "build-release/compile_commands.json")
 LIB  = os.environ.get("EJ_LIB") or os.path.join(ROOT, "build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a")   # EJ_LIB: a before/after lib for RED/GREEN runs
 SRC  = os.path.abspath(sys.argv[1])
-OUT  = "/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad/" + \
-       os.path.splitext(os.path.basename(SRC))[0] + "_bin"
+# 28 Sep 2026: THE OUTPUT PATH CARRIES THE GUARD'S NAME, and the scratch directory is not baked in.
+# It used to be <one fixed scratchpad>/<source basename>_bin, and FIVE guards have a file called v2_side.cpp
+# (alias_mirror, lease_id, level_match, link_state, role_snapshot) - so all five compiled to ONE path. Four of
+# them run back to back in the gate, and level_match_guard's V2 side was launched as lease_id_guard's binary:
+# its v2.log holds "v2 side: compiled (EJ_LIG_HOME unset - the runner starts the pair)", the Apply was never
+# pressed, and every leg that waits on a V2 file failed with the trims still at their starting values. A shared
+# name between two harnesses is a harness fault that reads exactly like a product one.
+SCRATCH = os.environ.get("EJ_SCRATCH") or \
+          "/private/tmp/claude-502/-Users-SeanD-echojay-vst/8b86da2a-378d-4ecf-97c0-0e33f4993ece/scratchpad"
+OUT  = os.path.join(SCRATCH, os.path.basename(os.path.dirname(SRC)) + "_" +
+                    os.path.splitext(os.path.basename(SRC))[0] + "_bin")
 
 cc = json.load(open(CC))
 entry = next(e for e in cc if e["file"].endswith("PluginEditor.cpp"))
