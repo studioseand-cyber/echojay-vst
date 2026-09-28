@@ -610,8 +610,13 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
     }
     // Round 49 (Sean: "bottom one should stay whether set by hand or not"):
     // the line is UNCONDITIONAL - key, reference and voice, in every state.
+    // 21t-j (28 Sep 2026 ruling): a BUILD's write is not "by hand". When the build set the key and the
+    // reference from the [KEY] block, the block's own source is named here instead - the same "from <source>"
+    // the auto line has always carried, because it is the same question being answered.
+    const juce::String keyFrom = proc_.keySourceLabel();
+    const juce::String byHandOrFrom = keyFrom.isNotEmpty() ? (" from " + keyFrom) : juce::String (" (by hand)");
     const juce::String refLine =
-        ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz (by hand)"
+        ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz" + byHandOrFrom
         : st.refSelfIgnored ? "   ref 440.0 Hz (auto: only this track measurable - not followed)"
         : "   ref " + juce::String (st.refApplied, 1) + " Hz (auto)";
     if (voiceLine.isEmpty())
@@ -630,7 +635,7 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
         const int root = (int) proc_.getParamValue (EedPitchProcessor::kKeyRoot);
         keyLine = "key " + juce::String (kNames[juce::jlimit (0, 11, root)]) + " "
                 + (sc != nullptr ? juce::String (sc->choiceLabel (proc_.getParamValue (EedPitchProcessor::kScale))) : juce::String())
-                + " (by hand)";
+                + byHandOrFrom;
     }
     else if (st.applied)
     {

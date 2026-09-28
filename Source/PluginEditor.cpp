@@ -24754,6 +24754,10 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
     if (msgIdx < 0 || msgIdx >= (int)chatMessages.size()) return;
     auto& cm = chatMessages[(size_t)msgIdx];
     if (cm.editApplied || cm.editData.isEmpty()) return;
+    // 21t-j: the attribution goes in BEFORE anything is parsed or sent, so every road out of this function -
+    // the borrowed host, a Link over the wire, a group's members - carries it, and the stored message shows
+    // what was actually applied.
+    cm.editData = stampKeySourceIntoChainJson (cm.editData);
 
     // 21t-e: AN EDIT MADE IN A GROUP CHAT GOES TO EVERY MEMBER. The chat is working on seven channels; which one
     // happens to be on screen is a view, not a target. Each member gets the same ops through the same path a
@@ -27940,6 +27944,55 @@ void EchoJayEditor::showKeySourceMenu()
         });
 }
 
+// ---- 21t-j (28 Sep 2026 ruling): THE ATTRIBUTION STAMPS -------------------------------------------------
+// The [KEY] block names one source and calls it the authority for key, scale and reference. When the build
+// comes back and sets those three, the plugin has no way to know where they came from: a build's write looks
+// exactly like a hand on the knob, and the tuner panel said "(by hand)". These put the block's own source
+// label into the settings the build carries, so the device can say it.
+//
+// A NOTE, NOT A CONTROL: "key_source" sits beside "params", never inside it, so no dial path can read it as a
+// value and nothing has to be added to any schema. It is stamped ONLY onto a slot that actually sets one of
+// the three, so a compressor's settings never carry a key source.
+bool EchoJayEditor::stampKeySourceIntoStructured (juce::var& structured) const
+{
+    if (lastKeySourceLabel_.isEmpty()) return false;
+    auto* obj = structured.getDynamicObject();
+    if (obj == nullptr) return false;
+    auto* params = obj->getProperty ("params").getDynamicObject();
+    if (params == nullptr) return false;
+    const bool touchesKey = params->hasProperty ("key_root") || params->hasProperty ("scale")
+                         || params->hasProperty ("reference_hz") || params->hasProperty ("key_source")
+                         || params->hasProperty ("reference_source");
+    if (! touchesKey) return false;
+    obj->setProperty ("key_source", lastKeySourceLabel_);
+    return true;
+}
+
+juce::String EchoJayEditor::stampKeySourceIntoChainJson (const juce::String& json) const
+{
+    if (lastKeySourceLabel_.isEmpty() || json.isEmpty()) return json;
+    auto doc = juce::JSON::parse (json);
+    if (doc.getDynamicObject() == nullptr) return json;
+    int stamped = 0;
+    for (const char* arrayName : { "chain", "edit" })
+    {
+        auto* arr = doc.getProperty (arrayName, juce::var()).getArray();
+        if (arr == nullptr) continue;
+        for (auto& entry : *arr)
+        {
+            auto* eo = entry.getDynamicObject();
+            if (eo == nullptr) continue;
+            auto ss = eo->getProperty ("settings_structured");
+            if (stampKeySourceIntoStructured (ss)) { eo->setProperty ("settings_structured", ss); ++stamped; }
+        }
+    }
+    if (stamped == 0) return json;
+    EchoJay_NSLog (("EJChain: key and reference on " + juce::String (stamped)
+                    + " slot(s) attributed to \"" + lastKeySourceLabel_
+                    + "\" - the [KEY] block's selected source").toRawUTF8());
+    return juce::JSON::toString (doc, true);
+}
+
 juce::String EchoJayEditor::buildDetectedKeyContext()
 {
     auto keyText = [] (int root, bool minor)
@@ -27994,7 +28047,7 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     };
 
     const auto sources = collectKeySources();
-    if (sources.all.empty()) return {};
+    if (sources.all.empty()) { lastKeySourceLabel_.clear(); return {}; }
 
     juce::String c;
     const auto* p = sources.primary();
@@ -28053,6 +28106,10 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     // 21t-j (28 Sep 2026 ruling): THE SELECTED SOURCE IS THE SINGLE AUTHORITY, and the block says so in one place.
     // Confidence IS carried now (the ruling names it), because a server told to use one source and nothing else
     // needs to know how good that one reading is; what it must not have is a menu of readings to choose from.
+    // 21t-j: THE SELECTED SOURCE'S OWN LABEL, kept for the build that follows. The block below tells the server
+    // this source is the authority for key, scale and reference; when the build comes back and sets them, the
+    // plugin should be able to say where they came from in the same words the user saw here.
+    lastKeySourceLabel_ = srcLabel (*p);
     c << "key: " << keyText (p->root, p->minor)
       << "   scale: " << (p->minor ? "minor" : "major")
       << "   ref_hz: " << tuningText (p->tuningHz) << "\n"
@@ -33476,6 +33533,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
         // settings_structured (server-validated): drives the auto-apply
         // path; void/absent means prose-only for this slot.
         juce::var structured  = entryObj->getProperty("settings_structured");
+        stampKeySourceIntoStructured (structured);   // 21t-j: where the key and the reference came from
         // Slot wet/dry from the model (16 Aug 2026): "wet_pct" 0..100 on the
         // slot object. Numbers clamp; anything else is absent and logged.
         float wetPct = -1.0f;

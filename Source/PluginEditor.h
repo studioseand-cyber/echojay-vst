@@ -3702,6 +3702,17 @@ private:
     // built from collectKeySources(); names which source won (and which stem,
     // for a channel reading). Empty when no source has a reading.
     juce::String buildDetectedKeyContext();
+    // 21t-j (28 Sep 2026 ruling): WHERE A BUILD'S KEY AND REFERENCE CAME FROM. buildDetectedKeyContext records
+    // the selected source's own label here as it composes the [KEY] block; the two stamps below put that label
+    // into the settings a build or an edit carries, so the plugin can say "key F# minor from the Music Bus"
+    // instead of "(by hand)". Empty when this turn carried no [KEY] block - and then nothing is stamped.
+    juce::String lastKeySourceLabel_;
+    /** Adds "key_source" to a slot's settings_structured when it sets the key, the scale or the reference.
+        Returns true when it stamped. */
+    bool stampKeySourceIntoStructured (juce::var& structured) const;
+    /** The same, over a whole chain / edit JSON document. Returns the document - unchanged when there is
+        nothing to stamp, or when it does not parse. */
+    juce::String stampKeySourceIntoChainJson (const juce::String& json) const;
     /** [GROUP LEVELS] (21t-c): the selected group's MEMBERS and their own readings; empty when no group. */
     juce::String buildGroupLevelsContext();
     // 21t-g item 2: one line builder behind both blocks, and the single-track block itself.

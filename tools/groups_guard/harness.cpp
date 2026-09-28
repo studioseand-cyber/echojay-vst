@@ -31,6 +31,11 @@ struct EchoJayTabStripTestAccess
     static juce::String groupStripId (EchoJayEditor& e) { for (const auto& a : e.rosterAddresses()) if (a.startsWith ("grp:")) return a.fromFirstOccurrenceOf ("grp:", false, false); return {}; }
     // 21t-j: the block the server actually reads, composed by the shipping code.
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }
+    // 21t-j: the key-attribution stamp. The label is normally recorded by buildDetectedKeyContext as it composes
+    // the [KEY] block; set directly here so the STAMPING RULES are what is under test, not the collector.
+    static void setKeySrc (EchoJayEditor& e, const juce::String& s) { e.lastKeySourceLabel_ = s; }
+    static juce::String stampJson (EchoJayEditor& e, const juce::String& json)
+    { return e.stampKeySourceIntoChainJson (json); }
 };
 using A = EchoJayTabStripTestAccess;
 namespace {
@@ -136,6 +141,49 @@ int main()
                juce::String (got70 != nullptr ? got70->members.size() : 0) + " kept, cap "
                + juce::String (EchoJayProcessor::kMaxGroupMembers) + "/" + juce::String (EchoJayProcessor::kMaxGroups)
                + "; first refusal: " + refused2[0]);
+        // ---- 21t-j (28 Sep 2026 ruling): WHERE A BUILD'S KEY AND REFERENCE CAME FROM ----------------------
+        // The [KEY] block names one source and calls it the authority. When the build comes back and sets key,
+        // scale and reference, the block's own label is stamped beside the params so the plugin can say it -
+        // instead of "(by hand)", which is what a build's write used to look like.
+        {
+            std::printf ("\n== 21t-j: the key-attribution stamp ==\n");
+            const juce::String json =
+                "{\"edit\":[{\"op\":\"set\",\"name\":\"EchoJay Pitch\",\"settings_structured\":"
+                "{\"params\":{\"key_root\":6,\"scale\":\"minor\",\"reference_hz\":441.0}}},"
+                "{\"op\":\"set\",\"name\":\"EchoJay Comp\",\"settings_structured\":"
+                "{\"params\":{\"threshold_db\":-18.0}}}]}";
+            A::setKeySrc (*ed, "the Music Bus (Link \u0027MUSIC\u0027)");
+            const auto out = A::stampJson (*ed, json);
+            const auto v = juce::JSON::parse (out);
+            auto* arr = v.getProperty ("edit", juce::var()).getArray();
+            juce::String tunerSrc, compSrc;
+            if (arr != nullptr)
+                for (auto& e2 : *arr)
+                {
+                    const auto nm = e2.getProperty ("name", juce::var()).toString();
+                    const auto ss = e2.getProperty ("settings_structured", juce::var());
+                    const auto src = ss.getProperty ("key_source", juce::var()).toString();
+                    if (nm.contains ("Pitch")) tunerSrc = src; else compSrc = src;
+                }
+            check (tunerSrc.contains ("the Music Bus"),
+                   "21t-j. the slot that sets key / scale / reference is stamped with the [KEY] block's source",
+                   tunerSrc.isEmpty() ? juce::String ("(none)") : tunerSrc);
+            check (compSrc.isEmpty(),
+                   "21t-j. ...and a slot that sets none of them is NOT - a compressor carries no key source",
+                   compSrc.isEmpty() ? juce::String ("(none, correct)") : compSrc);
+            check (! out.contains ("\"key_source\":\"\"") ,
+                   "21t-j. ...and the field is never stamped empty");
+            // NO BLOCK, NO STAMP: a turn that carried no [KEY] block attributes nothing, and the document comes
+            // back byte for byte.
+            A::setKeySrc (*ed, {});
+            check (A::stampJson (*ed, json) == json,
+                   "21t-j. a turn with NO [KEY] block leaves the document exactly as it was");
+            A::setKeySrc (*ed, "the Music Bus");
+            check (A::stampJson (*ed, "not json at all") == "not json at all",
+                   "21t-j. ...and a document that does not parse is returned unchanged, never half-rewritten");
+            A::setKeySrc (*ed, {});
+        }
+
         // THIS LEG LEAVES THE STATE AS IT FOUND IT (ruled): the persistence check below asserts on the ONE group
         // the earlier legs made, and a guard that changes what the next leg measures is not a guard.
         p.chatTargetGroupId.clear();

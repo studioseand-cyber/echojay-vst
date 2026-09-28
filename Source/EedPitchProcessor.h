@@ -225,6 +225,23 @@ public:
                                   int* appliedOut = nullptr,
                                   int* skippedOut = nullptr) override;
 
+    /** 21t-j (28 Sep 2026 ruling): WHERE THE KEY AND THE REFERENCE CAME FROM. A build that set them from the
+        [KEY] block stamps the selected source's own label onto the device with the write, and the plugin then
+        SAYS SO - "key F# minor from the Music Bus" rather than "(by hand)", which is what a build's write used
+        to look like. An empty label means nobody attributed it, and the display says "(by hand)" as before.
+
+        It is deliberately NOT a parameter: it is a note about where a value came from, it has no position and
+        nothing dials it. It rides the session state beside the values it describes, and it is CLEARED the
+        moment anything other than a build writes the key, the scale or the reference - because at that point
+        the attribution would be a lie. */
+    void setKeySourceLabel (const juce::String& label) { keySourceLabel_ = label; }
+    juce::String keySourceLabel() const { return keySourceLabel_; }
+    /** Called from every write to key_root / scale / reference_hz. A write that is not a build's - a hand on the
+        knob, a state load's replay is excluded by its own guard - drops the attribution, because a value the
+        Music Bus did not choose must not carry the Music Bus's name. */
+    void clearKeyAttributionOnHandWrite()
+    { if (! applyingStructured_ && ! writingDefaults_ && ! applyingState()) keySourceLabel_.clear(); }
+
     // The two lookahead settings, in periods of the active voice_type's floor.
     // PUBLIC because the editor prints the latency each one causes - the number
     // is the whole point of the control, so the control has to be able to ask.
@@ -347,11 +364,17 @@ private:
     // applyMode/applyScale run inside setParamValue, whose caller builds its
     // own summary from id/value pairs and would report "correction_mode hard"
     // over six knobs that silently moved. They leave their detail here so
+    // 21t-j: the [KEY] block's own source label, when a build set the key/scale/reference from it.
+    juce::String keySourceLabel_;
     // applyStructured can put it back into the applied line.
     juce::String pendingModeSummary_, pendingScaleSummary_;
 
     bool applyingMode_ = false;
     bool writingDefaults_ = false;
+    // 21t-j: true only while applyStructured is placing a build's values, so a write that is NOT a build can
+    // clear the attribution. Without it, a hand on the key knob would keep "from the Music Bus" on a value the
+    // Music Bus never chose.
+    bool applyingStructured_ = false;
 
     std::atomic<int> modeIndex_ { kNatural };
     double               sampleRate_ = 48000.0;

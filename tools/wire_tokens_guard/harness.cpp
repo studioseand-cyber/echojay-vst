@@ -238,6 +238,53 @@ int main()
                    && next.contains ("key ") && next.contains ("scale ") && next.contains ("ref "),
                    "21t-j: ...in the ruled field order - mode, retune, flex, humanize, key, scale, ref",
                    next.substring (0, 120));
+            check (! next.contains ("key_source"),
+                   "21t-j: ...and NO key_source field when nobody attributed the key - absent, not empty",
+                   next.substring (0, 120));
+        }
+        // ---- 21t-j (28 Sep 2026 ruling): WHERE THE KEY AND THE REFERENCE CAME FROM -------------------------
+        // A build that sets them from the [KEY] block carries that block's source label beside the params. The
+        // line the server reads gains ONE ADDITIVE FIELD at the end; every existing field keeps its spelling,
+        // its order and its value.
+        {
+            auto tunerLine = [&host]
+            {
+                const auto b = EchoJayAPI::buildCurrentChainInjection (host);
+                const auto ls = juce::StringArray::fromLines (b);
+                for (int i = 0; i < ls.size(); ++i)
+                    if (ls[i].contains ("EchoJay Pitch") && i + 1 < ls.size()) return ls[i + 1];
+                return juce::String();
+            };
+            auto* pk = new juce::DynamicObject();
+            pk->setProperty ("key_root", 6); pk->setProperty ("scale", "minor");
+            pk->setProperty ("reference_hz", 441.0);
+            auto* outer3 = new juce::DynamicObject();
+            outer3->setProperty ("params", juce::var (pk));
+            outer3->setProperty ("key_source", "the Music Bus (Link \"MUSIC\")");
+            host.setSlotStructuredSettings (1, juce::var (outer3));
+            pump (300);
+            const auto withSrc = tunerLine();
+            std::printf ("\n----- THE TUNER SLOT LINE after a build that set key and ref from [KEY] -----\n%s\n"
+                         "----- end -----\n", withSrc.toRawUTF8());
+            check (withSrc.contains ("key_source \"the Music Bus (Link \"MUSIC\")\"")
+                   || withSrc.contains ("key_source \"the Music Bus"),
+                   "21t-j: a build that set key and reference from [KEY] carries key_source on the chain line",
+                   withSrc.substring (0, 160));
+            check (withSrc.contains ("key F#") && withSrc.contains ("ref 441.0 Hz")
+                   && withSrc.indexOf ("key_source") > withSrc.indexOf ("ref "),
+                   "21t-j: ...as an ADDITIVE field at the END - the values and their order are untouched",
+                   withSrc.substring (0, 160));
+            // ...and a HAND on the knob drops the attribution, because the value is no longer that source's.
+            {
+                auto* byHand = new juce::DynamicObject(); byHand->setProperty ("key_root", 0);
+                auto* outer4 = new juce::DynamicObject(); outer4->setProperty ("params", juce::var (byHand));
+                host.setSlotStructuredSettings (1, juce::var (outer4));
+                pump (300);
+                const auto after2 = tunerLine();
+                check (after2.contains ("key C") && ! after2.contains ("key_source"),
+                       "21t-j: ...and a later write that carries NO source drops the attribution rather than "
+                       "keeping a name on a value that source never chose", after2.substring (0, 160));
+            }
         }
         check (block.contains ("[CURRENT CHAIN"), "the block marker is \"[CURRENT CHAIN\"",
                block.substring (0, 40));

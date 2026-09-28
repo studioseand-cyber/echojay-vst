@@ -433,10 +433,12 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         // loaded as MANUAL - the reference path had the guard, the key path
         // did not (the same "applied differently on load" class as the trap).
         if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false);
+        clearKeyAttributionOnHandWrite();
         return true;
     }
     if (id == kScale)       { applyScale ((int) std::lround (value));
-                              if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false); return true; }
+                              if (! writingDefaults_ && ! applyingState()) keyAuto_.store (false);
+                              clearKeyAttributionOnHandWrite(); return true; }
     if (id == kReferenceHz)
     {
         // The value lands in the MANUAL FIELD. Only a LIVE write - a person
@@ -448,6 +450,7 @@ bool EedPitchProcessor::setParamValue (const juce::String& id, double value)
         if (! writingDefaults_ && ! applyingState())
         { refAuto_.store (false); refManualByUser_.store (true); }
         if (! refAuto_.load()) correct_.setReferenceHz (manualRefHz_.load());
+        clearKeyAttributionOnHandWrite();
         return true;
     }
     if (id == kTranspose)   { correct_.setTranspose ((float) value);   return true; }
@@ -544,6 +547,12 @@ juce::String EedPitchProcessor::readbackSummary() const
         << ", key " << kRoots[root]
         << ", scale " << (sspec != nullptr ? juce::String (sspec->choiceLabel ((double) sc)) : juce::String (sc))
         << ", ref " << juce::String (getParamValue (kReferenceHz), 1) << " Hz";
+    // 21t-j (28 Sep 2026 ruling): WHERE THEY CAME FROM, as an ADDITIVE field at the end. Every existing field
+    // keeps its spelling, its order and its value, so nothing that parses this line has to change; a reader that
+    // wants the attribution finds it, and one that does not is unaffected. The field is absent - not empty -
+    // when nobody attributed the key, which is the same rule the rest of these blocks follow.
+    if (keySourceLabel_.isNotEmpty())
+        out << ", key_source \"" << keySourceLabel_ << "\"";
     return out;
 }
 
@@ -718,6 +727,34 @@ juce::String EedPitchProcessor::applyStructured (const juce::var& structured,
     juce::StringArray parts;
     pendingModeSummary_ = {};
     pendingScaleSummary_ = {};
+    // 21t-j (28 Sep 2026 ruling): WHERE THE KEY AND REFERENCE CAME FROM. A build that set them from the [KEY]
+    // block carries that block's own source label beside the params; it is a note, not a control, so it is read
+    // here and never dialled. The scoped flag keeps the writes below from clearing the attribution they are
+    // carrying - only a write from somewhere else does that.
+    const juce::ScopedValueSetter<bool> structuredGuard (applyingStructured_, true);
+    {
+        // DOES THIS PAYLOAD TOUCH THE THREE? An attribution only ever describes key, scale and reference, so a
+        // payload that sets none of them leaves whatever attribution is already there alone - a mode edit does
+        // not un-attribute a key the build attributed.
+        bool touchesKey = false;
+        if (auto* pp = structured.getProperty ("params", juce::var()).getDynamicObject())
+            touchesKey = pp->hasProperty ("key_root") || pp->hasProperty ("scale")
+                      || pp->hasProperty ("reference_hz") || pp->hasProperty ("key_source")
+                      || pp->hasProperty ("reference_source");
+        if (structured.hasProperty ("key_source"))
+        {
+            // Inner quotes are flattened: this label is printed inside quotes on the [CURRENT CHAIN] line, and a
+            // quote inside a quoted field is a parsing problem handed to whoever reads it.
+            keySourceLabel_ = structured.getProperty ("key_source", juce::var()).toString().trim()
+                                  .replaceCharacter ('"', '\'');
+        }
+        else if (touchesKey)
+        {
+            // A WRITE WITH NO SOURCE IS NOT THAT SOURCE'S VALUE. Keeping the old label here is how "from the
+            // Music Bus" would end up on a key somebody else chose.
+            keySourceLabel_.clear();
+        }
+    }
 
     // The flat params first, so a move that sets `scale` AND edits a degree
     // ends with the degree edit winning - which is what the caller wrote.
