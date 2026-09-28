@@ -215,7 +215,8 @@ int main()
     }
 
     std::printf ("== KEY-SIDE CIRCULARITY GUARD (behind debugKeySelfGuard): a self-derived fact "
-                 "is not followed for key root/mode - chromatic, never the last key ==\n");
+                 "is not followed for key root/mode - the previous key is HELD (COMMIT 4), and the render "
+                 "stays chromatic ==\n");
     {
         auto pump = [&] (int blocks)
         {
@@ -254,16 +255,24 @@ int main()
         check (std::abs (p.autoKeyState().refApplied - 440.0) < 0.1,
                "...while the reference guard already ignores it (440)");
 
-        // THE GUARD, flag ON: chromatic, actively, and the state says why.
+        // THE GUARD, flag ON. RE-RULED 29 Sep 2026 (21t-k item 8): these three rows asserted CHROMATIC and
+        // "the previous key did not survive", which was the rule when the guard was written (round 23) and was
+        // superseded by COMMIT 4's HOLD: "with no usable fact, a key already taken STAYS. Only before the first
+        // valid detection is there nothing to hold - chromatic." A refused self-fact IS "no usable fact", so the
+        // key that was legitimately taken a moment earlier is held rather than thrown away - which is the better
+        // behaviour for the case the guard exists for (a vocal correcting itself), because the alternative is to
+        // drop a good external key the instant the singer's own analysis arrives.
+        // What the guard still owes, and what these rows now assert: the self-derived fact is NOT taken, the
+        // readout says why, and the reference is untouched.
         p.debugKeySelfGuard (true);
         pump (4);
         const auto st = p.autoKeyState();
-        check (! st.applied && st.fellBack, "flag ON: the self-derived key is NOT applied");
+        check (! st.fellBack && st.held, "flag ON as re-ruled: the self-derived key is not taken - the PREVIOUS "
+                                        "key is HELD (COMMIT 4), not dropped to chromatic");
         check (st.keySelfIgnored, "...keySelfIgnored is set for the readout");
-        check (allDegrees(), "...the scale reads chromatic");
         check (std::abs (st.refApplied - 440.0) < 0.1, "...reference stays 440");
-        check (! (p.autoKeyState().root == 6 && p.autoKeyState().applied),
-               "...the PREVIOUS key (F# minor) did not survive - chromatic, not the last key");
+        check (p.autoKeyState().root == 6 && p.autoKeyState().minor,
+               "...and the held key is the one the EXTERNAL source gave (F# minor), never the self-derived one");
 
         // A self-derived fact from ANOTHER instance (a bus Link's own
         // analysis) is legitimate and still followed.
@@ -831,24 +840,45 @@ int main()
         echojay::KeyFeed::instance().publish (f);
         pump (4);
 
+        // RE-RULED 29 Sep 2026 (21t-k item 8): THERE IS NO CONFIDENCE FALLBACK. These three rows are from the
+        // rule COMMIT 4 retired - "only 'nothing detected yet' (and the self-derived guard) reach chromatic".
+        // A weak reading is APPLIED and its weakness is reported where the reader can act on it: since 21t-k
+        // item 2(c) the [KEY] block carries "stability: unstable (live 0.06 below 0.2) - values above are the
+        // last stable reading". Throwing a 0.31 key away silently was the behaviour that left a tuner chromatic
+        // with no explanation anywhere.
         const auto* sp = EedPitchProcessor::schema().find ("scale");
-        check (sp->choiceLabel (p.getParamValue ("scale")) == "chromatic",
-               "a 0.31-confidence key falls back to chromatic");
-        for (int s2 = 0; s2 < 12; ++s2)
-            if (! p.corrector().degreeEnabled (s2))
-            { check (false, "chromatic must allow every degree"); break; }
+        check (sp->choiceLabel (p.getParamValue ("scale")) != "chromatic",
+               "a 0.31-confidence key IS applied (the confidence fallback is retired; the [KEY] block reports "
+               "stability instead)");
         const auto st = p.autoKeyState();
-        check (st.fellBack && ! st.applied, "the state reports the fallback so the UI can show it");
+        check (st.applied && ! st.fellBack,
+               "...and the state says applied, not fellBack - nothing is silently dropped");
+        check (st.root == 6 && st.minor, "...as the key it was given (F# minor)");
     }
 
-    std::printf ("== no source at all is also chromatic, not a guess ==\n");
+    std::printf ("== a source that GOES AWAY is held, not dropped (COMMIT 4) ==\n");
     {
+        // RE-RULED 29 Sep 2026 (21t-k item 8): this row asserted chromatic when the feed went empty. COMMIT 4
+        // made that a HOLD - "a key already taken STAYS. Only before the first valid detection is there nothing
+        // to hold" - and a key that vanished the moment the music stopped was the fault it fixed. Chromatic
+        // before the first detection is asserted in the fresh-instance leg below.
         echojay::KeyFeed::instance().publish (echojay::DetectedKeyFact{});
         juce::AudioBuffer<float> b (2, 512); juce::MidiBuffer m;
         for (int i = 0; i < 4; ++i) { b.clear(); p.processBlock (b, m); }
-        const auto* sp = EedPitchProcessor::schema().find ("scale");
-        check (sp->choiceLabel (p.getParamValue ("scale")) == "chromatic",
-               "no key detected -> chromatic");
+        const auto st = p.autoKeyState();
+        check (st.held && ! st.fellBack,
+               "an empty feed HOLDS the key already taken, and the state says held");
+        // ...and a FRESH instance, which has nothing to hold, is chromatic - the half of the old row that stands.
+        {
+            EedPitchProcessor fresh;
+            fresh.prepareToPlay (48000.0, 512);
+            fresh.applyStructured (params ({ { "key_source", "auto" } }), EedDeviceProcessor::ParamSource::Assistant);
+            juce::AudioBuffer<float> fb (2, 512); juce::MidiBuffer fm;
+            for (int i = 0; i < 4; ++i) { fb.clear(); fresh.processBlock (fb, fm); }
+            const auto* sp = EedPitchProcessor::schema().find ("scale");
+            check (sp->choiceLabel (fresh.getParamValue ("scale")) == "chromatic",
+                   "...while an instance that has NEVER had a key is chromatic, having nothing to hold");
+        }
     }
 
     std::printf ("== setting key or scale BY HAND takes over from auto ==\n");

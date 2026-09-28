@@ -815,8 +815,12 @@ void EedPitchProcessor::refreshAutoKey()
     // reference guard below has always treated it as unmeasured for tuning.
     // Behind keySelfGuard_ it is unmeasured for KEY ROOT/MODE as well (see
     // debugKeySelfGuard): the corrector must not take its scale from the
-    // melody it is correcting. Chromatic, actively applied - never the last
-    // key - exactly as the confidence gate does.
+    // melody it is correcting. 29 Sep 2026: the tail of this comment used to
+    // read "Chromatic, actively applied - never the last key - exactly as the
+    // confidence gate does", and BOTH halves of that are superseded: COMMIT 4
+    // retired the confidence gate and made a missing usable fact a HOLD, so a
+    // refused self-fact leaves the previously taken key in place (the render
+    // stays chromatic through the scale mask) instead of discarding it.
     const bool selfFact    = f.selfDerived && f.publisherId != 0
                           && f.publisherId == keyFeedSelfId_.load (std::memory_order_relaxed);
     const bool keyCircular = keySelfGuard_.load() && selfFact;
