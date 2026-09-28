@@ -10207,10 +10207,53 @@ bool EchoJayEditor::applyRosterSelectionClick(const juce::String& addr, bool isB
         }
         if (linkSelection_.count(addr)) linkSelection_.erase(addr);
         else                            linkSelection_.insert(addr);
+        selectionAnchor_ = addr;                              // 21t-k item 5: a toggle re-anchors
         return true;                                          // consumed: the working Link does not change
     }
+    // 21t-k item 5 (28/29 Sep 2026 ruling): SHIFT-CLICK SELECTS THE RANGE FROM THE LAST PLAIN CLICK. The range
+    // is taken in the ROSTER's own order - what the user sees - and includes both ends. With no anchor yet a
+    // shift-click is a plain click, because a range needs two points and inventing one would select a run
+    // nobody indicated.
+    if (mods.isShiftDown() && ! isBus && selectionAnchor_.isNotEmpty() && selectionAnchor_ != addr)
+    {
+        const auto rows = rosterAddresses();
+        int a = -1, b = -1;
+        for (int i = 0; i < (int) rows.size(); ++i)
+        {
+            if (rows[(size_t) i] == selectionAnchor_) a = i;
+            if (rows[(size_t) i] == addr)             b = i;
+        }
+        if (a >= 0 && b >= 0)
+        {
+            linkSelection_.clear();
+            for (int i = juce::jmin (a, b); i <= juce::jmax (a, b); ++i)
+            {
+                const auto& r = rows[(size_t) i];
+                if (r.startsWith ("grp:")) continue;           // a group row is not a Link
+                linkSelection_.insert (r);
+            }
+            EchoJay_NSLog(("EJSelect: shift-click range " + juce::String (juce::jmin (a, b)) + ".."
+                           + juce::String (juce::jmax (a, b)) + " -> " + juce::String ((int) linkSelection_.size())
+                           + " Link(s)").toRawUTF8());
+            return true;                                      // consumed: the working Link does not change
+        }
+    }
     linkSelection_.clear();                                   // a plain click is a selection of one
+    selectionAnchor_ = addr;                                  // ...and it is the anchor a shift-click ranges from
     return false;
+}
+
+// 21t-k item 5: SELECT BY ROLE, the four menu entries. One function, so the menu and the guard agree.
+void EchoJayEditor::selectRosterByRole(const juce::String& roleIn)
+{
+    const auto role = roleIn.trim().toLowerCase();
+    if (role == "none") { clearRosterSelection(); repaint(); return; }
+    linkSelection_.clear();
+    const auto take = (role == "all") ? juce::String() : role;
+    for (const auto& u : processorRef.uidsForScopeRole (take)) linkSelection_.insert (u);
+    EchoJay_NSLog(("EJSelect: \"select all " + role + "\" -> " + juce::String ((int) linkSelection_.size())
+                   + " Link(s) of " + processorRef.linkRosterSentence()).toRawUTF8());
+    repaint();
 }
 
 // 21o item 1b: M / S on a group act on EVERY member through the per-Link command that already exists
@@ -32430,6 +32473,16 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
         m.addSeparator();
         m.addItem(12, juce::String::fromUTF8("Group\xe2\x80\xa6") + " (" + juce::String(sel.size()) + " Links)", sel.size() >= 2);
     }
+    {   // 21t-k item 5 (28/29 Sep 2026 ruling): SELECT ALL, by role. The counts come from the roster, so the
+        // menu says how many each entry would take before it is chosen.
+        const auto rc = processorRef.linkRosterCounts();
+        m.addSeparator();
+        m.addItem (20, "Select all channels (" + juce::String (rc.channels) + ")", rc.channels > 0);
+        m.addItem (21, "Select all buses ("    + juce::String (rc.buses)    + ")", rc.buses    > 0);
+        m.addItem (22, "Select all ("          + juce::String (rc.channels + rc.buses) + ")",
+                   (rc.channels + rc.buses) > 0);
+        m.addItem (23, "Select none", ! linkSelection_.empty());
+    }
     {   // 21t-i (27 Sep 2026 ruling): THE USER'S RESET of this channel's kept levels - the only thing that clears
         // the stored record. It says what it will lose, because the record is the whole session's listening.
         const auto rec = processorRef.levelRecordFor (linkAddr);
@@ -32445,6 +32498,8 @@ void EchoJayEditor::showLinkPlacementMenu(const juce::String& linkAddr)
         {
             if (safeThis == nullptr || r == 0) return;
             if (r == 11) { safeThis->processorRef.setLinkAlias(linkAddr, {}); safeThis->repaint(); return; }
+            if (r >= 20 && r <= 23)   // 21t-k item 5
+            { safeThis->selectRosterByRole (r == 20 ? "channel" : r == 21 ? "bus" : r == 22 ? "all" : "none"); return; }
             if (r == 13)
             {
                 safeThis->processorRef.resetLevelRecord (linkAddr);

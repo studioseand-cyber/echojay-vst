@@ -126,6 +126,7 @@ struct EchoJayTabStripTestAccess
     static auto& panel (EchoJayEditor& e) { return e.chainListPanel; }        // 22 Sep 2026 (item 7)
     static void picker (EchoJayEditor& e) { e.showChainPluginPicker(); }     // 22 Sep 2026 (item 7)
     static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
+    static std::vector<juce::String> rosterRows (EchoJayEditor& e) { return e.rosterAddresses(); }   // 21t-k item 5
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void refreshPanel (EchoJayEditor& e) { e.refreshChainPanelForView (true); }   // 21m ruling 3 (keep-level grey-out)
     // ---- 21o (23 Sep 2026) ----
@@ -407,6 +408,60 @@ int main()
         check (! consumedPlain && ed->rosterSelection().empty(), "(12a) a plain click clears the multi-selection and falls through to the working-Link path -> exactly one strip selected", juce::String ((int) ed->rosterSelection().size()));
         ed->applyRosterSelectionClick ("lnk_02", false, false, cmd);
         check (ed->applyRosterSelectionClick ({}, false, false, plain) && ed->rosterSelection().empty(), "(12a) a click on empty roster space clears the selection");
+        // ---- 21t-k item 5 (28/29 Sep 2026 ruling): SHIFT-CLICK RANGES, AND SELECT BY ROLE ------------------
+        {
+            std::printf ("== 21t-k item 5: shift-click ranges from the last plain click; select by role ==\n");
+            const juce::ModifierKeys shift (juce::ModifierKeys::shiftModifier);
+            const auto rows = A::rosterRows (*ed);
+            juce::StringArray rowStr; for (const auto& r : rows) rowStr.add (r);
+            std::printf ("    roster order: %s\n", rowStr.joinIntoString (", ").toRawUTF8());
+            ed->clearRosterSelection();
+            check (ed->rosterSelectionAnchor().isEmpty(),
+                   "21t-k 5. with no plain click yet there is no anchor");
+            const bool shiftNoAnchor = ed->applyRosterSelectionClick ("lnk_03", false, false, shift);
+            check (! shiftNoAnchor && ed->rosterSelection().empty(),
+                   "21t-k 5. ...so a shift-click with no anchor behaves as a plain click, never an invented range",
+                   juce::String ((int) ed->rosterSelection().size()) + " selected");
+            ed->applyRosterSelectionClick ("lnk_01", false, false, plain);
+            check (ed->rosterSelectionAnchor() == "lnk_01",
+                   "21t-k 5. a PLAIN click is the anchor", ed->rosterSelectionAnchor());
+            const bool ranged = ed->applyRosterSelectionClick ("lnk_03", false, false, shift);
+            { const auto sel = ed->rosterSelection();
+              juce::StringArray got; for (const auto& u : sel) got.add (u);
+              check (ranged && sel.size() == 3 && sel.count ("lnk_01") && sel.count ("lnk_02") && sel.count ("lnk_03"),
+                     "21t-k 5. shift-click selects the contiguous run from the anchor, both ends included  (RED as "
+                     "it stood: a shift-click was a plain click and the run did not exist)",
+                     got.joinIntoString (",")); }
+            // ...and backwards, because a range has no preferred direction.
+            ed->applyRosterSelectionClick ("lnk_03", false, false, plain);
+            ed->applyRosterSelectionClick ("lnk_01", false, false, shift);
+            check (ed->rosterSelection().size() == 3,
+                   "21t-k 5. ...and the same run backwards", juce::String ((int) ed->rosterSelection().size()));
+            // SELECT BY ROLE. The fixture's Links are undeclared, so declare two channels and a bus first.
+            {
+                auto decl = links;
+                for (size_t i = 0; i < decl.size(); ++i)
+                    decl[i].placement = (i == 2 ? 1 : 2);        // lnk_03 a bus, the rest channels
+                EchoJayAlignTestAccess::setLinks (proc, decl);
+                const int nCh = (int) decl.size() - 1;        // the fixture's Links, less the one made a bus
+                ed->selectRosterByRole ("channel");
+                check ((int) ed->rosterSelection().size() == nCh && ! ed->rosterSelection().count ("lnk_03"),
+                       "21t-k 5. \"Select all channels\" takes the channels and not the bus",
+                       juce::String ((int) ed->rosterSelection().size()) + " of " + juce::String (nCh));
+                ed->selectRosterByRole ("bus");
+                check (ed->rosterSelection().size() == 1 && ed->rosterSelection().count ("lnk_03"),
+                       "21t-k 5. \"Select all buses\" takes the bus",
+                       juce::String ((int) ed->rosterSelection().size()));
+                ed->selectRosterByRole ("all");
+                check ((int) ed->rosterSelection().size() == (int) decl.size(),
+                       "21t-k 5. \"Select all\" takes every DECLARED Link",
+                       juce::String ((int) ed->rosterSelection().size()) + " of " + juce::String ((int) decl.size()));
+                ed->selectRosterByRole ("none");
+                check (ed->rosterSelection().empty() && ed->rosterSelectionAnchor().isEmpty(),
+                       "21t-k 5. \"Select none\" clears the selection and its anchor");
+            }
+            ed->clearRosterSelection();
+        }
         // ---- (12b) group strip parity ----
         const auto gid = proc.createLinkGroup ("the BVs", juce::StringArray { "lnk_01", "lnk_02", "lnk_03" });
         A::toLinkTab (*ed);

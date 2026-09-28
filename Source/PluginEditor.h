@@ -4912,11 +4912,19 @@ public:
         rule. Returns true when the click was a selection gesture and the caller must stop (a Cmd-click toggle or a
         click on empty space); a plain click clears the selection and returns false so the working-Link path runs. */
     bool applyRosterSelectionClick(const juce::String& addr, bool isBus, bool isGroup, const juce::ModifierKeys& mods);
-    void clearRosterSelection() { linkSelection_.clear(); }
+    void clearRosterSelection() { linkSelection_.clear(); selectionAnchor_.clear(); }
     std::set<juce::String> rosterSelection() const { return linkSelection_; }
+    /** 21t-k item 5 (28/29 Sep 2026 ruling): SELECT BY ROLE, from the strip's right-click menu. "channel" and
+        "bus" take every Link the roster declares as one; "all" takes every declared Link; "none" clears. The
+        roster's own order is used, so what is selected is what the user can see. */
+    void selectRosterByRole(const juce::String& role);
+    /** The anchor a shift-click ranges from: the last PLAIN click. Empty until there has been one. */
+    juce::String rosterSelectionAnchor() const { return selectionAnchor_; }
 private:
     void showGroupMenu(const juce::String& groupId);
     void promptGroupName(const juce::StringArray& members);
+    // 21t-k item 5: the last PLAIN click, which a shift-click ranges from. Cleared with the selection.
+    juce::String selectionAnchor_;
     juce::String lastGroupMoveStatus_;              // "the BVs moved by 1.0 dB (BV 2 is at -24 dB)" - the guard reads it
     // AI-driven level match: compute the absolute gain that lands this Link's
     // integrated loudness at targetLufs (from its freshest frame + current
