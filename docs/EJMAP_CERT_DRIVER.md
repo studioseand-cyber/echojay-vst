@@ -50,7 +50,46 @@ on expiry. It records a timeout as a timeout, not a refusal: the retry rule is
 "-15 / killed = re-run alone once, and two timeouts mark a hang". The probe's own
 bound is a convenience, never the guarantee.
 
-## 3. The fixture unit rule is EJ Map's
+## 3. Unlicensed on this host is not broken
+
+Every run happens on one machine with that machine's licences. A licence-bound
+plugin without its licence is **UNLICENSED ON THIS HOST**. That says nothing
+about the plugin. Spec section 6 already has the behaviour: leave the product at
+`mapped` with reason `unlicensed_on_host`, and let a machine that has the licence
+pick it up. The driver must never read a stub, an empty instance or a hang as
+evidence about the plugin: not `uncertifiable`, not `error`, and never a count
+toward quarantine.
+
+Shapes seen on the dev Mac (no iLok dongle present), 28 Sep, all through the
+signed standalone probe with `--list-params`:
+- **Empty instance.** Decapitator AU 5.4.3 (PACE-wrapped): exit 0 in 7.4 s, an
+  instance, 0 parameters, no dialog. EJ Map's extractor also recorded 0 for this
+  AU on 27 Jul; its VST3 has 12. It cannot be scored: "no licence" and "this AU
+  shows nothing outside a DAW" look identical.
+- **Activation UI, then a hang.** Eiosis E2Deesser AU 1.1.6 (PACE-wrapped;
+  expected 67 parameters from ejextract 27 Jul and the EJ Map map 7 Aug): about
+  1.1 s into instantiation the wrapper launched PACE's "Software Activation"
+  (`PACEEdenExperience`) as a child with a window. The probe never got an
+  instance, printed 0 rows, and was killed at 90 s; the activation process exited
+  with it. It was NOT the "fatal wrapper bootstrap error" (100001) dialog.
+- **Fatal wrapper bootstrap error.** Seen 21 Sep with an UNSIGNED harness (df407ab).
+  Not seen with the signed probe.
+
+So a licence problem can present as an empty instance, a hang behind an
+activation window, or an exit. The driver cannot tell these from real defects by
+the probe's output alone. It therefore needs an independent "is this licensed
+here" signal, or it must treat every such shape from a known licence-bound
+vendor as `unlicensed_on_host` and say so in the run report.
+
+An activation window is a UI event on the user's desktop. An unattended run must
+count it and name it in the report, not just time it out silently.
+
+**Dongle-bound subjects on the dev Mac** (per Sean, 28 Sep; not measured here).
+A full certification run on this Mac will SILENTLY UNDER-COVER these, and the run
+report must say so: SSL (28 products), Softube (4), Harrison (4), oeksound,
+Audified, Eventide.
+
+## 4. The fixture unit rule is EJ Map's
 
 The 74 compressor-profile fixtures derived `unit` in an uncommitted sampling
 pass. The rule is now written down and pinned:
