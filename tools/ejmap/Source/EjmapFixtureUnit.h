@@ -55,12 +55,19 @@
   together in ONE change, never the rule alone. The pin in RoundTripTest.cpp
   fails if someone "fixes" the rule silently, and that is what it is for.
 
-  TWO CHOICES THE DATA DOES NOT DECIDE (every variant scores the same on all
-  1,783 controls):
-    - U+2212 counts as a minus sign (kHs Compressor prints "−40.00 dB").
-    - An empty remainder at the 0.0 point ("0.00") means no unit. It does NOT
-      fall back to the 1.0 point.
-  Both are pinned, so any change to them is deliberate.
+  U+2212 IS NOT A MINUS SIGN - CORRECTED 28 Sep, and bug-compatible like the
+  leading dot. The first version of this header counted U+2212 as a sign and
+  called it a choice the data did not decide. The unit data alone does not
+  decide it. The RANGE data does (EjmapFixtureRange.h): kHs Compressor's
+  Threshold "−40.00 dB / −17.00 dB / +6.00 dB" is recorded as named positions,
+  because only the ASCII "+6.00" parsed. One number parser made both fields,
+  so this one must match it. No fixture unit changes: kHs's Threshold still
+  reads dB, from its 1.0 point. The same rule as the leading dot applies: fix
+  it only together with re-sampling the affected fixtures.
+
+  THE ONE CHOICE THE DATA DOES NOT DECIDE (every variant scores the same on all
+  1,783 controls): an empty remainder at the 0.0 point ("0.00") means no unit.
+  It does NOT fall back to the 1.0 point. Pinned, so any change is deliberate.
 */
 
 #pragma once
@@ -75,7 +82,15 @@ namespace ejmap::fixtureunit
     start with one. U+202F and U+00A0 (kHs prints "40.00 dB") are read as
     ordinary spaces first.
 */
-inline std::optional<juce::String> remainderAfterLeadingNumber (const juce::String& text)
+struct LeadingNumber { double value = 0.0; juce::String remainder; };
+
+/** THE NUMBER PARSER the fixtures were built with, shared by the unit and range
+    rules so the two can never disagree about what a number is: an optional ASCII
+    sign (- or +), one or more ASCII digits, then optionally '.' and one or more
+    digits. NOT a number: a bare leading dot (".1 s") or a U+2212 minus
+    ("−40.00") - both bug-compatible, see above.
+*/
+inline std::optional<LeadingNumber> leadingNumber (const juce::String& text)
 {
     const auto t = text.replaceCharacter ((juce::juce_wchar) 0x202F, ' ')
                        .replaceCharacter ((juce::juce_wchar) 0x00A0, ' ')
@@ -83,18 +98,24 @@ inline std::optional<juce::String> remainderAfterLeadingNumber (const juce::Stri
     auto isAsciiDigit = [] (juce::juce_wchar c) { return c >= '0' && c <= '9'; };
     const int n = t.length();
     int i = 0;
-    if (i < n && (t[i] == '-' || t[i] == '+' || t[i] == (juce::juce_wchar) 0x2212))
+    if (i < n && (t[i] == '-' || t[i] == '+'))
         ++i;
     const int digitsFrom = i;
     while (i < n && isAsciiDigit (t[i])) ++i;
     if (i == digitsFrom)
-        return std::nullopt;                 // ".1 s" lands here, deliberately
+        return std::nullopt;                 // ".1 s" and "−40" land here, deliberately
     if (i + 1 < n && t[i] == '.' && isAsciiDigit (t[i + 1]))
     {
         ++i;
         while (i < n && isAsciiDigit (t[i])) ++i;
     }
-    return t.substring (i).trim();
+    return LeadingNumber { t.substring (0, i).getDoubleValue(), t.substring (i).trim() };
+}
+
+inline std::optional<juce::String> remainderAfterLeadingNumber (const juce::String& text)
+{
+    if (auto n = leadingNumber (text)) return n->remainder;
+    return std::nullopt;
 }
 
 /** The fixture `unit` for one control. Empty means no unit. textAt0 and

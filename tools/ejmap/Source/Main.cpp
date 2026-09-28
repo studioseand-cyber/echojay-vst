@@ -19,6 +19,7 @@
 #include "EjmapBuildInfo.h"
 #include "EjmapSupervisor.h"
 #include "EjmapMarks.h"
+#include "EjmapCertDriver.h"
 
 #include <map>
 #include <csignal>
@@ -572,6 +573,40 @@ namespace
                     std::cout << "  (nothing marked)" << std::endl;
                 return 0;
             }
+
+        // --cert-rederive <fixturesDir>   and   --cert-defaults --fixtures <dir> --probe <path> --out <dir> ...
+        // THE CERTIFICATION DRIVER (EjmapCertDriver.h, docs/EJMAP_CERT_DRIVER.md). Headless: the
+        // probe hosts every plugin in its own process; ejmap only orchestrates and derives.
+        for (int i = 1; i < argc; ++i)
+        {
+            const auto a = argAt (argc, argv, i);
+            auto cwdFile = [] (const juce::String& p) { return juce::File::getCurrentWorkingDirectory().getChildFile (p); };
+            if (a == "--cert-rederive" && i + 1 < argc)
+                return ejmap::cert::runRederive (cwdFile (argAt (argc, argv, i + 1)));
+            if (a == "--cert-defaults")
+            {
+                ejmap::cert::Options o;
+                for (int j = 1; j < argc; ++j)
+                {
+                    const auto k = argAt (argc, argv, j);
+                    const auto v = argAt (argc, argv, j + 1);
+                    if      (k == "--fixtures"      && j + 1 < argc) o.fixtures = cwdFile (v);
+                    else if (k == "--probe"         && j + 1 < argc) o.probe = cwdFile (v);
+                    else if (k == "--out"           && j + 1 < argc) o.out = cwdFile (v);
+                    else if (k == "--timeout-s"     && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
+                    else if (k == "--sign-identity" && j + 1 < argc) o.signIdentity = v;
+                    else if (k == "--entitlements"  && j + 1 < argc) o.entitlements = cwdFile (v);
+                    else if (k == "--include-pace")                  o.includePace = true;
+                }
+                if (o.fixtures == juce::File() || o.probe == juce::File() || o.out == juce::File())
+                {
+                    std::cerr << "usage: ejmap --cert-defaults --fixtures <dir> --probe <EchoJayProbe> --out <dir>\n"
+                                 "       [--timeout-s N] [--sign-identity ID --entitlements FILE] [--include-pace]" << std::endl;
+                    return 2;
+                }
+                return ejmap::cert::runCertDefaults (o);
+            }
+        }
 
         // --registry-report [substring]
         // Every AU component the registry holds, resolved through the SAME

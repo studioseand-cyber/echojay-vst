@@ -57,6 +57,7 @@
 #include "EchoJayParamMaps.h"   // identityKeyForDescription
 #include "EjmapExposure.h"
 #include "EjmapFixtureUnit.h"
+#include "EjmapFixtureRange.h"
 
 namespace
 {
@@ -3670,11 +3671,71 @@ void testFixtureUnitRule()
     check (unitFor ("", "-10.0 N", "12.0") == "N", "unit: C1 Floor text alone would say N");
     check (unitFor ("dB", "-10.0 N", "12.0") == "dB", "unit: ...the label overrides it");
 
-    // The two choices the 1,783 controls do not decide, pinned so a change is deliberate.
-    check (unitFor ("", minus + "40.00" + narrow + "dB", "Max") == "dB",
-           "unit: U+2212 is a minus sign, and U+202F is a space (kHs Compressor's text)");
+    // U+2212 is NOT a sign - decided by the RANGE data (kHs Threshold is named
+    // positions), so the unit rule shares that parser. Bug-compatible.
+    check (unitFor ("", minus + "40.00" + narrow + "dB", "Max").isEmpty(),
+           "unit: U+2212 does not start a number (the range data decides it), so a lone "
+           "U+2212 point gives no unit");
+    check (unitFor ("", minus + "40.00" + narrow + "dB", "+6.00" + narrow + "dB") == "dB",
+           "unit: kHs Compressor Threshold -> dB, from its 1.0 point; U+202F reads as a space");
+    // The one choice the 1,783 controls do not decide, pinned so a change is deliberate.
     check (unitFor ("", "0.00", "48 dB").isEmpty(),
            "unit: an empty remainder at 0.0 means no unit; it does not fall back to 1.0");
+}
+
+//==============================================================================
+/** THE FIXTURE RANGE AND DIRECTION RULES (EjmapFixtureRange.h), one pin per
+    clause, each a real control from a pushed fixture with the value that fixture
+    records. Together the rules reproduce all 1,783 controls (28 Sep).
+*/
+void testFixtureRangeRule()
+{
+    using ejmap::fixturerange::derive;
+    auto has = [] (const juce::var& r, const char* k) { return r.getDynamicObject() != nullptr
+                                                           && r.getDynamicObject()->hasProperty (k); };
+    auto num = [] (const juce::var& r, const char* k) { return (double) r.getProperty (k, -12345.0); };
+    const juce::String minus = juce::CharPointer_UTF8 ("\xe2\x88\x92");
+    const juce::String narrow = juce::CharPointer_UTF8 ("\xe2\x80\xaf");
+
+    // 1. fewer than two numbers -> not numeric
+    auto d = derive ("0.08 s", "F", "S");
+    check (d.direction == "named positions" && d.range.getProperty ("status", "") == "text is not numeric",
+           "range: Drawmer 1973 Release '0.08 s / F / S' -> named positions (one number is not a range)");
+    d = derive ("OFF", "+8", "GR");
+    check (d.direction == "named positions", "range: UAD 1176AE Meter 'OFF / +8 / GR' -> named positions");
+    d = derive (minus + "40.00" + narrow + "dB", minus + "17.00" + narrow + "dB", "+6.00" + narrow + "dB");
+    check (d.direction == "named positions",
+           "range: kHs Threshold -> named positions: U+2212 is not a sign, so only '+6.00' parsed");
+
+    // 2. min / max from the ENDS; a missing end borrows the middle
+    d = derive ("0.50:1", "4.58:1", "-5.00:1");
+    check (num (d.range, "min") == -5.0 && num (d.range, "max") == 0.5,
+           "range: C1 Comp Ratio -> min -5, max 0.5 (the ends), not the middle's 4.58");
+    check (d.direction == "descending" && (bool) d.range.getProperty ("inverted", false)
+           && ! (bool) d.range.getProperty ("linear", true),
+           "range: ...descending, inverted, and not linear");
+    d = derive ("-oo dB", "-90.0 dB", "-60.0 dB");
+    check (num (d.range, "min") == -90.0 && num (d.range, "max") == -60.0 && d.range.getProperty ("at0", 0).isVoid(),
+           "range: XLA-3 Noise Level -> min -90 borrowed from the middle, at0 null");
+
+    // 4. endsNotNumeric names only ENDS, with the note; 5. linear only when both ends parse
+    check (has (d.range, "endsNotNumeric") && has (d.range, "note") && ! has (d.range, "linear"),
+           "range: ...an unparsed END gives endsNotNumeric + note and no linear");
+    d = derive ("+10dB", "GR", "+4dB");
+    check (! has (d.range, "endsNotNumeric") && ! has (d.range, "note") && has (d.range, "linear")
+           && ! (bool) d.range.getProperty ("linear", true) && d.direction == "descending",
+           "range: LA-2 Meter '+10dB / GR / +4dB' -> both ends parse: no endsNotNumeric, linear false");
+
+    // 5. the linearity tolerance, bracketed by the data (0.476% true, 2.17% false)
+    check ((bool) derive ("0.0", "5.2", "10.5").range.getProperty ("linear", false),
+           "range: Distressor 0 / 5.2 / 10.5 (0.476% off the midpoint) is linear");
+    check (! (bool) derive ("1.0", "13.0", "24.0").range.getProperty ("linear", true),
+           "range: Shadow Hills Discrete Gain 1 / 13 / 24 (2.17% off) is not linear");
+
+    // 6. flat
+    d = derive ("None", "2:1+4:1", "2:1+20:1");
+    check (d.direction == "flat" && num (d.range, "min") == 2.0 && num (d.range, "max") == 2.0,
+           "range: UAD 1176AE Ratio -> flat at 2 (the missing end borrows the middle)");
 }
 
 int main (int, char**)
@@ -3719,6 +3780,7 @@ int main (int, char**)
     testPerStepWorkIsNotRepeated();
     testUnfinishedAttemptRule();
     testFixtureUnitRule();
+    testFixtureRangeRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

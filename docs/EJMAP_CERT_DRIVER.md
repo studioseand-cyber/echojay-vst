@@ -9,6 +9,65 @@ MEASURES, and EJ Map DERIVES and ORCHESTRATES. The test for where a piece of log
 goes is whether changing it needs re-measuring or only re-computing. A formula
 change must never cost a rebuild and a re-sign.
 
+## 0. Acceptance criterion for step 5, stated before any driver code
+
+The driver's first job is regenerating the 74 pushed compressor-profile fixtures
+(echojay-saas `origin/main` `scripts/fixtures/compressor-profiles/`) from live probe
+runs. It CANNOT reach most of them on the dev Mac, and its proof must say so rather
+than borrow the size of the whole set. Measured 28 Sep:
+
+| Class on the dev Mac | Products |
+|---|---|
+| installed at the fixture's version, not PACE-wrapped | 14 |
+| installed and present, but the fixture records no version (AUMultibandCompressor: its `version` field holds the component code) | 1 |
+| HELD until step 2 closes: 10 PACE-wrapped at the fixture's version, plus the 2 McDSP APB fixtures (also no version recorded), which are PACE-wrapped and register without an `AudioComponents` key, so the driver cannot find their bundle and holds them rather than assume them clear | 12 |
+| installed at a DIFFERENT version (all 42 are Waves 12 vs 15 or UAD 11.2 vs 11.8) | 42 |
+| not installed | 5 |
+| **total** | **74** |
+
+So 15 are reachable today. (Before the first driver run this table said the two APB
+fixtures were "not installed". A plist scan cannot see them; the AU registry can, and
+the first run found them. See below.) kHs Compressor hung the probe past its own bound
+once on 28 Sep, then answered normally in both driver runs, so its hang is intermittent.
+
+**THE FIRST RUN (28 Sep) BROKE THE HOLD, AND THIS IS RECORDED RATHER THAN HIDDEN.** The
+first version treated "no bundle found" as "not PACE", so it ran `--list-params` and
+`--text-at all` on the two APB compressors, which are PACE-wrapped, while step 2 was open.
+Both answered in full and matched their fixtures. The driver watched no windows, so
+whether a dialog appeared is UNKNOWN, and this is NOT step 2 evidence. The hold now fails
+safe: a component whose PACE state cannot be checked is held and says why. Apple's own
+built-ins are the only exemption.
+
+**MEASURED OUTCOME (28 Sep, second run): reproduced 14 of 15 reachable, of 74.** The
+fifteenth, Shadow Hills Class A Mastering Comp, differs in exactly ONE field:
+`controls[41].defaultOnInstantiate.normalised`. Control 41 is "VU Meter R", a meter the
+plugin exposes as an automatable parameter. Its value on instantiate differs in every
+fresh process: 0.153, 0.162, 0.170, 0.165 and 0.173 in five runs, against 0.139 in the
+pushed fixture. That fixture field recorded one sample of a moving meter, so NO run can
+reproduce it. By the criterion above this is a miss, and it is counted as one. Making it
+reproducible needs a MEASUREMENT change (instantiate twice and flag a control whose value
+differs as a readout), which is a probe and schema decision, not a driver fix.
+
+**THE CRITERION:** the driver reproduces every fixture it can reach on this machine.
+Concretely:
+- Every reachable product whose probe runs answer regenerates with ZERO field
+  differences from its pushed fixture. Only the provenance fields are not compared:
+  `sampledAt`, `probe`, `defaultsSampledAt`, `defaultsProbe`.
+- Every reachable product that does not answer is recorded with a NAMED reason
+  (timeout, refused and its text, or crash and its signal). It counts as NOT
+  reproduced. It is never a pass and never silently dropped.
+- The run report's FIRST lines are the coverage above, followed by the reproduced
+  count as "N of 15 reachable, of 74". It never reads as "74 reproduced", and the
+  out-of-reach products are listed BY NAME with their class.
+- Separately, `--cert-rederive` re-derives `range`, `direction` and `unit` from each
+  fixture's own `displayAt` for ALL 74 (1,783 controls). That needs no probe and no
+  installed plugin, so it is the one check that covers the whole set. It proves the
+  derivation code, not the measurements.
+
+The 10 PACE-wrapped products join when step 2 closes. The 49 at other versions or not
+installed are out of reach on this machine. A run on a machine that has them is what
+reaches them.
+
 ## 1. Sign once, at the start of a run, and fail loudly if signing blocks
 
 PACE refuses an unsigned probe ("fatal wrapper bootstrap error", 21 Sep, df407ab),
