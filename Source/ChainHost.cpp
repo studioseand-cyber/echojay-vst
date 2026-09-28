@@ -7768,6 +7768,15 @@ juce::StringArray ChainHost::getRecommendableNames() const
     juce::StringArray names;
     for (const auto& e : recommendable_)
         names.add(e.displayName);
+    // 21t-k item 2(b) (28 Sep 2026 ruling): THE BUILT-INS ARE IN THE FEED ON EVERY SEND. recommendable_ is
+    // built from the scanner's entries_, and a built-in is not a scanned plugin, so EchoJay's own devices were
+    // absent from every list that comes through here - the AI feed, the build-path name gate and the
+    // feed-conformance check alike. Sean's 21:24 log: `EJChat: chain name OUT OF FEED: "EchoJay Pitch"`, on a
+    // build of OUR OWN tuner, against a feed of 1428 names. They were offered only as the fallback for a
+    // machine with nothing recommendable at all, which is the one case where they are not the interesting part.
+    // Added here rather than at each of the six call sites, so no consumer can be left out again.
+    for (const auto& b : builtinDeviceNames())
+        if (! names.contains (b, true)) names.add (b);
     return names;
 }
 
@@ -9048,6 +9057,10 @@ juce::StringArray ChainHost::getDialableRecommendableNames() const
                 dialable = true;
         if (dialable) out.addIfNotAlreadyThere (e.displayName);
     }
+    // 21t-k item 2(b): and the built-ins, which are dialable BY CONSTRUCTION - they publish their own schema
+    // and apply through the exact built-in path, so no map and no existence lookup is involved. The feed split
+    // must never be the reason EchoJay's own devices are unofferable.
+    for (const auto& b : builtinDeviceNames()) out.addIfNotAlreadyThere (b);
     return out;
 }
 

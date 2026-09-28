@@ -212,6 +212,35 @@ int main()
             host.setSlotStructuredSettings (1, settings);
             pump (300);
         }
+        // ---- 21t-k item 2(b) (28 Sep 2026 ruling): THE BUILT-INS ARE IN THE FEED ON EVERY SEND ------------
+        // recommendable_ comes from the scanner's entries_, and a built-in is not a scanned plugin, so every
+        // list that comes through getRecommendableNames() was missing EchoJay's own devices - the AI feed, the
+        // build-path name gate and the feed-conformance check alike. Sean's 21:24 log, on a build of our own
+        // tuner against 1428 names: `EJChat: chain name OUT OF FEED: "EchoJay Pitch"`.
+        {
+            const auto feed = host.getRecommendableNames();
+            const auto dial = host.getDialableRecommendableNames();
+            const auto builtins = ChainHost::builtinDeviceNames();
+            juce::StringArray missing, missingDial;
+            for (const auto& b : builtins)
+            {
+                if (! feed.contains (b, true)) missing.add (b);
+                if (! dial.contains (b, true)) missingDial.add (b);
+            }
+            std::printf ("    built-ins: %s\n", builtins.joinIntoString (", ").toRawUTF8());
+            check (feed.contains ("EchoJay Pitch", true),
+                   "21t-k 2(b). \"EchoJay Pitch\" is in the recommendable feed  (RED as it stood: EJChat: chain "
+                   "name OUT OF FEED: \"EchoJay Pitch\")",
+                   feed.contains ("EchoJay Pitch", true) ? juce::String ("in the feed") : juce::String ("ABSENT"));
+            check (missing.isEmpty(),
+                   "21t-k 2(b). ...and so is EVERY built-in - the EQ, the Level, the Limiter and the rest",
+                   missing.isEmpty() ? juce::String ("none missing") : "missing: " + missing.joinIntoString (", "));
+            check (missingDial.isEmpty(),
+                   "21t-k 2(b). ...and in the DIALABLE feed too, because a built-in is dialable by construction "
+                   "(its own schema, the exact built-in apply path - no map, no existence lookup)",
+                   missingDial.isEmpty() ? juce::String ("none missing") : "missing: " + missingDial.joinIntoString (", "));
+        }
+
         const auto block = EchoJayAPI::buildCurrentChainInjection (host);
         std::printf ("\n----- [CURRENT CHAIN] VERBATIM, as buildCurrentChainInjection writes it -----\n%s\n"
                      "----- end -----\n", block.toRawUTF8());
