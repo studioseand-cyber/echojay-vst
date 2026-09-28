@@ -18,6 +18,24 @@
 // Level conventions, verdicts and anything else that only needs re-computing belong to EJ Map, so changing them never
 // costs a rebuild and a re-sign of this binary.
 //
+// SIDECHAIN POLICY: ENABLED, FED SILENCE, for every certification render (ruled 28 Sep 2026). Every bus the
+// plugin declares stays enabled at its declared layout, and every input channel outside the main bus is zero.
+//   - Disabling a declared bus measures a configuration the plugin never ships in. A DAW instantiates the sidechain
+//     bus whether or not anything is routed to it.
+//   - It is the conservative choice: the harness stops altering the declared layout.
+//   - It is the AMEK hypothesis. The first version of this mode called setPlayConfigDetails, and JUCE's
+//     setPlayConfigDetails ends in an UNCONDITIONAL disableNonMainBuses() ("if the user is using this method then
+//     they do not want any side-buses", juce_AudioProcessor.cpp:366). So enableAllBuses turned AMEK Mastering
+//     Compressor's stereo sidechain on and the next line turned it off (it read disabled, 0 channels), and AMEK then
+//     crashed in its own render. API-2500's mono sidechain survived only because that disable FAILED - a jassert,
+//     so nothing in a release build. EJ Map's PluginHost uses the same sequence, so its M9 renders also ran with
+//     sidechains off wherever the plugin allowed it.
+// So configure = enableAllBuses + setRateAndBufferSizeDetails (rate and block only, no bus changes) + prepareToPlay.
+// THE RISK, recorded rather than hidden: a compressor that defaults to EXTERNAL sidechain keying keys off silence and
+// never compresses, so a sweep reads flat at every position and level. That lands in the existing `flat` result, not
+// a new one, but it must be readable as such. The "sidechain" lines below state the state as measured, and the fixture
+// must carry it, so a flat result is not blamed on the threshold.
+//
 // The stimulus is EJ Map's renderSine, unchanged: 997 Hz at -12 dBFS, 0.5 s of silence first, then 2 s of tone, with
 // the first 0.25 s of tone discarded from the level readings. It drives the MAIN input bus only; every other input
 // channel (a sidechain) is held at zero, and the output says which channels were driven.
@@ -92,9 +110,16 @@ inline void runRenderTest (juce::AudioPluginInstance& p, const RenderSpec& s = {
     printLayoutSupport (p);
 
     stage ("configure");
-    p.enableAllBuses();
-    p.setPlayConfigDetails (p.getTotalNumInputChannels(), p.getTotalNumOutputChannels(), s.sampleRate, s.block);
+    // NOT setPlayConfigDetails: it ends in an unconditional disableNonMainBuses(). See SIDECHAIN POLICY above.
+    const bool allEnabled = p.enableAllBuses();
+    p.setRateAndBufferSizeDetails (s.sampleRate, s.block);
+    std::printf ("policy\tsidechain\tenabled_silent\tenable_all_buses\t%s\n", allEnabled ? "ok" : "refused");
     printBuses (p, "render");
+    for (int b = 1; b < p.getBusCount (true); ++b)
+        if (auto* bus = p.getBus (true, b))
+            std::printf ("sidechain\t%d\t%s\t%d\t%s\t%s\n", b, clean (bus->getName()).toRawUTF8(),
+                         bus->getNumberOfChannels(), bus->isEnabled() ? "enabled" : "disabled",
+                         bus->isEnabled() && bus->getNumberOfChannels() > 0 ? "silent" : "absent");
 
     stage ("prepare");
     p.prepareToPlay (s.sampleRate, s.block);

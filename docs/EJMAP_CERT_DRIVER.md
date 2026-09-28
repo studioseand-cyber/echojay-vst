@@ -89,7 +89,26 @@ A full certification run on this Mac will SILENTLY UNDER-COVER these, and the ru
 report must say so: SSL (28 products), Softube (4), Harrison (4), oeksound,
 Audified, Eventide.
 
-## 4. The fixture unit rule is EJ Map's
+## 4. Sidechains are enabled and fed silence, and the fixture says so
+
+Ruled 28 Sep: every certification render keeps every bus the plugin declares
+enabled at its declared layout, and feeds silence to every input outside the
+main bus. The reasoning is in the header of
+`tools/au_instantiate_probe/probe_render.h`. In short: disabling a declared bus
+measures a configuration the plugin never ships in.
+
+The probe prints a `policy sidechain enabled_silent` line and one `sidechain`
+line per non-main input bus, as measured after configure. The fixture writer
+must carry that state on every certification record.
+
+The reason is a known risk. A compressor that defaults to EXTERNAL sidechain
+keying keys off silence and never compresses, so its sweep reads flat at every
+position and level. That lands in the existing `flat` result, which is correct,
+but a `flat` with an enabled-and-silent sidechain has to be readable as "maybe
+keyed externally", not blamed on the threshold. Never report one without the
+other.
+
+## 5. The fixture unit rule is EJ Map's
 
 The 74 compressor-profile fixtures derived `unit` in an uncommitted sampling
 pass. The rule is now written down and pinned:
