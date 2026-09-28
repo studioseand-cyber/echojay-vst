@@ -1408,6 +1408,12 @@ public:
     /** 21t-j (B's note 1): read a named METER control on a slot, as the plugin prints it. Returns false when the
         control is not there or its text is not a number - a figure nobody published is never invented. */
     bool readControlDb (int slotIndex, const juce::String& controlName, float& outDb) const;
+    /** 21t-j (owed): the SAME control, read for the cross-check - its raw normalised position, the text the plugin
+        prints for it, and whether that text parsed as dB. Returns false only when the control is not there at all;
+        a control that prints something unparseable is a FINDING, not an absence, and comes back with parsedOk
+        false so the log can say so. */
+    bool readControlRaw (int slotIndex, const juce::String& controlName,
+                         float& outRaw, juce::String& outText, bool& outParsedOk, float& outDb) const;
 
     /** 21t-j (28 Sep 2026 general compressor rule): THE SLOT'S OWN OUTPUT GAIN. The level hold writes the profile's
         output control when the block names one, and this when it does not - which is most plugins. It sits on the

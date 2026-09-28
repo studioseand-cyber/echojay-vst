@@ -93,6 +93,24 @@ int main()
         check (echojay::parseDisplayDb ("-30.2 dB", db) && std::abs (db + 30.2) < 0.001,
                "...and a normal reading parses as itself", juce::String (db, 2));
         check (! echojay::parseDisplayDb ("All Buttons", db), "...and a word parses as nothing");
+        // 21t-j (28 Sep 2026): FOUND BY THE GR-METER CROSS-CHECK LEG. The scan collects sign and point
+        // characters as happily as digits, so a meter printing "--" - the standard "nothing to show", and what
+        // this product's own strips draw - came through as the string "--", and getDoubleValue() made it 0.0.
+        // A GR meter reading "--" was a reading of 0.0 dB, and a readback search would have believed it.
+        check (! echojay::parseDisplayDb ("--", db),
+               "21t-j: \"--\" is NOT a reading  (RED as it stood: it parsed as 0.0 dB, so a meter with nothing "
+               "to show published a figure)", juce::String (db, 2));
+        check (! echojay::parseDisplayDb ("-", db) && ! echojay::parseDisplayDb ("+", db)
+               && ! echojay::parseDisplayDb (".", db) && ! echojay::parseDisplayDb ("+-", db)
+               && ! echojay::parseDisplayDb ("- . -", db),
+               "21t-j: ...nor any other string of signs and points - the question is whether it has a DIGIT");
+        // ...and the other direction, so the tightening cannot have made a real reading unreadable:
+        check (echojay::parseDisplayDb ("0.41", db) && std::abs (db - 0.41) < 0.001,
+               "21t-j: a bare number is still a reading (0.41)", juce::String (db, 2));
+        check (echojay::parseDisplayDb ("-0.5", db) && std::abs (db + 0.5) < 0.001,
+               "21t-j: ...and so is a negative one", juce::String (db, 2));
+        check (echojay::parseDisplayDb ("4.2 dB GR", db) && std::abs (db - 4.2) < 0.001,
+               "21t-j: ...and a number with a unit and a suffix", juce::String (db, 2));
     }
     std::printf ("\n==== readback_search_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);

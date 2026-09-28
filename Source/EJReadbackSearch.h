@@ -43,7 +43,13 @@ inline bool parseDisplayDb (const juce::String& text, double& outDb)
         if (juce::CharacterFunctions::isDigit (c) || c == '.' || c == '-' || c == '+') num << c;
         else if (num.isNotEmpty()) break;
     }
-    if (num.isEmpty() || num == "-" || num == "+" || num == ".") return false;
+    // 21t-j (28 Sep 2026, found by the GR-meter cross-check leg): A STRING WITH NO DIGITS IS NOT A NUMBER.
+    // The scan above collects sign and point characters as happily as digits, so "--" - which is what a meter
+    // prints when it has nothing to show, and what this product's own strips draw - came through as the string
+    // "--" and getDoubleValue() turned it into 0.0. A GR meter reading "--" was therefore a reading of 0.0 dB,
+    // and a readback search would have believed it. The old guard listed three exact strings; this one asks the
+    // question that matters.
+    if (num.isEmpty() || ! num.containsAnyOf ("0123456789")) return false;
     outDb = num.getDoubleValue();
     return true;
 }

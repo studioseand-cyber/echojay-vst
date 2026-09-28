@@ -3142,6 +3142,29 @@ bool ChainHost::readControlDb (int slotIndex, const juce::String& controlName, f
     return false;
 }
 
+bool ChainHost::readControlRaw (int slotIndex, const juce::String& controlName,
+                               float& outRaw, juce::String& outText, bool& outParsedOk, float& outDb) const
+{
+    outRaw = 0.0f; outText = {}; outParsedOk = false; outDb = 0.0f;
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;
+    auto* proc = const_cast<ChainHost*> (this)->getSlotProcessor (slotIndex);
+    if (proc == nullptr) return false;
+    const auto want = controlName.trim().toLowerCase();
+    for (auto* p : proc->getParameters())
+        if (p != nullptr && p->getName (echojay::kParamNameQueryLen).trim().toLowerCase() == want)
+        {
+            outRaw  = p->getValue();
+            outText = p->getText (p->getValue(), 256);
+            double db = 0.0;
+            // The same parse readControlDb uses, and the same "-inf is not a reading" rule: what differs is that
+            // a failure here is REPORTED rather than swallowed, because reporting it is the whole point.
+            outParsedOk = echojay::parseDisplayDb (outText, db) && db > -1.0e8 && db < 1.0e8;
+            outDb = outParsedOk ? (float) db : 0.0f;
+            return true;
+        }
+    return false;
+}
+
 bool ChainHost::landControlAtDb (int slotIndex, const juce::String& controlName, float targetDb,
                                  float* landedDbOut, float* positionOut, float toleranceDb, int maxSteps)
 {

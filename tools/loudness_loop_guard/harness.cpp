@@ -14,6 +14,7 @@
 #include "EchoJayReadingGate.h"
 #include "EJCalibLoop.h"   // 21t-d: the calibration loop under test
 #include "EJLevelRecord.h" // 21t-i: the stored level record under test
+#include "EJReadbackSearch.h" // 21t-j: parseDisplayDb, the product's own parse, used by the cross-check legs
 #include <cstdio>
 #include <memory>
 #include <cmath>
@@ -1939,6 +1940,71 @@ static int guardMain()
             check (asks.size() == 1 && asks[0].contains ("play it and I'll tell you what it's doing"),
                    "21t-i (6). ...in the ruled words", asks.isEmpty() ? juce::String ("(none)") : asks[0]);
         }
+    }
+
+    // ===============================================================================================
+    // 21t-j (owed): THE GR-METER CROSS-CHECK. B's block says a control reads as dB; whether it does is a fact
+    // about the plugin, and the product writes down what it found rather than believing the claim. Five windows
+    // after a build, then quiet - and the line carries the RAW position beside the printed text, because a
+    // control printing "0.41" for a compressor doing 4 dB is exactly the confusion this exists to catch.
+    // ===============================================================================================
+    {
+        std::printf ("\n== 21t-j: the GR-meter cross-check ==\n");
+        echojay::CalibLoop::Config c;
+        c.plugin = "Purple Audio MC 77"; c.slot = 0; c.lo = 2.0f; c.hi = 3.0f;
+        c.mode = echojay::CalibLoop::Mode::Passive;
+        c.actuator = echojay::CalibLoop::Actuator::Drive;
+        c.startDb = 0.0f;
+        c.senseParams.add ("GR Meter L"); c.grReadable = true;
+        echojay::CalibLoop l; l.begin (c);
+        check (l.senseLogsOwed == echojay::CalibLoop::kSenseLogWindows,
+               "21t-j (cross-check). a build that names a sense control owes FIVE windows of it",
+               juce::String (l.senseLogsOwed));
+        // THE PARSE IS THE PRODUCT'S OWN, not a bool set by hand: a leg that decides for itself whether the text
+        // parsed would assert a fiction. Three texts, one per window: a real dB meter, the same control printing
+        // its bare normalised position, and a control printing nothing numeric at all.
+        const char* texts[5] = { "4.2 dB", "0.41", "--", "-3.5 dB", "GR" };   // "--" is an absence since 21t-j
+        juce::StringArray lines;
+        for (int i = 0; i < 12; ++i)
+        {
+            int n = 0;
+            if (! l.takeSenseLog (n)) continue;
+            const juce::String text (texts[(n - 1) % 5]);
+            double db = 0.0;
+            const bool okParse = echojay::parseDisplayDb (text, db) && db > -1.0e8 && db < 1.0e8;
+            lines.add (echojay::CalibLoop::senseCrossCheckLine (c.plugin, c.senseParams[0],
+                                                               0.4100f, text, okParse, (float) db, n));
+        }
+        check (lines.size() == 5,
+               "21t-j (cross-check). ...FIVE and no more - a check, not a running commentary",
+               juce::String (lines.size()) + " line(s)");
+        for (const auto& ln : lines) std::printf ("    %s\n", ln.toRawUTF8());
+        check (lines.size() == 5 && lines[0].contains ("window 1/5") && lines[4].contains ("window 5/5"),
+               "21t-j (cross-check). ...numbered, so a truncated run is visible in the log",
+               lines.isEmpty() ? juce::String ("(none)") : lines[0]);
+        check (! lines.isEmpty() && lines[0].contains ("raw=0.4100") && lines[0].contains ("text=\"4.2 dB\"")
+               && lines[0].contains ("parsed=4.20 dB") && lines[0].contains ("prints_db=yes")
+               && ! lines[0].contains ("NOTE:"),
+               "21t-j (cross-check). a real dB meter: the line carries the raw position, the printed text, the "
+               "parse and the verdict, and nothing else", lines.isEmpty() ? juce::String ("(none)") : lines[0]);
+        // THE CASE THIS EXISTS FOR. parseDisplayDb reads "0.41" as 0.41 dB - correctly, it is a number - so the
+        // verdict is prints_db=yes and the TELL is that the figure equals the raw position. The line says that
+        // out loud rather than leaving someone to notice it.
+        check (lines.size() > 1 && lines[1].contains ("text=\"0.41\"") && lines[1].contains ("parsed=0.41 dB")
+               && lines[1].contains ("prints_db=yes")
+               && lines[1].contains ("the parsed figure equals the raw position"),
+               "21t-j (cross-check). a control printing its BARE POSITION parses as dB - and the line says the "
+               "figure equals the raw position, which is the observation, not a guess",
+               lines.size() > 1 ? lines[1] : juce::String ("(none)"));
+        check (lines.size() > 2 && lines[2].contains ("text=\"--\"") && lines[2].contains ("parsed=NO")
+               && lines[2].contains ("prints_db=no"),
+               "21t-j (cross-check). ...and a control printing nothing numeric says prints_db=no, which is a "
+               "finding, not an absence", lines.size() > 2 ? lines[2] : juce::String ("(none)"));
+        { echojay::CalibLoop::Config plain = c; plain.senseParams.clear(); plain.grReadable = false;
+          echojay::CalibLoop l2; l2.begin (plain); int n = 0;
+          check (l2.senseLogsOwed == 0 && ! l2.takeSenseLog (n),
+                 "21t-j (cross-check). a build with NO sense control logs nothing at all",
+                 juce::String (l2.senseLogsOwed)); }
     }
 
     // ===============================================================================================

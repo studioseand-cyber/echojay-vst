@@ -131,6 +131,12 @@ struct CalibLoop
     juce::StringArray senseParams;     // the plugin's own GR meter, when the block named one
     bool   grReadable = false;         // ...and whether the block says it reads as dB
     float  sensedGrDb = std::numeric_limits<float>::quiet_NaN();   // what that meter last read, positive dB
+    // 21t-j (owed): THE GR-METER CROSS-CHECK. A block can SAY a control reads as dB; whether it does is a
+    // question about the plugin, and the only honest answer is the control's own text beside its raw position.
+    // Five windows of it after a build, on whichever host owns the rack, and then it stops - this is a check, not
+    // a running commentary. `kSenseLogWindows` is the budget; senseLogsOwed is what is left of it.
+    static constexpr int kSenseLogWindows = 5;   // ruled: five windows, then quiet
+    int    senseLogsOwed = 0;
     juce::StringArray outParams;
     float  outValue = std::numeric_limits<float>::quiet_NaN();
     float  outMin = -24.0f, outMax = 0.0f;
@@ -487,6 +493,7 @@ struct CalibLoop
         // THE BUILD OPENS THE SETTLE (28 Sep 2026 ruling) and says so in ONE line, which the completion edits in
         // place. No ask state, no timer: the build is not complete until the slot has heard the vocal and landed.
         settling = true; landed = false; settleSteps = 0; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        senseLogsOwed = senseParams.isEmpty() ? 0 : kSenseLogWindows;   // 21t-j: the cross-check, five windows
         askOwed = openingLine();
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
@@ -515,6 +522,7 @@ struct CalibLoop
         pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0; askOwed.clear();
         freshWanted = 0; lastHeardS = -1.0f;
         settling = false; landed = false; settleSteps = 0; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        senseLogsOwed = 0;
         blockHeardS = std::numeric_limits<float>::quiet_NaN(); fromWorking = false;
         state = State::Listening;
     }
@@ -608,6 +616,43 @@ struct CalibLoop
     bool writesNamedParam() const { return actuator == Actuator::Threshold || actuator == Actuator::Input; }
     /** The sense, from the KIND and nothing else (ruled 28 Sep 2026): -1 = lower is harder, +1 = higher. */
     static int senseForActuator (Actuator a) { return a == Actuator::Threshold ? -1 : 1; }
+
+    /** THE CROSS-CHECK LINE (21t-j, owed to the 28 Sep ruling). One line per window, five of them, carrying the
+        control's RAW position, the text the plugin prints for it, and whether that text parsed as dB at all.
+        Composed here so both hosts write the SAME line and a guard can assert its shape without a plugin.
+
+        Why the raw position is on it: "GR Meter L" at 0.41 printing "4.2 dB" is a meter reading in dB; the same
+        control printing "0.41" is a normalised position that a dB parser will happily read as 0.41 dB, and the
+        reply would then quote four tenths of a dB of gain reduction for a compressor doing four. The two figures
+        side by side are what tells them apart, and nothing here guesses: it prints what it found. */
+    static juce::String senseCrossCheckLine (const juce::String& plugin, const juce::String& control,
+                                             float raw, const juce::String& text, bool parsedOk, float parsedDb,
+                                             int windowNumber)
+    {
+        juce::String s;
+        s << "EJGrMeter: " << plugin << " \"" << control << "\" window " << juce::String (windowNumber)
+          << "/" << juce::String (kSenseLogWindows)
+          << " raw=" << juce::String (raw, 4)
+          << " text=\"" << text.trim() << "\""
+          << " parsed=" << (parsedOk ? juce::String (parsedDb, 2) + " dB" : juce::String ("NO"))
+          << " prints_db=" << (parsedOk ? "yes" : "no");
+        // THE COINCIDENCE IS WORTH WRITING DOWN, and it is an OBSERVATION, not a guess: the dB parser will read
+        // a bare normalised position ("0.41") as 0.41 dB perfectly happily, and then a compressor doing four dB
+        // would be reported as doing four tenths. When the parsed figure IS the raw position, the line says so
+        // and leaves the conclusion to whoever reads it.
+        if (parsedOk && raw >= 0.0f && raw <= 1.0f && std::abs ((float) parsedDb - raw) < 0.01f)
+            s << " NOTE: the parsed figure equals the raw position - this control may not be printing dB";
+        return s;
+    }
+
+    /** Spends one of the five, and says whether the caller should write the line. */
+    bool takeSenseLog (int& windowNumberOut)
+    {
+        if (senseLogsOwed <= 0) return false;
+        windowNumberOut = kSenseLogWindows - senseLogsOwed + 1;
+        --senseLogsOwed;
+        return true;
+    }
 
     Step onWindow (const Window& w, double windowMs)
     {

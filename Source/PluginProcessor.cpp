@@ -6426,6 +6426,26 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
         if (host->readControlDb (loop.slot, loop.senseParams[0], grFromPlugin))
             w.sensedGrDb = std::abs (grFromPlugin);
     }
+    // 21t-j (owed): THE CROSS-CHECK, five windows after a build and then quiet. A block can SAY a control reads
+    // as dB; this writes down what the control actually prints beside its raw position, so the claim can be
+    // checked against the plugin rather than believed. One line, composed in the loop header so both hosts write
+    // the same one.
+    if (! loop.senseParams.isEmpty())
+    {
+        int windowNo = 0;
+        if (loop.takeSenseLog (windowNo))
+        {
+            float raw = 0.0f, parsed = 0.0f; juce::String text; bool okParse = false;
+            if (host->readControlRaw (loop.slot, loop.senseParams[0], raw, text, okParse, parsed))
+                EchoJay_NSLog (echojay::CalibLoop::senseCrossCheckLine (loop.plugin, loop.senseParams[0],
+                                                                       raw, text, okParse, parsed, windowNo)
+                                   .toRawUTF8());
+            else
+                EchoJay_NSLog (("EJGrMeter: " + loop.plugin + " \"" + loop.senseParams[0]
+                                + "\" is NOT a control on this plugin - the block named a meter that is not "
+                                  "there").toRawUTF8());
+        }
+    }
 
     const double nowMs = juce::Time::getMillisecondCounterHiRes();
     if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;

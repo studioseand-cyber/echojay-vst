@@ -455,6 +455,24 @@ void LinkProcessor::calibTickOwnRack()
         if (chainHost.readControlDb (calibLoop_.slot, calibLoop_.senseParams[0], grFromPlugin))
             w.sensedGrDb = std::abs (grFromPlugin);
     }
+    // 21t-j (owed): THE CROSS-CHECK, the same five windows and the same line as V2's side - one header, one
+    // behaviour, whichever host owns the rack.
+    if (! calibLoop_.senseParams.isEmpty())
+    {
+        int windowNo = 0;
+        if (calibLoop_.takeSenseLog (windowNo))
+        {
+            float raw = 0.0f, parsed = 0.0f; juce::String text; bool okParse = false;
+            if (chainHost.readControlRaw (calibLoop_.slot, calibLoop_.senseParams[0], raw, text, okParse, parsed))
+                EchoJay_NSLog (echojay::CalibLoop::senseCrossCheckLine (calibLoop_.plugin, calibLoop_.senseParams[0],
+                                                                       raw, text, okParse, parsed, windowNo)
+                                   .toRawUTF8());
+            else
+                EchoJay_NSLog (("EJGrMeter: " + calibLoop_.plugin + " \"" + calibLoop_.senseParams[0]
+                                + "\" is NOT a control on this plugin - the block named a meter that is not "
+                                  "there").toRawUTF8());
+        }
+    }
 
     // 21t-i: the measure-and-ask line is left in the STATE (askOwed) rather than posted here - this process has no
     // chat. V2 hands it to the chat out of the sidecar, from whichever host measured the window.
