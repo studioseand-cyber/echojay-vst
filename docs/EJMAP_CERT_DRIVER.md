@@ -64,6 +64,51 @@ Concretely:
   installed plugin, so it is the one check that covers the whole set. It proves the
   derivation code, not the measurements.
 
+**RE-DERIVED WITH THE DONGLE IN (29 Sep, after step 2 closed; `--cert-defaults
+--include-pace`, 388 s, 73 probe attempts, no retries).** This supersedes the no-dongle
+table above for THIS Mac as it now is:
+
+| Class of the 74, dongle in | Products |
+|---|---|
+| answered, REPRODUCED exactly | 21 |
+| answered, differs ONLY on a detected readout (Shadow Hills Class A, VU Meter R) | 1 |
+| answered, DIFFERS (MCompressor 6 fields, MModernCompressor 27; both Melda, see below) | 2 |
+| showed a PACE activation window, killed by the watch (kHs Compressor, see below) | 1 |
+| not measured: requires external hardware (McDSP APB C673-A, C-18) | 2 |
+| installed at another version (Waves 12 vs 15, UAD 11.2 vs 11.8) | 42 |
+| not installed | 5 |
+| **total** | **74** |
+
+**Result: reproduced 21 of 25 reachable, of 74.** Separately: emitted the readout fields
+correctly on 24 of 25 (kHs was never checked, because it never answered).
+`unlicensed_on_host` was **0**. All 8 PACE-wrapped products from the vendors expected not
+to load here (Softube: Drawmer 1973, Tube-Tech CL 1B, Mike-E Comp; SSL: Native X-Comp v6,
+G3 MultiBusComp, Native Bus Compressor 2; Audified U73b; Antares Auto-Tune Vocal
+Compressor) answered and REPRODUCED their fixtures exactly with the dongle in.
+
+Two findings, recorded as observed and NOT diagnosed:
+- **kHs Compressor showed PACE's activation UI** (`PACEEdenExperience`, in the probe's own
+  process tree, 3.4 s in). Yet by the driver's PACE rule, which reads only the plugin's
+  bundle, kHs is NOT licence-bound: it has no Eden bundle and no PACE bytes. So the
+  bundle-only rule misses at least one product that brings up PACE. The same product
+  answered normally in three earlier runs and hung once on 28 Sep, before any window was
+  watched. Its classification here is "not reproduced (named)", not `unlicensed_on_host`,
+  because nothing marked it licence-bound. That rule gap is logged, not fixed.
+- **Both Melda compressors differ at the fixture's own version (14.16.0)**, and the
+  differences are FORMATTING, not measurements:
+  - control names are ordered differently ("Preset trigger - previous" here, against
+    "previous (Preset trigger)" in the fixture);
+  - some middle texts read "63 ms" against "62 ms";
+  - one control's top end reads "+96.00 dB" against "Off".
+
+  The pushed fixtures were sampled on another Mac, so a machine-level Melda display setting
+  is one possible explanation. It is not measured. Until it is, a Melda fixture is not
+  portable between machines on names alone.
+
+The ~40 dongle-bound products outside the fixture set (the 2 Sep list: SSL, Softube,
+Harrison, oeksound, Audified, Eventide) have NO pushed fixtures, so nothing here measures
+them. Only the 7 of them inside the 74 were run, and all 7 reproduced.
+
 **WHAT "REPRODUCED N OF 15" COMPARES, AND WHAT IT DOES NOT.** Read this before
 quoting the number.
 - **It compares:** every top-level field (`identity`, `product`, `format`, `uid`,
@@ -196,6 +241,46 @@ vendor as `unlicensed_on_host` and say so in the run report.
 
 An activation window is a UI event on the user's desktop. An unattended run must
 count it and name it in the report, not just time it out silently.
+
+**STEP 2 CLOSED 29 Sep: PASSED, on the evidence of 28 Sep.** The question was whether
+PACE refuses a standalone signed probe, which would mean the harness can only live inside
+a shipped plugin bundle. On 28 Sep the signed standalone EchoJayProbe (cdhash
+`f7ffe8eb…`) ran `--list-params` and `--text-at all` on both McDSP APB compressors. Both
+are PACE-wrapped (an Eden bundle and PACE bytes in the binary). Both returned COMPLETE
+parameter lists that matched their pushed fixtures field for field (4/4 and 8/8
+controls). A refused process does not return complete, matching data, so PACE did not
+refuse the standalone signed probe, and the architecture stands.
+
+What this evidence does NOT cover, stated so it is not over-read:
+- **No window watch was running on 28 Sep** (it did not exist yet). So it cannot say that
+  no dialog appeared. It says only that instantiation and enumeration both succeeded,
+  which a BLOCKING dialog prevents.
+- **It is two plugins from ONE vendor.** It shows PACE does not categorically refuse a
+  standalone signed host. It does not show that every PACE-wrapped product will load.
+- The same two plugins did not answer on 29 Sep with the dongle in (below), and McDSP is
+  now out of the pool as hardware-bound. That is recorded, not re-litigated. Step 2 is
+  closed deliberately on the result already in hand, without spending runs to find a
+  cleaner version of it.
+
+The closure does NOT settle E2Deesser's activation window, which was dropped as a subject
+(it is not a compressor and not in the fixture set). It also does not settle why any
+particular PACE product fails on this Mac: that is licensing, recorded as
+`unlicensed_on_host`.
+
+**A SECOND CATEGORY THAT IS NOT MEASURED: plugins that require external hardware
+(logged 29 Sep).** A plugin that processes audio only on attached hardware cannot be
+certified by rendering. It may enumerate, but it renders nothing without the hardware.
+Record it as such, with the reason `requires_external_hardware`, the same way
+`unlicensed_on_host` is recorded. Never measure it and never score it. The first known
+members are the McDSP APB plugins, which need McDSP's Analog Processing Box (per Kathy).
+On the dev Mac, with the dongle in, 29 Sep, through the same signed probe binary (cdhash
+`f7ffe8eb…`) that listed both in full on 28 Sep without the dongle:
+- **APB C673-A:** `--list-params` refused after 87 s with "An OS error occurred during
+  initialisation of the plug-in (-10847)", which is `kAudioUnitErr_Unauthorized`.
+- **APB C-18:** timed out at 90 s with no output past its header.
+
+Neither showed a window. These are recorded, not diagnosed. McDSP is out of the step-2
+subject pool.
 
 **Dongle-bound subjects on the dev Mac** (per Sean, 28 Sep; not measured here).
 A full certification run on this Mac will SILENTLY UNDER-COVER these, and the run

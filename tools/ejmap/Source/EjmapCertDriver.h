@@ -329,11 +329,22 @@ struct Subject
     juce::File fixtureFile;
     juce::var pushed;
     juce::String product, uid, version;
-    enum class Reach { reachable, reachableNoVersion, heldPace, versionMismatch, notInstalled, ambiguous } reach
+    enum class Reach { reachable, reachableNoVersion, heldPace, requiresHardware, versionMismatch, notInstalled, ambiguous } reach
         = Reach::notInstalled;
     juce::String detail;                 // installed version(s), the ambiguity, ...
     juce::PluginDescription desc;        // resolved component, when installed
+    bool licenceBound = false;           // PACE-wrapped, or its PACE state could not be checked
 };
+
+// PLUGINS THAT NEED EXTERNAL HARDWARE (logged 29 Sep, docs/EJMAP_CERT_DRIVER.md
+// section 3): they may enumerate, but they render nothing without the hardware, so they
+// are RECORDED, never measured and never scored. The only known members so far are McDSP's
+// APB plugins, which need the Analog Processing Box (per Kathy). The rule is by
+// manufacturer code and product name, not by guess. Add to it only on evidence.
+inline bool requiresExternalHardware (const juce::String& product, const juce::String& componentCode)
+{
+    return componentCode.endsWith (",McDP") && product.startsWith ("APB ");
+}
 
 inline juce::String reachName (Subject::Reach r)
 {
@@ -341,7 +352,8 @@ inline juce::String reachName (Subject::Reach r)
     {
         case Subject::Reach::reachable:          return "reachable";
         case Subject::Reach::reachableNoVersion: return "reachable (fixture records no version)";
-        case Subject::Reach::heldPace:           return "held: PACE-wrapped or unverifiable, waits for step 2";
+        case Subject::Reach::heldPace:           return "held: PACE-wrapped or unverifiable (run with --include-pace)";
+        case Subject::Reach::requiresHardware:   return "not measured: requires external hardware";
         case Subject::Reach::versionMismatch:    return "out of reach: installed at another version";
         case Subject::Reach::notInstalled:       return "out of reach: not installed";
         case Subject::Reach::ambiguous:          return "out of reach: uid matches more than one component";
@@ -407,8 +419,11 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
             if (d.fileOrIdentifier.isEmpty() || d.name.isEmpty() || d.name == "<Unknown>")
             { s.reach = Subject::Reach::notInstalled; s.detail = "component " + s.version + " is not registered"; continue; }
             s.desc = d;
+            if (requiresExternalHardware (s.product, s.version))
+            { s.reach = Subject::Reach::requiresHardware; s.detail = "needs its hardware to process audio; recorded, not measured"; continue; }
             juce::String why;
-            const bool held = ! includePace && isPace (d, why);
+            s.licenceBound = isPace (d, why);
+            const bool held = ! includePace && s.licenceBound;
             s.detail = held ? why : "installed " + d.version + "; the fixture records no version to check it against";
             s.reach = held ? Subject::Reach::heldPace : Subject::Reach::reachableNoVersion;
             continue;
@@ -430,8 +445,11 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
             continue;                                   // never pick one
         }
         s.desc = atVersion.getReference (0);
+        if (requiresExternalHardware (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)))
+        { s.reach = Subject::Reach::requiresHardware; s.detail = "needs its hardware to process audio; recorded, not measured"; continue; }
         juce::String why;
-        const bool held = ! includePace && isPace (s.desc, why);
+        s.licenceBound = isPace (s.desc, why);
+        const bool held = ! includePace && s.licenceBound;
         if (held) s.detail = why;
         s.reach = held ? Subject::Reach::heldPace : Subject::Reach::reachable;
     }
@@ -696,7 +714,7 @@ inline int runCertDefaults (const Options& opt)
     // reduction meter sitting at 0 in silence) is NOT caught.
     struct Readout { int index; juce::String name; double a, b; juce::String ta, tb; };
     struct Row { const Subject* s; juce::String outcome; juce::StringArray diffs, diffsOnReadouts, emissionFails;
-                 bool reproduced = false, retried = false, readoutChecked = false, emitted = false;
+                 bool reproduced = false, retried = false, readoutChecked = false, emitted = false, unlicensed = false;
                  int captured = 0, onList = 0; std::vector<Readout> readouts; juce::String readoutNote; };
     std::vector<Row> rows;
     for (const auto& s : subjects)
@@ -706,8 +724,14 @@ inline int runCertDefaults (const Options& opt)
         std::cout << "  probing " << s.product << " ..." << std::flush;
         auto lp = runProbe (s, "--list-params", { "--list-params" }, row.retried);
         auto ta = lp.cleanExit() ? runProbe (s, "--text-at all", { "--text-at", "all" }, row.retried) : ChildResult();
-        if (! lp.cleanExit()) row.outcome = "NOT REPRODUCED: --list-params " + lp.describe();
-        else if (! ta.cleanExit()) row.outcome = "NOT REPRODUCED: --text-at all " + ta.describe();
+        // UNLICENSED IS NOT BROKEN (doc section 3, spec section 6). A licence-bound product
+        // that refuses, hangs or shows a window is recorded as unlicensed_on_host, with the
+        // shape it failed in. It is not a pass and not a defect, and it is counted apart.
+        auto failedWith = [&] (const juce::String& f) {
+            row.unlicensed = s.licenceBound;
+            return s.licenceBound ? "UNLICENSED ON HOST (licence-bound; " + f + ")" : "NOT REPRODUCED: " + f; };
+        if (! lp.cleanExit()) row.outcome = failedWith ("--list-params " + lp.describe());
+        else if (! ta.cleanExit()) row.outcome = failedWith ("--text-at all " + ta.describe());
         else
         {
             const auto list = parseListParams (lp.out);
@@ -800,12 +824,13 @@ inline int runCertDefaults (const Options& opt)
     std::map<Subject::Reach, juce::StringArray> byReach;
     for (const auto& s : subjects) byReach[s.reach].add (s.product + (s.detail.isNotEmpty() ? "  (" + s.detail + ")" : ""));
     const int reachable = (int) rows.size();
-    int reproduced = 0, differs = 0, onlyReadouts = 0, failed = 0, readoutControls = 0, readoutChecked = 0, emitted = 0;
+    int reproduced = 0, differs = 0, onlyReadouts = 0, failed = 0, unlicensed = 0, readoutControls = 0, readoutChecked = 0, emitted = 0;
     for (const auto& r : rows)
     {
         if (r.reproduced) ++reproduced;
         else if (! r.diffs.isEmpty()) ++differs;
         else if (! r.diffsOnReadouts.isEmpty()) ++onlyReadouts;
+        else if (r.unlicensed) ++unlicensed;
         else ++failed;
         readoutControls += (int) r.readouts.size();
         if (r.readoutChecked) ++readoutChecked;
@@ -819,13 +844,14 @@ inline int runCertDefaults (const Options& opt)
         << "COVERAGE (read this first)\n"
         << "  " << juce::String ("fixtures").paddedRight (' ', 58) << (int) subjects.size() << "\n";
     for (auto r : { Subject::Reach::reachable, Subject::Reach::reachableNoVersion, Subject::Reach::heldPace,
-                    Subject::Reach::versionMismatch, Subject::Reach::notInstalled, Subject::Reach::ambiguous })
+                    Subject::Reach::requiresHardware, Subject::Reach::versionMismatch, Subject::Reach::notInstalled,
+                    Subject::Reach::ambiguous })
         rep << "  " << reachName (r).paddedRight (' ', 58) << byReach[r].size() << "\n";
     // TWO LINES, NEVER ONE: they answer different questions.
     rep << "\nREPRODUCTION (the MEASURED form vs the pushed fixture; item-12 fields are not in it): reproduced "
         << reproduced << " of " << reachable << " reachable, of " << (int) subjects.size() << " fixtures"
         << "  |  differ only on detected readouts " << onlyReadouts << "  |  differ " << differs
-        << "  |  not reproduced (named) " << failed << "\n"
+        << "  |  unlicensed_on_host " << unlicensed << "  |  not reproduced (named) " << failed << "\n"
         << "SCHEMA EMISSION (item 12, checked separately, C1-C5): emitted the readout fields correctly on "
         << emitted << " of " << reachable << " reachable\n"
         << "READOUTS: checked on " << readoutChecked << " of " << reachable << " (two fresh instances each); "
@@ -847,7 +873,8 @@ inline int runCertDefaults (const Options& opt)
         if (r.readoutNote.isNotEmpty()) rep << "      " << r.readoutNote << "\n";
     }
     rep << "\nOUT OF REACH OR HELD, BY NAME\n";
-    for (auto r : { Subject::Reach::heldPace, Subject::Reach::versionMismatch, Subject::Reach::notInstalled, Subject::Reach::ambiguous })
+    for (auto r : { Subject::Reach::heldPace, Subject::Reach::requiresHardware, Subject::Reach::versionMismatch,
+                    Subject::Reach::notInstalled, Subject::Reach::ambiguous })
         if (! byReach[r].isEmpty())
         {
             rep << "  " << reachName (r) << " (" << byReach[r].size() << ")\n";
