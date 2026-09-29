@@ -670,6 +670,13 @@ public:
     void calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg);
     /** One tick: advance the loop by any 3 s windows the owning host has measured. Returns the card text. */
     juce::String calibTick(const juce::String& uid);
+    // 21t-m (29 Sep 2026 ruling): A TEST-ONLY CLOCK FOR THE WINDOW RATE LIMIT. calibTick takes one decision per
+    // 3 s window and the window is WALL CLOCK, so an end-to-end harness that feeds three seconds of audio in a
+    // fifth of a second must otherwise sit out the difference - five cases at real time is minutes on every fast
+    // gate. When this is set, calibTick reads it instead of juce::Time::getMillisecondCounterHiRes(); null (the
+    // default, and the only state a shipping session is ever in) is the real clock, unchanged. The rate limit
+    // ITSELF is still proved at real time by its own case in level_loop_guard.
+    std::function<double()> calibClockMsForTest;
     /** The closing message, handed over exactly once - whoever asks first posts it. */
     juce::String calibTakeClosing(const juce::String& uid);
     // 21t-i/21t-j: the loop's one chat line, handed out exactly once. replacesOpeningOut says whether it REPLACES

@@ -210,6 +210,14 @@ ej_add_guard(stepped_position_guard   SOURCE tools/stepped_position_guard/harnes
 ej_add_guard(limiter_wall_guard       SOURCE tools/limiter_wall_guard/harness.cpp             LABEL fast SCRIBBLE)
 ej_add_guard(loudness_loop_guard      SOURCE tools/loudness_loop_guard/harness.cpp            LABEL fast SCRIBBLE)
 ej_add_guard(level_slot_guard         SOURCE tools/level_slot_guard/harness.cpp               LABEL fast SCRIBBLE)
+# 21t-m (29 Sep 2026 ruling): THE END-TO-END LEVEL HARNESS. Real ChainHost, real tallies, real EJCalibLoop,
+# generated audio - the hold had been fixed six times from Pro Tools logs, one symptom a round, and this is where
+# its RED lives from now on. Sits beside level_slot_guard because they share the rig's shape.
+ej_add_guard(level_loop_guard         SOURCE tools/level_loop_guard/harness.cpp               LABEL fast SCRIBBLE)
+# ...and its PRE-FIX reproducer, registered so it BUILDS with the tree (a RED that does not compile is not a RED)
+# but with NO label, so no gate runs it: it is the same rig cut down to what exists before this round's fix, and
+# it is run by hand against a stashed Source/ to show the wind-up happening. Its output is quoted in MERGE.
+ej_add_guard(level_loop_red_prefix    SOURCE tools/level_loop_guard/red_prefix.cpp             LABEL none SCRIBBLE)
 ej_add_guard(pair_dial_guard          SOURCE tools/pair_dial_guard/harness.cpp                LABEL fast SCRIBBLE)
 ej_add_guard(deltas_guard             SOURCE tools/deltas_guard/harness.cpp                   LABEL fast SCRIBBLE)
 ej_add_guard(bubble_parity_guard      SOURCE tools/bubble_parity_guard/harness.cpp            LABEL fast SCRIBBLE)

@@ -1709,13 +1709,24 @@ static int guardMain()
             // that is what this leg asserts now: the settle spends its budget and then nothing moves at all.
             check (writes <= 3, "21t-i (1) as re-ruled. the settle takes AT MOST THREE steps, however far out",
                    juce::String (writes) + " write(s)");
-            int afterLanding = 0;
+            // 29 Sep 2026 (21t-m item 1) RE-STATES THIS ONE AGAIN, and the re-statement is forced, not chosen:
+            // the hold now runs AFTER landing rather than between drive steps, so "after landing nothing moves"
+            // is no longer true as written - the hold's one write is a write after landing and is the point of
+            // the round. What the ruling actually promises is that the ACTUATOR never moves again and the hold
+            // writes AT MOST TWICE, so that is what is counted here, separately.
+            int driveAfterLanding = 0, holdAfterLanding = 0;
             for (int i = 0; i < 12; ++i)
             { const auto st = l.onWindow (win (20.0f, 200.0f + (float) i * 3.0f), 3000.0);
-              if (st.writeDrive || st.writeParams || st.writeSlotGain) ++afterLanding; }
-            check (l.landed && afterLanding == 0,
-                   "21t-i (1) as re-ruled. ...and AFTER LANDING twelve judged windows 17 dB out of band move "
-                   "nothing", juce::String (afterLanding) + " write(s) after landing");
+              if (st.writeDrive || st.writeParams) ++driveAfterLanding;
+              if (st.writeSlotGain || st.writeOutput) ++holdAfterLanding; }
+            check (l.landed && driveAfterLanding == 0,
+                   "21t-i (1) as re-ruled twice. ...and AFTER LANDING twelve judged windows 17 dB out of band "
+                   "move THE ACTUATOR not at all",
+                   juce::String (driveAfterLanding) + " actuator write(s) after landing");
+            check (holdAfterLanding <= 2,
+                   "21t-m (1). ...and the hold writes AT MOST TWICE over those twelve windows - once on the "
+                   "landed drive and at most one refinement, never once per window",
+                   juce::String (holdAfterLanding) + " hold write(s) after landing");
             check (lines == 12, "21t-i (1). ...and every judged window still prints its line, so a loop sitting "
                    "in band and a loop that has stalled cannot look the same",
                    juce::String (lines) + " line(s) of 12");

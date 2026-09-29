@@ -6722,7 +6722,8 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
         }
     }
 
-    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    // 21t-m: the test clock when a harness set one, the real clock otherwise (see the header).
+    const double nowMs = calibClockMsForTest ? calibClockMsForTest() : juce::Time::getMillisecondCounterHiRes();
     if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
     const double sinceMs = nowMs - calibLastWindowMs_;
     if (sinceMs < 3000.0) return loop.card();   // one decision per 3 s window, never per tick
