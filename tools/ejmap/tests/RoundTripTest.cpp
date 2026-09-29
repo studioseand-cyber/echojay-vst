@@ -60,6 +60,9 @@
 #include "EjmapFixtureRange.h"
 #include "EjmapFixtureReadout.h"
 #include "EjmapCertOutcome.h"
+#include "EjmapNameTokens.h"
+#include "EjmapRoles.h"
+#include "EjmapRoleSemantics.h"
 
 namespace
 {
@@ -3819,6 +3822,185 @@ void testLicenceOutcome()
            "licence K4: a window from something other than PACE is recorded, not called a licence fact");
 }
 
+//==============================================================================
+/** THE NAME MATCHER IS THE SERVER'S (EjmapNameTokens.h). Every vector in
+    name-token-vectors.json was produced by the server's own controlNameTokens /
+    controlAnswersTerm (lib/controls-note.js @ a86dba8, unmodified, in node); this port
+    must reproduce all of them. The counts are the CONTROL: an unread or truncated file
+    would otherwise pass by asserting nothing.
+*/
+void testNameTokenVectors()
+{
+    using namespace ejmap::nametokens;
+    const auto file = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/name-token-vectors.json");
+    const auto v = juce::JSON::parse (file.loadFileAsString());
+    const auto* toks = v.getProperty ("tokens", {}).getArray();
+    const auto* ans  = v.getProperty ("answers", {}).getArray();
+    check (toks != nullptr && toks->size() == 1006 && ans != nullptr && ans->size() == 1506,
+           "tokens T0: the vector file is read whole (1,006 token vectors, 1,506 answer vectors)");
+    if (toks == nullptr || ans == nullptr) return;
+
+    int tokenMiss = 0, answerMiss = 0, refusals = 0;
+    for (const auto& t : *toks)
+    {
+        juce::StringArray want;
+        if (const auto* a = t.getProperty ("tokens", {}).getArray())
+            for (const auto& x : *a) want.add (x.toString());
+        const auto got = controlNameTokens (t.getProperty ("name", {}).toString());
+        if (got != want && ++tokenMiss <= 5)
+            std::cerr << "  token vector: '" << t.getProperty ("name", {}).toString() << "' server ["
+                      << want.joinIntoString ("|") << "] port [" << got.joinIntoString ("|") << "]" << std::endl;
+    }
+    for (const auto& a : *ans)
+    {
+        const bool want = (bool) a.getProperty ("result", false);
+        if (! want) ++refusals;
+        const bool got = controlAnswersTerm (a.getProperty ("name", {}).toString(), a.getProperty ("term", {}).toString());
+        if (got != want && ++answerMiss <= 5)
+            std::cerr << "  answer vector: '" << a.getProperty ("name", {}).toString() << "' / '"
+                      << a.getProperty ("term", {}).toString() << "' server " << (int) want << " port " << (int) got << std::endl;
+    }
+    check (tokenMiss == 0, "tokens T1: controlNameTokens reproduces every server vector (" + juce::String (tokenMiss) + " differ)");
+    check (answerMiss == 0, "tokens T2: controlAnswersTerm reproduces every server vector (" + juce::String (answerMiss) + " differ)");
+    check (refusals == 466, "tokens T3: the file carries the 466 refusals - letters inside a token, and band abbreviations "
+                             "without their word boundary - that the rule exists to make");
+
+    // Named, so a reader sees what the vectors protect.
+    check (! controlAnswersTerm ("Threshold", "hold") && ! controlAnswersTerm ("Calibration", "ratio"),
+           "tokens T4: letters inside a token do not answer (hold/Threshold, ratio/Calibration)");
+    check (controlNameTokens ("aBcD").joinIntoString ("|") == "a|bc|d",
+           "tokens T5: only lower->Upper splits a case change; Upper->lower does not");
+    check (controlAnswersTerm ("LF Gain", "low") && ! controlAnswersTerm ("LF_Gain", "low")
+             && ! controlAnswersTerm ("Shelf Gain", "low"),
+           "tokens T7: a band abbreviation answers only at a JavaScript \\b boundary, where _ and digits are word characters");
+    check (controlAnswersTerm (juce::String::charToString ((juce::juce_wchar) 0x212A) + "ey", "key"),
+           "tokens T6: JavaScript lowercases the Kelvin sign to k, so the server answers 'key' - and so must the port");
+}
+
+//==============================================================================
+/** THE ROLE RULE (EjmapRoles.h), each clause named with the real control it was
+    written for. */
+void testRoleRules()
+{
+    using namespace ejmap::roles;
+    auto one = [] (const char* n, Category c = Category::compressor) { return roleOfName (n, c); };
+
+    check (one ("L DC Thr").role == "threshold" && one ("L DC Thr").flags.contains ("dc"),
+           "roles R1: DC is a FLAG, not a veto - Fairchild 'L DC Thr' keeps its threshold role, flagged");
+    check (one ("Select Attack Release").role.isEmpty()
+             && one ("Select Attack Release").reason == "ambiguous:attack|release",
+           "roles R2: a name answering two roles REFUSES and names both (CL 1B 'Select Attack Release')");
+    check (one ("Key").role.isEmpty() && one ("Key").reason == "veto:sidechain",
+           "roles R3: on a compressor 'Key' is the sidechain key - vetoed");
+    check (one ("Key", Category::tuner).role == "key" && one ("Speed", Category::tuner).role == "strength"
+             && one ("Speed").role.isEmpty(),
+           "roles R4: on a tuner 'Key' is the musical key and 'Speed' is strength; on a compressor neither is a tuner role");
+    check (one ("Peak Reduct").role == "threshold" && one ("Thr").role == "threshold"
+             && one ("Rcv").role == "release" && one ("Att").role == "attack" && one ("Rat").role == "ratio",
+           "roles R5: the lexicon carries LA-2A's 'Peak Reduct' and UAD's Thr/Rcv/Att/Rat");
+    check (one ("SC HPF").reason == "veto:sidechain+filter" && one ("GR Meter").reason == "veto:meter"
+             && one ("Preset Threshold").reason == "veto:preset",
+           "roles R6: vetoes name every family that fired");
+
+    auto cls = [] (std::initializer_list<const char*> names)
+    {
+        std::vector<NamedControl> cs;
+        int i = 0;
+        for (auto* n : names) cs.push_back ({ i++, n });
+        return classify (cs, Category::compressor);
+    };
+    const auto g = cls ({ "CompThresh", "ExpThresh", "CompRatio" });
+    check (g.cls == "comp_over_expander" && g.controls[0].role == "threshold"
+             && g.controls[1].role.isEmpty() && g.controls[1].reason == "expander_or_strap_threshold",
+           "roles R7: SSL G-Channel - the compressor threshold keeps the role, the expander's loses it");
+    const auto u = cls ({ "Input", "Output", "Attack" });
+    check (u.cls == "input_as_threshold" && u.controls[0].role == "threshold"
+             && u.controls[0].flags.contains ("input_as_threshold"),
+           "roles R8: a 1176 with no threshold by name - its Input takes the role, flagged");
+    check (cls ({ "L Thr", "R Thr" }).cls == "channels_lr" && cls ({ "Thr LFE", "Thr C" }).cls == "surround"
+             && cls ({ "Threshold 1", "Threshold 2" }).cls == "bands_or_stages"
+             && cls ({ "Density", "Output" }).cls == "amount_only" && cls ({ "Bypass" }).cls == "none",
+           "roles R9: the multi-threshold and no-threshold classes");
+    {
+        std::vector<NamedControl> cs { { 0, "Threshold", true }, { 1, "Input", false } };
+        const auto r = classify (cs, Category::compressor);
+        check (r.controls[0].role.isEmpty() && r.controls[0].reason == "readout" && r.cls == "input_as_threshold",
+               "roles R10: a READOUT gets no role whatever its name says - a roled meter would be swept");
+    }
+
+    using namespace ejmap::rolesemantics;
+    ControlRole in; in.role = "threshold"; in.flags.add ("input_as_threshold");
+    check (semanticForRole ("threshold", "dB") == "threshold_db" && semanticForRole ("threshold", "").isEmpty()
+             && semanticForRole ("threshold", "dBu").isEmpty(),
+           "roles S1: threshold -> threshold_db only in dB; a 0-10 threshold has a role and NO semantic; dBu is not dB");
+    check (semanticForRole ("ratio", "") == "ratio" && semanticForRole ("attack", "s") == "attack_ms"
+             && semanticForRole ("release", "mS") == "release_ms" && semanticForRole ("attack", "dB").isEmpty()
+             && semanticForRole ("mix", "%") == "mix_pct" && semanticForRole ("key", "").isEmpty(),
+           "roles S2: ratio always; time roles only in time units; mix only in %; tuner roles map to nothing");
+    check (semanticFor (in, "dB") == "input_db",
+           "roles S3: an input-as-threshold control keeps its NAME's semantic - the role is per control, not derived");
+    check (roleForSemantic ("threshold_db") == "threshold" && roleForSemantic ("input_db") == "input"
+             && roleForSemantic ("knee_db").isEmpty() && roleForSemantic ("hold_ms").isEmpty(),
+           "roles S4: semantic -> role always for the eight, nothing for knee/range/hold/tone/slope");
+}
+
+//==============================================================================
+/** THE 74 CLASSIFIED (role-classification-74.json, produced by the reference
+    classifier on the server's own matcher). Every product's class and every control's
+    role, flags and reason must reproduce, and the 38 is pinned as a literal as well, so
+    regenerating the file under a changed lexicon cannot move it silently.
+*/
+void testRoleClassification74()
+{
+    using namespace ejmap::roles;
+    const auto file = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/role-classification-74.json");
+    const auto v = juce::JSON::parse (file.loadFileAsString());
+    const auto* products = v.getProperty ("products", {}).getArray();
+    check (products != nullptr && products->size() == 74, "roles C0: the classification file is read whole (74 products)");
+    if (products == nullptr) return;
+
+    std::map<juce::String, int> counts;
+    int classMiss = 0, controlMiss = 0, controlsSeen = 0;
+    for (const auto& p : *products)
+    {
+        std::vector<NamedControl> cs;
+        const auto* recorded = p.getProperty ("controls", {}).getArray();
+        if (recorded == nullptr) { ++classMiss; continue; }
+        for (const auto& c : *recorded)
+            cs.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString() });
+        const auto got = classify (cs, Category::compressor);
+        ++counts[got.cls];
+        const auto product = p.getProperty ("product", {}).toString();
+        if (got.cls != p.getProperty ("cls", {}).toString() && ++classMiss <= 5)
+            std::cerr << "  class: " << product << " recorded " << p.getProperty ("cls", {}).toString()
+                      << " port " << got.cls << std::endl;
+        for (size_t i = 0; i < got.controls.size() && i < (size_t) recorded->size(); ++i)
+        {
+            ++controlsSeen;
+            const auto& r = recorded->getReference ((int) i);
+            juce::StringArray flags;
+            if (const auto* f = r.getProperty ("flags", {}).getArray())
+                for (const auto& x : *f) flags.add (x.toString());
+            const auto& c = got.controls[i];
+            const juce::String recRole = r.getProperty ("role", {}).isVoid() ? juce::String() : r.getProperty ("role", {}).toString();
+            if ((c.role != recRole || c.flags != flags || c.reason != r.getProperty ("reason", {}).toString())
+                 && ++controlMiss <= 5)
+                std::cerr << "  control: " << product << " / " << c.name << " recorded " << recRole << "["
+                          << flags.joinIntoString (",") << "]" << r.getProperty ("reason", {}).toString()
+                          << " port " << c.role << "[" << c.flags.joinIntoString (",") << "]" << c.reason << std::endl;
+        }
+    }
+    check (controlsSeen == 1783, "roles C1: all 1,783 controls were compared (" + juce::String (controlsSeen) + ")");
+    check (classMiss == 0, "roles C2: every product's class reproduces (" + juce::String (classMiss) + " differ)");
+    check (controlMiss == 0, "roles C3: every control's role, flags and reason reproduce (" + juce::String (controlMiss) + " differ)");
+    check (counts["single_threshold"] == 38, "roles C4: 38 products have exactly one threshold by name");
+    check (counts["input_as_threshold"] == 9 && counts["comp_over_expander"] == 4,
+           "roles C5: 13 take a threshold by a flagged rule (9 input-as-threshold, 4 comp-over-expander)");
+    check (counts["amount_only"] == 4 && counts["channels_lr"] == 3 && counts["bands_or_stages"] == 14
+             && counts["surround"] == 2 && counts["none"] == 0,
+           "roles C6: 23 are deferred to review after the sweep (4 amount, 3 L/R, 14 bands or stages, 2 surround)");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -3864,6 +4046,9 @@ int main (int, char**)
     testFixtureRangeRule();
     testFixtureReadoutEmission();
     testLicenceOutcome();
+    testNameTokenVectors();
+    testRoleRules();
+    testRoleClassification74();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
