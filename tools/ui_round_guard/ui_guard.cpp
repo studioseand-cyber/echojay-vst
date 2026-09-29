@@ -466,6 +466,24 @@ int main()
             }
             ed->clearRosterSelection();
         }
+        // ---- 21t-l item 1 (29 Sep 2026 ruling): A GROUP STRIP SHOWS THE COUNT ------------------------------
+        // Sean's "Group 2" painted fourteen member names down the data band, over the GROUP label and over the
+        // strip below it. The body is the count now, one line, inside its own rect; the names are the tooltip.
+        {
+            std::printf ("== 21t-l item 1: a group strip shows the COUNT ==\n");
+            check (EchoJayEditor::groupStripBodyText (14) == "14 Links",
+                   "21t-l 1. a 14-member group's body text is \"14 Links\"  (RED as it stood: fourteen names, one "
+                   "per line, painted over the label and the strip below)",
+                   EchoJayEditor::groupStripBodyText (14));
+            check (EchoJayEditor::groupStripBodyText (1) == "1 Link"
+                   && EchoJayEditor::groupStripBodyText (8) == "8 Links"
+                   && EchoJayEditor::groupStripBodyText (0) == "0 Links",
+                   "21t-l 1. ...and it is one line at every size, singular at one",
+                   EchoJayEditor::groupStripBodyText (1) + " / " + EchoJayEditor::groupStripBodyText (8));
+            check (! EchoJayEditor::groupStripBodyText (14).containsChar ('\n'),
+                   "21t-l 1. ...with no line break in it, so it cannot grow past its rect");
+        }
+
         // ---- 21t-l (29 Sep 2026 ruling): THE HEADER UNDO BUTTON IS THE PATH -------------------------------
         // Cmd-Z reaches rackUndoRedo from keyPressed, but only for key events the HOST forwards; Pro Tools binds
         // Cmd-Z to its own session undo and whether it passes it on is the host's decision, not determinable

@@ -10315,14 +10315,16 @@ void EchoJayEditor::paintGroupStrip(juce::Graphics& g, const StripGeom& sg)
     // group has nothing to show, and an outlined empty box reads as a broken meter rather than as absence. The
     // geometry is untouched - the row keeps exactly the same height, the space is simply not drawn on.
     // data band — the member names, centred, one per line (plus the bus when one is set)
+    // 21t-l item 1 (29 Sep 2026 ruling): THE COUNT, ONE LINE, INSIDE ITS OWN RECT. The names used to paint one
+    // per line down this band, so "Group 2" with fourteen members drew fourteen names over the GROUP label and
+    // over the strip below it - drawFittedText was given fourteen lines and a rect that fits about four, and it
+    // scaled the text down rather than clipping. The list belongs in the tooltip and in the roster highlight,
+    // which already carry it; the strip says how many.
     {
-        juce::StringArray lines;
-        for (const auto& u : gr->members) lines.add(processorRef.resolveLinkDisplayName(u));
-        if (gr->bus.isNotEmpty()) lines.add("bus: " + processorRef.resolveLinkDisplayName(gr->bus));
         g.setColour(LinkConsole::label);
         g.setFont(juce::Font(juce::FontOptions(wide ? 10.0f : 9.0f)));
-        g.drawFittedText(lines.joinIntoString("\n"), sg.data.reduced(3),
-                         juce::Justification::centred, juce::jmax(1, lines.size()), 1.0f);
+        g.drawFittedText(groupStripBodyText(gr->members.size()), sg.data.reduced(3),
+                         juce::Justification::centred, 1, 1.0f);
     }
     // fader - 21r item 4: THE GROUP'S OFFSET, LIKE A VCA. It used to snap back to 0 the moment the drag ended,
     // which made a control that had just moved six faders look untouched. It now sits where it was put, is
@@ -10953,6 +10955,21 @@ juce::String EchoJayEditor::linkStripTooltip(const StripGeom& sg,
     // Consumes the SAME stored rects as paint and mouseDown, via the same
     // stripHitAt. The tooltip is where the narrow strip's elided information
     // lives: the full name, and the merged control's status words.
+    // 21t-l item 1: A GROUP ROW'S TOOLTIP IS THE MEMBER LIST. The strip body is the count now, so this is where
+    // the names live - with the roster highlight, which shows the same set on the strips themselves.
+    if (sg.isGroup || sg.addr.startsWith ("grp:"))
+    {
+        const auto gid = sg.groupId.isNotEmpty() ? sg.groupId : sg.addr.fromFirstOccurrenceOf ("grp:", false, false);
+        if (const auto* gr = processorRef.linkGroupById (gid))
+        {
+            juce::StringArray names;
+            for (const auto& u : gr->members) names.add (processorRef.resolveLinkDisplayName (u));
+            juce::String tip = gr->name + " - " + groupStripBodyText (gr->members.size());
+            if (! names.isEmpty()) tip << "\n" << names.joinIntoString ("\n");
+            if (gr->bus.isNotEmpty()) tip << "\nbus: " << processorRef.resolveLinkDisplayName (gr->bus);
+            return tip;
+        }
+    }
     EchoJayProcessor::LinkDisplayEntry en;
     const bool have = !sg.isBus && findLinkEntryByAddr(sg.addr, en);
     const juce::String name = sg.isBus
@@ -26807,6 +26824,13 @@ void EchoJayEditor::setChatTargetGroup(const juce::String& groupId)
 // ellipsised from the tail; when what survives is shorter than four characters the strip draws its INDEX
 // instead, because three letters of a name identify nothing while a number at least identifies the strip.
 // Measured against the SAME font the painter uses, so "it fits" is not an estimate.
+// 21t-l item 1: one line, the count, and nothing that can grow with the membership.
+juce::String EchoJayEditor::groupStripBodyText (int memberCount)
+{
+    const int n = juce::jmax (0, memberCount);
+    return juce::String (n) + (n == 1 ? " Link" : " Links");
+}
+
 juce::String EchoJayEditor::stripNameLabel (const juce::String& name, const juce::Font& font, int widthPx, int index)
 {
     const auto trimmed = name.trim();

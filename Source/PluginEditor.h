@@ -4931,6 +4931,11 @@ public:
         four characters - at that width a truncated name identifies nothing, and a number at least identifies
         the strip. The name never overflows: the returned string is measured to fit. `index` is 1-based. */
     static juce::String stripNameLabel (const juce::String& name, const juce::Font& font, int widthPx, int index);
+    /** 21t-l item 1 (29 Sep 2026 ruling): A GROUP STRIP'S BODY IS THE COUNT, one line. The member names used to
+        paint one per line down the data band, so a group of fourteen drew fourteen names over the GROUP label
+        and over the strip below it. The names live in the tooltip and in the roster highlight, where a list
+        belongs; the strip says how many. */
+    static juce::String groupStripBodyText (int memberCount);
     static constexpr int kStripLabelMinChars = 4;   // ruled
 private:
     void groupMuteSoloClick(const juce::String& groupId, bool isSolo);
