@@ -132,7 +132,9 @@ struct CalibLoop
     // A cap shorter than the machine's own cadence is not a budget, it is a stop.
     static constexpr int   kSettleMaxSteps  = 3;      // ruled
     static constexpr float kSettleMaxHeardS = 45.0f;  // ruled, in HEARD seconds - the backstop, not the budget
-    // The output/makeup control, when the block named one, and what the loop last wrote to it.
+    // The output/makeup control the block named, IF it named one. 21t-m (29 Sep 2026 ruling): the HOLD never
+    // writes it - these are kept because the block's parse carries them and the card/log report what the build
+    // set, not because anything here moves them.
     juce::StringArray senseParams;     // the plugin's own GR meter, when the block named one
     bool   grReadable = false;         // ...and whether the block says it reads as dB
     float  sensedGrDb = std::numeric_limits<float>::quiet_NaN();   // what that meter last read, positive dB
@@ -239,10 +241,9 @@ struct CalibLoop
         // transcript carries the line's current text only - the opening line while pending, the completed line
         // once landed, never both.
         bool  askReplacesOpening = false;
-        // 21t-j: the level hold. A second write, to a DIFFERENT control from the actuator, and reported in words.
-        bool  writeOutput = false;
-        juce::StringArray outputNames;
-        float outputValue = 0.0f;
+        // 21t-j's "a second write, to a DIFFERENT control from the actuator" is GONE (21t-m, 29 Sep 2026 ruling):
+        // the hold writes EchoJay's own OUT and nothing else, so there is no second write target and no Step
+        // field for one. A plugin's output control is left exactly where the build put it.
         // 21t-j: the hold through EchoJay's own per-slot output gain, for a plugin that publishes no output control.
         bool  writeSlotGain = false;
         float slotGainValue = 0.0f;
@@ -970,13 +971,19 @@ struct CalibLoop
             // 21t-m item 1 (ruled): ...AND NOW THE HOLD, ONCE, ON THE FINAL DRIVE. The closing line is not handed
             // out yet: it has to state what the hold wrote, and the hold has not measured a fresh window at this
             // drive position. The settle's landing opens the hold and waits; holdStep() below closes the line.
-            if (outParams.isEmpty() || outValue == outValue)
-            {
+            {   // 21t-m (ruled): the hold always has a target - EchoJay's own OUT - so it always opens.
                 holdOpen = true; holdDone = false; holdWrites = 0;
                 holdBaseGainDb = slotGainDb;
                 holdFirstExcessDb = std::numeric_limits<float>::quiet_NaN();
-                freshWanted = kFreshAfterWrite;   // one FRESH window at the landed drive, before anything is written
                 judged = 0;
+                // ONE FRESH WINDOW AT THE LANDED DRIVE, before anything is written - but only if the drive
+                // actually MOVED. A compressor that was already in band took no step, so nothing has been
+                // written since this window was measured and this window IS at the landed drive: making it wait
+                // two more would be nine seconds of silence bought for nothing, on the ORDINARY case. Caught by
+                // loudness_loop_guard 21t-g (6b), which asks for the line after three in-band windows.
+                freshWanted = settleSteps > 0 ? kFreshAfterWrite : 0;
+                if (freshWanted == 0)
+                    return holdStep (s);   // nothing moved: judge this window and close the line now
                 s.card = card();
                 s.logLine = log (inBand ? "landed-holding" : (settleSteps >= kSettleMaxSteps
                                                                   ? "landed-step-budget-holding"
@@ -1010,55 +1017,36 @@ struct CalibLoop
         refinement; the closing line is handed out when it is finished, so the sentence can state the total. */
     Step& holdStep (Step& s)
     {
-        const bool named = ! outParams.isEmpty() && outValue == outValue;
-        const float excess = named ? levelChangeDb : levelResidualDb;
+        // 21t-m (29 Sep 2026 ruling, replacing the named-output question): THE HOLD WRITES ECHOJAY'S OWN OUT,
+        // ALWAYS. Never a plugin's output control, whether or not the map names one - a plugin's own output is
+        // left exactly where the build put it. There is one write target and one residual, so there is nothing
+        // here to choose between: the slot has two EchoJay gains, IN and OUT, and the hold sets OUT.
+        const float excess = levelResidualDb;
         if (holdFirstExcessDb != holdFirstExcessDb) holdFirstExcessDb = excess;   // the budget this hold may spend
 
         const float threshold = holdWrites == 0 ? kHoldOpenDb : kHoldRefineDb;
         if (std::abs (excess) > threshold && holdWrites < kHoldMaxWrites)
         {
-            if (named)
+            // The total may never exceed the first measured excess by more than kHoldTotalSlackDb (ruled).
+            const float cap     = std::abs (holdFirstExcessDb) + kHoldTotalSlackDb;
+            const float wasGain = slotGainDb;
+            float wantGain = juce::jlimit (holdBaseGainDb - cap, holdBaseGainDb + cap, slotGainDb - excess);
+            wantGain = juce::jlimit (-24.0f, 12.0f, wantGain);
+            if (std::abs (wantGain - wasGain) > 0.05f)
             {
-                const float want  = juce::jlimit (outMin, outMax, outValue - excess);
-                const float moved = want - outValue;
-                if (std::abs (moved) > 0.05f)
-                {
-                    outValue = want;
-                    ++holdWrites;
-                    levelTrimmedDb += moved;                 // the WRITTEN TOTAL for this settle
-                    levelHeld = true;
-                    levelHoldClamped = std::abs ((outValue - moved) - excess - want) > 0.05f;
-                    freshWanted = kFreshAfterWrite;          // re-measure before judging again
-                    judged = 0;
-                    s.writeOutput = true; s.outputNames = outParams; s.outputValue = outValue;
-                    s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold" : "level-hold-refine");
-                    return s;
-                }
-                levelHoldClamped = true; levelHoldLimitDb = outValue;   // the control ran out
+                slotGainDb = wantGain;
+                ++holdWrites;
+                levelTrimmedDb = slotGainDb - holdBaseGainDb;        // the WRITTEN TOTAL, absolute
+                levelHeld = true;
+                levelHoldClamped = std::abs ((holdBaseGainDb - holdFirstExcessDb) - slotGainDb) > 0.05f;
+                levelHoldLimitDb = slotGainDb;
+                freshWanted = kFreshAfterWrite;
+                judged = 0;
+                s.writeSlotGain = true; s.slotGainValue = slotGainDb;
+                s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
+                return s;
             }
-            else
-            {
-                // The total may never exceed the first measured excess by more than kHoldTotalSlackDb (ruled).
-                const float cap     = std::abs (holdFirstExcessDb) + kHoldTotalSlackDb;
-                const float wasGain = slotGainDb;
-                float wantGain = juce::jlimit (holdBaseGainDb - cap, holdBaseGainDb + cap, slotGainDb - excess);
-                wantGain = juce::jlimit (-24.0f, 12.0f, wantGain);
-                if (std::abs (wantGain - wasGain) > 0.05f)
-                {
-                    slotGainDb = wantGain;
-                    ++holdWrites;
-                    levelTrimmedDb = slotGainDb - holdBaseGainDb;        // the WRITTEN TOTAL, absolute
-                    levelHeld = true;
-                    levelHoldClamped = std::abs ((holdBaseGainDb - holdFirstExcessDb) - slotGainDb) > 0.05f;
-                    levelHoldLimitDb = slotGainDb;
-                    freshWanted = kFreshAfterWrite;
-                    judged = 0;
-                    s.writeSlotGain = true; s.slotGainValue = slotGainDb;
-                    s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
-                    return s;
-                }
-                levelHoldClamped = true; levelHoldLimitDb = slotGainDb;  // the cap or the control ran out
-            }
+            levelHoldClamped = true; levelHoldLimitDb = slotGainDb;  // the cap or the control ran out
         }
         // FINISHED: within the threshold, out of writes, or out of control. The closing line goes now, and it
         // states the written total.
@@ -1160,10 +1148,12 @@ struct CalibLoop
                         + " dB out and I cannot hold the rest."
                       // 21t-m item 1 (ruled): the WRITTEN TOTAL, not the last move.
                       : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB in total to hold the level.";
-        else if (std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
-            level = " It is " + juce::String (std::abs (levelChangeDb), 1) + " dB "
-                  + (levelChangeDb > 0.0f ? "louder" : "quieter")
-                  + " through the plugin and I have no output control for it here, so the level is not held.";
+        else if (std::abs (levelResidualDb) > 1.0f)
+            // 21t-m (ruled): the hold always writes EchoJay's own OUT, so "I have no output control for it here"
+            // is no longer a thing that can be true. What CAN be true is that OUT ran out of range.
+            level = " The slot is still " + juce::String (std::abs (levelResidualDb), 1) + " dB "
+                  + (levelResidualDb > 0.0f ? "louder" : "quieter")
+                  + " out than in and my output trim has no more to give.";
         // 21t-j (ruled): NO FIGURE THE PLUGIN DID NOT PUBLISH. A GR figure is quoted only from the plugin's own
         // meter (sense_param, gr_readable); the slot's in-vs-out pair is a level change and is reported as one.
         // EVERY FIGURE IN A REPLY IS A METER SAMPLE (ruled). The crest difference is measured on this slot's own

@@ -1718,7 +1718,7 @@ static int guardMain()
             for (int i = 0; i < 12; ++i)
             { const auto st = l.onWindow (win (20.0f, 200.0f + (float) i * 3.0f), 3000.0);
               if (st.writeDrive || st.writeParams) ++driveAfterLanding;
-              if (st.writeSlotGain || st.writeOutput) ++holdAfterLanding; }
+              if (st.writeSlotGain) ++holdAfterLanding; }   // 21t-m: the hold has ONE write target now
             check (l.landed && driveAfterLanding == 0,
                    "21t-i (1) as re-ruled twice. ...and AFTER LANDING twelve judged windows 17 dB out of band "
                    "move THE ACTUATOR not at all",

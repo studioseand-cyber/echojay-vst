@@ -498,15 +498,9 @@ void LinkProcessor::calibTickOwnRack()
         chainHost.setSlotControlsToValue(calibLoop_.slot, step.paramNames, step.paramValue);
         chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the actuator");   // both legs start again
     }
-    // 21t-j: the level hold, on this side too - one header, one behaviour, whichever host owns the tallies.
-    if (step.writeOutput)
-    {
-        chainHost.setSlotControlsToValue(calibLoop_.slot, step.outputNames, step.outputValue);
-        chainHost.resetSlotShortTermStats(calibLoop_.slot, "the hold moved the plugin output");   // 21t-j: both legs start again
-        EchoJay_NSLog(("EJThreshold: level hold - wrote " + step.outputNames.joinIntoString(" + ") + " = "
-                       + juce::String(step.outputValue, 2) + " on slot " + juce::String(calibLoop_.slot + 1)).toRawUTF8());
-    }
-    // 21t-j: ...and the hold through EchoJay's own per-slot output gain, when the plugin named no output control.
+    // 21t-m (29 Sep 2026 ruling): the hold's write to a PLUGIN'S output control is gone - it writes EchoJay's
+    // own per-slot OUT and nothing else, so there is no step.writeOutput to handle here any more.
+    // THE HOLD, through EchoJay's own per-slot output gain - the only control it ever writes.
     if (step.writeSlotGain)
     {
         chainHost.setSlotOutGainDb(calibLoop_.slot, step.slotGainValue);

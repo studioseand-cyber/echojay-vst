@@ -6766,19 +6766,9 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
         host->resetSlotShortTermStats(loop.slot, "the loop moved " + step.paramNames.joinIntoString(" + "));
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();
     }
-    // 21t-j: THE LEVEL HOLD, a write to a DIFFERENT control from the actuator, through the same map-keyed apply.
-    if (step.writeOutput)
-    {
-        host->setSlotControlsToValue(loop.slot, step.outputNames, step.outputValue);
-        // RESET POINT 3 of 4: a write to the plugin's OUTPUT control.
-        host->resetSlotShortTermStats(loop.slot, "the hold moved " + step.outputNames.joinIntoString(" + "));
-        if (uid.isNotEmpty()) republishBorrowedRackSidecar();
-        EchoJay_NSLog(("EJThreshold: level hold - wrote " + step.outputNames.joinIntoString(" + ") + " = "
-                       + juce::String(step.outputValue, 2) + " on slot " + juce::String(loop.slot + 1)
-                       + " (the slot was " + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
-                       + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
-    }
-    // 21t-j: ...and the hold through EchoJay's own per-slot output gain, when the plugin named no output control.
+    // 21t-m (29 Sep 2026 ruling): the hold's write to a PLUGIN'S output control is gone - it writes EchoJay's
+    // own per-slot OUT and nothing else, so there is no step.writeOutput to handle here any more.
+    // THE HOLD, through EchoJay's own per-slot output gain - the only control it ever writes.
     if (step.writeSlotGain)
     {
         host->setSlotOutGainDb(loop.slot, step.slotGainValue);

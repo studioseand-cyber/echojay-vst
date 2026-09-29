@@ -293,6 +293,39 @@ void guardMain()
                "(2b) ...and the chain comes out where it went in", f1 (d2b) + " dB");
     }
 
+    // ---- (2c) A SLOT THAT NAMES AN OUTPUT CONTROL: the hold still writes EchoJay's OWN OUT --------------
+    {
+        std::printf ("\n-- (2c) the block names an output control: it is left exactly where the build put it --\n");
+        // 29 Sep 2026 ruling, replacing the named-output question: "THE HOLD WRITES EchoJay's OWN OUT, ALWAYS.
+        // Never a plugin's output control, whether or not the map names one ... A plugin's own output control is
+        // left exactly where the build put it." The fake compressor here is an EchoJay Gain whose level_db IS an
+        // output control, and the block names it - so the old code would have written level_db and left OUT at
+        // zero, and the plugin's own setting would have moved under the user.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        auto cfg = passiveDriveCfg ("Fake Comp, output named");
+        cfg.outputParams.add ("level_db");
+        cfg.outputStartDb = 6.0f;          // where the BUILD put it, and where it must still be at the end
+        cfg.outputMinDb = -24.0f; cfg.outputMaxDb = 24.0f;
+        feed (r.proc, r.prog, 6.0);
+        r.proc.calibStart ({}, cfg);
+        const auto rr = runLoop (r, 28);
+        reportRun ("(2c)", rr);
+
+        auto* gain = dynamic_cast<EedGainProcessor*> (r.h.getSlotProcessor (0));
+        check (gain != nullptr, "(2c) fixture: the slot is the EchoJay Gain whose level_db the block named");
+        if (gain != nullptr)
+            check (std::abs ((float) gain->getParamValue (EedGainProcessor::kLevelDb) - 6.0f) <= 0.05f,
+                   "(2c) THE PLUGIN'S OWN OUTPUT CONTROL IS UNTOUCHED - it is still where the build put it  (RED "
+                   "as it stood: the hold wrote it instead of OUT, so the user's plugin moved under them)",
+                   "level_db " + f1 ((float) gain->getParamValue (EedGainProcessor::kLevelDb)) + " dB, build set 6.00");
+        check ((int) rr.slotGainWrites.size() >= 1,
+               "(2c) ...and OUT carried the correction instead",
+               juce::String ((int) rr.slotGainWrites.size()) + " write(s) to OUT");
+        const float d2c = rr.chainOutAtEnd - rr.chainInAtEnd;
+        check (d2c == d2c && std::abs (d2c) <= 0.6f,
+               "(2c) ...and the chain still comes out where it went in", f1 (d2c) + " dB");
+    }
+
     // ---- (3a) THE ROLE HAS THREE SOURCES (21t-m item 5, 29 Sep 2026 ruling) --------------------------------
     {
         std::printf ("\n-- (3a) the role's three sources: the prompt, the placement selector, the track name --\n");
