@@ -257,14 +257,22 @@ ej_add_guard(eq_readback              SOURCE tools/eq_readback/harness.cpp      
 ej_add_guard(pregain_readback         SOURCE tools/pregain_readback/harness.cpp               LABEL fast)
 # own_diff's verdict is the sha256 of the own-channel text it writes, not its exit code, so it runs through a
 # wrapper that keeps the suite script's check (shasum -a 256 /tmp/own_out.txt against the baseline).
-# RE-BASELINED 27 Sep 2026 BY RULING, and only after the diff was read: the whole difference from
-# 5f47897e... was the ruled short90 token inserted after p90 on the [CHAIN LEVELS] header line, on one line, with
-# nothing else changed anywhere in the 4,953 bytes. The text itself is OWN_CHANNEL_BASELINE_efdec55.txt, so the next
-# move can be diffed rather than guessed at. The standing rule is unchanged for every future move: if this goes
-# RED, STOP AND REPORT.
+#
+# RE-BASELINED 29 Sep 2026 BY RULING (21t-k), and only after the diff was read and reported RED overnight: 65
+# lines ADDED, none removed, 4,953 -> 14,469 bytes. Item 2(b) put EchoJay's own devices in the recommendable feed
+# on every send, and the own_diff fixture is a machine with NO scanned plugins - so where the feed used to be
+# empty and the injection omitted them entirely, it now carries [AVAILABLE PLUGINS], the CHAIN BLOCK RULE and the
+# AVAILABLE BUILTINS descriptions. That is the ruled behaviour, not a regression: the product already treated the
+# built-ins as the right feed for a machine with nothing recommendable (the feed-split fallback), and the ruling
+# generalised it. The text is OWN_CHANNEL_BASELINE_c7b142a.txt so the next move can be diffed rather than guessed.
+#
+# PREVIOUSLY: re-baselined 27 Sep 2026 by ruling, from 5f47897e..., for the ruled short90 token on the
+# [CHAIN LEVELS] header (OWN_CHANNEL_BASELINE_efdec55.txt).
+#
+# THE STANDING RULE IS UNCHANGED for every future move: if this goes RED, STOP AND REPORT - never re-baseline.
 ej_add_guard(mapfps_sync_guard        SOURCE tools/mapfps_sync_guard/harness.cpp              LABEL fast SCRIBBLE)
 ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp                       LABEL fast
-             WRAPPER run_own_diff.sh WRAPPER_ARG 07abba366534f8745cf3627719c1468783d84ad0ceccfc48dc5adee5bc1bcc1e)
+             WRAPPER run_own_diff.sh WRAPPER_ARG 46da20e4279c2f03ca9d0bd8d9b03fb976f7c59d8fb5d08c0b205e6a9b84800f)
 
 
 # ---- the guards that are not a single in-process binary -----------------------------------------------------
