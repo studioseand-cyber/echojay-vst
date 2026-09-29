@@ -154,7 +154,19 @@ int main()
             EchoJayBorrowHostTestAccess::addEntry (h, d);
             ScannedPlugin q; q.name = "Pro-Q 3"; q.manufacturer = "FabFilter"; q.format = "AU"; q.enabled = true; q.uid = "ff-q3";
             h.buildRecommendable (std::vector<ScannedPlugin> { q }, {});
-            check (h.getRecommendableNames().contains ("Pro-Q 3") && h.getRecommendableNames().size() == 1, "F3. an unsuffixed registration is offered exactly as before", h.getRecommendableNames().joinIntoString ("|"));
+            // RE-RULED 29 Sep 2026 (21t-k item 2(b)): the feed also carries EchoJay's OWN devices now, on every
+            // send - Sean's 21:24 log had `EJChat: chain name OUT OF FEED: "EchoJay Pitch"` on a build of our own
+            // tuner. "exactly as before" is therefore asserted as "the scanned row, and nothing else scanned":
+            // the built-ins are subtracted before the count.
+            {
+                const auto all = h.getRecommendableNames();
+                juce::StringArray scanned = all;
+                for (const auto& b : ChainHost::builtinDeviceNames()) scanned.removeString (b);
+                check (all.contains ("Pro-Q 3") && scanned.size() == 1,
+                       "F3 as re-ruled. an unsuffixed registration is offered exactly as before - one scanned row, "
+                       "beside the built-ins the feed now always carries",
+                       "scanned: " + scanned.joinIntoString ("|") + "   all: " + all.joinIntoString ("|"));
+            }
         }
     }
     std::printf ("\n==== substitute_guard: %s (%d assertion(s) failed) ====\n", failures == 0 ? "GREEN" : "RED", failures);
