@@ -131,6 +131,86 @@ int main()
                "asked " + juce::String (want, 2) + ", reads " + juce::String (now, 2) + " dB");
     }
 
+    // ---- 21t-m item 4: THE LEG 21t-l ITEM 8 OWED - a BORROWED member's trim moves too ------------------------
+    // 21t-l closed Sean's "7 of 8 ... Main vocal 4 is still at -2.3 dB" but could not guard it: the defect only
+    // exists while THIS instance holds a live lease on that member's rack, which needs the two-process rig. It
+    // does now. The borrow is engaged against one of the three REAL Links the link side is running, so
+    // borrowHostIfActiveFor() answers for the same reason it answers in Sean's session.
+    {
+        const auto& b = mem[1];
+        proc.borrowEngageBegin (b.uid, "lmg-borrow-" + juce::String (juce::Time::currentTimeMillis()), true, false);
+        pumpMs (200);
+        check (proc.borrowHostIfActiveFor (b.uid) != nullptr,
+               "(5) fixture: \"" + b.name + "\"'s rack is BORROWED by this instance - the state the miss needs",
+               proc.borrowActive() ? "lease held on " + proc.borrowUid() : juce::String ("no borrow"));
+
+        // Where each member stands now, so the leg asserts a MOVE and not a value.
+        struct Was { juce::String uid, name; float before = 0.0f; double delta = 0.0; };
+        std::vector<Was> was;
+        for (const auto& m : mem)
+        {
+            float g = 0.0f;
+            for (const auto& li : proc.getLinkSlotInfos()) if (li.uid == m.uid) g = li.gainDb;
+            was.push_back ({ m.uid, m.name, g, m.uid == b.uid ? -1.4 : -0.8 });
+        }
+        juce::String editData2;
+        {
+            juce::Array<juce::var> members;
+            for (const auto& w : was)
+            {
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("uid", w.uid); o->setProperty ("name", w.name);
+                o->setProperty ("int_lufs", -20.0 + (double) members.size());
+                o->setProperty ("delta_db", w.delta);
+                members.add (juce::var (o));
+            }
+            auto* lm = new juce::DynamicObject(); lm->setProperty ("members", juce::var (members));
+            auto* op = new juce::DynamicObject(); op->setProperty ("op", "level_match"); op->setProperty ("members", juce::var (members));
+            juce::Array<juce::var> ops; ops.add (juce::var (op));
+            auto* wrap = new juce::DynamicObject();
+            wrap->setProperty ("level_match", juce::var (lm));
+            wrap->setProperty ("edit", juce::var (ops));
+            editData2 = juce::JSON::toString (juce::var (wrap));
+        }
+        A::addAssistant (*ed, "Level match again, with one member's rack borrowed.", editData2);
+        const int idx2 = (int) A::msgs (*ed).size() - 1;
+        const int saidBefore = (int) A::msgs (*ed).size();
+        A::apply (*ed, idx2);
+
+        juce::String verdict2;
+        for (int k = 0; k < 150 && verdict2.isEmpty(); ++k)
+        {
+            proc.refreshLinkRegistry(); A::tick (*ed); pumpMs (100);
+            for (int i = saidBefore; i < (int) A::msgs (*ed).size(); ++i)
+                if (A::msgs (*ed)[(size_t) i].content.contains ("took the change")) verdict2 = A::msgs (*ed)[(size_t) i].content;
+        }
+        std::printf ("    the sentence with a member borrowed: %s\n", verdict2.isEmpty() ? "(none)" : verdict2.toRawUTF8());
+
+        for (const auto& w : was)
+        {
+            const float want = juce::jlimit (-24.0f, 12.0f, (float) (w.before + w.delta));
+            float now = -999.0f;
+            for (const auto& li : proc.getLinkSlotInfos()) if (li.uid == w.uid) now = li.gainDb;
+            const bool borrowed = w.uid == b.uid;
+            check (std::abs (now - want) <= 0.1f,
+                   juce::String ("(5) \"") + w.name + "\"'s trim moved"
+                   + (borrowed ? " - THE BORROWED MEMBER  (RED as it stood: its op went to applyChainEdits, a rack "
+                                 "apply with no trim to move, and aborted \"0 applied in session\")"
+                               : " - an unborrowed member, unchanged by the fix"),
+                   "was " + juce::String (w.before, 2) + ", asked " + juce::String (want, 2)
+                   + ", reads " + juce::String (now, 2) + " dB");
+        }
+        check (verdict2.contains ("3 of 3"),
+               "(5) ...and the sentence still counts three of three, with one of them borrowed",
+               verdict2.substring (0, 110));
+        check (! verdict2.contains (b.name + "\" is still at") && ! verdict2.contains ("is still at"),
+               "(5) ...and nobody is named as having missed it  (RED as it stood: \"" + b.name + " is still at "
+               "<its old trim>\")", verdict2.substring (0, 110));
+        proc.borrowRelease (false);
+        pumpMs (200);
+        check (proc.borrowHostIfActiveFor (b.uid) == nullptr, "(5) the borrow is released before the next leg");
+    }
+
     // ---- (2) a rack edit that cannot apply: the ack says not_applied ----------------------------------------
     {
         auto* rem = new juce::DynamicObject(); rem->setProperty ("op", "remove"); rem->setProperty ("slot", 1);
