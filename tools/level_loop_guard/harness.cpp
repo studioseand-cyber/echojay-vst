@@ -293,6 +293,48 @@ void guardMain()
                "(2b) ...and the chain comes out where it went in", f1 (d2b) + " dB");
     }
 
+    // ---- (1b) THE LOOP WAITS FOR THE SLOT, NOT FOR THE DIAL (21t-m item 1, 29 Sep 2026 ruling) -----------
+    {
+        std::printf ("\n-- (1b) an empty rack is not \"settled\": the wait is for the slot the block names --\n");
+        // Sean's 18:05 log: "EJThreshold: block not usable - wire slot 1 ... rack has 0 slot(s); nothing
+        // started." at 18:05:39.634, and the plugin landed at 18:05:40.527 - 893 ms later, an async load. The
+        // edit path was waiting on whenDialSettled, and dialStateSettled() walks slots_ looking for a PENDING
+        // one: on an empty rack the loop body never runs and it answers "settled" by vacuous truth. Same line
+        // at 18:12:56.990 on the local Mix Bus build. The vocal was left at the server's opening Threshold.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        auto& h = r.h;
+        // The rig loads one slot in its constructor; remove it so the rack is genuinely empty, as it is in the
+        // instant between "apply" and the async load landing.
+        while (h.getNumSlots() > 0) h.removeSlot (0);
+        pumpMs (100);
+        check (h.getNumSlots() == 0, "(1b) fixture: the rack is empty, as it is while an add is in flight",
+               juce::String (h.getNumSlots()) + " slot(s)");
+        check (h.dialStateSettled(),
+               "(1b) ...and dialStateSettled() says SETTLED on it - the vacuous truth that caused this",
+               "this is the trap, not the fix");
+        check (! h.slotReadyForCalibration (0),
+               "(1b) but slot 0 is NOT ready for calibration on an empty rack  (RED as it stood: the edit path "
+               "read \"settled\" here and started nothing, 893 ms before the plugin landed)");
+        check (! h.slotReadyForCalibration (1) && ! h.slotReadyForCalibration (-1),
+               "(1b) ...nor is any other index, in or out of range");
+
+        // ...and once the slot lands, it IS ready, so the wait ends rather than hanging.
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (gn != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
+        pumpMs (200);
+        check (h.getNumSlots() == 1 && h.slotReadyForCalibration (0),
+               "(1b) ...and the moment the slot lands it IS ready, so the wait ends rather than hanging",
+               juce::String (h.getNumSlots()) + " slot(s), ready "
+               + (h.slotReadyForCalibration (0) ? "yes" : "no"));
+        check (! h.slotReadyForCalibration (1),
+               "(1b) ...while the slot AFTER it still is not: readiness is per slot, not per rack");
+
+        // the DialSummary headline the ruling asks for
+        check (h.dynamicsSlotCount() == 0,
+               "(1b) an EchoJay Gain is not a dynamics slot, so nothing is owed a loop here",
+               juce::String (h.dynamicsSlotCount()) + " dynamics slot(s)");
+    }
+
     // ---- (2c) A SLOT THAT NAMES AN OUTPUT CONTROL: the hold still writes EchoJay's OWN OUT --------------
     {
         std::printf ("\n-- (2c) the block names an output control: it is left exactly where the build put it --\n");

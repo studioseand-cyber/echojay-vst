@@ -3935,6 +3935,25 @@ void ChainHost::whenDialSettled(int maxWaitMs, std::function<void(bool)> fn)
     });
 }
 
+// 21t-m item 1 (29 Sep 2026 ruling): THE LOOP STARTS WHEN THE SLOT HAS LANDED, NOT WHEN THE DIAL HAS SETTLED.
+bool ChainHost::slotReadyForCalibration (int slotIndex) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return false;   // an empty rack is never "ready"
+    return slots_[(size_t) slotIndex].dialStatus != DialStatus::pending;
+}
+
+void ChainHost::whenSlotReady (int slotIndex, int maxWaitMs, std::function<void(bool)> fn)
+{
+    if (! fn) return;
+    if (slotReadyForCalibration (slotIndex) || maxWaitMs <= 0) { fn (slotReadyForCalibration (slotIndex)); return; }
+    std::weak_ptr<int> alive = life_;
+    juce::Timer::callAfterDelay (50, [this, alive, slotIndex, maxWaitMs, fn]()
+    {
+        if (alive.expired()) return;
+        whenSlotReady (slotIndex, maxWaitMs - 50, fn);
+    });
+}
+
 void ChainHost::storeParamMaps(const juce::var& mapsObj)
 {
     auto* o = mapsObj.getDynamicObject();
@@ -4775,6 +4794,31 @@ void ChainHost::logDialSummary(const juce::String& reason) const
                    + juce::String((int) slots_.size()) + " slot(s) dialled something"
                    + (noSettings > 0 ? ("; " + juce::String(noSettings)
                                         + " carried NO settings from the server") : juce::String())).toRawUTF8());
+    // 21t-m item 1 (29 Sep 2026 ruling): ...AND HOW MANY LOOPS STARTED, against how many slots owed one. Sean's
+    // build logged "0 loop(s) started" and nothing else said that a compressor had been left at the server's
+    // opening guess: this is the line that makes it visible without reading the rows.
+    const int dyn = dynamicsSlotCount();
+    if (dyn > 0 || loopsStarted_ >= 0)
+        EchoJay_NSLog(("EJDialSummary: loops started "
+                       + juce::String(juce::jmax(0, loopsStarted_)) + " of " + juce::String(dyn)
+                       + " dynamics slots"
+                       + (loopsStarted_ < 0 ? juce::String(" (nothing has reported a start on this rack)")
+                          : (juce::jmax(0, loopsStarted_) < dyn
+                               ? juce::String(" - a dynamics slot with no loop is running at the settings the "
+                                              "build gave it")
+                               : juce::String())) ).toRawUTF8());
+}
+
+int ChainHost::dynamicsSlotCount() const
+{
+    int n = 0;
+    for (const auto& s : slots_)
+    {
+        const auto cat = s.desc.category.toLowerCase();
+        if (cat.contains("dynamic") || cat.contains("compress") || cat.contains("limit")
+            || cat.contains("gate") || cat.contains("expand")) ++n;
+    }
+    return n;
 }
 
 const char* ChainHost::dialTriggerName(DialTrigger t)

@@ -24528,6 +24528,44 @@ int EchoJayEditor::editCardHeight(const ChatMsg& msg) const
 // the loop needs: source, heard_s, measure, mode, actuator, slot, param (a name OR an array of names for a paired
 // L/R threshold), start_db (null when the server heard under 30 s and set nothing), sense, min_db, max_db and
 // gr_target_db. A block with no mode is PASSIVE, per the ruling - the default is the quiet one.
+// 21t-m item 1 (29 Sep 2026 ruling): WHICH SLOT THE BLOCK IS ABOUT, so the wait can be for THAT SLOT landing
+// rather than for a dial with nothing to settle. Returns a 0-based index, or -1 when the payload names none.
+// 21t-m item 1 (29 Sep 2026 ruling): "if it cannot start the chat says so ... instead of silence". A dynamics
+// slot that ends a build or an edit without a loop is a slot the product promised to land and did not, and the
+// only thing worse than that happening is it happening quietly. Named, in the chat, once.
+void EchoJayEditor::sayCalibrationCouldNotStart (const juce::String& uid, const juce::String& payloadJson)
+{
+    const auto payload = juce::JSON::parse (payloadJson);
+    auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
+    const int calSlot = calibrationSlotIndexOf (payload);
+    juce::String name;
+    if (host != nullptr && calSlot >= 0 && calSlot < host->getNumSlots())
+        name = host->getSlotInfo (calSlot).name;
+    if (name.isEmpty())
+    {   // the slot never landed: name it from the block, which is the only place left that knows
+        auto* co = payload.getProperty ("calibration", juce::var()).getDynamicObject();
+        if (co != nullptr) name = co->getProperty ("plugin").toString();
+    }
+    if (name.isEmpty()) name = "that compressor";
+    const juce::String why = (host == nullptr)            ? "its rack is not held here"
+                           : (calSlot < 0)                ? "the build named no slot to land"
+                           : (calSlot >= host->getNumSlots()) ? "it never arrived in the rack"
+                                                          : "its settings never landed";
+    EchoJay_NSLog (("EJThreshold: COULD NOT START LANDING \"" + name + "\" - " + why).toRawUTF8());
+    appendLocalResultBubble ("I could not start landing " + name + " - " + why
+                             + ". It is running at the settings the build gave it; say \"land it\" and I will "
+                             "try again.");
+}
+
+int EchoJayEditor::calibrationSlotIndexOf (const juce::var& payload)
+{
+    auto* co = payload.getProperty ("calibration", juce::var()).getDynamicObject();
+    if (co == nullptr) return -1;
+    if (! co->hasProperty ("slot")) return -1;
+    const int oneBased = (int) co->getProperty ("slot");
+    return oneBased >= 1 ? oneBased - 1 : -1;
+}
+
 int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juce::var& chain)
 {
     auto* co = chain.getProperty ("calibration", juce::var()).getDynamicObject();
@@ -25185,16 +25223,53 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             if (editCarriesAdd (editJson))
             {
                 auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
-                bhEdit->whenDialSettled (ChainHost::kMapFetchBoundMs, [safeThis, editUid, editJson] (bool settled)
+                // 21t-m item 1 (ruled): WAIT FOR THE SLOT, NOT FOR THE DIAL. whenDialSettled asks "is any slot
+                // pending?", and on a rack the add has not landed in yet the answer is YES, SETTLED - by vacuous
+                // truth over an empty vector. Sean's 18:05:39.634 "rack has 0 slot(s); nothing started" fired
+                // 893 ms before the CL 1B landed at 18:05:40.527, and that vocal was never landed from the
+                // meters. The wait is now for the slot the block names.
+                {
+                    const int calSlot = calibrationSlotIndexOf (juce::JSON::parse (editJson));
+                    auto after = [safeThis, editUid, editJson] (bool ready, const char* what)
+                    {
+                        if (safeThis == nullptr) return;
+                        const int started = safeThis->startCalibrationForEdit (editUid, editJson);
+                        if (auto* h = editUid.isEmpty() ? &safeThis->processorRef.getChainHost()
+                                                        : safeThis->processorRef.borrowHostIfActiveFor (editUid))
+                            h->setLoopsStarted (started);   // 21t-m item 1: the DialSummary headline
+                        EchoJay_NSLog (("EJThreshold: edit settled (" + juce::String (what)
+                                        + (ready ? "" : ", bound expired") + ") -> " + juce::String (started)
+                                        + " loop(s) started").toRawUTF8());
+                        if (started == 0) safeThis->sayCalibrationCouldNotStart (editUid, editJson);
+                    };
+                    if (calSlot >= 0)
+                        bhEdit->whenSlotReady (calSlot, ChainHost::kMapFetchBoundMs,
+                                               [after] (bool ready) { after (ready, "slot landed"); });
+                    else
+                        bhEdit->whenDialSettled (ChainHost::kMapFetchBoundMs,
+                                                 [after] (bool settled) { after (settled, "dial settled"); });
+                }
+            }
+            else
+            {   // 21t-m item 1: the LOCAL rack takes the same road - a local build's adds are async too, and
+                // Sean's 18:12:56.990 "rack has 0 slot(s); nothing started" is this path on the Mix Bus.
+                const int calSlot = calibrationSlotIndexOf (juce::JSON::parse (editJson));
+                auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+                auto after = [safeThis, editUid, editJson] (bool ready)
                 {
                     if (safeThis == nullptr) return;
                     const int started = safeThis->startCalibrationForEdit (editUid, editJson);
-                    EchoJay_NSLog (("EJThreshold: edit settled (dial " + juce::String (settled ? "settled" : "bound expired")
-                                    + ") -> " + juce::String (started) + " loop(s) started").toRawUTF8());
-                });
+                    safeThis->processorRef.getChainHost().setLoopsStarted (started);   // 21t-m item 1
+                    EchoJay_NSLog (("EJThreshold: local edit settled (slot landed"
+                                    + juce::String (ready ? "" : ", bound expired") + ") -> "
+                                    + juce::String (started) + " loop(s) started").toRawUTF8());
+                    if (started == 0) safeThis->sayCalibrationCouldNotStart (editUid, editJson);
+                };
+                if (calSlot >= 0)
+                    processorRef.getChainHost().whenSlotReady (calSlot, ChainHost::kMapFetchBoundMs, after);
+                else
+                    startCalibrationForEdit (editUid, editJson);
             }
-            else
-                startCalibrationForEdit(editUid, editJson);
         }
         return;
     }
@@ -31245,9 +31320,22 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                 // 21t-h: AND THE CALIBRATION LOOP, HERE, because here is where the build is actually finished on
                 // this path - the adds are in the borrowed host and the dial has settled (or its bound expired,
                 // which `settled` says). Starting it at send time read a rack with no slots in it.
-                const int started = safeThis->startCalibrationFromChain(linkUid, juce::JSON::parse(chainJsonForBubble));
-                EchoJay_NSLog(("EJThreshold: leased build settled (dial " + juce::String(settled ? "settled" : "bound expired")
-                               + ") -> " + juce::String(started) + " loop(s) started").toRawUTF8());
+                // 21t-m item 1 (ruled): and the START waits for the SLOT the block names, not for the dial.
+                const auto chainVar = juce::JSON::parse (chainJsonForBubble);
+                const int calSlot = calibrationSlotIndexOf (chainVar);
+                auto fire = [safeThis, linkUid, chainJsonForBubble, settled] (bool ready)
+                {
+                    if (safeThis == nullptr) return;
+                    const int started = safeThis->startCalibrationFromChain (linkUid, juce::JSON::parse (chainJsonForBubble));
+                    if (auto* h = safeThis->processorRef.borrowHostIfActiveFor (linkUid)) h->setLoopsStarted (started);
+                    EchoJay_NSLog (("EJThreshold: leased build settled (dial "
+                                    + juce::String (settled ? "settled" : "bound expired")
+                                    + ", slot " + juce::String (ready ? "landed" : "NOT landed")
+                                    + ") -> " + juce::String (started) + " loop(s) started").toRawUTF8());
+                    if (started == 0) safeThis->sayCalibrationCouldNotStart (linkUid, chainJsonForBubble);
+                };
+                if (calSlot >= 0) bhS->whenSlotReady (calSlot, ChainHost::kMapFetchBoundMs, fire);
+                else              fire (true);
             });
             juce::Timer::callAfterDelay(6000, [safeThis, linkUid]
             {

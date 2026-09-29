@@ -670,6 +670,24 @@ public:
     // carry their own bound (kMapFetchBoundMs, armed when the fetch leaves),
     // so a fetch that never answers settles its slot noMap inside the wait.
     void whenDialSettled (int maxWaitMs, std::function<void(bool settled)> fn);
+    /** 21t-m item 1 (29 Sep 2026 ruling): WAIT FOR THE SLOT, NOT FOR THE DIAL.
+        dialStateSettled() asks "is any slot pending?" - and on an EMPTY rack the loop body never runs, so it
+        answers YES, SETTLED by vacuous truth. That is why a single add started nothing: Sean's 18:05:39.634
+        "rack has 0 slot(s); nothing started" fired 893 ms before the plugin landed at 18:05:40.527, because the
+        edit path waited on the dial and the dial had nothing to settle. The loop may only start once the slot
+        the block names EXISTS and its settings have been applied, which is what this waits for. `ready` is false
+        when the wait ran out, and the caller says so rather than going quiet. */
+    void whenSlotReady (int slotIndex, int maxWaitMs, std::function<void(bool ready)> fn);
+    /** True when slotIndex is in the rack AND that slot's dial is not still pending. Pure; the wait above is
+        this, polled. An index outside the rack is NOT ready, however empty the rack is. */
+    bool slotReadyForCalibration (int slotIndex) const;
+    /** 21t-m item 1: how many slots are dynamics-role, by the plugin's own category - the same word
+        slotPicture() uses, so there is one classification in the tree and not two. The DialSummary headline
+        reports loops started against THIS, because "N of M dynamics slots" is the sentence that makes a
+        build that landed nothing visible without reading rows. */
+    int dynamicsSlotCount() const;
+    /** Set by the editor after a build or an edit, for the headline above. */
+    void setLoopsStarted (int n) { loopsStarted_ = n; }
     static constexpr int kMapFetchBoundMs = 4000;
     // True while an exact-map fetch OR a fallback lookup for fp is unanswered.
     bool mapFetchInFlight (const juce::String& fp) const
@@ -2439,6 +2457,7 @@ private:
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;
     echojay::ChainRole chainRole_;        // 21t-m item 5: the role and WHICH of its three sources decided it
+    int          loopsStarted_ = -1;      // 21t-m item 1: -1 = nothing has reported yet
     juce::String hostPluginFormat_;   // see setHostPluginFormat
     juce::String restoredLevelsTrack_;   // the track a restored tally was measured on, until the host names this one
     // Pending per-slot level restore, keyed by saved slot number (1-based,

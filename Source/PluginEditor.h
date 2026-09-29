@@ -3798,6 +3798,10 @@ private:
     int startCalibrationFromChain (const juce::String& uid, const juce::var& chain);
     // ...and an edit card's block, with the per-op shape as the fallback.
     int startCalibrationForEdit (const juce::String& uid, const juce::String& editJson);
+    /** 21t-m item 1: which slot the calibration block names (0-based), or -1. */
+    static int calibrationSlotIndexOf (const juce::var& payload);
+    /** 21t-m item 1: the chat line owed when a dynamics slot ends a build or edit with no loop. */
+    void sayCalibrationCouldNotStart (const juce::String& uid, const juce::String& payloadJson);
 public:
     /** 21t-l item 5: true when the edit adds or replaces a plugin, so its calibration block must wait for the
         ops to land before it is judged. Public so the guard reads the same answer the apply path does. */
