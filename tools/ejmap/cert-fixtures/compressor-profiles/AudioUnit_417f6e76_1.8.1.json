@@ -487,12 +487,41 @@
       1.0
     ],
     "linearReference": {
+      "mode": "soft_end",
       "position": 15,
       "gain_db": {
         "-24": 2.43,
         "-12": 2.43,
         "-6": 2.43
-      }
+      },
+      "spread_db": 0.0,
+      "unusable_beyond_db": 2.0
+    },
+    "defaultGain_db": {
+      "-12": 1.9,
+      "-24": 2.43,
+      "-6": -0.6
+    },
+    "positionLandedBy": [
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack"
+    ],
+    "writeLanding": {
+      "instack": 16
     },
     "reduction_db": {
       "-24": [
@@ -581,15 +610,20 @@
       }
     ],
     "result": "certified",
-    "displayLinear": false,
     "displayOffsetDb": -15.0,
     "displayOffsetSpread": {
       "positions": 13,
       "iqr_db": 4.5,
       "min_db": -18.899999999999999,
       "max_db": -11.4,
-      "linear_bound_iqr_db": 3.5,
       "convention": "peak"
+    },
+    "displayEngage": {
+      "-12": 11.69,
+      "-24": 14.890000000000001,
+      "-6": 10.43,
+      "drift_db": 4.46,
+      "rule": "display where reduction crosses 0.5 dB, less the level (lower_is_harder) or plus it (higher_is_harder)"
     }
   }
 }

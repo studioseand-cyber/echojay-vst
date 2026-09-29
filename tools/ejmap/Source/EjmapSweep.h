@@ -21,14 +21,23 @@
     is no reference.
   - GUARDS: more than two positions still moving after the doubling, or a reduction more than
     0.5 dB BELOW the linear reference, refuses. Arm A certified without them.
-  - THREE RESULTS, never merged (ruled 29 Sep, replacing display_dbfs):
-      result           the dB-equivalent map: certified | flat | nonmonotonic | unreadable
-      displayLinear    whether the display is LINEAR in dBFS: the offsets (T - display) hold
-                       steady, so subtracting one constant gives dBFS. Spread is the
-                       discriminator, never magnitude: a console-calibrated +14 held steady is
-                       usable (subtract 14); only drift leaves no constant to subtract.
-      displayOffsetDb  the offsets' median, a NUMBER whatever its value. Spec 7's 2 dB bar is
-                       a test on this number, not the definition of displayLinear.
+  - THE DISPLAY, recorded as NUMBERS and never merged with the map's `result` (ruled 29 Sep):
+      displayEngage    PRIMARY. At each level, the display where reduction crosses 0.5 dB, less the
+                       level (lower_is_harder) or plus it (higher_is_harder); `drift_db` is their
+                       spread. It never touches the ratio, so the deep positions' departure from
+                       the textbook curve (MCompressor, townhouse) cannot leak into it.
+      displayOffsetSpread  the IQR of (derived T - display): secondary, it inherits R's error.
+      displayOffsetDb  the median of (derived T - display), a number whatever its value; spec 7's
+                       2 dB bar is a test on it.
+    `displayLinear` is LEFT UNSET: two subjects are no population to fit a bound to. The
+    population decides at ~20 fixtures, as the acceptance test settled peak vs RMS.
+  - INPUT-AS-THRESHOLD controls change gain as well as compression, so no end is a linear
+    reference: each position carries its OWN, two quiet levels (-54, -48) that must differ by
+    6 dB within 0.1 dB, or that position is refused rather than calibrated off a compressed or
+    noise-floored tone.
+  - NOT LICENSED is not inferable from audio: only silence, non-finite output, or output that is
+    not the input's tone (tone_frac under 0.5) at the default settings - plus the window watch.
+    Default gain is recorded as information, never judged.
   - THE RATIO RAISE (spec 4.2): a ratio instantiating at 1:1 is written to the grid position
     with the SMALLEST read value at or above 4:1, and R is derived from the ratio text READ
     BACK after the write in every process - never from what was asked for (a stepped ratio
@@ -58,11 +67,14 @@ inline constexpr double kEngageDb     = 0.5;    // reduction that counts as enga
 inline constexpr double kSaturateDb   = 12.0;   // the readable band's ceiling
 inline constexpr double kMonotonicTol = 0.5;    // a fall below the running maximum by more than this is nonmonotonic
 inline constexpr double kPeakToRmsDb  = 3.0103; // a sine's peak over its RMS
-inline constexpr double kLinearDb     = 0.5;    // the soft end's gains must agree across the levels within this
+inline constexpr double kLinearDb     = 2.0;    // the soft end's gains disagreeing by more than this is UNUSABLE data (useful
+                                                // reductions are 3-20 dB); the disagreement itself is recorded on every fixture
+inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must differ by 6 dB within this
+inline constexpr double kSilentDb     = -90.0;  // an output below this at every level is silent
+inline constexpr double kToneFracMin  = 0.5;    // an output with less than half its power at the tone is not the input's tone
 inline constexpr double kBelowRefDb   = 0.5;    // a reduction below the linear reference by more than this refuses
 inline constexpr int    kMaxMoving    = 2;      // more positions than this still moving after the doubling refuses
 inline constexpr double kDisplayDb    = 2.0;    // spec 7's bar, a TEST on displayOffsetDb (never the definition of linear)
-inline constexpr double kLinearIqrDb  = 3.5;    // displayLinear: the offsets' interquartile range must be within this
 inline constexpr double kRatioTarget  = 4.0;    // spec 4.2: a 1:1 ratio is raised to the nearest position at or above 4:1
 
 //==============================================================================
@@ -85,6 +97,9 @@ struct Plan
     juce::String pickNote;                   // how one threshold was chosen from several, when it was
     juce::String channel;                    // "L" when an L/R pair was reduced to channel A (spec 4.7)
     juce::StringArray linkStates;            // every control answering "link", as instantiated: recorded, never written
+    bool quietReference = false;             // input-as-threshold: each position carries its own quiet reference
+    std::vector<double> probeLevels() const  // quiet to loud, as the probe renders them
+    { return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 }; }
 };
 
 inline juce::var findControl (const juce::var& fixture, int index)
@@ -218,6 +233,7 @@ inline Plan planFromFixture (const juce::var& fixture)
     p.thr = pick->index;
     p.thrName = pick->name;
     p.thrFlags = pick->flags;
+    p.quietReference = p.thrFlags.contains ("input_as_threshold");
     const auto tc = findControl (fixture, p.thr);
     p.thrUnit = tc.getProperty ("unit", {}).toString();
     p.norms = positionsFor (tc);
@@ -258,7 +274,7 @@ inline Plan planFromFixture (const juce::var& fixture)
 // PARSE. Each process prints its own lines; the driver parses each and merges them.
 struct HoldReading
 {
-    double levelDb = -999.0, inRmsDb = -999.0, finalMoveDb = 0.0;
+    double levelDb = -999.0, inRmsDb = -999.0, finalMoveDb = 0.0, toneFrac = -1.0;   // toneFrac -1: not printed (pre-29-Sep)
     bool doubled = false, present = false;
     long long nonFinite = 0;
 };
@@ -269,7 +285,8 @@ struct PositionReading
     bool unlanded = false, unsteady = false, rerendered = false, instackMatch = false, processFailed = false;
     juce::String failure;                        // the process outcome, when it failed
     double confirmMs = -1.0;
-    int slices = 0;
+    int slices = 0, renderBlocks = 0;
+    juce::String landedBy;                       // instack | pump | render | unlanded (empty in pre-29-Sep traces)
     juce::String text;
     std::map<juce::String, HoldReading> holds;   // key: the level as printed, e.g. "-12.00"
 };
@@ -283,6 +300,8 @@ struct Measured
     std::map<int, std::pair<juce::String, juce::String>> params;   // index -> (name, text) as instantiated
     juce::String refText;                        // the threshold's text at instantiate (the reference process)
     std::map<juce::String, double> refDb, inRmsDb, inPeakDb;       // the DEFAULT-threshold reference (spec 4.7 only)
+    std::map<juce::String, double> refToneFrac;                     // -1 when not printed
+    std::map<juce::String, long long> refNonFinite;
     std::vector<PositionReading> positions;
     double wallMs = 0.0, audioS = 0.0;
     std::map<int, juce::String> setTexts;        // precondition writes, the text READ BACK after each (probe "set" lines)
@@ -317,6 +336,9 @@ inline Measured parseSweep (const juce::String& out)
             m.refDb[L] = kv (f, 2, "level_db").getDoubleValue();
             m.inRmsDb[L] = kv (f, 2, "in_rms_db").getDoubleValue();
             m.inPeakDb[L] = kv (f, 2, "in_peak_db").getDoubleValue();
+            const auto tf = kv (f, 2, "tone_frac");
+            m.refToneFrac[L] = tf.isNotEmpty() ? tf.getDoubleValue() : -1.0;
+            m.refNonFinite[L] = kv (f, 2, "nonfinite").getLargeIntValue();
         }
         else if (t == "pos" && f.size() > 3)
         {
@@ -327,6 +349,8 @@ inline Measured parseSweep (const juce::String& out)
             p.confirmMs = p.unlanded ? -1.0 : kv (f, 2, "confirm_ms").getDoubleValue();
             p.slices = kv (f, 2, "slices").getIntValue();
             p.instackMatch = kv (f, 2, "instack_match") == "1";
+            p.landedBy = kv (f, 2, "landed_by");
+            p.renderBlocks = kv (f, 2, "render_blocks").getIntValue();
             p.text = kv (f, 2, "text");
             at[p.k] = m.positions.size();
             m.positions.push_back (p);
@@ -342,6 +366,8 @@ inline Measured parseSweep (const juce::String& out)
             h.doubled = kv (f, 3, "doubled") == "1";
             h.finalMoveDb = kv (f, 3, "final_move_db").getDoubleValue();
             h.nonFinite = kv (f, 3, "nonfinite").getLargeIntValue();
+            const auto tf = kv (f, 3, "tone_frac");
+            h.toneFrac = tf.isNotEmpty() ? tf.getDoubleValue() : -1.0;
             p.holds[levelKey (f[2].getDoubleValue())] = h;     // a rerender REPLACES the hold it repeats
             if (t == "rerender") p.rerendered = true;
         }
@@ -417,21 +443,28 @@ inline bool loadProcesses (const juce::File& processesJson, const juce::File& ra
 struct Derived
 {
     juce::String result = "error", reason, sense;   // result: certified | flat | nonmonotonic | unreadable | error
-    std::vector<double> levels;                     // ascending
+    std::vector<double> levels;                     // the TEST levels, ascending (quiet reference levels are separate)
     std::vector<float> norms;                       // ascending: position i is norms[i]
     std::vector<juce::String> texts;                // the display text read at each position
+    std::vector<juce::String> landedBy;             // which mechanism landed each position's write ("" when skipped)
     std::map<juce::String, std::vector<std::optional<double>>> gain;        // out - in, level -> per position
     std::map<juce::String, std::vector<std::optional<double>>> reduction;   // linear reference - gain
-    std::map<juce::String, double> linearGain;      // the soft end's gain per level: the reference
-    std::optional<int> softEnd;                     // the position the reference was taken at
+    // THE REFERENCE. Threshold controls: the soft end's linear gain (softEnd, linearGain, softEndSpreadDb).
+    // Input-as-threshold: each position's own gain at -48, checked against -54 (quietCheckDb per position).
+    bool quietReference = false;
+    std::map<juce::String, double> linearGain;
+    std::optional<int> softEnd;
+    std::optional<double> softEndSpreadDb;
+    std::vector<std::optional<double>> quietCheckDb; // per position: (gain at -48) - (gain at -54); 0 for a linear quiet tone
     std::map<juce::String, std::optional<int>> engage;
     std::vector<juce::var> tEquivalent;             // number | {"above": L} | {"below": L} | null
     std::optional<double> ratio;
-    juce::String ratioText, ratioInstantiated;   // ratioText is what the sweep RAN at (read back when it was written)
+    juce::String ratioText, ratioInstantiated;      // ratioText is what the sweep RAN at (read back when it was written)
     juce::Array<int> holdDoubled, stillMoving, skipped;
     juce::StringArray skippedReasons;
     bool unlicensedSuspect = false;
     juce::String referenceNote;
+    std::map<juce::String, double> defaultGain;     // out - in at the default settings: INFORMATION ONLY, never judged
 };
 
 inline double median (std::vector<double> v)
@@ -441,49 +474,80 @@ inline double median (std::vector<double> v)
     return n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
 }
 
-
-inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex)
+inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex, bool quietReference = false)
 {
     Derived d;
     d.levels = levelsIn;
+    d.quietReference = quietReference;
     std::sort (d.levels.begin(), d.levels.end());
     if (! m.ok) { d.reason = m.refused.isNotEmpty() ? "probe refused: " + m.refused : "no sweep output"; return d; }
     if (m.setConflict.isNotEmpty()) { d.result = "unreadable"; d.reason = "a precondition " + m.setConflict; return d; }
 
-    // SPEC 4.7's unlicensed test, on the DEFAULT-threshold reference: output more than 3 dB from the input.
-    for (double L : d.levels)
+    // NOT LICENSED, NARROWED (ruled 29 Sep): licence state is not inferable from audio. At the default settings only
+    // silence at every level, non-finite output, or output that is not the input's tone flags it; the window watch is
+    // the other signal. Default gain is recorded as information and never judged (CLA-2A's +8.5 dB is a working plugin).
     {
-        const auto k = levelKey (L);
-        if (m.refDb.count (k) && m.inRmsDb.count (k) && std::abs (m.refDb.at (k) - m.inRmsDb.at (k)) > 3.0)
+        bool allSilent = ! m.refDb.empty(), nonFinite = false, notTone = false;
+        for (const auto& [k, lvl] : m.refDb)
         {
-            d.unlicensedSuspect = true;
-            d.referenceNote << "default-threshold output at " << k << " is " << juce::String (m.refDb.at (k) - m.inRmsDb.at (k), 2)
-                            << " dB from the input; ";
+            if (m.inRmsDb.count (k)) d.defaultGain[k] = lvl - m.inRmsDb.at (k);
+            if (lvl >= kSilentDb) allSilent = false;
+            if (m.refNonFinite.count (k) && m.refNonFinite.at (k) > 0) nonFinite = true;
+            const double tf = m.refToneFrac.count (k) ? m.refToneFrac.at (k) : -1.0;
+            if (lvl >= kSilentDb && tf >= 0.0 && tf < kToneFracMin)
+            { notTone = true; d.referenceNote << "output at " << k << " is " << juce::String (tf * 100.0, 1) << "% the input's tone; "; }
         }
+        if (allSilent) d.referenceNote << "the output is silent at every level; ";
+        if (nonFinite) d.referenceNote << "the output is non-finite; ";
+        d.unlicensedSuspect = allSilent || nonFinite || notTone;
     }
 
     // Positions in NORM order, whatever order they were walked in; gain = out - in per reading.
     std::vector<const PositionReading*> byNorm;
     for (const auto& p : m.positions) byNorm.push_back (&p);
     std::stable_sort (byNorm.begin(), byNorm.end(), [] (auto* a, auto* b) { return a->norm < b->norm; });
+    const auto q54 = levelKey (-54.0), q48 = levelKey (-48.0);
     for (size_t i = 0; i < byNorm.size(); ++i)
     {
         const auto* p = byNorm[i];
         d.norms.push_back (p->norm);
         d.texts.push_back (p->text);
-        if (p->processFailed || p->unlanded || p->unsteady)
+        bool skip = p->processFailed || p->unlanded || p->unsteady;
+        juce::String why = p->processFailed ? "process: " + p->failure : p->unlanded ? "write_unlanded" : "unsteady";
+        auto usable = [&] (const juce::String& k) -> std::optional<double> {
+            auto it = p->holds.find (k);
+            if (it == p->holds.end() || ! it->second.present || it->second.nonFinite != 0) return std::nullopt;
+            if (std::abs (it->second.finalMoveDb) > m.movingDb) return std::nullopt;
+            return it->second.levelDb - it->second.inRmsDb; };
+        std::optional<double> quietCheck;
+        if (quietReference && ! skip)
         {
-            d.skipped.add ((int) i);
-            d.skippedReasons.add (p->processFailed ? "process: " + p->failure : p->unlanded ? "write_unlanded" : "unsteady");
+            const auto a = usable (q54), b = usable (q48);
+            if (a && b) quietCheck = *b - *a;
+            if (! quietCheck || std::abs (*quietCheck) > kQuietTolDb)
+            {
+                skip = true;
+                why = ! quietCheck ? juce::String ("quiet reference: -54 or -48 unreadable")
+                                   : "quiet reference: -48 minus -54 is " + juce::String (6.0 + *quietCheck, 2) + " dB, not 6 (compressed or noise floor)";
+            }
         }
+        d.quietCheckDb.push_back (quietCheck);
+        if (skip) { d.skipped.add ((int) i); d.skippedReasons.add (why); }
+        // WHICH MECHANISM LANDED THIS POSITION'S WRITE, recorded even when the position is refused later for another
+        // reason: "" only when the process itself failed.
+        // Traces from before landed_by existed (28-29 Sep, first batch) still say instack_match, and pumping was then the
+        // only mechanism, so their writes are "instack" or "pump" by the same rule landWrite applies.
+        d.landedBy.push_back (p->processFailed ? juce::String()
+                              : p->unlanded ? juce::String ("unlanded")
+                              : p->landedBy.isNotEmpty() ? p->landedBy
+                              : juce::String (p->instackMatch ? "instack" : "pump"));
         bool doubled = false, moving = false;
         for (double L : d.levels)
         {
             const auto k = levelKey (L);
             std::optional<double> g;
             auto it = p->holds.find (k);
-            if (! p->processFailed && ! p->unlanded && ! p->unsteady && it != p->holds.end() && it->second.present
-                && it->second.nonFinite == 0)
+            if (! skip && it != p->holds.end() && it->second.present && it->second.nonFinite == 0)
             {
                 doubled = doubled || it->second.doubled;
                 // STILL MOVING AFTER THE DOUBLING: not a steady state, so not used.
@@ -505,45 +569,93 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         return d;
     }
 
-    // THE SOFT END: of the two end positions readable at every level, the one with the higher gain at the loudest level.
+    // PASS-THROUGH: every readable reading's output equals its input. Its own reason, so a human sees it (item 3).
+    auto passThrough = [&] {
+        int readings = 0;
+        for (const auto& [k, v] : d.gain) for (auto g : v) if (g) { ++readings; if (std::abs (*g) > 0.01) return false; }
+        return readings > 0; };
+
     auto readableAll = [&] (int i) { for (double L : d.levels) if (! d.gain[levelKey (L)][(size_t) i]) return false; return true; };
     std::optional<int> lo, hi;
     for (int i = 0; i < n && ! lo; ++i) if (readableAll (i)) lo = i;
     for (int i = n - 1; i >= 0 && ! hi; --i) if (readableAll (i)) hi = i;
     if (! lo || ! hi || *lo == *hi) { d.result = "unreadable"; d.reason = "no two end positions readable at every level"; return d; }
     const auto kLoud = levelKey (d.levels.back());
-    bool flat = true;
-    for (double L : d.levels)
-        if (std::abs (*d.gain[levelKey (L)][(size_t) *hi] - *d.gain[levelKey (L)][(size_t) *lo]) > kSenseDb) flat = false;
-    if (flat) { d.result = "flat"; d.reason = "the ends differ by no more than 1 dB at every test level"; return d; }
-    const bool higherHarder = *d.gain[kLoud][(size_t) *hi] < *d.gain[kLoud][(size_t) *lo];
-    d.softEnd = higherHarder ? lo : hi;
-    d.sense = higherHarder ? "higher_is_harder" : "lower_is_harder";
+    bool higherHarder = false;
 
-    // THE LINEAR REFERENCE: the soft end's gains must agree across the levels, or it is no reference.
-    double gmin = 1e9, gmax = -1e9;
-    for (double L : d.levels)
+    if (quietReference)
     {
-        const double g = *d.gain[levelKey (L)][(size_t) *d.softEnd];
-        d.linearGain[levelKey (L)] = g;
-        gmin = juce::jmin (gmin, g); gmax = juce::jmax (gmax, g);
-    }
-    if (gmax - gmin > kLinearDb)
-    {
-        d.result = "unreadable";
-        d.reason = "the soft end is not linear: its gain spans " + juce::String (gmax - gmin, 2) + " dB across the levels (limit "
-                   + juce::String (kLinearDb, 1) + ")";
-        return d;
-    }
-    for (double L : d.levels)
-    {
-        const auto k = levelKey (L);
+        // EACH POSITION'S OWN LINEAR GAIN, from its -48 reading (checked against -54 above).
         for (int i = 0; i < n; ++i)
         {
-            const auto g = d.gain[k][(size_t) i];
-            d.reduction[k].push_back (g ? std::optional<double> (d.linearGain[k] - *g) : std::nullopt);
+            std::optional<double> lin;
+            if (d.quietCheckDb[(size_t) i] && ! d.skipped.contains (i))
+                if (auto it = byNorm[(size_t) i]->holds.find (q48); it != byNorm[(size_t) i]->holds.end())
+                    lin = it->second.levelDb - it->second.inRmsDb;
+            for (double L : d.levels)
+            {
+                const auto g = d.gain[levelKey (L)][(size_t) i];
+                d.reduction[levelKey (L)].push_back (g && lin ? std::optional<double> (*lin - *g) : std::nullopt);
+            }
+        }
+        bool flat = true;
+        for (double L : d.levels)
+        {
+            const auto a = d.reduction[levelKey (L)][(size_t) *lo], b = d.reduction[levelKey (L)][(size_t) *hi];
+            if (a && b && std::abs (*b - *a) > kSenseDb) flat = false;
+        }
+        if (flat)
+        {
+            d.result = "flat";
+            d.reason = passThrough() ? "passthrough: output equals input within 0.01 dB at every reading"
+                                     : "the ends differ by no more than 1 dB at every test level";
+            return d;
+        }
+        const auto rl = d.reduction[kLoud][(size_t) *lo], rh = d.reduction[kLoud][(size_t) *hi];
+        higherHarder = rh.value_or (0.0) > rl.value_or (0.0);
+    }
+    else
+    {
+        bool flat = true;
+        for (double L : d.levels)
+            if (std::abs (*d.gain[levelKey (L)][(size_t) *hi] - *d.gain[levelKey (L)][(size_t) *lo]) > kSenseDb) flat = false;
+        if (flat)
+        {
+            d.result = "flat";
+            d.reason = passThrough() ? "passthrough: output equals input within 0.01 dB at every reading"
+                                     : "the ends differ by no more than 1 dB at every test level";
+            return d;
+        }
+        higherHarder = *d.gain[kLoud][(size_t) *hi] < *d.gain[kLoud][(size_t) *lo];
+        d.softEnd = higherHarder ? lo : hi;
+        // THE SOFT END'S LINEAR GAIN. Its disagreement across levels is RECORDED on every fixture; only beyond
+        // kLinearDb is the data unusable (ruled 29 Sep: 0.63 is noise against 3-20 dB reductions, 4.91 is signal-sized).
+        double gmin = 1e9, gmax = -1e9;
+        for (double L : d.levels)
+        {
+            const double g = *d.gain[levelKey (L)][(size_t) *d.softEnd];
+            d.linearGain[levelKey (L)] = g;
+            gmin = juce::jmin (gmin, g); gmax = juce::jmax (gmax, g);
+        }
+        d.softEndSpreadDb = gmax - gmin;
+        if (gmax - gmin > kLinearDb)
+        {
+            d.result = "unreadable";
+            d.reason = "the soft end is not linear: its gain spans " + juce::String (gmax - gmin, 2) + " dB across the levels (unusable beyond "
+                       + juce::String (kLinearDb, 1) + ")";
+            return d;
+        }
+        for (double L : d.levels)
+        {
+            const auto k = levelKey (L);
+            for (int i = 0; i < n; ++i)
+            {
+                const auto g = d.gain[k][(size_t) i];
+                d.reduction[k].push_back (g ? std::optional<double> (d.linearGain[k] - *g) : std::nullopt);
+            }
         }
     }
+    d.sense = higherHarder ? "higher_is_harder" : "lower_is_harder";
 
     // GUARD: a reduction BELOW the linear reference means a reading carries history, or this is not a compressor's curve.
     for (double L : d.levels)
@@ -611,24 +723,24 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
 }
 
 //==============================================================================
-// THE DISPLAY'S TWO RESULTS (ruled 29 Sep; never merged with the map's `result`, nor with each other).
-// For each position with a numeric T and a display that prints a number: offset = T - displayed threshold. Worked
-// through for a textbook compressor: a detector reading the input Delta dB below its peak makes T = Td + Delta in the
-// peak convention (Delta = 0 for a peak detector, 3.01 for a sine through an RMS detector); a console-calibrated
-// display adds its calibration. None of that stops the display being usable, as long as it is ONE constant:
-//   displayOffsetDb  the offsets' median, a number whatever its value (null when the threshold prints no dB)
-//   displayLinear    the offsets' interquartile range within kLinearIqrDb (null when not a dB display, or fewer than
-//                    four offsets). IQR, not max-min: the deep positions' large reductions depart from the textbook
-//                    R/(R-1) curve on both first subjects (MCompressor's ~35 dB ceiling, townhouse's ratio growing
-//                    with depth) and would swamp max-min. The bound 3.5 dB is set from those two subjects:
-//                    townhouse IQR 4.50 (drifts, must fail), MCompressor 2.53 Peak / 2.75 RMS (must pass).
+// THE DISPLAY, AS NUMBERS (ruled 29 Sep; never merged with the map's `result`, and no bound is set yet).
+// For a threshold that prints dB:
+//   ENGAGE (primary, ratio-free): at each level, the display value where reduction crosses kEngageDb, interpolated
+//     between the two positions that bracket it, less the level for lower_is_harder or plus it for higher_is_harder.
+//     A display linear in dBFS gives the SAME number at every level, whatever the ratio or knee; `drift_db` is the
+//     spread across the levels. The crossing is extrapolated along the first two ENGAGED positions (see below).
+//   OFFSETS (secondary): derived T minus the displayed threshold per position - the median is displayOffsetDb (a
+//     number, spec 7's 2 dB bar is a test on it), the IQR is recorded beside it. T inherits the textbook R/(R-1)
+//     curve's error at depth, which is why this is not the primary.
+// displayLinear is deliberately NOT derived: n = 2 is no population. The bound comes from ~20 fixtures.
 struct DisplayCheck
 {
-    std::optional<bool> linear;
-    std::optional<double> offsetDb;              // the median
+    std::optional<double> offsetDb;              // median of T - display
     int positions = 0;
     double iqrDb = 0.0, minDb = 0.0, maxDb = 0.0;
     std::vector<std::pair<int, double>> offsets; // position -> T - display
+    std::map<juce::String, std::optional<double>> engage;   // level -> display at the crossing -/+ level
+    std::optional<double> engageDriftDb;
 };
 
 inline double quantile (std::vector<double> v, double q)   // linear interpolation between order statistics
@@ -639,6 +751,14 @@ inline double quantile (std::vector<double> v, double q)   // linear interpolati
     return i + 1 < v.size() ? v[i] + (h - (double) i) * (v[i + 1] - v[i]) : v[i];
 }
 
+inline std::optional<double> displayNumber (const juce::String& text)
+{
+    const auto t = text.trim();
+    const bool numeric = t.isNotEmpty() && (juce::CharacterFunctions::isDigit (t[0])
+                          || ((t[0] == '-' || t[0] == '+') && t.length() > 1 && juce::CharacterFunctions::isDigit (t[1])));
+    return numeric ? std::optional<double> (t.getDoubleValue()) : std::nullopt;
+}
+
 inline DisplayCheck displayCheck (const Derived& d, const juce::String& thresholdUnit)
 {
     DisplayCheck c;
@@ -646,20 +766,68 @@ inline DisplayCheck displayCheck (const Derived& d, const juce::String& threshol
     for (size_t i = 0; i < d.tEquivalent.size() && i < d.texts.size(); ++i)
     {
         if (! d.tEquivalent[i].isDouble() && ! d.tEquivalent[i].isInt()) continue;
-        const auto t = d.texts[i].trim();
-        const bool numeric = t.isNotEmpty() && (juce::CharacterFunctions::isDigit (t[0])
-                              || ((t[0] == '-' || t[0] == '+') && t.length() > 1 && juce::CharacterFunctions::isDigit (t[1])));
-        if (numeric) c.offsets.push_back ({ (int) i, (double) d.tEquivalent[i] - t.getDoubleValue() });
+        if (auto x = displayNumber (d.texts[i])) c.offsets.push_back ({ (int) i, (double) d.tEquivalent[i] - *x });
     }
     c.positions = (int) c.offsets.size();
-    if (c.positions == 0) return c;
-    std::vector<double> v;
-    for (auto& o : c.offsets) v.push_back (o.second);
-    c.offsetDb = median (v);
-    c.minDb = *std::min_element (v.begin(), v.end());
-    c.maxDb = *std::max_element (v.begin(), v.end());
-    c.iqrDb = quantile (v, 0.75) - quantile (v, 0.25);
-    if (c.positions >= 4) c.linear = c.iqrDb <= kLinearIqrDb;
+    if (c.positions > 0)
+    {
+        std::vector<double> v;
+        for (auto& o : c.offsets) v.push_back (o.second);
+        c.offsetDb = median (v);
+        c.minDb = *std::min_element (v.begin(), v.end());
+        c.maxDb = *std::max_element (v.begin(), v.end());
+        c.iqrDb = quantile (v, 0.75) - quantile (v, 0.25);
+    }
+    // THE ENGAGE CROSSING, per level.
+    if (d.sense.isNotEmpty())
+    {
+        const bool higherHarder = d.sense == "higher_is_harder";
+        const int n = (int) d.norms.size();
+        std::vector<double> found;
+        for (double L : d.levels)
+        {
+            const auto k = levelKey (L);
+            std::optional<double> cross;
+            auto it = d.reduction.find (k);
+            if (it != d.reduction.end())
+            {
+                // Walk from the soft end to the first ENGAGED position h1. The crossing is found on the line through h1 and
+                // the next engaged position h2: above the knee reduction is linear in a dB display, so for a hard knee this
+                // is exact. Interpolating across the knee instead (last unengaged -> h1) reads reduction as linear through
+                // the zero region and invents drift: 1.33 dB on a perfectly dB-linear input at 4 dB spacing (pin Q6).
+                // Fallback, only when no h2 exists: that bracket interpolation.
+                auto at = [&] (int j) { return higherHarder ? j : n - 1 - j; };
+                for (int j = 0; j < n && ! cross; ++j)
+                {
+                    const int h1 = at (j);
+                    const auto g1 = it->second[(size_t) h1];
+                    const auto x1 = displayNumber (d.texts[(size_t) h1]);
+                    if (! g1 || ! x1 || *g1 <= kEngageDb) continue;
+                    std::optional<double> x;
+                    if (j + 1 < n)
+                    {
+                        const int h2 = at (j + 1);
+                        const auto g2 = it->second[(size_t) h2];
+                        const auto x2 = displayNumber (d.texts[(size_t) h2]);
+                        if (g2 && x2 && *g2 > *g1 && *g2 < kSaturateDb)
+                            x = *x1 + (kEngageDb - *g1) * (*x2 - *x1) / (*g2 - *g1);
+                    }
+                    if (! x && j > 0)
+                    {
+                        const int s0 = at (j - 1);
+                        const auto g0 = it->second[(size_t) s0];
+                        const auto x0 = displayNumber (d.texts[(size_t) s0]);
+                        if (g0 && x0 && *g0 <= kEngageDb) x = *x0 + (kEngageDb - *g0) / (*g1 - *g0) * (*x1 - *x0);
+                    }
+                    if (x) cross = higherHarder ? *x + L : *x - L;
+                    break;
+                }
+            }
+            c.engage[k] = cross;
+            if (cross) found.push_back (*cross);
+        }
+        if (found.size() >= 2) c.engageDriftDb = *std::max_element (found.begin(), found.end()) - *std::min_element (found.begin(), found.end());
+    }
     return c;
 }
 
@@ -704,7 +872,9 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     tone->setProperty ("levels_dbfs", lv);
     s->setProperty ("tone", juce::var (tone));
     s->setProperty ("level_convention", "peak");
-    s->setProperty ("procedure", "one process per position, levels quiet to loud; reference = the soft end's linear gain");
+    s->setProperty ("procedure", d.quietReference
+                        ? "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)"
+                        : "one process per position, levels quiet to loud; reference = the soft end's linear gain");
     auto* rd = new juce::DynamicObject();
     rd->setProperty ("position", d.ratioText);
     rd->setProperty ("value", d.ratio ? juce::var (*d.ratio) : juce::var());
@@ -730,14 +900,43 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     juce::Array<juce::var> norms;
     for (float x : d.norms) norms.add (std::round (x * 1e6) / 1e6);
     s->setProperty ("positionNorms", norms);
-    if (d.softEnd)
+    if (d.quietReference)
+    {
+        auto* ref = new juce::DynamicObject();
+        ref->setProperty ("mode", "per_position_quiet");
+        ref->setProperty ("levels_dbfs", juce::Array<juce::var> { -54, -48 });
+        ref->setProperty ("tolerance_db", kQuietTolDb);
+        juce::Array<juce::var> chk;
+        for (auto q : d.quietCheckDb) chk.add (q ? juce::var (std::round (*q * 1000.0) / 1000.0) : juce::var());
+        ref->setProperty ("check_db", chk);
+        s->setProperty ("linearReference", juce::var (ref));
+    }
+    else if (d.softEnd)
     {
         auto* lg = new juce::DynamicObject();
         for (double L : d.levels) lg->setProperty (juce::String ((int) L), round2 (d.linearGain.at (levelKey (L))));
         auto* ref = new juce::DynamicObject();
+        ref->setProperty ("mode", "soft_end");
         ref->setProperty ("position", *d.softEnd);
         ref->setProperty ("gain_db", juce::var (lg));
+        ref->setProperty ("spread_db", round2 (d.softEndSpreadDb));
+        ref->setProperty ("unusable_beyond_db", kLinearDb);
         s->setProperty ("linearReference", juce::var (ref));
+    }
+    if (! d.defaultGain.empty())
+    {
+        auto* dg = new juce::DynamicObject();
+        for (const auto& [k, v] : d.defaultGain) dg->setProperty (juce::String ((int) k.getDoubleValue()), std::round (v * 100.0) / 100.0);
+        s->setProperty ("defaultGain_db", juce::var (dg));   // information only: never judged
+    }
+    {
+        juce::Array<juce::var> lb;
+        std::map<juce::String, int> counts;
+        for (const auto& x : d.landedBy) { lb.add (x.isEmpty() ? juce::var() : juce::var (x)); ++counts[x.isEmpty() ? "no_process" : x]; }
+        s->setProperty ("positionLandedBy", lb);
+        auto* wl = new juce::DynamicObject();
+        for (const auto& [k, v] : counts) wl->setProperty (k, v);
+        s->setProperty ("writeLanding", juce::var (wl));
     }
     auto* red = new juce::DynamicObject();
     for (double L : d.levels)
@@ -775,8 +974,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     }
     s->setProperty ("result", d.result);
     if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
-    // THE DISPLAY'S TWO RESULTS, beside the map's and never folded into it or into each other.
-    s->setProperty ("displayLinear", dc.linear ? juce::var (*dc.linear) : juce::var());
+    // THE DISPLAY, AS NUMBERS, beside the map's result and never folded into it. displayLinear is unset on purpose.
     s->setProperty ("displayOffsetDb", dc.offsetDb ? juce::var (std::round (*dc.offsetDb * 100.0) / 100.0) : juce::var());
     if (dc.positions > 0)
     {
@@ -785,9 +983,16 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         o->setProperty ("iqr_db", std::round (dc.iqrDb * 100.0) / 100.0);
         o->setProperty ("min_db", std::round (dc.minDb * 100.0) / 100.0);
         o->setProperty ("max_db", std::round (dc.maxDb * 100.0) / 100.0);
-        o->setProperty ("linear_bound_iqr_db", kLinearIqrDb);
         o->setProperty ("convention", "peak");
         s->setProperty ("displayOffsetSpread", juce::var (o));
+    }
+    if (! dc.engage.empty())
+    {
+        auto* o = new juce::DynamicObject();
+        for (const auto& [k, v] : dc.engage) o->setProperty (juce::String ((int) k.getDoubleValue()), round2 (v));
+        o->setProperty ("drift_db", round2 (dc.engageDriftDb));
+        o->setProperty ("rule", "display where reduction crosses 0.5 dB, less the level (lower_is_harder) or plus it (higher_is_harder)");
+        s->setProperty ("displayEngage", juce::var (o));
     }
     if (! pv.diagnosticArm.isVoid()) s->setProperty ("diagnosticArm", pv.diagnosticArm);
     return juce::var (s);

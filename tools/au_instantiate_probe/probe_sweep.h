@@ -30,6 +30,8 @@
 //   - ONE PROCESS PER POSITION (ruled 29 Sep): EJ Map runs a reference-only process (norms= empty) and then one
 //     process per position with ref=0, the levels quiet to loud inside it. Walking positions inside one process let
 //     every quiet reading inherit a loud one's release (townhouse: >3 s of auto release, arms A and B).
+//   - Every write says which mechanism landed it (landWrite): instack, pump, render (silence rendered after the pump
+//     timed out), or unlanded. Every hold prints tone_frac, the share of output power at the test tone.
 //   - Nothing is ever written back: the process exits after the sweep, and the instance dies with it.
 #pragma once
 
@@ -102,8 +104,18 @@ struct SweepRenderer
         std::vector<double> chanDb;          // per main output channel, over the measured span
         double levelDb = -999.0;             // power mean over main outputs, over the measured span
         double inPeakDb = -999.0, inRmsDb = -999.0;
+        double toneFrac = 0.0;               // share of the measured output power at the test tone (Goertzel), 0..1
         long long nonFinite = 0;
     };
+
+    // One block of SILENCE through the plugin: the write escalation confirms while rendering silence, which builds
+    // no compression history (ruled 29 Sep).
+    void renderSilentBlock()
+    {
+        io.clear();
+        midi.clear();
+        p.processBlock (io, midi);
+    }
 
     // Renders `seconds` of tone at `dbfs`; measures [measureFrom, seconds) and windows of `winS` from t = 0.
     Hold render (double dbfs, double seconds, double measureFrom, double winS)
@@ -114,6 +126,9 @@ struct SweepRenderer
         const long long winN = juce::jmax (1LL, (long long) std::llround (winS * sr));
         std::vector<double> chanSs ((size_t) juce::jmax (1, mainOut), 0.0);
         double winSs = 0.0, inSs = 0.0, inPeak = 0.0; long long inWin = 0, measured = 0;
+        // Goertzel at the tone over the measured span, per main output channel: is the output still the INPUT's tone?
+        const double gcoef = 2.0 * std::cos (step);
+        std::vector<double> gs1 ((size_t) juce::jmax (1, mainOut), 0.0), gs2 ((size_t) juce::jmax (1, mainOut), 0.0);
         for (long long done = 0; done < total; done += block)
         {
             io.clear();
@@ -135,7 +150,13 @@ struct SweepRenderer
                     const float d = io.getSample (ch, n);
                     if (! std::isfinite (d)) { ++h.nonFinite; continue; }
                     ss += (double) d * d;
-                    if (t >= from) chanSs[(size_t) ch] += (double) d * d;
+                    if (t >= from)
+                    {
+                        chanSs[(size_t) ch] += (double) d * d;
+                        const double s0 = (double) d + gcoef * gs1[(size_t) ch] - gs2[(size_t) ch];
+                        gs2[(size_t) ch] = gs1[(size_t) ch];
+                        gs1[(size_t) ch] = s0;
+                    }
                 }
                 if (mainOut > 0) ss /= mainOut;
                 winSs += ss;
@@ -152,6 +173,19 @@ struct SweepRenderer
             all += chanSs[(size_t) ch];
         }
         h.levelDb = toDb (measured > 0 && mainOut > 0 ? std::sqrt (all / (measured * (double) mainOut)) : 0.0);
+        {
+            // Tone power per channel = 2 |X|^2 / N^2 (a sine of amplitude A gives |X| = A N / 2, power A^2 / 2); its
+            // share of the total output power over the measured span.
+            double tone = 0.0;
+            for (int ch = 0; ch < mainOut; ++ch)
+            {
+                const double a = gs1[(size_t) ch], b = gs2[(size_t) ch];
+                const double mag2 = a * a + b * b - gcoef * a * b;
+                tone += measured > 0 ? 2.0 * mag2 / ((double) measured * (double) measured) : 0.0;
+            }
+            const double total2 = measured > 0 ? all / (double) measured : 0.0;
+            h.toneFrac = total2 > 0.0 ? juce::jlimit (0.0, 1.0, tone / total2) : 0.0;
+        }
         h.inPeakDb = toDb (inPeak);
         h.inRmsDb = toDb (total > 0 ? std::sqrt (inSs / total) : 0.0);
         return h;
@@ -184,6 +218,29 @@ inline double confirmCounted (juce::AudioProcessorParameter& q, float want, floa
     return -1.0;
 }
 
+// LAND A WRITE, ESCALATING (ruled 29 Sep). Pump first (the verify's step 1, 500 ms); on timeout, confirm while
+// rendering SILENCE for up to 500 ms more. Which mechanism landed it is printed with every write: "instack" (already
+// true before any pump), "pump", "render", or "unlanded". Recorded per write, it settles write by write whether a
+// plugin needs the message loop, wall time, or render cycles (the 2 Aug / 10 Aug disagreement).
+struct Landing { double ms = -1.0; int slices = 0, blocks = 0; bool instack = false; float read = 0.0f; const char* by = "unlanded"; };
+inline Landing landWrite (juce::AudioProcessorParameter& q, float want, SweepRenderer* r, float tol = 0.005f)
+{
+    Landing l;
+    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    const double ms = confirmCounted (q, want, l.read, l.slices, l.instack, 500, tol);
+    if (ms >= 0) { l.ms = ms; l.by = l.instack ? "instack" : "pump"; return l; }
+    if (r == nullptr) return l;
+    const double t1 = juce::Time::getMillisecondCounterHiRes();
+    while (juce::Time::getMillisecondCounterHiRes() - t1 < 500.0)
+    {
+        r->renderSilentBlock();
+        ++l.blocks;
+        l.read = q.getValue();
+        if (std::abs (l.read - want) <= tol) { l.ms = juce::Time::getMillisecondCounterHiRes() - t0; l.by = "render"; return l; }
+    }
+    return l;
+}
+
 inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const RenderSpec& rs = {})
 {
     auto ps = p.getParameters();
@@ -210,12 +267,12 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
         if (! juce::isPositiveAndBelow (idx, ps.size()) || ps[idx] == nullptr) { std::printf ("refused set: no parameter %d\n", idx); return; }
         auto& q = *ps[idx];
         q.setValueNotifyingHost (norm);
-        float read = 0; int slices = 0; bool instack = false;
-        const double ms = confirmCounted (q, norm, read, slices, instack);
+        const auto l = landWrite (q, norm, &r);
         juce::String text; int reads = 0;
         stableText (q, text, reads);
-        std::printf ("set\t%d\t%.6f\tconfirm_ms\t%.1f\tgetValue\t%.6f\ttext\t%s\n", idx, norm, ms, read, clean (text).toRawUTF8());
-        if (ms < 0) { std::printf ("refused set_unlanded %d\n", idx); return; }
+        std::printf ("set\t%d\t%.6f\tconfirm_ms\t%.1f\tgetValue\t%.6f\tlanded_by\t%s\trender_blocks\t%d\ttext\t%s\n", idx, norm, l.ms,
+                     l.read, l.by, l.blocks, clean (text).toRawUTF8());
+        if (l.ms < 0) { std::printf ("refused set_unlanded %d\n", idx); return; }
     }
 
     auto& t = *ps[s.thr];
@@ -233,8 +290,9 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
             if (s.resetPerHold) p.reset();
             const auto h = r.render (L, s.refS, s.refS - (s.holdS - s.discardS), s.winS);
             audioS += s.refS;
-            std::printf ("ref\t%.2f\tlevel_db\t%.4f\tin_peak_db\t%.4f\tin_rms_db\t%.4f\tch\t%s\twin\t%s\tnonfinite\t%lld\n", L,
-                         h.levelDb, h.inPeakDb, h.inRmsDb, joinDb (h.chanDb).toRawUTF8(), joinDb (h.windowsDb).toRawUTF8(), h.nonFinite);
+            std::printf ("ref\t%.2f\tlevel_db\t%.4f\tin_peak_db\t%.4f\tin_rms_db\t%.4f\ttone_frac\t%.4f\tch\t%s\twin\t%s\tnonfinite\t%lld\n", L,
+                         h.levelDb, h.inPeakDb, h.inRmsDb, h.toneFrac, joinDb (h.chanDb).toRawUTF8(), joinDb (h.windowsDb).toRawUTF8(),
+                         h.nonFinite);
         }
     }
 
@@ -254,13 +312,13 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
                 auto h2 = r.render (L, s.holdS, s.discardS, s.winS);   // measured over its last (hold - discard) s
                 audioS += s.holdS;
                 for (double w : h2.windowsDb) h.windowsDb.push_back (w);
-                h.levelDb = h2.levelDb; h.chanDb = h2.chanDb; h.nonFinite += h2.nonFinite;
+                h.levelDb = h2.levelDb; h.chanDb = h2.chanDb; h.toneFrac = h2.toneFrac; h.nonFinite += h2.nonFinite;
                 doubled = 1;
             }
             const size_t m = h.windowsDb.size();
             const double finalMove = m >= 2 ? h.windowsDb[m - 1] - h.windowsDb[m - 2] : 0.0;
-            std::printf ("%s\t%d\t%.2f\tlevel_db\t%.4f\tin_rms_db\t%.4f\tch\t%s\tdoubled\t%d\tlast_move_db\t%.4f\tfinal_move_db\t%.4f\twin\t%s\tnonfinite\t%lld\n",
-                         tag, k, L, h.levelDb, h.inRmsDb, joinDb (h.chanDb).toRawUTF8(), doubled, lastMove, finalMove,
+            std::printf ("%s\t%d\t%.2f\tlevel_db\t%.4f\tin_rms_db\t%.4f\ttone_frac\t%.4f\tch\t%s\tdoubled\t%d\tlast_move_db\t%.4f\tfinal_move_db\t%.4f\twin\t%s\tnonfinite\t%lld\n",
+                         tag, k, L, h.levelDb, h.inRmsDb, h.toneFrac, joinDb (h.chanDb).toRawUTF8(), doubled, lastMove, finalMove,
                          joinDb (h.windowsDb).toRawUTF8(), h.nonFinite);
         }
     };
@@ -270,17 +328,17 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
         stage ("position");
         const float want = s.norms[(size_t) k];
         t.setValueNotifyingHost (want);
-        float read = 0; int slices = 0; bool instack = false;
-        const double ms = confirmCounted (t, want, read, slices, instack);
-        if (ms < 0)
+        const auto l = landWrite (t, want, &r);
+        if (l.ms < 0)
         {
-            std::printf ("pos\t%d\tnorm\t%.6f\twrite_unlanded\tgetValue\t%.6f\tslices\t%d\n", k, want, read, slices);
+            std::printf ("pos\t%d\tnorm\t%.6f\twrite_unlanded\tgetValue\t%.6f\tslices\t%d\trender_blocks\t%d\tlanded_by\tunlanded\n",
+                         k, want, l.read, l.slices, l.blocks);
             continue;                                   // SKIPPED, never rendered
         }
         juce::String text; int reads = 0;
         const double tms = stableText (t, text, reads);
-        std::printf ("pos\t%d\tnorm\t%.6f\tconfirm_ms\t%.2f\tslices\t%d\tinstack_match\t%d\tgetValue\t%.6f\ttext_ms\t%.1f\treads\t%d\ttext\t%s\n",
-                     k, want, ms, slices, instack ? 1 : 0, read, tms, reads, clean (text).toRawUTF8());
+        std::printf ("pos\t%d\tnorm\t%.6f\tconfirm_ms\t%.2f\tslices\t%d\tinstack_match\t%d\tgetValue\t%.6f\tlanded_by\t%s\trender_blocks\t%d\ttext_ms\t%.1f\treads\t%d\ttext\t%s\n",
+                     k, want, l.ms, l.slices, l.instack ? 1 : 0, l.read, l.by, l.blocks, tms, reads, clean (text).toRawUTF8());
         const float preVal = t.getValue();
         const juce::String preText = t.getCurrentValueAsText();
         holdAll (k, "hold");
@@ -311,15 +369,15 @@ inline void runTextAtNorms (juce::AudioPluginInstance& p, int index, const std::
     auto& q = *ps[index];
     std::printf ("textat\tproto\t1\tindex\t%d\tname\t%s\tpoints\t%d\tinstantiated\t%.6f\t%s\n", index,
                  clean (q.getName (128)).toRawUTF8(), (int) norms.size(), q.getValue(), clean (q.getCurrentValueAsText()).toRawUTF8());
+    SweepRenderer r (p, 48000.0, 512, 997.0);
     for (float n : norms)
     {
         q.setValueNotifyingHost (n);
-        float read = 0; int slices = 0; bool instack = false;
-        const double ms = confirmCounted (q, n, read, slices, instack);
+        const auto l = landWrite (q, n, &r);
         juce::String text; int reads = 0;
         stableText (q, text, reads);
-        std::printf ("at\t%.6f\t%s\tgetValue\t%.6f\tconfirm_ms\t%.1f\ttext\t%s\n", n, ms < 0 ? "unlanded" : "landed", read, ms,
-                     clean (text).toRawUTF8());
+        std::printf ("at\t%.6f\t%s\tgetValue\t%.6f\tconfirm_ms\t%.1f\tlanded_by\t%s\ttext\t%s\n", n, l.ms < 0 ? "unlanded" : "landed",
+                     l.read, l.ms, l.by, clean (text).toRawUTF8());
     }
     stage ("done");
 }

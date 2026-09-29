@@ -359,9 +359,21 @@ inline bool measurable (const Subject& s, bool includePace)
 // are RECORDED, never measured and never scored. The only known members so far are McDSP's
 // APB plugins, which need the Analog Processing Box (per Kathy). The rule is by
 // manufacturer code and product name, not by guess. Add to it only on evidence.
+//
+// UAD-2 joins it (ruled 29 Sep): every UAD-2 product (manufacturer code "!UAD") opened its own dialog at the FIRST RENDER
+// on this Mac, which has no UAD hardware attached; defaults sampling, which never renders, was clean. Consistent with
+// needing the hardware, not proven - the window watch cannot read titles. All 215 UAD components installed here are
+// com.uaudio.effects with "!UAD"; none is a UADx (native) build, which would not need hardware.
+// The category is CONDITIONAL, not uncertifiable: attaching the hardware makes it one re-run.
+inline juce::String externalHardwareNeeded (const juce::String& product, const juce::String& componentCode)
+{
+    if (componentCode.endsWith (",McDP") && product.startsWith ("APB ")) return "McDSP APB hardware";
+    if (componentCode.endsWith (",!UAD")) return "UAD hardware (UAD-2)";
+    return {};
+}
 inline bool requiresExternalHardware (const juce::String& product, const juce::String& componentCode)
 {
-    return componentCode.endsWith (",McDP") && product.startsWith ("APB ");
+    return externalHardwareNeeded (product, componentCode).isNotEmpty();
 }
 
 inline juce::String reachName (Subject::Reach r)
@@ -438,7 +450,7 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
             { s.reach = Subject::Reach::notInstalled; s.detail = "component " + s.version + " is not registered"; continue; }
             s.desc = d;
             if (requiresExternalHardware (s.product, s.version))
-            { s.reach = Subject::Reach::requiresHardware; s.detail = "needs its hardware to process audio; recorded, not measured"; continue; }
+            { s.reach = Subject::Reach::requiresHardware; s.detail = "needs " + externalHardwareNeeded (s.product, s.version) + " present; recorded, not measured - attaching it makes this one re-run"; continue; }
             juce::String why;
             s.licenceBound = isPace (d, why);
             const bool held = ! includePace && s.licenceBound;
@@ -465,6 +477,7 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
                 s.desc = installed.getReference (0);
                 s.installedUnique = true;
                 s.hardware = requiresExternalHardware (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+                if (s.hardware) s.detail << "; needs " << externalHardwareNeeded (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) << " present";
                 juce::String why;
                 s.licenceBound = isPace (s.desc, why);
             }
@@ -478,7 +491,7 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
         }
         s.desc = atVersion.getReference (0);
         if (requiresExternalHardware (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)))
-        { s.reach = Subject::Reach::requiresHardware; s.detail = "needs its hardware to process audio; recorded, not measured"; continue; }
+        { s.reach = Subject::Reach::requiresHardware; s.detail = "needs " + externalHardwareNeeded (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) + " present; recorded, not measured - attaching it makes this one re-run"; continue; }
         juce::String why;
         s.licenceBound = isPace (s.desc, why);
         const bool held = ! includePace && s.licenceBound;
@@ -984,7 +997,7 @@ inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, co
                               const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info)
 {
     const std::vector<double> levels { -24.0, -12.0, -6.0 };
-    const auto d = sweep::derive (m, levels, plan.ratioIndex);
+    const auto d = sweep::derive (m, levels, plan.ratioIndex, plan.quietReference);
     const auto dc = sweep::displayCheck (d, plan.thrUnit);
     const bool written = ! d.unlicensedSuspect;
     if (written)
@@ -1017,10 +1030,29 @@ inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, co
         << " | auto make-up disabled: " << (plan.autoMakeupDisabled ? "yes" : "no") << "\n"
         << "default-threshold reference ('" << m.refText << "', spec 4.7 check only):";
     for (double L : levels) { const auto k = sweep::levelKey (L); if (m.refDb.count (k)) rep << "  " << k << " out-in " << juce::String (m.refDb.at (k) - m.inRmsDb.at (k), 2); }
-    rep << "\nlinear reference (soft end";
-    if (d.softEnd) { rep << ", position " << *d.softEnd << "):"; for (double L : levels) rep << "  " << sweep::levelKey (L) << " " << juce::String (d.linearGain.at (sweep::levelKey (L)), 2); }
-    else rep << "): none";
+    if (! d.defaultGain.empty()) rep << "  (default gain is information only)";
+    if (d.quietReference)
+    {
+        rep << "\nlinear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within "
+            << juce::String (sweep::kQuietTolDb, 1) << "):";
+        for (size_t i = 0; i < d.quietCheckDb.size(); ++i)
+            rep << " " << (d.quietCheckDb[i] ? juce::String (*d.quietCheckDb[i], 2) : juce::String ("--"));
+    }
+    else
+    {
+        rep << "\nlinear reference (soft end";
+        if (d.softEnd) { rep << ", position " << *d.softEnd << "):"; for (double L : levels) rep << "  " << sweep::levelKey (L) << " " << juce::String (d.linearGain.at (sweep::levelKey (L)), 2); }
+        else rep << "): none";
+        if (d.softEndSpreadDb) rep << "  | spread " << juce::String (*d.softEndSpreadDb, 2) << " dB (unusable beyond " << juce::String (sweep::kLinearDb, 1) << ")";
+    }
     rep << "\n";
+    {
+        std::map<juce::String, int> counts;
+        for (const auto& x : d.landedBy) ++counts[x.isEmpty() ? "no_process" : x];
+        rep << "writes landed by:";
+        for (const auto& [k, v] : counts) rep << " " << k << " " << v;
+        rep << "\n";
+    }
     if (info.processes > 0) rep << "processes: " << info.processes << " run, " << info.retried << " retried, " << failedProc << " position(s) failed\n";
     rep << "write verify: " << landed << " landed, " << unl << " write_unlanded (skipped), in-stack read already matched on " << instack
         << " of " << landed << ", pump slices total " << slicesTotal << ", longest confirm " << juce::String (confMax, 1) << " ms, re-rendered " << rer << "\n";
@@ -1044,12 +1076,13 @@ inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, co
     rep << "\n1 MAP:             " << d.result << (d.reason.isNotEmpty() ? " (" + d.reason + ")" : juce::String())
         << " | sense " << (d.sense.isEmpty() ? "--" : d.sense) << " | engage";
     for (double L : levels) { auto e = d.engage.count (sweep::levelKey (L)) ? d.engage.at (sweep::levelKey (L)) : std::nullopt; rep << " " << sweep::levelKey (L) << ":" << (e ? juce::String (*e) : juce::String ("none")); }
-    rep << "\n2 displayLinear:   " << (dc.linear ? (*dc.linear ? "TRUE" : "FALSE") : "null")
-        << (dc.positions > 0 ? " (IQR " + juce::String (dc.iqrDb, 2) + " dB, bound " + juce::String (sweep::kLinearIqrDb, 1) + "; min "
-                               + juce::String (dc.minDb, 2) + ", max " + juce::String (dc.maxDb, 2) + ", over " + juce::String (dc.positions) + " positions)"
-                             : juce::String (" (not a dB display, or no position with a numeric T)"))
+    rep << "\n2 engage drift:    " << num (dc.engageDriftDb);
+    for (const auto& [k, v] : dc.engage) rep << "  " << k << ":" << num (v);
+    rep << (dc.engage.empty() ? "  (not a dB display)" : "") << "   (primary; displayLinear unset until the population decides)"
+        << "\n   offset IQR:      " << (dc.positions > 0 ? juce::String (dc.iqrDb, 2) + " dB over " + juce::String (dc.positions) + " positions (min "
+                                                         + juce::String (dc.minDb, 2) + ", max " + juce::String (dc.maxDb, 2) + ")" : juce::String ("null"))
         << "\n3 displayOffsetDb: " << num (dc.offsetDb) << (dc.offsetDb ? juce::String (std::abs (*dc.offsetDb) <= sweep::kDisplayDb ? "  (inside spec 7's 2 dB bar)" : "  (outside spec 7's 2 dB bar)") : juce::String())
-        << "\n" << (written ? "fixture: " + fixtureOut.getFileName() : "UNLICENSED ON HOST suspected (spec 4.7): " + d.referenceNote + "no thresholdSweep written") << "\n";
+        << "\n" << (written ? "fixture: " + fixtureOut.getFileName() : "NOT LICENSED suspected (silent, non-finite or not the input's tone at default): " + d.referenceNote + "no thresholdSweep written") << "\n";
     reportOut.replaceWithText (rep, false, false, "\n");
     std::cout << rep << std::flush;
 }
@@ -1167,8 +1200,10 @@ inline int runCertSweep (const SweepOptions& opt)
 
     juce::StringArray sets;
     for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
+    juce::StringArray levelList;
+    for (double L : plan.probeLevels()) levelList.add (juce::String ((int) L));
     auto sweepArgs = [&] (const juce::String& norms, const juce::String& ref) {
-        juce::StringArray a { "--sweep", "thr=" + juce::String (plan.thr), "norms=" + norms, "levels=-24,-12,-6", "hz=997",
+        juce::StringArray a { "--sweep", "thr=" + juce::String (plan.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
                               "hold=1.5", "discard=0.75", "win=0.25", "ref=" + ref, "moving_db=0.1",
                               juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
         if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
@@ -1336,7 +1371,10 @@ inline int runSweepCensus (const juce::File& fixturesDir, bool includePace)
         {
             juce::String why = reachName (s.reach);
             if (s.reach == Subject::Reach::versionMismatch)
-                why << (! s.installedUnique ? " - several versions installed" : s.hardware ? " - needs its hardware" : " - licence-bound");
+                why = ! s.installedUnique ? why + " - several versions installed"
+                    : s.hardware ? "CONDITIONAL - " + s.detail.fromFirstOccurrenceOf ("; ", false, false) + " (one re-run once attached)"
+                    : why + " - licence-bound";
+            if (s.reach == Subject::Reach::requiresHardware) why = "CONDITIONAL - " + s.detail.upToFirstOccurrenceOf (";", false, false) + " (one re-run once attached)";
             notRunnable[why].add (s.product);
             continue;
         }

@@ -64,6 +64,7 @@
 #include "EjmapRoles.h"
 #include "EjmapRoleSemantics.h"
 #include "EjmapSweep.h"
+#include <functional>
 #include "EjmapCertDriver.h"
 
 namespace
@@ -4052,14 +4053,16 @@ void testSweepDerivation()
     check (std::abs (*d.reduction[levelKey (-6)][0] - 11.25) < 1e-9 && std::abs (*d.reduction[levelKey (-6)][5]) < 1e-9,
            "sweep D2: reduction is measured from the soft end's LINEAR gain, not from the default threshold");
 
-    // THE LINEAR REFERENCE: the soft end's gains must agree within 0.5 dB across the levels.
+    // THE LINEAR REFERENCE (ruled 29 Sep): the soft end's disagreement across levels is RECORDED on every fixture;
+    // only beyond 2 dB - the size of the signal, against 3-20 dB useful reductions - is the data unusable.
     auto nonLinear = clean;
-    nonLinear[5] = { 2.0, 2.0, 1.4 };
+    nonLinear[5] = { 2.0, 2.0, -0.5 };
     check (derive (fromGains (nonLinear), kLevels, -1).result == "unreadable",
-           "sweep D3: a soft end whose gains disagree by more than 0.5 dB is no reference - refuses");
-    nonLinear[5] = { 2.0, 2.0, 1.6 };
-    check (derive (fromGains (nonLinear), kLevels, -1).result == "certified",
-           "sweep D4: ...and within 0.5 dB it is one");
+           "sweep D3: a soft end whose gains disagree by 2.5 dB is unusable - refuses");
+    nonLinear[5] = { 2.0, 2.0, 0.8 };
+    const auto within = derive (fromGains (nonLinear), kLevels, -1);
+    check (within.result == "certified" && within.softEndSpreadDb && std::abs (*within.softEndSpreadDb - 1.2) < 1e-9,
+           "sweep D4: 1.2 dB is noise against the reductions - it certifies, and the 1.2 is recorded as a number");
 
     // GUARD 1: a reduction BELOW the linear reference by more than 0.5 dB.
     auto above = clean;
@@ -4089,6 +4092,103 @@ void testSweepDerivation()
            "sweep D9: townhouse arm A (one process, loud-to-quiet history) does NOT certify: '" + armA.result + "' - " + armA.reason);
     const auto armB = derive (parseSweep (dir.getChildFile ("townhouse-armB-descending.txt").loadFileAsString()), kLevels, 5);
     check (armB.result != "certified", "sweep D10: nor does arm B: '" + armB.result + "'");
+
+    // PASS-THROUGH gets its own reason (C1 comp and RCompressor at 12.0.0, 29 Sep: output = input at every reading).
+    std::vector<std::array<std::optional<double>, 3>> pass (6, { 0.0, 0.0, 0.0 });
+    const auto pt = derive (fromGains (pass), kLevels, -1);
+    check (pt.result == "flat" && pt.reason.startsWith ("passthrough"), "sweep D11: output equal to input everywhere is flat with reason passthrough");
+    check (derive (fromGains (flat), kLevels, -1).reason.startsWith ("the ends differ"), "sweep D12: an ordinary flat keeps its plain reason");
+}
+
+//==============================================================================
+/** INPUT-AS-THRESHOLD: each position's own quiet reference, self-checked (ruled 29 Sep). A textbook 1176-style
+    device: input gain G_p = -20 + 4p dB into a fixed -20 dBFS threshold at 4:1, so a quiet tone is linear at every
+    position and the reduction at a loud one is (L + G_p + 20) * 0.75 above threshold. */
+void testSweepQuietReference()
+{
+    using namespace ejmap::sweep;
+    auto build = [] (std::function<double (int, double)> quietBend) {
+        Measured m; m.ok = true; m.movingDb = 0.1;
+        for (int p = 0; p < 6; ++p)
+        {
+            PositionReading r; r.k = p; r.norm = (float) p / 5.0f; r.text = juce::String (-20.0 + 4.0 * p, 1) + " dB"; r.landedBy = "pump";
+            const double G = -20.0 + 4.0 * p;
+            for (double L : { -54.0, -48.0, -24.0, -12.0, -6.0 })
+            {
+                HoldReading h; h.present = true; h.inRmsDb = L - 3.0103;
+                const double over = L + G + 20.0;
+                h.levelDb = h.inRmsDb + G - (over > 0 ? over * 0.75 : 0.0) + quietBend (p, L);
+                r.holds[levelKey (L)] = h;
+            }
+            m.positions.push_back (r);
+        }
+        return m; };
+    const auto ok = derive (build ([] (int, double) { return 0.0; }), sweeptest::kLevels, -1, true);
+    check (ok.result == "certified" && ok.sense == "higher_is_harder" && ok.quietCheckDb[3] && std::abs (*ok.quietCheckDb[3]) < 1e-9,
+           "quiet Q1: an input control certifies higher_is_harder against each position's own quiet gain");
+    check (std::abs (*ok.reduction.at (levelKey (-6))[5] - 10.5) < 1e-9 && std::abs (*ok.reduction.at (levelKey (-24))[0]) < 1e-9,
+           "quiet Q2: reduction is that position's -48 gain minus its gain at the level (input gain cancels)");
+    const auto okd = displayCheck (ok, "dB");
+    check (okd.engageDriftDb && *okd.engageDriftDb < 0.01,
+           "quiet Q6: for a higher_is_harder input gain the engage number is display PLUS level, so a dB-linear input shows no drift ("
+             + juce::String (okd.engageDriftDb.value_or (99.0), 3) + ")");
+    const auto bent = derive (build ([] (int p, double L) { return p == 3 && L == -48.0 ? -0.3 : 0.0; }), sweeptest::kLevels, -1, true);
+    check (bent.skipped.contains (3) && bent.skippedReasons[bent.skipped.indexOf (3)].contains ("not 6"),
+           "quiet Q3: -48 and -54 differing by 5.7 dB, not 6, refuses THAT position rather than calibrate off it");
+    // A trace with no quiet levels (the first batch) cannot give an input control any reference at all.
+    auto old = build ([] (int, double) { return 0.0; });
+    for (auto& r : old.positions) { r.holds.erase (levelKey (-54.0)); r.holds.erase (levelKey (-48.0)); }
+    check (derive (old, sweeptest::kLevels, -1, true).result == "unreadable", "quiet Q4: no quiet readings, no reference - unreadable");
+    // Plan: only input-as-threshold picks carry it.
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
+    const auto mc = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_73462d29_1.5.1.json").loadFileAsString()));
+    check (mc.quietReference && mc.probeLevels().size() == 5 && mc.probeLevels().front() == -54.0,
+           "quiet Q5: MC 77's plan renders -54 and -48 first, quiet to loud");
+}
+
+//==============================================================================
+/** NOT LICENSED, NARROWED (ruled 29 Sep): silence, non-finite output, or output that is not the input's tone, at the
+    default settings. Default gain is information. The 3 dB rule withheld six working Waves plugins on 29 Sep. */
+void testLicenceFromAudio()
+{
+    using namespace ejmap::sweep;
+    auto m = sweeptest::fromGains ({ { 0.0, 0.0, 0.0 }, { 0.0, -1.0, -2.0 } });
+    for (double L : { -24.0, -12.0, -6.0 })
+    { m.refDb[levelKey (L)] = L - 3.0103 + 7.1; m.refToneFrac[levelKey (L)] = 0.99; m.refNonFinite[levelKey (L)] = 0; }
+    auto d = derive (m, sweeptest::kLevels, -1);
+    check (! d.unlicensedSuspect && std::abs (d.defaultGain.at (levelKey (-24)) - 7.1) < 1e-6,
+           "licence A1: +7.1 dB of default gain (CLA-3A) is information, NOT a licence finding");
+    auto silent = m; for (auto& [k, v] : silent.refDb) v = -130.0;
+    check (derive (silent, sweeptest::kLevels, -1).unlicensedSuspect, "licence A2: silence at every level is flagged");
+    auto nf = m; nf.refNonFinite[levelKey (-12)] = 3;
+    check (derive (nf, sweeptest::kLevels, -1).unlicensedSuspect, "licence A3: non-finite output is flagged");
+    auto noise = m; noise.refToneFrac[levelKey (-6)] = 0.2;
+    check (derive (noise, sweeptest::kLevels, -1).unlicensedSuspect, "licence A4: output that is 20% the input's tone is flagged");
+    auto old = m; for (auto& [k, v] : old.refToneFrac) v = -1.0;
+    check (! derive (old, sweeptest::kLevels, -1).unlicensedSuspect, "licence A5: a trace without tone_frac claims nothing");
+
+    // WHICH MECHANISM LANDED EACH WRITE, recorded per position (ruled 29 Sep).
+    const auto one = parseSweep ("sweep\tproto\t1\npos\t0\tnorm\t0.0\tconfirm_ms\t612.0\tslices\t250\tinstack_match\t0\tgetValue\t0\tlanded_by\trender\trender_blocks\t9\ttext_ms\t1\treads\t2\ttext\t-20 dB\n");
+    check (one.positions.size() == 1 && one.positions[0].landedBy == "render" && one.positions[0].renderBlocks == 9,
+           "landing W1: a pos line's landed_by and render_blocks are read");
+    auto lm = sweeptest::fromGains ({ { 0.0, -1.0, -2.0 }, { 0.0, 0.0, 0.0 } });
+    lm.positions[0].landedBy = "render"; lm.positions[1].landedBy = "pump";
+    const auto ld = derive (lm, sweeptest::kLevels, -1);
+    Plan pl; pl.ok = true;
+    const auto ts = composeThresholdSweep (ld, displayCheck (ld, ""), pl, {});
+    check (ld.landedBy == std::vector<juce::String> { "render", "pump" } && (int) ts.getProperty ("writeLanding", {}).getProperty ("render", 0) == 1,
+           "landing W2: the fixture records each position's mechanism and the counts");
+}
+
+// UAD-2 JOINS THE HARDWARE CATEGORY, conditional (ruled 29 Sep).
+void testExternalHardware()
+{
+    using namespace ejmap::cert;
+    check (externalHardwareNeeded ("UAD Neve 2254 E", "aufx,SCAU,!UAD") == "UAD hardware (UAD-2)"
+             && externalHardwareNeeded ("APB C-18 Compressor", "aufx,c18c,McDP") == "McDSP APB hardware"
+             && externalHardwareNeeded ("UADx 1176 Compressor", "aufx,U176,UADx").isEmpty()
+             && externalHardwareNeeded ("bx_townhouse Buss Compressor", "aumf,bxth,Brwx").isEmpty(),
+           "hardware H1: UAD-2 (!UAD) and McDSP APB need their hardware; a UADx native build and others do not");
 }
 
 void testSweepSplitVerdict()
@@ -4115,25 +4215,26 @@ void testSweepSplitVerdict()
     m.params[9] = { "Ratio", "2:1" };
     const auto d = derive (m, kLevels, 9);
     const auto dc = displayCheck (d, "dB");
-    check (d.result == "certified" && dc.linear && *dc.linear && dc.offsetDb && std::abs (*dc.offsetDb) < 0.01,
-           "sweep V1: a peak-referenced dBFS display is LINEAR with displayOffsetDb 0");
+    check (d.result == "certified" && dc.offsetDb && std::abs (*dc.offsetDb) < 0.01 && dc.engageDriftDb && *dc.engageDriftDb < 0.01,
+           "sweep V1: a peak-referenced dBFS display: displayOffsetDb 0, engage drift 0");
     const auto noDb = displayCheck (d, "");
-    check (! noDb.linear.has_value() && ! noDb.offsetDb.has_value(),
-           "sweep V2: a threshold with no dB unit gives displayLinear and displayOffsetDb NULL, never false or 0");
+    check (! noDb.offsetDb.has_value() && noDb.engage.empty() && ! noDb.engageDriftDb.has_value(),
+           "sweep V2: a threshold with no dB unit records no display numbers, never 0");
 
     // SPREAD, NOT MAGNITUDE (ruled 29 Sep): a console-calibrated display 14 dB off, held steady, is linear and usable -
     // subtract 14. The same curve with a display that drifts 1.5 dB per position is not.
     auto shifted = m;
     for (auto& p : shifted.positions) p.text = juce::String (p.text.getDoubleValue() - 14.0, 1) + " dB";
     const auto sc = displayCheck (derive (shifted, kLevels, 9), "dB");
-    check (sc.linear && *sc.linear && sc.offsetDb && std::abs (*sc.offsetDb - 14.0) < 0.01,
-           "sweep V7: a steady +14 dB offset is LINEAR, and displayOffsetDb records 14 as a number");
+    check (sc.offsetDb && std::abs (*sc.offsetDb - 14.0) < 0.01 && sc.engageDriftDb && *sc.engageDriftDb < 0.01,
+           "sweep V7: a steady +14 dB offset records 14 as a number, with NO engage drift - magnitude is not the discriminator");
     auto drifting = m;
     for (size_t k = 0; k < drifting.positions.size(); ++k)
         drifting.positions[k].text = juce::String (drifting.positions[k].text.getDoubleValue() * 1.5, 1) + " dB";
     const auto dd = displayCheck (derive (drifting, kLevels, 9), "dB");
-    check (dd.linear && ! *dd.linear, "sweep V8: a display whose offset drifts across positions is NOT linear (IQR "
-                                          + juce::String (dd.iqrDb, 2) + " dB)");
+    check (dd.engageDriftDb && *dd.engageDriftDb > 1.0 && dd.iqrDb > 1.0,
+           "sweep V8: a display whose offset drifts records it in BOTH numbers (engage drift " + juce::String (dd.engageDriftDb.value_or (0.0), 2)
+             + ", IQR " + juce::String (dd.iqrDb, 2) + ")");
 
     // TOWNHOUSE, from its committed traces: a good map AND a display that models the console. Two verdicts.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/townhouse");
@@ -4142,9 +4243,9 @@ void testSweepSplitVerdict()
     check (loaded && pos.size() == 16, "sweep V3: the townhouse trace loads (1 reference + 16 position processes)");
     const auto td = derive (mergeProcesses (ref, pos), kLevels, 5);
     const auto tdc = displayCheck (td, "dB");
-    check (td.result == "certified" && tdc.linear && ! *tdc.linear && tdc.offsetDb && std::abs (*tdc.offsetDb + 15.0) < 0.01,
-           "sweep V4: townhouse CERTIFIES its map, displayLinear FALSE (IQR " + juce::String (tdc.iqrDb, 2)
-             + " dB: it drifts), displayOffsetDb -15 - three results, never merged");
+    check (td.result == "certified" && tdc.offsetDb && std::abs (*tdc.offsetDb + 15.0) < 0.01 && std::abs (tdc.iqrDb - 4.50) < 0.01
+             && tdc.engageDriftDb && std::abs (*tdc.engageDriftDb - 4.46) < 0.01,
+           "sweep V4: townhouse certifies its map; the display records engage drift 4.46, IQR 4.50, offset -15.00 - never merged");
 
     // THE COMMITTED FIXTURE RE-DERIVES FROM ITS TRACE (decision D2: re-compute, never re-measure).
     const auto fx = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT)
@@ -4154,7 +4255,8 @@ void testSweepSplitVerdict()
     const auto again = composeThresholdSweep (td, tdc, plan, pv);
     const auto committed = fx.getProperty ("thresholdSweep", {});
     juce::StringArray differ;
-    for (auto* k : { "reduction_db", "sense", "engage", "thresholdDbEquivalent", "result", "displayLinear", "displayOffsetDb", "displayOffsetSpread",
+    for (auto* k : { "reduction_db", "sense", "engage", "thresholdDbEquivalent", "result", "displayEngage", "displayOffsetDb", "displayOffsetSpread",
+                     "positionLandedBy", "writeLanding", "defaultGain_db",
                      "linearReference", "positionNorms", "ratioDuring", "level_convention", "tone" })
         if (juce::JSON::toString (again.getProperty (k, {}), true) != juce::JSON::toString (committed.getProperty (k, {}), true))
             differ.add (k);
@@ -4162,6 +4264,8 @@ void testSweepSplitVerdict()
            "sweep V5: the committed townhouse fixture re-derives from its committed trace (differs in: " + differ.joinIntoString (", ") + ")");
     check (plan.ok && plan.thr == 4 && plan.norms.size() == 16 && plan.ratioIndex == 5 && plan.thrUnit == "dB",
            "sweep V6: townhouse plans on [4] Thresh (dB), 16 positions, ratio [5]");
+    check (! committed.hasProperty ("displayLinear") && ! again.hasProperty ("displayLinear"),
+           "sweep V9: displayLinear is UNSET on every fixture until ~20 decide its bound");
 }
 
 void testSweepPrivacyAndPlan()
@@ -4267,12 +4371,14 @@ void testSweepRatioAndPicks()
         const auto ad = derive (mergeProcesses (r, ps), sweeptest::kLevels, 6);
         const auto ac = displayCheck (ad, "dB");
         if (juce::String (arm) == "rms-peak")
-            check (ok && ad.result == "certified" && ac.linear && *ac.linear && ac.offsetDb && std::abs (*ac.offsetDb) <= kDisplayDb,
-                   "convention C1: MCompressor at Peak - certified, linear, displayOffsetDb " + juce::String (ac.offsetDb ? *ac.offsetDb : 99.0, 2)
-                     + " within spec 7's 2 dB of 0: KEEP PEAK");
+            check (ok && ad.result == "certified" && ac.offsetDb && std::abs (*ac.offsetDb) <= kDisplayDb
+                     && ac.engageDriftDb && std::abs (*ac.engageDriftDb - 0.24) < 0.01,
+                   "convention C1: MCompressor at Peak - certified, displayOffsetDb " + juce::String (ac.offsetDb ? *ac.offsetDb : 99.0, 2)
+                     + " within spec 7's 2 dB of 0 (KEEP PEAK), engage drift 0.24");
         else
-            check (ok && ad.result == "certified" && ac.linear && *ac.linear && ac.offsetDb && std::abs (*ac.offsetDb - 0.80) < 0.01,
-                   "convention C2: MCompressor at 100 ms RMS - linear, displayOffsetDb +0.80 (not +3.01: Melda's detector, noted)");
+            check (ok && ad.result == "certified" && ac.offsetDb && std::abs (*ac.offsetDb - 0.80) < 0.01
+                     && ac.engageDriftDb && std::abs (*ac.engageDriftDb - 0.28) < 0.01,
+                   "convention C2: MCompressor at 100 ms RMS - displayOffsetDb +0.80 (not +3.01: Melda's detector, noted), engage drift 0.28");
     }
 }
 
@@ -4349,6 +4455,9 @@ int main (int, char**)
     testSweepPrivacyAndPlan();
     testMeasurableRule();
     testSweepRatioAndPicks();
+    testSweepQuietReference();
+    testLicenceFromAudio();
+    testExternalHardware();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

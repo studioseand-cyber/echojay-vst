@@ -517,17 +517,17 @@ server-side obligations the Mac-side work has created so far:
   are OBJECTS (items 8 and 11; the spec is amended, not the fixtures); roles are absent on
   every control (item 9, a prerequisite for the sweep); identity keyed on the XOR uid is its
   own migration task (item 10).
-- **`thresholdSweep` carries THREE results; read them separately** (section 10). `result`
-  says whether the dB-equivalent map is good. `displayLinear` says whether the dB display
-  holds a steady offset from dBFS (true / false / null when it prints no dB). `displayOffsetDb`
-  is that offset, a number. A certified map with `displayLinear: false` is the normal case
-  this feature exists for, not a failure: dial by `thresholdDbEquivalent`. A linear display
-  with any offset (a console-calibrated +14, an RMS-referenced +3) is usable by subtracting
-  `displayOffsetDb`.
+- **Read `thresholdSweep`'s map and display separately** (section 10). `result` says whether
+  the dB-equivalent map is good; dial by `thresholdDbEquivalent`. The display is recorded as
+  numbers only (`displayEngage.drift_db`, `displayOffsetSpread.iqr_db`, `displayOffsetDb`).
+  Whether it is linear in dBFS is NOT decided yet; do not infer it from any one number.
 - **Fields beyond spec 4.5**, added 29 Sep and flagged: `level_convention`, `procedure`,
-  `bridged`, `positionNorms`, `linearReference`, `displayLinear`, `displayOffsetDb`,
-  `displayOffsetSpread`, and when they occur `holdDoubled`, `stillMovingAfterDoubling`,
-  `skipped`, `diagnosticArm`, `thresholdPick`, and `ratioDuring.raisedFrom` / `readBack`. A fixture with
+  `bridged`, `positionNorms`, `linearReference` (with `spread_db` or the per-position
+  `check_db`), `displayEngage`, `displayOffsetDb`, `displayOffsetSpread`, `defaultGain_db`
+  (information only), `positionLandedBy` and `writeLanding`. When they occur:
+  `holdDoubled`, `stillMovingAfterDoubling`, `skipped`, `diagnosticArm`, `thresholdPick`,
+  and `ratioDuring.raisedFrom` / `readBack`. There is NO `displayLinear` yet: its bound comes
+  from the population. A fixture with
   `diagnosticArm` is a measurement with a non-swept control moved on purpose: never fold it
   into a product's certification.
 - **Pin the server's matcher to `tools/ejmap/tests/fixtures/name-token-vectors.json`**
@@ -663,29 +663,77 @@ Townhouse's default (0.0 dB) takes 3.07 dB at −6, while its soft end is linear
 
 The arm A trace is committed, and it must not certify (RoundTripTest D9).
 
-**Three results, never merged** (ruled 29 Sep; the same rule as reproduction score vs schema
-emission, applied a third time). Offsets are derived T minus the displayed threshold, per
-position, in the peak convention.
+**The display is recorded as NUMBERS; `displayLinear` is left unset** (ruled 29 Sep, a
+second time). These are never merged with the map's `result`, the same rule as reproduction
+score vs schema emission.
 1. `result`: the dB-equivalent map (certified, flat, nonmonotonic or unreadable).
-2. `displayLinear`: whether the offsets hold steady, so that subtracting one constant gives
-   dBFS. The discriminator is **spread, not magnitude**: the offsets' interquartile range
-   must be within 3.5 dB. The bound comes from the two subjects measured so far. Townhouse's
-   IQR is 4.50 and it must fail; MCompressor's is 2.53 (Peak) and 2.75 (RMS), and it must
-   pass. The margin is under 1 dB on the passing side. Max−min would not do: it separates
-   the two by only 1.5 dB (5.66 against 7.5). MCompressor's offsets are NOT flat either; they
-   tilt −4.2 → +1.5, because deep positions depart from the textbook R/(R−1) curve.
-3. `displayOffsetDb`: the offsets' median, recorded as a number whatever its value. Spec 7's
-   2 dB bar is a test on this number, not the definition of (2).
+2. `displayEngage` (**primary**): at each level, the display where reduction crosses 0.5 dB,
+   less the level for lower_is_harder or plus it for higher_is_harder. Its `drift_db` is the
+   spread across the three levels. It never touches the ratio.
+   - The crossing is extrapolated along the line through the first TWO ENGAGED positions.
+   - Interpolating across the knee (last unengaged position → first engaged) treats the zero
+     region as linear and invents drift: 1.33 dB on a perfectly dB-linear input at 4 dB
+     spacing (pin Q6).
+   - With the knee artefact removed: townhouse 4.46, MCompressor Peak 0.24 (it was 2.02 under
+     bracket interpolation), MCompressor 100 ms RMS 0.28.
+3. `displayOffsetSpread.iqr_db` (secondary): the IQR of (derived T − display). It inherits
+   R's error at depth. Townhouse 4.50, MCompressor 2.53 / 2.75.
+4. `displayOffsetDb`: the median of (derived T − display), recorded as a number whatever its
+   value. Spec 7's 2 dB bar is a test on it.
 
-**A ratio-independent cross-check** (not built, noted): the display at which reduction crosses
-0.5 dB, minus the test level, at each level. A display linear in dBFS gives the same number at
-all three, whatever the ratio or knee.
-- Townhouse: +15.1 / +12.0 / +10.6, a spread of 4.47 dB. It drifts.
-- MCompressor Peak: −0.5 / −2.1 / −2.5, a spread of 2.0 dB.
-- MCompressor RMS: −3.67 / −3.82 / −3.77, a spread of 0.15 dB.
+No bound is set: n = 2 is no population. The population decides at about 20 fixtures, the way
+the acceptance test settled peak vs RMS. The first two subjects' premise ("MCompressor's cells
+are consistent") was wrong, and measuring it is what moved the engage check to primary.
 
-It agrees with (2) on every subject, and it is the candidate rule if the IQR bound proves
-fragile.
+**Input-as-threshold: each position carries its own quiet reference** (ruled 29 Sep). An
+input control changes gain as well as compression, so no end of its travel is a linear
+reference (MC 77's soft end is −inf). Each position's process renders −54 and −48 first,
+quiet to loud.
+- The two quiet readings must differ by 6 dB within 0.1 dB. If they don't, the quiet tone is
+  compressed or on a noise floor, and that position is refused rather than calibrated off it.
+- Reduction is the position's own −48 gain minus its gain at the level.
+- The per-position check is recorded (`linearReference.check_db`).
+- The first batch's traces carry no quiet levels, so their input-as-threshold products
+  re-derive as unreadable, as they should.
+
+**Not licensed is not inferable from audio** (ruled 29 Sep, the second misfiring proxy after
+the PACE bundle markers). At the default settings a product is flagged only for:
+- silence at every level
+- non-finite output
+- output that is not the input's tone (`tone_frac` < 0.5, the Goertzel share of output power
+  at 997 Hz)
+
+The window watch is the other signal. Default gain is recorded (`defaultGain_db`) as
+information and never judged. Spec 4.7's "more than 3 dB from the input" withheld six working
+Waves plugins on 29 Sep; CLA-2A's default gain is +8.5 dB.
+
+**Pass-through has its own reason:** `flat` with reason "passthrough: output equals input
+within 0.01 dB at every reading". C1 comp and RCompressor at 12.0.0 read that way. Their
+defaults hold no bypass or on/off control at an off default, only modes (Low/Peak Ref,
+ARC/Manual, Warm/Smooth, Electro/Opto), so they go to review with the cause unmeasured.
+
+**The soft end's disagreement is a number on every fixture** (`linearReference.spread_db`).
+Only beyond 2 dB is the data unusable and the sweep refused. Useful reductions are 3 to 20 dB,
+so 0.63 is noise and 4.91 is the size of the signal. The first ruling's 0.5 dB had nothing
+behind it.
+
+**Writes escalate, and each records its mechanism** (ruled 29 Sep). The probe pumps first for
+500 ms; on timeout it confirms while rendering silence for up to 500 ms. Silence builds no
+compression history, and the post-render re-read still guards. Each write prints `landed_by`
+(instack, pump, render or unlanded). Fixtures carry `positionLandedBy` and `writeLanding`
+counts, so the 2 Aug / 10 Aug disagreement is settled write by write. Traces from before the
+field existed are read by the same rule: `instack_match` means instack, otherwise pump, since
+pumping was then the only mechanism. Solid Bus Comp is the case in point: its writes land only
+while rendering.
+
+**UAD-2 is conditional hardware** (ruled 29 Sep), in the same category as the McDSP APBs:
+"needs UAD hardware present", one re-run once attached.
+- On this Mac, which has no UAD hardware, all 19 opened their own dialog at the first render.
+  Defaults sampling, which never renders, was clean.
+- That is consistent with needing the hardware, not proven: the watch cannot read titles.
+- All 215 installed UAD components are `com.uaudio.effects` with manufacturer `!UAD`. None is
+  a UADx (native) build, so attaching the hardware should recover all 19.
+- The census names the hardware, and the batch skips them without launching anything.
 
 **The first real fixture, townhouse:** map certified, `displayLinear` false,
 `displayOffsetDb` −15.00. The file is
