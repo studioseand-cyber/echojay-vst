@@ -427,6 +427,49 @@ void guardMain()
                l.levelHoldClamped ? "CLAMPED" : "not clamped");
     }
 
+    // ---- (4c) A WAIT THAT RAN OUT IS A REFUSAL (21t-m item 4, 29 Sep 2026 ruling) -----------------------
+    {
+        std::printf ("\n-- (4c) the slot never lands: nothing starts, and it says so --\n");
+        // TWO CASES FROM SEAN'S LOG, both of them mine:
+        //   22:00:26.908  "block not usable - wire slot 2 ... rack has 0 slot(s); nothing started" on
+        //                 loadChainFromJson - item 1 wired the edit paths and the leased build to whenSlotReady
+        //                 and left the LOCAL build reading an empty rack.
+        //   21:35:08.617  "leased build settled (dial bound expired, slot NOT landed) -> 1 loop(s) started" - my
+        //                 own fire lambda started the loop whatever `ready` said. A wait whose answer is ignored
+        //                 is not a wait.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        auto& h = r.h;
+        while (h.getNumSlots() > 0) h.removeSlot (0);
+        pumpMs (100);
+        check (h.getNumSlots() == 0, "(4c) fixture: an empty rack, as it is while a build's adds are in flight");
+
+        // the wait must REFUSE on a rack where the slot never appears, however long it is given
+        bool fired = false, readyWas = true;
+        h.whenSlotReady (1, 300, [&fired, &readyWas] (bool ready) { fired = true; readyWas = ready; });
+        for (int i = 0; i < 40 && ! fired; ++i) pumpMs (50);
+        check (fired, "(4c) the wait does come back rather than hanging for ever");
+        check (! readyWas,
+               "(4c) ...and it comes back NOT READY, because slot 2 never landed  (RED as it stood: the caller "
+               "started a loop anyway and logged \"slot NOT landed -> 1 loop(s) started\")",
+               readyWas ? "ready (wrong)" : "not ready");
+
+        // ...and the moment the slot lands, the same wait says ready - so this is not a wait that always refuses
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (gn != nullptr)
+        {
+            EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
+            EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*gn));
+        }
+        pumpMs (250);
+        bool fired2 = false, ready2 = false;
+        h.whenSlotReady (1, 600, [&fired2, &ready2] (bool rr2) { fired2 = true; ready2 = rr2; });
+        for (int i = 0; i < 40 && ! fired2; ++i) pumpMs (50);
+        check (fired2 && ready2,
+               "(4c) ...while with slot 2 in the rack it comes back READY, so the refusal is the empty rack and "
+               "not a wait that never says yes",
+               juce::String (h.getNumSlots()) + " slot(s), ready " + (ready2 ? "yes" : "no"));
+    }
+
     // ---- (2e) A BUILD HAS NO LOOP; AN ASK MOVES ONE RUNG (21t-m item 2, 29 Sep 2026 ruling) -------------
     {
         std::printf ("\n-- (2e) a build holds once and closes; an ask moves one rung and reports --\n");

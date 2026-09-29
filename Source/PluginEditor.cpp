@@ -2577,7 +2577,37 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (uid.isEmpty())
             {
                 loadChainFromJson(chainBuildJsons[(size_t)i]);
-                startCalibrationFromChain({}, juce::JSON::parse(chainBuildJsons[(size_t)i]), echojay::CalibLoop::Purpose::buildHold);   // 21t-m item 2: a build holds once
+                // 21t-m item 4 (29 Sep 2026): THE LOCAL BUILD WAITS FOR ITS SLOT TOO. Sean's 22:00:26.908 on
+                // loadChainFromJson: "block not usable - wire slot 2 (1-based, so slot index 1), rack has 0
+                // slot(s); nothing started", then "loops started 0 of 1 dynamics slots". Item 1 wired the edit
+                // paths and the leased build onto whenSlotReady and left this one reading an empty rack.
+                {
+                    const auto chainVar = juce::JSON::parse (chainBuildJsons[(size_t)i]);
+                    const juce::String chainJson = chainBuildJsons[(size_t)i];
+                    const int calSlot = calibrationSlotIndexOf (chainVar);
+                    auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+                    auto after = [safeThis, chainJson] (bool ready)
+                    {
+                        if (safeThis == nullptr) return;
+                        if (! ready)
+                        {
+                            EchoJay_NSLog ("EJThreshold: NOT STARTED - the slot never landed on the local rack");
+                            safeThis->processorRef.getChainHost().setLoopsStarted (0);
+                            safeThis->sayCalibrationCouldNotStart ({}, chainJson);
+                            return;
+                        }
+                        const int n = safeThis->startCalibrationFromChain ({}, juce::JSON::parse (chainJson),
+                                                                          echojay::CalibLoop::Purpose::buildHold);
+                        safeThis->processorRef.getChainHost().setLoopsStarted (n);
+                        EchoJay_NSLog (("EJThreshold: local build settled (slot landed) -> " + juce::String (n)
+                                        + " hold(s) started").toRawUTF8());
+                        if (n == 0) safeThis->sayCalibrationCouldNotStart ({}, chainJson);
+                    };
+                    if (calSlot >= 0)
+                        processorRef.getChainHost().whenSlotReady (calSlot, ChainHost::kMapFetchBoundMs, after);
+                    else
+                        after (true);
+                }
                 return;
             }
             if (!linkUidLive(uid))
@@ -31433,6 +31463,19 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                 auto fire = [safeThis, linkUid, chainJsonForBubble, settled] (bool ready)
                 {
                     if (safeThis == nullptr) return;
+                    // 21t-m item 4 (29 Sep 2026): A WAIT THAT RAN OUT IS A REFUSAL, NOT A GO-AHEAD. My own item-1
+                    // code started the loop whatever `ready` said, so Sean's 21:35:08 and 21:36:26 logged
+                    // "leased build settled (dial bound expired, slot NOT landed) -> 1 loop(s) started" - a loop
+                    // pointed at a slot that was not there. It now says so and starts nothing.
+                    if (! ready)
+                    {
+                        EchoJay_NSLog (("EJThreshold: NOT STARTED - the slot never landed within "
+                                        + juce::String (ChainHost::kMapFetchBoundMs) + " ms (dial "
+                                        + juce::String (settled ? "settled" : "bound expired") + ")").toRawUTF8());
+                        if (auto* h = safeThis->processorRef.borrowHostIfActiveFor (linkUid)) h->setLoopsStarted (0);
+                        safeThis->sayCalibrationCouldNotStart (linkUid, chainJsonForBubble);
+                        return;
+                    }
                     const int started = safeThis->startCalibrationFromChain (linkUid, juce::JSON::parse (chainJsonForBubble), echojay::CalibLoop::Purpose::buildHold);
                     if (auto* h = safeThis->processorRef.borrowHostIfActiveFor (linkUid)) h->setLoopsStarted (started);
                     EchoJay_NSLog (("EJThreshold: leased build settled (dial "
