@@ -59,6 +59,7 @@
 #include "EjmapFixtureUnit.h"
 #include "EjmapFixtureRange.h"
 #include "EjmapFixtureReadout.h"
+#include "EjmapCertOutcome.h"
 
 namespace
 {
@@ -3798,6 +3799,26 @@ void testFixtureReadoutEmission()
            "readout P10: keeping the first sample instead of null reddens exactly one check (C3)");
 }
 
+//==============================================================================
+/** WHICH FAILURES ARE LICENSING FACTS (EjmapCertOutcome.h). K1 is the 29 Sep kHs
+    Compressor case: PACE's UI appeared although the bundle scan found no PACE, and
+    behavioural evidence outranks the scan. Dropping the behavioural clause reddens K1
+    alone.
+*/
+void testLicenceOutcome()
+{
+    using namespace ejmap::certoutcome;
+    check (classifyFailure (false, { "PACEEdenExperience [pid 49265]" }) == Failure::unlicensedOnHost,
+           "licence K1: PACE's UI in the probe's tree makes it unlicensed_on_host even when the bundle scan "
+           "found no PACE (kHs Compressor, 29 Sep)");
+    check (classifyFailure (true, {}) == Failure::unlicensedOnHost,
+           "licence K2: a bundle-marked PACE product that refuses or hangs is unlicensed_on_host");
+    check (classifyFailure (false, {}) == Failure::notReproduced,
+           "licence K3: an unmarked product that hangs with no window is NOT called a licence fact");
+    check (classifyFailure (false, { "SomeHelper [pid 1]" }) == Failure::notReproduced,
+           "licence K4: a window from something other than PACE is recorded, not called a licence fact");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -3842,6 +3863,7 @@ int main (int, char**)
     testFixtureUnitRule();
     testFixtureRangeRule();
     testFixtureReadoutEmission();
+    testLicenceOutcome();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

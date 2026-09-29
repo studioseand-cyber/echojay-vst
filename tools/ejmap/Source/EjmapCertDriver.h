@@ -44,6 +44,7 @@
 #include "EjmapFixtureUnit.h"
 #include "EjmapFixtureRange.h"
 #include "EjmapFixtureReadout.h"
+#include "EjmapCertOutcome.h"
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <libproc.h>
@@ -727,11 +728,18 @@ inline int runCertDefaults (const Options& opt)
         // UNLICENSED IS NOT BROKEN (doc section 3, spec section 6). A licence-bound product
         // that refuses, hangs or shows a window is recorded as unlicensed_on_host, with the
         // shape it failed in. It is not a pass and not a defect, and it is counted apart.
-        auto failedWith = [&] (const juce::String& f) {
-            row.unlicensed = s.licenceBound;
-            return s.licenceBound ? "UNLICENSED ON HOST (licence-bound; " + f + ")" : "NOT REPRODUCED: " + f; };
-        if (! lp.cleanExit()) row.outcome = failedWith ("--list-params " + lp.describe());
-        else if (! ta.cleanExit()) row.outcome = failedWith ("--text-at all " + ta.describe());
+        // Licence-bound by BUNDLE, or by BEHAVIOUR: PACE's UI appearing in the probe's
+        // tree outranks a bundle scan that found nothing (kHs Compressor, 29 Sep).
+        auto failedWith = [&] (const juce::String& f, const ChildResult& r) {
+            const bool byBehaviour = ! s.licenceBound && certoutcome::isPaceUi (r.windowsInTree);
+            row.unlicensed = certoutcome::classifyFailure (s.licenceBound, r.windowsInTree)
+                               == certoutcome::Failure::unlicensedOnHost;
+            if (! row.unlicensed) return "NOT REPRODUCED: " + f;
+            return juce::String (byBehaviour ? "UNLICENSED ON HOST (licence-bound BY BEHAVIOUR: PACE UI appeared, "
+                                                 "though its bundle carries no PACE markers; "
+                                             : "UNLICENSED ON HOST (licence-bound; ") + f + ")"; };
+        if (! lp.cleanExit()) row.outcome = failedWith ("--list-params " + lp.describe(), lp);
+        else if (! ta.cleanExit()) row.outcome = failedWith ("--text-at all " + ta.describe(), ta);
         else
         {
             const auto list = parseListParams (lp.out);

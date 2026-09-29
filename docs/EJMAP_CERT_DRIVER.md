@@ -282,6 +282,23 @@ On the dev Mac, with the dongle in, 29 Sep, through the same signed probe binary
 Neither showed a window. These are recorded, not diagnosed. McDSP is out of the step-2
 subject pool.
 
+**LICENCE-BOUND BY BEHAVIOUR (29 Sep): PACE's UI outranks the bundle scan.** kHs Compressor
+brought up `PACEEdenExperience` in the probe's tree, although its bundle carries no PACE
+markers. A product that shows PACE's activation window IS licence-bound, whatever its bundle
+says. The driver now records such a failure as `unlicensed_on_host` ("licence-bound BY
+BEHAVIOUR"), not as a defect (`EjmapCertOutcome.h`; pins K1-K4). A window from something
+other than PACE is still recorded as a window, but is not called a licensing fact. A hang
+with no window stays "not reproduced". Dropping the behavioural clause reddens exactly one
+pin (K1).
+
+**THE 2 SEP VENDOR-GAP TABLE IS SUSPECT (29 Sep).** The 2 Sep table of dongle-bound vendors
+that did not load (SSL 28, Softube 4, Harrison 4, oeksound, Audified, Eventide: about 40
+products) was measured WITHOUT the dongle. With the dongle in, every PACE-wrapped product
+from those vendors that is in the fixture set answered and reproduced its fixture exactly:
+7 of 7 (Softube 3, SSL 3, Audified 1; the eighth PACE success that day, Antares, is not a 2
+Sep vendor). That table needs RE-DERIVING with the dongle in before anyone plans work from
+it. The ~33 of its products outside the fixture set have not been run at all.
+
 **Dongle-bound subjects on the dev Mac** (per Sean, 28 Sep; not measured here).
 A full certification run on this Mac will SILENTLY UNDER-COVER these, and the run
 report must say so: SSL (28 products), Softube (4), Harrison (4), oeksound,
