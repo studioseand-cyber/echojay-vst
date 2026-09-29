@@ -315,6 +315,64 @@ int main()
                        "keeping a name on a value that source never chose", after2.substring (0, 160));
             }
         }
+        // ---- 21t-l item 4 (29 Sep 2026 ruling): correction_mode NEVER READS "custom" AFTER A SERVER BUILD --
+        // Sean's 10:48:08 readback, verbatim:
+        //   correction_mode custom, retune 78.6, flex 55, humanize 60, key A, scale minor, ref 438.2 Hz
+        // 78.6 IS natural's own dial, with natural's own flex (55) and humanize (60) beside it - nothing was
+        // wrong but the label. Reproduced here with the exact param set the DialSummary listed.
+        {
+            std::printf ("\n== 21t-l item 4: correction_mode after a server build ==\n");
+            auto* pp = new juce::DynamicObject();
+            pp->setProperty ("correction_mode", "natural");
+            pp->setProperty ("correct", 100.0);
+            pp->setProperty ("key_root", 9);
+            pp->setProperty ("scale", "minor");
+            pp->setProperty ("key_source", "manual");
+            pp->setProperty ("reference_source", "manual");
+            pp->setProperty ("reference_hz", 438.2);
+            pp->setProperty ("voice_type", "alto");
+            pp->setProperty ("tracking", "normal");
+            pp->setProperty ("formant_mode", "preserve");
+            pp->setProperty ("targeting_ignores_vibrato", true);
+            pp->setProperty ("low_latency", false);
+            pp->setProperty ("retune", 78.6);                 // the 13th: the dial the build also sent
+            auto* outerP = new juce::DynamicObject(); outerP->setProperty ("params", juce::var (pp));
+            host.setSlotStructuredSettings (1, juce::var (outerP));
+            pump (400);
+            const auto b4 = EchoJayAPI::buildCurrentChainInjection (host);
+            juce::String line4;
+            { const auto ls = juce::StringArray::fromLines (b4);
+              for (int i = 0; i < ls.size(); ++i)
+                  if (ls[i].contains ("EchoJay Pitch") && i + 1 < ls.size()) { line4 = ls[i + 1]; break; } }
+            std::printf ("    %s\n", line4.toRawUTF8());
+            check (! line4.contains ("correction_mode custom"),
+                   "21t-l 4. a server build carrying the mode AND its own numbers does not read \"custom\"  "
+                   "(RED as it stood: correction_mode custom, retune 78.6, flex 55, humanize 60)",
+                   line4.substring (0, 110));
+            check (line4.contains ("correction_mode natural"),
+                   "21t-l 4. ...it reads the rung those values ARE", line4.substring (0, 110));
+            check (line4.contains ("flex 55") && line4.contains ("humanize 60"),
+                   "21t-l 4. ...with the rung's own numbers under it", line4.substring (0, 110));
+            // ...and the ONE param of the thirteen that was refused, named with what would have worked. Sean's
+            // DialSummary read requested=13 applied=12; the twelfth is voice_type "alto", against a list that
+            // spells it "alto_tenor".
+            {
+                EedPitchProcessor probe; probe.prepareToPlay (48000.0, 512);
+                auto* vp = new juce::DynamicObject(); vp->setProperty ("voice_type", "alto");
+                auto* vo = new juce::DynamicObject(); vo->setProperty ("params", juce::var (vp));
+                int ap = 0, sk = 0;
+                const auto note = probe.applyStructured (juce::var (vo),
+                                                         EedDeviceProcessor::ParamSource::Assistant, &ap, &sk);
+                std::printf ("    refusal: %s\n", note.toRawUTF8());
+                check (sk == 1 && ap == 0,
+                       "21t-l 4. voice_type \"alto\" is the one of the thirteen that was refused",
+                       juce::String (ap) + " applied, " + juce::String (sk) + " skipped");
+                check (note.contains ("is not one of:") && note.contains ("alto_tenor"),
+                       "21t-l 4. ...and the refusal NAMES the choices, so the spelling is in the same line  (RED "
+                       "as it stood: \"voice_type (not a number)\", which is true of the var and useless)", note);
+            }
+        }
+
         check (block.contains ("[CURRENT CHAIN"), "the block marker is \"[CURRENT CHAIN\"",
                block.substring (0, 40));
         check (block.contains ("EchoJay Pitch"), "the tuner slot is named in it");

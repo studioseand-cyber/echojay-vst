@@ -529,6 +529,39 @@ bool EedPitchProcessor::wireModeIsSnap (const juce::String& label)
     return key == "snap";
 }
 
+// 21t-l item 4: THE RUNG THE VALUES ARE. Compared against the same table applyMode writes from - the retune
+// DIAL (what the readback prints and what a mode stores), flex, humanize, natural vibrato and the vibrato
+// targeting flag. kCustom is only what is left when no rung matches.
+int EedPitchProcessor::modeFromValues() const noexcept
+{
+    struct Rung { float retuneDial, flex, humanize, natVib; bool ignoreVib; };
+    // The dial each mode lands on, derived from the same retune-ms table rather than copied beside it.
+    auto dialFor = [] (float ms) { return echojay::RetuneMap::dialForRetuneMs (ms); };
+    const Rung rungs[kNumModes] = {
+        { dialFor (120.0f), 55.0f, 60.0f, 100.0f, true },   // natural
+        { dialFor ( 40.0f), 25.0f, 30.0f, 100.0f, true },   // balanced
+        { dialFor (  8.0f),  0.0f,  0.0f,  40.0f, true },   // tuned
+        { dialFor (  0.0f),  0.0f,  0.0f,  40.0f, true },   // hard
+        { 0.0f, 0.0f, 0.0f, 0.0f, true },                   // custom (never matched: skipped below)
+        { dialFor (  0.0f),  0.0f,  0.0f,   0.0f, true },   // snap
+    };
+    const float d  = retuneDial_.load();
+    const float fl = correct_.getFlex();
+    const float hu = correct_.getHumanize();
+    const float nv = correct_.getNaturalVibrato();
+    const bool  iv = correct_.getIgnoreVibrato();
+    auto same = [] (float a, float b) { return std::abs (a - b) < 0.05f; };
+    for (int i = 0; i < (int) kNumModes; ++i)
+    {
+        if (i == kCustom) continue;
+        const auto& r = rungs[i];
+        if (same (d, r.retuneDial) && same (fl, r.flex) && same (hu, r.humanize)
+            && same (nv, r.natVib) && iv == r.ignoreVib)
+            return i;
+    }
+    return kCustom;
+}
+
 juce::String EedPitchProcessor::readbackSummary() const
 {
     const auto* mspec = schema().find (kMode);

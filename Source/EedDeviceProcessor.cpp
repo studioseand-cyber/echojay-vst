@@ -121,19 +121,26 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
     juce::StringArray unknown;    // ids this device does not publish
     int applied = 0, skipped = 0;
 
-    // 21t-j: THE MODE FIRST. Two passes over the same object: the key the device names as its mode (if the payload
-    // carries it), then everything else. One ordering, so a mode and the flats it writes cannot race by JSON order.
+    // THE MODE IS APPLIED LAST when the payload carries both the mode and the numbers (21t-l item 4, 29 Sep
+    // 2026 ruling, superseding 21t-j's "the mode first"). Either order stops the two racing by JSON order; what
+    // decides between them is which one WINS when a build sends both, and the ruling is the mode. With the mode
+    // first, every numeric write that followed knocked the display to custom - Sean's 10:48 readback said
+    // "correction_mode custom" over natural's own numbers. (The display no longer depends on the order either:
+    // a device that names a mode key derives it from the live values. Both halves of the ruling, together.)
     juce::Array<juce::Identifier> order;
     {
         const auto modeId = juce::String (paramSchema().find (modeKeyId().toStdString()) != nullptr
                                               ? modeKeyId() : juce::String());
-        if (modeId.isNotEmpty())
-            for (const auto& prop : obj->getProperties())
-                if (echojay::ParamSchema::normalizeId (prop.name.toString().toStdString())
-                    == echojay::ParamSchema::normalizeId (modeId.toStdString()))
-                    order.add (prop.name);
+        juce::Array<juce::Identifier> modeLast;
         for (const auto& prop : obj->getProperties())
-            if (! order.contains (prop.name)) order.add (prop.name);
+        {
+            const bool isMode = modeId.isNotEmpty()
+                             && echojay::ParamSchema::normalizeId (prop.name.toString().toStdString())
+                                    == echojay::ParamSchema::normalizeId (modeId.toStdString());
+            if (isMode) modeLast.add (prop.name);
+            else        order.add (prop.name);
+        }
+        for (const auto& m : modeLast) order.add (m);
     }
     for (const auto& propName : order)
     {
@@ -188,7 +195,19 @@ juce::String EedDeviceProcessor::applyParams (const juce::var& paramsObject,
         if (! have && ! numberFromVar (prop.value, raw))
         {
             ++skipped;
-            unknown.add (id + " (not a number)");
+            // 21t-l item 4 (29 Sep 2026): SAY WHY, AND WHAT WOULD HAVE WORKED. A CHOICE param whose string is not
+            // one of its choices used to be reported as "(not a number)", which is true of the var and useless
+            // to the reader: Sean's 10:48 build sent voice_type "alto" against a list that spells it
+            // "alto_tenor", and the summary said the value was not a number. The refusal now names the choices,
+            // so the sender can see the spelling in the same line.
+            if (! spec->choices.empty())
+            {
+                juce::StringArray legal;
+                for (const auto& c : spec->choices) legal.add (juce::String (c));
+                unknown.add (id + " \"" + prop.value.toString() + "\" is not one of: " + legal.joinIntoString (", "));
+            }
+            else
+                unknown.add (id + " (not a number)");
             continue;
         }
 

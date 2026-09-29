@@ -358,8 +358,16 @@ private:
     // defaults touches retune/flex/humanize/ignore_vibrato in turn, and each
     // would otherwise knock the display to custom - leaving correction_mode
     // contradicting its own advertised default of natural.
+    // 21t-l item 4 (29 Sep 2026 ruling): VALUES THAT EQUAL A RUNG'S EXACTLY READ AS THAT RUNG, and "custom" is
+    // only for values that match none. This used to store kCustom on every hand write, so a SERVER BUILD that
+    // sent correction_mode AND the very numbers that mode writes came back reading "custom": Sean's 10:48
+    // readback was `correction_mode custom, retune 78.6, flex 55, humanize 60`, and 78.6 is natural's own dial
+    // with natural's own flex and humanize beside it. Nothing was wrong but the label.
     void toCustomMode()
-    { if (! applyingMode_ && ! writingDefaults_) modeIndex_.store (kCustom); }
+    { if (! applyingMode_ && ! writingDefaults_) modeIndex_.store (modeFromValues()); }
+    /** The rung the LIVE values are, or kCustom when they are no rung's. Public so the readback and the guard
+        read the same answer. */
+    int modeFromValues() const noexcept;
 
     // applyMode/applyScale run inside setParamValue, whose caller builds its
     // own summary from id/value pairs and would report "correction_mode hard"
