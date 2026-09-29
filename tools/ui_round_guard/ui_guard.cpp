@@ -127,6 +127,10 @@ struct EchoJayTabStripTestAccess
     static void picker (EchoJayEditor& e) { e.showChainPluginPicker(); }     // 22 Sep 2026 (item 7)
     static bool forcedVerb (EchoJayEditor& e, const juce::String& t) { return e.handleLoudnessVerb (t, true); }   // 22 Sep 2026 (item 2 client half): the server's loop_verb
     static std::vector<juce::String> rosterRows (EchoJayEditor& e) { return e.rosterAddresses(); }   // 21t-k item 5
+    // 21t-l: the header undo pair - the path that cannot be swallowed by a host.
+    static juce::String undoTip (EchoJayEditor& e) { return e.undoHdrBtn.getTooltip(); }
+    static bool undoEnabled (EchoJayEditor& e) { return e.undoHdrBtn.isEnabled(); }
+    static void refreshUndo (EchoJayEditor& e) { e.refreshUndoButtons(); }
     static void send (EchoJayEditor& e, const juce::String& t) { e.sendChatMessage (t); }
     static void refreshPanel (EchoJayEditor& e) { e.refreshChainPanelForView (true); }   // 21m ruling 3 (keep-level grey-out)
     // ---- 21o (23 Sep 2026) ----
@@ -462,6 +466,26 @@ int main()
             }
             ed->clearRosterSelection();
         }
+        // ---- 21t-l (29 Sep 2026 ruling): THE HEADER UNDO BUTTON IS THE PATH -------------------------------
+        // Cmd-Z reaches rackUndoRedo from keyPressed, but only for key events the HOST forwards; Pro Tools binds
+        // Cmd-Z to its own session undo and whether it passes it on is the host's decision, not determinable
+        // from here. So the button is the promise and the tooltip says exactly that.
+        {
+            std::printf ("== 21t-l: the header undo button is the path ==\n");
+            proc.recordLinkGainUndo ("lnk_01", 0.0f, -3.0f);
+            A::refreshUndo (*ed);
+            const auto tip = A::undoTip (*ed);
+            std::printf ("    tooltip: %s\n", tip.toRawUTF8());
+            check (A::undoEnabled (*ed), "21t-l. an undoable move enables the header undo button");
+            check (tip.contains ("this button always works"),
+                   "21t-l. ...and its tooltip promises the BUTTON, not a shortcut the host may keep", tip);
+            check (tip.contains ("Cmd-Z does when the host passes it through"),
+                   "21t-l. ...naming the shortcut as conditional rather than as a fact  (RED as it stood: it read "
+                   "\"(Cmd-Z)\" flat, which is a promise this product cannot keep in Pro Tools)", tip);
+            check (tip.contains ("Link trim"),
+                   "21t-l. ...and saying what it will undo", tip);
+        }
+
         // ---- 21t-k item 7 (28/29 Sep 2026 ruling): STRIP LABELS - one line, ellipsis, or the index ---------
         {
             std::printf ("== 21t-k item 7: strip labels never overflow ==\n");

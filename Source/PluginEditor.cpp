@@ -8936,8 +8936,17 @@ void EchoJayEditor::refreshUndoButtons()
 {
     auto& h = processorRef.undoHistory();
     undoHdrBtn.setEnabled(h.canUndo()); redoHdrBtn.setEnabled(h.canRedo());
-    undoHdrBtn.setTooltip(h.canUndo() ? "Undo " + h.undoLabel() + " (Cmd-Z)" : juce::String("Nothing to undo"));
-    redoHdrBtn.setTooltip(h.canRedo() ? "Redo " + h.redoLabel() + " (Shift-Cmd-Z)" : juce::String("Nothing to redo"));
+    // 21t-l (29 Sep 2026 ruling): THE BUTTON IS THE PATH, and the tooltip no longer promises a shortcut the host
+    // may keep for itself. EchoJayEditor::keyPressed routes any Cmd-Z outside a text field to rackUndoRedo, but
+    // that only ever fires for key events the HOST forwards to the plugin window, and Pro Tools binds Cmd-Z to
+    // its own session undo. Which way it goes there is the host's to decide and cannot be determined from here,
+    // so the tooltip states what is certainly true and mentions the shortcut as conditional.
+    undoHdrBtn.setTooltip(h.canUndo() ? "Undo " + h.undoLabel() + " - this button always works; Cmd-Z does when "
+                                        "the host passes it through"
+                                      : juce::String("Nothing to undo"));
+    redoHdrBtn.setTooltip(h.canRedo() ? "Redo " + h.redoLabel() + " - this button always works; Shift-Cmd-Z does "
+                                        "when the host passes it through"
+                                      : juce::String("Nothing to redo"));
 }
 
 void EchoJayEditor::sendRackUndo(const juce::String& uid, bool redo)

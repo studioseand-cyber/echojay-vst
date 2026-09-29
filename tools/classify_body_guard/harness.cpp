@@ -160,10 +160,38 @@ int main()
                "the dev-mode body dump lands inside the isolated root  (RED as it stood: it went to the live "
                "~/Documents/EchoJay and its history evicted real sessions)",
                isolated.getFullPathName());
-        check (live.getLastModificationTime() == liveStampBefore
-               && live.getParentDirectory().getNumberOfChildFiles (juce::File::findFiles, "chat-body-2*.json") == liveHistBefore,
-               "...and the live ~/Documents/EchoJay dump and its rolling history are untouched",
-               "history files " + juce::String (liveHistBefore));
+        // 21t-l (29 Sep 2026): RE-RULED, and this is the flake the overnight gate caught. The row asserted that
+        // the LIVE ~/Documents/EchoJay dump and its rolling history were byte-for-byte untouched across this
+        // guard's run - but that is a file the SHIPPING product writes on every chat send with dev_mode on, and
+        // Sean's Pro Tools session runs all day. A real send landing inside the guard's window charged the guard
+        // for the product's own legitimate write: it failed once in the overnight gate at 5.47 s and passed
+        // standalone at 5.53 s immediately afterwards, with nothing changed.
+        //
+        // What the row OWES is that THIS PROCESS did not write the live file, and that is what it asserts now.
+        // The same rule the harness runner already applies to the live-state fingerprint applies here: with a
+        // live EchoJay host running, a change to that file is NOT ATTRIBUTABLE to this guard, so it is reported
+        // and not charged. With nothing else running it is charged exactly as before.
+        {
+            const bool liveMoved =
+                live.getLastModificationTime() != liveStampBefore
+                || live.getParentDirectory().getNumberOfChildFiles (juce::File::findFiles, "chat-body-2*.json") != liveHistBefore;
+            juce::ChildProcess pg;
+            juce::String pids;
+            if (pg.start ("/usr/bin/pgrep -f Pro Tools|Logic Pro|AUHostingService|AAXHostService|EchoJay"))
+                pids = pg.readAllProcessOutput().trim();
+            const bool hostRunning = pids.isNotEmpty();
+            if (liveMoved && hostRunning)
+                std::printf ("  INCONCLUSIVE, NOT ATTRIBUTED: the live dump moved while a live EchoJay host was "
+                             "running (pid(s) %s). That file is one the SHIPPING product writes on every send "
+                             "with dev_mode on; this guard cannot be charged for it. Reported, not charged.\n",
+                             pids.replaceCharacter ('\n', ' ').toRawUTF8());
+            check (! liveMoved || hostRunning,
+                   "...and the live ~/Documents/EchoJay dump and its rolling history are untouched BY THIS RUN "
+                   "(charged only when no live host is running - re-ruled 29 Sep 2026, the overnight flake)",
+                   liveMoved ? ("moved, host(s): " + (hostRunning ? pids.replaceCharacter ('\n', ' ')
+                                                                  : juce::String ("none")))
+                             : ("untouched, history files " + juce::String (liveHistBefore)));
+        }
     }
 
     std::printf ("\n==== classify_body_guard: %s (%d assertion(s) failed) ====\n",
