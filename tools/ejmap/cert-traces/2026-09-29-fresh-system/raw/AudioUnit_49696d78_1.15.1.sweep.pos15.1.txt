@@ -1,0 +1,38 @@
+probe: "elysia mpressor" | AudioUnit:Effects/aufx,mprs,Elys | uid=49696d78 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Floor	On
+param	1	1.000000	Link	On
+param	2	1.000000	Active	On
+param	3	0.000000	Threshold	16.0 dB
+param	4	0.000000	SC Extern	Off
+param	5	0.500000	Attack	19.0 ms
+param	6	0.000000	Auto Fast	Off
+param	7	0.500000	Release	117.5 ms
+param	8	0.000000	Anti Log	Off
+param	9	0.363636	Ratio	2.8
+param	10	0.500000	EQ Gain	0.0 dB
+param	11	0.000000	EQ On	Off
+param	12	0.500000	EQ Freq	230.0 Hz
+param	13	0.000000	EQ Freq x10	Off
+param	14	0.500000	GR Limit	10.0 dB
+param	15	0.000000	GR Limit On	Off
+param	16	0.000000	Gain	0.0 dB
+param	17	0.000000	Gain Reduction	0.00 dB
+stage	position
+pos	0	norm	1.000000	confirm_ms	3.04	slices	1	instack_match	1	getValue	1.000000	landed_by	instack	render_blocks	0	text_ms	21.3	reads	2	text	-18.0 dB
+hold	0	-24.00	level_db	-35.9328	in_rms_db	-27.0103	tone_frac	1.0000	ch	-35.9328,-35.9328	doubled	0	last_move_db	0.0044	final_move_db	0.0044	win	-35.3933,-35.9313,-35.9357,-35.9313,-35.9357,-35.9313	nonfinite	0
+hold	0	-12.00	level_db	-31.6755	in_rms_db	-15.0103	tone_frac	1.0000	ch	-31.6755,-31.6755	doubled	0	last_move_db	0.0039	final_move_db	0.0039	win	-31.2218,-31.6742,-31.6780,-31.6742,-31.6781,-31.6742	nonfinite	0
+hold	0	-6.00	level_db	-29.6404	in_rms_db	-9.0103	tone_frac	1.0000	ch	-29.6404,-29.6404	doubled	0	last_move_db	0.0032	final_move_db	0.0032	win	-29.4300,-29.6393,-29.6425,-29.6393,-29.6426,-29.6394	nonfinite	0
+reread	0	steady
+timing	wall_ms	89.0	audio_s	4.500
+stage	done

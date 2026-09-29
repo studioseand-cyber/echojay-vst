@@ -1648,6 +1648,9 @@ inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledg
                     : s.hardware ? "CONDITIONAL - " + s.detail.fromFirstOccurrenceOf ("; ", false, false) + " (one re-run once attached)"
                     : why + " - licence-bound";
             if (s.reach == Subject::Reach::requiresHardware) why = "CONDITIONAL - " + s.detail.upToFirstOccurrenceOf (";", false, false) + " (one re-run once attached)";
+            if (s.reach == Subject::Reach::unfixtured)
+                why = s.hardware ? "discovered, CONDITIONAL - " + s.detail.fromFirstOccurrenceOf ("; ", false, false) + " (one re-run once attached)"
+                                 : juce::String ("discovered, licence-bound (run with --include-pace)");
             notRunnable[why].add (s.product);
             continue;
         }
