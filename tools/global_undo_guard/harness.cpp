@@ -145,8 +145,18 @@ int main()
                "21t-k 6. ...and the move is RELATIVE: every member goes down by the same 3 dB",
                f1 (r.applied));
         // The undo re-sends the inverse delta through the same VCA path.
+        // 21t-l item 2 (29 Sep 2026 ruling): ...AND PUTS THE GROUP'S OWN FADER BACK. Undo of a -3.1 dB move put
+        // every member back and left the fader reading -3.1, so the control claimed the group was still down.
+        p.setLinkGroupOffsetDb (gid, r.applied);   // where the drag's own release leaves it
         const bool undone = U.undo();
         check (undone, "21t-k 6. the undo applies", juce::String ((int) undone));
+        {
+            const auto* back = p.linkGroupById (gid);
+            check (back != nullptr && std::abs (back->offsetDb) < 0.01f,
+                   "21t-l 2. ...and the group's OWN fader reads 0.0 again  (RED as it stood: every member went "
+                   "back and the fader stayed at -3.1)",
+                   back != nullptr ? juce::String (back->offsetDb, 2) + " dB" : juce::String ("(gone)"));
+        }
         // ...and a group that has gone is refused rather than half-applied.
         p.removeLinkGroup (gid);
         { echojay::UndoEntry ghost; ghost.kind = "groupGain"; ghost.target = gid; ghost.before = 3.0; ghost.after = -3.0;

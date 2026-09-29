@@ -5502,12 +5502,20 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
     // gone is handled by that one function instead of by a stale number stored per target.
     if (e.kind == "groupGain")
     {
-        if (linkGroupById (e.target) == nullptr) return false;
-        const double want = (double) v;                    // the delta this direction asks for
+        const auto* g = linkGroupById (e.target);
+        if (g == nullptr) return false;
+        // 21t-l item 2: THE GROUP'S OWN FADER GOES BACK TOO. Undo of a -3.1 dB move put every member back and
+        // left the fader reading -3.1, so the control said the group was still down while nothing was. The
+        // offset follows what actually applied, exactly as the drag's own release does.
+        const juce::String gname = g->name;               // ...and the log line says the GROUP's name: it used to
+        const float wasOff = g->offsetDb;                 // resolve a group id through the LINK name resolver and
+        const double want = (double) v;                   // print group "".
         if (std::abs (want) < 0.005) return true;          // nothing to undo
         const auto r = moveLinkGroup (e.target, (float) want, true);
-        EchoJay_NSLog(("EJUndo: group \"" + resolveLinkDisplayName (e.target) + "\" moved " + juce::String (r.applied, 2)
-                       + " dB (asked " + juce::String (want, 2) + ")"
+        setLinkGroupOffsetDb (e.target, wasOff + r.applied);
+        EchoJay_NSLog(("EJUndo: group \"" + gname + "\" moved " + juce::String (r.applied, 2)
+                       + " dB (asked " + juce::String (want, 2) + "), fader "
+                       + juce::String (wasOff, 2) + " -> " + juce::String (wasOff + r.applied, 2) + " dB"
                        + (r.limitingMember.isNotEmpty() ? " - limited by " + r.limitingMember : juce::String())).toRawUTF8());
         return std::abs (r.applied) >= 0.005f;
     }
