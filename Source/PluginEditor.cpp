@@ -28320,6 +28320,15 @@ juce::String EchoJayEditor::stampKeySourceIntoChainJson (const juce::String& jso
     return juce::JSON::toString (doc, true);
 }
 
+// 21t-l item 6: the panel's own reading, read from the cache it paints from.
+EchoJayEditor::PanelKeyReading EchoJayEditor::testPanelKeyReading()
+{
+    PanelKeyReading r;
+    if (const auto* p = keySources_.primary())
+    { r.root = p->root; r.minor = p->minor; r.conf = p->conf; r.have = true; }
+    return r;
+}
+
 juce::String EchoJayEditor::buildDetectedKeyContext()
 {
     auto keyText = [] (int root, bool minor)
@@ -28373,7 +28382,14 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
              + (s.detail.isNotEmpty() ? " (channel: " + s.detail + ")" : "");
     };
 
-    const auto sources = collectKeySources();
+    // 21t-l item 6 (29 Sep 2026 ruling): THE BLOCK SENDS WHAT METERS SHOWS. This called collectKeySources()
+    // afresh at send time while the KEY panel paints from keySources_, the 2 Hz cache - so with a reading that
+    // fluctuates the two disagreed: Sean's panel showed F major while four consecutive blocks carried C major
+    // 0.00, F major 0.00, D minor 0.04 and D major 0.17. The block's own rules line says it is "exactly what
+    // EchoJay displays to the user", and today it was not. ONE STRUCT now feeds both. (The fresh collect stays
+    // as the fallback for an editor whose 2 Hz tick has not run yet - a headless harness, or the first frames
+    // after construction - because an empty cache is not a reading either.)
+    const auto sources = keySources_.all.empty() ? collectKeySources() : keySources_;
     if (sources.all.empty()) { lastKeySourceLabel_.clear(); return {}; }
 
     juce::String c;

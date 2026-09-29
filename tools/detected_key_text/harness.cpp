@@ -135,6 +135,49 @@ int main()
                "21t-k 2(c). ...and the header wording and line order are untouched");
     }
 
+    // ---- 21t-l item 6 (29 Sep 2026 ruling): THE BLOCK SENDS WHAT METERS SHOWS -------------------------------
+    // The KEY panel paints from keySources_, the editor's 2 Hz cache; buildDetectedKeyContext used to call
+    // collectKeySources() afresh at send time. With a reading that fluctuates the two disagreed - Sean's panel
+    // showed F major while four consecutive blocks carried C major 0.00, F major 0.00, D minor 0.04 and D major
+    // 0.17 - and the block's own rules line claims it is "exactly what EchoJay displays to the user".
+    {
+        std::printf ("\n== 21t-l item 6: the block sends what Meters shows ==\n");
+        // A reading the panel has cached, and then a DIFFERENT live one arriving after that cache was taken.
+        CaptureSnapshot shown;
+        shown.id = "cap-shown"; shown.name = "Mix capture 3"; shown.timestamp = juce::Time::currentTimeMillis();
+        shown.durationSeconds = 12.0f; shown.channelType = ChannelType::Other;
+        shown.keyValid = true; shown.keyRoot = 5; shown.keyMinor = false; shown.keyConfidence = 0.44f;  // F major
+        shown.keyTuningHz = 440.0f; shown.keySourceName = "Music Bus"; shown.keySourcePlacement = 1;
+        EchoJayAlignTestAccess::pushCapture (proc, shown);
+        ed->testRefreshKeySources();                        // what the panel is painting from now
+        const auto panel = ed->testPanelKeyReading();
+        std::printf ("    the panel is painting: root %d %s, conf %.2f\n",
+                     panel.root, panel.minor ? "minor" : "major", panel.conf);
+        // ...and now a DIFFERENT live reading arrives, with the cache not yet refreshed - which is the state
+        // Sean's session was in all morning: the panel steady on F major while each send re-collected whatever
+        // the fluctuating detector had at that instant.
+        CaptureSnapshot drifted;
+        drifted.id = "cap-drift"; drifted.name = "Mix capture 4";
+        drifted.timestamp = juce::Time::currentTimeMillis() + 1000;
+        drifted.durationSeconds = 12.0f; drifted.channelType = ChannelType::Other;
+        drifted.keyValid = true; drifted.keyRoot = 2; drifted.keyMinor = true; drifted.keyConfidence = 0.10f;
+        drifted.keyTuningHz = 440.0f; drifted.keySourceName = "Music Bus"; drifted.keySourcePlacement = 1;
+        EchoJayAlignTestAccess::pushCapture (proc, drifted);   // NO testRefreshKeySources() - the cache is stale
+        juce::StringArray mf3;
+        const auto blk = keyBlockOf (ed->testAssembleChainInjections ("what key is this in", {}, &mf3));
+        static const char* kN[12] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+        const juce::String wantKey = juce::String ("key: ") + kN[panel.root % 12]
+                                   + (panel.minor ? " minor" : " major");
+        const juce::String wantConf = "confidence: " + juce::String (panel.conf, 2);
+        check (blk.contains (wantKey),
+               "21t-l 6. the block's key is the one the KEY panel is painting  (RED as it stood: the panel read "
+               "from the 2 Hz cache and the block re-collected at send time)",
+               wantKey + "  |  " + blk.fromFirstOccurrenceOf ("key:", true, false).upToFirstOccurrenceOf ("\n", false, false));
+        check (blk.contains (wantConf),
+               "21t-l 6. ...and so is its confidence", wantConf + "  |  "
+               + blk.fromFirstOccurrenceOf ("confidence:", true, false).substring (0, 10));
+    }
+
     // persisted in both plugins: the storage key is "keyShowRelative"
     juce::MemoryBlock mb; proc.setKeyShowRelative (true); proc.getStateInformation (mb); proc.setKeyShowRelative (false);
     const juce::String st = juce::String::fromUTF8 ((const char*) mb.getData(), (int) mb.getSize());

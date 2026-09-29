@@ -46,6 +46,11 @@ public:
     // real-assembly harness with a Link target, so the harness exercises the
     // plugin's own assembly path rather than a hand-built request. Forwards
     // verbatim; no behaviour of its own.
+    /** 21t-l item 6: what the KEY panel is painting - the SAME struct the block reads. Public for the guard, so
+        the two are compared rather than assumed equal. */
+    struct PanelKeyReading { int root = -1; bool minor = false; float conf = 0.0f; bool have = false; };
+    PanelKeyReading testPanelKeyReading();
+    void testRefreshKeySources() { keySources_ = collectKeySources(); }
     juce::String testAssembleChainInjections(const juce::String& typedMsg,
                                              const juce::String& targetLinkUid,
                                              juce::StringArray* meterFieldsOut)
