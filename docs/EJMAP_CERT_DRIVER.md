@@ -87,6 +87,26 @@ quoting the number.
   fixture exists to compare it to. The two lines answer different questions and are never
   merged.
 
+**LOGGED 28 Sep, NOT FIXED: the driver's exit code is permanently 1 on this machine.**
+`--cert-defaults` exits 1 whenever any reachable product differs, and Shadow Hills Class
+A always does. Its pushed fixture holds one sample of "VU Meter R" (0.139141). No run
+reproduces that number, so `differ only on detected readouts` is 1 on every run here and
+cannot reach 0. By the criterion that is HONEST. But a gate that is always red invites
+someone to soften it later.
+
+- **THE CORRECT RESOLUTION is a ONE-PRODUCT re-sample of the Shadow Hills pushed
+  fixture.** It is possible only now that the readout encoding exists: its control 41
+  becomes a `readout` with a `null` `defaultOnInstantiate`, and it reproduces from then
+  on. That is a write to the SERVER tree, so it is the FIRST item for the server half
+  (section 7). It is not a Mac-side change, and it is not a reason to touch the other 73.
+- **THE WRONG FIX is excluding readouts from the pass condition.** Do not make
+  `differ only on detected readouts` count as a pass, and do not drop readout controls from
+  the reproduction comparison. The difference is REAL: the pushed fixture carries a number
+  that is not a measurement of anything settable. The pass condition's job is to say so
+  until the fixture is corrected, not to learn to stop saying it. Any future readout found
+  in another pushed fixture gets the same treatment: a one-product re-sample, never a
+  softer rule.
+
 The 10 PACE-wrapped products join when step 2 closes. The 49 at other versions or not
 installed are out of reach on this machine. A run on a machine that has them is what
 reaches them.
@@ -312,6 +332,12 @@ the scope yet.
 
 The fixture schema is the contract between EJ Map and the server. These are the
 server-side obligations the Mac-side work has created so far:
+- **FIRST: re-sample ONE pushed fixture, Shadow Hills Class A Mastering Comp**
+  (`AudioUnit_704f4855_1.4.1.json`), in the item-12 shape. Its control 41 "VU Meter R"
+  becomes a `readout` with a null `defaultOnInstantiate`. This is the only thing that
+  turns the driver's permanent exit 1 on the dev Mac to 0 honestly (section 0). Touch
+  only this one file. The other 73 are corrected per product when a machine that has the
+  plugin re-runs them, never in a bulk pass.
 - **A null `defaultOnInstantiate.normalised` (and `.display`).** That is how a readout is
   encoded (item 12). A reader that assumes a number must not crash on null, and must not
   substitute a default for it.

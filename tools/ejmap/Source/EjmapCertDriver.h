@@ -861,6 +861,27 @@ inline int runCertDefaults (const Options& opt)
 }
 
 //==============================================================================
+// ONE PROBE INVOCATION through the shipped machinery (--cert-probe-once): the same
+// signature gate, the same runChild, the default PRODUCTION window watch, and NO
+// retry. It exists for the step-2 question, which is one plugin and one mode, not a
+// fixture. A window is a result here, exactly as in --cert-defaults.
+inline int runProbeOnce (const juce::File& probe, const juce::StringArray& probeArgs, int timeoutMs)
+{
+    const auto id = checkProbe (probe, {}, {});
+    if (! id.ok) { std::cout << "PROBE-ONCE: ABORTED BEFORE ANY PLUGIN - " << id.why << std::endl; return 3; }
+    std::cout << "probe: team " << id.team << ", cdhash " << id.cdhash << std::endl;
+    juce::StringArray args { probe.getFullPathName() };
+    args.addArray (probeArgs);
+    const auto r = runChild (args, timeoutMs);
+    const auto rows = parseListParams (r.out);
+    std::cout << "outcome: " << r.describe() << "\n"
+              << "windows in the probe's tree: " << (r.windowsInTree.isEmpty() ? juce::String ("none") : r.windowsInTree.joinIntoString (", ")) << "\n"
+              << "parameter rows: " << (int) rows.size() << "\n"
+              << "---- probe output ----\n" << r.out << "---- end ----" << std::endl;
+    return r.cleanExit() ? 0 : 1;
+}
+
+//==============================================================================
 // SELF-TEST OF THE WINDOW WATCH (--cert-watch-selftest <helper>). The helper orders
 // in one 10x10 borderless window 20,000 px off every display and waits 20 s. It is
 // invisible to the user, but CoreGraphics lists it as ON SCREEN (measured 28 Sep),

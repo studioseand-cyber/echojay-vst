@@ -585,6 +585,14 @@ namespace
                 return ejmap::cert::runRederive (cwdFile (argAt (argc, argv, i + 1)));
             if (a == "--cert-watch-selftest" && i + 1 < argc)
                 return ejmap::cert::runWatchSelfTest (cwdFile (argAt (argc, argv, i + 1)));
+            // --cert-probe-once <probe> <timeout-s> <probe args...>
+            if (a == "--cert-probe-once" && i + 3 < argc)
+            {
+                juce::StringArray rest;
+                for (int j = i + 3; j < argc; ++j) rest.add (juce::String (juce::CharPointer_UTF8 (argv[j])));
+                return ejmap::cert::runProbeOnce (cwdFile (argAt (argc, argv, i + 1)),
+                                                  rest, juce::jmax (1, argAt (argc, argv, i + 2).getIntValue()) * 1000);
+            }
             if (a == "--cert-defaults")
             {
                 ejmap::cert::Options o;
