@@ -517,6 +517,16 @@ server-side obligations the Mac-side work has created so far:
   are OBJECTS (items 8 and 11; the spec is amended, not the fixtures); roles are absent on
   every control (item 9, a prerequisite for the sweep); identity keyed on the XOR uid is its
   own migration task (item 10).
+- **`thresholdSweep` carries TWO verdicts; read them separately** (section 10). `result` says
+  whether the dB-equivalent map is good; `display_dbfs` says whether a dB display means dBFS
+  (true / false / null when the threshold prints no dB). A certified map with
+  `display_dbfs: false` is the normal case this feature exists for, not a failure: dial by
+  `thresholdDbEquivalent`, never by the display.
+- **Fields beyond spec 4.5**, added 29 Sep and flagged: `level_convention`, `procedure`,
+  `bridged`, `positionNorms`, `linearReference`, `display_dbfs`, `displayOffset`, and when they
+  occur `holdDoubled`, `stillMovingAfterDoubling`, `skipped`, `diagnosticArm`. A fixture with
+  `diagnosticArm` is a measurement with a non-swept control moved on purpose: never fold it
+  into a product's certification.
 - **Pin the server's matcher to `tools/ejmap/tests/fixtures/name-token-vectors.json`**
   (added 29 Sep, section 9). EJ Map's port of `controlNameTokens` / `controlAnswersTerm`
   is asserted against that file; the file was generated from the server's copy, but
@@ -607,4 +617,69 @@ those two without a pick.
 - An eleventh ("a split consumes one character, not two") is an EQUIVALENT mutant. In
   these three split patterns the second character of a match can never start another, so
   it cannot be observed. It was dropped rather than pinned.
+
+## 10. The threshold sweep (spec section 4), as ruled 29 Sep after the first real subject
+
+The probe measures (`--sweep`, `tools/au_instantiate_probe/probe_sweep.h`); EJ Map plans,
+derives and writes the fixture (`--cert-sweep`, `tools/ejmap/Source/EjmapSweep.h`).
+`--cert-sweep-census` lists what can run here, read-only.
+
+**The first subject was bx_townhouse** (native, 2:1, threshold −20 to +10 dB). Three arms:
+- A: positions walked ascending in one process. It read "certified" on bad data.
+- B: the same, walked descending. It read nonmonotonic.
+- C: one fresh process per position and level, 6 s hold. Clean, and the ground truth.
+
+Any loud-to-quiet transition left townhouse's auto release running for more than 3 s. That
+covers the next position's quiet level, and the default reference's −6 hold before the first
+position. `AudioUnitReset` is a no-op on townhouse (outputs bit-identical), so it is no cure.
+
+**The ruled procedure:**
+- **One process per position**, levels quiet to loud inside it (−24, −12, −6).
+- Plus one reference-only process at the default threshold, used ONLY for spec 4.7's
+  unlicensed test.
+- Otherwise 16 positions × 3 levels, 997 Hz, the peak convention, and 1.5 s holds with 0.75 s
+  discarded.
+- The still-moving detector doubles a hold once. It fires when the last 0.25 s window moved
+  more than 0.1 dB.
+- The three-step write verify, where `write_unlanded` skips the position.
+- The retry rule per process. A window aborts the product as a licence event.
+- For an unseen version, defaults are sampled first (a new identity), then the sweep, in one
+  pass.
+- Measured cost: 17 processes, 78 s of audio, 11 s wall for native townhouse.
+
+**SPEC 4.3 AMENDED: the reference is the soft end's LINEAR gain.** Reduction is measured
+against the soft end's out-minus-in, not against the output at the default threshold. The
+soft end's gains must agree across the three levels within 0.5 dB, or the sweep refuses.
+Why: the default-threshold reference is wrong on any plugin whose default compresses.
+Townhouse's default (0.0 dB) takes 3.07 dB at −6, while its soft end is linear
+(+2.43 / +2.42 / +2.35 dB).
+
+**Guards: a map certifies only if neither fires.**
+- More than two positions still moving after the doubling.
+- Any reduction more than 0.5 dB below the linear reference.
+
+The arm A trace is committed, and it must not certify (RoundTripTest D9).
+
+**Two verdicts, never merged** (the same rule as reproduction score vs schema emission):
+- `result` is the dB-equivalent map: certified, flat, nonmonotonic or unreadable.
+- `display_dbfs` answers whether the dB display means dBFS. It is true when the median of
+  (derived T − displayed threshold) is within 2 dB in the peak convention.
+- **Townhouse:** the map is certified and `display_dbfs` is false. Its median offset is −15 dB,
+  because the display models the console. It is the first real fixture:
+  `tools/ejmap/cert-fixtures/compressor-profiles/AudioUnit_417f6e76_1.8.1.json`. Its 17 raw
+  traces are committed and re-derive it exactly (RoundTripTest V5).
+
+**Measured bias, recorded, not corrected.** Against arm C's 6 s truth, the 1.5 s holds
+under-read townhouse's reduction by at most 0.35 dB, with a median of 0.14 dB over 30 engaged
+cells. It never over-reads. The cause is a slow detector creep of about 0.02 to 0.09 dB per
+0.25 s, which stays under the 0.1 dB still-moving threshold.
+
+**Noted for later, NOT built:**
+- **A silence-settle optimisation** (render silence between positions instead of starting a
+  fresh process). It is untested, and its failure mode is a quiet bias rather than an error.
+- **The spec 4.2 ratio raise.** Ten fixtures instantiate at 1:1 and are refused until it
+  exists: C1 comp, C1 comp-sc and RCompressor (m/s, six in the 38), plus C1 comp-gate and
+  SSLGChannel.
+- **The XLA-3 and MC 77 picks** (ruled: MC 77 sweeps Input L; XLA-3 is decided from range and
+  step count, never from the name).
 

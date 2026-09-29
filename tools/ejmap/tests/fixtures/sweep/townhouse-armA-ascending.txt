@@ -1,0 +1,131 @@
+probe: "bx_townhouse Buss Compressor" | AudioUnit:Effects/aumf,bxth,Brwx | uid=417f6e76 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	4	name	Thresh	positions	16	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Bank	A
+param	1	1.000000	Comp In	On
+param	2	0.000000	Key In	Off
+param	3	0.000000	AutoFade	Off
+param	4	0.666667	Thresh	0.0 dB
+param	5	0.000000	Ratio	2:1
+param	6	0.600000	Attack	3 ms
+param	7	1.000000	Release	auto
+param	8	0.100000	MakeUp	+1.5 dB
+param	9	0.500000	FadeRate	7.2 s
+param	10	1.000000	Mix	100 %
+param	11	0.000000	SC Filter	Off
+param	12	0.400000	Virtual Gain	-100 dB
+param	13	0.500000	Headroom	0.0 dB
+param	14	1.000000	Gain Reduction	22.0 dB
+param	15	0.000000	Input	0.0 dB
+stage	reference
+refpos	val	0.666667	text	0.0 dB
+ref	-24.00	level_db	-24.5800	in_peak_db	-24.0000	in_rms_db	-27.0103	ch	-24.5800,-24.5800	win	-24.5805,-24.5798,-24.5804,-24.5797,-24.5804,-24.5798,-24.5804,-24.5798	nonfinite	0
+ref	-12.00	level_db	-13.1064	in_peak_db	-12.0000	in_rms_db	-15.0103	ch	-13.1064,-13.1064	win	-12.9491,-13.0062,-13.0393,-13.0592,-13.0820,-13.0936,-13.1097,-13.1160	nonfinite	0
+ref	-6.00	level_db	-9.6135	in_peak_db	-6.0000	in_rms_db	-9.0103	ch	-9.6135,-9.6135	win	-9.1413,-9.3167,-9.4041,-9.4825,-9.5338,-9.5836,-9.6124,-9.6446	nonfinite	0
+stage	position
+pos	0	norm	0.000000	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.000000	text_ms	22.9	reads	2	text	-20.0 dB
+hold	0	-24.00	level_db	-32.1275	ch	-32.1275,-32.1275	doubled	0	last_move_db	-0.0438	final_move_db	-0.0438	win	-31.5997,-31.8268,-31.9538,-32.0565,-32.1416,-32.1854	nonfinite	0
+hold	0	-12.00	level_db	-27.9144	ch	-27.9144,-27.9144	doubled	0	last_move_db	-0.0715	final_move_db	-0.0715	win	-27.2641,-27.5506,-27.6982,-27.8209,-27.9263,-27.9979	nonfinite	0
+hold	0	-6.00	level_db	-26.3267	ch	-26.3267,-26.3267	doubled	0	last_move_db	-0.0417	final_move_db	-0.0417	win	-25.9111,-26.1022,-26.2112,-26.2689,-26.3351,-26.3768	nonfinite	0
+reread	0	steady
+stage	position
+pos	1	norm	0.066667	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.066667	text_ms	20.7	reads	2	text	-18.0 dB
+hold	1	-24.00	level_db	-35.4232	ch	-35.4233,-35.4232	doubled	1	last_move_db	0.6243	final_move_db	0.4662	win	-41.8239,-40.6882,-40.0117,-39.3597,-38.7126,-38.0883,-37.5059,-36.9476,-36.4244,-35.9138,-35.4366,-34.9704	nonfinite	0
+hold	1	-12.00	level_db	-26.2500	ch	-26.2500,-26.2500	doubled	0	last_move_db	-0.0194	final_move_db	-0.0194	win	-25.9596,-26.1093,-26.1766,-26.2171,-26.2568,-26.2762	nonfinite	0
+hold	1	-6.00	level_db	-24.3982	ch	-24.3982,-24.3982	doubled	0	last_move_db	-0.0354	final_move_db	-0.0354	win	-23.9846,-24.1687,-24.2755,-24.3455,-24.4071,-24.4425	nonfinite	0
+reread	1	steady
+stage	position
+pos	2	norm	0.133333	confirm_ms	2.15	slices	1	instack_match	1	getValue	0.133333	text_ms	22.7	reads	2	text	-16.0 dB
+hold	2	-24.00	level_db	-34.3920	ch	-34.3920,-34.3920	doubled	1	last_move_db	0.5510	final_move_db	0.4187	win	-40.1835,-39.1661,-38.5076,-37.9044,-37.3394,-36.7884,-36.2640,-35.7607,-35.2903,-34.8309,-34.4026,-33.9839	nonfinite	0
+hold	2	-12.00	level_db	-24.4831	ch	-24.4831,-24.4831	doubled	0	last_move_db	-0.0142	final_move_db	-0.0142	win	-24.2527,-24.3756,-24.4276,-24.4578,-24.4887,-24.5029	nonfinite	0
+hold	2	-6.00	level_db	-22.5035	ch	-22.5035,-22.5035	doubled	0	last_move_db	-0.0364	final_move_db	-0.0364	win	-22.0911,-22.2764,-22.3810,-22.4515,-22.5116,-22.5480	nonfinite	0
+reread	2	steady
+stage	position
+pos	3	norm	0.200000	confirm_ms	2.74	slices	1	instack_match	1	getValue	0.200000	text_ms	21.0	reads	2	text	-14.0 dB
+hold	3	-24.00	level_db	-33.3479	ch	-33.3479,-33.3479	doubled	1	last_move_db	0.4881	final_move_db	0.3705	win	-38.4865,-37.5463,-36.9936,-36.4593,-35.9563,-35.4681,-35.0020,-34.5577,-34.1400,-33.7353,-33.3556,-32.9851	nonfinite	0
+hold	3	-12.00	level_db	-22.7876	ch	-22.7876,-22.7876	doubled	0	last_move_db	-0.0111	final_move_db	-0.0111	win	-22.6175,-22.7142,-22.7490,-22.7702,-22.7908,-22.8019	nonfinite	0
+hold	3	-6.00	level_db	-20.6281	ch	-20.6281,-20.6281	doubled	0	last_move_db	-0.0405	final_move_db	-0.0405	win	-20.2084,-20.3983,-20.5014,-20.5758,-20.6343,-20.6748	nonfinite	0
+reread	3	steady
+stage	position
+pos	4	norm	0.266667	confirm_ms	3.04	slices	1	instack_match	1	getValue	0.266667	text_ms	22.8	reads	2	text	-12.0 dB
+hold	4	-24.00	level_db	-32.2796	ch	-32.2796,-32.2796	doubled	1	last_move_db	0.4243	final_move_db	0.3299	win	-36.8409,-36.0126,-35.5249,-35.0592,-34.6162,-34.1919,-33.7821,-33.3971,-33.0299,-32.6302,-32.2824,-31.9525	nonfinite	0
+hold	4	-12.00	level_db	-21.1820	ch	-21.1820,-21.1820	doubled	0	last_move_db	-0.0078	final_move_db	-0.0078	win	-21.0747,-21.1468,-21.1615,-21.1739,-21.1821,-21.1899	nonfinite	0
+hold	4	-6.00	level_db	-18.8219	ch	-18.8219,-18.8219	doubled	0	last_move_db	-0.0440	final_move_db	-0.0440	win	-18.4026,-18.5941,-18.6931,-18.7706,-18.8258,-18.8699	nonfinite	0
+reread	4	steady
+stage	position
+pos	5	norm	0.333333	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.333333	text_ms	22.5	reads	2	text	-10.0 dB
+hold	5	-24.00	level_db	-31.2738	ch	-31.2738,-31.2738	doubled	1	last_move_db	0.3672	final_move_db	0.2834	win	-35.2543,-34.5318,-34.1084,-33.7106,-33.3266,-32.9593,-32.5548,-32.2165,-31.8864,-31.5768,-31.2739,-30.9906	nonfinite	0
+hold	5	-12.00	level_db	-19.5767	ch	-19.5767,-19.5767	doubled	0	last_move_db	-0.0029	final_move_db	-0.0029	win	-19.5470,-19.5822,-19.5766,-19.5789,-19.5741,-19.5770	nonfinite	0
+hold	5	-6.00	level_db	-17.0827	ch	-17.0827,-17.0827	doubled	0	last_move_db	-0.0467	final_move_db	-0.0467	win	-16.6670,-16.8586,-16.9532,-17.0325,-17.0847,-17.1314	nonfinite	0
+reread	5	steady
+stage	position
+pos	6	norm	0.400000	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.400000	text_ms	20.2	reads	2	text	-8.0 dB
+hold	6	-24.00	level_db	-30.3036	ch	-30.3036,-30.3036	doubled	1	last_move_db	0.3141	final_move_db	0.2390	win	-33.7327,-33.1150,-32.7181,-32.3613,-32.0235,-31.7094,-31.3946,-31.1078,-30.8235,-30.5618,-30.3012,-30.0621	nonfinite	0
+hold	6	-12.00	level_db	-18.1300	ch	-18.1300,-18.1300	doubled	0	last_move_db	0.0039	final_move_db	0.0039	win	-18.1942,-18.1846,-18.1557,-18.1436,-18.1252,-18.1213	nonfinite	0
+hold	6	-6.00	level_db	-15.4289	ch	-15.4289,-15.4289	doubled	0	last_move_db	-0.0471	final_move_db	-0.0471	win	-15.0204,-15.2117,-15.3018,-15.3802,-15.4299,-15.4770	nonfinite	0
+reread	6	steady
+stage	position
+pos	7	norm	0.466667	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.466667	text_ms	20.3	reads	2	text	-6.0 dB
+hold	7	-24.00	level_db	-29.3766	ch	-29.3766,-29.3766	doubled	1	last_move_db	0.2609	final_move_db	0.1982	win	-32.2311,-31.6912,-31.3803,-31.0945,-30.8105,-30.5496,-30.2853,-30.0472,-29.8089,-29.5916,-29.3732,-29.1750	nonfinite	0
+hold	7	-12.00	level_db	-16.7912	ch	-16.7912,-16.7912	doubled	0	last_move_db	0.0157	final_move_db	0.0157	win	-16.9925,-16.9106,-16.8517,-16.8186,-16.7855,-16.7698	nonfinite	0
+hold	7	-6.00	level_db	-13.7712	ch	-13.7712,-13.7712	doubled	0	last_move_db	-0.0469	final_move_db	-0.0469	win	-13.3904,-13.5578,-13.6442,-13.7219,-13.7726,-13.8195	nonfinite	0
+reread	7	steady
+stage	position
+pos	8	norm	0.533333	confirm_ms	2.74	slices	1	instack_match	1	getValue	0.533333	text_ms	22.7	reads	2	text	-4.0 dB
+hold	8	-24.00	level_db	-28.4878	ch	-28.4878,-28.4878	doubled	1	last_move_db	0.2113	final_move_db	0.1607	win	-30.8034,-30.3601,-30.1083,-29.8768,-29.6470,-29.4357,-29.2223,-29.0291,-28.8371,-28.6608,-28.4849,-28.3242	nonfinite	0
+hold	8	-12.00	level_db	-15.6476	ch	-15.6476,-15.6476	doubled	0	last_move_db	0.0500	final_move_db	0.0500	win	-16.1613,-16.0140,-15.8672,-15.7332,-15.6305,-15.5805	nonfinite	0
+hold	8	-6.00	level_db	-12.2755	ch	-12.2755,-12.2755	doubled	0	last_move_db	-0.0420	final_move_db	-0.0420	win	-11.8961,-12.0726,-12.1584,-12.2286,-12.2782,-12.3202	nonfinite	0
+reread	8	steady
+stage	position
+pos	9	norm	0.600000	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.600000	text_ms	20.4	reads	2	text	-2.0 dB
+hold	9	-24.00	level_db	-27.6761	ch	-27.6761,-27.6761	doubled	1	last_move_db	0.1673	final_move_db	0.1281	win	-29.4989,-29.1420,-28.9464,-28.7632,-28.5849,-28.4177,-28.2525,-28.0991,-27.9507,-27.8105,-27.6750,-27.5469	nonfinite	0
+hold	9	-12.00	level_db	-14.9820	ch	-14.9820,-14.9820	doubled	0	last_move_db	0.0984	final_move_db	0.0984	win	-15.4218,-15.3040,-15.1917,-15.0840,-14.9813,-14.8829	nonfinite	0
+hold	9	-6.00	level_db	-10.8938	ch	-10.8938,-10.8938	doubled	0	last_move_db	-0.0312	final_move_db	-0.0312	win	-10.5848,-10.7303,-10.8016,-10.8550,-10.8978,-10.9290	nonfinite	0
+reread	9	steady
+stage	position
+pos	10	norm	0.666667	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.666667	text_ms	22.9	reads	2	text	0.0 dB
+hold	10	-24.00	level_db	-26.9451	ch	-26.9451,-26.9451	doubled	1	last_move_db	0.1285	final_move_db	0.1024	win	-28.3174,-28.0456,-27.9016,-27.7611,-27.6302,-27.5017,-27.3807,-27.2623,-27.1542,-27.0458,-26.9471,-26.8447	nonfinite	0
+hold	10	-12.00	level_db	-14.3641	ch	-14.3641,-14.3641	doubled	0	last_move_db	0.0797	final_move_db	0.0797	win	-14.7071,-14.6128,-14.5289,-14.4422,-14.3656,-14.2860	nonfinite	0
+hold	10	-6.00	level_db	-9.6282	ch	-9.6282,-9.6282	doubled	0	last_move_db	-0.0191	final_move_db	-0.0191	win	-9.4062,-9.5118,-9.5650,-9.5995,-9.6331,-9.6522	nonfinite	0
+reread	10	steady
+stage	position
+pos	11	norm	0.733333	confirm_ms	3.04	slices	1	instack_match	1	getValue	0.733333	text_ms	21.0	reads	2	text	+2.0 dB
+hold	11	-24.00	level_db	-26.7234	ch	-26.7234,-26.7234	doubled	0	last_move_db	0.0956	final_move_db	0.0956	win	-27.2389,-27.0476,-26.9503,-26.8470,-26.7110,-26.6153	nonfinite	0
+hold	11	-12.00	level_db	-14.2159	ch	-14.2159,-14.2159	doubled	0	last_move_db	0.0750	final_move_db	0.0750	win	-14.5317,-14.4433,-14.3682,-14.2868,-14.2185,-14.1435	nonfinite	0
+hold	11	-6.00	level_db	-8.4730	ch	-8.4730,-8.4730	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-8.4212,-8.4486,-8.4635,-8.4658,-8.4769,-8.4762	nonfinite	0
+reread	11	steady
+stage	position
+pos	12	norm	0.800000	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.800000	text_ms	20.4	reads	2	text	+4.0 dB
+hold	12	-24.00	level_db	-25.9550	ch	-25.9550,-25.9550	doubled	0	last_move_db	0.0644	final_move_db	0.0644	win	-26.2609,-26.1458,-26.0839,-26.0141,-25.9580,-25.8936	nonfinite	0
+hold	12	-12.00	level_db	-13.6367	ch	-13.6367,-13.6367	doubled	0	last_move_db	0.0508	final_move_db	0.0508	win	-13.8423,-13.7827,-13.7366,-13.6817,-13.6399,-13.5891	nonfinite	0
+hold	12	-6.00	level_db	-7.4531	ch	-7.4531,-7.4531	doubled	0	last_move_db	0.0164	final_move_db	0.0164	win	-7.5519,-7.5078,-7.4880,-7.4642,-7.4557,-7.4393	nonfinite	0
+reread	12	steady
+stage	position
+pos	13	norm	0.866667	confirm_ms	2.75	slices	1	instack_match	1	getValue	0.866667	text_ms	21.6	reads	2	text	+6.0 dB
+hold	13	-24.00	level_db	-25.2410	ch	-25.2410,-25.2410	doubled	0	last_move_db	0.0337	final_move_db	0.0337	win	-25.3793,-25.3318,-25.3048,-25.2685,-25.2443,-25.2105	nonfinite	0
+hold	13	-12.00	level_db	-13.0882	ch	-13.0882,-13.0882	doubled	0	last_move_db	0.0269	final_move_db	0.0269	win	-13.1887,-13.1576,-13.1379,-13.1090,-13.0914,-13.0645	nonfinite	0
+hold	13	-6.00	level_db	-6.9720	ch	-6.9720,-6.9720	doubled	0	last_move_db	0.0214	final_move_db	0.0214	win	-7.0497,-7.0250,-7.0106,-6.9877,-6.9749,-6.9535	nonfinite	0
+reread	13	steady
+stage	position
+pos	14	norm	0.933333	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.933333	text_ms	20.3	reads	2	text	+8.0 dB
+hold	14	-24.00	level_db	-24.8797	ch	-24.8797,-24.8797	doubled	0	last_move_db	0.0171	final_move_db	0.0171	win	-24.9389,-24.9202,-24.9098,-24.8915,-24.8823,-24.8652	nonfinite	0
+hold	14	-12.00	level_db	-12.8107	ch	-12.8107,-12.8107	doubled	0	last_move_db	0.0135	final_move_db	0.0135	win	-12.8572,-12.8417,-12.8341,-12.8197,-12.8130,-12.7995	nonfinite	0
+hold	14	-6.00	level_db	-6.7589	ch	-6.7589,-6.7589	doubled	0	last_move_db	0.0105	final_move_db	0.0105	win	-6.7947,-6.7827,-6.7770,-6.7657,-6.7608,-6.7502	nonfinite	0
+reread	14	steady
+stage	position
+pos	15	norm	1.000000	confirm_ms	2.84	slices	1	instack_match	1	getValue	1.000000	text_ms	22.0	reads	2	text	+10.0 dB
+hold	15	-24.00	level_db	-24.7160	ch	-24.7160,-24.7160	doubled	0	last_move_db	0.0081	final_move_db	0.0081	win	-24.7430,-24.7343,-24.7298,-24.7213,-24.7174,-24.7093	nonfinite	0
+hold	15	-12.00	level_db	-12.6851	ch	-12.6851,-12.6851	doubled	0	last_move_db	0.0059	final_move_db	0.0059	win	-12.7060,-12.6992,-12.6955,-12.6892,-12.6859,-12.6800	nonfinite	0
+hold	15	-6.00	level_db	-6.6625	ch	-6.6625,-6.6625	doubled	0	last_move_db	0.0040	final_move_db	0.0040	win	-6.6782,-6.6735,-6.6702,-6.6658,-6.6628,-6.6588	nonfinite	0
+reread	15	steady
+timing	wall_ms	867.2	audio_s	93.000
+stage	done

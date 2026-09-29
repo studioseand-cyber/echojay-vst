@@ -593,6 +593,41 @@ namespace
                 return ejmap::cert::runProbeOnce (cwdFile (argAt (argc, argv, i + 1)),
                                                   rest, juce::jmax (1, argAt (argc, argv, i + 2).getIntValue()) * 1000);
             }
+            if (a == "--cert-sweep-census" && i + 1 < argc)
+            {
+                bool includePace = false;
+                for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--include-pace") includePace = true;
+                return ejmap::cert::runSweepCensus (cwdFile (argAt (argc, argv, i + 1)), includePace);
+            }
+            if (a == "--cert-sweep")
+            {
+                ejmap::cert::SweepOptions o;
+                o.hostVersion = EJMAP_VERSION;
+                for (int j = 1; j < argc; ++j)
+                {
+                    const auto k = argAt (argc, argv, j);
+                    const auto v = argAt (argc, argv, j + 1);
+                    if      (k == "--fixtures"  && j + 1 < argc) o.fixtures = cwdFile (v);
+                    else if (k == "--probe"     && j + 1 < argc) o.probe = cwdFile (v);
+                    else if (k == "--out"       && j + 1 < argc) o.out = cwdFile (v);
+                    else if (k == "--product"   && j + 1 < argc) o.product = v;
+                    else if (k == "--arm"       && j + 1 < argc) o.armLabel = v;
+                    else if (k == "--set"       && j + 1 < argc)
+                        o.extraSets.push_back ({ v.upToFirstOccurrenceOf (":", false, false).getIntValue(),
+                                                 (float) v.fromFirstOccurrenceOf (":", false, false).getDoubleValue() });
+                    else if (k == "--timeout-s" && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
+                    else if (k == "--reset-per-hold")            o.resetPerHold = true;
+                    else if (k == "--include-pace")              o.includePace = true;
+                }
+                if (o.fixtures == juce::File() || o.probe == juce::File() || o.out == juce::File() || o.product.isEmpty()
+                    || (o.extraSets.empty() != o.armLabel.isEmpty()))
+                {
+                    std::cerr << "usage: ejmap --cert-sweep --fixtures <dir> --probe <EchoJayProbe> --out <dir> --product <name>\n"
+                                 "       [--include-pace] [--timeout-s N per process] [--arm LABEL --set IDX:NORM ...] [--reset-per-hold]" << std::endl;
+                    return 2;
+                }
+                return ejmap::cert::runCertSweep (o);
+            }
             if (a == "--cert-defaults")
             {
                 ejmap::cert::Options o;

@@ -14,6 +14,7 @@
 #include <JuceHeader.h>
 #include "probe_render.h"                    // feat/ejmap-cert: --render-test (the whole mode lives there)
 #include "probe_write.h"                     // feat/ejmap-cert: --write-test (the whole mode lives there)
+#include "probe_sweep.h"                     // feat/ejmap-cert: --sweep, spec section 4 (the whole mode lives there)
 #include <set>
 #include <vector>
 #include <cstdio>
@@ -80,7 +81,8 @@ int main (int argc, char** argv)
     // the other list modes (no editor, no marker, no state file, exit 0 / exit 3 "refused <reason>"); see probe_render.h.
     const bool renderTest = argc >= 5 && juce::String (argv[4]) == "--render-test";
     const bool writeTest  = argc >= 9 && juce::String (argv[4]) == "--write-test";   // <index> <from> <to> <arm>
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest;
+    const bool sweep      = argc >= 5 && juce::String (argv[4]) == "--sweep";        // key=value arguments, probe_sweep.h
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -122,6 +124,13 @@ int main (int argc, char** argv)
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
         if (renderTest) { ejprobe::runRenderTest (*inst); std::fflush (stdout); std::_Exit (0); }
+        if (sweep)
+        {
+            ejprobe::SweepSpec spec; juce::String why;
+            if (! ejprobe::parseSweepArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            ejprobe::runSweep (*inst, spec);
+            std::fflush (stdout); std::_Exit (0);
+        }
         if (writeTest)
         {
             ejprobe::runWriteTest (*inst, atoi (argv[5]), (float) atof (argv[6]), (float) atof (argv[7]),

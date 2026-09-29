@@ -45,6 +45,7 @@
 #include "EjmapFixtureRange.h"
 #include "EjmapFixtureReadout.h"
 #include "EjmapCertOutcome.h"
+#include "EjmapSweep.h"
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <libproc.h>
@@ -335,7 +336,23 @@ struct Subject
     juce::String detail;                 // installed version(s), the ambiguity, ...
     juce::PluginDescription desc;        // resolved component, when installed
     bool licenceBound = false;           // PACE-wrapped, or its PACE state could not be checked
+    // versionMismatch only: the ONE installed version, resolved for MEASUREMENT (see measurable()).
+    bool installedUnique = false, hardware = false;
 };
+
+// THE VERSION GUARD BELONGS ON COMPARISON, NOT ON MEASUREMENT (ruled 29 Sep). A fixture made at another
+// version cannot be REPRODUCED here, so --cert-defaults still skips it; but a fresh measurement at the
+// installed version is valid and writes a NEW identity. Section 6 runs EJ Map on other people's Macs, where
+// a version nobody has sampled is the normal case, not a workaround. Measurable when:
+//   - reachable, with or without a recorded version; or
+//   - installed at another version, exactly ONE version installed (several: never pick one), not a
+//     hardware product, and not licence-bound unless PACE is included.
+inline bool measurable (const Subject& s, bool includePace)
+{
+    if (s.reach == Subject::Reach::reachable || s.reach == Subject::Reach::reachableNoVersion) return true;
+    return s.reach == Subject::Reach::versionMismatch && s.installedUnique && ! s.hardware
+           && (! s.licenceBound || includePace);
+}
 
 // PLUGINS THAT NEED EXTERNAL HARDWARE (logged 29 Sep, docs/EJMAP_CERT_DRIVER.md
 // section 3): they may enumerate, but they render nothing without the hardware, so they
@@ -438,7 +455,21 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
         }
         if (versions.isEmpty()) { s.reach = Subject::Reach::notInstalled; continue; }
         if (atVersion.isEmpty())
-        { s.reach = Subject::Reach::versionMismatch; s.detail = "fixture " + s.version + ", installed " + versions.joinIntoString (" / "); continue; }
+        {
+            s.reach = Subject::Reach::versionMismatch;
+            s.detail = "fixture " + s.version + ", installed " + versions.joinIntoString (" / ");
+            juce::Array<juce::PluginDescription> installed;
+            for (auto [it, end] = byUid.equal_range (s.uid); it != end; ++it) installed.add (it->second);
+            if (installed.size() == 1)
+            {
+                s.desc = installed.getReference (0);
+                s.installedUnique = true;
+                s.hardware = requiresExternalHardware (s.product, s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+                juce::String why;
+                s.licenceBound = isPace (s.desc, why);
+            }
+            continue;
+        }
         if (atVersion.size() > 1)
         {
             s.reach = Subject::Reach::ambiguous;
@@ -489,6 +520,33 @@ inline std::vector<TextAtRow> parseTextAt (const juce::String& out)
             rows.back().at[f[1]] = f.size() >= 3 ? f[2] : juce::String();
     }
     return rows;
+}
+
+// READOUT DETECTION: a control whose value differs between two FRESH instances is a readout (item 12).
+// One function, used by --cert-defaults and by the sweep's defaults-first pass for an unseen version.
+struct ReadoutHit { int index; juce::String name; double a, b; juce::String ta, tb; };
+struct ReadoutScan { bool checked = false; juce::String note; std::vector<ReadoutHit> hits; std::set<int> positions; };
+inline ReadoutScan scanReadouts (const std::vector<TextAtRow>& text, const ChildResult& second)
+{
+    ReadoutScan r;
+    std::map<int, int> positionOf;                      // control index -> position in controls[]
+    for (size_t i = 0; i < text.size(); ++i) positionOf[text[i].index] = (int) i;
+    if (! second.cleanExit()) { r.note = "readout check incomplete: second instance " + second.describe(); return r; }
+    const auto again = parseTextAt (second.out);
+    std::map<int, const TextAtRow*> byIndex;
+    for (const auto& t : again) byIndex[t.index] = &t;
+    r.checked = true;
+    for (const auto& t : text)
+    {
+        auto it = byIndex.find (t.index);
+        if (it == byIndex.end()) { r.note = "second instance lacks control " + juce::String (t.index); r.checked = false; break; }
+        if (it->second->defNorm != t.defNorm || it->second->defText != t.defText)
+        {
+            r.hits.push_back ({ t.index, t.name, t.defNorm, it->second->defNorm, t.defText, it->second->defText });
+            r.positions.insert (positionOf[t.index]);
+        }
+    }
+    return r;
 }
 
 //==============================================================================
@@ -713,7 +771,7 @@ inline int runCertDefaults (const Options& opt)
     // derivation from two measurements, so it lives here and the probe is unchanged.
     // Sufficient, not necessary: a meter that happens to read the same twice (a gain
     // reduction meter sitting at 0 in silence) is NOT caught.
-    struct Readout { int index; juce::String name; double a, b; juce::String ta, tb; };
+    using Readout = ReadoutHit;
     struct Row { const Subject* s; juce::String outcome; juce::StringArray diffs, diffsOnReadouts, emissionFails;
                  bool reproduced = false, retried = false, readoutChecked = false, emitted = false, unlicensed = false;
                  int captured = 0, onList = 0; std::vector<Readout> readouts; juce::String readoutNote; };
@@ -749,27 +807,11 @@ inline int runCertDefaults (const Options& opt)
 
             // THE SECOND INSTANCE. One extra instantiation per product.
             auto tb = runProbe (s, "--text-at all (second instance)", { "--text-at", "all" }, row.retried);
-            std::map<int, int> positionOf;                      // control index -> position in controls[]
-            for (size_t i = 0; i < text.size(); ++i) positionOf[text[i].index] = (int) i;
-            std::set<int> readoutPositions;
-            if (! tb.cleanExit()) row.readoutNote = "readout check incomplete: second instance " + tb.describe();
-            else
-            {
-                const auto second = parseTextAt (tb.out);
-                std::map<int, const TextAtRow*> byIndex;
-                for (const auto& t : second) byIndex[t.index] = &t;
-                row.readoutChecked = true;
-                for (const auto& t : text)
-                {
-                    auto it = byIndex.find (t.index);
-                    if (it == byIndex.end()) { row.readoutNote = "second instance lacks control " + juce::String (t.index); row.readoutChecked = false; break; }
-                    if (it->second->defNorm != t.defNorm || it->second->defText != t.defText)
-                    {
-                        row.readouts.push_back ({ t.index, t.name, t.defNorm, it->second->defNorm, t.defText, it->second->defText });
-                        readoutPositions.insert (positionOf[t.index]);
-                    }
-                }
-            }
+            const auto scan = scanReadouts (text, tb);
+            row.readoutChecked = scan.checked;
+            if (scan.note.isNotEmpty()) row.readoutNote = scan.note;
+            row.readouts = scan.hits;
+            const auto& readoutPositions = scan.positions;
 
             // TWO FORMS, TWO QUESTIONS. `regen` is the MEASURED form, composed exactly as
             // before item 12; it is what the reproduction score compares, so that score stays
@@ -893,6 +935,312 @@ inline int runCertDefaults (const Options& opt)
     opt.out.getChildFile ("report.txt").replaceWithText (rep);
     std::cout << "\n" << rep << std::endl;
     return (differs == 0 && onlyReadouts == 0 && failed == 0 && emitted == reachable) ? 0 : 1;
+}
+
+//==============================================================================
+// THE THRESHOLD SWEEP, one product (spec section 4; --cert-sweep). The probe measures, EJ Map
+// plans and derives (EjmapSweep.h). Same gates as --cert-defaults: the signature once, the
+// reachability classification, the retry rule, the window watch, and every probe output kept.
+// ONE PROCESS PER POSITION (ruled 29 Sep): a reference-only process at the default threshold
+// (spec 4.7's unlicensed test only), then one process per position, levels quiet to loud.
+// The fixture is written to <out>/fixtures only - never into the server tree, never over a
+// pushed fixture - with LF line ends. processes.json records every process, so the fixture
+// can be re-derived from the raw files alone (RoundTripTest does exactly that).
+struct SweepOptions
+{
+    juce::File fixtures, probe, out;
+    juce::String product, hostVersion, armLabel;
+    std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
+    int timeoutMs = 120000;                          // per process
+    bool includePace = false, resetPerHold = false;
+};
+
+// The architecture the plugin RUNS in (ruling item 4): the bundle's own slices against this
+// host's. A bundle with no slice for the host runs bridged, out of process, under Rosetta.
+inline juce::String bundleArchs (const juce::File& bundle)
+{
+    auto plist = juce::parseXML (bundle.getChildFile ("Contents/Info.plist"));
+    juce::String exeName;
+    if (plist != nullptr)
+        if (auto* dict = plist->getChildByName ("dict"))
+            for (auto* k = dict->getFirstChildElement(); k != nullptr; k = k->getNextElement())
+                if (k->hasTagName ("key") && k->getAllSubText() == "CFBundleExecutable" && k->getNextElement() != nullptr)
+                    exeName = k->getNextElement()->getAllSubText();
+    if (exeName.isEmpty()) return {};
+    auto r = runChild ({ "/usr/bin/lipo", "-archs", bundle.getChildFile ("Contents/MacOS").getChildFile (exeName).getFullPathName() }, 20000);
+    return r.cleanExit() ? r.out.trim() : juce::String();
+}
+
+inline juce::String fixtureFileName (const juce::var& f)
+{
+    return "AudioUnit_" + f.getProperty ("uid", "").toString() + "_" + f.getProperty ("version", "").toString() + ".json";
+}
+
+inline int runCertSweep (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    if (! opt.out.createDirectory()) { say ("SWEEP: cannot create " + opt.out.getFullPathName()); return 2; }
+    const auto id = checkProbe (opt.probe, {}, {});
+    if (! id.ok) { say ("SWEEP: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const juce::String probeLabel = "signed EchoJayProbe (feat/ejmap-cert), team " + id.team + ", cdhash " + id.cdhash;
+    const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+
+    auto subjects = loadFixtures (opt.fixtures);
+    classify (subjects, opt.includePace);
+    const Subject* sp = nullptr;
+    for (const auto& x : subjects) if (x.product == opt.product) { sp = &x; break; }
+    if (sp == nullptr) { say ("SWEEP: no fixture for product '" + opt.product + "'"); return 2; }
+    const Subject& s = *sp;
+    if (! measurable (s, opt.includePace))
+    {
+        juce::String why = reachName (s.reach) + (s.detail.isNotEmpty() ? " (" + s.detail + ")" : juce::String());
+        if (s.reach == Subject::Reach::versionMismatch)
+            why << (! s.installedUnique ? "; more than one version installed, and one is never picked"
+                    : s.hardware ? "; needs its hardware" : "; licence-bound (run with --include-pace)");
+        say ("SWEEP: " + s.product + " is not measurable here: " + why);
+        return 4;
+    }
+
+    const juce::String armTag = opt.armLabel.isNotEmpty() ? ".arm-" + opt.armLabel : juce::String();
+    auto raw = opt.out.getChildFile ("raw");
+    raw.createDirectory();
+    auto ledger = opt.out.getChildFile ("run.jsonl");
+    juce::Array<juce::var> processes;
+    bool windowSeen = false;
+    juce::StringArray windows;
+    // THE RETRY RULE, as --cert-defaults: anything but a clean exit is re-run ONCE; a refusal (exit 3) and a
+    // window are answers, not retried. Every attempt's output is kept.
+    auto runProbe = [&] (const juce::String& stem, const juce::String& tag, const juce::StringArray& extra, float norm) -> ChildResult
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), s.desc.name, s.desc.fileOrIdentifier,
+                                 juce::String::toHexString (s.desc.uniqueId) };
+        args.addArray (extra);
+        ChildResult r;
+        for (int attempt = 1; attempt <= 2; ++attempt)
+        {
+            r = runChild (args, opt.timeoutMs);
+            const auto file = stem + "." + tag + "." + juce::String (attempt) + ".txt";
+            raw.getChildFile (file).replaceWithText (r.out, false, false, "\n");
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("tag", tag); o->setProperty ("attempt", attempt); o->setProperty ("file", file);
+            o->setProperty ("outcome", r.describe()); o->setProperty ("clean", r.cleanExit()); o->setProperty ("norm", norm);
+            o->setProperty ("ms", r.ms);
+            processes.add (juce::var (o));
+            ledger.appendText (juce::JSON::toString (juce::var (o), true) + "\n");
+            if (r.kind == ChildResult::Kind::uiShown) { windowSeen = true; windows.addArray (r.windowsInTree); }
+            if (r.cleanExit() || (r.kind == ChildResult::Kind::exited && r.code == 3) || r.kind == ChildResult::Kind::uiShown) break;
+        }
+        return r;
+    };
+    auto licenceLine = [&] (const juce::String& what, const ChildResult& r) {
+        const auto f = certoutcome::classifyFailure (s.licenceBound, r.windowsInTree);
+        return (f == certoutcome::Failure::unlicensedOnHost ? "UNLICENSED ON HOST: " : "ERROR: ") + what + " " + r.describe(); };
+
+    // AN UNSEEN VERSION: sample defaults first, then sweep, in one pass (ruled 29 Sep). The identity is the
+    // INSTALLED component's, composed by the same composeFixture as --cert-defaults.
+    juce::var base = s.pushed;
+    bool newIdentity = false;
+    if (s.reach == Subject::Reach::versionMismatch)
+    {
+        const auto dstem = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".defaults";
+        auto lp = runProbe (dstem, "list-params", { "--list-params" }, -1.0f);
+        if (! lp.cleanExit()) { say ("SWEEP: " + s.product + " - " + licenceLine ("defaults --list-params", lp)); return 1; }
+        auto ta = runProbe (dstem, "text-at", { "--text-at", "all" }, -1.0f);
+        if (! ta.cleanExit()) { say ("SWEEP: " + s.product + " - " + licenceLine ("defaults --text-at all", ta)); return 1; }
+        auto tb = runProbe (dstem, "text-at-2", { "--text-at", "all" }, -1.0f);
+        const auto text = parseTextAt (ta.out);
+        const auto scan = scanReadouts (text, tb);
+        std::vector<fixturereadout::Moved> moved;
+        for (const auto& h : scan.hits) moved.push_back ({ h.index, h.a, h.b, h.ta, h.tb });
+        base = fixturereadout::applySchema (composeFixture (s, parseListParams (lp.out), text, lp.code, ta.code, probeLabel, date),
+                                            moved, scan.checked);
+        newIdentity = true;
+    }
+
+    auto plan = sweep::planFromFixture (base);
+    if (! plan.ok) { say ("SWEEP: " + s.product + " - " + plan.why); return 4; }
+    for (auto x : opt.extraSets) plan.sets.push_back (x);
+
+    const std::vector<double> levels { -24.0, -12.0, -6.0 };   // quiet to loud, inside every process
+    const double hz = 997.0;
+    juce::StringArray sets;
+    for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
+    auto sweepArgs = [&] (const juce::String& norms, const juce::String& ref) {
+        juce::StringArray a { "--sweep", "thr=" + juce::String (plan.thr), "norms=" + norms, "levels=-24,-12,-6", "hz=997",
+                              "hold=1.5", "discard=0.75", "win=0.25", "ref=" + ref, "moving_db=0.1",
+                              juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
+        if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+        return a; };
+
+    const auto stem = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + ".sweep" + armTag;
+    std::cout << "  sweeping " << s.product << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
+              << " - 1 reference + " << (int) plan.norms.size() << " position processes" << std::endl;
+    sweep::ProcessOut refOut;
+    {
+        const auto r = runProbe (stem, "ref", sweepArgs ("", "2.0"), -1.0f);
+        refOut = { r.out, r.cleanExit(), r.describe(), -1.0f };
+    }
+    std::vector<sweep::ProcessOut> posOut;
+    for (size_t k = 0; k < plan.norms.size() && ! windowSeen; ++k)
+    {
+        const auto tag = "pos" + juce::String ((int) k).paddedLeft ('0', 2);
+        const auto r = runProbe (stem, tag, sweepArgs (juce::String (plan.norms[k], 6), "0"), plan.norms[k]);
+        posOut.push_back ({ r.out, r.cleanExit(), r.describe(), plan.norms[k] });
+    }
+    opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
+    if (windowSeen)
+    {
+        say ("SWEEP: " + s.product + " - UNLICENSED ON HOST: a window appeared in the probe's tree (" + windows.joinIntoString (", ")
+             + "); the product was stopped at once, nothing derived");
+        return 1;
+    }
+
+    const auto m = sweep::mergeProcesses (refOut, posOut);
+    const auto d = sweep::derive (m, levels, plan.ratioIndex);
+    const auto dc = sweep::displayCheck (d, plan.thrUnit);
+
+    juce::String pluginArch = m.arch;
+    bool bridged = false;
+    const auto bundles = componentBundles();
+    if (auto it = bundles.find (s.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)); it != bundles.end())
+    {
+        const auto archs = juce::StringArray::fromTokens (bundleArchs (it->second), " ", "");
+        if (! archs.isEmpty() && ! archs.contains (m.arch)) { bridged = true; pluginArch = archs.contains ("x86_64") ? "x86_64" : archs[0]; }
+    }
+    sweep::Provenance pv;
+    pv.measuredAt = juce::Time::getCurrentTime().toISO8601 (false);
+    pv.host = "EJ Map " + opt.hostVersion + " / " + pluginArch + " / 48k";
+    pv.bridged = bridged;
+    pv.hz = hz;
+    if (! opt.extraSets.empty())
+    {
+        auto* arm = new juce::DynamicObject();
+        arm->setProperty ("label", opt.armLabel);
+        arm->setProperty ("note", "DIAGNOSTIC ARM - a non-swept control was moved on purpose; this is not the product's certification");
+        juce::Array<juce::var> xs;
+        for (auto [i, v] : opt.extraSets)
+        {
+            auto* x = new juce::DynamicObject();
+            x->setProperty ("index", i); x->setProperty ("normalised", v);
+            if (m.params.count (i)) x->setProperty ("name", m.params.at (i).first);
+            xs.add (juce::var (x));
+        }
+        arm->setProperty ("sets", xs);
+        pv.diagnosticArm = juce::var (arm);
+    }
+
+    auto fixturesDir = opt.out.getChildFile ("fixtures");
+    fixturesDir.createDirectory();
+    const auto outName = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + armTag + ".json";
+    if (d.unlicensedSuspect)
+        say ("SWEEP: " + s.product + " - UNLICENSED ON HOST suspected (spec 4.7): " + d.referenceNote + "no thresholdSweep written");
+    else
+    {
+        const auto ts = sweep::composeThresholdSweep (d, dc, plan, pv);
+        fixturesDir.getChildFile (outName).replaceWithText (juce::JSON::toString (sweep::composeFixture (base, ts)) + "\n", false, false, "\n");
+    }
+
+    // THE REPORT: the trace in reading order, so the curve can be checked by eye.
+    int slicesTotal = 0, instack = 0, unl = 0, rer = 0, landed = 0, failedProc = 0; double confMax = 0;
+    for (const auto& p : m.positions)
+    {
+        if (p.processFailed) { ++failedProc; continue; }
+        if (p.unlanded) { ++unl; continue; }
+        ++landed; slicesTotal += p.slices; if (p.instackMatch) ++instack; confMax = juce::jmax (confMax, p.confirmMs);
+        if (p.rerendered) ++rer;
+    }
+    int retried = 0;
+    for (const auto& pr : processes) if ((int) pr.getProperty ("attempt", 1) == 2) ++retried;
+    juce::String rep;
+    rep << "EJ Map threshold sweep - " << s.product << " -> " << outName << (newIdentity ? "  (NEW IDENTITY: installed " + s.desc.version + ", no fixture at that version)" : juce::String()) << "\n"
+        << "probe: " << probeLabel << " | plugin ran " << pluginArch << (bridged ? " (BRIDGED)" : " (native)") << "\n";
+    if (! opt.extraSets.empty()) rep << "DIAGNOSTIC ARM '" << opt.armLabel << "': " << sets.joinIntoString (", ") << " (not the product's certification)\n";
+    rep << "threshold: [" << plan.thr << "] " << plan.thrName << " unit '" << plan.thrUnit << "' (class " << plan.cls
+        << (plan.thrFlags.isEmpty() ? "" : ", flags " + plan.thrFlags.joinIntoString (",")) << ") | positions " << (int) plan.norms.size()
+        << (plan.stepped ? " (every step)" : " (16 evenly spaced)") << ", one process each, levels quiet to loud\n"
+        << "ratio: " << (plan.ratioIndex >= 0 ? "[" + juce::String (plan.ratioIndex) + "] '" + d.ratioText + "' -> " + (d.ratio ? juce::String (*d.ratio) : juce::String ("not numeric")) : plan.ratioNote)
+        << " | auto make-up disabled: " << (plan.autoMakeupDisabled ? "yes" : "no") << "\n"
+        << "default-threshold reference ('" << m.refText << "', spec 4.7 check only):";
+    for (double L : levels) { const auto k = sweep::levelKey (L); if (m.refDb.count (k)) rep << "  " << k << " out-in " << juce::String (m.refDb.at (k) - m.inRmsDb.at (k), 2); }
+    rep << "\nlinear reference (soft end";
+    if (d.softEnd) { rep << ", position " << *d.softEnd << "):"; for (double L : levels) rep << "  " << sweep::levelKey (L) << " " << juce::String (d.linearGain.at (sweep::levelKey (L)), 2); }
+    else rep << "): none";
+    rep << "\nprocesses: " << processes.size() << " run, " << retried << " retried, " << failedProc << " position(s) failed\n"
+        << "write verify: " << landed << " landed, " << unl << " write_unlanded (skipped), in-stack read already matched on " << instack
+        << " of " << landed << ", pump slices total " << slicesTotal << ", longest confirm " << juce::String (confMax, 1) << " ms, re-rendered " << rer << "\n";
+    { juce::StringArray a; for (int i : d.holdDoubled) a.add (juce::String (i)); rep << "hold doubled at positions: " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
+    { juce::StringArray a; for (int i : d.stillMoving) a.add (juce::String (i)); rep << "still moving AFTER doubling (reading not used): " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
+    rep << "audio " << juce::String (m.audioS, 1) << " s, render wall " << juce::String (m.wallMs / 1000.0, 2) << " s\n\n"
+        << "pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display\n";
+    for (size_t i = 0; i < d.norms.size(); ++i)
+    {
+        auto cell = [&] (double L) {
+            auto it = d.reduction.find (sweep::levelKey (L));
+            std::optional<double> g = it != d.reduction.end() && i < it->second.size() ? it->second[i] : std::nullopt;
+            return (g ? juce::String (*g, 2) : juce::String ("--")).paddedLeft (' ', 7); };
+        const juce::var tv = i < d.tEquivalent.size() ? d.tEquivalent[i] : juce::var();
+        juce::String t = tv.isVoid() ? "--" : tv.isObject() ? juce::JSON::toString (tv, true) : juce::String ((double) tv, 1);
+        juce::String off;
+        for (const auto& o : dc.offsets) if (o.first == (int) i) off = juce::String (o.second, 2);
+        rep << juce::String ((int) i).paddedLeft (' ', 3) << "  " << juce::String (d.norms[i], 4).paddedRight (' ', 8) << "  "
+            << d.texts[i].paddedRight (' ', 13) << cell (-24) << "  " << cell (-12) << "  " << cell (-6) << "   "
+            << t.paddedLeft (' ', 9) << "   " << off.paddedLeft (' ', 7) << "\n";
+    }
+    rep << "\nMAP:     " << d.result << (d.reason.isNotEmpty() ? " (" + d.reason + ")" : juce::String())
+        << " | sense " << (d.sense.isEmpty() ? "--" : d.sense) << " | engage";
+    for (double L : levels) { auto e = d.engage.count (sweep::levelKey (L)) ? d.engage.at (sweep::levelKey (L)) : std::nullopt; rep << " " << sweep::levelKey (L) << ":" << (e ? juce::String (*e) : juce::String ("none")); }
+    rep << "\nDISPLAY: display_dbfs " << (dc.dbfs ? (*dc.dbfs ? "TRUE" : "FALSE") : "null (not a dB display, or too few positions)");
+    if (dc.positions > 0)
+        rep << " | T - display over " << dc.positions << " positions: median " << juce::String (dc.medianDb, 2) << " dB, min "
+            << juce::String (dc.minDb, 2) << ", max " << juce::String (dc.maxDb, 2) << "  (peak convention: 0 = peak detector, +3.01 = RMS detector)";
+    rep << "\n";
+    opt.out.getChildFile (stem + ".report.txt").replaceWithText (rep, false, false, "\n");
+    std::cout << rep << std::flush;
+    return 0;
+}
+
+//==============================================================================
+// THE SWEEP CENSUS (--cert-sweep-census): which fixtures a sweep can run on HERE, read-only, nothing
+// instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
+// measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
+// the pushed fixture's controls; the real plan is made from the defaults sampled at the installed version.
+inline int runSweepCensus (const juce::File& fixturesDir, bool includePace)
+{
+    auto subjects = loadFixtures (fixturesDir);
+    classify (subjects, includePace);
+    int runnable = 0, runnableNewIdentity = 0;
+    std::map<juce::String, juce::StringArray> notRunnable;
+    juce::StringArray rows;
+    for (const auto& s : subjects)
+    {
+        const auto plan = sweep::planFromFixture (s.pushed);
+        if (! plan.ok)
+        {
+            notRunnable[plan.why.contains ("unity") ? "ratio instantiates at 1:1 - the section 4.2 raise to 4:1 is not built (class " + plan.cls + ")"
+                                                    : "no single threshold (" + plan.cls + ") - deferred to review after the sweep"].add (s.product);
+            continue;
+        }
+        if (! measurable (s, includePace))
+        {
+            juce::String why = reachName (s.reach);
+            if (s.reach == Subject::Reach::versionMismatch)
+                why << (! s.installedUnique ? " - several versions installed" : s.hardware ? " - needs its hardware" : " - licence-bound");
+            notRunnable[why].add (s.product);
+            continue;
+        }
+        ++runnable;
+        const bool fresh = s.reach == Subject::Reach::versionMismatch;
+        if (fresh) ++runnableNewIdentity;
+        rows.add ("  " + s.product.paddedRight (' ', 40) + (fresh ? "NEW IDENTITY at installed " + s.desc.version + " (defaults first)" : juce::String ("at the fixture's version"))
+                  + (s.licenceBound ? "  [licence-bound]" : ""));
+    }
+    std::cout << "SWEEP CENSUS - " << (int) subjects.size() << " fixtures, PACE " << (includePace ? "included" : "held") << "\n"
+              << "RUNNABLE: " << runnable << " (" << runnableNewIdentity << " as a new identity at the installed version)\n"
+              << rows.joinIntoString ("\n") << "\nNOT RUNNABLE, BY REASON\n";
+    for (const auto& [why, names] : notRunnable)
+        std::cout << "  " << why << " (" << names.size() << "): " << names.joinIntoString (", ") << "\n";
+    std::cout << std::flush;
+    return 0;
 }
 
 //==============================================================================

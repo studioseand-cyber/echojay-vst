@@ -63,6 +63,8 @@
 #include "EjmapNameTokens.h"
 #include "EjmapRoles.h"
 #include "EjmapRoleSemantics.h"
+#include "EjmapSweep.h"
+#include "EjmapCertDriver.h"
 
 namespace
 {
@@ -4001,6 +4003,203 @@ void testRoleClassification74()
            "roles C6: 23 are deferred to review after the sweep (4 amount, 3 L/R, 14 bands or stages, 2 surround)");
 }
 
+//==============================================================================
+/** THE THRESHOLD SWEEP'S DERIVATION (EjmapSweep.h), on synthetic readings where the rule is the point and on
+    the committed townhouse traces where the data is. One process per position, the soft end's linear gain as the
+    reference, the two guards, and two verdicts that are never merged (all ruled 29 Sep). */
+namespace sweeptest
+{
+    using namespace ejmap::sweep;
+    // A Measured built from out-minus-in gains per position (rows) at -24/-12/-6 (columns); nullopt = still moving.
+    inline Measured fromGains (const std::vector<std::array<std::optional<double>, 3>>& gains, bool withRef = true)
+    {
+        Measured m;
+        m.ok = true;
+        m.movingDb = 0.1;
+        const double L[3] = { -24.0, -12.0, -6.0 };
+        if (withRef) for (double l : L) { m.refDb[levelKey (l)] = l - 3.0103; m.inRmsDb[levelKey (l)] = l - 3.0103; }
+        for (size_t k = 0; k < gains.size(); ++k)
+        {
+            PositionReading p;
+            p.k = (int) k;
+            p.norm = gains.size() > 1 ? (float) k / (float) (gains.size() - 1) : 0.0f;
+            p.text = juce::String (-20.0 + 2.0 * (double) k, 1) + " dB";
+            for (int j = 0; j < 3; ++j)
+            {
+                HoldReading h;
+                h.present = true;
+                h.inRmsDb = L[j] - 3.0103;
+                if (gains[k][(size_t) j]) h.levelDb = h.inRmsDb + *gains[k][(size_t) j];
+                else { h.levelDb = h.inRmsDb; h.finalMoveDb = 0.5; h.doubled = true; }
+                p.holds[levelKey (L[j])] = h;
+            }
+            m.positions.push_back (p);
+        }
+        return m;
+    }
+    inline const std::vector<double> kLevels { -24.0, -12.0, -6.0 };
+}
+
+void testSweepDerivation()
+{
+    using namespace sweeptest;
+    // A clean lower-is-harder compressor: gain 2 dB when linear, reduction growing toward position 0.
+    std::vector<std::array<std::optional<double>, 3>> clean;
+    for (int k = 0; k < 6; ++k) { const double r = (5 - k) * 1.5; clean.push_back ({ 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.5 }); }
+    auto d = derive (fromGains (clean), kLevels, -1);
+    check (d.result == "certified" && d.sense == "lower_is_harder" && d.softEnd && *d.softEnd == 5,
+           "sweep D1: a clean curve certifies, lower is harder, and the reference is the SOFT end (position 5)");
+    check (std::abs (*d.reduction[levelKey (-6)][0] - 11.25) < 1e-9 && std::abs (*d.reduction[levelKey (-6)][5]) < 1e-9,
+           "sweep D2: reduction is measured from the soft end's LINEAR gain, not from the default threshold");
+
+    // THE LINEAR REFERENCE: the soft end's gains must agree within 0.5 dB across the levels.
+    auto nonLinear = clean;
+    nonLinear[5] = { 2.0, 2.0, 1.4 };
+    check (derive (fromGains (nonLinear), kLevels, -1).result == "unreadable",
+           "sweep D3: a soft end whose gains disagree by more than 0.5 dB is no reference - refuses");
+    nonLinear[5] = { 2.0, 2.0, 1.6 };
+    check (derive (fromGains (nonLinear), kLevels, -1).result == "certified",
+           "sweep D4: ...and within 0.5 dB it is one");
+
+    // GUARD 1: a reduction BELOW the linear reference by more than 0.5 dB.
+    auto above = clean;
+    above[3] = { 2.0, 3.0, 2.0 };
+    check (derive (fromGains (above), kLevels, -1).result == "unreadable",
+           "sweep D5: a reading 1 dB ABOVE the linear reference refuses - it carries history, or this is no compressor curve");
+
+    // GUARD 2: more than two positions still moving after the doubling.
+    auto moving = clean;
+    moving[1][0] = std::nullopt; moving[2][0] = std::nullopt;
+    const auto two = derive (fromGains (moving), kLevels, -1);
+    check (two.result == "certified" && two.stillMoving.size() == 2 && ! two.reduction.at (levelKey (-24))[1],
+           "sweep D6: two still-moving positions are left out (null) and named, not refused");
+    moving[3][0] = std::nullopt;
+    check (derive (fromGains (moving), kLevels, -1).result == "unreadable",
+           "sweep D7: a third refuses - the holds never reached a steady state");
+
+    // FLAT: the ends within 1 dB at every level.
+    std::vector<std::array<std::optional<double>, 3>> flat (6, { 2.0, 2.0, 2.0 });
+    flat[0] = { 1.5, 1.2, 1.1 };
+    check (derive (fromGains (flat), kLevels, -1).result == "flat", "sweep D8: ends within 1 dB at every level is flat");
+
+    // THE ARM A TRACE (29 Sep, positions walked in ONE process): it read "certified" before the guards. It must not.
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep");
+    const auto armA = derive (parseSweep (dir.getChildFile ("townhouse-armA-ascending.txt").loadFileAsString()), kLevels, 5);
+    check (armA.result == "unreadable" && armA.stillMoving.size() > 2,
+           "sweep D9: townhouse arm A (one process, loud-to-quiet history) does NOT certify: '" + armA.result + "' - " + armA.reason);
+    const auto armB = derive (parseSweep (dir.getChildFile ("townhouse-armB-descending.txt").loadFileAsString()), kLevels, 5);
+    check (armB.result != "certified", "sweep D10: nor does arm B: '" + armB.result + "'");
+}
+
+void testSweepSplitVerdict()
+{
+    using namespace sweeptest;
+    // A dB display that IS dBFS in the peak convention: T lands on the displayed value.
+    // Ratio 2:1, input peak L, displayed threshold Td: g = (L - Td) / 2, so the display text must equal L - 2g.
+    Measured m = fromGains ({ { 2.0, 2.0, 2.0 } });
+    m.positions.clear();
+    const double L[3] = { -24.0, -12.0, -6.0 };
+    for (int k = 0; k < 6; ++k)
+    {
+        const double td = -30.0 + 6.0 * k;                 // -30 .. 0 dB
+        PositionReading p; p.k = k; p.norm = (float) k / 5.0f; p.text = juce::String (td, 1) + " dB";
+        for (double l : L)
+        {
+            HoldReading h; h.present = true; h.inRmsDb = l - 3.0103;
+            const double g = juce::jmax (0.0, (l - td) / 2.0);
+            h.levelDb = h.inRmsDb - g;
+            p.holds[levelKey (l)] = h;
+        }
+        m.positions.push_back (p);
+    }
+    m.params[9] = { "Ratio", "2:1" };
+    const auto d = derive (m, kLevels, 9);
+    const auto dc = displayCheck (d, "dB");
+    check (d.result == "certified" && dc.dbfs && *dc.dbfs && std::abs (dc.medianDb) < 0.01,
+           "sweep V1: a peak-referenced dBFS display gives T - display = 0 and display_dbfs TRUE");
+    check (! displayCheck (d, "").dbfs.has_value(), "sweep V2: a threshold with no dB unit gives display_dbfs NULL, never false");
+
+    // TOWNHOUSE, from its committed traces: a good map AND a display that models the console. Two verdicts.
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/townhouse");
+    ProcessOut ref; std::vector<ProcessOut> pos;
+    const bool loaded = loadProcesses (dir.getChildFile ("processes.json"), dir.getChildFile ("raw"), ref, pos);
+    check (loaded && pos.size() == 16, "sweep V3: the townhouse trace loads (1 reference + 16 position processes)");
+    const auto td = derive (mergeProcesses (ref, pos), kLevels, 5);
+    const auto tdc = displayCheck (td, "dB");
+    check (td.result == "certified" && tdc.dbfs && ! *tdc.dbfs,
+           "sweep V4: townhouse CERTIFIES its map with display_dbfs FALSE - the two verdicts are separate (median offset "
+             + juce::String (tdc.medianDb, 2) + " dB)");
+
+    // THE COMMITTED FIXTURE RE-DERIVES FROM ITS TRACE (decision D2: re-compute, never re-measure).
+    const auto fx = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT)
+                        .getChildFile ("tools/ejmap/cert-fixtures/compressor-profiles/AudioUnit_417f6e76_1.8.1.json").loadFileAsString());
+    const auto plan = planFromFixture (fx);
+    Provenance pv; pv.measuredAt = "x"; pv.host = "x";
+    const auto again = composeThresholdSweep (td, tdc, plan, pv);
+    const auto committed = fx.getProperty ("thresholdSweep", {});
+    juce::StringArray differ;
+    for (auto* k : { "reduction_db", "sense", "engage", "thresholdDbEquivalent", "result", "display_dbfs", "displayOffset",
+                     "linearReference", "positionNorms", "ratioDuring", "level_convention", "tone" })
+        if (juce::JSON::toString (again.getProperty (k, {}), true) != juce::JSON::toString (committed.getProperty (k, {}), true))
+            differ.add (k);
+    check (committed.isObject() && differ.isEmpty(),
+           "sweep V5: the committed townhouse fixture re-derives from its committed trace (differs in: " + differ.joinIntoString (", ") + ")");
+    check (plan.ok && plan.thr == 4 && plan.norms.size() == 16 && plan.ratioIndex == 5 && plan.thrUnit == "dB",
+           "sweep V6: townhouse plans on [4] Thresh (dB), 16 positions, ratio [5]");
+}
+
+void testSweepPrivacyAndPlan()
+{
+    using namespace ejmap::sweep;
+    auto* prov = new juce::DynamicObject();
+    prov->setProperty ("tester_id", "sean"); prov->setProperty ("machine_id", "abc123"); prov->setProperty ("keep", 1);
+    auto* base = new juce::DynamicObject();
+    base->setProperty ("provenance", juce::var (prov)); base->setProperty ("machine_id", "top");
+    auto* ts = new juce::DynamicObject(); ts->setProperty ("tester_id", "inside");
+    const auto f = composeFixture (juce::var (base), juce::var (ts));
+    const auto text = juce::JSON::toString (f);
+    check (! text.contains ("tester_id") && ! text.contains ("machine_id") && text.contains ("\"keep\""),
+           "sweep P1: the fixture writer drops tester_id and machine_id wherever they appear, and nothing else");
+
+    auto control = [] (int idx, const char* name, int steps, bool discrete, double defNorm, const char* defText, const char* unit) {
+        auto* c = new juce::DynamicObject();
+        c->setProperty ("index", idx); c->setProperty ("name", name); c->setProperty ("numSteps", steps);
+        c->setProperty ("discrete", discrete); c->setProperty ("unit", unit);
+        auto* d = new juce::DynamicObject(); d->setProperty ("normalised", defNorm); d->setProperty ("display", defText);
+        c->setProperty ("defaultOnInstantiate", juce::var (d));
+        return juce::var (c); };
+    auto fixture = [] (juce::Array<juce::var> cs) { auto* o = new juce::DynamicObject(); o->setProperty ("controls", cs); return juce::var (o); };
+    const auto unity = planFromFixture (fixture ({ control (0, "Threshold", 0, false, 0.5, "-10 dB", "dB"),
+                                                   control (1, "Ratio", 0, false, 0.0, "1.00:1", ":1") }));
+    check (! unity.ok && unity.why.contains ("unity"), "sweep P2: a ratio instantiating at 1:1 refuses until the 4.2 raise is built");
+    const auto autoMk = planFromFixture (fixture ({ control (0, "Threshold", 0, false, 0.5, "-10 dB", "dB"),
+                                                    control (3, "Auto Makeup", 2, true, 1.0, "On", "") }));
+    check (autoMk.ok && autoMk.autoMakeupDisabled && autoMk.sets.size() == 1 && autoMk.sets[0].first == 3 && autoMk.sets[0].second == 0.0f,
+           "sweep P3: auto make-up on by default is written OFF for the sweep, and the fixture says so");
+    const auto stepped = planFromFixture (fixture ({ control (0, "Threshold", 5, true, 0.0, "Off", "") }));
+    check (stepped.ok && stepped.norms.size() == 5 && stepped.norms[4] == 1.0f, "sweep P4: a stepped threshold sweeps every step");
+}
+
+// THE VERSION GUARD IS ON COMPARISON, NOT MEASUREMENT (ruled 29 Sep): a fresh sweep at an unseen version is valid.
+void testMeasurableRule()
+{
+    using ejmap::cert::Subject;
+    using ejmap::cert::measurable;
+    Subject s;
+    s.reach = Subject::Reach::reachable;                       check (measurable (s, false), "measurable M1: reachable");
+    s.reach = Subject::Reach::versionMismatch; s.installedUnique = true;
+    check (measurable (s, false), "measurable M2: installed at ANOTHER version, one version installed - measurable (a new identity)");
+    s.installedUnique = false;
+    check (! measurable (s, false), "measurable M3: several versions installed - never pick one");
+    s.installedUnique = true; s.hardware = true;
+    check (! measurable (s, false), "measurable M4: a hardware product stays unmeasured whatever its version");
+    s.hardware = false; s.licenceBound = true;
+    check (! measurable (s, false) && measurable (s, true), "measurable M5: licence-bound only with PACE included");
+    s.licenceBound = false;
+    for (auto r : { Subject::Reach::notInstalled, Subject::Reach::ambiguous, Subject::Reach::heldPace, Subject::Reach::requiresHardware })
+    { s.reach = r; check (! measurable (s, true), "measurable M6: " + ejmap::cert::reachName (r) + " is not measurable"); }
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -4049,6 +4248,10 @@ int main (int, char**)
     testNameTokenVectors();
     testRoleRules();
     testRoleClassification74();
+    testSweepDerivation();
+    testSweepSplitVerdict();
+    testSweepPrivacyAndPlan();
+    testMeasurableRule();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
