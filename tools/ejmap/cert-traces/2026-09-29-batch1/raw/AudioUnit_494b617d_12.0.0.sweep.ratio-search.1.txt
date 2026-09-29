@@ -1,0 +1,76 @@
+probe: "C1 comp (s)" | AudioUnit:Effects/aufx,CMPS,ksWV | uid=494b617d | arch=arm64 | format=AudioUnit
+
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	in	1	Side-Chain Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+sidechain	1	Side-Chain Input Bus	2	enabled	silent
+stage	prepare
+textat	proto	1	index	4	name	Ratio	points	65	instantiated	0.218000	1.00:1
+at	0.000000	landed	getValue	0.000000	confirm_ms	56.4	text	0.50:1
+at	0.015625	landed	getValue	0.015625	confirm_ms	65.5	text	0.52:1
+at	0.031250	landed	getValue	0.031250	confirm_ms	63.1	text	0.54:1
+at	0.046875	landed	getValue	0.046875	confirm_ms	60.4	text	0.56:1
+at	0.062500	landed	getValue	0.062500	confirm_ms	67.7	text	0.58:1
+at	0.078125	landed	getValue	0.078125	confirm_ms	63.8	text	0.61:1
+at	0.093750	landed	getValue	0.093750	confirm_ms	52.6	text	0.64:1
+at	0.109375	landed	getValue	0.109375	confirm_ms	55.5	text	0.67:1
+at	0.125000	landed	getValue	0.125000	confirm_ms	62.3	text	0.71:1
+at	0.140625	landed	getValue	0.140625	confirm_ms	50.2	text	0.75:1
+at	0.156250	landed	getValue	0.156250	confirm_ms	38.5	text	0.79:1
+at	0.171875	landed	getValue	0.171875	confirm_ms	61.0	text	0.83:1
+at	0.187500	landed	getValue	0.187500	confirm_ms	62.0	text	0.88:1
+at	0.203125	landed	getValue	0.203125	confirm_ms	73.5	text	0.94:1
+at	0.218750	landed	getValue	0.218750	confirm_ms	67.9	text	1.00:1
+at	0.234375	landed	getValue	0.234375	confirm_ms	49.6	text	1.07:1
+at	0.250000	landed	getValue	0.250000	confirm_ms	35.1	text	1.15:1
+at	0.265625	landed	getValue	0.265625	confirm_ms	56.4	text	1.23:1
+at	0.281250	landed	getValue	0.281250	confirm_ms	63.1	text	1.32:1
+at	0.296875	landed	getValue	0.296875	confirm_ms	56.6	text	1.43:1
+at	0.312500	landed	getValue	0.312500	confirm_ms	58.9	text	1.54:1
+at	0.328125	landed	getValue	0.328125	confirm_ms	63.6	text	1.67:1
+at	0.343750	landed	getValue	0.343750	confirm_ms	56.6	text	1.81:1
+at	0.359375	landed	getValue	0.359375	confirm_ms	61.7	text	1.96:1
+at	0.375000	landed	getValue	0.375000	confirm_ms	54.8	text	2.14:1
+at	0.390625	landed	getValue	0.390625	confirm_ms	58.2	text	2.33:1
+at	0.406250	landed	getValue	0.406250	confirm_ms	66.3	text	2.55:1
+at	0.421875	landed	getValue	0.421875	confirm_ms	50.2	text	2.80:1
+at	0.437500	landed	getValue	0.437500	confirm_ms	61.6	text	3.07:1
+at	0.453125	landed	getValue	0.453125	confirm_ms	59.7	text	3.38:1
+at	0.468750	landed	getValue	0.468750	confirm_ms	52.2	text	3.73:1
+at	0.484375	landed	getValue	0.484375	confirm_ms	60.7	text	4.13:1
+at	0.500000	landed	getValue	0.500000	confirm_ms	57.0	text	4.58:1
+at	0.515625	landed	getValue	0.515625	confirm_ms	65.6	text	5.08:1
+at	0.531250	landed	getValue	0.531250	confirm_ms	70.4	text	5.66:1
+at	0.546875	landed	getValue	0.546875	confirm_ms	57.1	text	6.31:1
+at	0.562500	landed	getValue	0.562500	confirm_ms	64.6	text	7.05:1
+at	0.578125	landed	getValue	0.578125	confirm_ms	61.0	text	7.90:1
+at	0.593750	landed	getValue	0.593750	confirm_ms	62.3	text	8.87:1
+at	0.609375	landed	getValue	0.609375	confirm_ms	59.6	text	9.98:1
+at	0.625000	landed	getValue	0.625000	confirm_ms	58.6	text	11.25:1
+at	0.640625	landed	getValue	0.640625	confirm_ms	59.8	text	12.71:1
+at	0.656250	landed	getValue	0.656250	confirm_ms	57.4	text	14.39:1
+at	0.671875	landed	getValue	0.671875	confirm_ms	55.5	text	16.33:1
+at	0.687500	landed	getValue	0.687500	confirm_ms	54.4	text	18.58:1
+at	0.703125	landed	getValue	0.703125	confirm_ms	63.2	text	21.17:1
+at	0.718750	landed	getValue	0.718750	confirm_ms	65.1	text	24.18:1
+at	0.734375	landed	getValue	0.734375	confirm_ms	50.3	text	27.68:1
+at	0.750000	landed	getValue	0.750000	confirm_ms	64.1	text	31.76:1
+at	0.765625	landed	getValue	0.765625	confirm_ms	70.3	text	36.51:1
+at	0.781250	landed	getValue	0.781250	confirm_ms	52.1	text	42.07:1
+at	0.796875	landed	getValue	0.796875	confirm_ms	51.4	text	48.57:1
+at	0.812500	landed	getValue	0.812500	confirm_ms	49.9	text	-43.77:1
+at	0.828125	landed	getValue	0.828125	confirm_ms	58.8	text	-36.53:1
+at	0.843750	landed	getValue	0.843750	confirm_ms	67.1	text	-30.49:1
+at	0.859375	landed	getValue	0.859375	confirm_ms	60.0	text	-25.45:1
+at	0.875000	landed	getValue	0.875000	confirm_ms	61.1	text	-21.24:1
+at	0.890625	landed	getValue	0.890625	confirm_ms	59.1	text	-17.73:1
+at	0.906250	landed	getValue	0.906250	confirm_ms	62.8	text	-14.79:1
+at	0.921875	landed	getValue	0.921875	confirm_ms	59.8	text	-12.35:1
+at	0.937500	landed	getValue	0.937500	confirm_ms	49.1	text	-10.30:1
+at	0.953125	landed	getValue	0.953125	confirm_ms	39.0	text	-8.60:1
+at	0.968750	landed	getValue	0.968750	confirm_ms	56.9	text	-7.18:1
+at	0.984375	landed	getValue	0.984375	confirm_ms	72.3	text	-5.99:1
+at	1.000000	landed	getValue	1.000000	confirm_ms	60.3	text	-5.00:1
+stage	done

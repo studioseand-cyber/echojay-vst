@@ -1,0 +1,152 @@
+probe: "C1 comp-gate (s)" | AudioUnit:Effects/aufx,COMS,ksWV | uid=49497c7d | arch=arm64 | format=AudioUnit
+
+param	0	Low/Peak ref	unit	
+def	0.000000	Low Ref	default	0.000000
+at	0.000	Low Ref
+at	0.500	Low Ref
+at	1.000	Peak Ref
+param	1	Gate Hold	unit	ms
+def	0.000000	0.01	default	0.000000
+at	0.000	0.01
+at	0.500	7.07
+at	1.000	5000.00
+param	2	LookAhead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Gate Attack	unit	ms
+def	0.460000	2.00	default	0.460000
+at	0.000	0.01
+at	0.500	3.16
+at	1.000	1000.00
+param	4	Gate Release	unit	ms
+def	0.369000	30	default	0.369000
+at	0.000	1
+at	0.500	100
+at	1.000	10000
+param	5	Floor	unit	dB
+def	0.219000	-Inf	default	0.219000
+at	0.000	-10.0 N
+at	0.500	-5.7
+at	1.000	12.0
+param	6	Gate open	unit	dB
+def	0.000000	-Inf	default	0.000000
+at	0.000	-Inf
+at	0.500	-50.0
+at	1.000	0.0
+param	7	Gate close	unit	dB
+def	0.000000	-Inf	default	0.000000
+at	0.000	-Inf
+at	0.500	-50.0
+at	1.000	0.0
+param	8	Expander/Gate	unit	
+def	0.000000	Gate	default	0.000000
+at	0.000	Gate
+at	0.500	Gate
+at	1.000	Expander
+param	9	Exp Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	Comp Attack	unit	ms
+def	0.460000	2.00	default	0.460000
+at	0.000	0.01
+at	0.500	3.16
+at	1.000	1000.00
+param	11	Comp Release	unit	ms
+def	0.425000	50	default	0.425000
+at	0.000	1
+at	0.500	100
+at	1.000	10000
+param	12	PDR Tc	unit	ms
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	22
+at	1.000	1000
+param	13	Ratio	unit	
+def	0.218000	1.00:1	default	0.218000
+at	0.000	0.50:1
+at	0.500	4.58:1
+at	1.000	-5.00:1
+param	14	Makeup Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-40.0
+at	0.500	0.0
+at	1.000	40.0
+param	15	Output Gain	unit	dB
+def	0.690000	0.0	default	0.690000
+at	0.000	-40.0
+at	0.500	-11.0
+at	1.000	18.0
+param	16	Threshold	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-100.0
+at	0.500	-50.0
+at	1.000	0.0
+param	17	Comp Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	18	In Left Gain	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-24.0
+at	0.500	-12.0
+at	1.000	0.0
+param	19	In Right Gain	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-24.0
+at	0.500	-12.0
+at	1.000	0.0
+param	20	Filter Type	unit	
+def	0.000000	Low-Pass	default	0.000000
+at	0.000	Low-Pass
+at	0.500	Hi-Pass
+at	1.000	Band-Reject
+param	21	Filter Freq	unit	Hz
+def	0.849000	7179	default	0.849000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	22	Filter Q	unit	
+def	1.000000	0.600	default	1.000000
+at	0.000	0.100
+at	0.500	0.350
+at	1.000	0.600
+param	23	Gate Filter On	unit	
+def	0.000000	Wideband	default	0.000000
+at	0.000	Wideband
+at	0.500	Sidechain
+at	1.000	Split
+param	24	Select monitor	unit	
+def	0.000000	Audio	default	0.000000
+at	0.000	Audio
+at	0.500	Sidechain
+at	1.000	Passive
+param	25	Comp Filter On	unit	
+def	0.000000	Wideband	default	0.000000
+at	0.000	Wideband
+at	0.500	Sidechain
+at	1.000	Split
+param	26	Key Mode	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	L -> R
+at	1.000	R -> L
+param	27	Strap Att	unit	ms
+def	0.460000	2.00	default	0.460000
+at	0.000	0.01
+at	0.500	3.16
+at	1.000	1000.00
+param	28	Strap Rel	unit	ms
+def	0.425000	50	default	0.425000
+at	0.000	1
+at	0.500	100
+at	1.000	10000
+param	29	Strap Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-100.0
+at	0.500	-50.0
+at	1.000	0.0

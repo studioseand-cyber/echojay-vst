@@ -1,0 +1,23 @@
+probe: "UAD Neve 2254 E" | AudioUnit:Effects/aufx,SCAU,!UAD | uid=13636669 | arch=arm64 | format=AudioUnit
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+0	Bypass		2	1	1	0
+1	Meter		3	1	1	0
+2	Lim Attack		3	1	1	0
+3	Lim Lvl		17	1	1	0
+4	Lim Rcvr		4	1	1	0
+5	Comp Attack		3	1	1	0
+6	Comp Ratio		5	1	1	0
+7	Comp Thr		16	1	1	0
+8	Comp Rcvr		4	1	1	0
+9	Comp /8		2	1	1	0
+10	Comp Gain		11	1	1	0
+11	Output		21	1	1	0
+12	Stereo Link		2	1	1	0
+13	SC HPF		2147483647	0	1	0
+14	Mix		2147483647	0	1	0
+15	Headroom		7	1	1	0
+16	Power		2	1	1	0

@@ -1,0 +1,28 @@
+probe: "bx_opto" | AudioUnit:Effects/aufx,bxot,Brwx | uid=417f7e74 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Peak Reduction	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Power	On
+param	1	0.500000	Speed	50
+param	2	0.000000	Peak Reduction	0
+param	3	0.000000	Output Gain	0 dB
+param	4	0.000000	Sidechain Filter Type	HP
+param	5	0.000000	Sidechain Frequency	20 Hz
+param	6	1.000000	Mix	100 %
+param	7	0.000000	Sidechain Off/On/Solo	Off
+param	8	0.000000	Bank	A
+param	9	1.000000		
+stage	position
+pos	0	norm	0.333333	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.333333	text_ms	21.3	reads	2	text	33
+hold	0	-24.00	level_db	-27.0239	in_rms_db	-27.0103	ch	-27.0239,-27.0239	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-27.0244,-27.0237,-27.0244,-27.0237,-27.0244,-27.0237	nonfinite	0
+hold	0	-12.00	level_db	-15.0422	in_rms_db	-15.0103	ch	-15.0422,-15.0422	doubled	0	last_move_db	-0.0024	final_move_db	-0.0024	win	-15.0269,-15.0295,-15.0352,-15.0377,-15.0433,-15.0457	nonfinite	0
+hold	0	-6.00	level_db	-11.7186	in_rms_db	-9.0103	ch	-11.7186,-11.7186	doubled	0	last_move_db	0.0014	final_move_db	0.0014	win	-10.9183,-11.6052,-11.6983,-11.7148,-11.7212,-11.7199	nonfinite	0
+reread	0	steady
+timing	wall_ms	41.0	audio_s	4.500
+stage	done

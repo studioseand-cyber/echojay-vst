@@ -1,0 +1,32 @@
+probe: "U73b Compressor" | AudioUnit:Effects/aufx,U73b,AdFd | uid=7526137e | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Level	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Audio Input	2	Stereo	enabled
+bus	render	in	1	Sidechain Input	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Sidechain Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Bypass	Off
+param	1	0.000000	Mode	0
+param	2	0.400000	Release Time	2
+param	3	0.500000	Input Level	0
+param	4	0.500000	Output Level	0
+param	5	0.000000	Key Input	0
+param	6	0.500000	Meter	1
+param	7	1.000000	HiPass	On
+param	8	0.625000	Calibration	-9
+param	9	0.000000	Autovolume	Off
+param	10	0.000000	Oversampling	Off
+param	11	1.000000	Comp. Amount	100
+stage	position
+pos	0	norm	0.800000	confirm_ms	2.99	slices	1	instack_match	1	getValue	0.800000	text_ms	22.1	reads	2	text	10.8
+hold	0	-24.00	level_db	-15.4147	in_rms_db	-27.0103	ch	-15.4147,-15.4147	doubled	0	last_move_db	0.0125	final_move_db	0.0125	win	-16.9528,-15.4064,-15.4110,-15.4247,-15.4160,-15.4035	nonfinite	0
+hold	0	-12.00	level_db	-15.2112	in_rms_db	-15.0103	ch	-15.2112,-15.2112	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-15.1790,-15.2094,-15.2120,-15.2099,-15.2126,-15.2111	nonfinite	0
+hold	0	-6.00	level_db	-23.1223	in_rms_db	-9.0103	ch	-23.1223,-23.1223	doubled	0	last_move_db	0.0907	final_move_db	0.0907	win	-23.3399,-23.4732,-23.3442,-23.2222,-23.1188,-23.0281	nonfinite	0
+reread	0	steady
+timing	wall_ms	194.3	audio_s	4.500
+stage	done

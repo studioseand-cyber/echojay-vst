@@ -1,0 +1,80 @@
+probe: "UAD Tube-Tech CL 1B mk II" | AudioUnit:Effects/aufx,dbau,!UAD | uid=24424649 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Output Volume	unit	
+def	0.330000	0.0	default	0.330000
+at	0.000	Off
+at	0.500	8.5
+at	1.000	31.0
+param	1	Ratio	unit	
+def	0.500000	6:1	default	0.500000
+at	0.000	2:1
+at	0.500	6:1
+at	1.000	10:1
+param	2	Threshold	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	-18.5
+at	1.000	-41.0
+param	3	Meter	unit	
+def	0.500000	Comp	default	0.500000
+at	0.000	In
+at	0.500	Comp
+at	1.000	Out
+param	4	Attack	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	5	Release	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	6	Select Attack Release	unit	
+def	1.000000	Man	default	1.000000
+at	0.000	Fix
+at	0.500	F/M
+at	1.000	Man
+param	7	Sidechain	unit	
+def	0.000000	Int	default	0.000000
+at	0.000	Int
+at	0.500	Int
+at	1.000	Ext
+param	8	Sidechain Low Cut	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	80 Hz
+at	1.000	220 Hz
+param	9	Parallel Compression	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	10	In	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Bypass
+at	0.500	Bypass
+at	1.000	Enabled
+param	11	Mode	unit	
+def	1.000000	Active	default	1.000000
+at	0.000	Bypass
+at	0.500	Bypass
+at	1.000	Active

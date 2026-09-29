@@ -1,0 +1,35 @@
+probe: "SSLGChannel (s)" | AudioUnit:Effects/aufx,SCGS,ksWV | uid=5945767d | arch=arm64 | format=AudioUnit
+
+0	Analog		2	1	1	0
+1	CompThresh	dB	2147483647	0	1	0
+2	CompRatio		2147483647	0	1	0
+3	CompFast		2	1	1	0
+4	CompRelease	ms	2147483647	0	1	0
+5	ExpAttack		2	1	1	0
+6	ExpRelease	ms	2147483647	0	1	0
+7	ExpThresh	dB	2147483647	0	1	0
+8	ExpRange	dB	2147483647	0	1	0
+9	ExpGate		2	1	1	0
+10	EQBypass		2	1	1	0
+11	EQDynamic		2	1	1	0
+12	DynamicBypass		2	1	1	0
+13	DynaminCHOut		2	1	1	0
+14	FilterSplit		2	1	1	0
+15	HP Frq	Hz	2147483647	0	1	0
+16	LP Frq	KHz	2147483647	0	1	0
+17	LF Gain	dB	2147483647	0	1	0
+18	LF Frq	Hz	2147483647	0	1	0
+19	LMF div3		2	1	1	0
+20	LMF Gain	dB	2147483647	0	1	0
+21	LMF Frq	KHz	2147483647	0	1	0
+22	LMF Q		2147483647	0	1	0
+23	HMF Gain	dB	2147483647	0	1	0
+24	HMF Frq	KHz	2147483647	0	1	0
+25	HMF Q		2147483647	0	1	0
+26	HMF X3		2	1	1	0
+27	HF Gain	dB	2147483647	0	1	0
+28	HF Frq	KHz	2147483647	0	1	0
+29	Gain	dB	2147483647	0	1	0
+30	VUInOut		2	1	1	0
+31	PhaseReverse		2	1	1	0
+32	InputLevel	dB	2147483647	0	1	0

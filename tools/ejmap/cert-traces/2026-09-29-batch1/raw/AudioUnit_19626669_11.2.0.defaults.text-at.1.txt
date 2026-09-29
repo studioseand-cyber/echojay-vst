@@ -1,0 +1,75 @@
+probe: "UAD SSL G Bus Compressor" | AudioUnit:Effects/aufx,YBAU,!UAD | uid=19626669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Thresh	unit	
+def	1.000000	15.0 dB	default	1.000000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	15.0 dB
+param	1	Make Up	unit	
+def	0.199982	3.0 dB	default	0.199982
+at	0.000	0.0 dB
+at	0.500	7.5 dB
+at	1.000	15.0 dB
+param	2	Attack	unit	
+def	0.400000	1 ms	default	0.400000
+at	0.000	0.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	3	Release	unit	
+def	1.000000	Auto	default	1.000000
+at	0.000	0.1 s
+at	0.500	0.6 s
+at	1.000	Auto
+param	4	Ratio	unit	
+def	0.000000	2:1	default	0.000000
+at	0.000	2:1
+at	0.500	4:1
+at	1.000	10:1
+param	5	SC Filter	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	84 Hz
+at	1.000	500 Hz
+param	6	Headroom	unit	
+def	0.500000	16 dB	default	0.500000
+at	0.000	4 dB
+at	0.500	16 dB
+at	1.000	28 dB
+param	7	Mix	unit	
+def	1.000000	100%	default	1.000000
+at	0.000	0%
+at	0.500	50%
+at	1.000	100%
+param	8	Fade Rate	unit	
+def	0.673981	24.8 s	default	0.673981
+at	0.000	1.0 s
+at	0.500	6.0 s
+at	1.000	60.0 s
+param	9	Fade	unit	
+def	0.000000	In	default	0.000000
+at	0.000	In
+at	0.500	In
+at	1.000	Out
+param	10	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

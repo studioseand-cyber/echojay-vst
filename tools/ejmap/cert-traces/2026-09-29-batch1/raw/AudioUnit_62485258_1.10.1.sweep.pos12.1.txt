@@ -1,0 +1,32 @@
+probe: "Acme Opticom XLA-3" | AudioUnit:Effects/aufx,AOCX,Brwx | uid=62485258 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Gain	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	1.000000	Meter Mode	Output
+param	2	0.500000	Response	Normal
+param	3	0.400000	Input Gain	4.0
+param	4	0.400000	Output Gain	4.0
+param	5	1.000000	Mode	In
+param	6	0.000000	Input Pad	Off
+param	7	1.000000	Stereo Link	On
+param	8	1.000000	Level Trim	0.0 dB
+param	9	1.000000	Dry/Wet Mix	100 %
+param	10	0.500000	Noise Level	-90.0 dB
+param	11	0.000000	Bank	A
+param	12	0.000000	VU Meter	
+param	13	0.714090	GR Meter	
+stage	position
+pos	0	norm	0.800000	confirm_ms	2.33	slices	1	instack_match	1	getValue	0.800000	text_ms	22.3	reads	2	text	8.0
+hold	0	-24.00	level_db	-13.5638	in_rms_db	-27.0103	ch	-13.5638,-13.5638	doubled	0	last_move_db	0.0044	final_move_db	0.0044	win	-13.0897,-13.5623,-13.5668,-13.5622,-13.5668,-13.5623	nonfinite	0
+hold	0	-12.00	level_db	-3.8223	in_rms_db	-15.0103	ch	-3.8223,-3.8223	doubled	0	last_move_db	0.0041	final_move_db	0.0041	win	-3.8014,-3.8208,-3.8249,-3.8212,-3.8250,-3.8208	nonfinite	0
+hold	0	-6.00	level_db	1.4680	in_rms_db	-9.0103	ch	1.4680,1.4680	doubled	0	last_move_db	0.0027	final_move_db	0.0027	win	1.4641,1.4685,1.4658,1.4694,1.4660,1.4687	nonfinite	0
+reread	0	steady
+timing	wall_ms	200.3	audio_s	4.500
+stage	done

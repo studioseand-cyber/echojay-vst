@@ -1,0 +1,41 @@
+probe: "UAD Tube-Tech CL 1B mk II" | AudioUnit:Effects/aufx,dbau,!UAD | uid=24424649 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+sweep	proto	1	thr	2	name	Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	primary	2	Stereo	enabled
+bus	render	out	0	primary	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.330000	Output Volume	0.0
+param	1	0.500000	Ratio	6:1
+param	2	0.000000	Threshold	Off
+param	3	0.500000	Meter	Comp
+param	4	0.500000	Attack	5.0
+param	5	0.500000	Release	5.0
+param	6	1.000000	Select Attack Release	Man
+param	7	0.000000	Sidechain	Int
+param	8	0.000000	Sidechain Low Cut	Off
+param	9	1.000000	Parallel Compression	100
+param	10	1.000000	In	Enabled
+param	11	1.000000	Mode	Active
+stage	reference

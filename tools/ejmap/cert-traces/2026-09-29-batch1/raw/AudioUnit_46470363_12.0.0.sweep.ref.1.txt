@@ -1,0 +1,23 @@
+probe: "CLA-2A (m)" | AudioUnit:Effects/aufx,LA2M,ksWV | uid=46470363 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Peak Reduction	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.535000	Gain	40.00
+param	1	0.598000	Peak Reduction	46.00
+param	2	0.000000	Comp/Limiter	Comp
+param	3	0.500000	Hi Freq	50.0
+param	4	1.000000	Analog	Off
+param	5	0.500000	VU Display	GR
+stage	reference
+refpos	val	0.598000	text	46.00
+ref	-24.00	level_db	-18.5270	in_peak_db	-24.0000	in_rms_db	-27.0103	ch	-18.5270	win	-18.5276,-18.5267,-18.5276,-18.5268,-18.5276,-18.5267,-18.5276,-18.5268	nonfinite	0
+ref	-12.00	level_db	-7.7934	in_peak_db	-12.0000	in_rms_db	-15.0103	ch	-7.7934	win	-7.3468,-7.7051,-7.7494,-7.7611,-7.7766,-7.7834,-7.7961,-7.8007	nonfinite	0
+ref	-6.00	level_db	-6.0426	in_peak_db	-6.0000	in_rms_db	-9.0103	ch	-6.0426	win	-5.4070,-5.8577,-5.9233,-5.9760,-6.0026,-6.0303,-6.0404,-6.0572	nonfinite	0
+timing	wall_ms	72.6	audio_s	6.000
+stage	done

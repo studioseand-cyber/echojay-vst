@@ -1,0 +1,38 @@
+[
+  {
+    "tag": "list-params",
+    "attempt": 1,
+    "file": "AudioUnit_75186669_11.2.0.defaults.list-params.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 349.615916669368744
+  },
+  {
+    "tag": "text-at",
+    "attempt": 1,
+    "file": "AudioUnit_75186669_11.2.0.defaults.text-at.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 1608.960333347320557
+  },
+  {
+    "tag": "text-at-2",
+    "attempt": 1,
+    "file": "AudioUnit_75186669_11.2.0.defaults.text-at-2.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 1593.804000020027161
+  },
+  {
+    "tag": "ref",
+    "attempt": 1,
+    "file": "AudioUnit_75186669_11.2.0.sweep.ref.1.txt",
+    "outcome": "SHOWED A WINDOW (EchoJayProbe [pid 82286]) after 0.3 s; killed by the driver",
+    "clean": false,
+    "norm": -1.0,
+    "ms": 279.830000042915344
+  }
+]

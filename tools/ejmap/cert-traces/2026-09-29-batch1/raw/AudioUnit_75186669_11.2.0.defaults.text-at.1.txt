@@ -1,0 +1,50 @@
+probe: "UAD 4K Buss Compressor" | AudioUnit:Effects/aufx,58AU,!UAD | uid=75186669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Thresh	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	15.0 dB
+param	1	Make Up	unit	
+def	0.204834	3.1 dB	default	0.204834
+at	0.000	0.0 dB
+at	0.500	7.5 dB
+at	1.000	15.0 dB
+param	2	Attack	unit	
+def	0.400000	1.00 ms	default	0.400000
+at	0.000	0.10 ms
+at	0.500	1.00 ms
+at	1.000	30.00 ms
+param	3	Release	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	0.10 s
+at	0.500	0.60 s
+at	1.000	AUTO
+param	4	Ratio	unit	
+def	0.000000	2:1	default	0.000000
+at	0.000	2:1
+at	0.500	4:1
+at	1.000	10:1
+param	5	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

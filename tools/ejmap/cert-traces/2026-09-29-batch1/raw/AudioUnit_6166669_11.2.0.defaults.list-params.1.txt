@@ -1,0 +1,31 @@
+probe: "UAD Precision Buss Compressor" | AudioUnit:Effects/aufx,F6AU,!UAD | uid=6166669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+0	Filter		2147483647	0	1	0
+1	Thresh		2147483647	0	1	0
+2	Ratio		3	1	1	0
+3	Attack		41	1	1	0
+4	Release		2147483647	0	1	0
+5	Input		2147483647	0	1	0
+6	Mix		2147483647	0	1	0
+7	Output		2147483647	0	1	0
+8	FadeSet		2147483647	0	1	0
+9	Fade		2	1	1	0
+10	Power		2	1	1	0

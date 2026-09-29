@@ -1,0 +1,36 @@
+probe: "UAD UA 1176SE Legacy" | AudioUnit:Effects/aufx,53AU,!UAD | uid=75136669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+sweep	proto	1	thr	0	name	Input	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	primary	2	Stereo	enabled
+bus	render	out	0	primary	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Input	-24.00
+param	1	0.625000	Output	-18.00
+param	2	0.500000	Attack	4.00
+param	3	0.665985	Release	5.00
+param	4	0.000000	Ratio	4:1
+param	5	1.000000	Meter	GR
+param	6	1.000000	Power	On
+stage	reference

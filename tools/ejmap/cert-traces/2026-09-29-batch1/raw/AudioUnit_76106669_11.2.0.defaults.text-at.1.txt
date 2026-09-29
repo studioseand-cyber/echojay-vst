@@ -1,0 +1,45 @@
+probe: "UAD Teletronix LA-2A Legacy" | AudioUnit:Effects/aufx,60AU,!UAD | uid=76106669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Peak Reduct	unit	
+def	0.349976	35	default	0.349976
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	1	Gain	unit	
+def	0.399994	40	default	0.399994
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	2	Comp/Limit	unit	
+def	0.000000	Comp	default	0.000000
+at	0.000	Comp
+at	0.500	Comp
+at	1.000	Limit
+param	3	Meter	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	+10dB
+at	0.500	GR
+at	1.000	+4dB
+param	4	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

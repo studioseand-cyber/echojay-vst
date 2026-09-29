@@ -1,0 +1,70 @@
+probe: "UAD UA 1176LN Rev E" | AudioUnit:Effects/aufx,N9AU,!UAD | uid=e196669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Input	unit	
+def	0.199982	-40.57 dB	default	0.199982
+at	0.000	-Inf dB
+at	0.500	-24.00 dB
+at	1.000	-0.00 dB
+param	1	Output	unit	
+def	0.625916	-17.96 dB	default	0.625916
+at	0.000	-Inf dB
+at	0.500	-24.00 dB
+at	1.000	-0.00 dB
+param	2	Attack	unit	
+def	0.500000	4.00	default	0.500000
+at	0.000	OFF
+at	0.500	4.00
+at	1.000	7.00
+param	3	Release	unit	
+def	0.665955	5.00	default	0.665955
+at	0.000	1.00
+at	0.500	4.00
+at	1.000	7.00
+param	4	Ratio	unit	
+def	0.100000	4:1	default	0.100000
+at	0.000	None
+at	0.500	4:1+8:1
+at	1.000	4:1+20:1
+param	5	Meter	unit	
+def	1.000000	GR	default	1.000000
+at	0.000	OFF
+at	0.500	+8
+at	1.000	GR
+param	6	SC Filter	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	8	Headroom	unit	
+def	0.500000	16 dB	default	0.500000
+at	0.000	4 dB
+at	0.500	16 dB
+at	1.000	28 dB
+param	9	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

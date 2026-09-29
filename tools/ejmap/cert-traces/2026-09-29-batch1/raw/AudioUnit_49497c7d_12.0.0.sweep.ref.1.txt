@@ -1,0 +1,48 @@
+probe: "C1 comp-gate (s)" | AudioUnit:Effects/aufx,COMS,ksWV | uid=49497c7d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	16	name	Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	340
+param	0	0.000000	Low/Peak ref	Low Ref
+param	1	0.000000	Gate Hold	0.01
+param	2	0.000000	LookAhead	Off
+param	3	0.460000	Gate Attack	2.00
+param	4	0.369000	Gate Release	30
+param	5	0.219000	Floor	-Inf
+param	6	0.000000	Gate open	-Inf
+param	7	0.000000	Gate close	-Inf
+param	8	0.000000	Expander/Gate	Gate
+param	9	0.000000	Exp Bypass	Off
+param	10	0.460000	Comp Attack	2.00
+param	11	0.425000	Comp Release	50
+param	12	0.000000	PDR Tc	0
+param	13	0.218000	Ratio	1.00:1
+param	14	0.500000	Makeup Gain	0.0
+param	15	0.690000	Output Gain	0.0
+param	16	1.000000	Threshold	0.0
+param	17	0.000000	Comp Bypass	Off
+param	18	1.000000	In Left Gain	0.0
+param	19	1.000000	In Right Gain	0.0
+param	20	0.000000	Filter Type	 Low-Pass
+param	21	0.849000	Filter Freq	7179
+param	22	1.000000	Filter Q	0.600
+param	23	0.000000	Gate Filter On	Wideband
+param	24	0.000000	Select monitor	    Audio
+param	25	0.000000	Comp Filter On	Wideband
+param	26	0.000000	Key Mode	Stereo
+param	27	0.460000	Strap Att	2.00
+param	28	0.425000	Strap Rel	50
+param	29	1.000000	Strap Thresh	0.0
+set	13	0.484375	confirm_ms	60.7	getValue	0.484375	text	4.13:1
+stage	reference
+refpos	val	1.000000	text	0.0
+ref	-24.00	level_db	-26.9061	in_peak_db	-24.0000	in_rms_db	-27.0103	ch	-26.9061,-26.9061	win	-27.0482,-26.9046,-26.9090,-26.9046,-26.9090,-26.9046,-26.9090,-26.9046	nonfinite	0
+ref	-12.00	level_db	-14.9387	in_peak_db	-12.0000	in_rms_db	-15.0103	ch	-14.9387,-14.9387	win	-15.0553,-14.9388,-14.9385,-14.9388,-14.9385,-14.9388,-14.9385,-14.9388	nonfinite	0
+ref	-6.00	level_db	-9.5369	in_peak_db	-6.0000	in_rms_db	-9.0103	ch	-9.5369,-9.5369	win	-9.6106,-9.5382,-9.5343,-9.5382,-9.5343,-9.5382,-9.5343,-9.5382	nonfinite	0
+timing	wall_ms	40.9	audio_s	6.000
+stage	done

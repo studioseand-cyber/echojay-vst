@@ -1,0 +1,75 @@
+probe: "UAD Empirical Labs Distressor" | AudioUnit:Effects/aufx,4CAU,!UAD | uid=74636669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Byp
+param	1	Ratio	unit	
+def	0.571429	6:1	default	0.571429
+at	0.000	1:1
+at	0.500	6:1
+at	1.000	NUKE
+param	2	Detector	unit	
+def	0.000000	Norm	default	0.000000
+at	0.000	Norm
+at	0.500	Link
+at	1.000	HP+Emp+Link
+param	3	Audio	unit	
+def	0.000000	Norm	default	0.000000
+at	0.000	Norm
+at	0.500	Dist 2
+at	1.000	HP+Dist 3
+param	4	Input	unit	
+def	0.476166	5.0	default	0.476166
+at	0.000	0.0
+at	0.500	5.2
+at	1.000	10.5
+param	5	Attack	unit	
+def	0.476166	5.0	default	0.476166
+at	0.000	0.0
+at	0.500	5.2
+at	1.000	10.5
+param	6	Release	unit	
+def	0.476166	5.0	default	0.476166
+at	0.000	0.0
+at	0.500	5.2
+at	1.000	10.5
+param	7	Output	unit	
+def	0.619019	6.5	default	0.619019
+at	0.000	0.0
+at	0.500	5.2
+at	1.000	10.5
+param	8	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	9	Headroom	unit	
+def	0.500000	16 dB	default	0.500000
+at	0.000	4 dB
+at	0.500	16 dB
+at	1.000	28 dB
+param	10	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

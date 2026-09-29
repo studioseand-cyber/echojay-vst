@@ -1,0 +1,57 @@
+probe: "Purple Audio MC 77" | AudioUnit:Effects/aumf,PA77,Brwx | uid=73462d29 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	15	name	Input L	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	0.000000	M/S	Off
+param	2	0.000000	Monomaker Freq	Off
+param	3	0.500000	Stereowidth	100 %
+param	4	0.000000	SC HP Freq 	Off
+param	5	0.500000	Headroom	0.0 dB
+param	6	1.000000	Mix	100 %
+param	7	0.000000	Bank	A
+param	8	0.000000	SCLink	Off
+param	9	0.500000	Link	Std
+param	10	0.000000	IO-Link	Off
+param	11	0.000000	Insert	Off
+param	12	0.000000	TMT Channel	1
+param	13	0.000000	Stereo Mode	Analog
+param	14	0.000000	Monitoring 	Stereo
+param	15	0.375000	Input L	-30.0 dB
+param	16	0.434000	Output L	-27.2 dB
+param	17	0.402000	Attack L	+3.2
+param	18	0.700000	Release L	5.2
+param	19	0.066667	Ratio L	Ratio 4
+param	20	1.000000	Meter Mode L	GR
+param	21	0.000000	Meter IO L	OUT
+param	22	0.000000	Bypass L	Off
+param	23	1.000000	Power L	On
+param	24	0.375000	Input R	-30.0 dB
+param	25	0.434000	Output R	-27.2 dB
+param	26	0.402000	Attack R	+3.2
+param	27	0.700000	Release R	5.2
+param	28	0.066667	Ratio R	Ratio 4
+param	29	1.000000	Meter Mode R	GR
+param	30	0.000000	Meter IO R	OUT
+param	31	0.000000	Bypass R	Off
+param	32	1.000000	Power R	On
+param	33	0.009207	VU Meter L	+0.03273
+param	34	0.103547	VU Meter R	+0.13925
+param	35	0.010000	GR Meter L	+0.01000
+param	36	0.010000	GR Meter R	+0.01000
+stage	position
+pos	0	norm	0.200000	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.200000	text_ms	22.6	reads	2	text	-40.8 dB
+hold	0	-24.00	level_db	-34.0536	in_rms_db	-27.0103	ch	-34.0257,-34.0816	doubled	0	last_move_db	0.0046	final_move_db	0.0046	win	-34.0598,-34.0520,-34.0566,-34.0520,-34.0566,-34.0520	nonfinite	0
+hold	0	-12.00	level_db	-22.0536	in_rms_db	-15.0103	ch	-22.0258,-22.0816	doubled	0	last_move_db	0.0041	final_move_db	0.0041	win	-22.0666,-22.0523,-22.0564,-22.0523,-22.0564,-22.0523	nonfinite	0
+hold	0	-6.00	level_db	-16.0631	in_rms_db	-9.0103	ch	-16.0259,-16.1005	doubled	0	last_move_db	0.0035	final_move_db	0.0035	win	-16.0702,-16.0615,-16.0654,-16.0619,-16.0654,-16.0619	nonfinite	0
+reread	0	steady
+timing	wall_ms	150.7	audio_s	4.500
+stage	done

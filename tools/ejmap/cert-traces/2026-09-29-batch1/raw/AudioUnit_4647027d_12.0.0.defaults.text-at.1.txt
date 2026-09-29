@@ -1,0 +1,32 @@
+probe: "CLA-3A (s)" | AudioUnit:Effects/aufx,LA3S,ksWV | uid=4647027d | arch=arm64 | format=AudioUnit
+
+param	0	Gain	unit	
+def	0.550000	5.50	default	0.550000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	1	Peak Reduction	unit	
+def	0.400000	4.00	default	0.400000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	2	VU Display	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	In
+at	0.500	GR
+at	1.000	Out
+param	3	Comp/Limiter	unit	
+def	0.000000	Comp	default	0.000000
+at	0.000	Comp
+at	0.500	Comp
+at	1.000	Limit
+param	4	Analog	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	50Hz
+at	0.500	60Hz
+at	1.000	Off
+param	5	Hi Freq	unit	
+def	0.500000	50.0	default	0.500000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0

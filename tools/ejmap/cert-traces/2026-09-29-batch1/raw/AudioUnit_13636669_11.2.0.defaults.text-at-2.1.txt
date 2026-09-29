@@ -1,0 +1,105 @@
+probe: "UAD Neve 2254 E" | AudioUnit:Effects/aufx,SCAU,!UAD | uid=13636669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+param	0	Bypass	unit	
+def	0.000000	In	default	0.000000
+at	0.000	In
+at	0.500	In
+at	1.000	Byp
+param	1	Meter	unit	
+def	0.500000	Ctrl	default	0.500000
+at	0.000	In
+at	0.500	Ctrl
+at	1.000	Out
+param	2	Lim Attack	unit	
+def	0.500000	Slow	default	0.500000
+at	0.000	Fast
+at	0.500	Slow
+at	1.000	Off
+param	3	Lim Lvl	unit	
+def	1.000000	12 dBu	default	1.000000
+at	0.000	4 dBu
+at	0.500	8 dBu
+at	1.000	12 dBu
+param	4	Lim Rcvr	unit	
+def	0.000000	100mS	default	0.000000
+at	0.000	100mS
+at	0.500	800mS
+at	1.000	AUTO
+param	5	Comp Attack	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Slow
+at	1.000	Off
+param	6	Comp Ratio	unit	
+def	0.750000	4:1	default	0.750000
+at	0.000	1.5:1
+at	0.500	3:1
+at	1.000	6:1
+param	7	Comp Thr	unit	
+def	1.000000	10 dBu	default	1.000000
+at	0.000	-20 dBu
+at	0.500	-4 dBu
+at	1.000	10 dBu
+param	8	Comp Rcvr	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	400mS
+at	0.500	1.5S
+at	1.000	AUTO
+param	9	Comp /8	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	Comp Gain	unit	
+def	0.200000	4 dB	default	0.200000
+at	0.000	0 dB
+at	0.500	10 dB
+at	1.000	20 dB
+param	11	Output	unit	
+def	0.000000	0 dB	default	0.000000
+at	0.000	0 dB
+at	0.500	10 dB
+at	1.000	20 dB
+param	12	Stereo Link	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Stereo
+at	1.000	Mono
+param	13	SC HPF	unit	
+def	0.000000	Off Hz	default	0.000000
+at	0.000	Off Hz
+at	0.500	83.6 Hz
+at	1.000	500 Hz
+param	14	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	15	Headroom	unit	
+def	0.500000	16 dB	default	0.500000
+at	0.000	4 dB
+at	0.500	16 dB
+at	1.000	28 dB
+param	16	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

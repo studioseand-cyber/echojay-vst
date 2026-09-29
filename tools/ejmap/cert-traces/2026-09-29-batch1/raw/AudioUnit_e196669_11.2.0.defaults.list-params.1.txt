@@ -1,0 +1,30 @@
+probe: "UAD UA 1176LN Rev E" | AudioUnit:Effects/aufx,N9AU,!UAD | uid=e196669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+0	Input		2147483647	0	1	0
+1	Output		2147483647	0	1	0
+2	Attack		2147483647	0	1	0
+3	Release		2147483647	0	1	0
+4	Ratio		11	1	1	0
+5	Meter		4	1	1	0
+6	SC Filter		2	1	1	0
+7	Mix		2147483647	0	1	0
+8	Headroom		7	1	1	0
+9	Power		2	1	1	0

@@ -1,0 +1,40 @@
+probe: "UAD SSL G Bus Compressor" | AudioUnit:Effects/aufx,YBAU,!UAD | uid=19626669 | arch=arm64 | format=AudioUnit
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/EchoJayProbe_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+sweep	proto	1	thr	0	name	Thresh	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	primary	2	Stereo	enabled
+bus	render	out	0	primary	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	55
+param	0	1.000000	Thresh	15.0 dB
+param	1	0.199982	Make Up	3.0 dB
+param	2	0.400000	Attack	1 ms
+param	3	1.000000	Release	Auto
+param	4	0.000000	Ratio	2:1
+param	5	0.000000	SC Filter	Off
+param	6	0.500000	Headroom	16 dB
+param	7	1.000000	Mix	100%
+param	8	0.673981	Fade Rate	24.8 s
+param	9	0.000000	Fade	In
+param	10	1.000000	Power	On
+stage	reference
