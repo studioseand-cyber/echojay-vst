@@ -1,0 +1,24 @@
+probe: "CLA-3A (s)" | AudioUnit:Effects/aufx,LA3S,ksWV | uid=4647027d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Peak Reduction	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.550000	Gain	5.50
+param	1	0.400000	Peak Reduction	4.00
+param	2	0.500000	VU Display	GR
+param	3	0.000000	Comp/Limiter	Comp
+param	4	1.000000	Analog	Off
+param	5	0.500000	Hi Freq	50.0
+stage	position
+pos	0	norm	0.666667	confirm_ms	56.84	slices	6	instack_match	0	getValue	0.666667	landed_by	pump	render_blocks	0	text_ms	21.3	reads	2	text	6.67
+hold	0	-24.00	level_db	-23.2919	in_rms_db	-27.0103	tone_frac	1.0000	ch	-23.2919,-23.2919	doubled	0	last_move_db	-0.0264	final_move_db	-0.0264	win	-22.6364,-23.1816,-23.2269,-23.2622,-23.2935,-23.3200	nonfinite	0
+hold	0	-12.00	level_db	-20.4339	in_rms_db	-15.0103	tone_frac	1.0000	ch	-20.4339,-20.4339	doubled	0	last_move_db	-0.0147	final_move_db	-0.0147	win	-19.3695,-20.1887,-20.3414,-20.4068,-20.4402,-20.4549	nonfinite	0
+hold	0	-6.00	level_db	-18.8750	in_rms_db	-9.0103	tone_frac	1.0000	ch	-18.8750,-18.8750	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-18.6114,-18.8359,-18.8673,-18.8728,-18.8769,-18.8754	nonfinite	0
+reread	0	steady
+timing	wall_ms	142.2	audio_s	4.500
+stage	done

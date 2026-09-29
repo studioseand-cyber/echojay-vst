@@ -1,0 +1,22 @@
+probe: "RCompressor (s)" | AudioUnit:Effects/aufx,URCS,ksWV | uid=5f54727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	in	1	Side-Chain Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+sidechain	1	Side-Chain Input Bus	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Gain	500
+param	1	1.000000	Threshold	1000
+param	2	0.502000	Attack	502
+param	3	0.625000	Ratio	625
+param	4	0.000000	ARC / Manual	ARC
+param	5	0.000000	Warm / Smooth	Warm
+param	6	0.502000	Release	502
+param	7	0.000000	Electro / Opto	Electro
+set	3	0.390625	confirm_ms	-1.0	getValue	0.000000	landed_by	unlanded	render_blocks	2129246	text	0
+refused set_unlanded 3

@@ -4335,6 +4335,10 @@ void testSweepRatioAndPicks()
     const auto merged = mergeProcesses (ref, { p0, p1 });
     check (merged.setConflict.isNotEmpty() && derive (merged, sweeptest::kLevels, 7).result == "unreadable",
            "ratio R6: processes that read the ratio back differently (4:1 and 5:1) refuse the sweep");
+    ProcessOut refusedOne { "sweep\tproto\t1\nset\t7\t0.500000\tconfirm_ms\t-1.0\tgetValue\t0\tlanded_by\tunlanded\ttext\t0\nrefused set_unlanded 7\n", true, "exit 0", 1.0f };
+    const auto withRefusal = mergeProcesses (ref, { p0, refusedOne });
+    check (withRefusal.setConflict.isEmpty() && withRefusal.positions.size() == 2 && withRefusal.positions[1].processFailed,
+           "ratio R7: a process that REFUSED its precondition contributes no read-back - its position is skipped, not a conflict");
 
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");

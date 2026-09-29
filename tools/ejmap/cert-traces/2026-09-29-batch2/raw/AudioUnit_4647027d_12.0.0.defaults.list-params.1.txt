@@ -1,0 +1,8 @@
+probe: "CLA-3A (s)" | AudioUnit:Effects/aufx,LA3S,ksWV | uid=4647027d | arch=arm64 | format=AudioUnit
+
+0	Gain		2147483647	0	1	0
+1	Peak Reduction		2147483647	0	1	0
+2	VU Display		3	1	1	0
+3	Comp/Limiter		2	1	1	0
+4	Analog		3	1	1	0
+5	Hi Freq		2147483647	0	1	0

@@ -1,0 +1,62 @@
+probe: "H-Comp (s)" | AudioUnit:Effects/aufx,CLAS,ksWV | uid=494a707d | arch=arm64 | format=AudioUnit
+
+param	0	Threshold	unit	dB
+def	0.375000	-18.0	default	0.375000
+at	0.000	0.0
+at	0.500	-24.0
+at	1.000	-48.0
+param	1	Ratio	unit	
+def	0.257000	3.00	default	0.257000
+at	0.000	1.00
+at	0.500	8.00
+at	1.000	50.00
+param	2	Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	3	Attack	unit	ms
+def	0.498000	7.00	default	0.498000
+at	0.000	0.50
+at	0.500	7.07
+at	1.000	100
+param	4	Punch	unit	
+def	0.033000	1.0	default	0.033000
+at	0.000	0.0
+at	0.500	15.0
+at	1.000	30.0
+param	5	Release	unit	ms
+def	0.508000	100	default	0.508000
+at	0.000	3.00
+at	0.500	94.9
+at	1.000	3000
+param	6	Sync	unit	
+def	1.000000	ms	default	1.000000
+at	0.000	BPM
+at	0.500	Host
+at	1.000	ms
+param	7	Analog	unit	
+def	0.500000	Mod2	default	0.500000
+at	0.000	Off
+at	0.500	Mod2
+at	1.000	Mod4
+param	8	Output	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	9	Limiter	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	Meter Select	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	In
+at	0.500	GR
+at	1.000	Out
+param	11	ReleaseBPM	unit	
+def	0.263158	1/32D	default	0.263000
+at	0.000	1/64T
+at	0.500	1/8
+at	1.000	2B

@@ -1,0 +1,36 @@
+probe: "C1 comp-sc (s)" | AudioUnit:Effects/aufx,C1CS,ksWV | uid=4937727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	340
+param	0	0.000000	Low/Peak Ref	Low Ref
+param	1	0.000000	LookAhead	Off
+param	2	0.460000	Comp Attack	2.00
+param	3	0.425000	Comp Release	50
+param	4	0.000000	Comp PDR Tc	0
+param	5	0.218000	Comp Ratio	1.00:1
+param	6	0.500000	Comp Makeup	0.0
+param	7	0.690000	Output Gain	0.0
+param	8	1.000000	Threshold	0.0
+param	9	1.000000	In Left Gain	0.0
+param	10	1.000000	In Right Gain	0.0
+param	11	0.000000	Filter Type	 Low-Pass
+param	12	0.849000	Filter Freq	7179
+param	13	1.000000	Filter Q	0.600
+param	14	0.000000	Monitor	    Audio
+param	15	0.000000	EQ Mode	Wideband
+param	16	0.000000	Key Mode	Stereo
+set	5	0.484375	confirm_ms	62.2	getValue	0.484375	landed_by	pump	render_blocks	0	text	4.13:1
+stage	position
+pos	0	norm	0.933333	confirm_ms	65.17	slices	9	instack_match	0	getValue	0.933333	landed_by	pump	render_blocks	0	text_ms	22.8	reads	2	text	-6.7
+hold	0	-24.00	level_db	-26.8447	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.8447,-26.8447	doubled	0	last_move_db	0.0044	final_move_db	0.0044	win	-26.9990,-26.8432,-26.8476,-26.8432,-26.8476,-26.8432	nonfinite	0
+hold	0	-12.00	level_db	-15.6607	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.6607,-15.6607	doubled	0	last_move_db	0.0049	final_move_db	0.0049	win	-15.7629,-15.6591,-15.6639,-15.6591,-15.6639,-15.6591	nonfinite	0
+hold	0	-6.00	level_db	-11.4247	in_rms_db	-9.0103	tone_frac	1.0000	ch	-11.4247,-11.4247	doubled	0	last_move_db	0.0052	final_move_db	0.0052	win	-11.4695,-11.4230,-11.4282,-11.4230,-11.4282,-11.4230	nonfinite	0
+reread	0	steady
+timing	wall_ms	100.4	audio_s	4.500
+stage	done

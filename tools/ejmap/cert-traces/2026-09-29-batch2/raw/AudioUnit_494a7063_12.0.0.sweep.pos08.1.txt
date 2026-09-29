@@ -1,0 +1,32 @@
+probe: "H-Comp (m)" | AudioUnit:Effects/aufx,CLAM,ksWV | uid=494a7063 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	64
+param	0	0.375000	Threshold	-18.0
+param	1	0.257000	Ratio	3.00
+param	2	1.000000	Mix	100.0
+param	3	0.498000	Attack	7.00
+param	4	0.033000	Punch	1.0
+param	5	0.508000	Release	100
+param	6	1.000000	Sync	ms
+param	7	0.500000	Analog	Mod2
+param	8	0.500000	Output	0.0
+param	9	0.000000	Limiter	Off
+param	10	0.500000	Meter Select	GR
+param	11	0.263158	ReleaseBPM	1/32D
+stage	position
+pos	0	norm	0.533333	confirm_ms	55.11	slices	6	instack_match	0	getValue	0.533333	landed_by	pump	render_blocks	0	text_ms	22.6	reads	2	text	-25.6
+hold	0	-24.00	level_db	-22.6513	in_rms_db	-27.0103	tone_frac	0.9998	ch	-22.6513	doubled	0	last_move_db	-0.0051	final_move_db	-0.0051	win	-22.6724,-22.6530,-22.6479,-22.6530,-22.6479,-22.6530	nonfinite	0
+hold	0	-12.00	level_db	-10.5794	in_rms_db	-15.0103	tone_frac	0.9998	ch	-10.5794	doubled	0	last_move_db	-0.0054	final_move_db	-0.0054	win	-10.5991,-10.5812,-10.5758,-10.5812,-10.5758,-10.5812	nonfinite	0
+hold	0	-6.00	level_db	-4.4945	in_rms_db	-9.0103	tone_frac	0.9998	ch	-4.4945	doubled	0	last_move_db	-0.0056	final_move_db	-0.0056	win	-4.5097,-4.4964,-4.4908,-4.4964,-4.4908,-4.4964	nonfinite	0
+reread	0	steady
+timing	wall_ms	102.4	audio_s	4.500
+stage	done

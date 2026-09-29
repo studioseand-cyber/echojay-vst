@@ -1,0 +1,1 @@
+probe: "SSL Native Bus Compressor 2" | AudioUnit:Effects/aufx,NBC2,SSLN | uid=7c646904 | arch=arm64 | format=AudioUnit

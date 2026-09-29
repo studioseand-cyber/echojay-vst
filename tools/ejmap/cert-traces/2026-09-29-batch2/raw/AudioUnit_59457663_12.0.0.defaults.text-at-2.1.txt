@@ -1,0 +1,167 @@
+probe: "SSLGChannel (m)" | AudioUnit:Effects/aufx,SCGM,ksWV | uid=59457663 | arch=arm64 | format=AudioUnit
+
+param	0	Analog	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	CompThresh	unit	dB
+def	0.333000	0.0	default	0.333000
+at	0.000	10.0
+at	0.500	-5.0
+at	1.000	-20.0
+param	2	CompRatio	unit	
+def	0.000000	1.0	default	0.000000
+at	0.000	1.0
+at	0.500	5.0
+at	1.000	+Inf
+param	3	CompFast	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	CompRelease	unit	ms
+def	0.500000	0.40	default	0.500000
+at	0.000	0.10
+at	0.500	0.40
+at	1.000	4.00
+param	5	ExpAttack	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	ExpRelease	unit	ms
+def	0.350000	0.20	default	0.350000
+at	0.000	0.10
+at	0.500	0.40
+at	1.000	4.00
+param	7	ExpThresh	unit	dB
+def	0.001000	-30.0	default	0.001000
+at	0.000	-30.0
+at	0.500	-12.0
+at	1.000	10.0
+param	8	ExpRange	unit	dB
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	20.0
+at	1.000	40.0
+param	9	ExpGate	unit	
+def	0.000000	Exp	default	0.000000
+at	0.000	Exp
+at	0.500	Exp
+at	1.000	Gate
+param	10	EQBypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	EQDynamic	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	DynamicBypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	13	DynaminCHOut	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	FilterSplit	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	15	HP Frq	unit	Hz
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	120
+at	1.000	350
+param	16	LP Frq	unit	KHz
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	5.0
+at	1.000	3.0
+param	17	LF Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-17.0
+at	0.500	0.0
+at	1.000	17.0
+param	18	LF Frq	unit	Hz
+def	0.230000	60	default	0.230000
+at	0.000	30
+at	0.500	200
+at	1.000	450
+param	19	LMF div3	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	20	LMF Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	21	LMF Frq	unit	KHz
+def	0.260000	0.50	default	0.260000
+at	0.000	0.20
+at	0.500	1.00
+at	1.000	2.50
+param	22	LMF Q	unit	
+def	0.200000	2.50	default	0.200000
+at	0.000	3.50
+at	0.500	1.50
+at	1.000	0.10
+param	23	HMF Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	24	HMF Frq	unit	KHz
+def	0.550000	3.50	default	0.550000
+at	0.000	0.60
+at	0.500	3.00
+at	1.000	7.00
+param	25	HMF Q	unit	
+def	0.500000	1.50	default	0.500000
+at	0.000	3.50
+at	0.500	1.50
+at	1.000	0.10
+param	26	HMF X3	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	27	HF Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-17.0
+at	0.500	0.0
+at	1.000	17.0
+param	28	HF Frq	unit	KHz
+def	0.500000	8.00	default	0.500000
+at	0.000	1.50
+at	0.500	8.00
+at	1.000	16.00
+param	29	Gain	unit	dB
+def	0.667000	0.0	default	0.667000
+at	0.000	-24.0
+at	0.500	-6.0
+at	1.000	12.0
+param	30	VUInOut	unit	
+def	1.000000	Output	default	1.000000
+at	0.000	Input
+at	0.500	Input
+at	1.000	Output
+param	31	PhaseReverse	unit	
+def	0.000000	+	default	0.000000
+at	0.000	+
+at	0.500	+
+at	1.000	-
+param	32	InputLevel	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0

@@ -1,0 +1,72 @@
+probe: "C1 comp-sc (m)" | AudioUnit:Effects/aufx,C1CM,ksWV | uid=49377263 | arch=arm64 | format=AudioUnit
+
+param	0	Low/Peak Ref	unit	
+def	0.000000	Low Ref	default	0.000000
+at	0.000	Low Ref
+at	0.500	Low Ref
+at	1.000	Peak Ref
+param	1	LookAhead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Comp Attack	unit	ms
+def	0.460000	2.00	default	0.460000
+at	0.000	0.01
+at	0.500	3.16
+at	1.000	1000.00
+param	3	Comp Release	unit	ms
+def	0.425000	50	default	0.425000
+at	0.000	1
+at	0.500	100
+at	1.000	10000
+param	4	Comp PDR Tc	unit	ms
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	22
+at	1.000	1000
+param	5	Comp Ratio	unit	
+def	0.218000	1.00:1	default	0.218000
+at	0.000	0.50:1
+at	0.500	4.58:1
+at	1.000	-5.00:1
+param	6	Comp Makeup	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-40.0
+at	0.500	0.0
+at	1.000	40.0
+param	7	Output Gain	unit	dB
+def	0.690000	0.0	default	0.690000
+at	0.000	-40.0
+at	0.500	-11.0
+at	1.000	18.0
+param	8	Threshold	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-100.0
+at	0.500	-50.0
+at	1.000	0.0
+param	9	Filter Type	unit	
+def	0.000000	Low-Pass	default	0.000000
+at	0.000	Low-Pass
+at	0.500	Hi-Pass
+at	1.000	Band-Reject
+param	10	Filter Freq	unit	Hz
+def	0.849000	7179	default	0.849000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	11	Filter Q	unit	
+def	1.000000	0.600	default	1.000000
+at	0.000	0.100
+at	0.500	0.350
+at	1.000	0.600
+param	12	Monitor	unit	
+def	0.000000	Audio	default	0.000000
+at	0.000	Audio
+at	0.500	Sidechain
+at	1.000	Passive
+param	13	EQ Mode	unit	
+def	0.000000	Wideband	default	0.000000
+at	0.000	Wideband
+at	0.500	Sidechain
+at	1.000	Split

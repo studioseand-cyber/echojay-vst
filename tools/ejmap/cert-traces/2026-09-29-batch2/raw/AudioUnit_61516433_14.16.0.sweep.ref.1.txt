@@ -1,0 +1,37 @@
+probe: "MCompressor" | AudioUnit:Effects/aumf,MAe1,Meld | uid=61516433 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	5	name	Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Gain	0.00 dB
+param	1	0.500000	Output gain	0.00 dB
+param	2	0.316228	Attack	10.0 ms
+param	3	0.472871	Release	50 ms
+param	4	0.100000	RMS length	1.0 ms
+param	5	0.494949	Threshold	-12.0 dB
+param	6	0.205196	Ratio	1.80 : 1
+param	7	0.000000	Knee mode	Hard
+param	8	0.250000	Knee size	25.0%
+param	9	1.000000	Link channels	On
+param	10	0.000000	Maximize to 0dB	Off
+param	11	0.000000	Custom shape	Off
+param	12	0.500000	Param 1	50.0%
+param	13	0.500000	Param 2	50.0%
+param	14	0.500000	Param 3	50.0%
+param	15	0.500000	Param 4	50.0%
+param	16	0.000000	Preset trigger - previous	0.00
+param	17	0.000000	Preset trigger - next	0.00
+stage	reference
+refpos	val	0.494949	text	-12.0 dB
+ref	-24.00	level_db	-27.0102	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0102,-27.0102	win	-27.0107,-27.0099,-27.0107,-27.0099,-27.0107,-27.0099,-27.0107,-27.0099	nonfinite	0
+ref	-12.00	level_db	-15.0097	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0097,-15.0097	win	-15.0121,-15.0085,-15.0121,-15.0085,-15.0121,-15.0085,-15.0121,-15.0085	nonfinite	0
+ref	-6.00	level_db	-10.8249	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-10.8249,-10.8249	win	-10.6827,-10.8267,-10.8212,-10.8267,-10.8212,-10.8267,-10.8212,-10.8267	nonfinite	0
+timing	wall_ms	30.7	audio_s	6.000
+stage	done

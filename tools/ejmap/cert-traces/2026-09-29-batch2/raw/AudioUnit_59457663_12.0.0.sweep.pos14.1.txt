@@ -1,0 +1,52 @@
+probe: "SSLGChannel (m)" | AudioUnit:Effects/aufx,SCGM,ksWV | uid=59457663 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	CompThresh	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	1
+param	0	0.000000	Analog	Off
+param	1	0.333000	CompThresh	0.0
+param	2	0.000000	CompRatio	1.0
+param	3	0.000000	CompFast	Off
+param	4	0.500000	CompRelease	0.40
+param	5	0.000000	ExpAttack	Off
+param	6	0.350000	ExpRelease	0.20
+param	7	0.001000	ExpThresh	-30.0
+param	8	0.000000	ExpRange	0.0
+param	9	0.000000	ExpGate	Exp
+param	10	0.000000	EQBypass	Off
+param	11	0.000000	EQDynamic	Off
+param	12	0.000000	DynamicBypass	Off
+param	13	0.000000	DynaminCHOut	Off
+param	14	0.000000	FilterSplit	Off
+param	15	0.000000	HP Frq	Out
+param	16	0.000000	LP Frq	Out
+param	17	0.500000	LF Gain	0.0
+param	18	0.230000	LF Frq	60
+param	19	0.000000	LMF div3	Off
+param	20	0.500000	LMF Gain	0.0
+param	21	0.260000	LMF Frq	0.50
+param	22	0.200000	LMF Q	2.50
+param	23	0.500000	HMF Gain	0.0
+param	24	0.550000	HMF Frq	3.50
+param	25	0.500000	HMF Q	1.50
+param	26	0.000000	HMF X3	Off
+param	27	0.500000	HF Gain	0.0
+param	28	0.500000	HF Frq	8.00
+param	29	0.667000	Gain	0.0
+param	30	1.000000	VUInOut	Output
+param	31	0.000000	PhaseReverse	+
+param	32	0.500000	InputLevel	0.0
+set	2	0.421875	confirm_ms	47.7	getValue	0.421875	landed_by	pump	render_blocks	0	text	4.0
+stage	position
+pos	0	norm	0.933333	confirm_ms	33.92	slices	1	instack_match	0	getValue	0.933333	landed_by	pump	render_blocks	0	text_ms	21.0	reads	2	text	-18.0
+hold	0	-24.00	level_db	-28.4475	in_rms_db	-27.0103	tone_frac	1.0000	ch	-28.4475	doubled	0	last_move_db	0.0055	final_move_db	0.0055	win	-26.9795,-28.4839,-28.4668,-28.4523,-28.4478,-28.4424	nonfinite	0
+hold	0	-12.00	level_db	-23.7713	in_rms_db	-15.0103	tone_frac	1.0000	ch	-23.7713	doubled	0	last_move_db	0.0070	final_move_db	0.0070	win	-22.2876,-23.8163,-23.7932,-23.7768,-23.7720,-23.7651	nonfinite	0
+hold	0	-6.00	level_db	-21.7248	in_rms_db	-9.0103	tone_frac	1.0000	ch	-21.7248	doubled	0	last_move_db	0.0058	final_move_db	0.0058	win	-21.1818,-21.7476,-21.7376,-21.7270,-21.7266,-21.7208	nonfinite	0
+reread	0	steady
+timing	wall_ms	75.5	audio_s	4.500
+stage	done

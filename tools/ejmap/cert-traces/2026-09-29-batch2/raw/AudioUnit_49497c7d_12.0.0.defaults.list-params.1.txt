@@ -1,0 +1,32 @@
+probe: "C1 comp-gate (s)" | AudioUnit:Effects/aufx,COMS,ksWV | uid=49497c7d | arch=arm64 | format=AudioUnit
+
+0	Low/Peak ref		2	1	1	0
+1	Gate Hold	ms	2147483647	0	1	0
+2	LookAhead		2	1	1	0
+3	Gate Attack	ms	2147483647	0	1	0
+4	Gate Release	ms	2147483647	0	1	0
+5	Floor	dB	2147483647	0	1	0
+6	Gate open	dB	2147483647	0	1	0
+7	Gate close	dB	2147483647	0	1	0
+8	Expander/Gate		2	1	1	0
+9	Exp Bypass		2	1	1	0
+10	Comp Attack	ms	2147483647	0	1	0
+11	Comp Release	ms	2147483647	0	1	0
+12	PDR Tc	ms	2147483647	0	1	0
+13	Ratio		2147483647	0	1	0
+14	Makeup Gain	dB	2147483647	0	1	0
+15	Output Gain	dB	2147483647	0	1	0
+16	Threshold	dB	2147483647	0	1	0
+17	Comp Bypass		2	1	1	0
+18	In Left Gain	dB	2147483647	0	1	0
+19	In Right Gain	dB	2147483647	0	1	0
+20	Filter Type		4	1	1	0
+21	Filter Freq	Hz	2147483647	0	1	0
+22	Filter Q		2147483647	0	1	0
+23	Gate Filter On		3	1	1	0
+24	Select monitor		3	1	1	0
+25	Comp Filter On		3	1	1	0
+26	Key Mode		3	1	1	0
+27	Strap Att	ms	2147483647	0	1	0
+28	Strap Rel	ms	2147483647	0	1	0
+29	Strap Thresh	dB	2147483647	0	1	0

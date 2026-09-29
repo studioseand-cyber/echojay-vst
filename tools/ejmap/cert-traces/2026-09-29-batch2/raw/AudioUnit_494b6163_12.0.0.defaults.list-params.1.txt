@@ -1,0 +1,10 @@
+probe: "C1 comp (m)" | AudioUnit:Effects/aufx,CMPM,ksWV | uid=494b6163 | arch=arm64 | format=AudioUnit
+
+0	Low/Peak Ref		2	1	1	0
+1	Attack	ms	2147483647	0	1	0
+2	Release	ms	2147483647	0	1	0
+3	PDR Tc	ms	2147483647	0	1	0
+4	Ratio		2147483647	0	1	0
+5	Makeup	dB	2147483647	0	1	0
+6	Output Gain	dB	2147483647	0	1	0
+7	Threshold	dB	2147483647	0	1	0

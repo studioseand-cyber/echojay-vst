@@ -401,7 +401,11 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         }
         p.k = (int) k;
         m.positions.push_back (p);
-        // EVERY PROCESS READS ITS PRECONDITIONS BACK; they must all have read the same thing.
+        // EVERY PROCESS READS ITS PRECONDITIONS BACK; they must all have read the same thing. Only a process that went on
+        // to measure its position counts: one that REFUSED (set_unlanded) read nothing that was measured with. 29 Sep:
+        // RCompressor (s) position 5, a bridged process across a dark wake, read the ratio as 0 and refused, and its
+        // read-back alone made a false conflict with the fifteen that read 4.34.
+        if (! p.processFailed)
         for (const auto& [idx, text] : one.setTexts)
         {
             auto it = m.setTexts.find (idx);

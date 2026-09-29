@@ -1,0 +1,11 @@
+[
+  {
+    "tag": "ref",
+    "attempt": 1,
+    "file": "AudioUnit_517f614e_2.5.62.sweep.ref.1.txt",
+    "outcome": "SHOWED A WINDOW (PACEEdenExperience [pid 95085]) after 2.9 s; killed by the driver",
+    "clean": false,
+    "norm": -1.0,
+    "ms": 2926.87933337688446
+  }
+]
