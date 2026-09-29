@@ -1589,6 +1589,14 @@ public:
         matches the one stored for it. Returns how many were rebound; every one is logged. Groups saved before
         names were kept have nothing to match on, and that is logged too. */
     int repairGroupsByName();
+    /** 21t-l item 7 (29 Sep 2026 ruling): WHEN THE REPAIR RUNS. On the tick where the registry first shows a
+        live Link, or 30 s after the load, whichever comes first - and NEVER on an empty registry, because a
+        repair with nothing to bind to spends its one chance on nothing. Sean's session ran it at 10:37:28, four
+        seconds into the load, before any Link had registered: "8 with a name but no live Link". A pure decision,
+        so the guard reads the same rule the tick does. */
+    struct RepairDecision { bool run = false; bool giveUp = false; };
+    static RepairDecision groupRepairDecision (bool anyLiveLink, int ticksSinceLoad);
+    static constexpr int kGroupRepairGiveUpTicks = 30;   // ruled: 30 s at 1 Hz
     void setLinkGroupBus(const juce::String& id, const juce::String& busUid);
     void setLinkGroupMembers(const juce::String& id, const juce::StringArray& members);
     void renameLinkGroup(const juce::String& id, const juce::String& name);

@@ -1628,11 +1628,23 @@ void EchoJayProcessor::timerCallback()
     // It is armed by setStateInformation and disarmed here whatever it finds, so it can never loop.
     if (groupRepairArmed_)
     {
-        static constexpr int kRepairTicksToWait = 3;   // the Links need a moment to register
-        if (++groupRepairTicks_ >= kRepairTicksToWait)
+        // 21t-l item 7: the ruled timing. A fixed three-tick wait ran it before any Link had registered - Sean's
+        // 10:37:28 line, "8 with a name but no live Link", four seconds into the load. It waits for the registry
+        // to show something now, and gives up after 30 s rather than running against nothing.
+        bool anyLive = false;
+        for (const auto& li : getLinkSlotInfos()) if (li.uid.isNotEmpty()) { anyLive = true; break; }
+        const auto d = groupRepairDecision (anyLive, ++groupRepairTicks_);
+        if (d.run)
         {
             groupRepairArmed_ = false;
             repairGroupsByName();
+        }
+        else if (d.giveUp)
+        {
+            groupRepairArmed_ = false;
+            EchoJay_NSLog(("EJGroupRepair: " + juce::String (kGroupRepairGiveUpTicks)
+                           + " s after the load and the registry is still empty - nothing to repair against, so "
+                             "nothing was tried").toRawUTF8());
         }
     }
     updateOwnLevelRecord();     // 21t-i, same tick: this channel's own stored record, from its own chain-in tally
@@ -5676,6 +5688,14 @@ juce::String EchoJayProcessor::groupMemberName(const juce::String& groupId, cons
 // uid stable from this round on, no NEW group can break this way - so this is a MIGRATION, run once on load,
 // and every rebind is logged. It matches on the member's last known NAME, which is the only thing that survived
 // the re-mint, and it only ever rebinds to a LIVE Link that no other group member already claims.
+EchoJayProcessor::RepairDecision EchoJayProcessor::groupRepairDecision (bool anyLiveLink, int ticksSinceLoad)
+{
+    RepairDecision d;
+    if (anyLiveLink) { d.run = true; return d; }               // the first tick that has something to bind to
+    d.giveUp = ticksSinceLoad >= kGroupRepairGiveUpTicks;       // ...or 30 s, and then never on an empty registry
+    return d;
+}
+
 int EchoJayProcessor::repairGroupsByName()
 {
     int rebound = 0, unmatched = 0, nameless = 0;

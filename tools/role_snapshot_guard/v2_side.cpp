@@ -165,6 +165,32 @@ int main()
         }
     }
 
+    // ---- 21t-l item 7 (29 Sep 2026 ruling): WHEN THE GROUP REPAIR RUNS -----------------------------------
+    // Sean's load ran it at 10:37:28, four seconds in, before any Link had registered: "8 with a name but no
+    // live Link". Harmless there because the uids were kept, but a real repair would have spent its one chance
+    // on an empty roster. It waits for the registry to show a live Link now, or 30 s, and never runs on nothing.
+    {
+        std::printf ("\n== 21t-l item 7: the repair waits for a live Link ==\n");
+        int ran = 0, gaveUp = 0;
+        for (int t = 1; t <= 29; ++t)
+        {
+            const auto d = EchoJayProcessor::groupRepairDecision (false, t);
+            if (d.run) ++ran;
+            if (d.giveUp) ++gaveUp;
+        }
+        check (ran == 0 && gaveUp == 0,
+               "21t-l 7. with an EMPTY registry the repair does not run for 29 s  (RED as it stood: a fixed "
+               "three-tick wait ran it four seconds into the load, against nothing)",
+               juce::String (ran) + " run(s), " + juce::String (gaveUp) + " give-up(s) in 29 ticks");
+        const auto atLive = EchoJayProcessor::groupRepairDecision (true, 2);
+        check (atLive.run && ! atLive.giveUp,
+               "21t-l 7. ...and it runs on the FIRST tick the registry shows a live Link, whenever that is");
+        const auto at30 = EchoJayProcessor::groupRepairDecision (false, 30);
+        check (! at30.run && at30.giveUp,
+               "21t-l 7. ...and after 30 s with nothing there it GIVES UP rather than repairing against an empty "
+               "registry");
+    }
+
     { auto* o = new juce::DynamicObject(); o->setProperty ("done", true);
       juce::File (H + "/v2_done.json").replaceWithText (juce::JSON::toString (juce::var (o), true)); }
     std::printf ("\n==== role_snapshot_guard (v2 side): %s (%d assertion(s) failed) ====\n",
