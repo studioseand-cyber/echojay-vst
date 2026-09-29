@@ -57,10 +57,15 @@
 
 // EQ + Gain + Phase Invert (Wave 0) + the six Dynamics faces (Wave 1) + the
 // rest of the suite + the Key Detector (the first Analysis reader) + Pitch
-// (device #22, at P0 detection-only). A count rather than a >= so that a
-// device silently failing to register is a FAILURE and not a test that
-// quietly still passes.
-static constexpr int kExpectedDevices = 22;
+// (at P0 detection-only) + Level (the gain stage the loudness loop drives).
+// A count rather than a >= so that a device silently failing to register is a
+// FAILURE and not a test that quietly still passes.
+// 21t-m (29 Sep 2026): 22 -> 23. Level was added to every plugin target and to
+// this one's source list but NOT to this count, and this test is in no ctest
+// label - so the only binary of it on the machine was dated 21 August and the
+// count had been wrong, unnoticed, ever since. Both are fixed in this round:
+// the count here, and the label in tools/tests/CMakeLists.txt.
+static constexpr int kExpectedDevices = 23;
 
 static int g_fail = 0;
 
@@ -134,6 +139,11 @@ int main()
     // Device #22 (PITCH_CORRECTION_SPEC.md), at build phase P0: a detection-
     // only reader until the corrector phases land.
     check (registry.findByName ("EchoJay Pitch")             != nullptr, "EchoJay Pitch registered");
+
+    // 21t-m (29 Sep 2026): the gain stage the loudness loop drives. It was added to every plugin target and to
+    // THIS target's source list, and to neither this per-device check nor the count - which is how the count sat
+    // one low for five weeks with no binary of this test newer than 21 August.
+    check (registry.findByName ("EchoJay Level")             != nullptr, "EchoJay Level registered");
 
     check (registry.all().size() == kExpectedDevices,
            "exactly " + juce::String (kExpectedDevices) + " devices registered (got "

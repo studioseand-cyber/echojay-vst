@@ -283,6 +283,15 @@ ej_add_guard(own_diff                 SOURCE tools/own_diff/harness.cpp         
              WRAPPER run_own_diff.sh WRAPPER_ARG 46da20e4279c2f03ca9d0bd8d9b03fb976f7c59d8fb5d08c0b205e6a9b84800f)
 
 
+# 21t-m (29 Sep 2026): builtin_registry_test JOINS THE GATE. It is built by the ROOT CMakeLists as an
+# EXCLUDE_FROM_ALL console app (EchoJayBuiltinRegistryTest) and had no ctest label at all, which breaks the
+# standing rule that every test in the repo is in the gate or carries a written exclusion. The cost of not being
+# in it: its hard-coded device count said 22 while the product registers 23 (EchoJay Level was added to every
+# target's source list and to this test's, but not to its count), and the only binary of it on the machine was
+# dated 21 August - so the count had been wrong, unnoticed, for five weeks. It builds its own target first.
+add_test(NAME builtin_registry_test COMMAND bash ${CMAKE_SOURCE_DIR}/tools/builtin_registry_guard/build_and_run.sh)
+set_tests_properties(builtin_registry_test PROPERTIES LABELS "fast" TIMEOUT 1800 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
 # ---- the guards that are not a single in-process binary -----------------------------------------------------
 # Kept as their own scripts on purpose: each is a two-process orchestration (a real LinkProcessor against the Link
 # archive plus a real EchoJayProcessor against the V2 one), a grep over the source tree, or a python driver. They
