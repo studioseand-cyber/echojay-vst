@@ -445,6 +445,11 @@ void LinkProcessor::calibTickOwnRack()
                                  : ((I.known && O.known) ? (O.levelDb - I.levelDb) : 0.0f);
         if (! haveCrest) w.measured = false;   // no crest pair, no sample
     }
+    // 21t-m item 1: EchoJay's own per-slot output gain, read from the CONTROL. levelChangeDb above is taken
+    // before it (21t-k item 3), so the hold's residual is the two added - and a hold that has already corrected
+    // the slot can see its own correction instead of re-reading the same untouched excess four times.
+    w.slotOutGainDb = chainHost.getSlotOutGainDb (calibLoop_.slot);
+    w.slotPreTrimDb = chainHost.getSlotPreTrimDb (calibLoop_.slot);   // 21t-m item 1: the drive in front of the plugin
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
     w.heardSeconds = lv.in.heardSeconds;   // 21t-i: the question quotes what was actually heard
     // 21t-j (B's note 1): THE PLUGIN'S OWN GR METER, when the block named one. Read as the plugin prints it; a
@@ -506,10 +511,15 @@ void LinkProcessor::calibTickOwnRack()
     {
         chainHost.setSlotOutGainDb(calibLoop_.slot, step.slotGainValue);
         chainHost.resetSlotShortTermStats(calibLoop_.slot, "the hold moved EchoJay's slot output gain");   // 21t-j: both legs start again
+        // 21t-m item 1: BOTH figures, and the written total. The old line printed the PLUGIN's change alone, so
+        // four passes each reported "6.0 dB louder out than in" while the gain went -6, -12, -18, -24 - the line
+        // was true every time and the state it described was wrong.
         EchoJay_NSLog(("EJThreshold: level hold - EchoJay's slot output gain = " + juce::String(step.slotGainValue, 2)
-                       + " dB on slot " + juce::String(calibLoop_.slot + 1) + " (the slot was "
+                       + " dB on slot " + juce::String(calibLoop_.slot + 1) + " (the plugin is "
                        + juce::String(std::abs(calibLoop_.levelChangeDb), 1) + " dB "
-                       + (calibLoop_.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
+                       + (calibLoop_.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in; residual before this "
+                       "write " + juce::String(calibLoop_.levelResidualDb, 2) + " dB; written total "
+                       + juce::String(calibLoop_.levelTrimmedDb, 2) + " dB)").toRawUTF8());
     }
     // THE STATE V2 RENDERS FROM, written by the host that measured it - every judged window, not only the ones
     // that moved the drive: the card says "working N dB" and that figure changes on windows that change nothing

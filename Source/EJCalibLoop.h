@@ -150,7 +150,31 @@ struct CalibLoop
     float  levelTrimmedDb = 0.0f;      // what the hold ACTUALLY wrote (21t-k: not what it wanted to write)
     bool   levelHoldClamped = false;   // ...and true when the control ran out before the level was held
     float  levelHoldLimitDb = 0.0f;    // where it stopped
-    bool   levelHeld = false;          // the hold has been applied for the current actuator position
+    bool   levelHeld = false;          // the hold has written at least once at the current actuator position
+    // ---- 21t-m item 1 (29 Sep 2026 ruling): THE HOLD CONVERGES ----------------------------------------------
+    // Sean's 12:55-12:57 demo: -6.00, -12.00, -18.00, -24.00 on four consecutive holds, every one of them
+    // reporting "the slot was 6.0 dB louder out than in", and the closing sentence then said "Output trimmed
+    // 6.0 dB" with 24 written. Two faults met: the sensor's out tap sits BEFORE this gain (21t-k item 3, and it
+    // stays there - it is the PLUGIN's change the card and the block quote), while the write was
+    // previous + delta against a measurement that could never see the previous write. The delta was 6.0 every
+    // time because it was the SAME untouched excess re-read, not a per-pass clamp.
+    //   residualDb  = the plugin's change PLUS what this hold has already written = what is still wrong at the
+    //                 slot's true output. It is what the hold acts on, so the loop closes.
+    //   holdOpen / holdWrites / holdBaseGainDb / holdFirstExcessDb enforce the ruled shape (29 Sep 2026): the
+    //                 hold runs ONCE, on the LANDED drive - one absolute correction, one re-measurement, at most
+    //                 one refinement, and the total never beyond the first measured excess plus 1 dB. Nothing is
+    //                 held between drive steps; that is the fault behind -6 / -12 / -18 / -24.
+    float  levelResidualDb = 0.0f;
+    bool   holdOpen = false;                                              // the settle has landed and the hold owes a window
+    bool   holdDone = false;                                              // ...and it has finished: nothing more is written
+    int    holdWrites = 0;                                                // writes this settle - never more than two
+    bool   landedInBand = false;
+    float  holdBaseGainDb = 0.0f;                                         // the slot gain the hold opened from
+    float  holdFirstExcessDb = std::numeric_limits<float>::quiet_NaN();   // the excess the first window measured
+    static constexpr int   kHoldMaxWrites   = 2;     // ruled: one correction, at most one refinement
+    static constexpr float kHoldOpenDb      = 1.0f;  // ...the first write is owed above this
+    static constexpr float kHoldRefineDb    = 0.5f;  // ...and the refinement above this
+    static constexpr float kHoldTotalSlackDb = 1.0f; // the total may exceed the first excess by this much, no more
     static constexpr int kFreshAfterWrite = 2;   // 21t-k item 3 (ruled 28 Sep 2026): two fresh windows per step
 
     // ---- one 3 s window, as the host measured it ----
@@ -179,6 +203,18 @@ struct CalibLoop
         // 21t-j: the plugin's OWN gain-reduction meter, in dB and POSITIVE, when the block named one and the host
         // could read it. NaN = the plugin published nothing, and then the reply carries no GR figure at all.
         float sensedGrDb = std::numeric_limits<float>::quiet_NaN();
+        // 21t-m item 1: EchoJay's OWN per-slot output gain as it reads at this window, from the control itself -
+        // not from what this loop believes it last wrote. levelChangeDb is measured BEFORE it (21t-k item 3), so
+        // the hold's residual is levelChangeDb + this, and a hold that has already corrected the slot sees it.
+        // NaN = the host did not supply it, and then the loop falls back to its own slotGainDb.
+        float slotOutGainDb = std::numeric_limits<float>::quiet_NaN();
+        // 21t-m item 1: and EchoJay's own PRE-TRIM on this slot - the drive. levelChangeDb is measured AFTER it
+        // (21t-k item 3: the sensor measures the plugin, not the staging), and the drive's compensating post-trim
+        // goes to setSlotTrimDb, which is the COMPARE trim and is only in circuit while an A/B runs (ruling R2,
+        // 24 Sep 2026). So a drive of +7.6 dB raises the chain by 7.6 dB and NOTHING takes it back. The hold's
+        // job is that the slot comes out where it went in, so its residual counts every gain EchoJay itself put
+        // in the slot - the pre-trim in front and the output gain behind. NaN = the host did not supply it.
+        float slotPreTrimDb = std::numeric_limits<float>::quiet_NaN();
     };
 
     // ---- what the host should do about it ----
@@ -517,6 +553,7 @@ struct CalibLoop
         outParams = c.outputParams; outValue = c.outputStartDb;
         outMin = juce::jmin (c.outputMinDb, c.outputMaxDb); outMax = juce::jmax (c.outputMinDb, c.outputMaxDb);
         levelChangeDb = 0.0f; levelTrimmedDb = 0.0f; levelHeld = false; slotGainDb = 0.0f;
+        resetHoldBudget();
         levelHoldClamped = false; levelHoldLimitDb = 0.0f;
         blockHeardS = c.heardS; fromWorking = c.working;
         // THE BUILD OPENS THE SETTLE (28 Sep 2026 ruling) and says so in ONE line, which the completion edits in
@@ -574,6 +611,7 @@ struct CalibLoop
         freshWanted = kFreshAfterWrite;
         judged = 0; asked = false;
         levelHeld = false;          // a new actuator position owes a new level hold (ruled)
+        resetHoldBudget();          // ...and its own budget: the first excess it measures is the one it may spend
         return true;
     }
 
@@ -842,57 +880,36 @@ struct CalibLoop
                 }
             }
             judged = 0; asked = false; awaitFresh = true;
-            if (s.writeDrive || s.writeParams) { freshWanted = kFreshAfterWrite; levelHeld = false; }   // 21t-j: settle, then hold the level again, then report
+            // 21t-m item 1: a comparative reopens the settle, and with it the hold - the drive is about to move,
+            // so the level it was holding is about to change. Nothing is written until it lands again.
+            if (s.writeDrive || s.writeParams) { freshWanted = kFreshAfterWrite; levelHeld = false; levelTrimmedDb = 0.0f; resetHoldBudget(); }
             s.card = card();
             s.logLine = log ((s.writeDrive || s.writeParams) ? "stepped" : "at-the-limit");
             return s;
         }
 
-        // 21t-j (ruled): LEVEL-NEUTRAL, BEFORE IT SPEAKS. The slot's own out-minus-in IS what the chain is adding
-        // at this point; holding it within 1 dB is what makes a compressor build level-neutral. Written ONCE per
-        // actuator position, to the control the block named, and said out loud in the reply.
+        // 21t-m item 1 (29 Sep 2026 ruling, SUPERSEDING 21t-j's "once per actuator position"): THE HOLD RUNS
+        // ONCE, AFTER THE SETTLE HAS LANDED. Sean's demo logged level-hold-slot at windows 2, 9, 16 and 25 - one
+        // per settle stage - and each of them re-read the same untouched +6.0 excess and added another -6, so the
+        // slot gain walked -6, -12, -18, -24. Nothing is held BETWEEN drive steps any more: the drive lands
+        // first, then one fresh window is measured at a point after EchoJay's own slot output gain, one absolute
+        // correction is written, one re-measurement is taken, and at most one refinement follows. After that the
+        // output is not touched again until the user asks. The hold block now lives below, past the settle.
         levelChangeDb = w.levelChangeDb;   // out minus in on SHORT90: the slot's own contribution, as ruled
-        // 21t-j (ruled): WITH NO OUTPUT CONTROL NAMED, the hold goes to EchoJay's own per-slot output gain, which
-        // every slot has after this cut. "The slot's output equals its input within 1 dB" is then a promise the
-        // product keeps on any plugin, not one that depends on what the plugin publishes.
-        // 21t-j (ruled): the hold belongs to the SETTLE. After landing nothing moves at all until a comparative
-        // reopens it - a slot that drifts out of level later is not something the product quietly corrects.
-        if (! landed && ! levelHeld && std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
+        // THE RESIDUAL. levelChangeDb is taken BEFORE this gain (21t-k item 3, and it stays there - it is the
+        // PLUGIN's change, which is what the card, the block and the reply quote). The residual is that change
+        // plus what the hold has already written: what is still wrong at the slot's true output. The gain comes
+        // from the control itself when the host supplies it; the loop's own belief is only the fallback, and
+        // before the hold has written anything the reading is adopted, so a slot that already carried a gain is
+        // not double-counted.
+        const float stagingIn = (w.slotPreTrimDb == w.slotPreTrimDb) ? w.slotPreTrimDb : 0.0f;
+        if (w.slotOutGainDb == w.slotOutGainDb)
         {
-            // 21t-k item 3 (28 Sep 2026 ruling): THE REPLY REPORTS WHAT THE HOLD WROTE. Sean's Zip line said
-            // "Output trimmed 15.0 dB to hold the level" while the control had landed at +12.0, its limit - the
-            // slot was still 3 dB down and the sentence claimed it was level. levelTrimmedDb is now the MOVE
-            // that actually happened, and levelHoldClamped records that the control ran out.
-            const float wantGain = slotGainDb - levelChangeDb;
-            const float wasGain  = slotGainDb;
-            slotGainDb = juce::jlimit (-24.0f, 12.0f, wantGain);
-            levelTrimmedDb = slotGainDb - wasGain;
-            levelHoldClamped = std::abs (wantGain - slotGainDb) > 0.05f;
-            levelHoldLimitDb = slotGainDb;
-            levelHeld = true;
-            freshWanted = kFreshAfterWrite;
-            judged = 0;
-            s.writeSlotGain = true; s.slotGainValue = slotGainDb;
-            s.card = card(); s.logLine = log ("level-hold-slot");
-            return s;
+            if (holdWrites == 0 && std::abs (w.slotOutGainDb - slotGainDb) > 0.05f) slotGainDb = w.slotOutGainDb;
+            levelResidualDb = levelChangeDb + w.slotOutGainDb + stagingIn;
         }
-        if (! landed && ! levelHeld && std::abs (levelChangeDb) > 1.0f && ! outParams.isEmpty() && outValue == outValue)
-        {
-            const float want = juce::jlimit (outMin, outMax, outValue - levelChangeDb);
-            const float moved = want - outValue;
-            if (std::abs (moved) > 0.05f)
-            {
-                outValue = want;
-                levelTrimmedDb = moved;
-                levelHeld = true;
-                freshWanted = kFreshAfterWrite;      // the hold is a write: settle before quoting anything
-                judged = 0;
-                s.writeOutput = true; s.outputNames = outParams; s.outputValue = outValue;
-                s.card = card(); s.logLine = log ("level-hold");
-                return s;
-            }
-            levelHeld = true;   // at the control's limit: nothing more to give, and the reply will say so
-        }
+        else
+            levelResidualDb = levelChangeDb + slotGainDb + stagingIn;
 
         // ---- THE SETTLE: the tail of the build (28 Sep 2026 ruling) ----------------------------------------
         // HEARD time counts, not clock time: a stop mid-settle simply stops adding to it, and playing resumes it.
@@ -929,15 +946,32 @@ struct CalibLoop
                         s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
                     }
                 }
-                if (s.writeParams || s.writeDrive) { freshWanted = kFreshAfterWrite; levelHeld = false; }
+                if (s.writeParams || s.writeDrive) { freshWanted = kFreshAfterWrite; }
                 awaitFresh = true;
                 s.card = card();
                 s.logLine = log (s.writeParams || s.writeDrive ? "settling" : "settle-at-the-limit");
                 if (s.writeParams || s.writeDrive) return s;
             }
-            // LANDED: in the band, or the step budget or the heard-audio budget is spent. The SAME line completes
-            // in place - not a second message (ruled (a)).
-            landed = true; settling = false; asked = true;
+            // LANDED: in the band, or the step budget or the heard-audio budget is spent.
+            landed = true; settling = false;
+            landedInBand = inBand;
+            // 21t-m item 1 (ruled): ...AND NOW THE HOLD, ONCE, ON THE FINAL DRIVE. The closing line is not handed
+            // out yet: it has to state what the hold wrote, and the hold has not measured a fresh window at this
+            // drive position. The settle's landing opens the hold and waits; holdStep() below closes the line.
+            if (outParams.isEmpty() || outValue == outValue)
+            {
+                holdOpen = true; holdDone = false; holdWrites = 0;
+                holdBaseGainDb = slotGainDb;
+                holdFirstExcessDb = std::numeric_limits<float>::quiet_NaN();
+                freshWanted = kFreshAfterWrite;   // one FRESH window at the landed drive, before anything is written
+                judged = 0;
+                s.card = card();
+                s.logLine = log (inBand ? "landed-holding" : (settleSteps >= kSettleMaxSteps
+                                                                  ? "landed-step-budget-holding"
+                                                                  : "landed-heard-budget-holding"));
+                return s;
+            }
+            asked = true;
             askOwed = completedLine();
             s.ask = askOwed;
             s.askReplacesOpening = true;
@@ -947,9 +981,82 @@ struct CalibLoop
             return s;
         }
 
+        // ---- 21t-m item 1 (29 Sep 2026 ruling): THE HOLD, ONCE, AFTER LANDING ------------------------------
+        // At most TWO writes for the whole settle: one absolute correction, then one refinement if the
+        // re-measurement is still more than kHoldRefineDb out. After that the output is not touched again until
+        // the user asks. Nothing here runs between drive steps - that is the design fault this replaces.
+        if (landed && holdOpen && ! holdDone)
+            return holdStep (s);
+
         // AFTER LANDING nothing moves except on a comparative, and nothing is said.
         s.card = card();
         s.logLine = log (landed ? "holding" : "measuring");
+        return s;
+    }
+
+    /** 21t-m item 1: the hold, on the LANDED drive. One absolute write, one re-measurement, at most one
+        refinement; the closing line is handed out when it is finished, so the sentence can state the total. */
+    Step& holdStep (Step& s)
+    {
+        const bool named = ! outParams.isEmpty() && outValue == outValue;
+        const float excess = named ? levelChangeDb : levelResidualDb;
+        if (holdFirstExcessDb != holdFirstExcessDb) holdFirstExcessDb = excess;   // the budget this hold may spend
+
+        const float threshold = holdWrites == 0 ? kHoldOpenDb : kHoldRefineDb;
+        if (std::abs (excess) > threshold && holdWrites < kHoldMaxWrites)
+        {
+            if (named)
+            {
+                const float want  = juce::jlimit (outMin, outMax, outValue - excess);
+                const float moved = want - outValue;
+                if (std::abs (moved) > 0.05f)
+                {
+                    outValue = want;
+                    ++holdWrites;
+                    levelTrimmedDb += moved;                 // the WRITTEN TOTAL for this settle
+                    levelHeld = true;
+                    levelHoldClamped = std::abs ((outValue - moved) - excess - want) > 0.05f;
+                    freshWanted = kFreshAfterWrite;          // re-measure before judging again
+                    judged = 0;
+                    s.writeOutput = true; s.outputNames = outParams; s.outputValue = outValue;
+                    s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold" : "level-hold-refine");
+                    return s;
+                }
+                levelHoldClamped = true; levelHoldLimitDb = outValue;   // the control ran out
+            }
+            else
+            {
+                // The total may never exceed the first measured excess by more than kHoldTotalSlackDb (ruled).
+                const float cap     = std::abs (holdFirstExcessDb) + kHoldTotalSlackDb;
+                const float wasGain = slotGainDb;
+                float wantGain = juce::jlimit (holdBaseGainDb - cap, holdBaseGainDb + cap, slotGainDb - excess);
+                wantGain = juce::jlimit (-24.0f, 12.0f, wantGain);
+                if (std::abs (wantGain - wasGain) > 0.05f)
+                {
+                    slotGainDb = wantGain;
+                    ++holdWrites;
+                    levelTrimmedDb = slotGainDb - holdBaseGainDb;        // the WRITTEN TOTAL, absolute
+                    levelHeld = true;
+                    levelHoldClamped = std::abs ((holdBaseGainDb - holdFirstExcessDb) - slotGainDb) > 0.05f;
+                    levelHoldLimitDb = slotGainDb;
+                    freshWanted = kFreshAfterWrite;
+                    judged = 0;
+                    s.writeSlotGain = true; s.slotGainValue = slotGainDb;
+                    s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
+                    return s;
+                }
+                levelHoldClamped = true; levelHoldLimitDb = slotGainDb;  // the cap or the control ran out
+            }
+        }
+        // FINISHED: within the threshold, out of writes, or out of control. The closing line goes now, and it
+        // states the written total.
+        holdDone = true; holdOpen = false; asked = true;
+        askOwed = completedLine();
+        s.ask = askOwed;
+        s.askReplacesOpening = true;
+        s.card = card();
+        s.logLine = log (holdWrites == 0 ? "landed-level-already-held"
+                                         : (holdWrites == 1 ? "landed-held-one-write" : "landed-held-two-writes"));
         return s;
     }
 
@@ -1008,9 +1115,11 @@ struct CalibLoop
         if (std::abs (levelTrimmedDb) > 0.05f)
             out += levelHoldClamped
                      ? " Output " + signed1 (levelHoldLimitDb) + " dB, its limit - the slot is still "
-                       + juce::String (std::abs (levelChangeDb) - std::abs (levelTrimmedDb), 1)
-                       + " dB down and I cannot hold the rest."
-                     : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
+                       + juce::String (std::abs (levelResidualDb), 1)
+                       + " dB out and I cannot hold the rest."
+                     // 21t-m item 1 (ruled): the WRITTEN TOTAL. Sean's demo wrote -24.00 over four passes and
+                     // this sentence said "Output trimmed 6.0 dB", which was the last move.
+                     : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB in total to hold the level.";
         else if (std::abs (levelChangeDb) > 1.0f)
             out += " It is " + juce::String (std::abs (levelChangeDb), 1) + " dB "
                  + (levelChangeDb > 0.0f ? "louder" : "quieter") + " through the plugin and I could not hold it.";
@@ -1035,9 +1144,10 @@ struct CalibLoop
         if (std::abs (levelTrimmedDb) > 0.05f)
             level = levelHoldClamped
                       ? " Output " + signed1 (levelHoldLimitDb) + " dB, its limit - the slot is still "
-                        + juce::String (std::abs (levelChangeDb) - std::abs (levelTrimmedDb), 1)
-                        + " dB down and I cannot hold the rest."
-                      : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB to hold the level.";
+                        + juce::String (std::abs (levelResidualDb), 1)
+                        + " dB out and I cannot hold the rest."
+                      // 21t-m item 1 (ruled): the WRITTEN TOTAL, not the last move.
+                      : " Output trimmed " + juce::String (std::abs (levelTrimmedDb), 1) + " dB in total to hold the level.";
         else if (std::abs (levelChangeDb) > 1.0f && outParams.isEmpty())
             level = " It is " + juce::String (std::abs (levelChangeDb), 1) + " dB "
                   + (levelChangeDb > 0.0f ? "louder" : "quieter")
@@ -1164,6 +1274,13 @@ struct CalibLoop
         o->setProperty ("settleHeardS", (double) settleHeardS);
         o->setProperty ("settleStartHeardS", (double) settleStartHeardS);
         o->setProperty ("levelHeld", levelHeld);
+        // 21t-m item 1: the hold's budget rides the handover too, or the second host would open a fresh budget
+        // mid-settle and be entitled to spend the whole excess again - the wind-up by another road.
+        o->setProperty ("holdOpen", holdOpen);
+        o->setProperty ("holdDone", holdDone);
+        o->setProperty ("holdWrites", holdWrites);
+        o->setProperty ("holdBaseGainDb", (double) holdBaseGainDb);
+        o->setProperty ("holdFirstExcessDb", (double) holdFirstExcessDb);
         o->setProperty ("senseParams", senseParams.joinIntoString ("\n"));
         o->setProperty ("grReadable", grReadable);
         o->setProperty ("sensedGrDb", (sensedGrDb == sensedGrDb) ? juce::var ((double) sensedGrDb) : juce::var());
@@ -1237,6 +1354,13 @@ struct CalibLoop
           c.settleStartHeardS = o->hasProperty ("settleStartHeardS")
                                   ? (float) (double) o->getProperty ("settleStartHeardS") : -1.0f;
           c.levelHeld = (bool) o->getProperty ("levelHeld");
+          c.holdOpen   = o->hasProperty ("holdOpen") ? (bool) o->getProperty ("holdOpen") : false;
+          c.holdDone   = o->hasProperty ("holdDone") ? (bool) o->getProperty ("holdDone") : c.levelHeld;
+          c.holdWrites = o->hasProperty ("holdWrites") ? (int) o->getProperty ("holdWrites") : (c.levelHeld ? 1 : 0);
+          c.holdBaseGainDb = o->hasProperty ("holdBaseGainDb") ? (float) (double) o->getProperty ("holdBaseGainDb") : c.slotGainDb;
+          c.holdFirstExcessDb = o->hasProperty ("holdFirstExcessDb")
+                                  ? (float) (double) o->getProperty ("holdFirstExcessDb")
+                                  : std::numeric_limits<float>::quiet_NaN();
           const auto sp = o->getProperty ("senseParams").toString();
           if (sp.isNotEmpty()) c.senseParams.addLines (sp);
           c.grReadable = (bool) o->getProperty ("grReadable");
@@ -1246,6 +1370,16 @@ struct CalibLoop
         return c;
     }
     bool active() const { return state != State::Idle; }
+
+    /** 21t-m item 1: a new actuator position (or a fresh build) owes a new hold, with its own budget: the first
+        excess IT measures is the one it may spend, and no correction from the position before it carries over. */
+    void resetHoldBudget() noexcept
+    {
+        holdOpen = false; holdDone = false; holdWrites = 0;
+        holdBaseGainDb = slotGainDb;
+        holdFirstExcessDb = std::numeric_limits<float>::quiet_NaN();
+        levelResidualDb = 0.0f;
+    }
 
     juce::String log (const char* stateWord) const
     {

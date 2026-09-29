@@ -6667,6 +6667,11 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
                                  : ((I.known && O.known) ? (O.levelDb - I.levelDb) : 0.0f);
         if (! haveCrest) w.measured = false;   // no crest pair, no sample
     }
+    // 21t-m item 1: EchoJay's own per-slot output gain, read from the CONTROL. levelChangeDb above is taken
+    // before it (21t-k item 3), so the hold's residual is the two added - and a hold that has already corrected
+    // the slot can see its own correction instead of re-reading the same untouched excess four times.
+    w.slotOutGainDb = (*host).getSlotOutGainDb (loop.slot);
+    w.slotPreTrimDb = (*host).getSlotPreTrimDb (loop.slot);   // 21t-m item 1: the drive in front of the plugin
     // 21t-d: the slot's INPUT true peak at the drive this window ran at - what decides whether another dB of
     // drive would clip the input rather than buy gain reduction.
     w.inTruePeakDb = w.measured ? lv.in.truePeakDb : -200.0f;
@@ -6746,10 +6751,15 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
         host->setSlotOutGainDb(loop.slot, step.slotGainValue);
         // RESET POINT 4 of 4: a write to ECHOJAY'S OWN per-slot output gain.
         host->resetSlotShortTermStats(loop.slot, "the hold moved EchoJay's slot output gain");
+        // 21t-m item 1: BOTH figures, and the written total. The old line printed the PLUGIN's change alone, so
+        // four passes each reported "6.0 dB louder out than in" while the gain went -6, -12, -18, -24 - the line
+        // was true every time and the state it described was wrong.
         EchoJay_NSLog(("EJThreshold: level hold - EchoJay's slot output gain = " + juce::String(step.slotGainValue, 2)
-                       + " dB on slot " + juce::String(loop.slot + 1) + " (the slot was "
+                       + " dB on slot " + juce::String(loop.slot + 1) + " (the plugin is "
                        + juce::String(std::abs(loop.levelChangeDb), 1) + " dB "
-                       + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in)").toRawUTF8());
+                       + (loop.levelChangeDb > 0.0f ? "louder" : "quieter") + " out than in; residual before this "
+                       "write " + juce::String(loop.levelResidualDb, 2) + " dB; written total "
+                       + juce::String(loop.levelTrimmedDb, 2) + " dB)").toRawUTF8());
     }
     calibStore(uid, loop);
     return step.card.isNotEmpty() ? step.card : loop.card();
