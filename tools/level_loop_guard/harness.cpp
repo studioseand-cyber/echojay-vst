@@ -599,6 +599,40 @@ void guardMain()
                juce::String (stale) + " stale of 4");
     }
 
+    // ---- (4b) A SLIVER IS NOT A WINDOW (21t-m item 5, 29 Sep 2026 ruling) --------------------------------
+    {
+        std::printf ("\n-- (4b) a stopping transport's tail must not advance the settle --\n");
+        // Sean's MV2 pass, windows 50-55:
+        //   w50-54  slot 21.4s  state=stale-window     correctly rejected
+        //   w55     slot 22.1s  state=settled          0.7 s of new audio, judged as a WHOLE 3 s window
+        // The gate asked "did heard advance at all" (+1 ms), so the tail of a stopping transport spent one of
+        // the settle's three windows. Replayed here at Sean's own numbers.
+        echojay::CalibLoop l;
+        l.begin (passiveDriveCfg ("MV2 (s)"));
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false; w.grDb = 0.2f; w.levelChangeDb = 0.1f; w.inTruePeakDb = -12.0f;
+        w.heardSeconds = 21.4f;
+        const auto first = l.onWindow (w, 3000.0);          // a judged window at 21.4 s
+        juce::ignoreUnused (first);
+        int stale = 0, judged = 0;
+        for (int i = 0; i < 5; ++i)                          // w50-54: heard frozen at 21.4
+        { const auto st = l.onWindow (w, 3000.0); if (st.logLine.contains ("stale-window")) ++stale; else ++judged; }
+        check (stale == 5 && judged == 0,
+               "(4b) five windows with the heard clock frozen are all stale",
+               juce::String (stale) + " stale, " + juce::String (judged) + " judged");
+        w.heardSeconds = 22.1f;                              // w55: Sean's 0.7 s sliver
+        const auto sliver = l.onWindow (w, 3000.0);
+        check (sliver.logLine.contains ("stale-window"),
+               "(4b) ...and 0.7 s of new audio is STILL stale - a judged window is a WINDOW's worth  (RED as it "
+               "stood: state=settled, and it spent one of the settle's three)",
+               sliver.logLine.fromLastOccurrenceOf ("state=", true, false));
+        w.heardSeconds = 21.4f + 3.0f;                       // a whole window's worth
+        const auto full = l.onWindow (w, 3000.0);
+        check (! full.logLine.contains ("stale-window"),
+               "(4b) ...while a WHOLE window's worth is judged, so the settle still runs on real audio",
+               full.logLine.fromLastOccurrenceOf ("state=", true, false));
+    }
+
     // ---- (5) THE RATE LIMIT ITSELF, AT REAL TIME ---------------------------------------------------------
     {
         std::printf ("\n-- (5) the 3 s window rate limit, on the real clock --\n");

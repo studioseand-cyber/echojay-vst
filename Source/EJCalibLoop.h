@@ -178,6 +178,9 @@ struct CalibLoop
     static constexpr float kHoldRefineDb    = 0.5f;  // ...and the refinement above this
     static constexpr float kHoldTotalSlackDb = 1.0f; // the total may exceed the first excess by this much, no more
     static constexpr int kFreshAfterWrite = 2;   // 21t-k item 3 (ruled 28 Sep 2026): two fresh windows per step
+    // 21t-m item 5: how much of a window's worth of NEW heard audio makes a window judgeable. Two thirds - a
+    // window is 3 s and a judged one must be most of that; Sean's 0.7 s sliver from a stopping transport is not.
+    static constexpr float kFreshWindowFraction = 0.67f;
 
     // ---- one 3 s window, as the host measured it ----
     struct Window
@@ -763,9 +766,18 @@ struct CalibLoop
         // once audio stopped the pair kept answering with its last closed window: gr read 5.6 for 190 windows,
         // through transport stops, silence and a 2.8 dB actuator change, and the ask quoted it 40 s later. The
         // heard time is the clock: if it has not advanced since the last judged window, nothing new was heard.
-        if (w.heardSeconds > 0.0f && lastHeardS >= 0.0f && w.heardSeconds <= lastHeardS + 1.0e-3f)
+        // 21t-m item 5 (29 Sep 2026 ruling): ...AND "STALE" IS NOT ONLY "DID NOT ADVANCE AT ALL". Sean's MV2
+        // pass, windows 50-55:
+        //     w50-54  slot 21.4s  state=stale-window     <- correctly rejected, the transport had stopped
+        //     w55     slot 22.1s  state=settled          <- 0.7 s of new audio, JUDGED AS A WHOLE WINDOW
+        // The gate compared against +1 ms, so the tail of a stopping transport counted as a fresh 3 s window and
+        // spent one of the settle's three. A judged window has to be a WINDOW's worth of new audio, so the bar
+        // is a fraction of the window the host actually measured rather than a constant that could drift from it.
+        const float minFreshS = juce::jmax (0.25f, (float) (windowMs * 0.001) * kFreshWindowFraction);
+        if (w.heardSeconds > 0.0f && lastHeardS >= 0.0f && w.heardSeconds < lastHeardS + minFreshS)
         {
-            s.card = card(); s.logLine = log ("stale-window");
+            s.card = card();
+            s.logLine = log (w.heardSeconds > lastHeardS + 1.0e-3f ? "stale-window (part)" : "stale-window");
             return s;
         }
         if (w.heardSeconds > 0.0f) lastHeardS = w.heardSeconds;
