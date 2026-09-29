@@ -1197,9 +1197,22 @@ inline int runCertSweep (const SweepOptions& opt)
                    .replaceWithText (juce::JSON::toString (base) + "\n", false, false, "\n");
     if (windowSeen)
     {
-        say ("SWEEP: " + s.product + " - UNLICENSED ON HOST: a window appeared in the probe's tree (" + windows.joinIntoString (", ")
-             + "); the product was stopped at once, nothing derived");
-        return 1;
+        // A WINDOW IS RECORDED; ONLY PACE'S IS CALLED A LICENCE FACT (EjmapCertOutcome.h). Said with the stage the probe
+        // had reached, so "at the first render" (UAD-2 on this Mac, 29 Sep) reads differently from "on load".
+        juce::String stageSeen = "unknown";
+        for (int i = processes.size(); --i >= 0;)
+            if (processes[i].getProperty ("outcome", "").toString().startsWith ("SHOWED A WINDOW"))
+            {
+                for (const auto& line : juce::StringArray::fromLines (raw.getChildFile (processes[i].getProperty ("file", "").toString()).loadFileAsString()))
+                    if (line.startsWith ("stage\t")) stageSeen = line.fromFirstOccurrenceOf ("\t", false, false);
+                stageSeen << " (process " << processes[i].getProperty ("tag", "").toString() << ")";
+                break;
+            }
+        const bool licence = certoutcome::classifyFailure (s.licenceBound, windows) == certoutcome::Failure::unlicensedOnHost;
+        say ("SWEEP: " + s.product + " - " + (licence ? "UNLICENSED ON HOST" : "STOPPED: A WINDOW (recorded, not called a licence fact)")
+             + ": a window appeared in the probe's tree (" + windows.joinIntoString (", ") + ") at stage " + stageSeen
+             + "; the product was stopped at once, nothing derived");
+        return licence ? 1 : 5;
     }
 
     const auto m = sweep::mergeProcesses (refOut, posOut);
