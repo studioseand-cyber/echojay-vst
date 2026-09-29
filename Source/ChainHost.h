@@ -1370,6 +1370,12 @@ public:
     // arrived), resets the tallies: same guard, both orderings.
     void      setHostTrackName(const juce::String& name);
     juce::String getHostTrackName() const { return hostTrackName_; }
+    // 21t-m item 2 (29 Sep 2026 ruling): THE DECLARED ROLE, as a fact this host owns. Set by the processor from
+    // its channelType whenever it changes. On a bus role nothing is written to the chain output and NO stored
+    // record is restored onto it - the chain's last stage sets the level there. Channel roles are unchanged.
+    void setRoleIsBus (bool b, const juce::String& roleName) { roleIsBus_ = b; roleName_ = roleName; }
+    bool roleIsBus() const noexcept { return roleIsBus_; }
+    juce::String roleName() const { return roleName_; }
 
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
@@ -2428,6 +2434,8 @@ private:
     echojay::LevelTally chainOutTally_ { echojay::LevelTally::Weighting::K };
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;
+    bool         roleIsBus_ = false;      // 21t-m item 2: the declared role is a bus (Mix Bus / master / any bus)
+    juce::String roleName_;               // ...and its name, for the line that says why nothing was restored
     juce::String hostPluginFormat_;   // see setHostPluginFormat
     juce::String restoredLevelsTrack_;   // the track a restored tally was measured on, until the host names this one
     // Pending per-slot level restore, keyed by saved slot number (1-based,

@@ -1571,9 +1571,21 @@ juce::String EchoJayProcessor::computePassName() const
     return proj + " v" + juce::String(juce::jmax(1, captureVersion));
 }
 
+/** 21t-m item 2 (29 Sep 2026 ruling): hand the DECLARED ROLE to the host that owns the tallies. Called wherever
+    channelType lands - the setter, and both state-restore paths - so the host never has to guess, and so the
+    level restore on a bus is refused by the role the user actually declared rather than by a track name. */
+void EchoJayProcessor::publishChainRole()
+{
+    const bool bus = chainRoleIsBus();
+    const auto name = (int) channelType >= 0 && (int) channelType < channelTypeNames.size()
+                        ? channelTypeNames[(int) channelType] : juce::String();
+    chainHost.setRoleIsBus(bus, name);
+}
+
 void EchoJayProcessor::setChannelType(ChannelType t)
 {
     channelType = t;
+    publishChainRole();   // 21t-m item 2
     // 21r item 7 (24 Sep 2026): ANSWERED, and the answer is the instance's. The prompt used to key off
     // "channelType == FullMix", so a user who genuinely chose Full Mix was asked again on every reopen, and any
     // instance whose state did not round-trip was asked again too. The question is now asked only when it has
@@ -4959,6 +4971,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             genre = obj->getProperty("genre").toString();
             if (genre.isEmpty()) genre = "hip-hop";
             channelType = static_cast<ChannelType>((int)obj->getProperty("channelType"));
+            publishChainRole();   // 21t-m item 2
             // 21t-i: the stored level records, back exactly as they were saved (absent on an older save = none,
             // and the first frame from each Link starts a fresh record).
             if (obj->hasProperty("levelRecords")) levelRecordsFromVar(obj->getProperty("levelRecords"));
@@ -5268,6 +5281,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
                                              slotsXml, chainSlotState, chainSlotParams, chainLevels] {
                 if (alive.expired()) { EchoJay_NSLog("EJState: deferred slot restore dropped - the plugin was removed before the message loop ran"); return; }
                 applyHostTrackNameIfDirty();
+                publishChainRole();   // 21t-m item 2: the restore must see the declared role, not race it
                 if (!chainLevels.isVoid())
                     chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
                 chainHost.tryRestoreSlotsFromXml(slotsXml, chainSlotState, chainSlotParams);
@@ -5280,6 +5294,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
             juce::MessageManager::callAsync([this, alive = std::weak_ptr<bool>(aliveToken_), chainLevels] {
                 if (alive.expired()) { EchoJay_NSLog("EJState: deferred tally restore dropped - the plugin was removed before the message loop ran"); return; }
                 applyHostTrackNameIfDirty();
+                publishChainRole();   // 21t-m item 2: the restore must see the declared role, not race it
                 chainHost.setPendingLevelsState(chainLevels, chainHost.getHostTrackName());
             });
         }
@@ -5304,6 +5319,7 @@ void EchoJayProcessor::setStateInformation(const void* data, int sizeInBytes)
         juce::ValueTree vstate = juce::ValueTree::fromXml(*xml);
         genre = vstate.getProperty("genre", "hip-hop").toString();
         channelType = static_cast<ChannelType>((int)vstate.getProperty("channelType", 0));
+        publishChainRole();   // 21t-m item 2
         customChannelName = vstate.getProperty("customChannelName", "").toString();
         channelTypePromptDismissed = (bool)vstate.getProperty("channelTypePromptDismissed", false);
         // Legacy XML saves predate the genre flag — derive as in the JSON path

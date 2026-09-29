@@ -201,6 +201,24 @@ public:
     }
     bool selfKeyRoleIsMusic() const { return isMusicBusRole(channelType); }
 
+    // ---- 21t-m item 2 (29 Sep 2026 ruling): A BUS IS NOT A CHANNEL ------------------------------------------
+    // "The whole-chain hold and the stored-record restore are for channel roles only - on Mix Bus, master or any
+    // bus role nothing is written to the chain output and no restore lands on it; the chain's last stage sets the
+    // level." The declaration already exists and Sean's session carries it: the 12:59 build logged "declared Mix
+    // Bus - EchoJay is ON the music bus", and the same instance then restored a saved chain-output tally onto it
+    // ("EJLevels: pending restore, chain in=y out=y slots=0 track=\"Mix Bus\""). This is the predicate that stops
+    // that. Broader than isMusicBusRole: a vocal bus and a drum bus are buses too, and the rule says ANY bus role.
+    static bool isBusRole(ChannelType t)
+    {
+        return t == ChannelType::FullMix      || t == ChannelType::MasterBus
+            || t == ChannelType::MusicBus     || t == ChannelType::InstrumentBus
+            || t == ChannelType::VocalBus     || t == ChannelType::DrumBus
+            || t == ChannelType::GuitarBus    || t == ChannelType::SynthBus;
+    }
+    bool chainRoleIsBus() const { return isBusRole(channelType); }
+    /** Push the declared role down to the ChainHost (see the .cpp). */
+    void publishChainRole();
+
     // Which spectrum statistic this channel type takes (METER SNAPSHOT v3).
     // Sustained full-range material gives a representative tonal balance when
     // AVERAGED; transient sources are diluted by averaging and need PEAK-HOLD

@@ -3124,6 +3124,18 @@ void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& cu
     if (o == nullptr) return;
     const juce::String savedTrack = o->getProperty("trackName").toString().trim();
     const juce::String nowTrack   = currentTrackName.trim();
+    // 21t-m item 2 (29 Sep 2026 ruling): NO RESTORE LANDS ON A BUS. Sean's 12:52:28.563 line restored a saved
+    // chain in/out tally onto "Mix Bus", a chain whose declared role is a bus - and on a bus the chain's LAST
+    // STAGE sets the level, so a level this instance measured in some earlier state has no business describing
+    // it. Channel roles are untouched: the restore is what spares them three seconds of playing after a reopen.
+    if (roleIsBus_)
+    {
+        EchoJay_NSLog(("EJLevels: saved tally NOT restored - this chain's declared role is a bus ("
+                       + (roleName_.isNotEmpty() ? roleName_ : juce::String("bus"))
+                       + "), and on a bus the chain's last stage sets the level: nothing is restored onto the "
+                         "chain output, and the tallies start from what is playing now").toRawUTF8());
+        return;
+    }
     // THE GUARD (load-bearing, not defensive): a level tally describes a
     // source. If this host names tracks and the names differ, the saved
     // tally is somebody else's channel (the plugin was copied) and starts

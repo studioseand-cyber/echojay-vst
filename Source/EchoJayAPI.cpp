@@ -3386,7 +3386,7 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
         notes.add(formatSlotLevelNote(chainHost, i++));
     }
     return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings,
-                                      &hasLiveReads);
+                                      &hasLiveReads, formatChainLevelLine(chainHost));
 }
 
 // ---- running level, rendered ----------------------------------------------
@@ -3399,6 +3399,28 @@ juce::String EchoJayAPI::formatHeard(float seconds)
 }
 
 static juce::String fmt1(float v) { return juce::String(v, 1); }
+
+// ---- 21t-m item 2 (29 Sep 2026 ruling): the CHAIN's own in and out, printed separately ---------------------
+// Sean's 13:04 bus block listed five slot lines and said nothing about the chain itself, so "the bus came out at
+// the level it went in" had to be reconstructed from five per-slot figures. The chain's own tallies already exist
+// (getChainInLevels / getChainOutLevels); this is the line that prints them, below the slots, distinct from the
+// last slot's out - because on a bus the LAST STAGE sets the level and the chain total is a separate fact.
+juce::String EchoJayAPI::formatChainLevelLine(const ChainHost& chainHost)
+{
+    const auto in  = chainHost.getChainInLevels();
+    const auto out = chainHost.getChainOutLevels();
+    if (! in.known || ! out.known)
+        return "Chain in/out: no level known (heard " + formatHeard(juce::jmax(in.heardSeconds, out.heardSeconds)) + ")";
+    juce::String n;
+    n << "Chain in/out: in " << fmt1(in.levelDb) << " dBFS RMS (p90 " << fmt1(in.p90) << ", pk " << fmt1(in.peakDb)
+      << "), out " << fmt1(out.levelDb) << " (pk " << fmt1(out.peakDb) << "), out-in "
+      << fmt1(out.levelDb - in.levelDb) << " dB, heard " << formatHeard(in.heardSeconds)
+      << " - this is the WHOLE chain, not the last slot";
+    if (chainHost.roleIsBus())
+        n << "; declared role " << (chainHost.roleName().isNotEmpty() ? chainHost.roleName() : juce::String("a bus"))
+          << ", so the chain's LAST STAGE sets this level and EchoJay writes nothing to the chain output";
+    return n;
+}
 
 juce::String EchoJayAPI::formatSlotLevelNote(const ChainHost& chainHost, int slot)
 {
@@ -3885,7 +3907,8 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
                                                     const juce::String& channelLabel,
                                                     const juce::StringArray* slotLevelNotes,
                                                     const juce::StringArray* slotModelSettings,
-                                                    const juce::Array<bool>* slotHasLiveReads)
+                                                    const juce::Array<bool>* slotHasLiveReads,
+                                                    const juce::String& chainLevelLine)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -3973,6 +3996,10 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
     }
     if (rack.masterWet < 0.995f)
         block << "Master chain wet/dry: " << juce::roundToInt(rack.masterWet * 100.0f) << "%\n";
+    // 21t-m item 2 (ruled): the CHAIN's own in and out, on their own line, below the slots and distinct from
+    // the last slot's out - the last stage sets the level, and what the chain did overall is its own fact.
+    if (chainLevelLine.isNotEmpty())
+        block << chainLevelLine << "\n";
     return block;
 }
 

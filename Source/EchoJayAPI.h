@@ -870,7 +870,14 @@ public:
     // parameters were read this turn, so an EMPTY model string means
     // "everything was suppressed" and NOT "no tiering exists" -- and the card
     // string must not be borrowed. Null (the Link path) falls back as before.
-                                                   const juce::Array<bool>* slotHasLiveReads = nullptr);
+                                                   const juce::Array<bool>* slotHasLiveReads = nullptr,
+    // 21t-m item 2 (29 Sep 2026 ruling): THE CHAIN'S OWN OUT, PRINTED SEPARATELY FROM THE LAST SLOT'S. Sean's
+    // 13:04 block listed five slots ending "SSL X-Limit ... out -19.9" and said nothing at all about the chain,
+    // so "the chain came out at the level it went in" had to be inferred from five per-slot lines. One line
+    // saying it is the difference between reading the block and reconstructing it. Empty = not available.
+                                                   const juce::String& chainLevelLine = {});
+    /** 21t-m item 2: the chain's OWN in/out line, distinct from the last slot's out. */
+    static juce::String formatChainLevelLine(const ChainHost& chainHost);
     // Running level (LevelTally, 17 Aug 2026), rendered for the model.
     //   formatLevelClause: one point, "in -19.2 dBFS RMS (p90 -15.5), peak
     //     -6.0, crest 12 dB, heard 2m10s (describes ~2m10s)" or the loud null
