@@ -6350,7 +6350,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
-    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
+    api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -8881,6 +8881,47 @@ void EchoJayEditor::promptGroupName(const juce::StringArray& members)
 }
 
 // 21n ruling 1b: the channel the turn is about
+// 21t-m item 3 (29 Sep 2026 ruling): THE ROLE ON THE BODY IS THE TARGET'S, NOT V2's.
+// Sean's dev_mode dump for a turn about "Aitch_4_01" carried
+//     "channelRole": {"kind": "bus", "from": "prompt", "name": "Stereo Out"},  "channel": "Mix Bus"
+// - V2's own role and V2's own channel, on a turn about a vocal Link. The [KEY] header agreed (log 10713/10716:
+// "THIS channel, whose declared role is the music bus ... declared Mix Bus, role bus (said by the
+// channel-type prompt)"). The server was told a vocal-channel turn was about a bus.
+//
+// Resolved through effectiveChannelUid(), the same resolver chatTargetChannelWidth() already uses, so the role
+// and the width can never disagree about which channel the turn is about. A Link's role is decideChainRole over
+// ITS registry entry - placement and name, with no prompt, because the start-prompt answer belongs to the V2 and
+// says nothing about a Link. A Link with nothing said is therefore a CHANNEL, which is the ruling.
+echojay::ChainRole EchoJayEditor::chatTargetChainRole() const
+{
+    const juce::String uid = effectiveChannelUid();
+    if (uid.isEmpty()) return processorRef.chainRole();           // the turn is about THIS chain
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid)
+        {
+            auto r = echojay::decideChainRole (false, e.info.placement, e.displayName);
+            r.trackName = e.displayName;   // the NAME on the wire is the target's, whatever decided the kind
+            return r;
+        }
+    // The Link is not in the registry right now. It is still not this V2's bus: a target we cannot read is a
+    // channel with its name, never this chain's role borrowed on its behalf.
+    echojay::ChainRole r;
+    r.trackName = processorRef.resolveLinkDisplayName (uid);
+    return r;
+}
+
+// 21t-m item 3: ...and the channel NAME the same way, so `channel` and `channelRole` name the same thing.
+juce::String EchoJayEditor::chatTargetChannelName() const
+{
+    const juce::String uid = effectiveChannelUid();
+    if (uid.isEmpty())
+    {
+        const auto t = processorRef.getChannelType();
+        return (int) t >= 0 && (int) t < channelTypeNames.size() ? channelTypeNames[(int) t] : juce::String();
+    }
+    return processorRef.resolveLinkDisplayName (uid);
+}
+
 int EchoJayEditor::chatTargetChannelWidth() const
 {
     const juce::String uid = effectiveChannelUid();
@@ -28471,13 +28512,19 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
             case KeySourceReading::Kind::BusLink:
                 return "\"" + s.name + "\" (bus Link, uid " + s.uid + ")";
             case KeySourceReading::Kind::SelfBus:
-                // 21t-m item 5 (29 Sep 2026 ruling): the key-source LINE says which source called this a bus,
-                // rather than quoting the start-prompt choice as if it were the only one. The MUSIC question
-                // behind SelfBus follows chainRole() NARROWED (echojay::decideChainIsMusic): a bus, unless the
-                // prompt or the name says it is a vocal or rhythm bus.
-                return "this channel (declared " + s.detail + ", role "
+            {
+                // 21t-m item 5: the key-source LINE says which source called this a bus, rather than quoting the
+                // start-prompt choice as if it were the only one. The MUSIC question behind SelfBus follows
+                // chainRole() NARROWED (echojay::decideChainIsMusic): a bus, unless the prompt or the name says
+                // it is a vocal or rhythm bus.
+                // 21t-m item 3: ...and it NAMES the channel, for the same reason the header does - on a
+                // Link-targeted turn "this channel" is the one thing the server cannot resolve unaided.
+                const auto selfName = processorRef.getEffectiveChannelName().trim();
+                return (selfName.isNotEmpty() ? "\"" + selfName + "\"" : juce::String ("the channel EchoJay is on"))
+                     + " (EchoJay's own channel, declared " + s.detail + ", role "
                      + processorRef.chainRole().text()
-                     + " - EchoJay is ON the music bus; bus-grade reading)";
+                     + " - ON the music bus; bus-grade reading)";
+            }
             case KeySourceReading::Kind::ChannelLink:
                 return "\"" + s.name + "\" (" + placeStr (s.placement)
                      + " Link - a single stem, uid " + s.uid + ")";
@@ -28536,10 +28583,24 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
                  "EchoJay on another channel; the KEY OF THE MUSIC]:\n");
             break;
         case KeySourceReading::Kind::SelfBus:
+        {
+            // 21t-m item 3 (29 Sep 2026): NAME THE CHANNEL THE READING CAME FROM, never "THIS channel".
+            // Sean's 18:04:29 body carried BOTH of these, in one turn:
+            //   [TARGET CHANNEL - this conversation IS the user's "Aitch_4_01" Link channel ...
+            //   [KEY - ... measured by EchoJay from THIS channel, whose declared role is the music bus ...
+            // The reading is legitimate - the key really does come from the mix bus - but "THIS channel" is a
+            // deictic, and on a Link-targeted turn the only channel the server has been told this conversation
+            // IS, is the Link's. So the two blocks disagreed about what "this" meant and the server had to
+            // guess. Naming the channel removes the guess without changing where the reading comes from.
+            const auto selfName = processorRef.getEffectiveChannelName().trim();
             c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source, measured by "
-                 "EchoJay from THIS channel, whose declared role is the music "
-                 "bus; the KEY OF THE MUSIC]:\n");
+                 "EchoJay on ")
+              << (selfName.isNotEmpty() ? "\"" + selfName + "\"" : juce::String ("the channel EchoJay is on"))
+              << juce::String::fromUTF8(" \xe2\x80\x94 the channel this EchoJay is loaded on, whose declared "
+                 "role is the music bus. It is NOT necessarily the channel this conversation is about: see "
+                 "TARGET CHANNEL. The KEY OF THE MUSIC]:\n");
             break;
+        }
         case KeySourceReading::Kind::ChannelLink:
             c << juce::String::fromUTF8("\n\n[KEY \xe2\x80\x94 the SELECTED source, measured by "
                  "EchoJay from a SINGLE STEM on another channel \xe2\x80\x94 "
@@ -29357,7 +29418,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
-    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
+    api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -30045,7 +30106,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
-    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
+    api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -30107,7 +30168,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
                         : juce::String::fromUTF8 ("Answering as a chat\xe2\x80\xa6"));
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
-    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
+    api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -35400,7 +35461,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
-    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
+    api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group

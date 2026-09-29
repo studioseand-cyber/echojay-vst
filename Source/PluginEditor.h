@@ -4929,6 +4929,10 @@ private:
     // 21n ruling 1b (22 Sep 2026): channelWidth per TARGET - on a turn targeting a Link it is THAT Link's channel width
     // (its registry row), never V2's own; 0 (unknown) leaves the field off the body. Local rack: V2's bus width.
     int  chatTargetChannelWidth() const;
+    /** 21t-m item 3: the TARGET's role and name - on a Link-targeted turn every per-channel field is the
+        target's, resolved through the same effectiveChannelUid() the width already uses. */
+    echojay::ChainRole chatTargetChainRole() const;
+    juce::String       chatTargetChannelName() const;
     // 21n item 4: groups client half - build on a group's target Links; the last build's uids / card line for the guard
     int  buildChainOnTargets(const juce::StringArray& uids, const juce::String& chainJson, bool each);
     juce::StringArray lastGroupBuildUids_; juce::String lastGroupBuildLine_;

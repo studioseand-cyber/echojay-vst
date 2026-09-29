@@ -517,17 +517,16 @@ public:
             emit ("This is quieter than the section the chain was built on (" + fmt (lastInputWindow_) + " now vs " + fmt (buildInputLufs_) + " at build). Is this the loudest part of the song?", -1.0f, false, false, Bubble::Kind::quiet, quietPills());
             return;
         }
-        {   // 21m ruling 2 (gain staging): at every Listen/Check window close, each slot except the Level and the last limiter is trimmed to
-            // unity (-(out - in) short-term, +-12 dB, kept slots untouched) BEFORE the proposal - the loop then works on a unity chain
-            auto sumTrims = [this] { float t = 0.0f; for (int i = 0; i < host_.getNumSlots(); ++i) t += host_.getSlotTrimDb (i); return t; };
-            const float trimsBefore = sumTrims();
-            // 21p item 1: the transport state travels WITH the request. A trim is never derived from a reading taken
-            // while the transport was stopped, and the trim pass is not left to guess.
-            juce::StringArray tl; const int changed = host_.measureUnityTrims (slot_, limiterSlot_, &tl, rollingOrUnknown());
-            for (const auto& l : tl) log ("unity trim: " + l);
-            trimDeltaDb_ = sumTrims() - trimsBefore;   // kept for the log line only - R2: it no longer moves the proposal
-            if (changed > 0) log ("unity trims changed: " + juce::String (changed)
-                                  + " (match trims, compare-only: the chain output does NOT move)"); }
+        {   // 21t-m item 2 (29 Sep 2026 ruling): LISTEN MEASURES AND ASKS. IT WRITES NOTHING.
+            // What was here: measureUnityTrims(), which wrote a pre-trim AND a post-trim on every slot but the
+            // Level and the last limiter, and logged "match trims, compare-only: the chain output does NOT
+            // move". Sean's 18:13:39.890 window wrote Saturate pre -4.8 dB and PuigTec pre -3.2 dB, and
+            // setSlotPreTrimDb is IN - applied unconditionally by SlotPreTrim, in the audio path. The chain
+            // output DID move, by those pre-gains, and he heard it drop before he had agreed to anything.
+            // The rule is now: the only level write on a bus is the Level slot, after Go, by exactly the
+            // proposed amount. A measurement that changes what it is measuring is not a measurement.
+            trimDeltaDb_ = 0.0f;
+            log ("listen: measured, nothing written - the only level write is the Level slot, after Go"); }
         {   // 21p item 2: the per-slot picture the Listen card shows, and the flags by name
             for (const auto& l : host_.listenCardLines()) log ("slot picture: " + l);
         }

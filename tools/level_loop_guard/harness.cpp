@@ -28,6 +28,7 @@
 // first cut of this guard did not, the registry came back empty, and every slot leg failed on an empty rack.
 // This reference is what pulls the device in; level_slot_guard gets it for free by using the Level processor.
 #include "EedGainProcessor.h"
+#include "EedLevelProcessor.h"
 #include <cstdio>
 #include <cmath>
 #include <memory>
@@ -129,6 +130,15 @@ struct Rig
     // ...and the INTEGRATED one where a record's value is what is being compared (the restore legs).
     float chainInIntDb() const { const auto s = h.getChainInLevels(); return s.known ? s.levelDb : std::numeric_limits<float>::quiet_NaN(); }
     float slotPreTrim() const { return h.getSlotPreTrimDb (0); }
+    /** 21t-m item 2: the Level slot's own gain, by name, so a leg can prove Listen did not move it. */
+    float levelGainDb() const
+    {
+        for (int i = 0; i < h.getNumSlots(); ++i)
+            if (h.getSlotInfo (i).name == "EchoJay Level")
+                if (auto* lv = dynamic_cast<EedLevelProcessor*> (h.getSlotProcessor (i)))
+                    return (float) lv->gainDb();
+        return 0.0f;
+    }
 };
 
 echojay::CalibLoop::Config passiveDriveCfg (const char* name)
@@ -366,6 +376,78 @@ void guardMain()
         const float d2c = rr.chainOutAtEnd - rr.chainInAtEnd;
         check (d2c == d2c && std::abs (d2c) <= 0.6f,
                "(2c) ...and the chain still comes out where it went in", f1 (d2c) + " dB");
+    }
+
+    // ---- (2d) LISTEN WRITES NOTHING; GO WRITES THE LEVEL SLOT EXACTLY (21t-m item 2 small) ---------------
+    {
+        std::printf ("\n-- (2d) Listen measures and asks; only Go moves the Level --\n");
+        // Sean's 18:13:39.890, on the Mix Bus, wrote live pre-trims on four slots under a log line claiming the
+        // chain output does not move:
+        //     unity trim: slot 2 Newfangled Saturate: ... -> pre -4.8 dB, post 0.8 dB
+        //     unity trim: slot 3 PuigTec EQP1A (s): ... -> pre -3.2 dB, post -3.8 dB
+        //     unity trims changed: 6 (match trims, compare-only: the chain output does NOT move)
+        // setSlotPreTrimDb is IN, applied unconditionally by SlotPreTrim. It moved, and he heard it.
+        //
+        // THE FIRST CUT OF THIS LEG WAS VACUOUS and its own last assertion caught it: the chain was Gain+Level
+        // with no limiter, armFromChain() needs a Level AND a limiter LAST, so the loop never armed and
+        // "nothing moved" was trivially true. The arm and the measurement are now asserted BEFORE the writes
+        // are judged, so this leg cannot pass by not running.
+        Rig r (ChannelType::FullMix, 0.0f);
+        auto& h = r.h;
+        while (h.getNumSlots() > 0) h.removeSlot (0);
+        auto load = [&h] (const char* name)
+        {
+            const auto* d = BuiltinDeviceRegistry::instance().findByName (name);
+            if (d != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (h, BuiltinDeviceRegistry::descriptionFor (*d));
+            pumpMs (120);
+        };
+        load ("EchoJay Level");        // slot 0 - what the loop drives
+        load ("EchoJay Gain");         // slot 1 - a slot with something to trim
+        load ("EchoJay Limiter");      // slot 2 - LAST, which is what arming needs
+        check (h.getNumSlots() == 3, "(2d) fixture: Level, a trimmable slot, and a limiter last",
+               juce::String (h.getNumSlots()) + " slot(s)");
+
+        auto& loop = r.proc.loudnessLoop();
+        juce::StringArray logs;
+        loop.logLine   = [&logs] (const juce::String& l) { logs.add (l); };
+        loop.isPlaying = [] { return true; };
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("gain_db", 0.0);
+          pp->setProperty ("target_lufs", -9.0); pp->setProperty ("loudness_option", 0);
+          auto* w = new juce::DynamicObject(); w->setProperty ("params", juce::var (pp));
+          h.setSlotStructuredSettings (0, juce::var (w)); pumpMs (120); }
+        const bool armed = loop.armFromChain();
+        check (armed, "(2d) fixture: the loudness loop ARMED - without this the leg proves nothing",
+               armed ? juce::String ("armed") : juce::String ("NOT ARMED"));
+
+        // every IN and OUT after arming, before the window
+        std::vector<float> preIn, preOut;
+        for (int i = 0; i < h.getNumSlots(); ++i) { preIn.push_back (h.getSlotPreTrimDb (i)); preOut.push_back (h.getSlotOutGainDb (i)); }
+        const float levelBefore = r.levelGainDb();
+
+        for (int k = 0; k < 24; ++k) feed (r.proc, r.prog, 1.0);
+        const auto joined = logs.joinIntoString (" | ");
+        check (joined.contains ("measured:") || joined.contains ("bubble:"),
+               "(2d) fixture: ...and it MEASURED a window - the leg is exercising Listen, not silence",
+               joined.isEmpty() ? juce::String ("(no loudness log at all)")
+                                : joined.substring (juce::jmax (0, joined.length() - 90)));
+
+        int movedIn = 0, movedOut = 0;
+        for (int i = 0; i < h.getNumSlots() && i < (int) preIn.size(); ++i)
+        {
+            if (std::abs (h.getSlotPreTrimDb (i)  - preIn[i])  > 0.05f) ++movedIn;
+            if (std::abs (h.getSlotOutGainDb (i) - preOut[i]) > 0.05f) ++movedOut;
+        }
+        check (movedIn == 0 && movedOut == 0,
+               "(2d) LISTEN WROTE NOTHING - not one slot's IN or OUT moved  (RED as it stood: four slots' pre "
+               "trims written live, under \"the chain output does NOT move\")",
+               juce::String (movedIn) + " IN, " + juce::String (movedOut) + " OUT moved");
+        check (std::abs (r.levelGainDb() - levelBefore) < 0.05f,
+               "(2d) ...and the Level slot did not move either: Listen ASKS, Go moves it",
+               "Level " + f1 (levelBefore) + " -> " + f1 (r.levelGainDb()) + " dB");
+        check (! joined.contains ("unity trim:") && ! joined.contains ("unity trims changed"),
+               "(2d) ...and the unity-trim lines are gone from the log with the writes they described",
+               joined.contains ("unity") ? juce::String ("a unity line is still logged")
+                                         : juce::String ("(no unity line)"));
     }
 
     // ---- (3a) THE ROLE HAS THREE SOURCES (21t-m item 5, 29 Sep 2026 ruling) --------------------------------
