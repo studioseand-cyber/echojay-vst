@@ -3793,6 +3793,11 @@ private:
     int startCalibrationFromChain (const juce::String& uid, const juce::var& chain);
     // ...and an edit card's block, with the per-op shape as the fallback.
     int startCalibrationForEdit (const juce::String& uid, const juce::String& editJson);
+public:
+    /** 21t-l item 5: true when the edit adds or replaces a plugin, so its calibration block must wait for the
+        ops to land before it is judged. Public so the guard reads the same answer the apply path does. */
+    static bool editCarriesAdd (const juce::String& editJson);
+private:
     /** One tick: render the card from whichever host is running the loop, and post a closing message once. */
     void calibTickAndPost (const juce::String& uid);
 

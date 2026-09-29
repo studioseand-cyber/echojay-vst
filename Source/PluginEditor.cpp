@@ -24580,6 +24580,18 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
 // An EDIT's card carries the same block a build's chain does. Where it does not - an older server, or a set op
 // that only carries the per-op gr_target_db / slot_pre_gain_db - the ops path is the fallback, so a compressor
 // edited by either shape still gets its loop.
+// 21t-l item 5: does this edit ADD a plugin? An add (or a replace, which is an add in the slot's place) means
+// the rack the calibration block describes does not exist yet, so the block waits for the ops rather than being
+// judged against an empty rack.
+bool EchoJayEditor::editCarriesAdd (const juce::String& editJson)
+{
+    if (editJson.isEmpty()) return false;
+    juce::StringArray base;
+    for (const auto& op : ChainHost::parseChainEditOps (editJson, &base))
+        if (op.op == "add" || op.op == "replace") return true;
+    return false;
+}
+
 int EchoJayEditor::startCalibrationForEdit (const juce::String& uid, const juce::String& editJson)
 {
     if (editJson.isEmpty()) return 0;
@@ -25137,8 +25149,28 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
         applyChainEditToLink(msgIdx);
         // 21t-g item 2: an edit that touched a compressor starts the loop too - on a leased rack only, which is
         // the only one whose slots this process can measure.
-        if (processorRef.borrowHostIfActiveFor(editUid) != nullptr)
-            startCalibrationForEdit(editUid, editJson);
+        // 21t-l item 5 (29 Sep 2026 ruling): A CALIBRATION BLOCK ON AN EDIT TURN WAITS FOR THE OPS. This used to
+        // fire the instant applyChainEditToLink returned, which is before the ops have landed: Sean's 10:45:07
+        // edit logged "block not usable - wire slot 1 ... rack has 0 slot(s); nothing started" at 10:45:13 and
+        // the Acme Opticom XLA-3 arrived at 10:45:15, so the settle never ran and the compressor sat at -7 dB of
+        // gain reduction. The BUILD path already waits for whenDialSettled; the edit path takes the same road
+        // when the reply carries an add. "Rack has 0 slots" is a refusal only when it does not.
+        if (auto* bhEdit = processorRef.borrowHostIfActiveFor(editUid))
+        {
+            if (editCarriesAdd (editJson))
+            {
+                auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
+                bhEdit->whenDialSettled (ChainHost::kMapFetchBoundMs, [safeThis, editUid, editJson] (bool settled)
+                {
+                    if (safeThis == nullptr) return;
+                    const int started = safeThis->startCalibrationForEdit (editUid, editJson);
+                    EchoJay_NSLog (("EJThreshold: edit settled (dial " + juce::String (settled ? "settled" : "bound expired")
+                                    + ") -> " + juce::String (started) + " loop(s) started").toRawUTF8());
+                });
+            }
+            else
+                startCalibrationForEdit(editUid, editJson);
+        }
         return;
     }
     if (chainViewUid().isNotEmpty()) selectRackForView({});   // a local edit shows the local rack

@@ -8,6 +8,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
+#include "PluginEditor.h"   // 21t-l item 5: editCarriesAdd
 #include "EedLimiterProcessor.h"   // force-link the built-in's registrar
 #include "EedDeviceRegistry.h"
 #include "EchoJayFileLog.h"
@@ -1995,6 +1996,45 @@ static int guardMain()
                    juce::String (asks.size()) + " line(s)");
             check (asks.size() == 1 && asks[0].contains ("play it and I'll tell you what it's doing"),
                    "21t-i (6). ...in the ruled words", asks.isEmpty() ? juce::String ("(none)") : asks[0]);
+        }
+    }
+
+    // ===============================================================================================
+    // 21t-l item 5 (29 Sep 2026 ruling): A CALIBRATION BLOCK ON AN EDIT TURN WAITS FOR THE OPS.
+    // Sean's 10:45:07 edit: the block was judged at 10:45:13 against a rack with no slots ("block not usable -
+    // wire slot 1 ... rack has 0 slot(s); nothing started") and the Acme Opticom XLA-3 arrived at 10:45:15, so
+    // the settle never ran and the compressor sat at -7 dB of gain reduction. An edit that ADDS is held until
+    // the ops land and the dial settles, the same road a build takes; "rack has 0 slots" is a refusal only when
+    // the reply carries no add.
+    // ===============================================================================================
+    {
+        std::printf ("\n== 21t-l item 5: a calibration block on an edit turn waits for the ops ==\n");
+        const juce::String withAdd =
+            R"({"edit":[{"op":"add","name":"Acme Opticom XLA-3","after":0}],)"
+            R"("calibration":{"source":"tally","mode":"passive","actuator":"drive","slot":1,)"
+            R"("gr_target_db":[2,3]}})";
+        const juce::String setOnly =
+            R"({"edit":[{"op":"set","slot":1,"settings_structured":{"params":{"threshold_db":-18}}}],)"
+            R"("calibration":{"source":"tally","mode":"passive","actuator":"drive","slot":1,)"
+            R"("gr_target_db":[2,3]}})";
+        check (EchoJayEditor::editCarriesAdd (withAdd),
+               "21t-l 5. an edit that ADDS a plugin is one whose block must wait for the ops  (RED as it stood: "
+               "the block was judged the instant the apply returned, against a rack with no slots)");
+        check (! EchoJayEditor::editCarriesAdd (setOnly),
+               "21t-l 5. ...and an edit that only SETS does not wait - there is a rack already, so \"rack has 0 "
+               "slots\" is a real refusal there");
+        check (! EchoJayEditor::editCarriesAdd ({}),
+               "21t-l 5. ...and an empty edit adds nothing");
+        // ...and the refusal itself is unchanged for the case that IS a refusal: a block naming a slot the rack
+        // does not have, on a reply that adds nothing.
+        {
+            echojay::CalibLoop::Config c; juce::String why;
+            const bool ok = echojay::CalibLoop::configFromBlock (
+                juce::JSON::parse (setOnly).getProperty ("calibration", juce::var()),
+                0, false, {}, c, why);
+            check (! ok && why.isNotEmpty(),
+                   "21t-l 5. ...and a block naming slot 1 of an EMPTY rack is still refused, with the reason",
+                   why.trim().substring (0, 110));
         }
     }
 
