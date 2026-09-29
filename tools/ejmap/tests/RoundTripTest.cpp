@@ -4406,6 +4406,31 @@ void testMeasurableRule()
     { s.reach = r; check (! measurable (s, true), "measurable M6: " + ejmap::cert::reachName (r) + " is not measurable"); }
 }
 
+//==============================================================================
+/** SLEEP NEVER BECOMES A HANG (ruled 29 Sep). Timeouts are measured on AWAKE time; wall time only reports how long
+    the Mac slept. Pinned on a real child process with an injected clock that "sleeps" 15 minutes mid-run. */
+void testSleepTimeouts()
+{
+    using namespace ejmap::cert;
+    check (timeoutPassed (0.0, 5000.1, 5000) && ! timeoutPassed (0.0, 5000.0, 5000) && ! timeoutPassed (1000.0, 5500.0, 5000),
+           "sleep S1: a timeout passes only when AWAKE elapsed exceeds it");
+    auto calls = std::make_shared<int> (0);
+    Clock sleeper;                                    // wall jumps 900 s after the first read; awake time does not
+    sleeper.wallMs = [calls] { return (double) juce::Time::currentTimeMillis() + (++*calls > 1 ? 900000.0 : 0.0); };
+    const auto slept = runChild ({ "/bin/sleep", "1" }, 5000, WatchOptions { false }, sleeper);
+    check (slept.cleanExit() && slept.sleptMs > 899000.0,
+           "sleep S2: a 1 s child across a simulated 15-minute sleep exits cleanly under a 5 s timeout, and records "
+             + juce::String (slept.sleptMs / 1000.0, 1) + " s slept");
+    auto ticks = std::make_shared<int> (0);
+    Clock counting;                                   // the CONTROL: an awake clock that counts the sleep must time out
+    counting.awakeMs = [ticks] { return juce::Time::getMillisecondCounterHiRes() + (++*ticks > 1 ? 900000.0 : 0.0); };
+    const auto hung = runChild ({ "/bin/sleep", "1" }, 5000, WatchOptions { false }, counting);
+    check (hung.kind == ChildResult::Kind::timedOut,
+           "sleep S3 (control): the same child under a clock that COUNTS slept time is reported as a timeout - the fake hang S2 prevents");
+    const SleepGuard guard ("EJ Map RoundTripTest");
+    check (guard.idleHeld, "sleep S4: the idle-sleep assertion is taken (" + guard.describe() + ")");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -4462,6 +4487,7 @@ int main (int, char**)
     testSweepQuietReference();
     testLicenceFromAudio();
     testExternalHardware();
+    testSleepTimeouts();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

@@ -48,6 +48,8 @@
 #include "EjmapSweep.h"
 
 #include <CoreGraphics/CoreGraphics.h>
+#include <IOKit/pwr_mgt/IOPMLib.h>
+#include <functional>
 #include <libproc.h>
 #include <spawn.h>
 #include <sys/wait.h>
@@ -79,7 +81,8 @@ struct ChildResult
     int signal = 0;           // terminating signal when signaled
     juce::String out;         // stdout and stderr, interleaved
     juce::StringArray windowsInTree;   // owner names of on-screen windows the child's tree showed
-    double ms = 0.0;
+    double ms = 0.0;                   // AWAKE time the child ran for (the clock every timeout is measured on)
+    double sleptMs = 0.0;              // wall time minus awake time over the run: > 0 means the Mac slept during it
 
     bool cleanExit (int wanted = 0) const { return kind == Kind::exited && code == wanted; }
     juce::String describe() const
@@ -142,7 +145,50 @@ inline juce::StringArray windowsOwnedByTree (pid_t root, bool onScreenOnly = tru
 
 struct WatchOptions { bool watchWindows = true; bool onScreenOnly = true; int pollMs = 250; };
 
-inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {})
+//==============================================================================
+// SLEEP (ruled 29 Sep; spec section 6: unattended runs happen on laptops).
+//
+// THE CLOCK. Every timeout is measured on AWAKE time, so a Mac that sleeps mid-run never turns slept time into a
+// "hang". Measured 29 Sep on this Mac: mach_absolute_time (JUCE's getMillisecondCounterHiRes) read 518,794 s against
+// 1,031,532 s of wall time since boot - it excludes the 5.9 days slept. runChild already timed out on that clock, so
+// batch 2's sleeps could not fake a timeout; this makes it explicit, injectable and PINNED instead of a property of
+// JUCE's implementation. Wall time is read beside it only to REPORT how long the Mac slept during each process.
+struct Clock
+{
+    std::function<double()> awakeMs = [] { return juce::Time::getMillisecondCounterHiRes(); };
+    std::function<double()> wallMs  = [] { return (double) juce::Time::currentTimeMillis(); };
+};
+
+// THE ASSERTION. Held for the whole of a run: no system sleep (honoured on AC power, including with the lid closed) and
+// no idle sleep. It CANNOT stop a lid-close on battery - batch 2's sleep (29 Sep, 18:36) was exactly that, "Clamshell
+// Sleep" on 9% battery, with idle sleep already prevented system-wide - which is why the awake clock above matters.
+struct SleepGuard
+{
+    IOPMAssertionID system = 0, idle = 0;
+    bool systemHeld = false, idleHeld = false;
+    explicit SleepGuard (const juce::String& why)
+    {
+        const auto reason = CFStringCreateWithCString (kCFAllocatorDefault, why.toRawUTF8(), kCFStringEncodingUTF8);
+        systemHeld = IOPMAssertionCreateWithName (kIOPMAssertionTypePreventSystemSleep, kIOPMAssertionLevelOn, reason, &system) == kIOReturnSuccess;
+        idleHeld   = IOPMAssertionCreateWithName (kIOPMAssertionTypePreventUserIdleSystemSleep, kIOPMAssertionLevelOn, reason, &idle) == kIOReturnSuccess;
+        CFRelease (reason);
+    }
+    ~SleepGuard()
+    {
+        if (systemHeld) IOPMAssertionRelease (system);
+        if (idleHeld) IOPMAssertionRelease (idle);
+    }
+    juce::String describe() const
+    {
+        return juce::String ("sleep assertions: system ") + (systemHeld ? "held" : "REFUSED") + ", idle " + (idleHeld ? "held" : "REFUSED")
+               + " (a lid-close on battery sleeps regardless; timeouts count awake time only)";
+    }
+};
+
+// THE TIMEOUT ARITHMETIC, alone so it can be pinned: elapsed is AWAKE time.
+inline bool timeoutPassed (double startAwakeMs, double nowAwakeMs, int timeoutMs) { return nowAwakeMs - startAwakeMs > timeoutMs; }
+
+inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, WatchOptions watch = {}, const Clock& clock = {})
 {
     ChildResult r;
     int fds[2];
@@ -161,7 +207,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     argv.push_back (nullptr);
 
     pid_t pid = 0;
-    const double t0 = juce::Time::getMillisecondCounterHiRes();
+    const double t0 = clock.awakeMs(), w0 = clock.wallMs();
     const int rc = posix_spawn (&pid, argv[0], &fa, nullptr, argv.data(), environ);
     posix_spawn_file_actions_destroy (&fa);
     close (fds[1]);
@@ -181,7 +227,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
         drain();
         if (! reaped && waitpid (pid, &status, WNOHANG) == pid) reaped = true;
         if (reaped) { drain(); break; }
-        const double now = juce::Time::getMillisecondCounterHiRes();
+        const double now = clock.awakeMs();
         if (watch.watchWindows && now - lastWindowPoll >= watch.pollMs)
         {
             lastWindowPoll = now;
@@ -206,7 +252,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
                 break;
             }
         }
-        if (now - t0 > timeoutMs)
+        if (timeoutPassed (t0, now, timeoutMs))
         {
             kill (pid, SIGKILL);
             waitpid (pid, &status, 0);
@@ -216,7 +262,8 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
         }
     }
     close (fds[0]);
-    r.ms  = juce::Time::getMillisecondCounterHiRes() - t0;
+    r.ms  = clock.awakeMs() - t0;
+    r.sleptMs = juce::jmax (0.0, (clock.wallMs() - w0) - r.ms);
     r.out = collected.toString();
     if (uiKilled)                r.kind = ChildResult::Kind::uiShown;
     else if (killed)             r.kind = ChildResult::Kind::timedOut;
@@ -727,6 +774,8 @@ inline int runCertDefaults (const Options& opt)
     if (! opt.fixtures.isDirectory()) { say ("CERT: no fixtures directory at " + opt.fixtures.getFullPathName()); return 2; }
     if (! opt.out.createDirectory()) { say ("CERT: cannot create " + opt.out.getFullPathName()); return 2; }
 
+    const SleepGuard sleepGuard ("EJ Map certification defaults");
+    std::cout << sleepGuard.describe() << std::endl;
     // 1. THE SIGNATURE, once, before anything is touched.
     const auto id = checkProbe (opt.probe, opt.signIdentity, opt.entitlements);
     if (! id.ok) { say ("CERT: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
@@ -745,6 +794,7 @@ inline int runCertDefaults (const Options& opt)
         o->setProperty ("product", s.product); o->setProperty ("fixture", s.fixtureFile.getFileName());
         o->setProperty ("mode", mode); o->setProperty ("attempt", attempt);
         o->setProperty ("outcome", r.describe()); o->setProperty ("ms", r.ms);
+        o->setProperty ("slept_ms", std::round (r.sleptMs));
         ledger.appendText (juce::JSON::toString (juce::var (o), true) + "\n");
     };
     // THE RETRY RULE: anything but a clean exit is re-run ONCE, alone. The second
@@ -991,7 +1041,7 @@ inline juce::String fixtureFileName (const juce::var& f)
 
 // DERIVE, COMPOSE, WRITE AND REPORT: shared by a live sweep and by a re-derivation from its traces, so the two can
 // never disagree about what a trace means (decision D2: re-compute, never re-measure).
-struct SweepRunInfo { juce::String headline, probeLabel, armLine; int processes = 0, retried = 0; bool newIdentity = false; };
+struct SweepRunInfo { juce::String headline, probeLabel, armLine; int processes = 0, retried = 0, sleptProcesses = 0; double sleptMs = 0; bool newIdentity = false; };
 
 inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
                               const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info)
@@ -1053,7 +1103,9 @@ inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, co
         for (const auto& [k, v] : counts) rep << " " << k << " " << v;
         rep << "\n";
     }
-    if (info.processes > 0) rep << "processes: " << info.processes << " run, " << info.retried << " retried, " << failedProc << " position(s) failed\n";
+    if (info.processes > 0) rep << "processes: " << info.processes << " run, " << info.retried << " retried, " << failedProc << " position(s) failed"
+                                << (info.sleptProcesses > 0 ? ", " + juce::String (info.sleptProcesses) + " SLEPT DURING THEIR RUN (" + juce::String (info.sleptMs / 1000.0, 1)
+                                                                + " s asleep; their readings are recorded as measured, not re-run)" : juce::String()) << "\n";
     rep << "write verify: " << landed << " landed, " << unl << " write_unlanded (skipped), in-stack read already matched on " << instack
         << " of " << landed << ", pump slices total " << slicesTotal << ", longest confirm " << juce::String (confMax, 1) << " ms, re-rendered " << rer << "\n";
     { juce::StringArray a; for (int i : d.holdDoubled) a.add (juce::String (i)); rep << "hold doubled at positions: " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
@@ -1090,6 +1142,7 @@ inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, co
 inline int runCertSweep (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const SleepGuard sleepGuard ("EJ Map certification sweep");
     if (! opt.out.createDirectory()) { say ("SWEEP: cannot create " + opt.out.getFullPathName()); return 2; }
     const auto id = checkProbe (opt.probe, {}, {});
     if (! id.ok) { say ("SWEEP: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
@@ -1136,6 +1189,7 @@ inline int runCertSweep (const SweepOptions& opt)
             o->setProperty ("tag", tag); o->setProperty ("attempt", attempt); o->setProperty ("file", file);
             o->setProperty ("outcome", r.describe()); o->setProperty ("clean", r.cleanExit()); o->setProperty ("norm", norm);
             o->setProperty ("ms", r.ms);
+            o->setProperty ("slept_ms", std::round (r.sleptMs));
             processes.add (juce::var (o));
             ledger.appendText (juce::JSON::toString (juce::var (o), true) + "\n");
             if (r.kind == ChildResult::Kind::uiShown) { windowSeen = true; windows.addArray (r.windowsInTree); }
@@ -1287,7 +1341,12 @@ inline int runCertSweep (const SweepOptions& opt)
                     + (newIdentity ? "  (NEW IDENTITY: installed " + s.desc.version + ", no fixture at that version)" : juce::String());
     info.probeLabel = probeLabel;
     info.processes = processes.size();
-    for (const auto& pr : processes) if ((int) pr.getProperty ("attempt", 1) == 2) ++info.retried;
+    for (const auto& pr : processes)
+    {
+        if ((int) pr.getProperty ("attempt", 1) == 2) ++info.retried;
+        const double sl = (double) pr.getProperty ("slept_ms", 0.0);
+        if (sl > 1000.0) { ++info.sleptProcesses; info.sleptMs += sl; }   // over a second: a sleep, not clock jitter
+    }
     info.newIdentity = newIdentity;
     composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info);
     return 0;
@@ -1330,6 +1389,8 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     classify (subjects, opt.includePace);
     juce::StringArray done, refused;
     int n = 0;
+    const SleepGuard sleepGuard ("EJ Map certification batch");
+    std::cout << sleepGuard.describe() << std::endl;
     for (const auto& s : subjects)
     {
         if (skip.contains (s.product) || ! measurable (s, opt.includePace) || ! sweep::planFromFixture (s.pushed).ok)

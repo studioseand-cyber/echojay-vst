@@ -777,6 +777,21 @@ under-read townhouse's reduction by at most 0.35 dB, with a median of 0.14 dB ov
 cells. It never over-reads. The cause is a slow detector creep of about 0.02 to 0.09 dB per
 0.25 s, which stays under the 0.1 dB still-moving threshold.
 
+**Sleep never becomes a hang** (ruled 29 Sep; section 6 runs on laptops).
+- **Timeouts count awake time only.** `runChild` takes an explicit `Clock`, and every timeout is
+  awake elapsed (`timeoutPassed`). This was already true by accident: JUCE's clock is
+  `mach_absolute_time`, which on this Mac read 518,794 s against 1,031,532 s of wall time since
+  boot. It is now pinned (S1–S3, on a real child process with a simulated 15-minute sleep).
+- **Every process records `slept_ms`** (wall minus awake), and the report counts processes that
+  slept mid-run.
+- **Every run holds `PreventSystemSleep` and `PreventUserIdleSystemSleep`.** Neither stops a
+  lid-close on battery. Batch 2's sleep (29 Sep, 18:36) was exactly that: "Clamshell Sleep" on
+  9% battery, with idle sleep already prevented system-wide by other processes.
+- **The hazard sleep actually produced was not a timeout.** It was a bridged plugin across a
+  wake: RCompressor (s) read its ratio as 0, and 2.1 M blocks rendered as no-ops within 500 ms.
+  The write verify caught it. Whether a process that slept should be re-run, not just recorded,
+  is open.
+
 **Noted for later, NOT built:** a silence-settle optimisation (render silence between
 positions instead of starting a fresh process). It is untested, and its failure mode is a
 quiet bias rather than an error.
