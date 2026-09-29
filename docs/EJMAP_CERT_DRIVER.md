@@ -430,6 +430,69 @@ because an uncaught meter degrades gracefully: the sweep writes to it, the audio
 not respond, and it lands in `flat` and then `uncertifiable`. Worth having; not worth
 the scope yet.
 
+## 6b. OPEN DESIGN QUESTION: "wrong" and "machine-dependent" look the same (logged 29 Sep)
+
+Certification runs on ANY machine EJ Map runs on (spec section 6). Fixtures accumulate
+from wherever the plugins happen to be. Spec section 2 promises that a product certified
+on one Mac is certified for everyone at that version.
+
+**The gap:** the driver cannot tell "this measurement is WRONG" apart from "this
+measurement is MACHINE-DEPENDENT". Both score `differs`, and they need different
+handling:
+- A wrong measurement is a defect to fix.
+- A machine-dependent one means two machines produce conflicting fixtures for the same
+  product at the same version. Under the distributed model the second overwrites the
+  first, and nothing detects the conflict.
+
+For such a vendor, section 2's promise is FALSE, silently.
+
+**It is not Melda-specific.** Any vendor with machine-level display preferences, or other
+per-machine plugin state, has it, and there is currently NO way to know which vendors
+those are.
+
+**The first known case, Melda (29 Sep), and what is established:**
+- MCompressor and MModernCompressor differ from their pushed fixtures (sampled on another
+  Mac) at the SAME version, 14.16.0. The differences are in name ORDER ("Preset trigger -
+  previous" against "previous (Preset trigger)") and in value text ("63 ms" against
+  "62 ms"; "+96.00 dB" against "Off").
+- On this Mac, Melda's text is STABLE: no control moved between two fresh instances in
+  the readout check.
+- JUCE 8.0.12, the version on both Macs by the records, passes an AU parameter's own
+  name string through unchanged (`juce_AudioUnitPluginFormatImpl.h:2175-2178`;
+  parameter groups become JUCE groups and are never joined into the name). So the name
+  order is most likely Melda's own string. That holds only if the studio's JUCE commit
+  (29396c22c9) behaves the same; this Mac's `../JUCE` is not a git checkout, so its
+  commit is unknown.
+- Melda keeps machine-level state that is not readable: a per-plugin encrypted
+  `systemconfig.tmf` (~90 bytes), written on instantiation (MModernCompressor's at 12:48
+  on 29 Sep), and `LIB/system*.dat`. No plain-text naming or unit preference was found.
+  So machine-dependence is plausible, but it is NOT shown.
+
+**THE SETTLING TEST (not yet run):** run the SAME signed probe binary, at the SAME Melda
+version, on the studio Mac against the two Melda compressors:
+- **It reproduces the pushed fixtures there (and not here):** the binary is ruled out;
+  the same binary gives different text on two Macs, so Melda's display text depends on
+  the MACHINE. The test alone cannot say whether that is one findable oddity of this Mac
+  or an inherent property of the vendor. That needs the setting to be found, or a third
+  machine. Until then it is treated as machine-dependent, and section 2 needs a rule for
+  it.
+- **It gives this Mac's text there too:** the machine is ruled out. The pushed fixtures
+  reflect something else: the other Mac's state when they were sampled, or the different
+  probe build that sampled them (the installed bundle's probe, from the kathy line).
+  That is findable.
+
+**Candidate rules for a machine-dependent vendor (undecided):**
+- NORMALISE the text before it enters a fixture.
+- RECORD the relevant machine STATE alongside the measurement. This cannot record the
+  machine's IDENTITY, because section 6 says nothing in a fixture identifies the machine
+  or the person.
+- REQUIRE AGREEMENT across machines before a fixture is trusted. A first fixture would
+  then be provisional until a second machine reproduces it, and a disagreement is flagged
+  rather than overwritten.
+
+Whichever is chosen, the server half must stop letting a second fixture silently
+overwrite a first that disagrees with it.
+
 ## 7. What the SERVER half must handle (so it is not discovered later)
 
 The fixture schema is the contract between EJ Map and the server. These are the
