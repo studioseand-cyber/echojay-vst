@@ -596,8 +596,13 @@ namespace
             if (a == "--cert-sweep-census" && i + 1 < argc)
             {
                 bool includePace = false;
-                for (int j = 1; j < argc; ++j) if (argAt (argc, argv, j) == "--include-pace") includePace = true;
-                return ejmap::cert::runSweepCensus (cwdFile (argAt (argc, argv, i + 1)), includePace);
+                auto ledgerRoot = ejmap::cert::defaultEjmapLedger();
+                for (int j = 1; j < argc; ++j)
+                {
+                    if (argAt (argc, argv, j) == "--include-pace") includePace = true;
+                    if (argAt (argc, argv, j) == "--ejmap-ledger" && j + 1 < argc) ledgerRoot = cwdFile (argAt (argc, argv, j + 1));
+                }
+                return ejmap::cert::runSweepCensus (cwdFile (argAt (argc, argv, i + 1)), ledgerRoot, includePace);
             }
             if (a == "--cert-sweep-rederive" && i + 4 < argc)
                 return ejmap::cert::runSweepRederive (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)),
@@ -616,6 +621,7 @@ namespace
                     else if (k == "--out"       && j + 1 < argc) o.out = cwdFile (v);
                     else if (k == "--product"   && j + 1 < argc) o.product = v;
                     else if (k == "--arm"       && j + 1 < argc) o.armLabel = v;
+                    else if (k == "--ejmap-ledger" && j + 1 < argc) o.ledger = cwdFile (v);
                     else if (k == "--skip"      && j + 1 < argc) skip.add (v);
                     else if (k == "--set"       && j + 1 < argc)
                         o.extraSets.push_back ({ v.upToFirstOccurrenceOf (":", false, false).getIntValue(),

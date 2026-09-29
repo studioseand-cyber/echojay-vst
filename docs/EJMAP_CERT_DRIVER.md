@@ -792,6 +792,60 @@ cells. It never over-reads. The cause is a slow detector creep of about 0.02 to 
   The write verify caught it. Whether a process that slept should be re-run, not just recorded,
   is open.
 
+**A process that slept is re-run once, and refused if it sleeps again** (ruled 29 Sep).
+- A measurement across a wake can be corrupt and still plausible. RCompressor (s) read its
+  ratio as 0 through a bridge that died across a dark wake.
+- So a clean run during which the Mac slept more than 1 s is re-run once. If it sleeps again
+  it is refused (`ChildResult::sleptTwice`), never looped. This is the same shape as the
+  SIGTERM rule, and one helper (`runWithRetry`) serves `--cert-defaults` and `--cert-sweep`.
+- Sleep is measured on `mach_continuous_time` minus awake time, which wall-clock changes
+  cannot move. A slept attempt is recorded as not clean, so a re-derivation distrusts it too.
+- Nobody on someone else's Mac reads `slept_ms`. The rule acts on it instead.
+
+**Engage drift has (at least) two mechanisms, and both show as drift** (logged 29 Sep; still
+no bound):
+1. **A display nonlinear in dBFS.** The crossing moves differently from the level across the
+   travel: townhouse's display models a console.
+2. **Positions bunched in display terms.** Tube-Tech CL 1B: every level engages at one knob
+   position near Off, where the display reads 1.4, 0.8, 0.2, then −4.2. The crossing is pinned
+   to that knob step whatever the level, so its display value barely moves while the level
+   moves 18 dB. Engage drift is 15.70 against an offset IQR of 0.45, and deep in its travel
+   the offsets hold at −14.3. This is a property of where the positions fall, not of whether
+   the display is linear.
+
+There are three drift/IQR disagreements so far: C1 comp-sc/comp-gate (4.17 vs 0.70), CL 1B,
+and townhouse, where the two numbers agree at 4.46 / 4.50. The population decides the bound.
+
+**Categorisation is a PREREQUISITE, not a gap** (ruled 29 Sep). A product's category comes
+only from the server's categorisation (`/api/params/categories`, cached as the ledger's
+`categories.json`). The param map has never worked offline, and EJ Map already fetches map
+state from the same server. A fresh Mac needs one connected EJ Map run, and it brings both the
+categories and the map state. Local categorisation is not to be built: reimplementing the
+server's model locally is the two-vocabularies hazard behind the Waves untick bug.
+
+**Discovery: the worklist is keyed on MAPS** (ruled 29 Sep). The driver used to read its
+worklist from its own output: every mode took its subjects from a fixtures directory, so a
+product nobody had certified could never enter it. A hand-written identity stub unblocked
+everything in the 29 Sep fresh-system test, which proved the point. Fixtures are the RECORD of
+what is certified, not the list of what to certify. Now a candidate is:
+- installed, and
+- MAPPED at its installed build, meaning a local map, or the server's map state 1–3 for that
+  identity. On a fresh Mac most products are mapped by someone else and have no local map.
+- in the compressor category (the local map's own, else `categories.json` by `format|uid`),
+  and
+- with no fixture at its installed identity and version.
+
+The worklist is the store's unswept fixtures plus the discovered candidates, in coverage
+order: a record whose sweep alone is missing, then those needing defaults first. A fixture
+that already records a sweep leaves the list. `--ejmap-ledger` names the ledger (default
+`~/Library/ejmap`); discovery only reads it. "pitch" products are listed, not swept, because
+tuner certification is not built. Pinned: a ledger with maps and no fixtures produces a
+non-empty worklist (F1), plus F2–F5.
+
+**Mapping and defaults each make their own probe pass, and that stays.** They measure
+different things (the control surface by set-then-read, and the instantiate state twice), and
+merging them would couple two stages that fail differently.
+
 **Noted for later, NOT built:** a silence-settle optimisation (render silence between
 positions instead of starting a fresh process). It is untested, and its failure mode is a
 quiet bias rather than an error.

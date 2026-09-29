@@ -49,6 +49,7 @@
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
+#include <mach/mach_time.h>
 #include <functional>
 #include <libproc.h>
 #include <spawn.h>
@@ -76,13 +77,13 @@ struct ChildResult
     // (LSBackgroundOnly, no editor), so any window in its tree is a plugin's or a
     // licence wrapper's - e.g. PACE's "Software Activation" (PACEEdenExperience),
     // a child of the probe, seen 28 Sep on Eiosis E2Deesser.
-    enum class Kind { exited, signaled, timedOut, uiShown, spawnFailed } kind = Kind::spawnFailed;
+    enum class Kind { exited, signaled, timedOut, uiShown, spawnFailed, sleptTwice } kind = Kind::spawnFailed;
     int code = 0;             // exit code when exited
     int signal = 0;           // terminating signal when signaled
     juce::String out;         // stdout and stderr, interleaved
     juce::StringArray windowsInTree;   // owner names of on-screen windows the child's tree showed
     double ms = 0.0;                   // AWAKE time the child ran for (the clock every timeout is measured on)
-    double sleptMs = 0.0;              // wall time minus awake time over the run: > 0 means the Mac slept during it
+    double sleptMs = 0.0;              // continuous minus awake time over the run: > 0 means the Mac slept during it
 
     bool cleanExit (int wanted = 0) const { return kind == Kind::exited && code == wanted; }
     juce::String describe() const
@@ -96,6 +97,7 @@ struct ChildResult
             case Kind::uiShown:     return "SHOWED A WINDOW (" + windowsInTree.joinIntoString (", ")
                                            + ") after " + juce::String (ms / 1000.0, 1) + " s; killed by the driver";
             case Kind::spawnFailed: return "could not be started";
+            case Kind::sleptTwice:  return "the Mac slept during both attempts: refused (a measurement across a wake is not trusted)";
         }
         return "?";
     }
@@ -152,12 +154,23 @@ struct WatchOptions { bool watchWindows = true; bool onScreenOnly = true; int po
 // "hang". Measured 29 Sep on this Mac: mach_absolute_time (JUCE's getMillisecondCounterHiRes) read 518,794 s against
 // 1,031,532 s of wall time since boot - it excludes the 5.9 days slept. runChild already timed out on that clock, so
 // batch 2's sleeps could not fake a timeout; this makes it explicit, injectable and PINNED instead of a property of
-// JUCE's implementation. Wall time is read beside it only to REPORT how long the Mac slept during each process.
+// JUCE's implementation. A second clock that DOES count sleep (mach_continuous_time: not moved by NTP or a user
+// changing the time, unlike wall time) is read beside it to measure how long the Mac slept during each process.
+inline double continuousMs()
+{
+    static const double ratio = [] { mach_timebase_info_data_t tb; mach_timebase_info (&tb); return (double) tb.numer / (double) tb.denom / 1.0e6; }();
+    return (double) mach_continuous_time() * ratio;
+}
 struct Clock
 {
-    std::function<double()> awakeMs = [] { return juce::Time::getMillisecondCounterHiRes(); };
-    std::function<double()> wallMs  = [] { return (double) juce::Time::currentTimeMillis(); };
+    std::function<double()> awakeMs     = [] { return juce::Time::getMillisecondCounterHiRes(); };
+    std::function<double()> withSleepMs = [] { return continuousMs(); };
 };
+
+// A process that slept longer than this during its run is not trusted (ruled 29 Sep): a measurement across a wake
+// can be corrupt AND plausible - RCompressor (s) position 5 read its ratio as 0 through a bridge that died across a
+// dark wake, and rendered 2.1 M no-op blocks inside 500 ms. It is re-run ONCE; slept again, it is refused, never looped.
+inline constexpr double kSleptMs = 1000.0;
 
 // THE ASSERTION. Held for the whole of a run: no system sleep (honoured on AC power, including with the lid closed) and
 // no idle sleep. It CANNOT stop a lid-close on battery - batch 2's sleep (29 Sep, 18:36) was exactly that, "Clamshell
@@ -207,7 +220,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     argv.push_back (nullptr);
 
     pid_t pid = 0;
-    const double t0 = clock.awakeMs(), w0 = clock.wallMs();
+    const double t0 = clock.awakeMs(), w0 = clock.withSleepMs();
     const int rc = posix_spawn (&pid, argv[0], &fa, nullptr, argv.data(), environ);
     posix_spawn_file_actions_destroy (&fa);
     close (fds[1]);
@@ -263,7 +276,7 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
     }
     close (fds[0]);
     r.ms  = clock.awakeMs() - t0;
-    r.sleptMs = juce::jmax (0.0, (clock.wallMs() - w0) - r.ms);
+    r.sleptMs = juce::jmax (0.0, (clock.withSleepMs() - w0) - r.ms);
     r.out = collected.toString();
     if (uiKilled)                r.kind = ChildResult::Kind::uiShown;
     else if (killed)             r.kind = ChildResult::Kind::timedOut;
@@ -274,6 +287,30 @@ inline ChildResult runChild (const juce::StringArray& args, int timeoutMs, Watch
 
 //==============================================================================
 // THE SIGNATURE GATE. Sign once (optional) under a deadline, then verify.
+// THE RETRY RULE, ONE IMPLEMENTATION for every probe the driver runs (--cert-defaults and --cert-sweep alike).
+//   - a refusal (exit 3) and a window are ANSWERS: never retried;
+//   - anything else unclean is re-run ONCE (the SIGTERM rule: a killed probe is not a refusal);
+//   - a clean run during which the Mac SLEPT is re-run ONCE too (ruled 29 Sep), because its numbers may be corrupt and
+//     still look right; slept AGAIN, it is refused (`sleptTwice`) - recorded, never looped.
+// `onAttempt` sees every attempt, so every attempt's output is kept.
+struct Attempted { ChildResult r; int attempts = 0; bool sleptTwice = false; };
+inline bool isAnswer (const ChildResult& r) { return (r.kind == ChildResult::Kind::exited && r.code == 3) || r.kind == ChildResult::Kind::uiShown; }
+inline Attempted runWithRetry (const juce::StringArray& args, int timeoutMs, const std::function<void (int, const ChildResult&)>& onAttempt,
+                               const Clock& clock = {}, WatchOptions watch = {})
+{
+    Attempted a;
+    for (int attempt = 1; attempt <= 2; ++attempt)
+    {
+        a.r = runChild (args, timeoutMs, watch, clock);
+        a.attempts = attempt;
+        if (onAttempt) onAttempt (attempt, a.r);
+        const bool slept = a.r.sleptMs > kSleptMs;
+        if (isAnswer (a.r) || (a.r.cleanExit() && ! slept)) return a;
+        if (attempt == 2) a.sleptTwice = slept;
+    }
+    return a;
+}
+
 struct ProbeIdentity { bool ok = false; juce::String why, team, cdhash; };
 
 inline ProbeIdentity checkProbe (const juce::File& probe, const juce::String& signIdentity,
@@ -378,7 +415,7 @@ struct Subject
     juce::File fixtureFile;
     juce::var pushed;
     juce::String product, uid, version;
-    enum class Reach { reachable, reachableNoVersion, heldPace, requiresHardware, versionMismatch, notInstalled, ambiguous } reach
+    enum class Reach { reachable, reachableNoVersion, heldPace, requiresHardware, versionMismatch, notInstalled, ambiguous, unfixtured } reach
         = Reach::notInstalled;
     juce::String detail;                 // installed version(s), the ambiguity, ...
     juce::PluginDescription desc;        // resolved component, when installed
@@ -397,6 +434,7 @@ struct Subject
 inline bool measurable (const Subject& s, bool includePace)
 {
     if (s.reach == Subject::Reach::reachable || s.reach == Subject::Reach::reachableNoVersion) return true;
+    if (s.reach == Subject::Reach::unfixtured) return ! s.hardware && (! s.licenceBound || includePace);
     return s.reach == Subject::Reach::versionMismatch && s.installedUnique && ! s.hardware
            && (! s.licenceBound || includePace);
 }
@@ -434,6 +472,7 @@ inline juce::String reachName (Subject::Reach r)
         case Subject::Reach::versionMismatch:    return "out of reach: installed at another version";
         case Subject::Reach::notInstalled:       return "out of reach: not installed";
         case Subject::Reach::ambiguous:          return "out of reach: uid matches more than one component";
+        case Subject::Reach::unfixtured:         return "discovered: mapped, no fixture at its installed version";
     }
     return "?";
 }
@@ -457,6 +496,24 @@ inline std::vector<Subject> loadFixtures (const juce::File& dir)
     return out;
 }
 
+// THE HOLD FAILS SAFE. First version: "no bundle found" meant "not PACE", and the two McDSP APB compressors ran while
+// step 2 was open - PACE-wrapped (Eden bundle and PACE bytes both present), but registered without an AudioComponents
+// key, so no plist scan finds them. A component whose PACE state cannot be CHECKED is held, and says so. Apple's own
+// built-ins have no bundle here and are exempt. One rule, used by classify and by discovery.
+inline bool paceHeld (const juce::PluginDescription& d, const std::map<juce::String, juce::File>& bundles, juce::String& why)
+{
+    const auto code = d.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false);
+    auto it = bundles.find (code);
+    if (it != bundles.end())
+    {
+        if (isPaceWrapped (it->second)) { why = "PACE-wrapped (" + it->second.getFileName() + ")"; return true; }
+        return false;
+    }
+    if (code.endsWith (",appl")) return false;      // macOS built-in, no bundle to check
+    why = "no bundle found for " + code + ", so its PACE state cannot be checked: held, not assumed clear";
+    return true;
+}
+
 inline void classify (std::vector<Subject>& subjects, bool includePace)
 {
     const auto bundles = componentBundles();
@@ -468,23 +525,7 @@ inline void classify (std::vector<Subject>& subjects, bool includePace)
         if (d.fileOrIdentifier.isNotEmpty())
             byUid.emplace (juce::String::toHexString (d.uniqueId).toLowerCase(), d);
     }
-    // THE HOLD FAILS SAFE. First version: "no bundle found" meant "not PACE", and the
-    // two McDSP APB compressors ran while step 2 was open - PACE-wrapped (Eden bundle
-    // and PACE bytes both present), but registered without an AudioComponents key, so
-    // no plist scan finds them. A component whose PACE state cannot be CHECKED is
-    // held, and says so. Apple's own built-ins have no bundle here and are exempt.
-    auto paceState = [&bundles] (const juce::PluginDescription& d, juce::String& why) {
-        const auto code = d.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false);
-        auto it = bundles.find (code);
-        if (it != bundles.end())
-        {
-            if (isPaceWrapped (it->second)) { why = "PACE-wrapped (" + it->second.getFileName() + ")"; return true; }
-            return false;
-        }
-        if (code.endsWith (",appl")) return false;      // macOS built-in, no bundle to check
-        why = "no bundle found for " + code + ", so its PACE state cannot be checked: held, not assumed clear";
-        return true; };
-    auto isPace = [&paceState] (const juce::PluginDescription& d, juce::String& why) { return paceState (d, why); };
+    auto isPace = [&bundles] (const juce::PluginDescription& d, juce::String& why) { return paceHeld (d, bundles, why); };
 
     for (auto& s : subjects)
     {
@@ -811,17 +852,13 @@ inline int runCertDefaults (const Options& opt)
                 + mode.retainCharacters ("abcdefghijklmnopqrstuvwxyz-") + "." + juce::String (attempt) + ".txt")
                .replaceWithText (r.out); };
         opt.out.getChildFile ("raw").createDirectory();
-        auto r = runChild (args, opt.timeoutMs);
-        logAttempt (s, mode, 1, r); keep (1, r);
         // Not retried: a refusal (exit 3) is the plugin's answer, and a window is a
         // licence or activation event - a retry would only put it on the desktop again.
-        if (! r.cleanExit() && ! (r.kind == ChildResult::Kind::exited && r.code == 3)
-            && r.kind != ChildResult::Kind::uiShown)
-        {
-            retried = true;
-            r = runChild (args, opt.timeoutMs);
-            logAttempt (s, mode, 2, r); keep (2, r);
-        }
+        // Re-run once: anything else unclean, or a clean run the Mac slept through.
+        const auto a = runWithRetry (args, opt.timeoutMs, [&] (int attempt, const ChildResult& r) { logAttempt (s, mode, attempt, r); keep (attempt, r); });
+        if (a.attempts == 2) retried = true;
+        auto r = a.r;
+        if (a.sleptTwice) r.kind = ChildResult::Kind::sleptTwice;
         return r;
     };
 
@@ -1001,6 +1038,172 @@ inline int runCertDefaults (const Options& opt)
 }
 
 //==============================================================================
+// DISCOVERY (ruled 29 Sep). THE DRIVER USED TO READ ITS WORKLIST FROM ITS OWN OUTPUT: every mode took its subjects from
+// a directory of fixtures, so a product nobody had certified could never enter it - on a fresh Mac, nothing ever would.
+// A fixture is the RECORD of what is certified, not the list of what to certify; a hand-written stub fixture unblocked
+// everything, which is the proof. The worklist is now keyed on MAPS, as the coverage state machine already says:
+//
+//   a CANDIDATE is installed, MAPPED at its installed build, in the compressor category, with no fixture at its
+//   installed identity and version.
+//
+//   MAPPED means EJ Map's ledger says so: a local map for that identity (maps/*.json), or the server's map state for it
+//   (map-state.json: 1 local only, 2 submitted by this machine, 3 submitted by another). The second matters most: on a
+//   fresh Mac almost everything is mapped by SOMEONE ELSE and has no local map at all (elysia mpressor, 29 Sep). A map
+//   for a DIFFERENT build (4) is not mapped here.
+//   THE CATEGORY is the local map's own, else categories.json's for that identity (indexed by format|uid, its
+//   mark_keys). Both come from the server's categorisation, a documented PREREQUISITE (docs section 10): on a fresh Mac
+//   the categories and the map state arrive in the same connected EJ Map run, so this one round-trip opens both stops.
+//   "pitch" (tuners) is listed, not swept: tuner certification (section 5) is not built.
+//
+// Everything here reads the ledger; nothing writes it.
+struct DiscoveryInputs
+{
+    std::map<juce::String, int> mapState;                   // identity key -> MapState (0 unmapped .. 5 unknown)
+    std::map<juce::String, juce::String> localMapCategory;  // identity key -> category, from a local map
+    std::map<juce::String, juce::String> categoryByUid;     // "AudioUnit|uid" -> category, from categories.json
+    juce::StringArray notes;                                // what was read, for the report
+};
+
+inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
+{
+    DiscoveryInputs in;
+    if (! ledgerRoot.isDirectory()) { in.notes.add ("no EJ Map ledger at " + ledgerRoot.getFullPathName()); return in; }
+    int maps = 0;
+    for (const auto& f : ledgerRoot.getChildFile ("maps").findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        const auto m = juce::JSON::parse (f.loadFileAsString());
+        const auto id = m.getProperty ("identity", {});
+        if (! id.isObject()) continue;
+        const auto key = id.getProperty ("format", "").toString() + "|" + id.getProperty ("uid", "").toString().toLowerCase()
+                         + "|" + id.getProperty ("version", "").toString();
+        in.localMapCategory[key] = m.getProperty ("category", "").toString();
+        ++maps;
+    }
+    const auto ms = juce::JSON::parse (ledgerRoot.getChildFile ("map-state.json").loadFileAsString());
+    if (auto* ids = ms.getProperty ("identities", {}).getDynamicObject())
+        for (const auto& p : ids->getProperties())
+            in.mapState[p.name.toString()] = (int) p.value.getProperty ("state", 5);
+    const auto cats = juce::JSON::parse (ledgerRoot.getChildFile ("categories.json").loadFileAsString());
+    if (auto* prods = cats.getProperty ("products", {}).getDynamicObject())
+        for (const auto& p : prods->getProperties())
+            if (const auto* mk = p.value.getProperty ("mark_keys", {}).getArray())
+                for (const auto& k : *mk)
+                    in.categoryByUid[k.toString().toLowerCase().replace ("audiounit|", "AudioUnit|").replace ("vst3|", "VST3|")]
+                        = p.value.getProperty ("category", "").toString();
+    in.notes.add (juce::String (maps) + " local map(s), " + juce::String ((int) in.mapState.size()) + " map-state row(s)"
+                  + (ms.getProperty ("fetched_at", "").toString().isNotEmpty() ? " (fetched " + ms.getProperty ("fetched_at", "").toString() + ")" : juce::String (" (never fetched)"))
+                  + ", " + juce::String ((int) in.categoryByUid.size()) + " categorised identities");
+    return in;
+}
+
+struct InstalledRecord { juce::PluginDescription desc; juce::String identityKey, uidKey; };
+
+inline std::vector<InstalledRecord> installedAudioUnits()
+{
+    std::vector<InstalledRecord> out;
+    for (const auto& t : echojay::auregistry::buildCensus().targets)
+    {
+        auto d = echojay::auregistry::describeFromRegistry (t.identifier);
+        if (d.fileOrIdentifier.isEmpty()) continue;
+        out.push_back ({ d, echojay::identityKeyForDescription (d), "AudioUnit|" + juce::String::toHexString (d.uniqueId).toLowerCase() });
+    }
+    return out;
+}
+
+// THE PURE CORE: which installed products are candidates, and why the rest are not. `fixtureKeys` holds "uid|version"
+// (lowercase uid) for every fixture in the store.
+struct Candidate { InstalledRecord inst; juce::String category, mappedBy; };
+struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners; };
+
+inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vector<InstalledRecord>& installed,
+                                     const std::set<juce::String>& fixtureKeys)
+{
+    Discovery d;
+    for (const auto& r : installed)
+    {
+        const auto local = in.localMapCategory.find (r.identityKey);
+        const auto st = in.mapState.find (r.identityKey);
+        const bool serverMapped = st != in.mapState.end() && st->second >= 1 && st->second <= 3;
+        if (local == in.localMapCategory.end() && ! serverMapped) { ++d.excluded["not mapped at this build"]; continue; }
+        juce::String category = local != in.localMapCategory.end() ? local->second : juce::String();
+        if (category.isEmpty()) if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end()) category = c->second;
+        const auto fxKey = juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version;
+        if (fixtureKeys.count (fxKey)) { ++d.excluded["fixture present at this version"]; continue; }
+        if (category == "pitch") { d.tuners.add (r.desc.name); continue; }
+        if (category != "compressor") { ++d.excluded[category.isEmpty() ? juce::String ("no category") : "category " + category]; continue; }
+        d.candidates.push_back ({ r, category, local != in.localMapCategory.end() ? juce::String ("local map")
+                                                                                  : "server map state " + juce::String (st->second) });
+    }
+    return d;
+}
+
+// THE WORKLIST: the fixture store's subjects (what has a record), then every discovered candidate (what has only a map),
+// in COVERAGE ORDER - a record at the installed version that has not been swept first (the sweep alone is missing),
+// then those that need defaults first (another version's record, or none). A fixture that already records a sweep is
+// certified and leaves the list.
+inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace,
+                                           juce::StringArray& report)
+{
+    std::vector<Subject> fromStore;
+    if (fixturesDir.isDirectory()) fromStore = loadFixtures (fixturesDir);
+    classify (fromStore, includePace);
+    std::set<juce::String> fixtureKeys, storeUids;
+    for (const auto& s : fromStore)
+    {
+        fixtureKeys.insert (s.uid + "|" + s.version);
+        storeUids.insert (s.uid);
+    }
+    std::vector<Subject> out;
+    int certified = 0;
+    for (auto& s : fromStore)
+        if (s.pushed.getProperty ("thresholdSweep", {}).isObject()) ++certified;
+        else out.push_back (s);
+
+    const auto in = loadDiscoveryInputs (ledgerRoot);
+    const auto installed = installedAudioUnits();
+    const auto disc = discoverCandidates (in, installed, fixtureKeys);
+    const auto bundles = componentBundles();
+    int added = 0;
+    for (const auto& c : disc.candidates)
+    {
+        const auto uid = juce::String::toHexString (c.inst.desc.uniqueId).toLowerCase();
+        if (storeUids.count (uid)) continue;                 // the store's own subject for this product already covers it
+        Subject s;
+        s.product = c.inst.desc.name; s.uid = uid; s.version = c.inst.desc.version;
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("product", s.product); o->setProperty ("uid", uid); o->setProperty ("version", s.version);
+        o->setProperty ("format", "AudioUnit");
+        o->setProperty ("discovered", "mapped (" + c.mappedBy + "), category " + c.category + ", no fixture: defaults are sampled first");
+        s.pushed = juce::var (o);
+        s.desc = c.inst.desc;
+        s.reach = Subject::Reach::unfixtured;
+        s.installedUnique = true;
+        s.hardware = requiresExternalHardware (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
+        juce::String why;
+        s.licenceBound = paceHeld (c.inst.desc, bundles, why);
+        s.detail = "mapped (" + c.mappedBy + ")" + (s.hardware ? "; needs " + externalHardwareNeeded (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) + " present" : juce::String());
+        out.push_back (s);
+        ++added;
+    }
+    // COVERAGE ORDER: the sweep alone is missing, then defaults-then-sweep; by name within each.
+    auto rank = [] (const Subject& s) { return (s.reach == Subject::Reach::versionMismatch || s.reach == Subject::Reach::unfixtured) ? 1 : 0; };
+    std::stable_sort (out.begin(), out.end(), [&] (const Subject& a, const Subject& b) {
+        return rank (a) != rank (b) ? rank (a) < rank (b) : a.product.compareIgnoreCase (b.product) < 0; });
+
+    report.add ("worklist: " + juce::String ((int) fromStore.size()) + " fixture(s) in the store (" + juce::String (certified)
+                + " already record a sweep), " + juce::String (added) + " discovered from the ledger at " + ledgerRoot.getFullPathName());
+    report.addArray (in.notes);
+    juce::StringArray ex;
+    for (const auto& [why, n] : disc.excluded) ex.add (juce::String (n) + " " + why);
+    report.add ("installed AUs not discovered: " + ex.joinIntoString (", "));
+    if (! disc.tuners.isEmpty()) report.add ("pitch category, listed not swept (tuner certification is not built): " + disc.tuners.joinIntoString (", "));
+    return out;
+}
+
+// The EJ Map ledger EJ Map itself uses when none is given.
+inline juce::File defaultEjmapLedger() { return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap"); }
+
+//==============================================================================
 // THE THRESHOLD SWEEP, one product (spec section 4; --cert-sweep). The probe measures, EJ Map
 // plans and derives (EjmapSweep.h). Same gates as --cert-defaults: the signature once, the
 // reachability classification, the retry rule, the window watch, and every probe output kept.
@@ -1011,7 +1214,7 @@ inline int runCertDefaults (const Options& opt)
 // can be re-derived from the raw files alone (RoundTripTest does exactly that).
 struct SweepOptions
 {
-    juce::File fixtures, probe, out;
+    juce::File fixtures, probe, out, ledger = defaultEjmapLedger();
     juce::String product, hostVersion, armLabel;
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
     int timeoutMs = 120000;                          // per process
@@ -1149,11 +1352,11 @@ inline int runCertSweep (const SweepOptions& opt)
     const juce::String probeLabel = "signed EchoJayProbe (feat/ejmap-cert), team " + id.team + ", cdhash " + id.cdhash;
     const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
 
-    auto subjects = loadFixtures (opt.fixtures);
-    classify (subjects, opt.includePace);
+    juce::StringArray wl;
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl);
     const Subject* sp = nullptr;
     for (const auto& x : subjects) if (x.product == opt.product) { sp = &x; break; }
-    if (sp == nullptr) { say ("SWEEP: no fixture for product '" + opt.product + "'"); return 2; }
+    if (sp == nullptr) { say ("SWEEP: '" + opt.product + "' is not on the worklist (" + wl.joinIntoString ("; ") + ")"); return 2; }
     const Subject& s = *sp;
     if (! measurable (s, opt.includePace))
     {
@@ -1179,22 +1382,25 @@ inline int runCertSweep (const SweepOptions& opt)
         juce::StringArray args { opt.probe.getFullPathName(), s.desc.name, s.desc.fileOrIdentifier,
                                  juce::String::toHexString (s.desc.uniqueId) };
         args.addArray (extra);
-        ChildResult r;
-        for (int attempt = 1; attempt <= 2; ++attempt)
+        const auto a = runWithRetry (args, opt.timeoutMs, [&] (int attempt, const ChildResult& r)
         {
-            r = runChild (args, opt.timeoutMs);
             const auto file = stem + "." + tag + "." + juce::String (attempt) + ".txt";
             raw.getChildFile (file).replaceWithText (r.out, false, false, "\n");
             auto* o = new juce::DynamicObject();
             o->setProperty ("tag", tag); o->setProperty ("attempt", attempt); o->setProperty ("file", file);
-            o->setProperty ("outcome", r.describe()); o->setProperty ("clean", r.cleanExit()); o->setProperty ("norm", norm);
+            // A process that slept is recorded as NOT clean: a re-derivation must not trust it either.
+            const bool slept = r.sleptMs > kSleptMs;
+            o->setProperty ("outcome", slept && r.cleanExit() ? "SLEPT " + juce::String (r.sleptMs / 1000.0, 1) + " s during its run: not trusted"
+                                                              : r.describe());
+            o->setProperty ("clean", r.cleanExit() && ! slept); o->setProperty ("norm", norm);
             o->setProperty ("ms", r.ms);
             o->setProperty ("slept_ms", std::round (r.sleptMs));
             processes.add (juce::var (o));
             ledger.appendText (juce::JSON::toString (juce::var (o), true) + "\n");
             if (r.kind == ChildResult::Kind::uiShown) { windowSeen = true; windows.addArray (r.windowsInTree); }
-            if (r.cleanExit() || (r.kind == ChildResult::Kind::exited && r.code == 3) || r.kind == ChildResult::Kind::uiShown) break;
-        }
+        });
+        auto r = a.r;
+        if (a.sleptTwice) r.kind = ChildResult::Kind::sleptTwice;   // refused: unclean, and it says why
         return r;
     };
     auto licenceLine = [&] (const juce::String& what, const ChildResult& r) {
@@ -1205,7 +1411,7 @@ inline int runCertSweep (const SweepOptions& opt)
     // INSTALLED component's, composed by the same composeFixture as --cert-defaults.
     juce::var base = s.pushed;
     bool newIdentity = false;
-    if (s.reach == Subject::Reach::versionMismatch)
+    if (s.reach == Subject::Reach::versionMismatch || s.reach == Subject::Reach::unfixtured)
     {
         const auto dstem = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".defaults";
         auto lp = runProbe (dstem, "list-params", { "--list-params" }, -1.0f);
@@ -1338,7 +1544,8 @@ inline int runCertSweep (const SweepOptions& opt)
     }
     const auto outName = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + armTag + ".json";
     info.headline = "EJ Map threshold sweep - " + s.product + " -> " + outName
-                    + (newIdentity ? "  (NEW IDENTITY: installed " + s.desc.version + ", no fixture at that version)" : juce::String());
+                    + (s.reach == Subject::Reach::unfixtured ? "  (DISCOVERED: " + s.detail + "; no fixture existed)"
+                       : newIdentity ? "  (NEW IDENTITY: installed " + s.desc.version + ", no fixture at that version)" : juce::String());
     info.probeLabel = probeLabel;
     info.processes = processes.size();
     for (const auto& pr : processes)
@@ -1385,15 +1592,19 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
 // runCertSweep each. A product's failure is reported and the batch goes on.
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 {
-    auto subjects = loadFixtures (opt.fixtures);
-    classify (subjects, opt.includePace);
+    juce::StringArray wl;
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl);
+    std::cout << wl.joinIntoString ("\n") << std::endl;
     juce::StringArray done, refused;
     int n = 0;
     const SleepGuard sleepGuard ("EJ Map certification batch");
     std::cout << sleepGuard.describe() << std::endl;
     for (const auto& s : subjects)
     {
-        if (skip.contains (s.product) || ! measurable (s, opt.includePace) || ! sweep::planFromFixture (s.pushed).ok)
+        // A DISCOVERED product has no controls until its defaults are sampled, so its plan is decided after sampling,
+        // not predicted; a fixture's subject is predicted from the fixture's own controls, as before.
+        const bool planLater = s.reach == Subject::Reach::unfixtured;
+        if (skip.contains (s.product) || ! measurable (s, opt.includePace) || (! planLater && ! sweep::planFromFixture (s.pushed).ok))
             continue;
         ++n;
         std::cout << "\n=== [" << n << "] " << s.product << std::endl;
@@ -1412,17 +1623,18 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 // instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
 // measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
 // the pushed fixture's controls; the real plan is made from the defaults sampled at the installed version.
-inline int runSweepCensus (const juce::File& fixturesDir, bool includePace)
+inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace)
 {
-    auto subjects = loadFixtures (fixturesDir);
-    classify (subjects, includePace);
-    int runnable = 0, runnableNewIdentity = 0;
+    juce::StringArray wl;
+    auto subjects = buildWorklist (fixturesDir, ledgerRoot, includePace, wl);
+    int runnable = 0, runnableNewIdentity = 0, runnableDiscovered = 0;
     std::map<juce::String, juce::StringArray> notRunnable;
     juce::StringArray rows;
     for (const auto& s : subjects)
     {
+        const bool discovered = s.reach == Subject::Reach::unfixtured;
         const auto plan = sweep::planFromFixture (s.pushed);
-        if (! plan.ok)
+        if (! discovered && ! plan.ok)
         {
             notRunnable[plan.why.contains ("unity") ? "ratio instantiates at 1:1 - the section 4.2 raise to 4:1 is not built (class " + plan.cls + ")"
                                                     : "no single threshold (" + plan.cls + ") - deferred to review after the sweep"].add (s.product);
@@ -1442,11 +1654,15 @@ inline int runSweepCensus (const juce::File& fixturesDir, bool includePace)
         ++runnable;
         const bool fresh = s.reach == Subject::Reach::versionMismatch;
         if (fresh) ++runnableNewIdentity;
-        rows.add ("  " + s.product.paddedRight (' ', 40) + (fresh ? "NEW IDENTITY at installed " + s.desc.version + " (defaults first)" : juce::String ("at the fixture's version"))
+        if (discovered) ++runnableDiscovered;
+        rows.add ("  " + s.product.paddedRight (' ', 40)
+                  + (discovered ? "DISCOVERED at " + s.desc.version + ", " + s.detail + " (defaults first; plan after sampling)"
+                     : fresh ? "NEW IDENTITY at installed " + s.desc.version + " (defaults first)" : juce::String ("at the fixture's version"))
                   + (s.licenceBound ? "  [licence-bound]" : ""));
     }
-    std::cout << "SWEEP CENSUS - " << (int) subjects.size() << " fixtures, PACE " << (includePace ? "included" : "held") << "\n"
-              << "RUNNABLE: " << runnable << " (" << runnableNewIdentity << " as a new identity at the installed version)\n"
+    std::cout << "SWEEP CENSUS - PACE " << (includePace ? "included" : "held") << "\n" << wl.joinIntoString ("\n") << "\n"
+              << "RUNNABLE: " << runnable << " (" << runnableNewIdentity << " as a new identity at the installed version, "
+              << runnableDiscovered << " discovered with no fixture at all)\n"
               << rows.joinIntoString ("\n") << "\nNOT RUNNABLE, BY REASON\n";
     for (const auto& [why, names] : notRunnable)
         std::cout << "  " << why << " (" << names.size() << "): " << names.joinIntoString (", ") << "\n";

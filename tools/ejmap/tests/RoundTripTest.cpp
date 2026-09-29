@@ -4439,7 +4439,7 @@ void testSleepTimeouts()
            "sleep S1: a timeout passes only when AWAKE elapsed exceeds it");
     auto calls = std::make_shared<int> (0);
     Clock sleeper;                                    // wall jumps 900 s after the first read; awake time does not
-    sleeper.wallMs = [calls] { return (double) juce::Time::currentTimeMillis() + (++*calls > 1 ? 900000.0 : 0.0); };
+    sleeper.withSleepMs = [calls] { return ejmap::cert::continuousMs() + (++*calls > 1 ? 900000.0 : 0.0); };
     const auto slept = runChild ({ "/bin/sleep", "1" }, 5000, WatchOptions { false }, sleeper);
     check (slept.cleanExit() && slept.sleptMs > 899000.0,
            "sleep S2: a 1 s child across a simulated 15-minute sleep exits cleanly under a 5 s timeout, and records "
@@ -4452,6 +4452,93 @@ void testSleepTimeouts()
            "sleep S3 (control): the same child under a clock that COUNTS slept time is reported as a timeout - the fake hang S2 prevents");
     const SleepGuard guard ("EJ Map RoundTripTest");
     check (guard.idleHeld, "sleep S4: the idle-sleep assertion is taken (" + guard.describe() + ")");
+}
+
+//==============================================================================
+/** DISCOVERY (ruled 29 Sep): the worklist is keyed on MAPS, never read back from the driver's own output. THE FRESH
+    SYSTEM, in one pin: a ledger with maps and no fixtures must produce a non-empty worklist - the one thing that had
+    never passed. Real ledger files in a temp directory, read by the same loader the driver uses. */
+void testDiscoveryFromMaps()
+{
+    using namespace ejmap::cert;
+    auto installedAs = [] (const char* name, int uid, const char* version, const char* code) {
+        InstalledRecord r;
+        r.desc.name = name; r.desc.uniqueId = uid; r.desc.version = version; r.desc.pluginFormatName = "AudioUnit";
+        r.desc.fileOrIdentifier = juce::String ("AudioUnit:Effects/") + code;
+        r.identityKey = echojay::identityKeyForDescription (r.desc);
+        r.uidKey = "AudioUnit|" + juce::String::toHexString (uid).toLowerCase();
+        return r; };
+    const std::vector<InstalledRecord> installed {
+        installedAs ("elysia mpressor", 0x49696d78, "1.15.1", "aufx,mprs,Elys"),     // mapped by ANOTHER machine only
+        installedAs ("Local Comp",      0x11112222, "2.0.0",  "aufx,lcmp,Test"),     // mapped HERE (a local map)
+        installedAs ("Some EQ",         0x33334444, "1.0.0",  "aufx,sweq,Test"),     // mapped, category eq
+        installedAs ("Other Build",     0x55556666, "3.0.0",  "aufx,obld,Test"),     // mapped for a different build only
+        installedAs ("Unmapped Comp",   0x77778888, "1.0.0",  "aufx,umcp,Test"),     // compressor, not mapped
+        installedAs ("A Tuner",         0x0000abcd, "1.0.0",  "aufx,tune,Test") };   // mapped, pitch
+    const auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-discovery-" + juce::Uuid().toDashedString());
+    root.getChildFile ("maps").createDirectory();
+    root.getChildFile ("maps").getChildFile ("fp1.json").replaceWithText (
+        R"({"identity": {"format": "AudioUnit", "uid": "11112222", "version": "2.0.0", "name": "Local Comp"}, "category": "compressor"})");
+    root.getChildFile ("map-state.json").replaceWithText (R"({"fetched_at": "2026-09-29T20:05:51", "failure": "", "identities": {
+        "AudioUnit|49696d78|1.15.1": {"state": 3}, "AudioUnit|33334444|1.0.0": {"state": 3}, "AudioUnit|55556666|3.0.0": {"state": 4},
+        "AudioUnit|77778888|1.0.0": {"state": 0}, "AudioUnit|abcd|1.0.0": {"state": 3}}})");
+    root.getChildFile ("categories.json").replaceWithText (R"({"products": {
+        "elysia mpressor|plugin alliance": {"category": "compressor", "mark_keys": ["AudioUnit|49696d78"]},
+        "some eq|test": {"category": "eq", "mark_keys": ["AudioUnit|33334444"]},
+        "other build|test": {"category": "compressor", "mark_keys": ["AudioUnit|55556666"]},
+        "unmapped comp|test": {"category": "compressor", "mark_keys": ["AudioUnit|77778888"]},
+        "a tuner|test": {"category": "pitch", "mark_keys": ["AudioUnit|abcd"]}}})");
+    const auto in = loadDiscoveryInputs (root);
+    const auto d = discoverCandidates (in, installed, {});
+    juce::StringArray names;
+    for (const auto& c : d.candidates) names.add (c.inst.desc.name);
+    check (! d.candidates.empty(), "discovery F1 (THE FRESH SYSTEM): a ledger with maps and NO fixtures produces a non-empty worklist");
+    check (names.contains ("elysia mpressor") && names.contains ("Local Comp") && names.size() == 2,
+           "discovery F2: mapped by another machine (map state only, no local map) and mapped here (local map) are both candidates ("
+             + names.joinIntoString (", ") + ")");
+    check (! names.contains ("Some EQ") && ! names.contains ("Other Build") && ! names.contains ("Unmapped Comp")
+             && d.tuners.contains ("A Tuner") && ! names.contains ("A Tuner"),
+           "discovery F3: another category, a map for a different build, and an unmapped compressor are not candidates; a pitch product is listed as a tuner, not swept");
+    const auto withFixture = discoverCandidates (in, installed, { "49696d78|1.15.1" });
+    bool still = false; for (const auto& c : withFixture.candidates) still = still || c.inst.desc.name == "elysia mpressor";
+    const auto otherVersion = discoverCandidates (in, installed, { "49696d78|1.0.0" });
+    bool other = false; for (const auto& c : otherVersion.candidates) other = other || c.inst.desc.name == "elysia mpressor";
+    check (! still && other, "discovery F4: a fixture at the installed version is the record - no candidate; one at another version is no record for this build");
+    const auto empty = loadDiscoveryInputs (root.getChildFile ("nope"));
+    check (discoverCandidates (empty, installed, {}).candidates.empty() && empty.notes.joinIntoString (" ").contains ("no EJ Map ledger"),
+           "discovery F5: with no ledger there is nothing to discover, and the report says why");
+    root.deleteRecursively();
+}
+
+/** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
+void testSleptProcessRetry()
+{
+    using namespace ejmap::cert;
+    auto sleepyClock = [] (std::vector<int> jumpAtCalls) {
+        auto calls = std::make_shared<int> (0);
+        auto offset = std::make_shared<double> (0.0);
+        Clock c;
+        c.withSleepMs = [calls, offset, jumpAtCalls] {
+            ++*calls;
+            for (int j : jumpAtCalls) if (*calls == j) *offset += 600000.0;   // ten minutes asleep
+            return continuousMs() + *offset; };
+        return c; };
+    int seen = 0;
+    auto count = [&seen] (int, const ChildResult&) { ++seen; };
+    // runChild reads withSleepMs twice per attempt: at the start (odd calls) and at the end (even calls).
+    seen = 0;
+    const auto once = runWithRetry ({ "/usr/bin/true" }, 5000, count, sleepyClock ({ 2 }), WatchOptions { false });
+    check (once.attempts == 2 && ! once.sleptTwice && once.r.cleanExit() && seen == 2,
+           "slept R1: a clean run the Mac slept through is re-run once, and the clean retry stands");
+    seen = 0;
+    const auto twice = runWithRetry ({ "/usr/bin/true" }, 5000, count, sleepyClock ({ 2, 4 }), WatchOptions { false });
+    check (twice.attempts == 2 && twice.sleptTwice && seen == 2, "slept R2: slept again on the retry - refused, and not looped");
+    seen = 0;
+    const auto awake = runWithRetry ({ "/usr/bin/true" }, 5000, count, sleepyClock ({}), WatchOptions { false });
+    check (awake.attempts == 1 && ! awake.sleptTwice, "slept R3 (control): a run with no sleep is not retried");
+    seen = 0;
+    const auto answer = runWithRetry ({ "/bin/sh", "-c", "exit 3" }, 5000, count, sleepyClock ({ 2 }), WatchOptions { false });
+    check (answer.attempts == 1, "slept R4: a refusal (exit 3) is an answer even if the Mac slept - never retried");
 }
 
 int main (int, char**)
@@ -4511,6 +4598,8 @@ int main (int, char**)
     testLicenceFromAudio();
     testExternalHardware();
     testSleepTimeouts();
+    testDiscoveryFromMaps();
+    testSleptProcessRetry();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
