@@ -45,6 +45,14 @@ namespace echojay
 
 struct CalibLoop
 {
+    /** 21t-m item 2 (29 Sep 2026 ruling): WHAT THIS RUN IS FOR.
+        A BUILD does not hunt. It applies the working position, matches the level ONCE through OUT, says so in
+        one line and stops - no windows, no rungs, no "landing it as it plays". Sean's 21:53 compressor walked
+        three rungs and 18 windows for a build he never asked to have dialled.
+        AN ASK ("harder", "more", "ease off", "softer", "land it") moves ONE rung of the plan's actuator and
+        reports what it moved and what the meters read. */
+    enum class Purpose { buildHold, askRung };
+
     enum class State { Idle, Listening, Waiting, Adjusted, Clamped };
     enum class Mode  { Passive, Listen };            // PASSIVE unless the block says otherwise
     // 21t-j (28 Sep 2026 ruling): THE KIND DECIDES THE DIRECTION.
@@ -171,6 +179,7 @@ struct CalibLoop
     bool   holdDone = false;                                              // ...and it has finished: nothing more is written
     int    holdWrites = 0;                                                // writes this settle - never more than two
     bool   landedInBand = false;
+    Purpose purpose = Purpose::askRung;   // 21t-m item 2
     float  holdBaseGainDb = 0.0f;                                         // the slot gain the hold opened from
     float  holdFirstExcessDb = std::numeric_limits<float>::quiet_NaN();   // the excess the first window measured
     static constexpr int   kHoldMaxWrites   = 2;     // ruled: one correction, at most one refinement
@@ -257,6 +266,7 @@ struct CalibLoop
         actuator, and a threshold range wide enough to be no constraint until a profile narrows it. */
     struct Config
     {
+        Purpose purpose = Purpose::askRung;
         juce::String plugin;
         int    slot = -1;
         float  lo = 2.0f, hi = 3.0f;      // gr_target_db
@@ -561,11 +571,20 @@ struct CalibLoop
         resetHoldBudget();
         levelHoldClamped = false; levelHoldLimitDb = 0.0f;
         blockHeardS = c.heardS; fromWorking = c.working;
-        // THE BUILD OPENS THE SETTLE (28 Sep 2026 ruling) and says so in ONE line, which the completion edits in
-        // place. No ask state, no timer: the build is not complete until the slot has heard the vocal and landed.
-        settling = true; landed = false; settleSteps = 0; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        purpose = c.purpose;
+        // 21t-m item 2 (29 Sep 2026 ruling): A BUILD HAS NO LOOP. It applies the working position, matches the
+        // level ONCE through OUT, and closes. So a build opens with its settle budget ALREADY SPENT: the first
+        // judged window lands, the hold runs once, and the line closes. It never hunts and never steps a rung.
+        // An ASK gets ONE rung - "harder" is one move, not a search.
+        // (The 28 Sep "the build opens the settle" rule is superseded by this: Sean's 21:53 compressor walked
+        // three rungs over eighteen windows for a build he never asked to have dialled.)
+        settling = true; landed = false; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        settleSteps = (c.purpose == Purpose::buildHold) ? kSettleMaxSteps        // spent: land at once, hold, close
+                                                        : kSettleMaxSteps - 1;   // one rung, then land
         senseLogsOwed = senseParams.isEmpty() ? 0 : kSenseLogWindows;   // 21t-j: the cross-check, five windows
-        askOwed = openingLine();
+        // 21t-m item 2: a BUILD says nothing on the way in - it has nothing to promise, because it is not going
+        // to hunt. Its one line is the closing one.
+        askOwed = (c.purpose == Purpose::buildHold) ? juce::String() : openingLine();
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
         value = c.startDb;
@@ -1119,6 +1138,31 @@ struct CalibLoop
     /** THE COMPLETED LINE: the same line, finished. Every figure in it is a meter sample. */
     juce::String completedLine() const
     {
+        // 21t-m item 2 (29 Sep 2026 ruling): TWO CLOSING LINES, one per purpose.
+        // A BUILD: "Built. Level held, Output -N dB." - what it did, in one line, with no promise to keep.
+        if (purpose == Purpose::buildHold)
+        {
+            juce::String b = "Built.";
+            if (std::abs (levelTrimmedDb) > 0.05f)
+                b << " Level held, Output " << signed1 (slotGainDb) << " dB.";
+            else if (std::abs (levelResidualDb) > 1.0f)
+                b << " The slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
+                  << (levelResidualDb > 0.0f ? "louder" : "quieter")
+                  << " out than in and my output trim has no more to give.";
+            else
+                b << " Level already matched, nothing to hold.";
+            return b;
+        }
+        // AN ASK: what it moved, and what the meters read for it.
+        if (purpose == Purpose::askRung && steps > 0)
+        {
+            juce::String a = knobText() + " " + signed1 (value - (writesNamedParam() ? stepDb * (float) senseSign : kStepDb))
+                           + juce::String::fromUTF8 (" \xe2\x86\x92 ") + signed1 (value);
+            const float gr = measuredGrDb();
+            if (gr == gr) a << ", " << juce::String (gr, 1) << " dB on the loud phrases";
+            a << (std::abs (levelResidualDb) <= 1.0f ? ", level held" : ", level NOT held");
+            return a + ".";
+        }
         const juce::String from = fromWorking
             ? juce::String (", set from the working position")
             : (blockHeardS == blockHeardS

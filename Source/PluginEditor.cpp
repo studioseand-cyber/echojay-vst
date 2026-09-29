@@ -2577,7 +2577,7 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
             if (uid.isEmpty())
             {
                 loadChainFromJson(chainBuildJsons[(size_t)i]);
-                startCalibrationFromChain({}, juce::JSON::parse(chainBuildJsons[(size_t)i]));
+                startCalibrationFromChain({}, juce::JSON::parse(chainBuildJsons[(size_t)i]), echojay::CalibLoop::Purpose::buildHold);   // 21t-m item 2: a build holds once
                 return;
             }
             if (!linkUidLive(uid))
@@ -24608,7 +24608,8 @@ int EchoJayEditor::calibrationSlotIndexOf (const juce::var& payload)
     return oneBased >= 1 ? oneBased - 1 : -1;
 }
 
-int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juce::var& chain)
+int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juce::var& chain,
+                                              echojay::CalibLoop::Purpose purpose)
 {
     auto* co = chain.getProperty ("calibration", juce::var()).getDynamicObject();
     if (co == nullptr) return 0;                       // no compressor in this chain: no block, nothing to start
@@ -24633,6 +24634,7 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
         return 0;
     }
     if (why.isNotEmpty()) EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
+    cfg.purpose = purpose;   // 21t-m item 2: a BUILD holds once and closes; an ASK moves one rung
     // (c) A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING, NOT FROM ZERO. slot_pre_gain_db has already been
     // written on that slot by the build; opening at 0 would undo it in one move and spend the step budget climbing
     // back to where it started.
@@ -24673,11 +24675,12 @@ bool EchoJayEditor::editCarriesAdd (const juce::String& editJson)
     return false;
 }
 
-int EchoJayEditor::startCalibrationForEdit (const juce::String& uid, const juce::String& editJson)
+int EchoJayEditor::startCalibrationForEdit (const juce::String& uid, const juce::String& editJson,
+                                            echojay::CalibLoop::Purpose purpose)
 {
     if (editJson.isEmpty()) return 0;
     const auto v = juce::JSON::parse (editJson);
-    if (const int n = startCalibrationFromChain (uid, v)) return n;
+    if (const int n = startCalibrationFromChain (uid, v, purpose)) return n;
     auto ops = v.getProperty ("ops", juce::var());
     if (! ops.isArray()) ops = v.getProperty ("edits", juce::var());
     return ops.isArray() ? startCalibrationFromOps (uid, ops) : 0;
@@ -25275,7 +25278,7 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                     auto after = [safeThis, editUid, editJson] (bool ready, const char* what)
                     {
                         if (safeThis == nullptr) return;
-                        const int started = safeThis->startCalibrationForEdit (editUid, editJson);
+                        const int started = safeThis->startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
                         if (auto* h = editUid.isEmpty() ? &safeThis->processorRef.getChainHost()
                                                         : safeThis->processorRef.borrowHostIfActiveFor (editUid))
                             h->setLoopsStarted (started);   // 21t-m item 1: the DialSummary headline
@@ -25300,7 +25303,7 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 auto after = [safeThis, editUid, editJson] (bool ready)
                 {
                     if (safeThis == nullptr) return;
-                    const int started = safeThis->startCalibrationForEdit (editUid, editJson);
+                    const int started = safeThis->startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
                     safeThis->processorRef.getChainHost().setLoopsStarted (started);   // 21t-m item 1
                     EchoJay_NSLog (("EJThreshold: local edit settled (slot landed"
                                     + juce::String (ready ? "" : ", bound expired") + ") -> "
@@ -25310,7 +25313,7 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 if (calSlot >= 0)
                     processorRef.getChainHost().whenSlotReady (calSlot, ChainHost::kMapFetchBoundMs, after);
                 else
-                    startCalibrationForEdit (editUid, editJson);
+                    startCalibrationForEdit (editUid, editJson, echojay::CalibLoop::Purpose::buildHold);
             }
         }
         return;
@@ -25349,7 +25352,7 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             auto& cm2 = safeThis->chatMessages[(size_t)msgIdx];
             // 21t-g item 2: a LOCAL edit that touched a compressor starts the loop, AFTER the ops landed - the
             // block names a slot index, and a slot index means nothing until the edit that created it is applied.
-            if (! aborted) safeThis->startCalibrationForEdit({}, cm2.editData);
+            if (! aborted) safeThis->startCalibrationForEdit({}, cm2.editData, echojay::CalibLoop::Purpose::buildHold);
 
             juce::String summary;
             bool allSuggest = !aborted && applied == total && results.size() > 0;
@@ -29751,8 +29754,12 @@ void EchoJayEditor::handleChatReply(const juce::String& reply, bool success,
             // which starts the loop after the edit has actually been applied.
             if (hasCalib && (eaEB == nullptr || eaEB->isEmpty()))
             {
-                const int started = startCalibrationForEdit (turnTargetUid, editJson);
-                EchoJay_NSLog(("EJThreshold: ops-free calibration block on the reply -> "
+                // 21t-m item 2: THIS is the ask - "harder", "more", "ease off", "softer", "land it". A block
+                // with no ops is the user's instruction, and it gets ONE rung and a report. Every other arrival
+                // (a build, an edit that changes the rack) holds the level once and starts no loop at all.
+                const int started = startCalibrationForEdit (turnTargetUid, editJson,
+                                                            echojay::CalibLoop::Purpose::askRung);
+                EchoJay_NSLog(("EJThreshold: ops-free calibration block on the reply (an ASK: one rung) -> "
                                + juce::String(started) + " loop(s) started or re-targeted"
                                + (turnTargetUid.isEmpty() ? juce::String(" (own rack)")
                                                           : " (uid " + turnTargetUid + ")")).toRawUTF8());
@@ -31388,7 +31395,7 @@ void EchoJayEditor::sendChainToLink(const juce::String& linkUid,
                 auto fire = [safeThis, linkUid, chainJsonForBubble, settled] (bool ready)
                 {
                     if (safeThis == nullptr) return;
-                    const int started = safeThis->startCalibrationFromChain (linkUid, juce::JSON::parse (chainJsonForBubble));
+                    const int started = safeThis->startCalibrationFromChain (linkUid, juce::JSON::parse (chainJsonForBubble), echojay::CalibLoop::Purpose::buildHold);
                     if (auto* h = safeThis->processorRef.borrowHostIfActiveFor (linkUid)) h->setLoopsStarted (started);
                     EchoJay_NSLog (("EJThreshold: leased build settled (dial "
                                     + juce::String (settled ? "settled" : "bound expired")

@@ -3795,9 +3795,11 @@ private:
     /** Start the loop for any dynamics-role slot an applied build/edit left in the rack. uid empty = own rack. */
     int startCalibrationFromOps (const juce::String& uid, const juce::var& ops);
     // 21t-g item 2: the response's chain-level calibration block (mode, actuator, param(s), sense, range).
-    int startCalibrationFromChain (const juce::String& uid, const juce::var& chain);
+    int startCalibrationFromChain (const juce::String& uid, const juce::var& chain,
+                                   echojay::CalibLoop::Purpose purpose = echojay::CalibLoop::Purpose::askRung);
     // ...and an edit card's block, with the per-op shape as the fallback.
-    int startCalibrationForEdit (const juce::String& uid, const juce::String& editJson);
+    int startCalibrationForEdit (const juce::String& uid, const juce::String& editJson,
+                                 echojay::CalibLoop::Purpose purpose = echojay::CalibLoop::Purpose::askRung);
     /** 21t-m item 1: which slot the calibration block names (0-based), or -1. */
     static int calibrationSlotIndexOf (const juce::var& payload);
     /** 21t-m item 1: the chat line owed when a dynamics slot ends a build or edit with no loop. */

@@ -279,15 +279,17 @@ void guardMain()
         check ((int) rr.chainDeltaAfterHold.size() >= 3 && held == (int) rr.chainDeltaAfterHold.size(),
                "(1) ...and it STAYS there over three more windows",
                juce::String (held) + " of " + juce::String ((int) rr.chainDeltaAfterHold.size()) + " window(s) held");
-        check (rr.closing.contains ("in total to hold the level"),
-               "(1) the closing sentence states the WRITTEN TOTAL  (RED as it stood: \"Output trimmed 6.0 dB\" "
-               "with 24 dB written)", rr.closing);
+        // 21t-m item 2: this case drives the real product through calibStart/calibTick with the DEFAULT purpose,
+        // which is an ASK - a build no longer steps a rung at all (case 2e covers the build). So the line it
+        // closes with is the ask's report, not the build's "in total" sentence.
+        check (rr.closing.contains (juce::String::fromUTF8 (" \xe2\x86\x92 ")),
+               "(1) the ask closes by reporting what it MOVED, from and to", rr.closing);
+        check (rr.closing.contains ("level held") || rr.closing.contains ("level NOT held"),
+               "(1) ...and whether the level came out held", rr.closing);
         if (! rr.slotGainWrites.empty())
-            // The sentence reports the hold's WRITTEN TOTAL - what the hold moved OUT by, measured from where
-            // the settle's last drive rung left it, not from zero. Here: OUT went -3 (drive) -> -9 (hold) = 6.
-            check (rr.closing.contains (juce::String (std::abs (holdTotalDb), 1)),
-                   "(1) ...and the number in it IS the total the HOLD moved OUT by, from where the drive left it",
-                   "wrote " + f1 (rr.slotGainWrites.back()) + " | " + rr.closing);
+            check (std::abs (holdTotalDb) > 0.05f,
+                   "(1) ...and the hold moved OUT from where the rung left it, not from zero",
+                   "hold moved " + f1 (holdTotalDb) + " dB, landing OUT at " + f1 (rr.slotGainWrites.back()));
     }
 
     // ---- (2) THE SAME SLOT 6 dB QUIET, AND A SLOT THAT OWES NOTHING ---------------------------------------
@@ -423,6 +425,62 @@ void guardMain()
         check (! l.levelHoldClamped,
                "(1c) ...and nothing reports a limit, because the control has 24 dB of range left",
                l.levelHoldClamped ? "CLAMPED" : "not clamped");
+    }
+
+    // ---- (2e) A BUILD HAS NO LOOP; AN ASK MOVES ONE RUNG (21t-m item 2, 29 Sep 2026 ruling) -------------
+    {
+        std::printf ("\n-- (2e) a build holds once and closes; an ask moves one rung and reports --\n");
+        // Sean's 21:53-21:54: a BUILD walked pre=+1/+2/+3 over eighteen windows, hunting for a gain-reduction
+        // band he had never asked it to find, and every rung leaked a dB. A build applies the working position,
+        // matches the level once through OUT, and says so. The hunting happens only when he asks for it.
+        auto runPurpose = [] (echojay::CalibLoop::Purpose purpose, int windows,
+                              int& rungsOut, int& holdsOut, juce::String& closingOut)
+        {
+            echojay::CalibLoop l;
+            auto cfg = passiveDriveCfg ("Fake Comp");
+            cfg.purpose = purpose;
+            l.begin (cfg);
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false; w.grDb = 0.2f; w.levelChangeDb = 6.0f; w.inTruePeakDb = -12.0f;
+            w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 0.0f;
+            rungsOut = 0; holdsOut = 0; closingOut = {};
+            float heard = 30.0f;
+            for (int i = 0; i < windows; ++i)
+            {
+                heard += 4.0f; w.heardSeconds = heard;
+                const auto st = l.onWindow (w, 3000.0);
+                if (st.writeDrive || st.writeParams) { ++rungsOut; w.slotPreTrimDb = st.newPre; w.slotOutGainDb = st.newPost; }
+                if (st.writeSlotGain) { ++holdsOut; w.slotOutGainDb = st.slotGainValue; }
+                if (st.ask.isNotEmpty()) closingOut = st.ask;
+            }
+            return l.landed;
+        };
+
+        {   // A BUILD
+            int rungs = 0, holds = 0; juce::String closing;
+            const bool landed = runPurpose (echojay::CalibLoop::Purpose::buildHold, 14, rungs, holds, closing);
+            std::printf ("    (2e) build: %d rung(s), %d hold write(s), landed %s\n    (2e) build says: %s\n",
+                         rungs, holds, landed ? "yes" : "no", closing.isEmpty() ? "(nothing)" : closing.toRawUTF8());
+            check (rungs == 0,
+                   "(2e) A BUILD MOVES NO RUNG AT ALL  (RED as it stood: three rungs and eighteen windows, "
+                   "hunting a band nobody asked for)", juce::String (rungs) + " rung(s)");
+            check (holds >= 1 && holds <= 2, "(2e) ...it matches the level once through OUT",
+                   juce::String (holds) + " hold write(s)");
+            check (closing.startsWith ("Built."),
+                   "(2e) ...and closes with ONE line that says what it did", closing);
+            check (closing.contains ("Level held") || closing.contains ("already matched"),
+                   "(2e) ...naming the level it held", closing);
+            check (! closing.contains ("landing it as it plays"),
+                   "(2e) ...and it never promises to land anything, because it is not going to hunt", closing);
+        }
+        {   // AN ASK
+            int rungs = 0, holds = 0; juce::String closing;
+            runPurpose (echojay::CalibLoop::Purpose::askRung, 14, rungs, holds, closing);
+            std::printf ("    (2e) ask: %d rung(s), %d hold write(s)\n    (2e) ask says: %s\n",
+                         rungs, holds, closing.isEmpty() ? "(nothing)" : closing.toRawUTF8());
+            check (rungs == 1, "(2e) AN ASK MOVES EXACTLY ONE RUNG", juce::String (rungs) + " rung(s)");
+            check (closing.isNotEmpty(), "(2e) ...and reports what it moved", closing);
+        }
     }
 
     // ---- (2c) A SLOT THAT NAMES AN OUTPUT CONTROL: the hold still writes EchoJay's OWN OUT --------------
