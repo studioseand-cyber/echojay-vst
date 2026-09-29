@@ -1,0 +1,33 @@
+probe: "SSL Native X-Comp v6" | AudioUnit:Effects/aufx,SNXC,SSLN | uid=61687275 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	4	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Knee	0.00
+param	1	0.000000	LF Bleed Amount	0.00
+param	2	1.000000	Max GR	60.00
+param	3	0.503753	Ratio	4.00
+param	4	1.000000	Threshold	12.0
+param	5	0.418367	Attack	10.00
+param	6	0.000000	Bypass	Off
+param	7	0.000000	HF Bleed Amount	0.00
+param	8	0.750000	Output Gain	0.00
+param	9	0.300000	HF Bleed Freq	5000
+param	10	0.259259	LF Bleed Freq	100.00
+param	11	0.000000	Listen	Off
+param	12	0.142857	Makeup Gain	0.00
+param	13	0.478005	Release	100.00
+param	14	0.750000	Input Gain	0.00
+stage	position
+pos	0	norm	0.066667	confirm_ms	2.56	slices	1	instack_match	1	getValue	0.066667	landed_by	instack	render_blocks	0	text_ms	20.2	reads	2	text	-44.0
+hold	0	-24.00	level_db	-41.1447	in_rms_db	-27.0103	tone_frac	1.0000	ch	-41.1447,-41.1447	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-39.3344,-41.1444,-41.1452,-41.1445,-41.1452,-41.1445	nonfinite	0
+hold	0	-12.00	level_db	-38.1446	in_rms_db	-15.0103	tone_frac	1.0000	ch	-38.1446,-38.1446	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-37.4204,-38.1440,-38.1456,-38.1440,-38.1456,-38.1440	nonfinite	0
+hold	0	-6.00	level_db	-36.6444	in_rms_db	-9.0103	tone_frac	1.0000	ch	-36.6444,-36.6444	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-36.2679,-36.6436,-36.6460,-36.6437,-36.6460,-36.6437	nonfinite	0
+reread	0	steady
+timing	wall_ms	58.8	audio_s	4.500
+stage	done

@@ -1,0 +1,422 @@
+{
+  "identity": "AudioUnit|517f614e|2.5.62",
+  "product": "Tube-Tech CL 1B",
+  "format": "AudioUnit",
+  "uid": "517f614e",
+  "version": "2.5.62",
+  "sampledAt": "2026-09-25",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "installed signed EchoJay V2 21t-a probe",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "8.5",
+        "1.000": "31.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 8.5,
+        "max": 31.0,
+        "at0": null,
+        "at0_5": 8.5,
+        "at1": 31.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.33,
+        "display": "0.0",
+        "declaredDefault": 0.33,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Ratio",
+      "unit": ":1",
+      "displayAt": {
+        "0.000": "2:1",
+        "0.500": "6:1",
+        "1.000": "10:1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 2.0,
+        "max": 10.0,
+        "at0": 2.0,
+        "at0_5": 6.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "6:1",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "-18.5",
+        "1.000": "-41.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -41.0,
+        "max": -18.5,
+        "at0": null,
+        "at0_5": -18.5,
+        "at1": -41.0,
+        "inverted": true,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Meter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "In",
+        "0.500": "Comp",
+        "1.000": "Out"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Comp",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Attack",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "5.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Release",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "5.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Select Attack Release",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Fix",
+        "0.500": "F/M",
+        "1.000": "Man"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Man",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Sidechain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Int",
+        "0.500": "Ext",
+        "1.000": "Ext"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Int",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-25",
+  "defaultsProbe": "installed signed EchoJay V2 21t-d probe",
+  "thresholdSweep": {
+    "measuredAt": "20260929T195341.829+0100",
+    "host": "EJ Map 0.1.0 / arm64 / 48k",
+    "bridged": false,
+    "tone": {
+      "hz": 997.0,
+      "levels_dbfs": [
+        -24.0,
+        -12.0,
+        -6.0
+      ]
+    },
+    "level_convention": "peak",
+    "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+    "ratioDuring": {
+      "position": "6:1",
+      "value": 6.0,
+      "assumed": false
+    },
+    "autoMakeupDisabled": false,
+    "positions": 16,
+    "positionNorms": [
+      0.0,
+      0.066667,
+      0.133333,
+      0.2,
+      0.266667,
+      0.333333,
+      0.4,
+      0.466667,
+      0.533333,
+      0.6,
+      0.666667,
+      0.733333,
+      0.8,
+      0.866667,
+      0.933333,
+      1.0
+    ],
+    "linearReference": {
+      "mode": "soft_end",
+      "position": 0,
+      "gain_db": {
+        "-24": -0.64,
+        "-12": -0.64,
+        "-6": -0.64
+      },
+      "spread_db": 0.0,
+      "unusable_beyond_db": 2.0
+    },
+    "defaultGain_db": {
+      "-12": -0.64,
+      "-24": -0.64,
+      "-6": -0.64
+    },
+    "positionLandedBy": [
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack"
+    ],
+    "writeLanding": {
+      "instack": 16
+    },
+    "reduction_db": {
+      "-24": [
+        0.0,
+        0.0,
+        0.01,
+        0.5,
+        1.44,
+        2.29,
+        4.04,
+        5.89,
+        8.01,
+        12.039999999999999,
+        15.710000000000001,
+        18.280000000000001,
+        20.219999999999999,
+        21.629999999999999,
+        22.449999999999999,
+        22.469999999999999
+      ],
+      "-12": [
+        0.0,
+        0.02,
+        0.06,
+        1.8,
+        5.55,
+        8.49,
+        11.539999999999999,
+        14.0,
+        16.68,
+        21.5,
+        25.620000000000001,
+        28.539999999999999,
+        30.699999999999999,
+        32.340000000000003,
+        33.280000000000001,
+        33.299999999999997
+      ],
+      "-6": [
+        0.0,
+        0.04,
+        0.14,
+        3.52,
+        9.27,
+        12.67,
+        16.039999999999999,
+        18.699999999999999,
+        21.600000000000001,
+        26.66,
+        31.059999999999999,
+        34.149999999999999,
+        36.390000000000001,
+        38.060000000000002,
+        39.030000000000001,
+        39.039999999999999
+      ]
+    },
+    "sense": "higher_is_harder",
+    "engage": {
+      "-24": 3,
+      "-12": 3,
+      "-6": 3
+    },
+    "thresholdDbEquivalent": [
+      {
+        "above": -6.0
+      },
+      {
+        "above": -6.0
+      },
+      {
+        "above": -6.0
+      },
+      -14.199999999999999,
+      -18.699999999999999,
+      -24.5,
+      -27.300000000000001,
+      -31.100000000000001,
+      -33.600000000000001,
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      }
+    ],
+    "result": "certified",
+    "displayOffsetDb": -14.300000000000001,
+    "displayOffsetSpread": {
+      "positions": 6,
+      "iqr_db": 0.45,
+      "min_db": -14.5,
+      "max_db": -13.300000000000001,
+      "convention": "peak"
+    },
+    "displayEngage": {
+      "-12": 13.73,
+      "-24": 24.210000000000001,
+      "-6": 8.51,
+      "drift_db": 15.699999999999999,
+      "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+    }
+  }
+}

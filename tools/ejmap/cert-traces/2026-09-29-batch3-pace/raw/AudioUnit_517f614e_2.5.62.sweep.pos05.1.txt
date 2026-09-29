@@ -1,0 +1,28 @@
+probe: "Tube-Tech CL 1B" | AudioUnit:Effects/aufx,clST,SfTb | uid=517f614e | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input	2	Stereo	enabled
+bus	render	in	1	Side Chain Input	2	Stereo	enabled
+bus	render	out	0	Main Output	2	Stereo	enabled
+sidechain	1	Side Chain Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	4
+param	0	0.330000	Gain	0.0
+param	1	0.500000	Ratio	6:1
+param	2	0.000000	Threshold	Off
+param	3	0.500000	Meter	Comp
+param	4	0.500000	Attack	5.0
+param	5	0.500000	Release	5.0
+param	6	1.000000	Select Attack Release	Man
+param	7	0.000000	Sidechain	Int
+stage	position
+pos	0	norm	0.333333	confirm_ms	2.35	slices	1	instack_match	1	getValue	0.333333	landed_by	instack	render_blocks	0	text_ms	22.2	reads	2	text	-10.2
+hold	0	-24.00	level_db	-29.9375	in_rms_db	-27.0103	tone_frac	1.0000	ch	-29.9375,-29.9375	doubled	0	last_move_db	0.0048	final_move_db	0.0048	win	-29.8563,-29.9359,-29.9407,-29.9359,-29.9407,-29.9359	nonfinite	0
+hold	0	-12.00	level_db	-24.1352	in_rms_db	-15.0103	tone_frac	1.0000	ch	-24.1352,-24.1352	doubled	0	last_move_db	0.0052	final_move_db	0.0052	win	-23.8444,-24.1334,-24.1387,-24.1336,-24.1386,-24.1334	nonfinite	0
+hold	0	-6.00	level_db	-22.3164	in_rms_db	-9.0103	tone_frac	1.0000	ch	-22.3164,-22.3164	doubled	0	last_move_db	0.0055	final_move_db	0.0055	win	-22.1216,-22.3146,-22.3202,-22.3144,-22.3201,-22.3146	nonfinite	0
+reread	0	steady
+timing	wall_ms	99.0	audio_s	4.500
+stage	done

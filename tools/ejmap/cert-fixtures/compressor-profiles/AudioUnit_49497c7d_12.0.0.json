@@ -999,7 +999,7 @@
       "-24": 5.48,
       "-6": 1.86,
       "drift_db": 4.17,
-      "rule": "display where reduction crosses 0.5 dB, less the level (lower_is_harder) or plus it (higher_is_harder)"
+      "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
     }
   }
 }

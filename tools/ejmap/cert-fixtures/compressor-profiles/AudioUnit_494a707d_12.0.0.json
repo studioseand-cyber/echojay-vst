@@ -504,11 +504,11 @@
       "convention": "peak"
     },
     "displayEngage": {
-      "-12": -34.399999999999999,
-      "-24": -22.379999999999999,
-      "-6": -40.420000000000002,
-      "drift_db": 18.039999999999999,
-      "rule": "display where reduction crosses 0.5 dB, less the level (lower_is_harder) or plus it (higher_is_harder)"
+      "-12": -58.399999999999999,
+      "-24": -70.379999999999995,
+      "-6": -52.420000000000002,
+      "drift_db": 17.960000000000001,
+      "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
     }
   }
 }

@@ -4132,6 +4132,29 @@ void testSweepQuietReference()
     check (okd.engageDriftDb && *okd.engageDriftDb < 0.01,
            "quiet Q6: for a higher_is_harder input gain the engage number is display PLUS level, so a dB-linear input shows no drift ("
              + juce::String (okd.engageDriftDb.value_or (99.0), 3) + ")");
+    {
+        // Q7: the same device with an INVERTED threshold display, higher_is_harder by norm while the displayed value
+        // FALLS (Tube-Tech CL 1B's shape): a fixed threshold swept by display Td = -20 - 4p reduces by (L - Td) * 0.75,
+        // so the engage number must be display MINUS level, and a dB-linear display must show no drift.
+        Measured inv; inv.ok = true; inv.movingDb = 0.1;
+        for (int p = 0; p < 6; ++p)
+        {
+            PositionReading r; r.k = p; r.norm = (float) p / 5.0f; const double td = 0.0 - 6.0 * p;
+            r.text = juce::String (td, 1) + " dB";
+            for (double L : { -24.0, -12.0, -6.0 })
+            {
+                HoldReading h; h.present = true; h.inRmsDb = L - 3.0103;
+                h.levelDb = h.inRmsDb - juce::jmax (0.0, (L - td) * 0.75);
+                r.holds[levelKey (L)] = h;
+            }
+            inv.positions.push_back (r);
+        }
+        const auto di = derive (inv, sweeptest::kLevels, -1);
+        const auto dic = displayCheck (di, "dB");
+        check (di.sense == "higher_is_harder" && dic.engageDriftDb && *dic.engageDriftDb < 0.01,
+               "quiet Q7: an inverted threshold display (norm up = harder, value down) keys the sign on the DISPLAY: no drift ("
+                 + juce::String (dic.engageDriftDb.value_or (99.0), 3) + ")");
+    }
     const auto bent = derive (build ([] (int p, double L) { return p == 3 && L == -48.0 ? -0.3 : 0.0; }), sweeptest::kLevels, -1, true);
     check (bent.skipped.contains (3) && bent.skippedReasons[bent.skipped.indexOf (3)].contains ("not 6"),
            "quiet Q3: -48 and -54 differing by 5.7 dB, not 6, refuses THAT position rather than calibrate off it");

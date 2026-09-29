@@ -728,6 +728,8 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
 
 //==============================================================================
 // THE DISPLAY, AS NUMBERS (ruled 29 Sep; never merged with the map's `result`, and no bound is set yet).
+// (The engage number is the display at the crossing less the level where the display FALLS toward the hard end - a
+// threshold - and plus the level where it RISES toward it - an input gain. It is keyed on the display, never the norm.)
 // For a threshold that prints dB:
 //   ENGAGE (primary, ratio-free): at each level, the display value where reduction crosses kEngageDb, interpolated
 //     between the two positions that bracket it, less the level for lower_is_harder or plus it for higher_is_harder.
@@ -808,22 +810,34 @@ inline DisplayCheck displayCheck (const Derived& d, const juce::String& threshol
                     const auto x1 = displayNumber (d.texts[(size_t) h1]);
                     if (! g1 || ! x1 || *g1 <= kEngageDb) continue;
                     std::optional<double> x;
+                    bool displayRisesTowardHard = false;
                     if (j + 1 < n)
                     {
                         const int h2 = at (j + 1);
                         const auto g2 = it->second[(size_t) h2];
                         const auto x2 = displayNumber (d.texts[(size_t) h2]);
                         if (g2 && x2 && *g2 > *g1 && *g2 < kSaturateDb)
+                        {
                             x = *x1 + (kEngageDb - *g1) * (*x2 - *x1) / (*g2 - *g1);
+                            displayRisesTowardHard = *x2 > *x1;
+                        }
                     }
                     if (! x && j > 0)
                     {
                         const int s0 = at (j - 1);
                         const auto g0 = it->second[(size_t) s0];
                         const auto x0 = displayNumber (d.texts[(size_t) s0]);
-                        if (g0 && x0 && *g0 <= kEngageDb) x = *x0 + (kEngageDb - *g0) / (*g1 - *g0) * (*x1 - *x0);
+                        if (g0 && x0 && *g0 <= kEngageDb)
+                        {
+                            x = *x0 + (kEngageDb - *g0) / (*g1 - *g0) * (*x1 - *x0);
+                            displayRisesTowardHard = *x1 > *x0;
+                        }
                     }
-                    if (x) cross = higherHarder ? *x + L : *x - L;
+                    // THE SIGN FOLLOWS THE DISPLAY, NOT THE NORM. A display whose VALUE rises toward the hard end is an
+                    // input gain (x + L constant); one whose value falls toward it is a threshold (x - L constant).
+                    // Keyed on the norm's sense, an inverted threshold display read 20.3 dB of false drift (Tube-Tech
+                    // CL 1B, 29 Sep: its norm rises toward harder while its displayed threshold falls; pin Q7).
+                    if (x) cross = displayRisesTowardHard ? *x + L : *x - L;
                     break;
                 }
             }
@@ -995,7 +1009,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         auto* o = new juce::DynamicObject();
         for (const auto& [k, v] : dc.engage) o->setProperty (juce::String ((int) k.getDoubleValue()), round2 (v));
         o->setProperty ("drift_db", round2 (dc.engageDriftDb));
-        o->setProperty ("rule", "display where reduction crosses 0.5 dB, less the level (lower_is_harder) or plus it (higher_is_harder)");
+        o->setProperty ("rule", "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises");
         s->setProperty ("displayEngage", juce::var (o));
     }
     if (! pv.diagnosticArm.isVoid()) s->setProperty ("diagnosticArm", pv.diagnosticArm);

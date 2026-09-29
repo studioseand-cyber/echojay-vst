@@ -1,0 +1,36 @@
+probe: "U73b Compressor" | AudioUnit:Effects/aufx,U73b,AdFd | uid=7526137e | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Level	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Audio Input	2	Stereo	enabled
+bus	render	in	1	Sidechain Input	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Sidechain Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Bypass	Off
+param	1	0.000000	Mode	0
+param	2	0.400000	Release Time	2
+param	3	0.500000	Input Level	0
+param	4	0.500000	Output Level	0
+param	5	0.000000	Key Input	0
+param	6	0.500000	Meter	1
+param	7	1.000000	HiPass	On
+param	8	0.625000	Calibration	-9
+param	9	0.000000	Autovolume	Off
+param	10	0.000000	Oversampling	Off
+param	11	1.000000	Comp. Amount	100
+stage	reference
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  3501  100    35  100  3466    404  40102 --:--:-- --:--:-- --:--:-- 40709
+refpos	val	0.500000	text	0
+ref	-54.00	level_db	-48.1238	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-48.1238,-48.1238	win	-49.7095,-48.1249,-48.1266,-48.1235,-48.1247,-48.1233,-48.1248,-48.1233	nonfinite	0
+ref	-48.00	level_db	-42.1238	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-42.1238,-42.1238	win	-42.1261,-42.1228,-42.1258,-42.1228,-42.1258,-42.1228,-42.1258,-42.1228	nonfinite	0
+ref	-24.00	level_db	-19.7102	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9997	ch	-19.7102,-19.7102	win	-19.6368,-19.6565,-19.6642,-19.7072,-19.7099,-19.7144,-19.7064,-19.7099	nonfinite	0
+ref	-12.00	level_db	-15.2871	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	0.9998	ch	-15.2871,-15.2871	win	-15.2447,-15.2836,-15.2884,-15.2846,-15.2890,-15.2851,-15.2899,-15.2863	nonfinite	0
+ref	-6.00	level_db	-15.2789	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9996	ch	-15.2789,-15.2789	win	-15.2627,-15.2779,-15.2778,-15.2785,-15.2787,-15.2790,-15.2789,-15.2789	nonfinite	0
+timing	wall_ms	398.6	audio_s	10.000
+stage	done
