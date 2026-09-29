@@ -517,14 +517,17 @@ server-side obligations the Mac-side work has created so far:
   are OBJECTS (items 8 and 11; the spec is amended, not the fixtures); roles are absent on
   every control (item 9, a prerequisite for the sweep); identity keyed on the XOR uid is its
   own migration task (item 10).
-- **`thresholdSweep` carries TWO verdicts; read them separately** (section 10). `result` says
-  whether the dB-equivalent map is good; `display_dbfs` says whether a dB display means dBFS
-  (true / false / null when the threshold prints no dB). A certified map with
-  `display_dbfs: false` is the normal case this feature exists for, not a failure: dial by
-  `thresholdDbEquivalent`, never by the display.
+- **`thresholdSweep` carries THREE results; read them separately** (section 10). `result`
+  says whether the dB-equivalent map is good. `displayLinear` says whether the dB display
+  holds a steady offset from dBFS (true / false / null when it prints no dB). `displayOffsetDb`
+  is that offset, a number. A certified map with `displayLinear: false` is the normal case
+  this feature exists for, not a failure: dial by `thresholdDbEquivalent`. A linear display
+  with any offset (a console-calibrated +14, an RMS-referenced +3) is usable by subtracting
+  `displayOffsetDb`.
 - **Fields beyond spec 4.5**, added 29 Sep and flagged: `level_convention`, `procedure`,
-  `bridged`, `positionNorms`, `linearReference`, `display_dbfs`, `displayOffset`, and when they
-  occur `holdDoubled`, `stillMovingAfterDoubling`, `skipped`, `diagnosticArm`. A fixture with
+  `bridged`, `positionNorms`, `linearReference`, `displayLinear`, `displayOffsetDb`,
+  `displayOffsetSpread`, and when they occur `holdDoubled`, `stillMovingAfterDoubling`,
+  `skipped`, `diagnosticArm`, `thresholdPick`, and `ratioDuring.raisedFrom` / `readBack`. A fixture with
   `diagnosticArm` is a measurement with a non-swept control moved on purpose: never fold it
   into a product's certification.
 - **Pin the server's matcher to `tools/ejmap/tests/fixtures/name-token-vectors.json`**
@@ -660,26 +663,73 @@ Townhouse's default (0.0 dB) takes 3.07 dB at −6, while its soft end is linear
 
 The arm A trace is committed, and it must not certify (RoundTripTest D9).
 
-**Two verdicts, never merged** (the same rule as reproduction score vs schema emission):
-- `result` is the dB-equivalent map: certified, flat, nonmonotonic or unreadable.
-- `display_dbfs` answers whether the dB display means dBFS. It is true when the median of
-  (derived T − displayed threshold) is within 2 dB in the peak convention.
-- **Townhouse:** the map is certified and `display_dbfs` is false. Its median offset is −15 dB,
-  because the display models the console. It is the first real fixture:
-  `tools/ejmap/cert-fixtures/compressor-profiles/AudioUnit_417f6e76_1.8.1.json`. Its 17 raw
-  traces are committed and re-derive it exactly (RoundTripTest V5).
+**Three results, never merged** (ruled 29 Sep; the same rule as reproduction score vs schema
+emission, applied a third time). Offsets are derived T minus the displayed threshold, per
+position, in the peak convention.
+1. `result`: the dB-equivalent map (certified, flat, nonmonotonic or unreadable).
+2. `displayLinear`: whether the offsets hold steady, so that subtracting one constant gives
+   dBFS. The discriminator is **spread, not magnitude**: the offsets' interquartile range
+   must be within 3.5 dB. The bound comes from the two subjects measured so far. Townhouse's
+   IQR is 4.50 and it must fail; MCompressor's is 2.53 (Peak) and 2.75 (RMS), and it must
+   pass. The margin is under 1 dB on the passing side. Max−min would not do: it separates
+   the two by only 1.5 dB (5.66 against 7.5). MCompressor's offsets are NOT flat either; they
+   tilt −4.2 → +1.5, because deep positions depart from the textbook R/(R−1) curve.
+3. `displayOffsetDb`: the offsets' median, recorded as a number whatever its value. Spec 7's
+   2 dB bar is a test on this number, not the definition of (2).
+
+**A ratio-independent cross-check** (not built, noted): the display at which reduction crosses
+0.5 dB, minus the test level, at each level. A display linear in dBFS gives the same number at
+all three, whatever the ratio or knee.
+- Townhouse: +15.1 / +12.0 / +10.6, a spread of 4.47 dB. It drifts.
+- MCompressor Peak: −0.5 / −2.1 / −2.5, a spread of 2.0 dB.
+- MCompressor RMS: −3.67 / −3.82 / −3.77, a spread of 0.15 dB.
+
+It agrees with (2) on every subject, and it is the candidate rule if the IQR bound proves
+fragile.
+
+**The first real fixture, townhouse:** map certified, `displayLinear` false,
+`displayOffsetDb` −15.00. The file is
+`tools/ejmap/cert-fixtures/compressor-profiles/AudioUnit_417f6e76_1.8.1.json`. Its 17 raw
+traces are committed and re-derive it exactly (RoundTripTest V5).
+`--cert-sweep-rederive <fixture> <processes.json> <rawDir> <out>` applies a changed rule to
+any past sweep without measuring.
+
+**The convention: KEEP PEAK** (ruled 29 Sep). These were diagnostic arms, with MCompressor's
+RMS length moved on purpose; their traces are committed (RoundTripTest C1/C2).
+- With RMS length at Peak, `displayOffsetDb` is −0.15 against a prediction of 0. This is the
+  positive control, and it passes.
+- With RMS length at 100 ms, it is +0.80, not +3.01. That is a fact about Melda's detector,
+  not about the convention. Noted, not chased.
+
+**The ratio raise (spec 4.2), built:**
+1. A ratio instantiating at 1:1 is read on a grid by the probe's `--text-at-norms`: every step
+   if the ratio is stepped, otherwise 65 points.
+2. The position with the **smallest READ value at or above 4:1** is chosen. This is not the
+   first norm: C1's ratio runs 0.5:1 → ∞ → −5:1, and RCompressor's is inverted.
+3. That position is written in every process.
+4. **R is derived from the text read back after the write**, never from what was asked for;
+   a stepped ratio asked for 4:1 may land on 3.5:1 or 5:1.
+5. Processes that read it back differently refuse the sweep. The fixture records
+   `ratioDuring.raisedFrom`.
+
+**The threshold picks, built (never by name):**
+- **Several input-as-threshold candidates:** the only continuous one wins over stepped ones.
+  XLA-3 sweeps Input Gain, not its two-state Input Pad.
+- **An input-as-threshold L/R pair:** channel A (spec 4.7). MC 77 sweeps Input L. Link
+  controls are recorded as they instantiated and never written; MC 77's Link is "Std".
+- **The channels_lr class** (Fairchild) stays deferred to review.
+
+**The defaults refactor, proved 29 Sep.** Readout detection is now one function, shared with
+the unseen-version path. `--cert-defaults` was re-run on Shadow Hills Class A (the known
+[41] VU Meter R readout) and on townhouse (none). Against the pre-refactor run, every emitted
+field is identical except the meter's own two samples, and the readout sidecars match.
 
 **Measured bias, recorded, not corrected.** Against arm C's 6 s truth, the 1.5 s holds
 under-read townhouse's reduction by at most 0.35 dB, with a median of 0.14 dB over 30 engaged
 cells. It never over-reads. The cause is a slow detector creep of about 0.02 to 0.09 dB per
 0.25 s, which stays under the 0.1 dB still-moving threshold.
 
-**Noted for later, NOT built:**
-- **A silence-settle optimisation** (render silence between positions instead of starting a
-  fresh process). It is untested, and its failure mode is a quiet bias rather than an error.
-- **The spec 4.2 ratio raise.** Ten fixtures instantiate at 1:1 and are refused until it
-  exists: C1 comp, C1 comp-sc and RCompressor (m/s, six in the 38), plus C1 comp-gate and
-  SSLGChannel.
-- **The XLA-3 and MC 77 picks** (ruled: MC 77 sweeps Input L; XLA-3 is decided from range and
-  step count, never from the name).
+**Noted for later, NOT built:** a silence-settle optimisation (render silence between
+positions instead of starting a fresh process). It is untested, and its failure mode is a
+quiet bias rather than an error.
 

@@ -581,12 +581,14 @@
       }
     ],
     "result": "certified",
-    "display_dbfs": false,
-    "displayOffset": {
+    "displayLinear": false,
+    "displayOffsetDb": -15.0,
+    "displayOffsetSpread": {
       "positions": 13,
-      "median_db": -15.0,
+      "iqr_db": 4.5,
       "min_db": -18.899999999999999,
       "max_db": -11.4,
+      "linear_bound_iqr_db": 3.5,
       "convention": "peak"
     }
   }

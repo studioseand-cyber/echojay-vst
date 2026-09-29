@@ -82,7 +82,8 @@ int main (int argc, char** argv)
     const bool renderTest = argc >= 5 && juce::String (argv[4]) == "--render-test";
     const bool writeTest  = argc >= 9 && juce::String (argv[4]) == "--write-test";   // <index> <from> <to> <arm>
     const bool sweep      = argc >= 5 && juce::String (argv[4]) == "--sweep";        // key=value arguments, probe_sweep.h
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep;
+    const bool textAtNorms = argc >= 7 && juce::String (argv[4]) == "--text-at-norms"; // <index> <n0,n1,...>, probe_sweep.h
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -124,6 +125,14 @@ int main (int argc, char** argv)
         const auto clean = [] (juce::String t) { return t.replace ("\t", " ").replace ("\n", " ").replace ("\r", " "); };
         std::printf ("\n");   // 21 Sep 2026: row 0 starts a line of its own - WaveShell-AU writes a banner to stdout with no trailing newline
         if (renderTest) { ejprobe::runRenderTest (*inst); std::fflush (stdout); std::_Exit (0); }
+        if (textAtNorms)
+        {
+            std::vector<float> ns;
+            for (auto& t : juce::StringArray::fromTokens (juce::String::fromUTF8 (argv[6]), ",", "")) ns.push_back ((float) t.getDoubleValue());
+            ejprobe::configureAndPrepare (*inst, {});
+            ejprobe::runTextAtNorms (*inst, atoi (argv[5]), ns);
+            std::fflush (stdout); std::_Exit (0);
+        }
         if (sweep)
         {
             ejprobe::SweepSpec spec; juce::String why;

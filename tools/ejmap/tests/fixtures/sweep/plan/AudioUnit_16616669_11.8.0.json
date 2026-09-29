@@ -1,0 +1,603 @@
+{
+ "identity": "AudioUnit|16616669|11.8.0",
+ "product": "UAD Fairchild 670",
+ "format": "AudioUnit",
+ "uid": "16616669",
+ "version": "11.8.0",
+ "sampledAt": "2026-09-25",
+ "certified": false,
+ "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+ "probe": "installed signed EchoJay V2 21t-a probe",
+ "listParamsRc": 0,
+ "textAtRc": 0,
+ "controls": [
+  {
+   "index": 0,
+   "name": "L Meter",
+   "unit": null,
+   "displayAt": {
+    "0.000": "In",
+    "0.500": "GR",
+    "1.000": "Out"
+   },
+   "numSteps": 3,
+   "discrete": true,
+   "range": {
+    "status": "text is not numeric"
+   },
+   "direction": "named positions",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "GR",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 1,
+   "name": "L Input",
+   "unit": "dB",
+   "displayAt": {
+    "0.000": "-20 dB",
+    "0.500": "-10 dB",
+    "1.000": "0 dB"
+   },
+   "numSteps": 21,
+   "discrete": true,
+   "range": {
+    "min": -20.0,
+    "max": 0.0,
+    "at0": -20.0,
+    "at0_5": -10.0,
+    "at1": 0.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.8,
+    "display": "-4 dB",
+    "declaredDefault": 0.8,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 2,
+   "name": "L Thresh",
+   "unit": null,
+   "displayAt": {
+    "0.000": "0.0",
+    "0.500": "5.0",
+    "1.000": "10.0"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 0.0,
+    "max": 10.0,
+    "at0": 0.0,
+    "at0_5": 5.0,
+    "at1": 10.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.149872,
+    "display": "1.5",
+    "declaredDefault": 0.149872,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 3,
+   "name": "L TimeCnst",
+   "unit": null,
+   "displayAt": {
+    "0.000": "1",
+    "0.500": "3",
+    "1.000": "6"
+   },
+   "numSteps": 6,
+   "discrete": true,
+   "range": {
+    "min": 1.0,
+    "max": 6.0,
+    "at0": 1.0,
+    "at0_5": 3.0,
+    "at1": 6.0,
+    "inverted": false,
+    "linear": false
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.8,
+    "display": "5",
+    "declaredDefault": 0.8,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 4,
+   "name": "L SC Filt",
+   "unit": "Hz",
+   "displayAt": {
+    "0.000": "Off",
+    "0.500": "98 Hz",
+    "1.000": "500 Hz"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 98.0,
+    "max": 500.0,
+    "at0": null,
+    "at0_5": 98.0,
+    "at1": 500.0,
+    "inverted": false,
+    "endsNotNumeric": [
+     "0.000"
+    ],
+    "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.0,
+    "display": "Off",
+    "declaredDefault": 0.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 5,
+   "name": "L Bal",
+   "unit": null,
+   "displayAt": {
+    "0.000": "-10.0",
+    "0.500": "0.0",
+    "1.000": "10.0"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": -10.0,
+    "max": 10.0,
+    "at0": -10.0,
+    "at0_5": 0.0,
+    "at1": 10.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "0.0",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 6,
+   "name": "L DC Thr",
+   "unit": null,
+   "displayAt": {
+    "0.000": "0.0",
+    "0.500": "5.0",
+    "1.000": "10.0"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 0.0,
+    "max": 10.0,
+    "at0": 0.0,
+    "at0_5": 5.0,
+    "at1": 10.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.86084,
+    "display": "8.6",
+    "declaredDefault": 0.86084,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 7,
+   "name": "L Output",
+   "unit": "dB",
+   "displayAt": {
+    "0.000": "-20.0 dB",
+    "0.500": "0.0 dB",
+    "1.000": "20.0 dB"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": -20.0,
+    "max": 20.0,
+    "at0": -20.0,
+    "at0_5": 0.0,
+    "at1": 20.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "0.0 dB",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 8,
+   "name": "R Meter",
+   "unit": null,
+   "displayAt": {
+    "0.000": "In",
+    "0.500": "GR",
+    "1.000": "Out"
+   },
+   "numSteps": 3,
+   "discrete": true,
+   "range": {
+    "status": "text is not numeric"
+   },
+   "direction": "named positions",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "GR",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 9,
+   "name": "R Input",
+   "unit": "dB",
+   "displayAt": {
+    "0.000": "-20 dB",
+    "0.500": "-10 dB",
+    "1.000": "0 dB"
+   },
+   "numSteps": 21,
+   "discrete": true,
+   "range": {
+    "min": -20.0,
+    "max": 0.0,
+    "at0": -20.0,
+    "at0_5": -10.0,
+    "at1": 0.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.8,
+    "display": "-4 dB",
+    "declaredDefault": 0.8,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 10,
+   "name": "R Thresh",
+   "unit": null,
+   "displayAt": {
+    "0.000": "0.0",
+    "0.500": "5.0",
+    "1.000": "10.0"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 0.0,
+    "max": 10.0,
+    "at0": 0.0,
+    "at0_5": 5.0,
+    "at1": 10.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.149872,
+    "display": "1.5",
+    "declaredDefault": 0.149872,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 11,
+   "name": "R TimeCnst",
+   "unit": null,
+   "displayAt": {
+    "0.000": "1",
+    "0.500": "3",
+    "1.000": "6"
+   },
+   "numSteps": 6,
+   "discrete": true,
+   "range": {
+    "min": 1.0,
+    "max": 6.0,
+    "at0": 1.0,
+    "at0_5": 3.0,
+    "at1": 6.0,
+    "inverted": false,
+    "linear": false
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.8,
+    "display": "5",
+    "declaredDefault": 0.8,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 12,
+   "name": "R SC Filt",
+   "unit": "Hz",
+   "displayAt": {
+    "0.000": "Off",
+    "0.500": "98 Hz",
+    "1.000": "500 Hz"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 98.0,
+    "max": 500.0,
+    "at0": null,
+    "at0_5": 98.0,
+    "at1": 500.0,
+    "inverted": false,
+    "endsNotNumeric": [
+     "0.000"
+    ],
+    "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.0,
+    "display": "Off",
+    "declaredDefault": 0.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 13,
+   "name": "R Bal",
+   "unit": null,
+   "displayAt": {
+    "0.000": "-10.0",
+    "0.500": "0.0",
+    "1.000": "10.0"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": -10.0,
+    "max": 10.0,
+    "at0": -10.0,
+    "at0_5": 0.0,
+    "at1": 10.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "0.0",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 14,
+   "name": "R DC Thr",
+   "unit": null,
+   "displayAt": {
+    "0.000": "0.0",
+    "0.500": "5.0",
+    "1.000": "10.0"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 0.0,
+    "max": 10.0,
+    "at0": 0.0,
+    "at0_5": 5.0,
+    "at1": 10.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.86084,
+    "display": "8.6",
+    "declaredDefault": 0.86084,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 15,
+   "name": "R Output",
+   "unit": "dB",
+   "displayAt": {
+    "0.000": "-20.0 dB",
+    "0.500": "0.0 dB",
+    "1.000": "20.0 dB"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": -20.0,
+    "max": 20.0,
+    "at0": -20.0,
+    "at0_5": 0.0,
+    "at1": 20.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "0.0 dB",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 16,
+   "name": "AGC Matrix",
+   "unit": null,
+   "displayAt": {
+    "0.000": "L-R",
+    "0.500": "L-R",
+    "1.000": "L-V"
+   },
+   "numSteps": 2,
+   "discrete": true,
+   "range": {
+    "status": "text is not numeric"
+   },
+   "direction": "named positions",
+   "defaultOnInstantiate": {
+    "normalised": 0.0,
+    "display": "L-R",
+    "declaredDefault": 0.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 17,
+   "name": "SC Link",
+   "unit": null,
+   "displayAt": {
+    "0.000": "Unlink",
+    "0.500": "Unlink",
+    "1.000": "Link"
+   },
+   "numSteps": 2,
+   "discrete": true,
+   "range": {
+    "status": "text is not numeric"
+   },
+   "direction": "named positions",
+   "defaultOnInstantiate": {
+    "normalised": 1.0,
+    "display": "Link",
+    "declaredDefault": 1.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 18,
+   "name": "Ctrl Link",
+   "unit": null,
+   "displayAt": {
+    "0.000": "Unlink",
+    "0.500": "Unlink",
+    "1.000": "Link"
+   },
+   "numSteps": 2,
+   "discrete": true,
+   "range": {
+    "status": "text is not numeric"
+   },
+   "direction": "named positions",
+   "defaultOnInstantiate": {
+    "normalised": 1.0,
+    "display": "Link",
+    "declaredDefault": 1.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 19,
+   "name": "Mix",
+   "unit": "%",
+   "displayAt": {
+    "0.000": "0 %",
+    "0.500": "50 %",
+    "1.000": "100 %"
+   },
+   "numSteps": 2147483647,
+   "discrete": false,
+   "range": {
+    "min": 0.0,
+    "max": 100.0,
+    "at0": 0.0,
+    "at0_5": 50.0,
+    "at1": 100.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 1.0,
+    "display": "100 %",
+    "declaredDefault": 1.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 20,
+   "name": "Headroom",
+   "unit": "dB",
+   "displayAt": {
+    "0.000": "4 dB",
+    "0.500": "16 dB",
+    "1.000": "28 dB"
+   },
+   "numSteps": 7,
+   "discrete": true,
+   "range": {
+    "min": 4.0,
+    "max": 28.0,
+    "at0": 4.0,
+    "at0_5": 16.0,
+    "at1": 28.0,
+    "inverted": false,
+    "linear": true
+   },
+   "direction": "ascending",
+   "defaultOnInstantiate": {
+    "normalised": 0.5,
+    "display": "16 dB",
+    "declaredDefault": 0.5,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  },
+  {
+   "index": 21,
+   "name": "Power",
+   "unit": null,
+   "displayAt": {
+    "0.000": "Off",
+    "0.500": "Off",
+    "1.000": "On"
+   },
+   "numSteps": 2,
+   "discrete": true,
+   "range": {
+    "status": "text is not numeric"
+   },
+   "direction": "named positions",
+   "defaultOnInstantiate": {
+    "normalised": 1.0,
+    "display": "On",
+    "declaredDefault": 1.0,
+    "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+   }
+  }
+ ],
+ "defaultsSampledAt": "2026-09-25",
+ "defaultsProbe": "installed signed EchoJay V2 21t-d probe"
+}

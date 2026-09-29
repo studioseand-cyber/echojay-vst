@@ -976,6 +976,84 @@ inline juce::String fixtureFileName (const juce::var& f)
     return "AudioUnit_" + f.getProperty ("uid", "").toString() + "_" + f.getProperty ("version", "").toString() + ".json";
 }
 
+// DERIVE, COMPOSE, WRITE AND REPORT: shared by a live sweep and by a re-derivation from its traces, so the two can
+// never disagree about what a trace means (decision D2: re-compute, never re-measure).
+struct SweepRunInfo { juce::String headline, probeLabel, armLine; int processes = 0, retried = 0; bool newIdentity = false; };
+
+inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
+                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info)
+{
+    const std::vector<double> levels { -24.0, -12.0, -6.0 };
+    const auto d = sweep::derive (m, levels, plan.ratioIndex);
+    const auto dc = sweep::displayCheck (d, plan.thrUnit);
+    const bool written = ! d.unlicensedSuspect;
+    if (written)
+        fixtureOut.replaceWithText (juce::JSON::toString (sweep::composeFixture (base, sweep::composeThresholdSweep (d, dc, plan, pv))) + "\n",
+                                    false, false, "\n");
+
+    int slicesTotal = 0, instack = 0, unl = 0, rer = 0, landed = 0, failedProc = 0; double confMax = 0;
+    for (const auto& p : m.positions)
+    {
+        if (p.processFailed) { ++failedProc; continue; }
+        if (p.unlanded) { ++unl; continue; }
+        ++landed; slicesTotal += p.slices; if (p.instackMatch) ++instack; confMax = juce::jmax (confMax, p.confirmMs);
+        if (p.rerendered) ++rer;
+    }
+    auto num = [] (std::optional<double> v, int dp = 2) { return v ? juce::String (*v, dp) : juce::String ("null"); };
+    juce::String rep;
+    rep << info.headline << "\n";
+    if (info.probeLabel.isNotEmpty()) rep << "probe: " << info.probeLabel << "\n";
+    rep << "host: " << pv.host << (pv.bridged ? " (BRIDGED)" : " (native)") << "\n";
+    if (info.armLine.isNotEmpty()) rep << info.armLine << "\n";
+    rep << "threshold: [" << plan.thr << "] " << plan.thrName << " unit '" << plan.thrUnit << "' (class " << plan.cls
+        << (plan.thrFlags.isEmpty() ? "" : ", flags " + plan.thrFlags.joinIntoString (",")) << ") | positions " << (int) plan.norms.size()
+        << (plan.stepped ? " (every step)" : " (16 evenly spaced)") << ", one process each, levels quiet to loud\n";
+    if (plan.pickNote.isNotEmpty()) rep << "pick: " << plan.pickNote << "\n";
+    if (! plan.linkStates.isEmpty()) rep << "links as instantiated (recorded, not written): " << plan.linkStates.joinIntoString (", ") << "\n";
+    rep << "ratio: " << (plan.ratioIndex >= 0 ? "[" + juce::String (plan.ratioIndex) + "] ran at '" + d.ratioText + "' -> "
+                                                  + (d.ratio ? juce::String (*d.ratio) : juce::String ("not numeric"))
+                                                  + (plan.ratioRaise ? " (RAISED from '" + d.ratioInstantiated + "', value READ BACK after the write)" : juce::String())
+                                                : plan.ratioNote)
+        << " | auto make-up disabled: " << (plan.autoMakeupDisabled ? "yes" : "no") << "\n"
+        << "default-threshold reference ('" << m.refText << "', spec 4.7 check only):";
+    for (double L : levels) { const auto k = sweep::levelKey (L); if (m.refDb.count (k)) rep << "  " << k << " out-in " << juce::String (m.refDb.at (k) - m.inRmsDb.at (k), 2); }
+    rep << "\nlinear reference (soft end";
+    if (d.softEnd) { rep << ", position " << *d.softEnd << "):"; for (double L : levels) rep << "  " << sweep::levelKey (L) << " " << juce::String (d.linearGain.at (sweep::levelKey (L)), 2); }
+    else rep << "): none";
+    rep << "\n";
+    if (info.processes > 0) rep << "processes: " << info.processes << " run, " << info.retried << " retried, " << failedProc << " position(s) failed\n";
+    rep << "write verify: " << landed << " landed, " << unl << " write_unlanded (skipped), in-stack read already matched on " << instack
+        << " of " << landed << ", pump slices total " << slicesTotal << ", longest confirm " << juce::String (confMax, 1) << " ms, re-rendered " << rer << "\n";
+    { juce::StringArray a; for (int i : d.holdDoubled) a.add (juce::String (i)); rep << "hold doubled at positions: " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
+    { juce::StringArray a; for (int i : d.stillMoving) a.add (juce::String (i)); rep << "still moving AFTER doubling (reading not used): " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
+    rep << "\npos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display\n";
+    for (size_t i = 0; i < d.norms.size(); ++i)
+    {
+        auto cell = [&] (double L) {
+            auto it = d.reduction.find (sweep::levelKey (L));
+            std::optional<double> g = it != d.reduction.end() && i < it->second.size() ? it->second[i] : std::nullopt;
+            return (g ? juce::String (*g, 2) : juce::String ("--")).paddedLeft (' ', 7); };
+        const juce::var tv = i < d.tEquivalent.size() ? d.tEquivalent[i] : juce::var();
+        juce::String t = tv.isVoid() ? "--" : tv.isObject() ? juce::JSON::toString (tv, true) : juce::String ((double) tv, 1);
+        juce::String off;
+        for (const auto& o : dc.offsets) if (o.first == (int) i) off = juce::String (o.second, 2);
+        rep << juce::String ((int) i).paddedLeft (' ', 3) << "  " << juce::String (d.norms[i], 4).paddedRight (' ', 8) << "  "
+            << d.texts[i].paddedRight (' ', 13) << cell (-24) << "  " << cell (-12) << "  " << cell (-6) << "   "
+            << t.paddedLeft (' ', 9) << "   " << off.paddedLeft (' ', 7) << "\n";
+    }
+    rep << "\n1 MAP:             " << d.result << (d.reason.isNotEmpty() ? " (" + d.reason + ")" : juce::String())
+        << " | sense " << (d.sense.isEmpty() ? "--" : d.sense) << " | engage";
+    for (double L : levels) { auto e = d.engage.count (sweep::levelKey (L)) ? d.engage.at (sweep::levelKey (L)) : std::nullopt; rep << " " << sweep::levelKey (L) << ":" << (e ? juce::String (*e) : juce::String ("none")); }
+    rep << "\n2 displayLinear:   " << (dc.linear ? (*dc.linear ? "TRUE" : "FALSE") : "null")
+        << (dc.positions > 0 ? " (IQR " + juce::String (dc.iqrDb, 2) + " dB, bound " + juce::String (sweep::kLinearIqrDb, 1) + "; min "
+                               + juce::String (dc.minDb, 2) + ", max " + juce::String (dc.maxDb, 2) + ", over " + juce::String (dc.positions) + " positions)"
+                             : juce::String (" (not a dB display, or no position with a numeric T)"))
+        << "\n3 displayOffsetDb: " << num (dc.offsetDb) << (dc.offsetDb ? juce::String (std::abs (*dc.offsetDb) <= sweep::kDisplayDb ? "  (inside spec 7's 2 dB bar)" : "  (outside spec 7's 2 dB bar)") : juce::String())
+        << "\n" << (written ? "fixture: " + fixtureOut.getFileName() : "UNLICENSED ON HOST suspected (spec 4.7): " + d.referenceNote + "no thresholdSweep written") << "\n";
+    reportOut.replaceWithText (rep, false, false, "\n");
+    std::cout << rep << std::flush;
+}
+
 inline int runCertSweep (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -1060,9 +1138,33 @@ inline int runCertSweep (const SweepOptions& opt)
     auto plan = sweep::planFromFixture (base);
     if (! plan.ok) { say ("SWEEP: " + s.product + " - " + plan.why); return 4; }
     for (auto x : opt.extraSets) plan.sets.push_back (x);
+    const auto stem = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + ".sweep" + armTag;
 
-    const std::vector<double> levels { -24.0, -12.0, -6.0 };   // quiet to loud, inside every process
-    const double hz = 997.0;
+    // THE RATIO RAISE (spec 4.2): read the ratio's own texts on a grid, pick the smallest READ value at or above 4:1,
+    // and write it in every process. The value used for R is read back after that write, in each process.
+    if (plan.ratioRaise)
+    {
+        const auto rc = sweep::findControl (base, plan.ratioIndex);
+        std::vector<float> grid;
+        if (sweep::isSteppedControl (rc)) { const int n = (int) rc.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) grid.push_back ((float) k / (float) (n - 1)); }
+        else for (int k = 0; k <= 64; ++k) grid.push_back ((float) k / 64.0f);
+        juce::StringArray gs;
+        for (float g : grid) gs.add (juce::String (g, 6));
+        const auto r = runProbe (stem, "ratio-search", { "--text-at-norms", juce::String (plan.ratioIndex), gs.joinIntoString (",") }, -1.0f);
+        if (windowSeen || ! r.cleanExit()) { say ("SWEEP: " + s.product + " - " + licenceLine ("ratio search", r)); return 1; }
+        std::vector<sweep::GridPoint> pts;
+        for (const auto& line : juce::StringArray::fromLines (r.out))
+        {
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            if (f.size() >= 3 && f[0] == "at" && f[2] == "landed") pts.push_back ({ (float) f[1].getDoubleValue(), f[f.indexOf ("text") + 1] });
+        }
+        juce::String chosenText;
+        const auto norm = sweep::chooseRatioRaise (pts, chosenText);
+        if (! norm) { say ("SWEEP: " + s.product + " - ratio instantiates at '" + plan.ratioDefaultText + "' and no grid position reads 4:1 or more; not swept"); return 4; }
+        plan.sets.push_back ({ plan.ratioIndex, *norm });
+        std::cout << "  ratio raise: [" << plan.ratioIndex << "] '" << plan.ratioDefaultText << "' -> norm " << *norm << " (grid read '" << chosenText << "')" << std::endl;
+    }
+
     juce::StringArray sets;
     for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
     auto sweepArgs = [&] (const juce::String& norms, const juce::String& ref) {
@@ -1072,10 +1174,10 @@ inline int runCertSweep (const SweepOptions& opt)
         if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
         return a; };
 
-    const auto stem = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + ".sweep" + armTag;
     std::cout << "  sweeping " << s.product << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
               << " - 1 reference + " << (int) plan.norms.size() << " position processes" << std::endl;
     sweep::ProcessOut refOut;
+    if (! windowSeen)
     {
         const auto r = runProbe (stem, "ref", sweepArgs ("", "2.0"), -1.0f);
         refOut = { r.out, r.cleanExit(), r.describe(), -1.0f };
@@ -1088,6 +1190,11 @@ inline int runCertSweep (const SweepOptions& opt)
         posOut.push_back ({ r.out, r.cleanExit(), r.describe(), plan.norms[k] });
     }
     opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
+    auto fixturesDir = opt.out.getChildFile ("fixtures");
+    fixturesDir.createDirectory();
+    if (newIdentity)   // the defaults the sweep was planned on, kept whatever happens next
+        fixturesDir.getChildFile (fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + ".defaults.json")
+                   .replaceWithText (juce::JSON::toString (base) + "\n", false, false, "\n");
     if (windowSeen)
     {
         say ("SWEEP: " + s.product + " - UNLICENSED ON HOST: a window appeared in the probe's tree (" + windows.joinIntoString (", ")
@@ -1096,9 +1203,6 @@ inline int runCertSweep (const SweepOptions& opt)
     }
 
     const auto m = sweep::mergeProcesses (refOut, posOut);
-    const auto d = sweep::derive (m, levels, plan.ratioIndex);
-    const auto dc = sweep::displayCheck (d, plan.thrUnit);
-
     juce::String pluginArch = m.arch;
     bool bridged = false;
     const auto bundles = componentBundles();
@@ -1111,7 +1215,7 @@ inline int runCertSweep (const SweepOptions& opt)
     pv.measuredAt = juce::Time::getCurrentTime().toISO8601 (false);
     pv.host = "EJ Map " + opt.hostVersion + " / " + pluginArch + " / 48k";
     pv.bridged = bridged;
-    pv.hz = hz;
+    SweepRunInfo info;
     if (! opt.extraSets.empty())
     {
         auto* arm = new juce::DynamicObject();
@@ -1123,80 +1227,75 @@ inline int runCertSweep (const SweepOptions& opt)
             auto* x = new juce::DynamicObject();
             x->setProperty ("index", i); x->setProperty ("normalised", v);
             if (m.params.count (i)) x->setProperty ("name", m.params.at (i).first);
+            if (m.setTexts.count (i)) x->setProperty ("readBack", m.setTexts.at (i));
             xs.add (juce::var (x));
         }
         arm->setProperty ("sets", xs);
         pv.diagnosticArm = juce::var (arm);
+        info.armLine = "DIAGNOSTIC ARM '" + opt.armLabel + "' (not the product's certification)";
     }
-
-    auto fixturesDir = opt.out.getChildFile ("fixtures");
-    fixturesDir.createDirectory();
     const auto outName = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + armTag + ".json";
-    if (d.unlicensedSuspect)
-        say ("SWEEP: " + s.product + " - UNLICENSED ON HOST suspected (spec 4.7): " + d.referenceNote + "no thresholdSweep written");
-    else
-    {
-        const auto ts = sweep::composeThresholdSweep (d, dc, plan, pv);
-        fixturesDir.getChildFile (outName).replaceWithText (juce::JSON::toString (sweep::composeFixture (base, ts)) + "\n", false, false, "\n");
-    }
-
-    // THE REPORT: the trace in reading order, so the curve can be checked by eye.
-    int slicesTotal = 0, instack = 0, unl = 0, rer = 0, landed = 0, failedProc = 0; double confMax = 0;
-    for (const auto& p : m.positions)
-    {
-        if (p.processFailed) { ++failedProc; continue; }
-        if (p.unlanded) { ++unl; continue; }
-        ++landed; slicesTotal += p.slices; if (p.instackMatch) ++instack; confMax = juce::jmax (confMax, p.confirmMs);
-        if (p.rerendered) ++rer;
-    }
-    int retried = 0;
-    for (const auto& pr : processes) if ((int) pr.getProperty ("attempt", 1) == 2) ++retried;
-    juce::String rep;
-    rep << "EJ Map threshold sweep - " << s.product << " -> " << outName << (newIdentity ? "  (NEW IDENTITY: installed " + s.desc.version + ", no fixture at that version)" : juce::String()) << "\n"
-        << "probe: " << probeLabel << " | plugin ran " << pluginArch << (bridged ? " (BRIDGED)" : " (native)") << "\n";
-    if (! opt.extraSets.empty()) rep << "DIAGNOSTIC ARM '" << opt.armLabel << "': " << sets.joinIntoString (", ") << " (not the product's certification)\n";
-    rep << "threshold: [" << plan.thr << "] " << plan.thrName << " unit '" << plan.thrUnit << "' (class " << plan.cls
-        << (plan.thrFlags.isEmpty() ? "" : ", flags " + plan.thrFlags.joinIntoString (",")) << ") | positions " << (int) plan.norms.size()
-        << (plan.stepped ? " (every step)" : " (16 evenly spaced)") << ", one process each, levels quiet to loud\n"
-        << "ratio: " << (plan.ratioIndex >= 0 ? "[" + juce::String (plan.ratioIndex) + "] '" + d.ratioText + "' -> " + (d.ratio ? juce::String (*d.ratio) : juce::String ("not numeric")) : plan.ratioNote)
-        << " | auto make-up disabled: " << (plan.autoMakeupDisabled ? "yes" : "no") << "\n"
-        << "default-threshold reference ('" << m.refText << "', spec 4.7 check only):";
-    for (double L : levels) { const auto k = sweep::levelKey (L); if (m.refDb.count (k)) rep << "  " << k << " out-in " << juce::String (m.refDb.at (k) - m.inRmsDb.at (k), 2); }
-    rep << "\nlinear reference (soft end";
-    if (d.softEnd) { rep << ", position " << *d.softEnd << "):"; for (double L : levels) rep << "  " << sweep::levelKey (L) << " " << juce::String (d.linearGain.at (sweep::levelKey (L)), 2); }
-    else rep << "): none";
-    rep << "\nprocesses: " << processes.size() << " run, " << retried << " retried, " << failedProc << " position(s) failed\n"
-        << "write verify: " << landed << " landed, " << unl << " write_unlanded (skipped), in-stack read already matched on " << instack
-        << " of " << landed << ", pump slices total " << slicesTotal << ", longest confirm " << juce::String (confMax, 1) << " ms, re-rendered " << rer << "\n";
-    { juce::StringArray a; for (int i : d.holdDoubled) a.add (juce::String (i)); rep << "hold doubled at positions: " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
-    { juce::StringArray a; for (int i : d.stillMoving) a.add (juce::String (i)); rep << "still moving AFTER doubling (reading not used): " << (a.isEmpty() ? "none" : a.joinIntoString (",")) << "\n"; }
-    rep << "audio " << juce::String (m.audioS, 1) << " s, render wall " << juce::String (m.wallMs / 1000.0, 2) << " s\n\n"
-        << "pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display\n";
-    for (size_t i = 0; i < d.norms.size(); ++i)
-    {
-        auto cell = [&] (double L) {
-            auto it = d.reduction.find (sweep::levelKey (L));
-            std::optional<double> g = it != d.reduction.end() && i < it->second.size() ? it->second[i] : std::nullopt;
-            return (g ? juce::String (*g, 2) : juce::String ("--")).paddedLeft (' ', 7); };
-        const juce::var tv = i < d.tEquivalent.size() ? d.tEquivalent[i] : juce::var();
-        juce::String t = tv.isVoid() ? "--" : tv.isObject() ? juce::JSON::toString (tv, true) : juce::String ((double) tv, 1);
-        juce::String off;
-        for (const auto& o : dc.offsets) if (o.first == (int) i) off = juce::String (o.second, 2);
-        rep << juce::String ((int) i).paddedLeft (' ', 3) << "  " << juce::String (d.norms[i], 4).paddedRight (' ', 8) << "  "
-            << d.texts[i].paddedRight (' ', 13) << cell (-24) << "  " << cell (-12) << "  " << cell (-6) << "   "
-            << t.paddedLeft (' ', 9) << "   " << off.paddedLeft (' ', 7) << "\n";
-    }
-    rep << "\nMAP:     " << d.result << (d.reason.isNotEmpty() ? " (" + d.reason + ")" : juce::String())
-        << " | sense " << (d.sense.isEmpty() ? "--" : d.sense) << " | engage";
-    for (double L : levels) { auto e = d.engage.count (sweep::levelKey (L)) ? d.engage.at (sweep::levelKey (L)) : std::nullopt; rep << " " << sweep::levelKey (L) << ":" << (e ? juce::String (*e) : juce::String ("none")); }
-    rep << "\nDISPLAY: display_dbfs " << (dc.dbfs ? (*dc.dbfs ? "TRUE" : "FALSE") : "null (not a dB display, or too few positions)");
-    if (dc.positions > 0)
-        rep << " | T - display over " << dc.positions << " positions: median " << juce::String (dc.medianDb, 2) << " dB, min "
-            << juce::String (dc.minDb, 2) << ", max " << juce::String (dc.maxDb, 2) << "  (peak convention: 0 = peak detector, +3.01 = RMS detector)";
-    rep << "\n";
-    opt.out.getChildFile (stem + ".report.txt").replaceWithText (rep, false, false, "\n");
-    std::cout << rep << std::flush;
+    info.headline = "EJ Map threshold sweep - " + s.product + " -> " + outName
+                    + (newIdentity ? "  (NEW IDENTITY: installed " + s.desc.version + ", no fixture at that version)" : juce::String());
+    info.probeLabel = probeLabel;
+    info.processes = processes.size();
+    for (const auto& pr : processes) if ((int) pr.getProperty ("attempt", 1) == 2) ++info.retried;
+    info.newIdentity = newIdentity;
+    composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info);
     return 0;
+}
+
+// RE-DERIVE A SWEEP FROM ITS TRACES (--cert-sweep-rederive): nothing is measured. The plan comes from the fixture's
+// own controls, the provenance (when, where, bridged, the diagnostic arm) from its existing thresholdSweep, and the
+// readings from processes.json and the raw files. A rule change is applied to every past sweep this way.
+inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& processesJson, const juce::File& rawDir, const juce::File& fixtureOut)
+{
+    const auto fx = juce::JSON::parse (fixtureIn.loadFileAsString());
+    const auto old = fx.getProperty ("thresholdSweep", {});
+    if (! old.isObject()) { std::cout << "REDERIVE: " << fixtureIn.getFileName() << " has no thresholdSweep" << std::endl; return 2; }
+    auto plan = sweep::planFromFixture (fx);
+    if (! plan.ok) { std::cout << "REDERIVE: " << plan.why << std::endl; return 4; }
+    // The raise, as recorded: the fixture says it ran raised; the value itself is read back from the traces.
+    if (old.getProperty ("ratioDuring", {}).hasProperty ("raisedFrom")) plan.ratioRaise = true;
+    sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
+    if (! sweep::loadProcesses (processesJson, rawDir, ref, pos)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
+    const auto m = sweep::mergeProcesses (ref, pos);
+    sweep::Provenance pv;
+    pv.measuredAt = old.getProperty ("measuredAt", "").toString();
+    pv.host = old.getProperty ("host", "").toString();
+    pv.bridged = (bool) old.getProperty ("bridged", false);
+    pv.diagnosticArm = old.getProperty ("diagnosticArm", {});
+    auto base = juce::JSON::parse (juce::JSON::toString (fx));
+    if (auto* o = base.getDynamicObject()) o->removeProperty ("thresholdSweep");
+    SweepRunInfo info;
+    info.headline = "RE-DERIVED from traces (nothing measured) - " + fx.getProperty ("product", "").toString() + " -> " + fixtureOut.getFileName();
+    if (! pv.diagnosticArm.isVoid()) info.armLine = "DIAGNOSTIC ARM '" + pv.diagnosticArm.getProperty ("label", "").toString() + "' (not the product's certification)";
+    composeAndReport (base, plan, m, pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info);
+    return 0;
+}
+
+// EVERY RUNNABLE PRODUCT (--cert-sweep-all): the census's runnable list, minus what is named in --skip, one
+// runCertSweep each. A product's failure is reported and the batch goes on.
+inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
+{
+    auto subjects = loadFixtures (opt.fixtures);
+    classify (subjects, opt.includePace);
+    juce::StringArray done, refused;
+    int n = 0;
+    for (const auto& s : subjects)
+    {
+        if (skip.contains (s.product) || ! measurable (s, opt.includePace) || ! sweep::planFromFixture (s.pushed).ok)
+            continue;
+        ++n;
+        std::cout << "\n=== [" << n << "] " << s.product << std::endl;
+        opt.product = s.product;
+        const int rc = runCertSweep (opt);
+        (rc == 0 ? done : refused).add (s.product + (rc == 0 ? juce::String() : " (exit " + juce::String (rc) + ")"));
+    }
+    std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped\n";
+    for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
+    std::cout << std::flush;
+    return refused.isEmpty() ? 0 : 1;
 }
 
 //==============================================================================

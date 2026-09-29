@@ -21,10 +21,18 @@
     is no reference.
   - GUARDS: more than two positions still moving after the doubling, or a reduction more than
     0.5 dB BELOW the linear reference, refuses. Arm A certified without them.
-  - TWO VERDICTS, never merged: `result` says whether the dB-equivalent map is good;
-    `display_dbfs` says whether a dB display means dBFS. Townhouse has a good map and a display
-    that models its console - a non-dBFS display is what this feature exists for, so it
-    certifies with display_dbfs false.
+  - THREE RESULTS, never merged (ruled 29 Sep, replacing display_dbfs):
+      result           the dB-equivalent map: certified | flat | nonmonotonic | unreadable
+      displayLinear    whether the display is LINEAR in dBFS: the offsets (T - display) hold
+                       steady, so subtracting one constant gives dBFS. Spread is the
+                       discriminator, never magnitude: a console-calibrated +14 held steady is
+                       usable (subtract 14); only drift leaves no constant to subtract.
+      displayOffsetDb  the offsets' median, a NUMBER whatever its value. Spec 7's 2 dB bar is
+                       a test on this number, not the definition of displayLinear.
+  - THE RATIO RAISE (spec 4.2): a ratio instantiating at 1:1 is written to the grid position
+    with the SMALLEST read value at or above 4:1, and R is derived from the ratio text READ
+    BACK after the write in every process - never from what was asked for (a stepped ratio
+    asked for 4:1 may land on 3.5:1 or 5:1).
 
   THE LEVEL CONVENTION IS PEAK (ruled 28 Sep, EJMAP_CERT_DECISIONS.md item 6): a "-12 dBFS"
   tone has its sine PEAK at -12 dBFS, so its RMS is -15.01. T = L - g R/(R-1) takes L in that
@@ -53,7 +61,9 @@ inline constexpr double kPeakToRmsDb  = 3.0103; // a sine's peak over its RMS
 inline constexpr double kLinearDb     = 0.5;    // the soft end's gains must agree across the levels within this
 inline constexpr double kBelowRefDb   = 0.5;    // a reduction below the linear reference by more than this refuses
 inline constexpr int    kMaxMoving    = 2;      // more positions than this still moving after the doubling refuses
-inline constexpr double kDisplayDb    = 2.0;    // spec 7: a dB display within this of the derived threshold is dBFS
+inline constexpr double kDisplayDb    = 2.0;    // spec 7's bar, a TEST on displayOffsetDb (never the definition of linear)
+inline constexpr double kLinearIqrDb  = 3.5;    // displayLinear: the offsets' interquartile range must be within this
+inline constexpr double kRatioTarget  = 4.0;    // spec 4.2: a 1:1 ratio is raised to the nearest position at or above 4:1
 
 //==============================================================================
 // PLAN
@@ -70,6 +80,11 @@ struct Plan
     juce::String ratioNote;
     std::vector<std::pair<int, float>> sets; // preconditions written before the sweep
     bool autoMakeupDisabled = false;
+    bool ratioRaise = false;                 // the ratio instantiates at 1:1: search, then set (spec 4.2)
+    juce::String ratioDefaultText;
+    juce::String pickNote;                   // how one threshold was chosen from several, when it was
+    juce::String channel;                    // "L" when an L/R pair was reduced to channel A (spec 4.7)
+    juce::StringArray linkStates;            // every control answering "link", as instantiated: recorded, never written
 };
 
 inline juce::var findControl (const juce::var& fixture, int index)
@@ -94,6 +109,50 @@ inline std::vector<float> positionsFor (const juce::var& control)
     return out;
 }
 
+// The ratio's number from its display text: "2:1" -> 2, "1.80 : 1" -> 1.8, "4.58:1" -> 4.58. When the text does not
+// START with a number, its ONLY number is taken ("Ratio 4" -> 4, MC 77); two numbers, or none ("All Buttons",
+// "+Inf", "-5.00:1"), give nothing: a named or negative ratio is not guessed.
+inline std::optional<double> ratioFromText (const juce::String& text)
+{
+    const auto t = text.trim();
+    if (t.isEmpty()) return std::nullopt;
+    if (juce::CharacterFunctions::isDigit (t[0]))
+    {
+        const double v = t.initialSectionContainingOnly ("0123456789.").getDoubleValue();
+        return v > 0.0 ? std::optional<double> (v) : std::nullopt;
+    }
+    if (t[0] == '-' || t[0] == '+') return std::nullopt;
+    juce::StringArray numbers;
+    juce::String run;
+    for (auto c : t + " ")
+    {
+        if (juce::CharacterFunctions::isDigit (c) || (c == '.' && run.isNotEmpty())) run << juce::String::charToString (c);
+        else if (run.isNotEmpty()) { numbers.add (run); run.clear(); }
+    }
+    if (numbers.size() != 1) return std::nullopt;
+    const double v = numbers[0].getDoubleValue();
+    return v > 0.0 ? std::optional<double> (v) : std::nullopt;
+}
+
+// THE RATIO RAISE's choice, from a grid the probe read (--text-at-norms): the position whose READ value is the
+// smallest at or above 4:1. Not the first norm: C1's ratio runs 0.5:1 -> infinity -> -5:1 and RCompressor's is
+// inverted (50 at 0, 0.5 at 1). Returns the norm, or nothing when no read value reaches 4:1.
+struct GridPoint { float norm; juce::String text; };
+inline std::optional<float> chooseRatioRaise (const std::vector<GridPoint>& grid, juce::String& chosenText)
+{
+    std::optional<float> best;
+    double bestV = 1e18;
+    for (const auto& g : grid)
+        if (auto v = ratioFromText (g.text); v && *v >= kRatioTarget && *v < bestV) { bestV = *v; best = g.norm; chosenText = g.text; }
+    return best;
+}
+
+inline bool isSteppedControl (const juce::var& c)
+{
+    const int steps = (int) c.getProperty ("numSteps", 0);
+    return (bool) c.getProperty ("discrete", false) && steps >= 2 && steps <= 64;
+}
+
 inline Plan planFromFixture (const juce::var& fixture)
 {
     Plan p;
@@ -110,15 +169,55 @@ inline Plan planFromFixture (const juce::var& fixture)
         if (r.role == "threshold") thr.push_back (&r);
         if (r.role == "ratio") ratio.push_back (&r);
     }
-    if (thr.size() != 1)
+    // SEVERAL INPUT-AS-THRESHOLD CANDIDATES (ruled 29 Sep), decided from RECORDED DATA, never from the name:
+    //   - exactly one CONTINUOUS candidate and the rest STEPPED: the continuous one (a pad is stepped, a gain is
+    //     continuous - Acme Opticom XLA-3's Input Gain over its two-state Input Pad);
+    //   - an L/R pair: channel A, the L control (spec 4.7 - Purple Audio MC 77's Input L). Link controls are
+    //     recorded as they instantiated and never written.
+    // Anything else, including the channels_lr class (Fairchild), stays deferred to review after the sweep.
+    const roles::ControlRole* pick = thr.size() == 1 ? thr[0] : nullptr;
+    bool allInput = ! thr.empty();
+    for (auto* t : thr) allInput = allInput && t->flags.contains ("input_as_threshold");
+    if (pick == nullptr && allInput && thr.size() > 1)
+    {
+        std::vector<const roles::ControlRole*> continuous;
+        for (auto* t : thr) if (! isSteppedControl (findControl (fixture, t->index))) continuous.push_back (t);
+        if (continuous.size() == 1)
+        {
+            pick = continuous[0];
+            juce::StringArray others;
+            for (auto* t : thr) if (t != pick)
+                others.add ("[" + juce::String (t->index) + "] stepped, " + juce::String ((int) findControl (fixture, t->index).getProperty ("numSteps", 0)) + " steps");
+            p.pickNote = "input_as_threshold: [" + juce::String (pick->index) + "] is the only continuous candidate; "
+                         + others.joinIntoString (", ") + " - chosen by range and step count, not by name";
+        }
+        else if (thr.size() == 2 && roles::isChannelEnded (thr[0]->name) && roles::isChannelEnded (thr[1]->name))
+        {
+            auto isLeft = [] (const juce::String& n) { const auto t = n.trim(); return t.endsWithIgnoreCase (" L") || t.startsWithIgnoreCase ("L "); };
+            const bool l0 = isLeft (thr[0]->name), l1 = isLeft (thr[1]->name);
+            if (l0 != l1)
+            {
+                pick = l0 ? thr[0] : thr[1];
+                p.channel = "L";
+                p.pickNote = "input_as_threshold L/R pair: channel A ([" + juce::String (pick->index) + "] " + pick->name
+                             + ") per spec 4.7; the other channel is not written";
+            }
+        }
+    }
+    if (pick == nullptr)
     {
         p.why = "not swept: " + juce::String ((int) thr.size()) + " controls hold the threshold role (class " + cl.cls
                 + "); deferred to review after the sweep";
         return p;
     }
-    p.thr = thr[0]->index;
-    p.thrName = thr[0]->name;
-    p.thrFlags = thr[0]->flags;
+    if (const auto* cs = fixture.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+            if (nametokens::controlAnswersTerm (c.getProperty ("name", {}).toString(), "link"))
+                p.linkStates.add ("[" + c.getProperty ("index", -1).toString() + "] " + c.getProperty ("name", {}).toString() + " = '"
+                                  + c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", {}).toString() + "'");
+    p.thr = pick->index;
+    p.thrName = pick->name;
+    p.thrFlags = pick->flags;
     const auto tc = findControl (fixture, p.thr);
     p.thrUnit = tc.getProperty ("unit", {}).toString();
     p.norms = positionsFor (tc);
@@ -127,17 +226,14 @@ inline Plan planFromFixture (const juce::var& fixture)
     if (ratio.size() == 1) p.ratioIndex = ratio[0]->index;
     else p.ratioNote = ratio.empty() ? "no control holds the ratio role" : juce::String ((int) ratio.size()) + " controls hold the ratio role";
 
-    // SPEC 4.2: a ratio that instantiates at unity must be raised to >= 4:1 for the sweep. Not built yet:
-    // choosing the position needs the plugin's own step texts. Refuse rather than sweep a 1:1 compressor.
+    // SPEC 4.2: a ratio that instantiates at unity has nothing to measure; it is RAISED for the sweep. The driver
+    // reads a grid of the ratio's own texts (--text-at-norms) and chooseRatioRaise picks the position.
     if (p.ratioIndex >= 0)
     {
         const auto rc = findControl (fixture, p.ratioIndex);
         const auto d = rc.getProperty ("defaultOnInstantiate", {}).getProperty ("display", {}).toString();
         // The LEADING number: "1.00:1" is 1, not the 1.001 that keeping every digit would read.
-        const auto t = d.trimStart();
-        const double v = t.initialSectionContainingOnly ("0123456789.").getDoubleValue();
-        if (t.isNotEmpty() && juce::CharacterFunctions::isDigit (t[0]) && v > 0.0 && v <= 1.0001)
-        { p.why = "not swept: ratio instantiates at unity (" + d + "); the section 4.2 raise to >= 4:1 is not built yet"; return p; }
+        if (auto v = ratioFromText (d); v && *v <= 1.0001) { p.ratioRaise = true; p.ratioDefaultText = d; }
     }
     // SPEC 4.2: auto make-up on by default is turned OFF for the sweep. A two-state control whose name answers
     // "auto" together with a make-up or gain word, instantiating at its upper state.
@@ -189,6 +285,8 @@ struct Measured
     std::map<juce::String, double> refDb, inRmsDb, inPeakDb;       // the DEFAULT-threshold reference (spec 4.7 only)
     std::vector<PositionReading> positions;
     double wallMs = 0.0, audioS = 0.0;
+    std::map<int, juce::String> setTexts;        // precondition writes, the text READ BACK after each (probe "set" lines)
+    juce::String setConflict;                    // processes that read a precondition back differently
 };
 
 inline juce::String levelKey (double L) { return juce::String (L, 2); }
@@ -212,6 +310,7 @@ inline Measured parseSweep (const juce::String& out)
         else if (t == "param" && f.size() >= 5) m.params[f[1].getIntValue()] = { f[3], f[4] };
         else if (t == "param" && f.size() == 4) m.params[f[1].getIntValue()] = { f[3], {} };
         else if (t == "refpos") m.refText = kv (f, 1, "text");
+        else if (t == "set" && f.size() > 2) m.setTexts[f[1].getIntValue()] = kv (f, 2, "text");
         else if (t == "ref" && f.size() > 2)
         {
             const auto L = levelKey (f[1].getDoubleValue());
@@ -276,6 +375,14 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         }
         p.k = (int) k;
         m.positions.push_back (p);
+        // EVERY PROCESS READS ITS PRECONDITIONS BACK; they must all have read the same thing.
+        for (const auto& [idx, text] : one.setTexts)
+        {
+            auto it = m.setTexts.find (idx);
+            if (it == m.setTexts.end()) m.setTexts[idx] = text;
+            else if (it->second != text && m.setConflict.isEmpty())
+                m.setConflict = "[" + juce::String (idx) + "] read back '" + it->second + "' in one process and '" + text + "' in another";
+        }
         m.wallMs += one.wallMs;
         m.audioS += one.audioS;
         if (m.arch.isEmpty()) m.arch = one.arch;
@@ -320,7 +427,7 @@ struct Derived
     std::map<juce::String, std::optional<int>> engage;
     std::vector<juce::var> tEquivalent;             // number | {"above": L} | {"below": L} | null
     std::optional<double> ratio;
-    juce::String ratioText;
+    juce::String ratioText, ratioInstantiated;   // ratioText is what the sweep RAN at (read back when it was written)
     juce::Array<int> holdDoubled, stillMoving, skipped;
     juce::StringArray skippedReasons;
     bool unlicensedSuspect = false;
@@ -334,14 +441,6 @@ inline double median (std::vector<double> v)
     return n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
 }
 
-// The ratio's number from its display text: "2:1" -> 2, "1.80 : 1" -> 1.8. Empty when the text starts with no number.
-inline std::optional<double> ratioFromText (const juce::String& text)
-{
-    const auto t = text.trim();
-    if (t.isEmpty() || ! juce::CharacterFunctions::isDigit (t[0])) return std::nullopt;
-    const double v = t.initialSectionContainingOnly ("0123456789.").getDoubleValue();
-    return v > 0.0 ? std::optional<double> (v) : std::nullopt;
-}
 
 inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex)
 {
@@ -349,6 +448,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     d.levels = levelsIn;
     std::sort (d.levels.begin(), d.levels.end());
     if (! m.ok) { d.reason = m.refused.isNotEmpty() ? "probe refused: " + m.refused : "no sweep output"; return d; }
+    if (m.setConflict.isNotEmpty()) { d.result = "unreadable"; d.reason = "a precondition " + m.setConflict; return d; }
 
     // SPEC 4.7's unlicensed test, on the DEFAULT-threshold reference: output more than 3 dB from the input.
     for (double L : d.levels)
@@ -478,9 +578,12 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     }
 
     // THE dB-EQUIVALENT MAP: T = L - g R/(R-1), median over the levels that put g inside the readable band.
-    if (ratioIndex >= 0 && m.params.count (ratioIndex))
+    // R IS WHAT THE PLUGIN SAYS IT RAN AT: the text read back after a write when the ratio was written (the raise),
+    // else the text it instantiated with. Never the value that was asked for.
+    if (ratioIndex >= 0)
     {
-        d.ratioText = m.params.at (ratioIndex).second;
+        if (m.params.count (ratioIndex)) d.ratioInstantiated = m.params.at (ratioIndex).second;
+        d.ratioText = m.setTexts.count (ratioIndex) ? m.setTexts.at (ratioIndex) : d.ratioInstantiated;
         d.ratio = ratioFromText (d.ratioText);
     }
     for (int i = 0; i < n; ++i)
@@ -508,23 +611,38 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
 }
 
 //==============================================================================
-// THE SECOND VERDICT: IS A dB DISPLAY dBFS? (spec 7; ruled 29 Sep: never merged with `result`)
-// For each position with a numeric T and a display that prints a number: T minus the displayed threshold. Worked
-// through: an RMS detector with displayed threshold Td reduces by g = (L - 3.01 - Td)(1 - 1/R) for a sine whose PEAK
-// is L, so the peak-convention T = L - g R/(R-1) = Td + 3.01. Median near 0: dBFS in the peak convention; near +3.01:
-// an RMS detector; anything else: the display is not dBFS. display_dbfs is null when the threshold's unit is not dB,
-// or fewer than three positions carry a numeric T.
+// THE DISPLAY'S TWO RESULTS (ruled 29 Sep; never merged with the map's `result`, nor with each other).
+// For each position with a numeric T and a display that prints a number: offset = T - displayed threshold. Worked
+// through for a textbook compressor: a detector reading the input Delta dB below its peak makes T = Td + Delta in the
+// peak convention (Delta = 0 for a peak detector, 3.01 for a sine through an RMS detector); a console-calibrated
+// display adds its calibration. None of that stops the display being usable, as long as it is ONE constant:
+//   displayOffsetDb  the offsets' median, a number whatever its value (null when the threshold prints no dB)
+//   displayLinear    the offsets' interquartile range within kLinearIqrDb (null when not a dB display, or fewer than
+//                    four offsets). IQR, not max-min: the deep positions' large reductions depart from the textbook
+//                    R/(R-1) curve on both first subjects (MCompressor's ~35 dB ceiling, townhouse's ratio growing
+//                    with depth) and would swamp max-min. The bound 3.5 dB is set from those two subjects:
+//                    townhouse IQR 4.50 (drifts, must fail), MCompressor 2.53 Peak / 2.75 RMS (must pass).
 struct DisplayCheck
 {
-    std::optional<bool> dbfs;
+    std::optional<bool> linear;
+    std::optional<double> offsetDb;              // the median
     int positions = 0;
-    double medianDb = 0.0, minDb = 0.0, maxDb = 0.0;
-    std::vector<std::pair<int, double>> offsets;   // position -> T - display
+    double iqrDb = 0.0, minDb = 0.0, maxDb = 0.0;
+    std::vector<std::pair<int, double>> offsets; // position -> T - display
 };
+
+inline double quantile (std::vector<double> v, double q)   // linear interpolation between order statistics
+{
+    std::sort (v.begin(), v.end());
+    const double h = (double) (v.size() - 1) * q;
+    const size_t i = (size_t) h;
+    return i + 1 < v.size() ? v[i] + (h - (double) i) * (v[i + 1] - v[i]) : v[i];
+}
 
 inline DisplayCheck displayCheck (const Derived& d, const juce::String& thresholdUnit)
 {
     DisplayCheck c;
+    if (! thresholdUnit.trim().equalsIgnoreCase ("dB")) return c;
     for (size_t i = 0; i < d.tEquivalent.size() && i < d.texts.size(); ++i)
     {
         if (! d.tEquivalent[i].isDouble() && ! d.tEquivalent[i].isInt()) continue;
@@ -534,16 +652,14 @@ inline DisplayCheck displayCheck (const Derived& d, const juce::String& threshol
         if (numeric) c.offsets.push_back ({ (int) i, (double) d.tEquivalent[i] - t.getDoubleValue() });
     }
     c.positions = (int) c.offsets.size();
-    if (c.positions > 0)
-    {
-        std::vector<double> v;
-        for (auto& o : c.offsets) v.push_back (o.second);
-        c.medianDb = median (v);
-        c.minDb = *std::min_element (v.begin(), v.end());
-        c.maxDb = *std::max_element (v.begin(), v.end());
-    }
-    if (! thresholdUnit.trim().equalsIgnoreCase ("dB") || c.positions < 3) return c;
-    c.dbfs = std::abs (c.medianDb) <= kDisplayDb;
+    if (c.positions == 0) return c;
+    std::vector<double> v;
+    for (auto& o : c.offsets) v.push_back (o.second);
+    c.offsetDb = median (v);
+    c.minDb = *std::min_element (v.begin(), v.end());
+    c.maxDb = *std::max_element (v.begin(), v.end());
+    c.iqrDb = quantile (v, 0.75) - quantile (v, 0.25);
+    if (c.positions >= 4) c.linear = c.iqrDb <= kLinearIqrDb;
     return c;
 }
 
@@ -593,7 +709,22 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     rd->setProperty ("position", d.ratioText);
     rd->setProperty ("value", d.ratio ? juce::var (*d.ratio) : juce::var());
     rd->setProperty ("assumed", false);
+    if (p.ratioRaise)   // spec 4.2 and 7: "swept at 4:1 and says so" - with what it READ, and what it instantiated at
+    {
+        rd->setProperty ("raisedFrom", d.ratioInstantiated.isNotEmpty() ? d.ratioInstantiated : p.ratioDefaultText);
+        rd->setProperty ("readBack", true);
+    }
     s->setProperty ("ratioDuring", juce::var (rd));
+    if (p.pickNote.isNotEmpty())
+    {
+        auto* pk = new juce::DynamicObject();
+        pk->setProperty ("index", p.thr);
+        pk->setProperty ("name", p.thrName);
+        pk->setProperty ("rule", p.pickNote);
+        if (p.channel.isNotEmpty()) pk->setProperty ("channel", p.channel);
+        if (! p.linkStates.isEmpty()) { juce::Array<juce::var> ls; for (auto& l : p.linkStates) ls.add (l); pk->setProperty ("links", ls); }
+        s->setProperty ("thresholdPick", juce::var (pk));
+    }
     s->setProperty ("autoMakeupDisabled", p.autoMakeupDisabled);
     s->setProperty ("positions", (int) d.norms.size());
     juce::Array<juce::var> norms;
@@ -644,17 +775,19 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     }
     s->setProperty ("result", d.result);
     if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
-    // THE SECOND VERDICT, beside the first and never folded into it.
-    s->setProperty ("display_dbfs", dc.dbfs ? juce::var (*dc.dbfs) : juce::var());
+    // THE DISPLAY'S TWO RESULTS, beside the map's and never folded into it or into each other.
+    s->setProperty ("displayLinear", dc.linear ? juce::var (*dc.linear) : juce::var());
+    s->setProperty ("displayOffsetDb", dc.offsetDb ? juce::var (std::round (*dc.offsetDb * 100.0) / 100.0) : juce::var());
     if (dc.positions > 0)
     {
         auto* o = new juce::DynamicObject();
         o->setProperty ("positions", dc.positions);
-        o->setProperty ("median_db", std::round (dc.medianDb * 100.0) / 100.0);
+        o->setProperty ("iqr_db", std::round (dc.iqrDb * 100.0) / 100.0);
         o->setProperty ("min_db", std::round (dc.minDb * 100.0) / 100.0);
         o->setProperty ("max_db", std::round (dc.maxDb * 100.0) / 100.0);
+        o->setProperty ("linear_bound_iqr_db", kLinearIqrDb);
         o->setProperty ("convention", "peak");
-        s->setProperty ("displayOffset", juce::var (o));
+        s->setProperty ("displayOffsetSpread", juce::var (o));
     }
     if (! pv.diagnosticArm.isVoid()) s->setProperty ("diagnosticArm", pv.diagnosticArm);
     return juce::var (s);

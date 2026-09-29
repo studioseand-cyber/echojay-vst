@@ -300,4 +300,28 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
     stage ("done");
 }
 
+// --text-at-norms <index> <n0,n1,...>: the control's OWN TEXT at each normalised value, each write confirmed (the verify's
+// step 1) and read stable (step 2). It measures; EJ Map chooses (spec 4.2's ratio raise reads its grid from here, so the
+// position is picked from what the plugin prints, and the sweep then reads the ratio back again after its own write).
+inline void runTextAtNorms (juce::AudioPluginInstance& p, int index, const std::vector<float>& norms)
+{
+    auto ps = p.getParameters();
+    if (! juce::isPositiveAndBelow (index, ps.size()) || ps[index] == nullptr)
+    { std::printf ("refused no parameter at index %d (%d parameters)\n", index, ps.size()); return; }
+    auto& q = *ps[index];
+    std::printf ("textat\tproto\t1\tindex\t%d\tname\t%s\tpoints\t%d\tinstantiated\t%.6f\t%s\n", index,
+                 clean (q.getName (128)).toRawUTF8(), (int) norms.size(), q.getValue(), clean (q.getCurrentValueAsText()).toRawUTF8());
+    for (float n : norms)
+    {
+        q.setValueNotifyingHost (n);
+        float read = 0; int slices = 0; bool instack = false;
+        const double ms = confirmCounted (q, n, read, slices, instack);
+        juce::String text; int reads = 0;
+        stableText (q, text, reads);
+        std::printf ("at\t%.6f\t%s\tgetValue\t%.6f\tconfirm_ms\t%.1f\ttext\t%s\n", n, ms < 0 ? "unlanded" : "landed", read, ms,
+                     clean (text).toRawUTF8());
+    }
+    stage ("done");
+}
+
 } // namespace ejprobe

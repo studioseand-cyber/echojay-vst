@@ -4115,9 +4115,25 @@ void testSweepSplitVerdict()
     m.params[9] = { "Ratio", "2:1" };
     const auto d = derive (m, kLevels, 9);
     const auto dc = displayCheck (d, "dB");
-    check (d.result == "certified" && dc.dbfs && *dc.dbfs && std::abs (dc.medianDb) < 0.01,
-           "sweep V1: a peak-referenced dBFS display gives T - display = 0 and display_dbfs TRUE");
-    check (! displayCheck (d, "").dbfs.has_value(), "sweep V2: a threshold with no dB unit gives display_dbfs NULL, never false");
+    check (d.result == "certified" && dc.linear && *dc.linear && dc.offsetDb && std::abs (*dc.offsetDb) < 0.01,
+           "sweep V1: a peak-referenced dBFS display is LINEAR with displayOffsetDb 0");
+    const auto noDb = displayCheck (d, "");
+    check (! noDb.linear.has_value() && ! noDb.offsetDb.has_value(),
+           "sweep V2: a threshold with no dB unit gives displayLinear and displayOffsetDb NULL, never false or 0");
+
+    // SPREAD, NOT MAGNITUDE (ruled 29 Sep): a console-calibrated display 14 dB off, held steady, is linear and usable -
+    // subtract 14. The same curve with a display that drifts 1.5 dB per position is not.
+    auto shifted = m;
+    for (auto& p : shifted.positions) p.text = juce::String (p.text.getDoubleValue() - 14.0, 1) + " dB";
+    const auto sc = displayCheck (derive (shifted, kLevels, 9), "dB");
+    check (sc.linear && *sc.linear && sc.offsetDb && std::abs (*sc.offsetDb - 14.0) < 0.01,
+           "sweep V7: a steady +14 dB offset is LINEAR, and displayOffsetDb records 14 as a number");
+    auto drifting = m;
+    for (size_t k = 0; k < drifting.positions.size(); ++k)
+        drifting.positions[k].text = juce::String (drifting.positions[k].text.getDoubleValue() * 1.5, 1) + " dB";
+    const auto dd = displayCheck (derive (drifting, kLevels, 9), "dB");
+    check (dd.linear && ! *dd.linear, "sweep V8: a display whose offset drifts across positions is NOT linear (IQR "
+                                          + juce::String (dd.iqrDb, 2) + " dB)");
 
     // TOWNHOUSE, from its committed traces: a good map AND a display that models the console. Two verdicts.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/townhouse");
@@ -4126,9 +4142,9 @@ void testSweepSplitVerdict()
     check (loaded && pos.size() == 16, "sweep V3: the townhouse trace loads (1 reference + 16 position processes)");
     const auto td = derive (mergeProcesses (ref, pos), kLevels, 5);
     const auto tdc = displayCheck (td, "dB");
-    check (td.result == "certified" && tdc.dbfs && ! *tdc.dbfs,
-           "sweep V4: townhouse CERTIFIES its map with display_dbfs FALSE - the two verdicts are separate (median offset "
-             + juce::String (tdc.medianDb, 2) + " dB)");
+    check (td.result == "certified" && tdc.linear && ! *tdc.linear && tdc.offsetDb && std::abs (*tdc.offsetDb + 15.0) < 0.01,
+           "sweep V4: townhouse CERTIFIES its map, displayLinear FALSE (IQR " + juce::String (tdc.iqrDb, 2)
+             + " dB: it drifts), displayOffsetDb -15 - three results, never merged");
 
     // THE COMMITTED FIXTURE RE-DERIVES FROM ITS TRACE (decision D2: re-compute, never re-measure).
     const auto fx = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT)
@@ -4138,7 +4154,7 @@ void testSweepSplitVerdict()
     const auto again = composeThresholdSweep (td, tdc, plan, pv);
     const auto committed = fx.getProperty ("thresholdSweep", {});
     juce::StringArray differ;
-    for (auto* k : { "reduction_db", "sense", "engage", "thresholdDbEquivalent", "result", "display_dbfs", "displayOffset",
+    for (auto* k : { "reduction_db", "sense", "engage", "thresholdDbEquivalent", "result", "displayLinear", "displayOffsetDb", "displayOffsetSpread",
                      "linearReference", "positionNorms", "ratioDuring", "level_convention", "tone" })
         if (juce::JSON::toString (again.getProperty (k, {}), true) != juce::JSON::toString (committed.getProperty (k, {}), true))
             differ.add (k);
@@ -4171,13 +4187,93 @@ void testSweepPrivacyAndPlan()
     auto fixture = [] (juce::Array<juce::var> cs) { auto* o = new juce::DynamicObject(); o->setProperty ("controls", cs); return juce::var (o); };
     const auto unity = planFromFixture (fixture ({ control (0, "Threshold", 0, false, 0.5, "-10 dB", "dB"),
                                                    control (1, "Ratio", 0, false, 0.0, "1.00:1", ":1") }));
-    check (! unity.ok && unity.why.contains ("unity"), "sweep P2: a ratio instantiating at 1:1 refuses until the 4.2 raise is built");
+    check (unity.ok && unity.ratioRaise && unity.ratioIndex == 1 && unity.ratioDefaultText == "1.00:1",
+           "sweep P2: a ratio instantiating at 1:1 plans the spec 4.2 raise (\"1.00:1\" is 1, not the 1.001 every digit reads)");
     const auto autoMk = planFromFixture (fixture ({ control (0, "Threshold", 0, false, 0.5, "-10 dB", "dB"),
                                                     control (3, "Auto Makeup", 2, true, 1.0, "On", "") }));
     check (autoMk.ok && autoMk.autoMakeupDisabled && autoMk.sets.size() == 1 && autoMk.sets[0].first == 3 && autoMk.sets[0].second == 0.0f,
            "sweep P3: auto make-up on by default is written OFF for the sweep, and the fixture says so");
     const auto stepped = planFromFixture (fixture ({ control (0, "Threshold", 5, true, 0.0, "Off", "") }));
     check (stepped.ok && stepped.norms.size() == 5 && stepped.norms[4] == 1.0f, "sweep P4: a stepped threshold sweeps every step");
+}
+
+//==============================================================================
+/** THE RATIO RAISE (spec 4.2) AND THE THRESHOLD PICKS (XLA-3, MC 77), ruled 29 Sep. */
+void testSweepRatioAndPicks()
+{
+    using namespace ejmap::sweep;
+    // THE CHOICE: the smallest READ value at or above 4:1, not the first norm.
+    juce::String chosen;
+    std::vector<GridPoint> c1 { { 0.0f, "0.50:1" }, { 0.2f, "1.00:1" }, { 0.45f, "3.80:1" }, { 0.5f, "4.58:1" }, { 0.6f, "8.00:1" },
+                                { 0.8f, "+Inf" }, { 1.0f, "-5.00:1" } };
+    auto n = chooseRatioRaise (c1, chosen);
+    check (n && *n == 0.5f && chosen == "4.58:1", "ratio R1: C1-shaped (0.5:1 -> infinity -> -5:1): the smallest read value >= 4 (4.58:1)");
+    std::vector<GridPoint> rc { { 0.0f, "50.00" }, { 0.2f, "8.10" }, { 0.3f, "4.40" }, { 0.35f, "3.90" }, { 0.6f, "1.00" }, { 1.0f, "0.50" } };
+    n = chooseRatioRaise (rc, chosen);
+    check (n && *n == 0.3f && chosen == "4.40", "ratio R2: RCompressor-shaped (inverted): 4.40 at 0.3, NOT 50.00 at norm 0");
+    std::vector<GridPoint> none { { 0.0f, "1.00:1" }, { 1.0f, "3.50:1" } };
+    check (! chooseRatioRaise (none, chosen), "ratio R3: no read value reaches 4:1 - nothing chosen, the product is refused");
+    check (ratioFromText ("Ratio 4") && *ratioFromText ("Ratio 4") == 4.0 && ! ratioFromText ("-5.00:1") && ! ratioFromText ("+Inf")
+             && ! ratioFromText ("All Buttons") && ! ratioFromText ("Ratio 4 of 20"),
+           "ratio R4: 'Ratio 4' is 4 (its only number); negative, infinite, named and two-number texts are not guessed");
+
+    // THE TRAP: R comes from the text READ BACK after the write, never from what was asked for. Here the plan asked
+    // for a 4:1 position on a stepped ratio and the plugin landed on 5:1.
+    auto m = sweeptest::fromGains ({ { 0.0, -1.0, -2.0 }, { 0.0, 0.0, -0.5 }, { 0.0, 0.0, 0.0 } });
+    m.params[7] = { "Ratio", "1:1" };            // as instantiated
+    m.setTexts[7] = "5:1";                       // what the plugin said after the raise
+    const auto d = derive (m, sweeptest::kLevels, 7);
+    check (d.ratio && *d.ratio == 5.0 && d.ratioText == "5:1" && d.ratioInstantiated == "1:1",
+           "ratio R5: the sweep derives with the ratio READ BACK (5:1), and records the instantiated 1:1 it was raised from");
+    ProcessOut ref { "sweep\tproto\t1\nset\t7\t0.500000\tconfirm_ms\t1\tgetValue\t0.5\ttext\t4:1\nref\t-24.00\tlevel_db\t-27\tin_peak_db\t-24\tin_rms_db\t-27\n", true, "exit 0", -1.0f };
+    ProcessOut p0 { "sweep\tproto\t1\nset\t7\t0.500000\tconfirm_ms\t1\tgetValue\t0.5\ttext\t4:1\npos\t0\tnorm\t0.0\tconfirm_ms\t1\tslices\t1\tinstack_match\t1\tgetValue\t0\ttext_ms\t1\treads\t2\ttext\t-20 dB\n", true, "exit 0", 0.0f };
+    ProcessOut p1 { "sweep\tproto\t1\nset\t7\t0.500000\tconfirm_ms\t1\tgetValue\t0.5\ttext\t5:1\npos\t0\tnorm\t1.0\tconfirm_ms\t1\tslices\t1\tinstack_match\t1\tgetValue\t1\ttext_ms\t1\treads\t2\ttext\t0 dB\n", true, "exit 0", 1.0f };
+    const auto merged = mergeProcesses (ref, { p0, p1 });
+    check (merged.setConflict.isNotEmpty() && derive (merged, sweeptest::kLevels, 7).result == "unreadable",
+           "ratio R6: processes that read the ratio back differently (4:1 and 5:1) refuse the sweep");
+
+    // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
+    const auto xla = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString()));
+    check (xla.ok && xla.thr == 3 && xla.pickNote.contains ("only continuous"),
+           "pick K1: Acme Opticom XLA-3 sweeps [3] Input Gain (continuous), not [6] Input Pad (two steps)");
+    const auto mc = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_73462d29_1.5.1.json").loadFileAsString()));
+    check (mc.ok && mc.thr == 15 && mc.channel == "L" && mc.linkStates.joinIntoString ("|").contains ("Link = 'Std'"),
+           "pick K2: Purple Audio MC 77 sweeps [15] Input L (channel A, spec 4.7) and records its Link as instantiated ('Std')");
+    check (mc.sets.empty() && xla.sets.empty(), "pick K3: neither pick writes a link or any other control");
+    {
+        // K1's order is XLA-3's own, where the continuous control happens to come first; reversed, the rule must still
+        // pick by step count, not by position in the list.
+        auto ctl = [] (int idx, const char* name, int steps, bool discrete) {
+            auto* c = new juce::DynamicObject();
+            c->setProperty ("index", idx); c->setProperty ("name", name); c->setProperty ("numSteps", steps); c->setProperty ("discrete", discrete);
+            return juce::var (c); };
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("controls", juce::Array<juce::var> { ctl (0, "Input Pad", 2, true), ctl (1, "Input Gain", 2147483647, false),
+                                                             ctl (2, "Output", 2147483647, false) });
+        const auto rev = planFromFixture (juce::var (o));
+        check (rev.ok && rev.thr == 1, "pick K5: with the stepped pad listed FIRST, the continuous gain is still the pick");
+    }
+    const auto fair = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_16616669_11.8.0.json").loadFileAsString()));
+    check (! fair.ok && fair.cls == "channels_lr", "pick K4: UAD Fairchild 670 (channels_lr) stays deferred to review - the L/R pick is for input-as-threshold only");
+
+    // THE CONVENTION'S POSITIVE CONTROL (spec 7, a test on displayOffsetDb): MCompressor with its detector at Peak lands
+    // inside 2 dB of 0 in the peak convention. The 100 ms arm is a fact about Melda's detector, recorded, not a test.
+    for (auto* arm : { "rms-peak", "rms-100ms" })
+    {
+        const auto adir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/mcompressor-" + juce::String (arm));
+        ProcessOut r; std::vector<ProcessOut> ps;
+        const bool ok = loadProcesses (adir.getChildFile ("processes.json"), adir.getChildFile ("raw"), r, ps);
+        const auto ad = derive (mergeProcesses (r, ps), sweeptest::kLevels, 6);
+        const auto ac = displayCheck (ad, "dB");
+        if (juce::String (arm) == "rms-peak")
+            check (ok && ad.result == "certified" && ac.linear && *ac.linear && ac.offsetDb && std::abs (*ac.offsetDb) <= kDisplayDb,
+                   "convention C1: MCompressor at Peak - certified, linear, displayOffsetDb " + juce::String (ac.offsetDb ? *ac.offsetDb : 99.0, 2)
+                     + " within spec 7's 2 dB of 0: KEEP PEAK");
+        else
+            check (ok && ad.result == "certified" && ac.linear && *ac.linear && ac.offsetDb && std::abs (*ac.offsetDb - 0.80) < 0.01,
+                   "convention C2: MCompressor at 100 ms RMS - linear, displayOffsetDb +0.80 (not +3.01: Melda's detector, noted)");
+    }
 }
 
 // THE VERSION GUARD IS ON COMPARISON, NOT MEASUREMENT (ruled 29 Sep): a fresh sweep at an unseen version is valid.
@@ -4252,6 +4348,7 @@ int main (int, char**)
     testSweepSplitVerdict();
     testSweepPrivacyAndPlan();
     testMeasurableRule();
+    testSweepRatioAndPicks();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
