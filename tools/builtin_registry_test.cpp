@@ -2982,17 +2982,42 @@ int main()
 
         // CLIP ignores the lookahead, and must therefore report NO latency — a
         // device that delays without a reason is a device that is wrong.
+        //
+        // 21t-m (29 Sep 2026): 240 -> 252, AND THE PRODUCT WAS RIGHT ALL ALONG. true_peak was switched ON three
+        // lines above, and under true_peak the interpolator reads the sidechain kTaps/2 samples late, so the
+        // audio is delayed by that much more and the limiter reports the delay it actually applies:
+        //     5 ms at 48 kHz            = 240 samples
+        //   + TruePeakInterp::kDelay    =  12 samples   (added 18 Sep 2026, "CHECK 2" in applyLookahead)
+        //   ------------------------------------------
+        //                                 252 samples
+        // The 18 Sep change said in its own comment that the extra delay "is REPORTED like the rest"; this
+        // expectation was never updated to match, and nothing noticed because this test was in NO ctest label
+        // and the only binary of it on the machine was dated 21 August. It is in the gate from this round.
         device->applyStructured (paramsMove ({ { "lookahead_ms", 5.0 } }), EedDeviceProcessor::ParamSource::Assistant);
         proc->prepareToPlay (48000.0, 512);
-        check (proc->getLatencySamples() == 240, "punchy honours the 5 ms lookahead");
+        check (proc->getLatencySamples() == 252, "punchy honours the 5 ms lookahead PLUS the true-peak group "
+               "delay: 240 + 12 (reported " + juce::String (proc->getLatencySamples()) + " samples)");
 
         device->applyStructured (paramsMove ({ { "mode", "clip" } }), EedDeviceProcessor::ParamSource::Assistant);
-        check (proc->getLatencySamples() == 0, "clip reports ZERO latency despite the 5 ms");
+        check (proc->getLatencySamples() == 0, "clip reports ZERO latency despite the 5 ms (reported "
+               + juce::String (proc->getLatencySamples()) + " samples)");
         check (near (device->getParamValue ("lookahead_ms"), 5.0),
                "while the dialled 5 ms is REMEMBERED, not destroyed");
 
         device->applyStructured (paramsMove ({ { "mode", "transparent" } }), EedDeviceProcessor::ParamSource::Assistant);
-        check (proc->getLatencySamples() == 240, "and comes back when the mode does");
+        check (proc->getLatencySamples() == 252, "and comes back when the mode does, the same 240 + 12 (reported "
+               + juce::String (proc->getLatencySamples()) + " samples)");
+
+        // 21t-m: ...AND THE OTHER PATH PINNED, so the two can never drift into each other again. With true_peak
+        // OFF the interpolator is not in circuit, there is no group delay to absorb, and the SAME 5 ms reports
+        // the lookahead alone. One of these two numbers on its own is an expectation; both of them is a rule.
+        device->applyStructured (paramsMove ({ { "true_peak", false } }), EedDeviceProcessor::ParamSource::Assistant);
+        check (near (device->getParamValue ("true_peak"), 0.0), "true_peak is off");
+        check (proc->getLatencySamples() == 240, "with true_peak OFF the same 5 ms reports the lookahead alone: "
+               "240, no group delay (reported " + juce::String (proc->getLatencySamples()) + " samples)");
+        device->applyStructured (paramsMove ({ { "true_peak", true } }), EedDeviceProcessor::ParamSource::Assistant);
+        check (proc->getLatencySamples() == 252, "...and switching true_peak back on puts the 12 back, live, "
+               "with no re-prepare (reported " + juce::String (proc->getLatencySamples()) + " samples)");
 
         // The release survives clip too, for the same reason: clip drives the
         // core's release to zero, so the dialled value has to live elsewhere.
