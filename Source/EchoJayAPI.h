@@ -378,6 +378,12 @@ public:
     void setChannelWidth(int channels) { channelWidth_ = juce::jlimit(0, 2, channels); }
     int  channelWidth() const { return channelWidth_; }
     int  channelWidth_ = 0;
+    // 21t-m item 5 (29 Sep 2026 ruling): the chain's ROLE rides every turn, in the ruled shape
+    // {"kind":"bus"|"channel","from":"prompt"|"placement"|"name","name":"<track name>"}. Set per send beside
+    // channelWidth and NOT consumed: it describes the chain, not a staged payload.
+    void setChainRoleVar(const juce::var& v) { chainRoleVar_ = v; }
+    juce::var chainRoleVar() const { return chainRoleVar_; }
+    juce::var chainRoleVar_;
     // 21m ruling (22 Sep 2026, CONTRACT_GROUPS "Capabilities"): "unityChain": true rides EVERY chat and chat-stream body
     // (both build through buildChatRequestBody) whenever the per-slot trim is active on the rack the turn is about;
     // ABSENT otherwise (an empty rack, no trims). The server then stops the Level slot compensating for make-up that
@@ -875,7 +881,10 @@ public:
     // 13:04 block listed five slots ending "SSL X-Limit ... out -19.9" and said nothing at all about the chain,
     // so "the chain came out at the level it went in" had to be inferred from five per-slot lines. One line
     // saying it is the difference between reading the block and reconstructing it. Empty = not available.
-                                                   const juce::String& chainLevelLine = {});
+                                                   const juce::String& chainLevelLine = {},
+    // 21t-m item 5 (29 Sep 2026 ruling): the chain's ROLE and which of its three sources decided it, printed in
+    // the header. The same fact goes to the server in the body as channelRole; the model reads this one.
+                                                   const juce::String& chainRoleText = {});
     /** 21t-m item 2: the chain's OWN in/out line, distinct from the last slot's out. */
     static juce::String formatChainLevelLine(const ChainHost& chainHost);
     // Running level (LevelTally, 17 Aug 2026), rendered for the model.

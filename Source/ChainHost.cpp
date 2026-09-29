@@ -3128,11 +3128,10 @@ void ChainHost::setPendingLevelsState(const juce::var& v, const juce::String& cu
     // chain in/out tally onto "Mix Bus", a chain whose declared role is a bus - and on a bus the chain's LAST
     // STAGE sets the level, so a level this instance measured in some earlier state has no business describing
     // it. Channel roles are untouched: the restore is what spares them three seconds of playing after a reopen.
-    if (roleIsBus_)
+    if (chainRole_.isBus())
     {
-        EchoJay_NSLog(("EJLevels: saved tally NOT restored - this chain's declared role is a bus ("
-                       + (roleName_.isNotEmpty() ? roleName_ : juce::String("bus"))
-                       + "), and on a bus the chain's last stage sets the level: nothing is restored onto the "
+        EchoJay_NSLog(("EJLevels: saved tally NOT restored - this chain's role is a " + chainRole_.text()
+                       + ", and on a bus the chain's last stage sets the level: nothing is restored onto the "
                          "chain output, and the tallies start from what is playing now").toRawUTF8());
         return;
     }

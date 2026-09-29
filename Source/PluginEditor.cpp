@@ -6350,6 +6350,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
+    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -28395,7 +28396,12 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
             case KeySourceReading::Kind::BusLink:
                 return "\"" + s.name + "\" (bus Link, uid " + s.uid + ")";
             case KeySourceReading::Kind::SelfBus:
-                return "this channel (declared " + s.detail
+                // 21t-m item 5 (29 Sep 2026 ruling): the key-source LINE says which source called this a bus,
+                // rather than quoting the start-prompt choice as if it were the only one. The MUSIC question
+                // behind SelfBus follows chainRole() NARROWED (echojay::decideChainIsMusic): a bus, unless the
+                // prompt or the name says it is a vocal or rhythm bus.
+                return "this channel (declared " + s.detail + ", role "
+                     + processorRef.chainRole().text()
                      + " - EchoJay is ON the music bus; bus-grade reading)";
             case KeySourceReading::Kind::ChannelLink:
                 return "\"" + s.name + "\" (" + placeStr (s.placement)
@@ -29276,6 +29282,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
+    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -29963,6 +29970,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
 
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
+    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -30024,6 +30032,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
                         : juce::String::fromUTF8 ("Answering as a chat\xe2\x80\xa6"));
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
+    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -35303,6 +35312,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     auto safeThis2 = juce::Component::SafePointer<EchoJayEditor>(this);
     juce::String captureChatId = chatId;
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
+    api.setChainRoleVar(processorRef.chainRole().toVar());            // 21t-m item 5: channelRole on every turn, from its three sources
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group

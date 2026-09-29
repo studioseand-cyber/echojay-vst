@@ -1,4 +1,5 @@
 #pragma once
+#include "EJChainRole.h"   // 21t-m item 5: the chain role and its three sources
 #include <JuceHeader.h>
 #include "EJStateRoot.h"   // 6 Sep 2026: every user-state path resolves through the isolatable root
 #include "PluginScanner.h"
@@ -1370,12 +1371,15 @@ public:
     // arrived), resets the tallies: same guard, both orderings.
     void      setHostTrackName(const juce::String& name);
     juce::String getHostTrackName() const { return hostTrackName_; }
-    // 21t-m item 2 (29 Sep 2026 ruling): THE DECLARED ROLE, as a fact this host owns. Set by the processor from
-    // its channelType whenever it changes. On a bus role nothing is written to the chain output and NO stored
-    // record is restored onto it - the chain's last stage sets the level there. Channel roles are unchanged.
-    void setRoleIsBus (bool b, const juce::String& roleName) { roleIsBus_ = b; roleName_ = roleName; }
-    bool roleIsBus() const noexcept { return roleIsBus_; }
-    juce::String roleName() const { return roleName_; }
+    // 21t-m items 2 and 5 (29 Sep 2026 rulings): THE CHAIN'S ROLE, as a fact this host owns. Set by the
+    // processor from all THREE of its sources (echojay::decideChainRole) whenever any of them changes. On a bus
+    // nothing is written to the chain output and NO stored record is restored onto it - the chain's last stage
+    // sets the level there. Channel roles are unchanged, and the source that said "bus" travels with it so no
+    // consumer has to re-derive it and nothing is decided silently.
+    void setChainRole (const echojay::ChainRole& r) { chainRole_ = r; }
+    const echojay::ChainRole& chainRole() const noexcept { return chainRole_; }
+    bool roleIsBus() const noexcept { return chainRole_.isBus(); }
+    juce::String roleName() const { return chainRole_.text(); }
 
     // EchoJay auto-parameter-mapping: dial a slot's hosted plugin from
     // structured settings plus the plugin's map.
@@ -2434,8 +2438,7 @@ private:
     echojay::LevelTally chainOutTally_ { echojay::LevelTally::Weighting::K };
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;
-    bool         roleIsBus_ = false;      // 21t-m item 2: the declared role is a bus (Mix Bus / master / any bus)
-    juce::String roleName_;               // ...and its name, for the line that says why nothing was restored
+    echojay::ChainRole chainRole_;        // 21t-m item 5: the role and WHICH of its three sources decided it
     juce::String hostPluginFormat_;   // see setHostPluginFormat
     juce::String restoredLevelsTrack_;   // the track a restored tally was measured on, until the host names this one
     // Pending per-slot level restore, keyed by saved slot number (1-based,

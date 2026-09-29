@@ -1375,6 +1375,12 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
         nextChatBusCount_ = 0;
         nextChatIsExplicitCapture_ = false;   // cleared after EVERY send
     }
+    // 21t-m item 5 (29 Sep 2026 ruling): THE CHAIN'S ROLE, ON EVERY TURN, in the ruled shape
+    //     channelRole: {"kind":"bus"|"channel","from":"prompt"|"placement"|"name","name":"<track name>"}
+    // Set per send by the editor, like channelWidth, and NOT cleared: it describes the chain rather than a
+    // staged payload, so a turn that forgot to set it would be a turn whose role silently reverted.
+    if (chainRoleVar_.isObject())
+        body += ",\"channelRole\":" + juce::JSON::toString (chainRoleVar_);
     // mapFps: which binary each plugin name is (per-fp exact controls
     // exposure). Already a JSON object from ChainHost::buildMapFpsJson;
     // consumed and cleared per send like the meters blob.
@@ -2229,6 +2235,7 @@ juce::String EchoJayAPI::buildClassifyRequestBody(const ClassifyRequest& req) co
     if (req.genre.isNotEmpty())          body->setProperty("genre", req.genre);
     if (req.priorAssistant.isNotEmpty()) body->setProperty("priorAssistant", req.priorAssistant);
     if (channelWidth_ > 0) body->setProperty("channelWidth", juce::String(channelWidth_ == 1 ? "mono" : "stereo"));   // 21m item 2 / 21n: the contract's string form
+    if (chainRoleVar_.isObject()) body->setProperty("channelRole", chainRoleVar_);   // 21t-m item 5: on classify too
     if (req.turnType.isNotEmpty())       body->setProperty("turnType", req.turnType);
     if (req.answers.isNotEmpty())        body->setProperty("answers", req.answers);
     if (groupsVar_.isArray())   // 21n item 4: classify carries the SAME links / groups shapes (objects with instanceId)
@@ -3386,7 +3393,8 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const ChainHost& chainHost)
         notes.add(formatSlotLevelNote(chainHost, i++));
     }
     return buildCurrentChainInjection(rack, juce::String(), &notes, &modelSettings,
-                                      &hasLiveReads, formatChainLevelLine(chainHost));
+                                      &hasLiveReads, formatChainLevelLine(chainHost),
+                                      chainHost.chainRole().text());
 }
 
 // ---- running level, rendered ----------------------------------------------
@@ -3416,8 +3424,10 @@ juce::String EchoJayAPI::formatChainLevelLine(const ChainHost& chainHost)
       << "), out " << fmt1(out.levelDb) << " (pk " << fmt1(out.peakDb) << "), out-in "
       << fmt1(out.levelDb - in.levelDb) << " dB, heard " << formatHeard(in.heardSeconds)
       << " - this is the WHOLE chain, not the last slot";
+    // 21t-m item 5: the ROLE and WHICH SOURCE said it, never silently - "bus (said by the host track name
+    // \"Mix Bus\")" rather than a bare "bus" the reader has to take on trust.
     if (chainHost.roleIsBus())
-        n << "; declared role " << (chainHost.roleName().isNotEmpty() ? chainHost.roleName() : juce::String("a bus"))
+        n << "; role " << chainHost.chainRole().text()
           << ", so the chain's LAST STAGE sets this level and EchoJay writes nothing to the chain output";
     return n;
 }
@@ -3908,7 +3918,8 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
                                                     const juce::StringArray* slotLevelNotes,
                                                     const juce::StringArray* slotModelSettings,
                                                     const juce::Array<bool>* slotHasLiveReads,
-                                                    const juce::String& chainLevelLine)
+                                                    const juce::String& chainLevelLine,
+                                                    const juce::String& chainRoleText)
 {
     if (!rack.valid || rack.slots.empty()) return {};
 
@@ -3933,7 +3944,11 @@ juce::String EchoJayAPI::buildCurrentChainInjection(const LinkShm::RackSidecar& 
     // verified (two copies briefly agreeing is fine; the prefix
     // "[CURRENT CHAIN" is server-keyed and byte-stable).
     juce::String block;
+    // 21t-m item 5 (ruled): THE ROLE IN THE HEADER, with the source that said it. The server gets the same fact
+    // in the body as channelRole; this is the one the model reads, and it is here rather than buried below the
+    // slots because what the chain IS changes what a build should do to it.
     block << juce::String::fromUTF8("\n\n[CURRENT CHAIN \xe2\x80\x94 ") << owner
+          << (chainRoleText.isNotEmpty() ? " (this chain's role: " + chainRoleText + ")" : juce::String())
           << ", in signal-flow "
           << "order; slot numbers are 1-based (the first slot is slot 1). "
           << "EDIT OPERATIONS (a CHAIN_EDIT block: add/remove/swap/reorder/"

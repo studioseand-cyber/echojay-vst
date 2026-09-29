@@ -16,6 +16,7 @@
 #include "LinkShm.h"
 #include "EchoJayUndoHistory.h"   // 21n item 3
 #include "EedKeyEngine.h"   // self-detection on music-bus roles (§6.1)
+#include "EJChainRole.h"    // 21t-m item 5: the chain's role, from its three sources
 #include "EedKeyWorker.h"
 #include "LoudnessLoop.h"
 
@@ -194,12 +195,31 @@ public:
     // disqualifier was never "the channel EchoJay is on", it is "a channel
     // that is not the music", judged by DECLARED ROLE — so a vocal or
     // unknown role never self-detects as a primary source.
-    static bool isMusicBusRole(ChannelType t)
+    // 21t-m item 5 (29 Sep 2026 ruling, the music gate): SUPERSEDED as the answer, kept as ONE INPUT to it.
+    // "The chain is THE MUSIC when chainRole() says bus AND none of these says it is a vocal or rhythm bus: the
+    // prompt answered VocalBus or DrumBus, or the track name contains vocal/vox/bv/harmony/drum/perc." So a
+    // start-prompt answer of Mix Bus no longer ANSWERS the music question on its own - it only makes the chain a
+    // bus, which every other source can do too. The decision is echojay::decideChainIsMusic; this predicate is
+    // gone as a reader and nothing else calls it.
+    bool selfKeyRoleIsMusic() const
     {
-        return t == ChannelType::FullMix || t == ChannelType::MasterBus
-            || t == ChannelType::MusicBus || t == ChannelType::InstrumentBus;
+        return echojay::decideChainIsMusic (chainRole(),
+                                            channelType == ChannelType::VocalBus,
+                                            channelType == ChannelType::DrumBus,
+                                            chainHost.getHostTrackName());
     }
-    bool selfKeyRoleIsMusic() const { return isMusicBusRole(channelType); }
+
+    // ---- 21t-m item 5 (29 Sep 2026 ruling): THE ROLE HAS THREE SOURCES ------------------------------------
+    // "isBusRole reads only the start-prompt channelType, so a track named 'Mix Bus' with the prompt unanswered
+    // is a channel - which is today's demo." The decision is echojay::decideChainRole (EJChainRole.h) and this
+    // is where its three inputs are gathered. NOTHING reads channelType for a ROLE question any more; the one
+    // place that still reads it is the MUSIC question, and that is now decided by echojay::decideChainIsMusic
+    // too: a vocal bus is a bus and is not the music, so the music gate is chainRole() NARROWED, not channelType.
+    echojay::ChainRole chainRole() const;
+    /** The Link's placement selector, as this instance knows it: 1 bus, 2 channel/insert, 0 unset. V2 has no
+        selector of its own and leaves it 0, which contributes nothing to the decision. */
+    void setSelfPlacement (int p) { selfPlacement_ = p; }
+    int  selfPlacement() const noexcept { return selfPlacement_; }
 
     // ---- 21t-m item 2 (29 Sep 2026 ruling): A BUS IS NOT A CHANNEL ------------------------------------------
     // "The whole-chain hold and the stored-record restore are for channel roles only - on Mix Bus, master or any
@@ -207,7 +227,8 @@ public:
     // level." The declaration already exists and Sean's session carries it: the 12:59 build logged "declared Mix
     // Bus - EchoJay is ON the music bus", and the same instance then restored a saved chain-output tally onto it
     // ("EJLevels: pending restore, chain in=y out=y slots=0 track=\"Mix Bus\""). This is the predicate that stops
-    // that. Broader than isMusicBusRole: a vocal bus and a drum bus are buses too, and the rule says ANY bus role.
+    // that. Broader than the old isMusicBusRole: a vocal bus and a drum bus are buses too, and the rule says ANY
+    // bus role - the music question is the narrowed one (decideChainIsMusic), not this.
     static bool isBusRole(ChannelType t)
     {
         return t == ChannelType::FullMix      || t == ChannelType::MasterBus
@@ -215,7 +236,8 @@ public:
             || t == ChannelType::VocalBus     || t == ChannelType::DrumBus
             || t == ChannelType::GuitarBus    || t == ChannelType::SynthBus;
     }
-    bool chainRoleIsBus() const { return isBusRole(channelType); }
+    /** 21t-m item 5: kept as the PROMPT source only - the whole-chain answer is chainRole(). */
+    bool promptSaysBus() const { return isBusRole(channelType); }
     /** Push the declared role down to the ChainHost (see the .cpp). */
     void publishChainRole();
 
@@ -1379,6 +1401,7 @@ private:
     juce::SharedResourcePointer<DashPollShared> dashPoll;
 
     ChannelType channelType { ChannelType::FullMix };
+    int         selfPlacement_ = 0;   // 21t-m item 5: the Link's placement selector; 0 on V2, which has none
     juce::String customChannelName;
     bool channelTypePromptDismissed = false;
     bool channelChosen = false;   // 21r item 7: persisted "the question has been answered"

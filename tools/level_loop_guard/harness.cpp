@@ -95,10 +95,13 @@ struct Rig
     // rather than minutes on every fast gate. The rate limit itself is proved at REAL time, by its own case.
     double virtualMs = 1000.0;
 
-    Rig (ChannelType role, float slotGainDb, bool realClock = false) : h (proc.getChainHost())
+    Rig (ChannelType role, float slotGainDb, bool realClock = false, const juce::String& trackName = {},
+         int placement = 0) : h (proc.getChainHost())
     {
         proc.prepareToPlay (48000.0, 512);
         if (! realClock) proc.calibClockMsForTest = [this] { return virtualMs; };
+        if (trackName.isNotEmpty()) h.setHostTrackName (trackName);
+        proc.setSelfPlacement (placement);
         proc.setChannelType (role);
         static const auto pullInGainDevice = EedGainProcessor::schema().params().size();   // see the include note
         juce::ignoreUnused (pullInGainDevice);
@@ -290,12 +293,118 @@ void guardMain()
                "(2b) ...and the chain comes out where it went in", f1 (d2b) + " dB");
     }
 
+    // ---- (3a) THE ROLE HAS THREE SOURCES (21t-m item 5, 29 Sep 2026 ruling) --------------------------------
+    {
+        std::printf ("\n-- (3a) the role's three sources: the prompt, the placement selector, the track name --\n");
+        // "isBusRole reads only the start-prompt channelType, so a track named 'Mix Bus' with the prompt
+        // unanswered is a channel - which is today's demo." The three cases are Sean's, verbatim.
+        {
+            Rig r (ChannelType::LeadVocal, 0.0f, false, "Mix Bus");
+            const auto role = r.proc.chainRole();
+            check (role.isBus() && role.from == "name",
+                   "(3a) an UNANSWERED prompt (LeadVocal) on a track named \"Mix Bus\" is a BUS, said by the "
+                   "NAME  (RED as it stood: channelType was the only source, so this was a channel - and it is "
+                   "the demo session)", role.text());
+            check (r.h.roleIsBus(), "(3a) ...and the host it publishes to agrees", r.h.chainRole().text());
+        }
+        {
+            Rig r (ChannelType::VocalBus, 0.0f, false, "Lead Vox");
+            const auto role = r.proc.chainRole();
+            check (role.isBus() && role.from == "prompt",
+                   "(3a) a track named \"Lead Vox\" with the prompt answered Vocal Bus is a BUS, said by the "
+                   "PROMPT - the name does not have to agree", role.text());
+        }
+        {
+            Rig r (ChannelType::LeadVocal, 0.0f, false, "Vox 2");
+            const auto role = r.proc.chainRole();
+            check (! role.isBus() && role.from.isEmpty(),
+                   "(3a) \"Vox 2\" with LeadVocal is a CHANNEL, and nothing claims to have decided it",
+                   role.text());
+            check (! r.h.roleIsBus(), "(3a) ...and the restore still lands on it (it is a channel)");
+        }
+        {   // the third source, which V2 has no selector for and a Link does
+            Rig r (ChannelType::LeadVocal, 0.0f, false, "Vox 2", /*placement*/ 1);
+            const auto role = r.proc.chainRole();
+            check (role.isBus() && role.from == "placement",
+                   "(3a) ...and the PLACEMENT selector saying bus is enough on its own", role.text());
+        }
+        {   // the wire shape, ruled verbatim
+            Rig r (ChannelType::LeadVocal, 0.0f, false, "Mix Bus");
+            const auto v = r.proc.chainRole().toVar();
+            const auto j = juce::JSON::toString (v, true);
+            std::printf ("    (3a) channelRole on the wire: %s\n", j.toRawUTF8());
+            // Parsed back, not string-matched: JUCE writes "key": value with a space, and a leg that asserted
+            // the spacing would be asserting JUCE's formatter rather than the ruled SHAPE.
+            const auto back = juce::JSON::parse (j);
+            check (back.getProperty ("kind", juce::var()).toString() == "bus"
+                     && back.getProperty ("from", juce::var()).toString() == "name"
+                     && back.getProperty ("name", juce::var()).toString() == "Mix Bus",
+                   "(3a) the wire shape is the ruled one: kind, from, name", j);
+        }
+        {   // ---- THE MUSIC GATE (29 Sep 2026 ruling): chainRole() NARROWED ----------------------------------
+            // "The chain is THE MUSIC when chainRole() says bus AND none of these says it is a vocal or rhythm
+            // bus: the prompt answered VocalBus or DrumBus, or the track name contains vocal/vox/bv/harmony/
+            // drum/perc." The five cases are Sean's, verbatim.
+            {
+                Rig r (ChannelType::LeadVocal, 0.0f, false, "Mix Bus");
+                check (r.proc.selfKeyRoleIsMusic(),
+                       "(3a music) \"Mix Bus\" with the prompt UNANSWERED is the music  (RED as it stood: the "
+                       "gate read channelType, which said LeadVocal - and that is today's demo)");
+            }
+            {
+                Rig r (ChannelType::LeadVocal, 0.0f, false, "Master");
+                check (r.proc.selfKeyRoleIsMusic(), "(3a music) ...and so is \"Master\"");
+            }
+            {
+                Rig r (ChannelType::LeadVocal, 0.0f, false, "Vocal Bus");
+                check (r.proc.chainRole().isBus() && ! r.proc.selfKeyRoleIsMusic(),
+                       "(3a music) \"Vocal Bus\" IS a bus and is NOT the music - the name disqualifies it",
+                       r.proc.chainRole().text());
+            }
+            {
+                Rig r (ChannelType::VocalBus, 0.0f, false, "Backings");
+                check (r.proc.chainRole().isBus() && ! r.proc.selfKeyRoleIsMusic(),
+                       "(3a music) ...and a VocalBus PROMPT ANSWER is not the music either, whatever the track "
+                       "is called", r.proc.chainRole().text());
+            }
+            {
+                Rig r (ChannelType::LeadVocal, 0.0f, false, "Drum Bus");
+                check (r.proc.chainRole().isBus() && ! r.proc.selfKeyRoleIsMusic(),
+                       "(3a music) \"Drum Bus\" is a bus and is not the music", r.proc.chainRole().text());
+            }
+            {
+                Rig r (ChannelType::LeadVocal, 0.0f, false, "Vox 2");
+                check (! r.proc.chainRole().isBus() && ! r.proc.selfKeyRoleIsMusic(),
+                       "(3a music) ...and a CHANNEL is never the music, however it is named");
+            }
+            {   // the disqualifying words, whole-word, and what must NOT match
+                auto v = [] (const char* n) { return echojay::nameReadsAsVocalOrRhythm (n); };
+                check (v ("Vocal Bus") && v ("Vox Bus") && v ("BV bus") && v ("BVs") && v ("Harmony stem")
+                         && v ("Harmonies") && v ("Drum Bus") && v ("Drums") && v ("Perc bus")
+                         && v ("Percussion sum"),
+                       "(3a music) every ruled vocal/rhythm word disqualifies, case-insensitive");
+                check (! v ("Voxel bus") && ! v ("Drumming master") && ! v ("Percolator stem")
+                         && ! v ("Mix Bus") && ! v ("Master"),
+                       "(3a music) ...WHOLE WORDS only, so Voxel, Drumming and Percolator do not");
+            }
+        }
+
+        {   // the words, whole-word and case-insensitive, and what must NOT match
+            auto b = [] (const char* n) { return echojay::trackNameReadsAsBus (n); };
+            check (b ("Mix Bus") && b ("2-Bus") && b ("MASTER") && b ("Gtr Stem") && b ("Sum") && b ("Print A"),
+                   "(3a) the ruled words all read as a bus, case-insensitive and across a hyphen");
+            check (! b ("Bussing") && ! b ("Mastered vox") && ! b ("Printer") && ! b ("Summer")
+                     && ! b ("Lead Vox") && ! b ("Vox 2"),
+                   "(3a) ...and WHOLE WORDS only, so Bussing, Mastered, Printer and Summer are not buses");
+        }
+    }
+
     // ---- (3) A BUS ROLE ------------------------------------------------------------------------------------
     {
         std::printf ("\n-- (3) bus role: nothing is written to the chain output, and no record is restored --\n");
         Rig r (ChannelType::FullMix, 6.0f);
-        check (r.h.roleIsBus() && r.h.roleName() == "Mix Bus",
-               "(3) fixture: the declared role is a BUS", r.h.roleName());
+        check (r.h.roleIsBus() && r.h.chainRole().from == "prompt",
+               "(3) fixture: the declared role is a BUS, said by the prompt (FullMix)", r.h.roleName());
 
         // THE STORED-RECORD RESTORE, exactly as Sean's 12:52:28.563 line ran it. The record is taken from a
         // DIFFERENT chain running 12 dB quieter, so a restore that lands is visible as a jump and one that is
@@ -369,8 +478,9 @@ void guardMain()
                "stood: five slot lines and nothing about the chain)", chainLine);
         check (chainLine.contains ("this is the WHOLE chain, not the last slot"),
                "(3) ...and says so in words, so it cannot be read as another slot line", chainLine);
-        check (chainLine.contains ("declared role Mix Bus"),
-               "(3) ...and on a bus it names the role and says the last stage sets the level", chainLine);
+        check (chainLine.contains ("role bus (said by the ") && chainLine.contains ("LAST STAGE sets this level"),
+               "(3) ...and on a bus it names the role, WHICH SOURCE said so, and that the last stage sets the "
+               "level  (21t-m item 5: never a bare \"bus\" the reader has to take on trust)", chainLine);
     }
 
     // ---- (4) A HANDOVER MID-LOOP -------------------------------------------------------------------------

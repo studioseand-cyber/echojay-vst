@@ -1396,7 +1396,7 @@ void EchoJayProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Midi
     // source (the disqualifier is "not the music", judged by declared role).
     // §7 exception: a user PIN of "this channel" overrides the role gate —
     // an explicit choice beats the inference (the role may be mis-declared).
-    if (isMusicBusRole(channelType) || selfKeyForced_.load(std::memory_order_relaxed))
+    if (selfKeyRoleIsMusic() || selfKeyForced_.load(std::memory_order_relaxed))   // 21t-m item 5: the ONE music reader
         selfKeyEngine_.pushBlock(left, right, buffer.getNumSamples());
 
     // Feed capture engine if capturing
@@ -1571,15 +1571,23 @@ juce::String EchoJayProcessor::computePassName() const
     return proj + " v" + juce::String(juce::jmax(1, captureVersion));
 }
 
-/** 21t-m item 2 (29 Sep 2026 ruling): hand the DECLARED ROLE to the host that owns the tallies. Called wherever
-    channelType lands - the setter, and both state-restore paths - so the host never has to guess, and so the
-    level restore on a bus is refused by the role the user actually declared rather than by a track name. */
+/** 21t-m item 5 (29 Sep 2026 ruling): THE CHAIN'S ROLE, from all three of its sources. The decision is the pure
+    function in EJChainRole.h; this gathers its inputs. (a) the start-prompt choice; (b) the Link's placement
+    selector, which V2 does not have and leaves unset; (c) the host track name, read whole-word. Bus wins, and
+    the source that said so travels with the answer so nothing is decided silently. */
+echojay::ChainRole EchoJayProcessor::chainRole() const
+{
+    return echojay::decideChainRole (promptSaysBus(), selfPlacement_, chainHost.getHostTrackName());
+}
+
+/** 21t-m item 2 (29 Sep 2026 ruling): hand the role to the host that owns the tallies. Called wherever any of
+    its three inputs lands - the channel-type setter, both state-restore paths, and the host track name - so the
+    host never has to guess, and so the level restore on a bus is refused by the role the CHAIN has rather than
+    by whichever single source happened to be filled in. */
 void EchoJayProcessor::publishChainRole()
 {
-    const bool bus = chainRoleIsBus();
-    const auto name = (int) channelType >= 0 && (int) channelType < channelTypeNames.size()
-                        ? channelTypeNames[(int) channelType] : juce::String();
-    chainHost.setRoleIsBus(bus, name);
+    const auto r = chainRole();
+    chainHost.setChainRole(r);
 }
 
 void EchoJayProcessor::setChannelType(ChannelType t)
@@ -1704,7 +1712,7 @@ void EchoJayProcessor::scheduleSelfKeyPass()
     }
     selfKeyStallTicks_ = 0;
 
-    if (! isMusicBusRole(channelType)
+    if (! selfKeyRoleIsMusic()   // 21t-m item 5: the ONE music reader
         && ! selfKeyForced_.load(std::memory_order_relaxed))
         return;                                  // not the music, not pinned
     if (! playing) return;
@@ -5671,7 +5679,15 @@ juce::StringArray EchoJayProcessor::uidsForScopeRole(const juce::String& roleIn,
     for (const auto& li : getLinkSlotInfos())
     {
         if (li.uid.isEmpty()) continue;
-        const bool isBus = (li.placement == 1), isCh = (li.placement == 2), isSend = (li.placement == 3);
+        // 21t-m item 5 (29 Sep 2026 ruling): "nothing reads channelType directly for role" - and nothing reads a
+        // bare placement either. A Link's role goes through the SAME decision the chain's does, so a Link whose
+        // selector was never set but which is called "Drums Bus" is a bus here for exactly the reason it is a bus
+        // everywhere else. A SEND is still a send: it is neither, and the placement selector is the only thing
+        // that can say so, so it is tested first.
+        const bool isSend = (li.placement == 3);
+        const auto liRole = echojay::decideChainRole (false, li.placement, resolveLinkDisplayName (li.uid));
+        const bool isBus = ! isSend && liRole.isBus();
+        const bool isCh  = ! isSend && ! isBus && li.placement == 2;
         const bool take = role == "bus"     ? isBus
                         : role == "channel" ? isCh
                                             : (isBus || isCh);
