@@ -11,7 +11,12 @@
 #include "LinkShm.h"
 #include <cstdio>
 #include <memory>
-struct EchoJayAlignTestAccess { static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v)
+struct EchoJayAlignTestAccess {
+    // 21t-l item 1: the stored record a TARGET headroom op reads - SHORTMAX, PEAK and how long it was heard for.
+    static void setRecord (EchoJayProcessor& p, const juce::String& uid, float shortMax, float peakTp, float heard)
+    { echojay::LevelRecord r; r.valid = true; r.shortMaxDb = shortMax; r.peakDbTp = peakTp;
+      r.heardSeconds = heard; r.heardKnown = true; p.levelRecordByUid_[uid] = r; }
+    static void setLinks (EchoJayProcessor& p, std::vector<EchoJayProcessor::LinkSlotInfo> v)
     {   // 22 Sep 2026: STOP the processor's 1 Hz timer first - refreshLinkRegistry() rebuilds linkSlotInfos from the real
         // registry (empty under the isolated home) and would wipe the injected rows the moment it fires (a longer run is
         // all it takes). The guard owns this input; the product path is untouched.
@@ -31,6 +36,12 @@ struct EchoJayTabStripTestAccess
     static juce::String groupStripId (EchoJayEditor& e) { for (const auto& a : e.rosterAddresses()) if (a.startsWith ("grp:")) return a.fromFirstOccurrenceOf ("grp:", false, false); return {}; }
     // 21t-j: the block the server actually reads, composed by the shipping code.
     static juce::String groupLevels (EchoJayEditor& e) { return e.buildGroupLevelsContext(); }
+    // 21t-l item 1: the headroom apply, and the readback queue it fills.
+    static EchoJayEditor::HeadroomApply headroom (EchoJayEditor& e, const ChainHost::ChainEditOp& op)
+    { return e.applyHeadroomOp (op); }
+    static int  trimVerifyCount (EchoJayEditor& e) { return (int) e.trimVerify_.size(); }
+    static void clearTrimVerify (EchoJayEditor& e) { e.trimVerify_.clear(); }
+
     // 21t-j: the key-attribution stamp. The label is normally recorded by buildDetectedKeyContext as it composes
     // the [KEY] block; set directly here so the STAMPING RULES are what is under test, not the collector.
     static void setKeySrc (EchoJayEditor& e, const juce::String& s) { e.lastKeySourceLabel_ = s; }
@@ -360,6 +371,112 @@ int main()
                        juce::String (got != nullptr ? got->members.size() : -1) + " member(s); refused: "
                        + refused.joinIntoString ("; "));
                 p.removeLinkGroup (gp);
+            }
+            EchoJayAlignTestAccess::setLinks (p, links);
+        }
+
+        // ---- 21t-l item 1 (29 Sep 2026 ruling): THE HEADROOM OP IS APPLIED --------------------------------
+        // Item 4 parsed it, resolved the scope and drew the row; nothing wrote a trim, so HEADROOM_OPS could not
+        // be turned on. It writes now, through the SAME transport level_match uses (sendLinkGainCommand ->
+        // ctrl-cmd gainDb), with one undo entry for the whole op and every write queued for the 0.1 dB readback.
+        {
+            std::printf ("\n== 21t-l item 1: the headroom op APPLIES ==\n");
+            int e3 = 0; const juce::String dir = LinkShm::resolveDir (e3);
+            std::vector<EchoJayProcessor::LinkSlotInfo> four;
+            const char* hn[4] = { "Vox", "Drums", "MUSIC", "Undeclared" };
+            const int   hp[4] = { 2, 2, 1, 0 };
+            const float hg[4] = { -3.0f, -6.0f, -2.0f, 0.0f };
+            for (int i = 0; i < 4; ++i)
+            {
+                EchoJayProcessor::LinkSlotInfo li;
+                li.uid = "lnk_h" + juce::String (i + 10); li.name = hn[i];
+                li.active = true; li.connected = true; li.channels = 2;
+                li.placement = hp[i]; li.gainDb = hg[i];
+                four.push_back (li);
+            }
+            EchoJayAlignTestAccess::setLinks (p, four);
+            for (int i = 0; i < 4; ++i) juce::File (dir + "ctrl-cmd-" + four[(size_t) i].uid + ".json").deleteFile();
+
+            // (a) RELATIVE: -10 dB on every CHANNEL, identically, and nothing on the bus or the undeclared one.
+            {
+                auto ops = ChainHost::parseChainEditOps (
+                    "{\"edit\":[{\"op\":\"headroom\",\"mode\":\"relative\",\"delta_db\":-10,"
+                    "\"scope\":{\"role\":\"channel\"}}]}", nullptr);
+                const int nBefore = (int) p.undoHistory().undoDepth();
+                const auto res = A::headroom (*ed, ops[0]);
+                const int queued = A::trimVerifyCount (*ed);   // BEFORE any pump: the 1 Hz tick consumes this queue
+                pumpMs (200);
+                check (res.ran && res.written == 2 && std::abs (res.offsetDb + 10.0f) < 0.01f,
+                       "21t-l 1(a). RELATIVE: the offset is written to every channel the scope selects  (RED as "
+                       "it stood: the op parsed and drew its row, and no trim moved)",
+                       juce::String (res.written) + " written, offset " + juce::String (res.offsetDb, 1) + " dB");
+                auto cmdGain = [&dir] (const juce::String& uid)
+                {
+                    const auto v = juce::JSON::parse (juce::File (dir + "ctrl-cmd-" + uid + ".json").loadFileAsString());
+                    return v.getProperty ("gainDb", juce::var());
+                };
+                const auto g0 = cmdGain ("lnk_h10"), g1 = cmdGain ("lnk_h11");
+                check (! g0.isVoid() && std::abs ((double) g0 + 13.0) < 0.01
+                       && ! g1.isVoid() && std::abs ((double) g1 + 16.0) < 0.01,
+                       "21t-l 1(a). ...as an absolute trim on the wire, each from its own starting point "
+                       "(-3 -> -13, -6 -> -16)",
+                       "Vox " + g0.toString() + ", Drums " + g1.toString());
+                check (juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_h12.json").loadFileAsString())
+                           .getProperty ("gainDb", juce::var()).isVoid(),
+                       "21t-l 1(a). ...and the BUS, which the scope excluded, was not written to");
+                check (res.excluded.joinIntoString ("; ").contains ("MUSIC")
+                       && res.excluded.joinIntoString ("; ").contains ("Undeclared"),
+                       "21t-l 1(a). ...both exclusions are NAMED for the card",
+                       res.excluded.joinIntoString ("; "));
+                check ((int) p.undoHistory().undoDepth() == nBefore + 1
+                       && p.undoHistory().top() != nullptr && p.undoHistory().top()->kind == "headroom",
+                       "21t-l 1(a). ...and the whole op is ONE undo entry, not one per Link",
+                       juce::String ((int) p.undoHistory().undoDepth() - nBefore) + " entry(ies), kind "
+                       + (p.undoHistory().top() != nullptr ? p.undoHistory().top()->kind : juce::String ("(none)")));
+                check (queued == 2,
+                       "21t-l 1(a). ...and both writes are queued for the 0.1 dB readback, the same queue "
+                       "level_match fills", juce::String (queued));
+            }
+            // (b) TARGET: the offset comes from the LOUDEST member's SHORTMAX and is capped by true peak.
+            {
+                A::clearTrimVerify (*ed);
+                for (int i = 0; i < 4; ++i) juce::File (dir + "ctrl-cmd-" + four[(size_t) i].uid + ".json").deleteFile();
+                EchoJayAlignTestAccess::setLinks (p, four);
+                // Vox: SHORTMAX -12, PEAK -2 (the loudest, and the one with the least true-peak room)
+                // Drums: SHORTMAX -20, PEAK -8, and only 4 s heard - applied anyway, and said.
+                EchoJayAlignTestAccess::setRecord (p, "lnk_h10", -12.0f, -2.0f, 60.0f);
+                EchoJayAlignTestAccess::setRecord (p, "lnk_h11", -20.0f, -8.0f, 4.0f);
+                auto ops = ChainHost::parseChainEditOps (
+                    "{\"edit\":[{\"op\":\"headroom\",\"mode\":\"target\","
+                    "\"target_short_max_lufs\":-8,\"target_tp_db\":-6,\"scope\":{\"role\":\"channel\"}}]}", nullptr);
+                const auto res = A::headroom (*ed, ops[0]);
+                pumpMs (200);
+                // THE CAP BINDS: aiming at -8 from a loudest of -12 asks for +4, and Vox's true peak of -2 has
+                // only -4 dB of room under the -6 ceiling. (A move DOWN never threatens a ceiling, which the
+                // second case below pins.)
+                check (std::abs (res.offsetDb + 4.0f) < 0.01f,
+                       "21t-l 1(b). TARGET: the offset is (target - the loudest member's SHORTMAX), CAPPED so no "
+                       "member's true peak passes target_tp_db  (+4 wanted, Vox has -4 dB of room at -2 dBTP)",
+                       juce::String (res.offsetDb, 2) + " dB   [" + res.note + "]");
+                check (res.written == 2,
+                       "21t-l 1(b). ...applied IDENTICALLY to every selected Link, never per channel",
+                       juce::String (res.written) + " written");
+                check (res.thin.joinIntoString ("; ").contains ("Drums"),
+                       "21t-l 1(b). ...and a member under 15 s heard is applied anyway and SAID, so the user "
+                       "knows to play it", res.thin.joinIntoString ("; "));
+                {   // THE CAP DOES NOT BIND on a move DOWN: -18 from -12 asks for -6, which puts Vox's peak at
+                    // -8 dBTP, under the -6 ceiling. A ceiling is not a target to hit.
+                    A::clearTrimVerify (*ed);
+                    EchoJayAlignTestAccess::setLinks (p, four);
+                    auto down = ChainHost::parseChainEditOps (
+                        "{\"edit\":[{\"op\":\"headroom\",\"mode\":\"target\","
+                        "\"target_short_max_lufs\":-18,\"target_tp_db\":-6,\"scope\":{\"role\":\"channel\"}}]}",
+                        nullptr);
+                    const auto rd = A::headroom (*ed, down[0]);
+                    check (std::abs (rd.offsetDb + 6.0f) < 0.01f && ! rd.note.contains ("capped"),
+                           "21t-l 1(b). ...and the cap does NOT bind when the move already leaves every peak "
+                           "under the ceiling", juce::String (rd.offsetDb, 2) + " dB   [" + rd.note + "]");
+                }
             }
             EchoJayAlignTestAccess::setLinks (p, links);
         }

@@ -3760,6 +3760,24 @@ private:
     void pollTrimVerification();               // called from the 1 Hz tick; posts the bubble when it can
     /** level_match (21t-c): add each member's delta_db to its Link trim; no-signal members untouched. */
     int applyGroupLevelMatch (const juce::var& membersVar);
+public:
+    /** 21t-l item 1 (29 Sep 2026 ruling): APPLY THE HEADROOM OP. One common offset, applied identically to every
+        Link the scope selects, through the same Apply path level_match uses - the same ctrl-cmd, the same ack,
+        the same readback within 0.1 dB - with ONE undo entry for the whole op. Nothing per-channel: a headroom
+        op is a single move on a set of channels, and a per-channel target would be a level match wearing its name. */
+    struct HeadroomApply
+    {
+        bool  ran = false;            // false = the op named no usable mode, or the scope selected nothing
+        float offsetDb = 0.0f;        // what was applied, identically, to every selected Link
+        int   written = 0, skipped = 0;
+        juce::StringArray excluded;   // the scope's own answer: who was left out and why
+        juce::StringArray thin;       // members with under 15 s heard - applied anyway, and said
+        juce::String why;             // the one-line reason when nothing ran
+        juce::String note;            // what capped the offset, when something did
+    };
+    HeadroomApply applyHeadroomOp (const ChainHost::ChainEditOp& op);
+    static constexpr float kHeadroomThinHeardS = 15.0f;   // ruled
+private:
     // ---- 21t-d: the calibration loop's trigger and its surface ----
     /** Start the loop for any dynamics-role slot an applied build/edit left in the rack. uid empty = own rack. */
     int startCalibrationFromOps (const juce::String& uid, const juce::var& ops);

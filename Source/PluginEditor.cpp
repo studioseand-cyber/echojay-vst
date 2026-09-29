@@ -24681,6 +24681,116 @@ juce::String EchoJayEditor::levelMatchCardFromBlock (const juce::String& lmJson,
          + (lines.size() == 1 ? " channel:\n" : " channels:\n") + lines.joinIntoString ("\n");
 }
 
+// ---- 21t-l item 1 (29 Sep 2026 ruling): APPLY THE HEADROOM OP ---------------------------------------------
+// ONE common offset, applied identically. relative takes the block's delta_db; target computes
+// (target_short_max_lufs - the LOUDEST member's SHORTMAX) and then caps it so no member's true peak can exceed
+// target_tp_db. Both go out through sendLinkGainCommand - the same ctrl-cmd level_match sends, so the ack a Link
+// writes is byte-identical to the one level_match already gets - and every write is queued for the 0.1 dB
+// readback. ONE undo entry for the whole op: the per-Link entries are suppressed for the duration.
+EchoJayEditor::HeadroomApply EchoJayEditor::applyHeadroomOp (const ChainHost::ChainEditOp& op)
+{
+    HeadroomApply r;
+    if (op.op != "headroom" || op.headroomMode.isEmpty())
+    { r.why = "the op names no usable mode"; EchoJay_NSLog ("EJHeadroom: no usable mode - nothing applied"); return r; }
+
+    const auto uids = processorRef.uidsForScopeRole (op.scopeRole, &r.excluded);
+    if (uids.isEmpty())
+    {
+        r.why = op.scopeRole.isEmpty() ? juce::String ("no Link has a declared role, so no scope selects one")
+                                       : ("no Link is declared a " + op.scopeRole);
+        EchoJay_NSLog (("EJHeadroom: " + r.why + " - nothing applied").toRawUTF8());
+        return r;
+    }
+
+    // ---- the offset -------------------------------------------------------------------------------------
+    if (op.headroomMode == "relative")
+    {
+        if (! (op.headroomDeltaDb == op.headroomDeltaDb))
+        { r.why = "a relative headroom op with no delta_db"; EchoJay_NSLog (("EJHeadroom: " + r.why).toRawUTF8()); return r; }
+        r.offsetDb = op.headroomDeltaDb;
+    }
+    else   // target
+    {
+        float loudest = -1.0e9f; juce::String loudestName;
+        for (const auto& u : uids)
+        {
+            const auto rec = processorRef.levelRecordFor (u);
+            if (! (rec.shortMaxDb > -1.0e8f)) continue;
+            if (rec.shortMaxDb > loudest) { loudest = rec.shortMaxDb; loudestName = channelDisplayLabel (u); }
+        }
+        if (loudest < -1.0e8f)
+        {
+            r.why = "no member has been heard yet, so there is no loudest to aim from";
+            EchoJay_NSLog (("EJHeadroom: " + r.why + " - nothing applied").toRawUTF8());
+            return r;
+        }
+        if (! (op.headroomShortMax == op.headroomShortMax))
+        { r.why = "a target headroom op with no target_short_max_lufs"; return r; }
+        r.offsetDb = op.headroomShortMax - loudest;
+        r.note = "from the loudest member, " + loudestName + " at " + juce::String (loudest, 1) + " LUFS";
+        // ...capped so NO member's true peak passes target_tp_db. The cap is the tightest room any member has.
+        if (op.headroomTruePeak == op.headroomTruePeak)
+        {
+            float room = 1.0e9f; juce::String capName;
+            for (const auto& u : uids)
+            {
+                const auto rec = processorRef.levelRecordFor (u);
+                if (! (rec.peakDbTp > -1.0e8f)) continue;
+                const float thisRoom = op.headroomTruePeak - rec.peakDbTp;
+                if (thisRoom < room) { room = thisRoom; capName = channelDisplayLabel (u); }
+            }
+            if (room < 1.0e8f && r.offsetDb > room)
+            {
+                EchoJay_NSLog (("EJHeadroom: offset " + juce::String (r.offsetDb, 2) + " dB capped to "
+                                + juce::String (room, 2) + " dB by " + capName + "'s true peak").toRawUTF8());
+                r.offsetDb = room;
+                r.note += "; capped to " + juce::String (room, 1) + " dB by " + capName + "'s true peak";
+            }
+        }
+    }
+
+    // ---- who has not been heard for long enough (applied anyway, and said) --------------------------------
+    for (const auto& u : uids)
+    {
+        const auto rec = processorRef.levelRecordFor (u);
+        if (rec.heardSeconds < kHeadroomThinHeardS)
+            r.thin.add (channelDisplayLabel (u) + " (" + juce::String ((int) rec.heardSeconds) + " s heard)");
+    }
+
+    // ---- the writes: identical on every selected Link ------------------------------------------------------
+    {
+        EchoJayProcessor::ScopedLinkGainUndoSuppress oneEntry (processorRef);   // ONE entry for the whole op
+        for (const auto& u : uids)
+        {
+            float before = 0.0f; bool known = false;
+            for (const auto& li : processorRef.getLinkSlotInfos()) if (li.uid == u) { before = li.gainDb; known = true; break; }
+            if (! known)
+            { ++r.skipped; EchoJay_NSLog (("EJHeadroom: " + u + " is not in the registry - nothing written").toRawUTF8()); continue; }
+            const float after = juce::jlimit (-24.0f, 12.0f, before + r.offsetDb);
+            if (std::abs (after - before) < 0.005f)
+            { ++r.skipped; continue; }
+            sendLinkGainCommand (u, after);
+            trimVerify_.push_back ({ u, channelDisplayLabel (u), after, before, false });   // the 0.1 dB readback
+            ++r.written;
+            EchoJay_NSLog (("EJHeadroom: \"" + channelDisplayLabel (u) + "\" (" + u + ") trim "
+                            + juce::String (before, 2) + " -> " + juce::String (after, 2) + " dB"
+                            + (std::abs ((before + r.offsetDb) - after) > 0.001f ? " (clamped)" : "")).toRawUTF8());
+        }
+    }
+    processorRef.recordHeadroomUndo (op.scopeRole, r.offsetDb,
+                                     "Headroom " + juce::String (r.offsetDb, 1) + " dB on "
+                                     + juce::String (r.written)
+                                     + (r.written == 1 ? " channel" : " channels"));
+    r.ran = r.written > 0;
+    EchoJay_NSLog (("EJHeadroom: " + op.headroomMode + " " + juce::String (r.offsetDb, 2) + " dB, scope \""
+                    + (op.scopeRole.isEmpty() ? juce::String ("(any declared)") : op.scopeRole) + "\" - "
+                    + juce::String (r.written) + " written, " + juce::String (r.skipped) + " left alone"
+                    + (r.excluded.isEmpty() ? juce::String() : "; left out: " + r.excluded.joinIntoString ("; "))
+                    + (r.thin.isEmpty() ? juce::String()
+                                        : "; under 15 s heard: " + r.thin.joinIntoString ("; "))).toRawUTF8());
+    return r;
+}
+
 int EchoJayEditor::applyGroupLevelMatch(const juce::var& membersVar)
 {
     auto* arr = membersVar.getArray();

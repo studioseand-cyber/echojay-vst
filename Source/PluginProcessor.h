@@ -311,6 +311,17 @@ public:
     // the editor records the Link commands it sends; the dispatcher re-sends them as a ctrl-cmd
     void recordLinkActiveUndo(const juce::String& uid, bool before, bool after);
     void recordLinkGainUndo(const juce::String& uid, float before, float after);
+    /** 21t-l item 1: ONE undo entry for a whole op. A headroom op moves every Link the scope selects; the
+        per-Link entries a fader drag records would make undo walk them one at a time, so they are suppressed
+        for the duration and one "headroom" entry is pushed instead. Same shape as the group fader's groupGain:
+        the entry carries the OFFSET and undo re-applies its inverse to the same scope. */
+    struct ScopedLinkGainUndoSuppress
+    {
+        explicit ScopedLinkGainUndoSuppress (EchoJayProcessor& p) : p_ (p) { p_.linkGainUndoSuppressed_ = true; }
+        ~ScopedLinkGainUndoSuppress() { p_.linkGainUndoSuppressed_ = false; }
+        EchoJayProcessor& p_;
+    };
+    void recordHeadroomUndo(const juce::String& scopeRole, float offsetDb, const juce::String& label);
     void writeLinkCtrlCommand(const juce::String& uid, const juce::String& field, const juce::var& value);
     juce::String lastUndoStatus() const { return lastUndoStatus_; }
     void wireUndoHooks(ChainHost& h, const juce::String& rackUid);       // chain / scalar / dial hooks on a ChainHost
@@ -1551,6 +1562,7 @@ public:
     // NOT a shared-memory change: groups live here, in V2's own state and on the wire; LinkShm has no group table,
     // so RegistrySlot and LinkMeterFrame keep their frozen layouts and the shm version does not move.
     // 21t-k item 1b: the one-time repair, armed by a state load and spent on the third tick after it.
+    bool linkGainUndoSuppressed_ = false;   // 21t-l item 1: one entry for a whole op, not one per Link
     bool groupRepairArmed_ = false;
     int  groupRepairTicks_ = 0;
 public:

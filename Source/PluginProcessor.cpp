@@ -5430,7 +5430,22 @@ void EchoJayProcessor::drainHostedGestures()
 void EchoJayProcessor::recordLinkActiveUndo(const juce::String& uid, bool before, bool after)
 { if (before == after) return; echojay::UndoEntry e; e.kind = "linkActive"; e.target = uid; e.label = juce::String(after ? "Link on: " : "Link off: ") + resolveLinkDisplayName(uid); e.before = before; e.after = after; undoHistory_.push(std::move(e)); }
 void EchoJayProcessor::recordLinkGainUndo(const juce::String& uid, float before, float after)
-{ if (std::abs(before - after) < 0.05f) return; echojay::UndoEntry e; e.kind = "linkGain"; e.target = uid; e.label = "Link trim " + resolveLinkDisplayName(uid); e.before = (double) before; e.after = (double) after; e.coalesceKey = "linkGain:" + uid; undoHistory_.push(std::move(e)); }
+{ if (linkGainUndoSuppressed_) return;   // 21t-l item 1: the op records ONE entry, not one per Link
+  if (std::abs(before - after) < 0.05f) return; echojay::UndoEntry e; e.kind = "linkGain"; e.target = uid; e.label = "Link trim " + resolveLinkDisplayName(uid); e.before = (double) before; e.after = (double) after; e.coalesceKey = "linkGain:" + uid; undoHistory_.push(std::move(e)); }
+// 21t-l item 1: ONE undo entry for a headroom op, carrying the OFFSET and the scope it was applied to. Undo
+// re-applies the inverse to the same scope - the same shape groupGain uses, and for the same reason: a list of
+// absolute per-Link gains would be stale the moment anything else moved one of them.
+void EchoJayProcessor::recordHeadroomUndo(const juce::String& scopeRole, float offsetDb, const juce::String& label)
+{
+    if (std::abs (offsetDb) < 0.05f) return;
+    echojay::UndoEntry e;
+    e.kind = "headroom"; e.target = scopeRole;   // "" = every declared Link
+    e.label = label.isNotEmpty() ? label : ("Headroom " + juce::String (offsetDb, 1) + " dB");
+    e.before = (double) -offsetDb;               // undo: put it back
+    e.after  = (double)  offsetDb;               // redo: apply it again
+    undoHistory_.push (std::move (e));
+}
+
 void EchoJayProcessor::writeLinkCtrlCommand(const juce::String& uid, const juce::String& field, const juce::var& value)
 {
     int err = 0; const juce::String dir = LinkShm::resolveDir(err);
@@ -5495,6 +5510,30 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
                        + " dB (asked " + juce::String (want, 2) + ")"
                        + (r.limitingMember.isNotEmpty() ? " - limited by " + r.limitingMember : juce::String())).toRawUTF8());
         return std::abs (r.applied) >= 0.005f;
+    }
+    // 21t-l item 1: the headroom op's undo - the inverse offset, to the same scope, through the same writes.
+    if (e.kind == "headroom")
+    {
+        const float off = (float) (double) v;
+        if (std::abs (off) < 0.005f) return true;
+        const auto uids = uidsForScopeRole (e.target);
+        if (uids.isEmpty()) return false;
+        ScopedLinkGainUndoSuppress noPerLink (*this);
+        int moved = 0;
+        for (const auto& u : uids)
+        {
+            float before = 0.0f; bool known = false;
+            for (const auto& li : getLinkSlotInfos()) if (li.uid == u) { before = li.gainDb; known = true; break; }
+            if (! known) continue;
+            const float after = juce::jlimit (-24.0f, 12.0f, before + off);
+            if (std::abs (after - before) < 0.005f) continue;
+            writeLinkCtrlCommand (u, "gainDb", (double) after);
+            ++moved;
+        }
+        EchoJay_NSLog(("EJUndo: headroom " + juce::String (off, 2) + " dB re-applied to "
+                       + juce::String (moved) + " Link(s) of scope \""
+                       + (e.target.isEmpty() ? juce::String ("(any declared)") : e.target) + "\"").toRawUTF8());
+        return moved > 0;
     }
     if (e.kind == "group") { return false; }   // item 4 fills this in
     return false;
