@@ -664,6 +664,16 @@ struct CalibLoop
     {
         awaitFresh = true;
         inBandRun  = 0;   // a run of in-band windows cannot span two different tallies
+        // 21t-m item 3 (29 Sep 2026): ...AND NEITHER CAN THE HEARD CLOCK. lastHeardS is a reading of the tally
+        // that measured the last judged window, and the staleness gate compares the NEXT window's heard time
+        // against it. Sean's NEOLD U17 handed over at 12:58:28 carrying the first host's 126.4 s; the second
+        // host's own tally started at zero, never passed it, and every window for the next NINE MINUTES logged
+        // state=stale-window with heard frozen at 24.1 s. The gate is right; the number it compared was another
+        // host's. The new host's first window is its own baseline.
+        lastHeardS = -1.0f;
+        // The settle's heard budget re-anchors on the new tally on the next window, keeping what was already
+        // spent (see onWindow): the work done is not undone by who is doing it, and neither is it charged twice.
+        settleStartHeardS = -1.0f;
         return log ("handover");
     }
 
@@ -913,7 +923,9 @@ struct CalibLoop
 
         // ---- THE SETTLE: the tail of the build (28 Sep 2026 ruling) ----------------------------------------
         // HEARD time counts, not clock time: a stop mid-settle simply stops adding to it, and playing resumes it.
-        if (settleStartHeardS < 0.0f) settleStartHeardS = slotHeardS;
+        // 21t-m item 3: re-anchoring after a handover keeps the budget already spent - subtracting it here
+        // means the new host's heard time continues the settle rather than restarting or inheriting it.
+        if (settleStartHeardS < 0.0f) settleStartHeardS = slotHeardS - settleHeardS;
         settleHeardS = juce::jmax (0.0f, slotHeardS - settleStartHeardS);
 
         if (settling && ! landed)
