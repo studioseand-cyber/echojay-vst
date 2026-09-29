@@ -3707,6 +3707,14 @@ private:
     // into the settings a build or an edit carries, so the plugin can say "key F# minor from the Music Bus"
     // instead of "(by hand)". Empty when this turn carried no [KEY] block - and then nothing is stamped.
     juce::String lastKeySourceLabel_;
+    // 21t-l item 3 (29 Sep 2026 ruling): WHAT THE [KEY] BLOCK ACTUALLY SAID. The label alone is not enough to
+    // attribute a key: the stamp used to put the last block's source onto whatever key came back, so a build
+    // whose key came from the CANDIDATES was labelled "from this channel (declared Mix Bus)". The values the
+    // block printed are kept beside the label and the stamp compares against them.
+    int   lastKeyBlockRoot_  = -1;       // -1 = no block yet
+    bool  lastKeyBlockMinor_ = false;
+    float lastKeyBlockRefHz_ = 0.0f;
+    static constexpr float kKeySourceRefTolHz = 0.2f;   // ruled
     // 21t-k item 2(c) (28 Sep 2026 ruling): THE LAST STABLE KEY READING. A live reading below 0.2 confidence is
     // not something to call "THE AUTHORITY" - Sean's block did exactly that with 0.06 - so the block shows the
     // last reading that WAS stable and says so on one additive line. Session-scoped and deliberately not

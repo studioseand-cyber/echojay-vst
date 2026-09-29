@@ -28219,7 +28219,6 @@ void EchoJayEditor::showKeySourceMenu()
 // the three, so a compressor's settings never carry a key source.
 bool EchoJayEditor::stampKeySourceIntoStructured (juce::var& structured) const
 {
-    if (lastKeySourceLabel_.isEmpty()) return false;
     auto* obj = structured.getDynamicObject();
     if (obj == nullptr) return false;
     auto* params = obj->getProperty ("params").getDynamicObject();
@@ -28228,7 +28227,39 @@ bool EchoJayEditor::stampKeySourceIntoStructured (juce::var& structured) const
                          || params->hasProperty ("reference_hz") || params->hasProperty ("key_source")
                          || params->hasProperty ("reference_source");
     if (! touchesKey) return false;
-    obj->setProperty ("key_source", lastKeySourceLabel_);
+
+    // 21t-l item 3 (29 Sep 2026 ruling): THE LABEL IS ONLY TRUE WHEN THE VALUES ARE THE BLOCK'S. Sean's plugin
+    // read "key A minor from this channel (declared Mix Bus ...)" on a build whose key came from the CANDIDATES
+    // block, because this function stamped the last [KEY] label onto whatever key arrived. The stamp now
+    // compares: key, scale and reference must all equal what [KEY] printed (the reference within 0.2 Hz).
+    // Anything else came from the conversation, and says so.
+    auto sameAsBlock = [this, params]() -> bool
+    {
+        if (lastKeyBlockRoot_ < 0) return false;                     // no block this turn: nothing to match
+        if (params->hasProperty ("key_root"))
+        {
+            const auto v = params->getProperty ("key_root");
+            if (! (v.isInt() || v.isInt64() || v.isDouble())) return false;
+            if ((int) v != lastKeyBlockRoot_) return false;
+        }
+        if (params->hasProperty ("scale"))
+        {
+            const auto want = juce::String (lastKeyBlockMinor_ ? "minor" : "major");
+            if (params->getProperty ("scale").toString().trim().toLowerCase() != want) return false;
+        }
+        if (params->hasProperty ("reference_hz"))
+        {
+            const auto v = params->getProperty ("reference_hz");
+            if (! (v.isDouble() || v.isInt() || v.isInt64())) return false;
+            if (std::abs ((float) (double) v - lastKeyBlockRefHz_) > kKeySourceRefTolHz) return false;
+        }
+        return true;
+    };
+    // A FIELD THE PAYLOAD OMITS CANNOT CONTRADICT THE BLOCK, so it is not counted against it; what is required
+    // is that every field it DOES carry agrees. (Decision recorded in MERGE: the ruling names the three fields
+    // together, and a build that sets only the reference is still that block's reference.)
+    const bool fromBlock = sameAsBlock() && lastKeySourceLabel_.isNotEmpty();
+    obj->setProperty ("key_source", fromBlock ? lastKeySourceLabel_ : juce::String ("chat"));
     return true;
 }
 
@@ -28391,6 +28422,8 @@ juce::String EchoJayEditor::buildDetectedKeyContext()
     const bool  showMinor = useStable ? lastStableKey_.minor    : p->minor;
     const float showTune  = useStable ? lastStableKey_.tuningHz : p->tuningHz;
     const float showRoot2 = useStable ? lastStableKey_.rootHz   : p->rootHz;
+    // 21t-l item 3: the values this block is about to print, kept for the stamp to compare against.
+    lastKeyBlockRoot_ = showRoot; lastKeyBlockMinor_ = showMinor; lastKeyBlockRefHz_ = showTune;
     c << "key: " << keyText (showRoot, showMinor)
       << "   scale: " << (showMinor ? "minor" : "major")
       << "   ref_hz: " << tuningText (showTune) << "\n"

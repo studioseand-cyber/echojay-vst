@@ -614,7 +614,11 @@ void EedPitchEditor::paintKeyAttribution (juce::Graphics& g, juce::Rectangle<int
     // reference from the [KEY] block, the block's own source is named here instead - the same "from <source>"
     // the auto line has always carried, because it is the same question being answered.
     const juce::String keyFrom = proc_.keySourceLabel();
-    const juce::String byHandOrFrom = keyFrom.isNotEmpty() ? (" from " + keyFrom) : juce::String (" (by hand)");
+    // 21t-l item 3: "chat" is the attribution for a value the conversation chose rather than the [KEY] block's
+    // selected source, and it reads as itself. Anything else is a source name and reads "from <it>".
+    const juce::String byHandOrFrom = keyFrom.isEmpty()   ? juce::String (" (by hand)")
+                                    : keyFrom == "chat"   ? juce::String (" (from chat)")
+                                                          : (" from " + keyFrom);
     const juce::String refLine =
         ! st.refAuto        ? "   ref " + juce::String (st.refApplied, 1) + " Hz" + byHandOrFrom
         : st.refSelfIgnored ? "   ref 440.0 Hz (auto: only this track measurable - not followed)"

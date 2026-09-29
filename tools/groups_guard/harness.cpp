@@ -45,6 +45,10 @@ struct EchoJayTabStripTestAccess
     // 21t-j: the key-attribution stamp. The label is normally recorded by buildDetectedKeyContext as it composes
     // the [KEY] block; set directly here so the STAMPING RULES are what is under test, not the collector.
     static void setKeySrc (EchoJayEditor& e, const juce::String& s) { e.lastKeySourceLabel_ = s; }
+    // 21t-l item 3: the label AND the values the [KEY] block printed, which the stamp compares against.
+    static void setKeyBlockValues (EchoJayEditor& e, const juce::String& label, int root, bool minor, float refHz)
+    { e.lastKeySourceLabel_ = label; e.lastKeyBlockRoot_ = root; e.lastKeyBlockMinor_ = minor;
+      e.lastKeyBlockRefHz_ = refHz; }
     static juce::String stampJson (EchoJayEditor& e, const juce::String& json)
     { return e.stampKeySourceIntoChainJson (json); }
     // 21t-k item 2(a): the LINK build path, the one Sean's 21:24 build took.
@@ -166,7 +170,10 @@ int main()
                 "{\"params\":{\"key_root\":6,\"scale\":\"minor\",\"reference_hz\":441.0}}},"
                 "{\"op\":\"set\",\"name\":\"EchoJay Comp\",\"settings_structured\":"
                 "{\"params\":{\"threshold_db\":-18.0}}}]}";
-            A::setKeySrc (*ed, "the Music Bus (Link \u0027MUSIC\u0027)");
+            // 21t-l item 3: the block's VALUES go with its label now - the stamp is the source only when the
+            // build's key, scale and reference are the ones [KEY] printed. This payload sets F# minor at 441.0,
+            // so the block is set to match it.
+            A::setKeyBlockValues (*ed, "the Music Bus (Link \u0027MUSIC\u0027)", 6, true, 441.0f);
             const auto out = A::stampJson (*ed, json);
             const auto v = juce::JSON::parse (out);
             auto* arr = v.getProperty ("edit", juce::var()).getArray();
@@ -187,6 +194,10 @@ int main()
                    compSrc.isEmpty() ? juce::String ("(none, correct)") : compSrc);
             check (! out.contains ("\"key_source\":\"\"") ,
                    "21t-j. ...and the field is never stamped empty");
+            // 21t-l item 3, DECISION RECORDED: the label and the block's values move together (both are written
+            // by buildDetectedKeyContext), so "a label with no values" is not a reachable state and is not
+            // asserted. The two states that ARE reachable are asserted: a turn with NO [KEY] block leaves the
+            // document untouched (below), and a block whose values differ stamps "chat" (item 3's own legs).
             // NO BLOCK, NO STAMP: a turn that carried no [KEY] block attributes nothing, and the document comes
             // back byte for byte.
             A::setKeySrc (*ed, {});
@@ -195,6 +206,56 @@ int main()
             A::setKeySrc (*ed, "the Music Bus");
             check (A::stampJson (*ed, "not json at all") == "not json at all",
                    "21t-j. ...and a document that does not parse is returned unchanged, never half-rewritten");
+            A::setKeySrc (*ed, {});
+        }
+
+        // ---- 21t-l item 3 (29 Sep 2026 ruling): THE LABEL IS ONLY TRUE WHEN THE VALUES ARE THE BLOCK'S -----
+        // Sean's plugin read "key A minor from this channel (declared Mix Bus ...)" on a build whose key came
+        // from the CANDIDATES block. The stamp compares now: key, scale and reference must all equal what [KEY]
+        // printed (the reference within 0.2 Hz), and anything else is stamped "chat".
+        {
+            std::printf ("\n== 21t-l item 3: key_source must be TRUE ==\n");
+            A::setKeyBlockValues (*ed, "the Mix Bus (Link 'MUSIC')", 5, false, 438.9f);   // F major, 438.9
+            auto srcOf = [&ed] (const juce::String& json)
+            {
+                const auto out = A::stampJson (*ed, json);
+                const auto v = juce::JSON::parse (out);
+                if (auto* arr = v.getProperty ("edit", juce::var()).getArray())
+                    if (! arr->isEmpty())
+                        return (*arr)[0].getProperty ("settings_structured", juce::var())
+                                        .getProperty ("key_source", juce::var()).toString();
+                return juce::String();
+            };
+            const juce::String same =
+                "{\"edit\":[{\"op\":\"set\",\"name\":\"EchoJay Pitch\",\"settings_structured\":"
+                "{\"params\":{\"key_root\":5,\"scale\":\"major\",\"reference_hz\":438.85}}}]}";
+            check (srcOf (same).contains ("the Mix Bus"),
+                   "21t-l 3. a build whose key, scale and ref ARE the block's carries the source label (the ref "
+                   "within 0.2 Hz)", srcOf (same));
+            const juce::String otherKey =
+                "{\"edit\":[{\"op\":\"set\",\"name\":\"EchoJay Pitch\",\"settings_structured\":"
+                "{\"params\":{\"key_root\":9,\"scale\":\"minor\",\"reference_hz\":438.9}}}]}";
+            check (srcOf (otherKey) == "chat",
+                   "21t-l 3. a build carrying a DIFFERENT key does not get the source label - it is \"chat\"  "
+                   "(RED as it stood: the last block's label went onto whatever key arrived, and the plugin read "
+                   "\"key A minor from this channel\")", srcOf (otherKey));
+            const juce::String otherRef =
+                "{\"edit\":[{\"op\":\"set\",\"name\":\"EchoJay Pitch\",\"settings_structured\":"
+                "{\"params\":{\"key_root\":5,\"scale\":\"major\",\"reference_hz\":441.0}}}]}";
+            check (srcOf (otherRef) == "chat",
+                   "21t-l 3. ...and a reference more than 0.2 Hz off the block's is \"chat\" too",
+                   srcOf (otherRef));
+            const juce::String otherScale =
+                "{\"edit\":[{\"op\":\"set\",\"name\":\"EchoJay Pitch\",\"settings_structured\":"
+                "{\"params\":{\"key_root\":5,\"scale\":\"dorian\"}}}]}";
+            check (srcOf (otherScale) == "chat",
+                   "21t-l 3. ...and a scale the block never named is \"chat\"", srcOf (otherScale));
+            const juce::String refOnly =
+                "{\"edit\":[{\"op\":\"set\",\"name\":\"EchoJay Pitch\",\"settings_structured\":"
+                "{\"params\":{\"reference_hz\":438.9}}}]}";
+            check (srcOf (refOnly).contains ("the Mix Bus"),
+                   "21t-l 3. ...while a field the payload OMITS cannot contradict the block: a build that sets "
+                   "only the reference is still that block's reference", srcOf (refOnly));
             A::setKeySrc (*ed, {});
         }
 
