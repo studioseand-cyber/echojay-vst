@@ -443,11 +443,15 @@ int main()
         {
             std::printf ("\n== 21t-l item 1: the headroom op APPLIES ==\n");
             int e3 = 0; const juce::String dir = LinkShm::resolveDir (e3);
+            // 21t-l item 9 (29 Sep 2026 ruling): the cap is the MINIMUM true-peak room across EVERY selected
+            // member, not the loudest one's. "Stab" is the fifth: a channel that is NOT the loudest (SHORTMAX
+            // -30) but has the hottest peak (0.0 dBTP), so it is the one that must cap the move. With Vox both
+            // loudest and tightest, the old fixture could not tell the two rules apart.
             std::vector<EchoJayProcessor::LinkSlotInfo> four;
-            const char* hn[4] = { "Vox", "Drums", "MUSIC", "Undeclared" };
-            const int   hp[4] = { 2, 2, 1, 0 };
-            const float hg[4] = { -3.0f, -6.0f, -2.0f, 0.0f };
-            for (int i = 0; i < 4; ++i)
+            const char* hn[5] = { "Vox", "Drums", "MUSIC", "Undeclared", "Stab" };
+            const int   hp[5] = { 2, 2, 1, 0, 2 };
+            const float hg[5] = { -3.0f, -6.0f, -2.0f, 0.0f, -4.0f };
+            for (int i = 0; i < 5; ++i)
             {
                 EchoJayProcessor::LinkSlotInfo li;
                 li.uid = "lnk_h" + juce::String (i + 10); li.name = hn[i];
@@ -456,7 +460,7 @@ int main()
                 four.push_back (li);
             }
             EchoJayAlignTestAccess::setLinks (p, four);
-            for (int i = 0; i < 4; ++i) juce::File (dir + "ctrl-cmd-" + four[(size_t) i].uid + ".json").deleteFile();
+            for (size_t i = 0; i < four.size(); ++i) juce::File (dir + "ctrl-cmd-" + four[i].uid + ".json").deleteFile();
 
             // (a) RELATIVE: -10 dB on every CHANNEL, identically, and nothing on the bus or the undeclared one.
             {
@@ -467,21 +471,24 @@ int main()
                 const auto res = A::headroom (*ed, ops[0]);
                 const int queued = A::trimVerifyCount (*ed);   // BEFORE any pump: the 1 Hz tick consumes this queue
                 pumpMs (200);
-                check (res.ran && res.written == 2 && std::abs (res.offsetDb + 10.0f) < 0.01f,
+                check (res.ran && res.written == 3 && std::abs (res.offsetDb + 10.0f) < 0.01f,
                        "21t-l 1(a). RELATIVE: the offset is written to every channel the scope selects  (RED as "
                        "it stood: the op parsed and drew its row, and no trim moved)",
-                       juce::String (res.written) + " written, offset " + juce::String (res.offsetDb, 1) + " dB");
+                       juce::String (res.written) + " written (Vox, Drums, Stab), offset "
+                       + juce::String (res.offsetDb, 1) + " dB");
                 auto cmdGain = [&dir] (const juce::String& uid)
                 {
                     const auto v = juce::JSON::parse (juce::File (dir + "ctrl-cmd-" + uid + ".json").loadFileAsString());
                     return v.getProperty ("gainDb", juce::var());
                 };
                 const auto g0 = cmdGain ("lnk_h10"), g1 = cmdGain ("lnk_h11");
+                const auto g4 = cmdGain ("lnk_h14");
                 check (! g0.isVoid() && std::abs ((double) g0 + 13.0) < 0.01
-                       && ! g1.isVoid() && std::abs ((double) g1 + 16.0) < 0.01,
+                       && ! g1.isVoid() && std::abs ((double) g1 + 16.0) < 0.01
+                       && ! g4.isVoid() && std::abs ((double) g4 + 14.0) < 0.01,
                        "21t-l 1(a). ...as an absolute trim on the wire, each from its own starting point "
-                       "(-3 -> -13, -6 -> -16)",
-                       "Vox " + g0.toString() + ", Drums " + g1.toString());
+                       "(-3 -> -13, -6 -> -16, -4 -> -14)",
+                       "Vox " + g0.toString() + ", Drums " + g1.toString() + ", Stab " + g4.toString());
                 check (juce::JSON::parse (juce::File (dir + "ctrl-cmd-lnk_h12.json").loadFileAsString())
                            .getProperty ("gainDb", juce::var()).isVoid(),
                        "21t-l 1(a). ...and the BUS, which the scope excluded, was not written to");
@@ -494,19 +501,20 @@ int main()
                        "21t-l 1(a). ...and the whole op is ONE undo entry, not one per Link",
                        juce::String ((int) p.undoHistory().undoDepth() - nBefore) + " entry(ies), kind "
                        + (p.undoHistory().top() != nullptr ? p.undoHistory().top()->kind : juce::String ("(none)")));
-                check (queued == 2,
-                       "21t-l 1(a). ...and both writes are queued for the 0.1 dB readback, the same queue "
-                       "level_match fills", juce::String (queued));
+                check (queued == 3,
+                       "21t-l 1(a). ...and EVERY write is queued for the 0.1 dB readback, the same queue "
+                       "level_match fills", juce::String (queued) + " of 3");
             }
             // (b) TARGET: the offset comes from the LOUDEST member's SHORTMAX and is capped by true peak.
             {
                 A::clearTrimVerify (*ed);
-                for (int i = 0; i < 4; ++i) juce::File (dir + "ctrl-cmd-" + four[(size_t) i].uid + ".json").deleteFile();
+                for (size_t i = 0; i < four.size(); ++i) juce::File (dir + "ctrl-cmd-" + four[i].uid + ".json").deleteFile();
                 EchoJayAlignTestAccess::setLinks (p, four);
                 // Vox: SHORTMAX -12, PEAK -2 (the loudest, and the one with the least true-peak room)
                 // Drums: SHORTMAX -20, PEAK -8, and only 4 s heard - applied anyway, and said.
                 EchoJayAlignTestAccess::setRecord (p, "lnk_h10", -12.0f, -2.0f, 60.0f);
                 EchoJayAlignTestAccess::setRecord (p, "lnk_h11", -20.0f, -8.0f, 4.0f);
+                EchoJayAlignTestAccess::setRecord (p, "lnk_h14", -30.0f,  0.0f, 60.0f);   // not loudest, hottest
                 auto ops = ChainHost::parseChainEditOps (
                     "{\"edit\":[{\"op\":\"headroom\",\"mode\":\"target\","
                     "\"target_short_max_lufs\":-8,\"target_tp_db\":-6,\"scope\":{\"role\":\"channel\"}}]}", nullptr);
@@ -515,11 +523,16 @@ int main()
                 // THE CAP BINDS: aiming at -8 from a loudest of -12 asks for +4, and Vox's true peak of -2 has
                 // only -4 dB of room under the -6 ceiling. (A move DOWN never threatens a ceiling, which the
                 // second case below pins.)
-                check (std::abs (res.offsetDb + 4.0f) < 0.01f,
-                       "21t-l 1(b). TARGET: the offset is (target - the loudest member's SHORTMAX), CAPPED so no "
-                       "member's true peak passes target_tp_db  (+4 wanted, Vox has -4 dB of room at -2 dBTP)",
+                check (std::abs (res.offsetDb + 6.0f) < 0.01f,
+                       "21t-l 9. the cap is the MINIMUM true-peak room across EVERY selected member, not the "
+                       "loudest one's: +4 wanted from Vox (the loudest), capped to -6 by STAB, which is 18 dB "
+                       "quieter and 2 dB hotter  (RED as it stood: the fixture's loudest was also its tightest, "
+                       "so the two rules could not be told apart)",
                        juce::String (res.offsetDb, 2) + " dB   [" + res.note + "]");
-                check (res.written == 2,
+                check (res.note.contains ("Stab"),
+                       "21t-l 9. ...and the note NAMES the member that capped it, not the loudest one",
+                       res.note);
+                check (res.written == 3,
                        "21t-l 1(b). ...applied IDENTICALLY to every selected Link, never per channel",
                        juce::String (res.written) + " written");
                 check (res.thin.joinIntoString ("; ").contains ("Drums"),

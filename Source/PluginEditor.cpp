@@ -25036,9 +25036,30 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
             }
             if (! ops.empty())
             {
-                int sent = 0, applied = 0;
+                int sent = 0, applied = 0, directTrims = 0;
                 for (const auto& m : g->members)
                 {
+                    // 21t-l item 8 (29 Sep 2026): A LEVEL MATCH REACHES A BORROWED MEMBER'S TRIM DIRECTLY.
+                    // Sean's 10:36:57 turn: "7 of 8 channels took the change. Main vocal 4 is still at -2.3 dB,
+                    // not -3.7." Seven members took the level_match op over the wire and applied it to their own
+                    // trim; the eighth was the one whose rack THIS instance had borrowed, so its ops went to
+                    // bh->applyChainEdits - a RACK apply, which has no trim to move and duly aborted ("0 applied
+                    // in session"). The trim is not a rack op, so for a borrowed member it is written the way
+                    // every other trim is written, as a gain command to the Link itself.
+                    if (groupLevelMatch && processorRef.borrowHostIfActiveFor (m) != nullptr)
+                    {
+                        for (const auto& tv : trimVerify_)
+                            if (tv.uid == m)
+                            {
+                                sendLinkGainCommand (m, tv.want);
+                                ++directTrims;
+                                EchoJay_NSLog (("EJLevelMatch: \"" + tv.name + "\" (" + m + ") is BORROWED by this "
+                                                "instance - its trim is written directly ("
+                                                + juce::String (tv.want, 2) + " dB), because a level match is "
+                                                "not a rack op").toRawUTF8());
+                                break;
+                            }
+                    }
                     if (auto* bh = processorRef.borrowHostIfActiveFor (m))
                     {
                         auto opsCopy = ops;
@@ -25058,7 +25079,10 @@ void EchoJayEditor::applyChainEditFromMsg(int msgIdx)
                 cm.editApplied = true;
                 EchoJay_NSLog (("EJGroupEdit: \"" + g->name + "\" - sent to " + juce::String (sent) + " of "
                                 + juce::String (g->members.size()) + " member(s), " + juce::String (applied)
-                                + " applied in session").toRawUTF8());
+                                + " applied in session"
+                                + (directTrims > 0 ? ", " + juce::String (directTrims)
+                                                     + " borrowed member trim(s) written directly"
+                                                   : juce::String())).toRawUTF8());
                 // 21t-j: a level-match card's sentence waits for the readback; any other edit keeps the old
                 // report, which is about commands reaching members and says so.
                 if (! trimVerify_.empty())
