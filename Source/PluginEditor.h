@@ -3795,6 +3795,9 @@ private:
     /** Start the loop for any dynamics-role slot an applied build/edit left in the rack. uid empty = own rack. */
     int startCalibrationFromOps (const juce::String& uid, const juce::var& ops);
     // 21t-g item 2: the response's chain-level calibration block (mode, actuator, param(s), sense, range).
+    /** 21t-m item 3: false when the target chain is a BUS - a bus dials nothing, holds nothing and has no
+        slot written to it; its level is its last stage's, and the Level slot's after Go. */
+    bool calibrationAllowedOn (const juce::String& uid, juce::String& whyNot) const;
     int startCalibrationFromChain (const juce::String& uid, const juce::var& chain,
                                    echojay::CalibLoop::Purpose purpose = echojay::CalibLoop::Purpose::askRung);
     // ...and an edit card's block, with the per-op shape as the fallback.

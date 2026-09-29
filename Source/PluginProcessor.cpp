@@ -6570,6 +6570,9 @@ void EchoJayProcessor::calibStore(const juce::String& uid, const echojay::CalibL
 void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce::String& pluginName,
                                   float bandLo, float bandHi, float openingDrive)
 {
+    { juce::String whyNot;   // 21t-m item 3: the listen/drive overload, same door, same refusal
+      if (calibTargetIsBus(uid, whyNot))
+      { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return; } }
     auto loop = calibLoad(uid);
     // A NEW TARGET ON A RUNNING LOOP RESTARTS IT FROM THE CURRENT DRIVE (ruled): the band changed, the drive the
     // loop has already found has not, and throwing it away would re-walk ground already covered.
@@ -6595,8 +6598,36 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
     calibStore(uid, loop);
 }
 
+// 21t-m item 3 (29 Sep 2026 ruling): ON A BUS, NOTHING WRITES IN OR OUT - AND THE GATE LIVES HERE.
+// It was first put on the editor's startCalibrationFromChain, and level_loop_guard immediately showed that to be
+// the wrong door: the guard reaches calibStart directly, wrote +10.5 dB to a bus slot anyway, and the leg failed.
+// Anything that can start a loop comes through calibStart, and every write comes through calibTick, so the
+// refusal belongs on this side of the boundary. The editor keeps its own check for the better log line.
+bool EchoJayProcessor::calibTargetIsBus(const juce::String& uid, juce::String& whyNot) const
+{
+    if (uid.isEmpty())
+    {
+        const auto role = chainRole();
+        if (role.isBus()) { whyNot = "this chain's role is " + role.text()
+                                    + " - on a bus the last stage sets the level, and after Go the Level slot";
+                            return true; }
+        return false;
+    }
+    for (const auto& li : getLinkSlotInfos())
+        if (li.uid == uid)
+        {
+            const auto r = echojay::decideChainRole(false, li.placement, resolveLinkDisplayName(uid));
+            if (r.isBus()) { whyNot = "\"" + resolveLinkDisplayName(uid) + "\" is a " + r.text(); return true; }
+            return false;
+        }
+    return false;   // not in the registry: not known to be a bus, and a channel is the safe reading
+}
+
 void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg)
 {
+    { juce::String whyNot;
+      if (calibTargetIsBus(uid, whyNot))
+      { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return; } }
     auto loop = calibLoad(uid);
     // A RE-TARGET IS ONLY A RE-TARGET WHILE NOTHING ELSE CHANGED. The same slot, the same plugin, the same mode
     // and the same actuator means the band moved and the work done stands. A different actuator (or a passive

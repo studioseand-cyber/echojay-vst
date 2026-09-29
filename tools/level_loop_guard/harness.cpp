@@ -588,6 +588,48 @@ void guardMain()
                                          : juce::String ("(no unity line)"));
     }
 
+    // ---- (3b) ON A BUS, NOTHING WRITES IN OR OUT (21t-m item 3, 29 Sep 2026 ruling) ----------------------
+    {
+        std::printf ("\n-- (3b) a bus dials nothing: no loop, no hold, no slot writes --\n");
+        // Sean's 22:03:49 and 22:03:59 on the Mix Bus (local rack):
+        //   162727  22:03:49.993  slot 2 output gain set to 10.50 dB (EchoJay's own, ...)
+        //           level hold - ... (the plugin is 13.5 dB quieter out than in; residual -10.50 dB)
+        // +10.5 then +9.5 dB pushed into a slot on the mix bus, and it distorted the chain. A bus's level is its
+        // last stage's, and after Go the Level slot's. Nothing else writes there.
+        Rig r (ChannelType::FullMix, -13.5f);   // a slot as quiet as the EMO-D5 measured
+        auto& h = r.h;
+        check (h.roleIsBus(), "(3b) fixture: the chain's role is a bus", h.chainRole().text());
+        const float inBefore = h.getSlotPreTrimDb (0), outBefore = h.getSlotOutGainDb (0);
+
+        feed (r.proc, r.prog, 6.0);
+        r.proc.calibStart ({}, passiveDriveCfg ("EMO-D5 (s)"));
+        const auto rr = runLoop (r, 20);
+        reportRun ("(3b)", rr);
+
+        check (std::abs (h.getSlotPreTrimDb (0) - inBefore) < 0.05f
+                 && std::abs (h.getSlotOutGainDb (0) - outBefore) < 0.05f,
+               "(3b) NOT ONE dB WAS WRITTEN to the slot's IN or OUT on a bus  (RED as it stood: +10.50 then "
+               "+9.50 dB into slot 2's OUT, and it distorted the chain)",
+               "IN " + f1 (inBefore) + " -> " + f1 (h.getSlotPreTrimDb (0))
+               + ", OUT " + f1 (outBefore) + " -> " + f1 (h.getSlotOutGainDb (0)));
+        check (rr.slotGainWrites.empty() && rr.everyOutWrite.empty(),
+               "(3b) ...and the loop wrote nothing at all, because it never started",
+               juce::String ((int) rr.everyOutWrite.size()) + " OUT write(s)");
+
+        // ...AND THE OTHER DIRECTION: the same chain on a CHANNEL still dials, or this leg is only proving that
+        // calibration is broken everywhere.
+        {
+            Rig c (ChannelType::LeadVocal, -13.5f);
+            feed (c.proc, c.prog, 6.0);
+            c.proc.calibStart ({}, passiveDriveCfg ("EMO-D5 (s)"));
+            const auto cr = runLoop (c, 20);
+            check (! cr.everyOutWrite.empty(),
+                   "(3b) ...while the SAME chain on a CHANNEL still dials, so the refusal is the role and not a "
+                   "loop that stopped working",
+                   juce::String ((int) cr.everyOutWrite.size()) + " OUT write(s) on the channel");
+        }
+    }
+
     // ---- (3a) THE ROLE HAS THREE SOURCES (21t-m item 5, 29 Sep 2026 ruling) --------------------------------
     {
         std::printf ("\n-- (3a) the role's three sources: the prompt, the placement selector, the track name --\n");

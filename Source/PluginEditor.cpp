@@ -24608,11 +24608,46 @@ int EchoJayEditor::calibrationSlotIndexOf (const juce::var& payload)
     return oneBased >= 1 ? oneBased - 1 : -1;
 }
 
+// 21t-m item 3 (29 Sep 2026 ruling): ON A BUS, NOTHING WRITES IN OR OUT.
+// Sean's 22:03:49 and 22:03:59 on the Mix Bus (local rack): the EMO-D5 loop's hold wrote +10.5 then +9.5 dB to
+// slot 2's OUT, because the plugin measured 13.5 dB quieter out than in, and it distorted the chain. A bus is
+// not a channel: its level is set by its last stage and, after Go, by the Level slot - and by nothing else.
+// A loop that cannot write anything has no business running, so the refusal is at the start, not at each write.
+bool EchoJayEditor::calibrationAllowedOn (const juce::String& uid, juce::String& whyNot) const
+{
+    if (uid.isEmpty())
+    {
+        const auto role = processorRef.chainRole();
+        if (role.isBus())
+        {
+            whyNot = "this chain's role is " + role.text() + " - on a bus the last stage sets the level, and "
+                     "after Go the Level slot; nothing dials a slot here";
+            return false;
+        }
+        return true;
+    }
+    for (const auto& e : processorRef.getLinkDisplayList())
+        if (e.info.uid == uid)
+        {
+            const auto r = echojay::decideChainRole (false, e.info.placement, e.displayName);
+            if (r.isBus())
+            {
+                whyNot = "\"" + e.displayName + "\" is a " + r.text() + " - on a bus the last stage sets the level";
+                return false;
+            }
+            return true;
+        }
+    return true;   // not in the registry: not known to be a bus, and a channel is the safe reading
+}
+
 int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juce::var& chain,
                                               echojay::CalibLoop::Purpose purpose)
 {
     auto* co = chain.getProperty ("calibration", juce::var()).getDynamicObject();
     if (co == nullptr) return 0;                       // no compressor in this chain: no block, nothing to start
+    { juce::String whyNot;                             // 21t-m item 3: a bus dials nothing
+      if (! calibrationAllowedOn (uid, whyNot))
+      { EchoJay_NSLog (("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return 0; } }
     auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
     if (host == nullptr) return 0;
 
@@ -24690,6 +24725,9 @@ int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce:
 {
     auto* arr = ops.getArray();
     if (arr == nullptr) return 0;
+    { juce::String whyNot;                             // 21t-m item 3: a bus dials nothing, on this road either
+      if (! calibrationAllowedOn (uid, whyNot))
+      { EchoJay_NSLog (("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return 0; } }
     auto* host = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor (uid);
     if (host == nullptr) return 0;
     // A BUS band or a TRACK band: the own rack on a master/full-mix channel is the bus case, a Link's rack is a

@@ -696,6 +696,10 @@ public:
         overload above is the listen/drive case and stays for the callers that mean exactly that. */
     void calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg);
     /** One tick: advance the loop by any 3 s windows the owning host has measured. Returns the card text. */
+    /** 21t-m item 3: true when the target chain is a BUS, with the reason. A bus dials nothing, holds nothing
+        and has no slot written to it. Gated HERE rather than in the editor, because calibStart is the only door
+        into a loop and calibTick is the only door to a write. */
+    bool calibTargetIsBus(const juce::String& uid, juce::String& whyNot) const;
     juce::String calibTick(const juce::String& uid);
     // 21t-m (29 Sep 2026 ruling): A TEST-ONLY CLOCK FOR THE WINDOW RATE LIMIT. calibTick takes one decision per
     // 3 s window and the window is WALL CLOCK, so an end-to-end harness that feeds three seconds of audio in a
