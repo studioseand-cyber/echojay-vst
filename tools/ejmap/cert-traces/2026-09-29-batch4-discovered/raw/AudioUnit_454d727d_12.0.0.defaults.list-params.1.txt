@@ -1,0 +1,4 @@
+probe: "OneKnob Pressure (s)" | AudioUnit:Effects/aufx,OKCS,ksWV | uid=454d727d | arch=arm64 | format=AudioUnit
+
+0	Input		3	1	1	0
+1	Pressure		2147483647	0	1	0

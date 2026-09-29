@@ -1,0 +1,72 @@
+probe: "API-2500 (s)" | AudioUnit:Effects/aufx,APCS,ksWV | uid=4b56727d | arch=arm64 | format=AudioUnit
+
+param	0	Thresh	unit	dB
+def	0.000000	10.00	default	0.000000
+at	0.000	10.00
+at	0.500	-0.48
+at	1.000	-20.00
+param	1	Attack	unit	
+def	0.500000	1	default	0.500000
+at	0.000	0.03
+at	0.500	1
+at	1.000	30
+param	2	Ratio	unit	
+def	0.500000	4:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	4:1
+at	1.000	Inf
+param	3	Release	unit	
+def	1.000000	Var	default	1.000000
+at	0.000	0.05
+at	0.500	0.5
+at	1.000	Var
+param	4	Knee	unit	
+def	0.000000	Hard	default	0.000000
+at	0.000	Hard
+at	0.500	Med
+at	1.000	Soft
+param	5	Thrust	unit	
+def	1.000000	Norm	default	1.000000
+at	0.000	Loud
+at	0.500	Med
+at	1.000	Norm
+param	6	Type	unit	
+def	0.000000	New	default	0.000000
+at	0.000	New
+at	0.500	New
+at	1.000	Old
+param	7	Link Shape	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	HP
+at	1.000	BP
+param	8	Analog	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Output	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	10	In	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	11	Release Variable	unit	
+def	0.547000	0.50	default	0.547000
+at	0.000	0.05
+at	0.500	0.43
+at	1.000	3.00
+param	12	L/R Link	unit	
+def	1.000000	100%	default	1.000000
+at	0.000	IND
+at	0.500	70%
+at	1.000	100%
+param	13	Makeup	unit	
+def	0.000000	Auto	default	0.000000
+at	0.000	Auto
+at	0.500	Auto
+at	1.000	Manual

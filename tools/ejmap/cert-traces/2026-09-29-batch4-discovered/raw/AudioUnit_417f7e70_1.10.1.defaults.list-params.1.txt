@@ -1,0 +1,8 @@
+probe: "bx_opto Pedal" | AudioUnit:Effects/aufx,bxop,Brwx | uid=417f7e70 | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	Speed		2147483647	0	1	0
+2	Density		2147483647	0	1	0
+3	Level Trim		2147483647	0	1	0
+4	Bank		4	1	1	0
+5			2147483647	0	1	0

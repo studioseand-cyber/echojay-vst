@@ -1,0 +1,92 @@
+probe: "SSL Native X-ValveComp v6" | AudioUnit:Effects/aufx,SNXV,SSLN | uid=61687260 | arch=arm64 | format=AudioUnit
+
+param	0	Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	1	Hold	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	80.6
+at	1.000	1000.0
+param	2	Knee	unit	
+def	0.500000	12.0	default	0.500000
+at	0.000	0.0
+at	0.500	12.0
+at	1.000	24.0
+param	3	Peak	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	Input Gain	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-42.0
+at	0.500	-21.0
+at	1.000	0.0
+param	5	Ratio	unit	
+def	0.502337	5.00	default	0.502337
+at	0.000	1.00
+at	0.500	4.96
+at	1.000	30.00
+param	6	S/Chain Listen	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Valve In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	Threshold	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-36.0
+at	0.500	-18.0
+at	1.000	0.0
+param	9	Sidechain In	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	Attack	unit	
+def	0.524388	12.0	default	0.524388
+at	0.000	0.0
+at	0.500	10.7
+at	1.000	100.0
+param	11	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	High Cut	unit	
+def	1.000000	20000	default	1.000000
+at	0.000	1000
+at	0.500	10500
+at	1.000	20000
+param	13	Low Cut	unit	
+def	0.000000	20	default	0.000000
+at	0.000	20
+at	0.500	510
+at	1.000	1000
+param	14	Release	unit	
+def	0.504449	100.0	default	0.504449
+at	0.000	1.0
+at	0.500	97.7
+at	1.000	1200.0
+param	15	Output Gain	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-42.0
+at	0.500	-21.0
+at	1.000	0.0
+param	16	Makeup Gain	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	12.0
+at	1.000	24.0
+param	17	Auto Gain	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

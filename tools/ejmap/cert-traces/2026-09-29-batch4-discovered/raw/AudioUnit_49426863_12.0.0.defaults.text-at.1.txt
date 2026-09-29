@@ -1,0 +1,217 @@
+probe: "EMO-D5 (m)" | AudioUnit:Effects/aufx,CDYM,ksWV | uid=49426863 | arch=arm64 | format=AudioUnit
+
+param	0	Gate On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Gate Thresh	unit	dB
+def	0.000000	-Inf	default	0.000000
+at	0.000	-Inf
+at	0.500	-72.0
+at	1.000	0.0
+param	2	GateExp	unit	
+def	0.000000	Gate	default	0.000000
+at	0.000	Gate
+at	0.500	Gate
+at	1.000	Exp
+param	3	Gate Attack	unit	ms
+def	0.333333	1.00	default	0.333333
+at	0.000	0.10
+at	0.500	3.16
+at	1.000	100.00
+param	4	Gate Rel	unit	ms
+def	0.666667	100.0	default	0.666667
+at	0.000	1.0
+at	0.500	31.6
+at	1.000	1000.0
+param	5	Gate Hold	unit	ms
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	63
+at	1.000	10000
+param	6	Gate Close	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-24.0
+at	1.000	0.0
+param	7	Gate Floor	unit	dB
+def	0.000000	-Inf	default	0.000000
+at	0.000	-Inf
+at	0.500	-72.0
+at	1.000	0.0
+param	8	Gate Int Ext	unit	
+def	0.000000	Int	default	0.000000
+at	0.000	Int
+at	0.500	Int
+at	1.000	Ext
+param	9	Gate Monitor	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	Gate HPF On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Gate HPF Freq	unit	Hz
+def	0.190867	60	default	0.190867
+at	0.000	16
+at	0.500	530
+at	1.000	18000
+param	12	Gate Filter Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	13	Gate LPF On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	Gate LPF Freq	unit	Hz
+def	0.974136	15000	default	0.974136
+at	0.000	16
+at	0.500	530
+at	1.000	18000
+param	15	Comp On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Comp Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-24.0
+at	1.000	0.0
+param	17	Comp Ratio	unit	
+def	0.366726	3.00	default	0.366726
+at	0.000	1.00
+at	0.500	4.47
+at	1.000	20.00
+param	18	Comp Knee	unit	
+def	0.500000	Normal	default	0.500000
+at	0.000	Soft
+at	0.500	Normal
+at	1.000	Hard
+param	19	Comp Attack	unit	ms
+def	0.412551	7.00	default	0.412551
+at	0.000	0.50
+at	0.500	12.25
+at	1.000	300.00
+param	20	Comp Auto Manual	unit	
+def	0.000000	Manual	default	0.000000
+at	0.000	Manual
+at	0.500	Manual
+at	1.000	Auto
+param	21	Comp Rel	unit	ms
+def	0.673667	220.0	default	0.673667
+at	0.000	1.0
+at	0.500	54.8
+at	1.000	3000.0
+param	22	Comp Int Ext	unit	
+def	0.000000	Int	default	0.000000
+at	0.000	Int
+at	0.500	DeS
+at	1.000	Ext
+param	23	Comp Monitor	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	24	Comp HPF On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	25	Comp HPF Freq	unit	Hz
+def	0.190867	60	default	0.190867
+at	0.000	16
+at	0.500	530
+at	1.000	18000
+param	26	Comp Filter Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	27	Comp LPF Freq	unit	Hz
+def	0.974136	15000	default	0.974136
+at	0.000	16
+at	0.500	530
+at	1.000	18000
+param	28	Comp Mix	unit	%
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	29	Leveller On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	30	Leveller Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-24.0
+at	1.000	0.0
+param	31	Leveller Range	unit	
+def	0.125000	6.0	default	0.125000
+at	0.000	0.0
+at	0.500	24.0
+at	1.000	48.0
+param	32	DeEsser On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	33	DeEsser Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-24.0
+at	1.000	0.0
+param	34	DeEsser Monitor	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	35	DeEsser Type	unit	
+def	0.000000	Shelf	default	0.000000
+at	0.000	Shelf
+at	0.500	Bell
+at	1.000	Notch
+param	36	DeEsser Freq	unit	Hz
+def	0.784005	4490	default	0.784005
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	37	DeEsser Range	unit	
+def	0.500000	-6.0	default	0.500000
+at	0.000	-12.0
+at	0.500	-6.0
+at	1.000	0.0
+param	38	Limiter On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	39	Limiter Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-24.0
+at	1.000	0.0
+param	40	Limiter Rel	unit	ms
+def	0.750000	100.0	default	0.750000
+at	0.000	0.1
+at	0.500	10.0
+at	1.000	1000.0
+param	41	Makeup	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	42	Comp LPF On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

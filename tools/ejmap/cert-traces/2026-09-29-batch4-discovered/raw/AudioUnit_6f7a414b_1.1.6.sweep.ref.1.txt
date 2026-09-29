@@ -1,0 +1,27 @@
+probe: "Low Control" | AudioUnit:Effects/aufx,LCtr,BLSA | uid=6f7a414b | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	4	name	Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Gain Reduction	-100.00
+param	1	0.000000	Solo Low	Not Soloed
+param	2	0.333333	Low Gain	0.0
+param	3	0.000000	Enhance	0
+param	4	0.687500	Threshold	-20.0
+param	5	0.842105	Output Gain	0.0
+param	6	1.000000	Enhance State	On
+param	7	1.000000	Compressor State	On
+param	8	0.157895	Compress Below	90
+param	9	0.250000	Enhance Frequency	80
+stage	reference
+refpos	val	0.687500	text	-20.0
+ref	-24.00	level_db	-27.0129	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9999	ch	-27.0123,-27.0135	win	-27.1225,-27.0136,-27.0115,-27.0136,-27.0115,-27.0136,-27.0115,-27.0136	nonfinite	0
+ref	-12.00	level_db	-15.0117	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0110,-15.0123	win	-15.0155,-15.0099,-15.0152,-15.0099,-15.0152,-15.0099,-15.0152,-15.0099	nonfinite	0
+ref	-6.00	level_db	-9.0133	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-9.0127,-9.0140	win	-9.0105,-9.0150,-9.0101,-9.0150,-9.0101,-9.0150,-9.0101,-9.0150	nonfinite	0
+timing	wall_ms	58.9	audio_s	6.000
+stage	done

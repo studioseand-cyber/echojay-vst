@@ -1,0 +1,121 @@
+probe: "TBTECH Cenozoix Compressor" | AudioUnit:Effects/aufx,0a6i,Tbtc | uid=5762472 | arch=arm64 | format=AudioUnit
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: Modules In/Out Effects will change latency to 4 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: The CompresorProcessor have been told that its latency now should be 4, the Host have been told., this log message gen at file: CompressorProcessor.cpp, line: 1147
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+
+0	Bypass		2	1	1	0
+1	MasterInput Gain		2147483647	0	1	0
+2	MasterOutput Gain		2147483647	0	1	0
+3	MasterInput Pan		2147483647	0	1	0
+4	MasterOutput Pan		2147483647	0	1	0
+5	MasterOutput Phase Invert		2	1	1	0
+6	Style		128	1	1	0
+7	Oversampling On		2	1	1	0
+8	Oversampling Realtime Ratio		4	1	1	0
+9	Enable Side Chain Monitoring		2	1	1	0
+10	MonitoringDelta		2	1	1	0
+11	Enable Ext. Side Chain		2	1	1	0
+12	Side Chain Mode		6	1	1	0
+13	Side Chain Gain		2147483647	0	1	0
+14	Side Chain Stereo Linking		2147483647	0	1	0
+15	Peak/RMS		2147483647	0	1	0
+16	FFFB		2147483647	0	1	0
+17	Odd/Even		2147483647	0	1	0
+18	Input Gain		2147483647	0	1	0
+19	Threshold		2147483647	0	1	0
+20	Ratio		2147483647	0	1	0
+21	Knee		2147483647	0	1	0
+22	Range		2147483647	0	1	0
+23	Att Time		2147483647	0	1	0
+24	Rel Time		2147483647	0	1	0
+25	Auto Rel		2	1	1	0
+26	Hold		2147483647	0	1	0
+27	Lookahead On		2	1	1	0
+28	Lookahead Time		2147483647	0	1	0
+29	Clamp		2147483647	0	1	0
+30	De-Click		2147483647	0	1	0
+31	Punch/Pump		2147483647	0	1	0
+32	Tight		2147483647	0	1	0
+33	Sensitive		2147483647	0	1	0
+34	Output Gain		2147483647	0	1	0
+35	Dry Mix		2147483647	0	1	0
+36	Auto Makeup		2	1	1	0
+37	SC EQ Bypass		2	1	1	0
+38	SC EQ Band1 Used		2	1	1	0
+39	SC EQ Band1 Enabled		2	1	1	0
+40	SC EQ Band1 Type		72	1	1	0
+41	SC EQ Band1 Slope		2147483647	0	1	0
+42	SC EQ Band1 Freq.		2147483647	0	1	0
+43	SC EQ Band1 Gain		2147483647	0	1	0
+44	SC EQ Band1 Q		2147483647	0	1	0
+45	SC EQ Band2 Used		2	1	1	0
+46	SC EQ Band2 Enabled		2	1	1	0
+47	SC EQ Band2 Type		72	1	1	0
+48	SC EQ Band2 Slope		2147483647	0	1	0
+49	SC EQ Band2 Freq.		2147483647	0	1	0
+50	SC EQ Band2 Gain		2147483647	0	1	0
+51	SC EQ Band2 Q		2147483647	0	1	0
+52	SC EQ Band3 Used		2	1	1	0
+53	SC EQ Band3 Enabled		2	1	1	0
+54	SC EQ Band3 Type		72	1	1	0
+55	SC EQ Band3 Slope		2147483647	0	1	0
+56	SC EQ Band3 Freq.		2147483647	0	1	0
+57	SC EQ Band3 Gain		2147483647	0	1	0
+58	SC EQ Band3 Q		2147483647	0	1	0
+59	SC EQ Band4 Used		2	1	1	0
+60	SC EQ Band4 Enabled		2	1	1	0
+61	SC EQ Band4 Type		72	1	1	0
+62	SC EQ Band4 Slope		2147483647	0	1	0
+63	SC EQ Band4 Freq.		2147483647	0	1	0
+64	SC EQ Band4 Gain		2147483647	0	1	0
+65	SC EQ Band4 Q		2147483647	0	1	0
+66	SC EQ Band5 Used		2	1	1	0
+67	SC EQ Band5 Enabled		2	1	1	0
+68	SC EQ Band5 Type		72	1	1	0
+69	SC EQ Band5 Slope		2147483647	0	1	0
+70	SC EQ Band5 Freq.		2147483647	0	1	0
+71	SC EQ Band5 Gain		2147483647	0	1	0
+72	SC EQ Band5 Q		2147483647	0	1	0
+73	SC EQ Band6 Used		2	1	1	0
+74	SC EQ Band6 Enabled		2	1	1	0
+75	SC EQ Band6 Type		72	1	1	0
+76	SC EQ Band6 Slope		2147483647	0	1	0
+77	SC EQ Band6 Freq.		2147483647	0	1	0
+78	SC EQ Band6 Gain		2147483647	0	1	0
+79	SC EQ Band6 Q		2147483647	0	1	0
+80	SC EQ Band7 Used		2	1	1	0
+81	SC EQ Band7 Enabled		2	1	1	0
+82	SC EQ Band7 Type		72	1	1	0
+83	SC EQ Band7 Slope		2147483647	0	1	0
+84	SC EQ Band7 Freq.		2147483647	0	1	0
+85	SC EQ Band7 Gain		2147483647	0	1	0
+86	SC EQ Band7 Q		2147483647	0	1	0
+87	SC EQ Band8 Used		2	1	1	0
+88	SC EQ Band8 Enabled		2	1	1	0
+89	SC EQ Band8 Type		72	1	1	0
+90	SC EQ Band8 Slope		2147483647	0	1	0
+91	SC EQ Band8 Freq.		2147483647	0	1	0
+92	SC EQ Band8 Gain		2147483647	0	1	0
+93	SC EQ Band8 Q		2147483647	0	1	0
+94	CompressionDisplay		2147483647	0	0	0
+95	Harmonic Style		129	1	1	0
+96	DriveOn		2	1	1	0
+97	Drive Input Gain		2147483647	0	1	0
+98	Post		2	1	1	0

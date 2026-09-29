@@ -1,0 +1,42 @@
+probe: "Lindell SBC" | AudioUnit:Effects/aufx,Lsbc,Brwx | uid=6f747363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+sweep	proto	1	thr	13	name	Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	52
+param	0	0.000000	SC HPF	Off
+param	1	1.000000	Mix	100
+param	2	0.500000	THD	-0.00
+param	3	0.000000	Gain	0.00
+param	4	0.000000	Knee	SOFT
+param	5	0.000000	Link	Off
+param	6	0.000000	Smash	Off
+param	7	0.500000	Input Gain	-0.00
+param	8	0.500000	Ratio	4:1
+param	9	0.000000	Style	Feed Back
+param	10	0.000000	Link HP	Off
+param	11	0.000000	Link LP	Off
+param	12	0.000000	External Side Chain	Off
+param	13	0.500000	Threshold	-1.61
+param	14	0.500000	Output Gain	-0.00
+param	15	1.000000	Manual Gain	On
+param	16	0.500000	Release	0.500
+param	17	0.500000	Meter Mode	GR
+param	18	1.000000	Compress	On
+param	19	0.500000	Attack	1 ms
+param	20	0.000000	Bypass	Off
+param	21	0.000000	Filter	OFF
+stage	reference
+refpos	val	0.500000	text	-1.61
+ref	-24.00	level_db	-27.0770	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0770,-27.0770	win	-27.0946,-27.0759,-27.0807,-27.0755,-27.0804,-27.0754,-27.0804,-27.0753	nonfinite	0
+ref	-12.00	level_db	-18.0668	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	0.9999	ch	-18.0668,-18.0668	win	-17.9917,-18.0836,-18.0747,-18.0720,-18.0679,-18.0680,-18.0656,-18.0667	nonfinite	0
+ref	-6.00	level_db	-14.4000	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9999	ch	-14.4000,-14.4000	win	-14.3507,-14.4086,-14.4022,-14.4032,-14.3991,-14.4014,-14.3980,-14.4007	nonfinite	0
+timing	wall_ms	150.1	audio_s	6.000
+stage	done

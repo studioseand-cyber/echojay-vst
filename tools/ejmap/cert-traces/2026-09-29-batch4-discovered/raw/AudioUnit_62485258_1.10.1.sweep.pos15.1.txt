@@ -1,0 +1,34 @@
+probe: "Acme Opticom XLA-3" | AudioUnit:Effects/aufx,AOCX,Brwx | uid=62485258 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Gain	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	1.000000	Meter Mode	Output
+param	2	0.500000	Response	Normal
+param	3	0.400000	Input Gain	4.0
+param	4	0.400000	Output Gain	4.0
+param	5	1.000000	Mode	In
+param	6	0.000000	Input Pad	Off
+param	7	1.000000	Stereo Link	On
+param	8	1.000000	Level Trim	0.0 dB
+param	9	1.000000	Dry/Wet Mix	100 %
+param	10	0.500000	Noise Level	-90.0 dB
+param	11	0.000000	Bank	A
+param	12	0.000000	VU Meter	
+param	13	0.714090	GR Meter	
+stage	position
+pos	0	norm	1.000000	confirm_ms	2.56	slices	1	instack_match	1	getValue	1.000000	landed_by	instack	render_blocks	0	text_ms	22.3	reads	2	text	10.0
+hold	0	-54.00	level_db	-25.1056	in_rms_db	-57.0103	tone_frac	1.0000	ch	-25.1056,-25.1056	doubled	0	last_move_db	0.0045	final_move_db	0.0045	win	-25.1195,-25.1042,-25.1086,-25.1041,-25.1086,-25.1041	nonfinite	0
+hold	0	-48.00	level_db	-20.0911	in_rms_db	-51.0103	tone_frac	1.0000	ch	-20.0911,-20.0911	doubled	0	last_move_db	0.0039	final_move_db	0.0039	win	-19.9510,-20.0874,-20.0935,-20.0897,-20.0937,-20.0898	nonfinite	0
+hold	0	-24.00	level_db	-11.5138	in_rms_db	-27.0103	tone_frac	1.0000	ch	-11.5138,-11.5138	doubled	0	last_move_db	0.0032	final_move_db	0.0032	win	-11.0368,-11.5128,-11.5160,-11.5126,-11.5160,-11.5128	nonfinite	0
+hold	0	-12.00	level_db	-1.2944	in_rms_db	-15.0103	tone_frac	0.9986	ch	-1.2944,-1.2944	doubled	0	last_move_db	0.0028	final_move_db	0.0028	win	-1.2834,-1.2932,-1.2959,-1.2937,-1.2961,-1.2933	nonfinite	0
+hold	0	-6.00	level_db	3.8100	in_rms_db	-9.0103	tone_frac	0.9924	ch	3.8100,3.8100	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	3.8081,3.8098,3.8086,3.8109,3.8091,3.8101	nonfinite	0
+reread	0	steady
+timing	wall_ms	318.2	audio_s	7.500
+stage	done

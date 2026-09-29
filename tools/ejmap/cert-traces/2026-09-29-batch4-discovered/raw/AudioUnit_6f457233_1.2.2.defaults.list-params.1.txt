@@ -1,0 +1,16 @@
+probe: "Lindell 254E" | AudioUnit:Effects/aufx,LBc3,Brwx | uid=6f457233 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+0	Mix		2147483647	0	1	0
+1	HPF		2147483647	0	1	0
+2	Limit		2147483647	0	1	0
+3	Compress		2147483647	0	1	0
+4	Meter		2147483647	0	1	0
+5	Gain		2147483647	0	1	0
+6	Ratio		2147483647	0	1	0
+7	Threshold		2147483647	0	1	0
+8	Compress Recovery		2147483647	0	1	0
+9	Limit Level		2147483647	0	1	0
+10	Limit Recovery		2147483647	0	1	0
+11	Bypass		2147483647	0	1	0
+12	Ext SideChain		2147483647	0	1	0

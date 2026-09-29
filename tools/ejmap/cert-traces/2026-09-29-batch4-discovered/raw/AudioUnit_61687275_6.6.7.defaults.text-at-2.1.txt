@@ -1,0 +1,77 @@
+probe: "SSL Native X-Comp v6" | AudioUnit:Effects/aufx,SNXC,SSLN | uid=61687275 | arch=arm64 | format=AudioUnit
+
+param	0	Knee	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	20.00
+at	1.000	40.00
+param	1	LF Bleed Amount	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	50.00
+at	1.000	100.00
+param	2	Max GR	unit	
+def	1.000000	60.00	default	1.000000
+at	0.000	20.00
+at	0.500	40.00
+at	1.000	60.00
+param	3	Ratio	unit	
+def	0.503753	4.00	default	0.503753
+at	0.000	1.00
+at	0.500	3.91
+at	1.000	50.00
+param	4	Threshold	unit	
+def	1.000000	12.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-18.0
+at	1.000	12.0
+param	5	Attack	unit	
+def	0.418367	10.00	default	0.418367
+at	0.000	0.50
+at	0.500	15.86
+at	1.000	100.00
+param	6	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	HF Bleed Amount	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	50.00
+at	1.000	100.00
+param	8	Output Gain	unit	
+def	0.750000	0.00	default	0.750000
+at	0.000	-36.00
+at	0.500	-12.00
+at	1.000	12.00
+param	9	HF Bleed Freq	unit	
+def	0.300000	5000	default	0.300000
+at	0.000	2000
+at	0.500	7000
+at	1.000	12000
+param	10	LF Bleed Freq	unit	
+def	0.259259	100.00	default	0.259259
+at	0.000	30.00
+at	0.500	165.00
+at	1.000	300.00
+param	11	Listen	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	Makeup Gain	unit	
+def	0.142857	0.00	default	0.142857
+at	0.000	-6.00
+at	0.500	15.00
+at	1.000	36.00
+param	13	Release	unit	
+def	0.478005	100.00	default	0.478005
+at	0.000	1.00
+at	0.500	119.90
+at	1.000	2000.00
+param	14	Input Gain	unit	
+def	0.750000	0.00	default	0.750000
+at	0.000	-36.00
+at	0.500	-12.00
+at	1.000	12.00

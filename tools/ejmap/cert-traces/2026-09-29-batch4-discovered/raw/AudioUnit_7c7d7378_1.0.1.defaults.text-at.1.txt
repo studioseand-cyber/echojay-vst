@@ -1,0 +1,97 @@
+probe: "Mixland Vac Attack" | AudioUnit:Effects/aufx,Paml,Mixl | uid=7c7d7378 | arch=arm64 | format=AudioUnit
+
+param	0	Right Mix	unit	
+def	1.000000	1.0	default	1.000000
+at	0.000	0.0
+at	0.500	0.5
+at	1.000	1.0
+param	1	SC HPF	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	200.0
+at	1.000	450.0
+param	2	SC LPF	unit	
+def	1.000000	24000.0	default	1.000000
+at	0.000	750.0
+at	0.500	4000.0
+at	1.000	24000.0
+param	3	SC Freq	unit	
+def	0.500000	2500.0	default	0.500000
+at	0.000	50.0
+at	0.500	2500.0
+at	1.000	10000.0
+param	4	SC Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-15.0
+at	0.500	0.0
+at	1.000	15.0
+param	5	LF Push	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-15.0
+at	0.500	0.0
+at	1.000	15.0
+param	6	Left Reduction	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	7	Right Gain	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	8	Stereo Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Left Gain	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	10	Power	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Left Mix	unit	
+def	1.000000	1.0	default	1.000000
+at	0.000	0.0
+at	0.500	0.5
+at	1.000	1.0
+param	12	HF Push	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-15.0
+at	0.500	0.0
+at	1.000	15.0
+param	13	Right Reduction	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	14	THD	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-15.0
+at	0.500	0.0
+at	1.000	15.0
+param	15	HF Mode	unit	
+def	1.000000	On	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Right Knee	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	17	LF Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	18	Left Knee	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0

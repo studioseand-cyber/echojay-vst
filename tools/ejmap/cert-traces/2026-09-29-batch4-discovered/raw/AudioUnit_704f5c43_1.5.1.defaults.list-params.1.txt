@@ -1,0 +1,35 @@
+probe: "Shadow Hills Mastering Compressor" | AudioUnit:Effects/aufx,SHMC,Brwx | uid=704f5c43 | arch=arm64 | format=AudioUnit
+
+0	Hardwire Bypass		2	1	1	0
+1	Optical Bypass 1		2	1	1	0
+2	Optical Threshold 1		24	1	1	0
+3	Optical Gain 1		24	1	1	0
+4	Discrete Bypass 1		2	1	1	0
+5	Discrete Threshold 1		24	1	1	0
+6	Discrete Ratio 1		6	1	1	0
+7	Discrete Attack 1		6	1	1	0
+8	Discrete Recover 1		6	1	1	0
+9	Discrete Gain 1		24	1	1	0
+10	Sidechain Filter 1		2	1	1	0
+11	Transformer 1		3	1	1	0
+12	Meter Select 1		3	1	1	0
+13	Optical Bypass 2		2	1	1	0
+14	Optical Threshold 2		24	1	1	0
+15	Optical Gain 2		24	1	1	0
+16	Discrete Bypass 2		2	1	1	0
+17	Discrete Threshold 2		24	1	1	0
+18	Discrete Ratio 2		6	1	1	0
+19	Discrete Attack 2		6	1	1	0
+20	Discrete Recover 2		6	1	1	0
+21	Discrete Gain 2		24	1	1	0
+22	Sidechain Filter 2		2	1	1	0
+23	Transformer 2		3	1	1	0
+24	Meter Select 2		3	1	1	0
+25	Mode		2	1	1	0
+26	Mix		2147483647	0	1	0
+27	Sidechain HP Freq		2147483647	0	1	0
+28	Bank		4	1	1	0
+29	Key In		2	1	1	0
+30	VU Reference Level		2147483647	0	1	0
+31	VU Meter 1		2147483647	0	1	0
+32	VU Meter 2		2147483647	0	1	0

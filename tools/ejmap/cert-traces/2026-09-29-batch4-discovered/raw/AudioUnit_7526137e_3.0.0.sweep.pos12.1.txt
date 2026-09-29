@@ -1,0 +1,37 @@
+probe: "U73b Compressor" | AudioUnit:Effects/aufx,U73b,AdFd | uid=7526137e | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Level	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Audio Input	2	Stereo	enabled
+bus	render	in	1	Sidechain Input	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Sidechain Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Bypass	Off
+param	1	0.000000	Mode	0
+param	2	0.400000	Release Time	2
+param	3	0.500000	Input Level	0
+param	4	0.500000	Output Level	0
+param	5	0.000000	Key Input	0
+param	6	0.500000	Meter	1
+param	7	1.000000	HiPass	On
+param	8	0.625000	Calibration	-9
+param	9	0.000000	Autovolume	Off
+param	10	0.000000	Oversampling	Off
+param	11	1.000000	Comp. Amount	100
+stage	position
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100  3501  100    35  100  3466    493  48854 --:--:-- --:--:-- --:--:-- 50014
+pos	0	norm	0.800000	confirm_ms	3.04	slices	1	instack_match	1	getValue	0.800000	landed_by	instack	render_blocks	0	text_ms	21.5	reads	2	text	10.8
+hold	0	-54.00	level_db	-37.3296	in_rms_db	-57.0103	tone_frac	1.0000	ch	-37.3296,-37.3296	doubled	0	last_move_db	0.0014	final_move_db	0.0014	win	-39.0407,-37.3289,-37.3305,-37.3290,-37.3306,-37.3291	nonfinite	0
+hold	0	-48.00	level_db	-31.3360	in_rms_db	-51.0103	tone_frac	1.0000	ch	-31.3360,-31.3360	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-31.3335,-31.3323,-31.3358,-31.3343,-31.3374,-31.3362	nonfinite	0
+hold	0	-24.00	level_db	-15.3796	in_rms_db	-27.0103	tone_frac	0.9997	ch	-15.3796,-15.3796	doubled	0	last_move_db	0.0040	final_move_db	0.0040	win	-15.3491,-15.3857,-15.3853,-15.3801,-15.3814,-15.3774	nonfinite	0
+hold	0	-12.00	level_db	-15.2111	in_rms_db	-15.0103	tone_frac	0.9997	ch	-15.2111,-15.2111	doubled	0	last_move_db	0.0031	final_move_db	0.0031	win	-15.1805,-15.2092,-15.2129,-15.2092,-15.2136,-15.2105	nonfinite	0
+hold	0	-6.00	level_db	-23.1219	in_rms_db	-9.0103	tone_frac	1.0000	ch	-23.1219,-23.1219	doubled	0	last_move_db	0.0920	final_move_db	0.0920	win	-23.3400,-23.4723,-23.3445,-23.2213,-23.1193,-23.0273	nonfinite	0
+reread	0	steady
+timing	wall_ms	307.3	audio_s	7.500
+stage	done

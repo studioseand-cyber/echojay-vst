@@ -1,0 +1,12 @@
+probe: "Low Control" | AudioUnit:Effects/aufx,LCtr,BLSA | uid=6f7a414b | arch=arm64 | format=AudioUnit
+
+0	Gain Reduction		2147483647	0	1	0
+1	Solo Low		2	1	1	0
+2	Low Gain		2147483647	0	1	0
+3	Enhance		2147483647	0	1	0
+4	Threshold		2147483647	0	1	0
+5	Output Gain		2147483647	0	1	0
+6	Enhance State		2	1	1	0
+7	Compressor State		2	1	1	0
+8	Compress Below		2147483647	0	1	0
+9	Enhance Frequency		2147483647	0	1	0

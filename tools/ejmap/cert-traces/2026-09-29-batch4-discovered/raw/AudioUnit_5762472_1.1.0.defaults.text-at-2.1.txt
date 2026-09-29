@@ -1,0 +1,536 @@
+probe: "TBTECH Cenozoix Compressor" | AudioUnit:Effects/aufx,0a6i,Tbtc | uid=5762472 | arch=arm64 | format=AudioUnit
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: Modules In/Out Effects will change latency to 4 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: The CompresorProcessor have been told that its latency now should be 4, the Host have been told., this log message gen at file: CompressorProcessor.cpp, line: 1147
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: Parameter Oversampling On wants to change the oversampling ratio, the Oversampline2 have been told, Module reinit will be run., this log message gen at file: dsp1d_Oversampling2.cpp, line: 84
+miniwl_log: the Oversampling reinit call caused by Parameter Oversampling On have been done., this log message gen at file: dsp1d_Oversampling2.cpp, line: 90
+miniwl_log: Parameter Oversampling On wants to change the oversampling ratio, the Oversampline2 have been told, Module reinit will be run., this log message gen at file: dsp1d_Oversampling2.cpp, line: 84
+miniwl_log: the Oversampling reinit call caused by Parameter Oversampling On have been done., this log message gen at file: dsp1d_Oversampling2.cpp, line: 90
+miniwl_log: Parameter Oversampling On wants to change the oversampling ratio, the Oversampline2 have been told, Module reinit will be run., this log message gen at file: dsp1d_Oversampling2.cpp, line: 84
+miniwl_log: the Oversampling reinit call caused by Parameter Oversampling On have been done., this log message gen at file: dsp1d_Oversampling2.cpp, line: 90
+miniwl_log: Parameter Oversampling Realtime Ratio wants to change the oversampling ratio, the Oversampline2 have been told, Module reinit will be run., this log message gen at file: dsp1d_Oversampling2.cpp, line: 84
+miniwl_log: the Oversampling reinit call caused by Parameter Oversampling Realtime Ratio have been done., this log message gen at file: dsp1d_Oversampling2.cpp, line: 90
+miniwl_log: Parameter Oversampling Realtime Ratio wants to change the oversampling ratio, the Oversampline2 have been told, Module reinit will be run., this log message gen at file: dsp1d_Oversampling2.cpp, line: 84
+miniwl_log: the Oversampling reinit call caused by Parameter Oversampling Realtime Ratio have been done., this log message gen at file: dsp1d_Oversampling2.cpp, line: 90
+miniwl_log: Parameter Oversampling Realtime Ratio wants to change the oversampling ratio, the Oversampline2 have been told, Module reinit will be run., this log message gen at file: dsp1d_Oversampling2.cpp, line: 84
+miniwl_log: the Oversampling reinit call caused by Parameter Oversampling Realtime Ratio have been done., this log message gen at file: dsp1d_Oversampling2.cpp, line: 90
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is true, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+
+param	0	Bypass	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	1	MasterInput Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	2	MasterOutput Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	3	MasterInput Pan	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	4	MasterOutput Pan	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	5	MasterOutput Phase Invert	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	6	Style	unit	
+def	0.094488		default	0.094488
+at	0.000	
+at	0.500	
+at	1.000	
+param	7	Oversampling On	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	8	Oversampling Realtime Ratio	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	9	Enable Side Chain Monitoring	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	10	MonitoringDelta	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	11	Enable Ext. Side Chain	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	12	Side Chain Mode	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	13	Side Chain Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	14	Side Chain Stereo Linking	unit	
+def	0.700000		default	0.700000
+at	0.000	
+at	0.500	
+at	1.000	
+param	15	Peak/RMS	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	16	FFFB	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	17	Odd/Even	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	18	Input Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	19	Threshold	unit	
+def	0.607843		default	0.607843
+at	0.000	
+at	0.500	
+at	1.000	
+param	20	Ratio	unit	
+def	0.610000		default	0.610000
+at	0.000	
+at	0.500	
+at	1.000	
+param	21	Knee	unit	
+def	0.313559		default	0.313559
+at	0.000	
+at	0.500	
+at	1.000	
+param	22	Range	unit	
+def	1.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	23	Att Time	unit	
+def	0.384944		default	0.384944
+at	0.000	
+at	0.500	
+at	1.000	
+param	24	Rel Time	unit	
+def	0.490435		default	0.490435
+at	0.000	
+at	0.500	
+at	1.000	
+param	25	Auto Rel	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	26	Hold	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	27	Lookahead On	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	28	Lookahead Time	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	29	Clamp	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	30	De-Click	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	31	Punch/Pump	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	32	Tight	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	33	Sensitive	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	34	Output Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	35	Dry Mix	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	36	Auto Makeup	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	37	SC EQ Bypass	unit	
+def	1.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	38	SC EQ Band1 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	39	SC EQ Band1 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	40	SC EQ Band1 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	41	SC EQ Band1 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	42	SC EQ Band1 Freq.	unit	
+def	0.234568		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	43	SC EQ Band1 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	44	SC EQ Band1 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	45	SC EQ Band2 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	46	SC EQ Band2 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	47	SC EQ Band2 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	48	SC EQ Band2 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	49	SC EQ Band2 Freq.	unit	
+def	0.301560		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	50	SC EQ Band2 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	51	SC EQ Band2 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	52	SC EQ Band3 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	53	SC EQ Band3 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	54	SC EQ Band3 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	55	SC EQ Band3 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	56	SC EQ Band3 Freq.	unit	
+def	0.368552		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	57	SC EQ Band3 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	58	SC EQ Band3 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	59	SC EQ Band4 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	60	SC EQ Band4 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	61	SC EQ Band4 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	62	SC EQ Band4 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	63	SC EQ Band4 Freq.	unit	
+def	0.435544		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	64	SC EQ Band4 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	65	SC EQ Band4 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	66	SC EQ Band5 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	67	SC EQ Band5 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	68	SC EQ Band5 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	69	SC EQ Band5 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	70	SC EQ Band5 Freq.	unit	
+def	0.502536		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	71	SC EQ Band5 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	72	SC EQ Band5 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	73	SC EQ Band6 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	74	SC EQ Band6 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	75	SC EQ Band6 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	76	SC EQ Band6 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	77	SC EQ Band6 Freq.	unit	
+def	0.569529		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	78	SC EQ Band6 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	79	SC EQ Band6 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	80	SC EQ Band7 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	81	SC EQ Band7 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	82	SC EQ Band7 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	83	SC EQ Band7 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	84	SC EQ Band7 Freq.	unit	
+def	0.636521		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	85	SC EQ Band7 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	86	SC EQ Band7 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	87	SC EQ Band8 Used	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	88	SC EQ Band8 Enabled	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	89	SC EQ Band8 Type	unit	
+def	0.042254		default	0.042254
+at	0.000	
+at	0.500	
+at	1.000	
+param	90	SC EQ Band8 Slope	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	91	SC EQ Band8 Freq.	unit	
+def	0.703513		default	0.575188
+at	0.000	
+at	0.500	
+at	1.000	
+param	92	SC EQ Band8 Gain	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	93	SC EQ Band8 Q	unit	
+def	0.500000		default	0.500000
+at	0.000	
+at	0.500	
+at	1.000	
+param	95	Harmonic Style	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	96	DriveOn	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	97	Drive Input Gain	unit	
+def	0.333333		default	0.333333
+at	0.000	
+at	0.500	
+at	1.000	
+param	98	Post	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	

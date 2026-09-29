@@ -1,0 +1,29 @@
+probe: "CLA-76 (m)" | AudioUnit:Effects/aufx,76CM,ksWV | uid=3d307263 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.375000	Input	-30.0
+param	1	0.625000	Output	-18.0
+param	2	0.333000	Attack	3.00
+param	3	0.500000	Release	4.00
+param	4	0.750000	Ratio	4
+param	5	1.000000	Analog	Off
+param	6	1.000000	Revision	Blacky
+param	7	0.000000	Meter	GR
+param	8	0.000000	Comp Off	Cmp On
+stage	position
+pos	0	norm	0.666667	confirm_ms	45.90	slices	2	instack_match	0	getValue	0.666667	landed_by	pump	render_blocks	0	text_ms	20.9	reads	2	text	-16.0
+hold	0	-54.00	level_db	-36.1099	in_rms_db	-57.0103	tone_frac	1.0000	ch	-36.1099	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-36.1104,-36.1096,-36.1104,-36.1096,-36.1103,-36.1096	nonfinite	0
+hold	0	-48.00	level_db	-30.1063	in_rms_db	-51.0103	tone_frac	1.0000	ch	-30.1063	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-30.1074,-30.1058,-30.1073,-30.1058,-30.1073,-30.1058	nonfinite	0
+hold	0	-24.00	level_db	-13.6867	in_rms_db	-27.0103	tone_frac	1.0000	ch	-13.6867	doubled	0	last_move_db	0.0302	final_move_db	0.0302	win	-13.7437,-14.0086,-13.8559,-13.7321,-13.6793,-13.6491	nonfinite	0
+hold	0	-12.00	level_db	-11.6089	in_rms_db	-15.0103	tone_frac	1.0000	ch	-11.6089	doubled	0	last_move_db	0.0029	final_move_db	0.0029	win	-11.5144,-11.7002,-11.5992,-11.6059,-11.6118,-11.6090	nonfinite	0
+hold	0	-6.00	level_db	-9.9857	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.9857	doubled	0	last_move_db	0.0038	final_move_db	0.0038	win	-9.7771,-9.9693,-9.9865,-9.9845,-9.9882,-9.9844	nonfinite	0
+reread	0	steady
+timing	wall_ms	105.5	audio_s	7.500
+stage	done

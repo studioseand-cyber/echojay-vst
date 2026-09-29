@@ -1,0 +1,57 @@
+probe: "NEOLD U2A" | AudioUnit:Effects/aufx,NeU2,Neol | uid=61755c26 | arch=arm64 | format=AudioUnit
+
+param	0	Aging	unit	
+def	0.000000	New	default	0.000000
+at	0.000	New
+at	0.500	50.0 %
+at	1.000	Old
+param	1	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	2	Mix	unit	
+def	1.000000	Wet	default	1.000000
+at	0.000	Dry
+at	0.500	50.0 %
+at	1.000	Wet
+param	3	Drive	unit	
+def	0.250000	25.0 %	default	0.250000
+at	0.000	Clean
+at	0.500	50.0 %
+at	1.000	Dirty
+param	4	Gain	unit	%
+def	0.240000	24.0	default	0.240000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	5	Meter Mode	unit	
+def	0.500000	Reduction	default	0.500000
+at	0.000	Input
+at	0.500	Reduction
+at	1.000	Output
+param	6	Mode	unit	
+def	0.000000	Compress	default	0.000000
+at	0.000	Compress
+at	0.500	Compress
+at	1.000	Limit
+param	9	Peak Reduction	unit	%
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	10	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	R37	unit	
+def	1.000000	Flat	default	1.000000
+at	0.000	Bent
+at	0.500	50.0 %
+at	1.000	Flat
+param	12	Recovery	unit	
+def	0.750000	75.0 %	default	0.750000
+at	0.000	Slow
+at	0.500	50.0 %
+at	1.000	Fast

@@ -1,0 +1,17 @@
+probe: "MV2 (s)" | AudioUnit:Effects/aufx,MV2S,ksWV | uid=4750037d | arch=arm64 | format=AudioUnit
+
+param	0	Low Level	unit	dB
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	15.0
+at	1.000	48.0
+param	1	High Level	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-15.0
+at	1.000	0.0
+param	2	Output Gain	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-15.0
+at	1.000	0.0

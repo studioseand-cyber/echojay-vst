@@ -1,0 +1,20 @@
+probe: "MCompressor" | AudioUnit:Effects/aumf,MAe1,Meld | uid=61516433 | arch=arm64 | format=AudioUnit
+
+0	Gain		2147483647	0	1	0
+1	Output gain		2147483647	0	1	0
+2	Attack		2147483647	0	1	0
+3	Release		2147483647	0	1	0
+4	RMS length		2147483647	0	1	0
+5	Threshold		2147483647	0	1	0
+6	Ratio		2147483647	0	1	0
+7	Knee mode		2147483647	0	1	0
+8	Knee size		2147483647	0	1	0
+9	Link channels		2	1	1	0
+10	Maximize to 0dB		2	1	1	0
+11	Custom shape		2	1	1	0
+12	Param 1		2147483647	0	1	0
+13	Param 2		2147483647	0	1	0
+14	Param 3		2147483647	0	1	0
+15	Param 4		2147483647	0	1	0
+16	Preset trigger - previous		2147483647	0	1	0
+17	Preset trigger - next		2147483647	0	1	0

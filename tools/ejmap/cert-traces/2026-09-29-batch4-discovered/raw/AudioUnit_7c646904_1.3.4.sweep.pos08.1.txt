@@ -1,0 +1,32 @@
+probe: "SSL Native Bus Compressor 2" | AudioUnit:Effects/aufx,NBC2,SSLN | uid=7c646904 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Key Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Key Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.166667	Ratio	2:1
+param	1	0.000000	Comp Bypass	Off
+param	2	1.000000	Threshold	20.0
+param	3	0.000000	Mix Lock	Off
+param	4	1.000000	Release	AUTO
+param	5	1.000000	Dry/Wet Mix	100.0
+param	6	0.250000	Makeup Gain	0.0
+param	7	0.000000	GroupSense	0
+param	8	0.000000	External S/C	Off
+param	9	0.000000	Sidechain HPF	OFF
+param	10	0.000000	Oversampling	OFF
+param	11	0.666667	Attack	10
+stage	position
+pos	0	norm	0.533333	confirm_ms	3.08	slices	1	instack_match	1	getValue	0.532500	landed_by	instack	render_blocks	0	text_ms	22.0	reads	2	text	1.3
+hold	0	-24.00	level_db	-29.4200	in_rms_db	-27.0103	tone_frac	1.0000	ch	-29.4199,-29.4201	doubled	1	last_move_db	-0.1086	final_move_db	-0.0182	win	-28.0997,-28.4640,-28.7223,-28.9151,-29.0612,-29.1698,-29.2543,-29.3143,-29.3622,-29.3954,-29.4232,-29.4414	nonfinite	0
+hold	0	-12.00	level_db	-21.3034	in_rms_db	-15.0103	tone_frac	1.0000	ch	-21.3032,-21.3037	doubled	1	last_move_db	-0.1346	final_move_db	-0.0146	win	-19.4693,-20.0458,-20.4303,-20.6993,-20.8944,-21.0290,-21.1304,-21.1962,-21.2482,-21.2800,-21.3079,-21.3225	nonfinite	0
+hold	0	-6.00	level_db	-17.8914	in_rms_db	-9.0103	tone_frac	1.0000	ch	-17.8910,-17.8917	doubled	0	last_move_db	-0.0827	final_move_db	-0.0827	win	-16.9165,-17.3298,-17.5993,-17.7784,-17.9078,-17.9905	nonfinite	0
+reread	0	steady
+timing	wall_ms	58.4	audio_s	7.500
+stage	done

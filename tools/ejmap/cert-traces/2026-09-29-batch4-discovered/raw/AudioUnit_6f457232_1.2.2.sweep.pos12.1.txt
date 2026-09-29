@@ -1,0 +1,34 @@
+probe: "Lindell 7X-500" | AudioUnit:Effects/aufx,LBc2,Brwx | uid=6f457232 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.300000	Input	3.0
+param	1	0.300000	Output	3.0
+param	2	1.000000	Attack	Slow
+param	3	0.000000	Release	Fast
+param	4	1.000000	Mix	10.0
+param	5	0.000000	Ratio	4:1
+param	6	0.000000	SC High Pass Filter	OFF
+param	7	0.500000	Continuous Attack	5.0
+param	8	0.500000	Continuous Release	5.0
+param	9	0.500000	Stereo Link	50%
+param	10	0.000000	Bypass	In
+param	11	0.000000	Continuous ON	Off
+param	12	0.000000	Link ON	Off
+param	13	1.000000	Analog ON	On
+stage	position
+pos	0	norm	0.800000	confirm_ms	2.55	slices	1	instack_match	1	getValue	0.800000	landed_by	instack	render_blocks	0	text_ms	22.4	reads	2	text	8.0
+hold	0	-54.00	level_db	-37.5118	in_rms_db	-57.0103	tone_frac	1.0000	ch	-37.5118,-37.5118	doubled	0	last_move_db	0.0004	final_move_db	0.0004	win	-38.7437,-37.5117,-37.5121,-37.5115,-37.5122,-37.5117	nonfinite	0
+hold	0	-48.00	level_db	-31.5154	in_rms_db	-51.0103	tone_frac	1.0000	ch	-31.5153,-31.5154	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-31.5161,-31.5149,-31.5163,-31.5150,-31.5163,-31.5148	nonfinite	0
+hold	0	-24.00	level_db	-17.9783	in_rms_db	-27.0103	tone_frac	0.9999	ch	-17.9783,-17.9783	doubled	0	last_move_db	-0.0092	final_move_db	-0.0092	win	-15.4704,-17.4357,-17.8298,-17.9491,-17.9884,-17.9976	nonfinite	0
+hold	0	-12.00	level_db	-16.1615	in_rms_db	-15.0103	tone_frac	0.9998	ch	-16.1615,-16.1616	doubled	0	last_move_db	-0.0008	final_move_db	-0.0008	win	-15.5084,-16.0131,-16.1204,-16.1517,-16.1661,-16.1669	nonfinite	0
+hold	0	-6.00	level_db	-14.6908	in_rms_db	-9.0103	tone_frac	0.9997	ch	-14.6908,-14.6908	doubled	0	last_move_db	0.0006	final_move_db	0.0006	win	-14.2313,-14.5758,-14.6589,-14.6825,-14.6952,-14.6946	nonfinite	0
+reread	0	steady
+timing	wall_ms	170.0	audio_s	7.500
+stage	done

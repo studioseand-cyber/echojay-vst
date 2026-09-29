@@ -1,0 +1,67 @@
+probe: "Rubber Band Compressor V2" | AudioUnit:Effects/aufx,Rcbv,Mixl | uid=7e7f7c62 | arch=arm64 | format=AudioUnit
+
+param	0	EQhigh	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	1	EQlow	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	2	Snap	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	3	Release	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	4	Detector	unit	
+def	0.500000	100.0	default	0.500000
+at	0.000	20.0
+at	0.500	100.0
+at	1.000	420.0
+param	5	Tension	unit	
+def	0.500000	2.0	default	0.500000
+at	0.000	1.0
+at	0.500	2.0
+at	1.000	3.0
+param	6	Bias	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	7	Attack	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	8	Crunch	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	9	TiltHi	unit	
+def	0.333333	2.0	default	0.333333
+at	0.000	1.0
+at	0.500	2.5
+at	1.000	4.0
+param	10	Tilt	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	11	Colour	unit	
+def	0.500000	2.0	default	0.500000
+at	0.000	1.0
+at	0.500	2.0
+at	1.000	3.0
+param	12	TiltLo	unit	
+def	0.666667	3.0	default	0.666667
+at	0.000	1.0
+at	0.500	2.5
+at	1.000	4.0

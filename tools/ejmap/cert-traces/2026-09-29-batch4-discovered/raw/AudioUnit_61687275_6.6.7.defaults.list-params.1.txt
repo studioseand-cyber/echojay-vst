@@ -1,0 +1,17 @@
+probe: "SSL Native X-Comp v6" | AudioUnit:Effects/aufx,SNXC,SSLN | uid=61687275 | arch=arm64 | format=AudioUnit
+
+0	Knee		2147483647	0	1	0
+1	LF Bleed Amount		2147483647	0	1	0
+2	Max GR		2147483647	0	1	0
+3	Ratio		2147483647	0	1	0
+4	Threshold		2147483647	0	1	0
+5	Attack		2147483647	0	1	0
+6	Bypass		2	1	1	0
+7	HF Bleed Amount		2147483647	0	1	0
+8	Output Gain		2147483647	0	1	0
+9	HF Bleed Freq		2147483647	0	1	0
+10	LF Bleed Freq		2147483647	0	1	0
+11	Listen		2	1	1	0
+12	Makeup Gain		2147483647	0	1	0
+13	Release		2147483647	0	1	0
+14	Input Gain		2147483647	0	1	0

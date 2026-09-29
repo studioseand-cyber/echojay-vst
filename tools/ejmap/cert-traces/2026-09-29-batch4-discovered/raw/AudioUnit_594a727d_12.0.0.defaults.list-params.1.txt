@@ -1,0 +1,11 @@
+probe: "SSLComp (s)" | AudioUnit:Effects/aufx,SLCS,ksWV | uid=594a727d | arch=arm64 | format=AudioUnit
+
+0	Thresh	dB	2147483647	0	1	0
+1	Makeup	dB	2147483647	0	1	0
+2	Attack		2147483647	0	1	0
+3	Release	ms	2147483647	0	1	0
+4	Ratio		2147483647	0	1	0
+5	Rate-S		2147483647	0	1	0
+6	IN		2	1	1	0
+7	ANLG		2	1	1	0
+8	AutoFade		3	1	1	0

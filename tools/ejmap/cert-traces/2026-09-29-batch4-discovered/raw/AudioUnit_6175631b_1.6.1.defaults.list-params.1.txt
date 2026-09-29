@@ -1,0 +1,46 @@
+probe: "SPL IRON" | AudioUnit:Effects/aufx,SPIR,SPL1 | uid=6175631b | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	M/S		2	1	1	0
+2	Monomaker Freq		2147483647	0	1	0
+3	Stereowidth		2147483647	0	1	0
+4	Bank		4	1	1	0
+5	Auto Bypass		3	1	1	0
+6	Interval		2147483647	0	1	0
+7	Out Mode		3	1	1	0
+8	Link		2	1	1	0
+9	SC Link		2	1	1	0
+10	SC HP Freq 		2147483647	0	1	0
+11	Mix		2147483647	0	1	0
+12	Headroom		2147483647	0	1	0
+13	TMT Channel		20	1	1	0
+14	Stereo Mode		2	1	1	0
+15	Monitoring 		3	1	1	0
+16	Power L		2	1	1	0
+17	Input L		6	1	1	0
+18	Input Sign L		3	1	1	0
+19	Output L		6	1	1	0
+20	Output Sign L		3	1	1	0
+21	Meter L		3	1	1	0
+22	Threshold L		41	1	1	0
+23	Tube Bias L		3	1	1	0
+24	Attack L		6	1	1	0
+25	Release L		6	1	1	0
+26	Rectifier L		6	1	1	0
+27	Side Chain EQ L		6	1	1	0
+28	Power R		2	1	1	0
+29	Input R		6	1	1	0
+30	Input Sign R		3	1	1	0
+31	Output R		6	1	1	0
+32	Output Sign R		3	1	1	0
+33	Meter R		3	1	1	0
+34	Threshold R		41	1	1	0
+35	Tube Bias R		3	1	1	0
+36	Attack R		6	1	1	0
+37	Release R		6	1	1	0
+38	Rectifier R		6	1	1	0
+39	Side Chain EQ R		6	1	1	0
+40			2147483647	0	1	0
+41			2147483647	0	1	0
+42			2147483647	0	1	0
+43			2147483647	0	1	0

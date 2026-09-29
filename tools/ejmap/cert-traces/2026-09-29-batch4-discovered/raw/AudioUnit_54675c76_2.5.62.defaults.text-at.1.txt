@@ -1,0 +1,62 @@
+probe: "Empirical Labs Mike-E Comp" | AudioUnit:Effects/aufx,ftnl,SfTb | uid=54675c76 | arch=arm64 | format=AudioUnit
+
+param	0	Preamp Gain	unit	
+def	0.000000	CLEAN	default	0.000000
+at	0.000	CLEAN
+at	0.500	8 dB
+at	1.000	18 dB
+param	1	Phase	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	2	Hi-Pass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	3	Drive	unit	
+def	0.500000	5.00	default	0.500000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	4	Comp Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Low Freq Emph
+at	1.000	High Freq Emph 1
+param	5	Ratio	unit	
+def	0.600000	4:1	default	0.600000
+at	0.000	Bypass
+at	0.500	4:1
+at	1.000	NUKE
+param	6	Attack	unit	ms
+def	0.250000	8.0	default	0.250000
+at	0.000	0.9
+at	0.500	12.0
+at	1.000	100.0
+param	7	Release	unit	s
+def	0.333333	0.10	default	0.333333
+at	0.000	0.05
+at	0.500	0.25
+at	1.000	0.50
+param	8	Mix	unit	
+def	1.000000	10.00	default	1.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	9	Out	unit	
+def	0.650000	6.50	default	0.650000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	10	Ext S/C In	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	11	Ext S/C Gain	unit	dB
+def	0.680000	-12.0	default	0.680000
+at	0.000	67.0
+at	0.500	0.0
+at	1.000	-21.0

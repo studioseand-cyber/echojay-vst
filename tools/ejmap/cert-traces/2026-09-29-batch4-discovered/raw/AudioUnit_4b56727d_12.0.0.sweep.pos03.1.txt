@@ -1,0 +1,34 @@
+probe: "API-2500 (s)" | AudioUnit:Effects/aufx,APCS,ksWV | uid=4b56727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Thresh	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	in	1	Side-Chain Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+sidechain	1	Side-Chain Input Bus	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Thresh	10.00
+param	1	0.500000	Attack	1
+param	2	0.500000	Ratio	4:1
+param	3	1.000000	Release	Var
+param	4	0.000000	Knee	Hard
+param	5	1.000000	Thrust	Norm
+param	6	0.000000	Type	New
+param	7	0.000000	Link Shape	Off
+param	8	0.000000	Analog	Off
+param	9	0.500000	Output	0.0
+param	10	1.000000	In	In
+param	11	0.547000	Release Variable	0.50
+param	12	1.000000	L/R Link	100%
+param	13	0.000000	Makeup	Auto
+stage	position
+pos	0	norm	0.200000	confirm_ms	46.61	slices	3	instack_match	0	getValue	0.200000	landed_by	pump	render_blocks	0	text_ms	23.1	reads	2	text	6.61
+hold	0	-24.00	level_db	-25.4080	in_rms_db	-27.0103	tone_frac	1.0000	ch	-25.4080,-25.4080	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-25.4085,-25.4078,-25.4085,-25.4078,-25.4085,-25.4078	nonfinite	0
+hold	0	-12.00	level_db	-13.4079	in_rms_db	-15.0103	tone_frac	1.0000	ch	-13.4079,-13.4079	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-13.4089,-13.4073,-13.4089,-13.4073,-13.4089,-13.4073	nonfinite	0
+hold	0	-6.00	level_db	-7.4077	in_rms_db	-9.0103	tone_frac	1.0000	ch	-7.4077,-7.4077	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-7.4093,-7.4070,-7.4093,-7.4070,-7.4093,-7.4070	nonfinite	0
+reread	0	steady
+timing	wall_ms	130.8	audio_s	4.500
+stage	done

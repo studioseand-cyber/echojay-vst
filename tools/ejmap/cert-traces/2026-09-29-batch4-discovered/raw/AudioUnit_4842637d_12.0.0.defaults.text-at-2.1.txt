@@ -1,0 +1,177 @@
+probe: "DPR-402 (s)" | AudioUnit:Effects/aufx,BDRS,ksWV | uid=4842637d | arch=arm64 | format=AudioUnit
+
+param	0	Input L/M	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	1	Input R/S	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	2	Stereo Mode	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	DOU
+at	1.000	MS
+param	3	Monitor	unit	
+def	0.666667	STEREO	default	0.666667
+at	0.000	LEFT
+at	0.500	STEREO
+at	1.000	RIGHT
+param	4	Comp Mode L/M	unit	
+def	0.000000	Comp	default	0.000000
+at	0.000	Comp
+at	0.500	De-Esser Wide
+at	1.000	De-Ess H.F
+param	5	Comp Mode R/S	unit	
+def	0.000000	Comp	default	0.000000
+at	0.000	Comp
+at	0.500	De-Esser Wide
+at	1.000	De-Ess H.F
+param	6	Threshold L/M	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	-50.0 dB
+at	0.500	-25.0 dB
+at	1.000	Out
+param	7	Threshold R/S	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	-50.0 dB
+at	0.500	-25.0 dB
+at	1.000	Out
+param	8	Ratio L/M	unit	
+def	0.500000	4.0	default	0.500000
+at	0.000	Out
+at	0.500	4.0
+at	1.000	Inf
+param	9	Ratio R/S	unit	
+def	0.500000	4.0	default	0.500000
+at	0.000	Out
+at	0.500	4.0
+at	1.000	Inf
+param	10	Attack L/M	unit	
+def	0.400000	1 ms	default	0.400000
+at	0.000	50 usec
+at	0.500	~2.5 ms
+at	1.000	100 msec
+param	11	Attack R/S	unit	
+def	0.400000	1 ms	default	0.400000
+at	0.000	50 usec
+at	0.500	~2.5 ms
+at	1.000	100 msec
+param	12	Release L/M	unit	
+def	0.400000	100 ms	default	0.400000
+at	0.000	5 msec
+at	0.500	~250 ms
+at	1.000	Auto
+param	13	Release R/S	unit	
+def	0.400000	100 ms	default	0.400000
+at	0.000	5 msec
+at	0.500	~250 ms
+at	1.000	Auto
+param	14	De-Ess L/M	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	Max
+at	0.500	5.0
+at	1.000	Out
+param	15	De-Ess R/S	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	Max
+at	0.500	5.0
+at	1.000	Out
+param	16	Freq L/M	unit	
+def	1.000000	15.00 kHz	default	1.000000
+at	0.000	0.80 kHz
+at	0.500	1.50 kHz
+at	1.000	15.00 kHz
+param	17	Freq R/S	unit	
+def	1.000000	15.00 kHz	default	1.000000
+at	0.000	0.80 kHz
+at	0.500	1.50 kHz
+at	1.000	15.00 kHz
+param	18	Peak Lim L/M	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	-16.0 dB
+at	0.500	-8.0 dB
+at	1.000	Out
+param	19	Peak Lim R/S	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	-16.0 dB
+at	0.500	-8.0 dB
+at	1.000	Out
+param	20	Peak Lim Attack L/M	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Fast
+at	1.000	Slow
+param	21	Peak Lim Attack R/S	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Fast
+at	1.000	Slow
+param	22	Noise	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	50.0
+at	1.000	100.0
+param	23	Output L/M	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-20.0 dB
+at	0.500	0.0 dB
+at	1.000	20.0 dB
+param	24	Output R/S	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-20.0 dB
+at	0.500	0.0 dB
+at	1.000	20.0 dB
+param	25	Mon S.C L/M	unit	
+def	0.000000	Audio	default	0.000000
+at	0.000	Audio
+at	0.500	Audio
+at	1.000	S.C
+param	26	Mon S.C R/S	unit	
+def	0.000000	Audio	default	0.000000
+at	0.000	Audio
+at	0.500	Audio
+at	1.000	S.C
+param	27	Jumper L/M	unit	
+def	0.000000	Normal Comp	default	0.000000
+at	0.000	Normal Comp
+at	0.500	Wide LF Cntrl Comp
+at	1.000	Exapnder HF Cntrl
+param	28	Jumper R/S	unit	
+def	0.000000	Normal Comp	default	0.000000
+at	0.000	Normal Comp
+at	0.500	Wide LF Cntrl Comp
+at	1.000	Exapnder HF Cntrl
+param	29	Mix L/M	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100.0%
+param	30	Mix R/S	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100.0%
+param	31	DPR Bypass L/M	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	32	DPR Bypass R/S	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	33	Ext S.C L/M	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	34	Ext S.C R/S	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

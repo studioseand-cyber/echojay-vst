@@ -1,0 +1,16 @@
+probe: "C1 comp-sc (m)" | AudioUnit:Effects/aufx,C1CM,ksWV | uid=49377263 | arch=arm64 | format=AudioUnit
+
+0	Low/Peak Ref		2	1	1	0
+1	LookAhead		2	1	1	0
+2	Comp Attack	ms	2147483647	0	1	0
+3	Comp Release	ms	2147483647	0	1	0
+4	Comp PDR Tc	ms	2147483647	0	1	0
+5	Comp Ratio		2147483647	0	1	0
+6	Comp Makeup	dB	2147483647	0	1	0
+7	Output Gain	dB	2147483647	0	1	0
+8	Threshold	dB	2147483647	0	1	0
+9	Filter Type		4	1	1	0
+10	Filter Freq	Hz	2147483647	0	1	0
+11	Filter Q		2147483647	0	1	0
+12	Monitor		3	1	1	0
+13	EQ Mode		3	1	1	0

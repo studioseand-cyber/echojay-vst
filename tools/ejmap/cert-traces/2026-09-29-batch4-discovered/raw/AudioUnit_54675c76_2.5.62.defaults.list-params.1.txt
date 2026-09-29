@@ -1,0 +1,14 @@
+probe: "Empirical Labs Mike-E Comp" | AudioUnit:Effects/aufx,ftnl,SfTb | uid=54675c76 | arch=arm64 | format=AudioUnit
+
+0	Preamp Gain		2147483647	0	1	0
+1	Phase		2147483647	0	1	0
+2	Hi-Pass		2147483647	0	1	0
+3	Drive		2147483647	0	1	0
+4	Comp Mode		2147483647	0	1	0
+5	Ratio		2147483647	0	1	0
+6	Attack	ms	2147483647	0	1	0
+7	Release	s	2147483647	0	1	0
+8	Mix		2147483647	0	1	0
+9	Out		2147483647	0	1	0
+10	Ext S/C In		2147483647	0	1	0
+11	Ext S/C Gain	dB	2147483647	0	1	0

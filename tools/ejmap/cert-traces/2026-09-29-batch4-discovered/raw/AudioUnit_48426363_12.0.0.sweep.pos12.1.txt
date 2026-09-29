@@ -1,0 +1,37 @@
+probe: "DPR-402 (m)" | AudioUnit:Effects/aufx,BDRM,ksWV | uid=48426363 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	85
+param	0	0.500000	Input	0.0
+param	1	0.000000	Comp Mode	Comp
+param	2	1.000000	Threshold	Out
+param	3	0.500000	Ratio	4.0
+param	4	0.400000	Attack	1 ms
+param	5	0.400000	Release	100 ms
+param	6	1.000000	De-Ess	Out
+param	7	1.000000	Freq	15.00 kHz
+param	8	1.000000	Peak Lim	Out
+param	9	0.000000	Peak Lim Attack	Fast
+param	10	0.000000	Noise	Off
+param	11	0.500000	Output	0.0 dB
+param	12	0.000000	Mon S.C	Audio
+param	13	0.000000	Jumper	Normal Comp
+param	14	1.000000	Mix	100.0%
+param	15	1.000000	DPR Bypass	On
+param	16	0.000000	Ext S.C	Off
+stage	position
+pos	0	norm	0.800000	confirm_ms	47.61	slices	5	instack_match	0	getValue	0.800000	landed_by	pump	render_blocks	0	text_ms	20.9	reads	2	text	-10.0 dB
+hold	0	-24.00	level_db	-27.0130	in_rms_db	-27.0103	tone_frac	0.9999	ch	-27.0130	doubled	0	last_move_db	-0.0019	final_move_db	-0.0019	win	-27.0434,-27.0136,-27.0118,-27.0136,-27.0118,-27.0136	nonfinite	0
+hold	0	-12.00	level_db	-16.0448	in_rms_db	-15.0103	tone_frac	0.9999	ch	-16.0448	doubled	0	last_move_db	-0.0027	final_move_db	-0.0027	win	-16.0570,-16.0457,-16.0430,-16.0457,-16.0430,-16.0457	nonfinite	0
+hold	0	-6.00	level_db	-12.4705	in_rms_db	-9.0103	tone_frac	0.9999	ch	-12.4705	doubled	0	last_move_db	-0.0034	final_move_db	-0.0034	win	-12.4500,-12.4717,-12.4683,-12.4717,-12.4683,-12.4717	nonfinite	0
+reread	0	steady
+timing	wall_ms	171.1	audio_s	4.500
+stage	done

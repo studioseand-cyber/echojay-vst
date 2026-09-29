@@ -1,0 +1,5 @@
+probe: "RVox (m)" | AudioUnit:Effects/aufx,MXVM,ksWV | uid=475e6763 | arch=arm64 | format=AudioUnit
+
+0	Compression	dB	2147483647	0	1	0
+1	Gate	dB	2147483647	0	1	0
+2	Gain	dB	2147483647	0	1	0

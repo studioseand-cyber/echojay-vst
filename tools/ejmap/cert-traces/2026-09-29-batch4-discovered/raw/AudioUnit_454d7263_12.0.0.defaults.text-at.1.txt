@@ -1,0 +1,12 @@
+probe: "OneKnob Pressure (m)" | AudioUnit:Effects/aufx,OKCM,ksWV | uid=454d7263 | arch=arm64 | format=AudioUnit
+
+param	0	Input	unit	
+def	0.000000	Unity	default	0.000000
+at	0.000	Unity
+at	0.500	Boost
+at	1.000	Pad
+param	1	Pressure	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0

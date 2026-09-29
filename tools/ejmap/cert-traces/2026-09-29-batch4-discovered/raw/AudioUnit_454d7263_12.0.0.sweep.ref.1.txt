@@ -1,0 +1,21 @@
+probe: "OneKnob Pressure (m)" | AudioUnit:Effects/aufx,OKCM,ksWV | uid=454d7263 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.000000	Input	Unity
+param	1	0.000000	Pressure	0.0
+stage	reference
+refpos	val	0.000000	text	Unity
+ref	-54.00	level_db	-57.0102	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-57.0102	win	-57.0107,-57.0099,-57.0107,-57.0099,-57.0107,-57.0099,-57.0107,-57.0099	nonfinite	0
+ref	-48.00	level_db	-51.0097	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-51.0097	win	-51.0121,-51.0085,-51.0121,-51.0085,-51.0121,-51.0085,-51.0121,-51.0085	nonfinite	0
+ref	-24.00	level_db	-27.0112	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-27.0112	win	-27.0075,-27.0131,-27.0075,-27.0131,-27.0075,-27.0131,-27.0075,-27.0131	nonfinite	0
+ref	-12.00	level_db	-15.0097	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0097	win	-15.0122,-15.0084,-15.0122,-15.0084,-15.0122,-15.0084,-15.0122,-15.0084	nonfinite	0
+ref	-6.00	level_db	-9.0102	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.0102	win	-9.0106,-9.0100,-9.0106,-9.0100,-9.0106,-9.0100,-9.0106,-9.0100	nonfinite	0
+timing	wall_ms	88.1	audio_s	10.000
+stage	done

@@ -1,0 +1,46 @@
+probe: "Shadow Hills Class A Mastering Comp" | AudioUnit:Effects/aumf,SHRK,Brwx | uid=704f4855 | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	Hardwire Bypass		2	1	1	0
+2	M/S		2	1	1	0
+3	Monomaker Freq		2147483647	0	1	0
+4	Stereowidth		2147483647	0	1	0
+5	Monitoring		3	1	1	0
+6	Mode		2	1	1	0
+7	Parameter Link		2	1	1	0
+8	TMT Channel		20	1	1	0
+9	Stereo Mode		2	1	1	0
+10	Mix		2147483647	0	1	0
+11	Headroom		2147483647	0	1	0
+12	Sidechain HP Freq		2147483647	0	1	0
+13	Bank		4	1	1	0
+14	Key In		2	1	1	0
+15	VU Reference Level		2147483647	0	1	0
+16	Optical Bypass 1		2	1	1	0
+17	Optical Threshold 1		24	1	1	0
+18	Optical Gain 1		24	1	1	0
+19	Discrete Bypass 1		2	1	1	0
+20	Discrete Threshold 1		24	1	1	0
+21	Discrete Ratio 1		6	1	1	0
+22	Discrete Attack 1		6	1	1	0
+23	Discrete Recover 1		6	1	1	0
+24	Discrete Gain 1		24	1	1	0
+25	Sidechain Filter 1		2	1	1	0
+26	Transformer 1		3	1	1	0
+27	Meter Select 1		3	1	1	0
+28	Optical Bypass 2		2	1	1	0
+29	Optical Threshold 2		24	1	1	0
+30	Optical Gain 2		24	1	1	0
+31	Discrete Bypass 2		2	1	1	0
+32	Discrete Threshold 2		24	1	1	0
+33	Discrete Ratio 2		6	1	1	0
+34	Discrete Attack 2		6	1	1	0
+35	Discrete Recover 2		6	1	1	0
+36	Discrete Gain 2		24	1	1	0
+37	Sidechain Filter 2		2	1	1	0
+38	Transformer 2		3	1	1	0
+39	Meter Select 2		3	1	1	0
+40	VU Meter L		2147483647	0	1	0
+41	VU Meter R		2147483647	0	1	0
+42	GR Meter		2147483647	0	1	0
+43	Eye Meter		2147483647	0	1	0

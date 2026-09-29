@@ -1,0 +1,82 @@
+probe: "NEOLD U17" | AudioUnit:Effects/aufx,NU17,Neol | uid=61453823 | arch=arm64 | format=AudioUnit
+
+param	0	Attack Time	unit	
+def	0.500000	10.0 ms	default	0.500000
+at	0.000	0.5 ms
+at	0.500	10.0 ms
+at	1.000	Auto
+param	1	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	2	Density	unit	%
+def	0.250000	25.0	default	0.250000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	3	Mix	unit	
+def	1.000000	Wet	default	1.000000
+at	0.000	Dry
+at	0.500	50.0 %
+at	1.000	Wet
+param	4	Emphasis	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	Low
+at	0.500	Off
+at	1.000	High
+param	5	External SC	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	Input	unit	dB
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	27.0
+at	1.000	54.0
+param	7	Detector	unit	
+def	1.000000	Linked	default	1.000000
+at	0.000	Unlinked
+at	0.500	50.0 %
+at	1.000	Linked
+param	8	Monitor	unit	
+def	0.000000	Program	default	0.000000
+at	0.000	Program
+at	0.500	Program
+at	1.000	Sidechain
+param	9	Meter Mode	unit	
+def	0.500000	Reduction	default	0.500000
+at	0.000	Input
+at	0.500	Reduction
+at	1.000	Output
+param	12	Output	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	13	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	Release Time	unit	
+def	0.500000	500.0 ms	default	0.500000
+at	0.000	50.0 ms
+at	0.500	500.0 ms
+at	1.000	Auto
+param	15	Frequency	unit	
+def	0.500000	1.0 kHz	default	0.500000
+at	0.000	80.0 Hz
+at	0.500	1.0 kHz
+at	1.000	12.0 kHz
+param	16	Shape	unit	
+def	0.500000	Flat (Off)	default	0.500000
+at	0.000	Low Pass
+at	0.500	Flat (Off)
+at	1.000	High Pass
+param	17	Torque	unit	%
+def	0.200000	20.0	default	0.200000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0

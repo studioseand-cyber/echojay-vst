@@ -1,0 +1,8 @@
+probe: "PuigChild 660 (m)" | AudioUnit:Effects/aufx,FCHM,ksWV | uid=4c457963 | arch=arm64 | format=AudioUnit
+
+0	OnOff		2	1	1	0
+1	Mains		3	1	1	0
+2	Input		21	1	1	0
+3	Threshold		2147483647	0	1	0
+4	Time Constant		6	1	1	0
+5	Output		2147483647	0	1	0

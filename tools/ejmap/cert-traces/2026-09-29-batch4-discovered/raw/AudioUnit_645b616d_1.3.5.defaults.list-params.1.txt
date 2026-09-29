@@ -1,0 +1,1 @@
+probe: "VBC FG-Red" | AudioUnit:Effects/aufx,VBCr,SlDg | uid=645b616d | arch=arm64 | format=AudioUnit

@@ -1,0 +1,43 @@
+probe: "Lindell SBC" | AudioUnit:Effects/aufx,Lsbc,Brwx | uid=6f747363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+sweep	proto	1	thr	13	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	52
+param	0	0.000000	SC HPF	Off
+param	1	1.000000	Mix	100
+param	2	0.500000	THD	-0.00
+param	3	0.000000	Gain	0.00
+param	4	0.000000	Knee	SOFT
+param	5	0.000000	Link	Off
+param	6	0.000000	Smash	Off
+param	7	0.500000	Input Gain	-0.00
+param	8	0.500000	Ratio	4:1
+param	9	0.000000	Style	Feed Back
+param	10	0.000000	Link HP	Off
+param	11	0.000000	Link LP	Off
+param	12	0.000000	External Side Chain	Off
+param	13	0.500000	Threshold	-1.61
+param	14	0.500000	Output Gain	-0.00
+param	15	1.000000	Manual Gain	On
+param	16	0.500000	Release	0.500
+param	17	0.500000	Meter Mode	GR
+param	18	1.000000	Compress	On
+param	19	0.500000	Attack	1 ms
+param	20	0.000000	Bypass	Off
+param	21	0.000000	Filter	OFF
+stage	position
+pos	0	norm	0.800000	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.800000	landed_by	instack	render_blocks	0	text_ms	20.6	reads	2	text	-10.92
+hold	0	-24.00	level_db	-28.8946	in_rms_db	-27.0103	tone_frac	1.0000	ch	-28.8946,-28.8946	doubled	0	last_move_db	0.0062	final_move_db	0.0062	win	-28.8420,-28.9044,-28.9033,-28.8947,-28.8977,-28.8914	nonfinite	0
+hold	0	-12.00	level_db	-21.4645	in_rms_db	-15.0103	tone_frac	1.0000	ch	-21.4645,-21.4645	doubled	0	last_move_db	0.0067	final_move_db	0.0067	win	-21.3628,-21.4759,-21.4742,-21.4648,-21.4677,-21.4610	nonfinite	0
+hold	0	-6.00	level_db	-18.0152	in_rms_db	-9.0103	tone_frac	1.0000	ch	-18.0152,-18.0152	doubled	0	last_move_db	0.0062	final_move_db	0.0062	win	-17.9690,-18.0199,-18.0219,-18.0144,-18.0187,-18.0125	nonfinite	0
+reread	0	steady
+timing	wall_ms	129.2	audio_s	4.500
+stage	done

@@ -1,0 +1,10 @@
+probe: "SSL Fusion HF Compressor" | AudioUnit:Effects/aufx,HFCP,SSLN | uid=7a606966 | arch=arm64 | format=AudioUnit
+
+0	X-Over		2147483647	0	1	0
+1	Threshold		2147483647	0	1	0
+2	Listen		2	1	1	0
+3	Output Trim		2147483647	0	1	0
+4	Mix		2147483647	0	1	0
+5	Auto Gain		2	1	1	0
+6	Input Trim		2147483647	0	1	0
+7	Bypass		2	1	1	0

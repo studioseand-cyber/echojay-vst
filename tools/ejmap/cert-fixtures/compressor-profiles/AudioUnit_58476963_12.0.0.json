@@ -1,0 +1,197 @@
+{
+  "identity": "AudioUnit|58476963|12.0.0",
+  "product": "Renaissance Axx (m)",
+  "format": "AudioUnit",
+  "uid": "58476963",
+  "version": "12.0.0",
+  "sampledAt": "2026-09-29",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-30.0",
+        "0.500": "-15.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 0.0,
+        "at0": -30.0,
+        "at0_5": -15.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "0.0",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-60.0",
+        "0.500": "-30.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -60.0,
+        "max": 0.0,
+        "at0": -60.0,
+        "at0_5": -30.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "0.0",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "25.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 50.0,
+        "at0": 0.0,
+        "at0_5": 25.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.1,
+        "display": "5.00",
+        "declaredDefault": 0.1,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-29",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  },
+  "thresholdSweep": {
+    "measuredAt": "20260929T220551.511+0100",
+    "host": "EJ Map 0.1.0 / x86_64 / 48k",
+    "bridged": true,
+    "tone": {
+      "hz": 997.0,
+      "levels_dbfs": [
+        -24.0,
+        -12.0,
+        -6.0
+      ]
+    },
+    "level_convention": "peak",
+    "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+    "ratioDuring": {
+      "position": "",
+      "value": null,
+      "assumed": false
+    },
+    "autoMakeupDisabled": false,
+    "positions": 16,
+    "positionNorms": [
+      0.0,
+      0.066667,
+      0.133333,
+      0.2,
+      0.266667,
+      0.333333,
+      0.4,
+      0.466667,
+      0.533333,
+      0.6,
+      0.666667,
+      0.733333,
+      0.8,
+      0.866667,
+      0.933333,
+      1.0
+    ],
+    "linearReference": {
+      "mode": "soft_end",
+      "position": 0,
+      "gain_db": {
+        "-24": 23.879999999999999,
+        "-12": 11.970000000000001,
+        "-6": 5.95
+      },
+      "spread_db": 17.93,
+      "unusable_beyond_db": 2.0
+    },
+    "defaultGain_db": {
+      "-12": 0.0,
+      "-24": -0.0,
+      "-6": 0.0
+    },
+    "positionLandedBy": [
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "pump",
+      "instack"
+    ],
+    "writeLanding": {
+      "instack": 1,
+      "pump": 15
+    },
+    "reduction_db": {
+      "-24": [],
+      "-12": [],
+      "-6": []
+    },
+    "engage": {
+      "-24": null,
+      "-12": null,
+      "-6": null
+    },
+    "thresholdDbEquivalent": [],
+    "result": "unreadable",
+    "reason": "the soft end is not linear: its gain spans 17.93 dB across the levels (unusable beyond 2.0)",
+    "displayOffsetDb": null
+  }
+}

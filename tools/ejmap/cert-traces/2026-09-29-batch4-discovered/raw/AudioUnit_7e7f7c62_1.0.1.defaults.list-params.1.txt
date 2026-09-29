@@ -1,0 +1,15 @@
+probe: "Rubber Band Compressor V2" | AudioUnit:Effects/aufx,Rcbv,Mixl | uid=7e7f7c62 | arch=arm64 | format=AudioUnit
+
+0	EQhigh		2147483647	0	1	0
+1	EQlow		2147483647	0	1	0
+2	Snap		2147483647	0	1	0
+3	Release		2147483647	0	1	0
+4	Detector		2147483647	0	1	0
+5	Tension		2147483647	0	1	0
+6	Bias		2147483647	0	1	0
+7	Attack		2147483647	0	1	0
+8	Crunch		2147483647	0	1	0
+9	TiltHi		2147483647	0	1	0
+10	Tilt		2147483647	0	1	0
+11	Colour		2147483647	0	1	0
+12	TiltLo		2147483647	0	1	0

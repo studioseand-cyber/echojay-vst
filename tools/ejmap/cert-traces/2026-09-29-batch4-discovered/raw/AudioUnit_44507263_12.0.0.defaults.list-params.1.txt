@@ -1,0 +1,14 @@
+probe: "VComp (m)" | AudioUnit:Effects/aufx,NVCM,ksWV | uid=44507263 | arch=arm64 | format=AudioUnit
+
+0	Input		2147483647	0	1	0
+1	Output		2147483647	0	1	0
+2	Meter		3	1	1	0
+3	Analog		4	1	1	0
+4	Limit		2	1	1	0
+5	Limit Level		17	1	1	0
+6	Attack		2	1	1	0
+7	Release Limiter		4	1	1	0
+8	Compress		2	1	1	0
+9	Ratio		5	1	1	0
+10	Release Compressor		4	1	1	0
+11	DeEsser		2	1	1	0

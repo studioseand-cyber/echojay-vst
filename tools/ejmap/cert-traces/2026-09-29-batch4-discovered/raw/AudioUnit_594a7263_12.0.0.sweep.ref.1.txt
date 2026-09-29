@@ -1,0 +1,28 @@
+probe: "SSLComp (m)" | AudioUnit:Effects/aufx,SLCM,ksWV | uid=594a7263 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Thresh	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.800000	Thresh	9.0
+param	1	0.400000	Makeup	3.0
+param	2	0.400000	Attack	1ms
+param	3	0.750000	Release	1.2s
+param	4	0.500000	Ratio	4:1
+param	5	0.000000	Rate-S	1
+param	6	1.000000	IN	In
+param	7	0.000000	ANLG	Out
+param	8	0.000000	AutoFade	Off
+stage	reference
+refpos	val	0.800000	text	9.0
+ref	-24.00	level_db	-24.0102	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-24.0102	win	-24.0107,-24.0099,-24.0107,-24.0099,-24.0107,-24.0099,-24.0107,-24.0099	nonfinite	0
+ref	-12.00	level_db	-12.0097	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-12.0097	win	-12.0121,-12.0085,-12.0121,-12.0085,-12.0121,-12.0085,-12.0121,-12.0085	nonfinite	0
+ref	-6.00	level_db	-6.0112	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-6.0112	win	-6.0075,-6.0131,-6.0075,-6.0131,-6.0075,-6.0131,-6.0075,-6.0131	nonfinite	0
+timing	wall_ms	47.4	audio_s	6.000
+stage	done

@@ -1,0 +1,49 @@
+probe: "LinMB (s)" | AudioUnit:Effects/aufx,LC5S,ksWV | uid=4645047d | arch=arm64 | format=AudioUnit
+
+0	Makeup Mode		2	1	1	0
+1	Adaptivity Level	dB	2147483647	0	1	0
+2	Band 1 Gain	dB	2147483647	0	1	0
+3	Band 1 Range	dB	2147483647	0	1	0
+4	Band 1 Attack	ms	2147483647	0	1	0
+5	Band 1 Release	ms	2147483647	0	1	0
+6	Band 1 Solo		2	1	1	0
+7	Band 1 Bypass		2	1	1	0
+8	Band 1 Thresh	dB	2147483647	0	1	0
+9	Band 2 Gain	dB	2147483647	0	1	0
+10	Band 2 Range	dB	2147483647	0	1	0
+11	Band 2 Attack	ms	2147483647	0	1	0
+12	Band 2 Release	ms	2147483647	0	1	0
+13	Band 2 Solo		2	1	1	0
+14	Band 2 Bypass		2	1	1	0
+15	Band 2 Thresh	dB	2147483647	0	1	0
+16	Band 3 Gain	dB	2147483647	0	1	0
+17	Band 3 Range	dB	2147483647	0	1	0
+18	Band 3 Attack	ms	2147483647	0	1	0
+19	Band 3 Release	ms	2147483647	0	1	0
+20	Band 3 Solo		2	1	1	0
+21	Band 3 Bypass		2	1	1	0
+22	Band 3 Thresh	dB	2147483647	0	1	0
+23	Band 4 Gain	dB	2147483647	0	1	0
+24	Band 4 Range	dB	2147483647	0	1	0
+25	Band 4 Attack	ms	2147483647	0	1	0
+26	Band 4 Release	ms	2147483647	0	1	0
+27	Band 4 Solo		2	1	1	0
+28	Band 4 Bypass		2	1	1	0
+29	Band 4 Thresh	dB	2147483647	0	1	0
+30	Band 5 Gain	dB	2147483647	0	1	0
+31	Band 5 Range	dB	2147483647	0	1	0
+32	Band 5 Attack	ms	2147483647	0	1	0
+33	Band 5 Release	ms	2147483647	0	1	0
+34	Band 5 Solo		2	1	1	0
+35	Band 5 Bypass		2	1	1	0
+36	Band 5 Thresh	dB	2147483647	0	1	0
+37	Low Crossover	Hz	2147483647	0	1	0
+38	LoMid Crossover	Hz	2147483647	0	1	0
+39	HiMid Crossover	Hz	2147483647	0	1	0
+40	High Crossover	Hz	2147483647	0	1	0
+41	Dither Mode		2	1	1	0
+42	Release Mode		2	1	1	0
+43	Behavior		2	1	1	0
+44	Knee		2147483647	0	1	0
+45	Trim		2	1	1	0
+46	Output Gain	dB	2147483647	0	1	0

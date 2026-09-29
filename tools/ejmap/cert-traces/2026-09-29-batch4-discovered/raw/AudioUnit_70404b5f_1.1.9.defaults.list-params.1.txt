@@ -1,0 +1,15 @@
+probe: "SSL LMC+" | AudioUnit:Effects/aufx,Bfai,SSLN | uid=70404b5f | arch=arm64 | format=AudioUnit
+
+0	Dry/Wet Mix		2147483647	0	1	0
+1	EQ In		2	1	1	0
+2	EXT Sidechain		2	1	1	0
+3	Scoop		2	1	1	0
+4	Split		2	1	1	0
+5	Sidechain Listen		2	1	1	0
+6	Output Gain		2147483647	0	1	0
+7	Low-pass Filter		2147483647	0	1	0
+8	Auto Make-up Gain		2	1	1	0
+9	Input Gain		2147483647	0	1	0
+10	High-pass Filter		2147483647	0	1	0
+11	Amount		2147483647	0	1	0
+12	Bypass		2	1	1	0

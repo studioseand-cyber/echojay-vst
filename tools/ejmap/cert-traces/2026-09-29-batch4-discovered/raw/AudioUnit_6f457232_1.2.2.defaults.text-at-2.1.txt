@@ -1,0 +1,72 @@
+probe: "Lindell 7X-500" | AudioUnit:Effects/aufx,LBc2,Brwx | uid=6f457232 | arch=arm64 | format=AudioUnit
+
+param	0	Input	unit	
+def	0.300000	3.0	default	0.300000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	1	Output	unit	
+def	0.300000	3.0	default	0.300000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	2	Attack	unit	
+def	1.000000	Slow	default	1.000000
+at	0.000	Fast
+at	0.500	Medium
+at	1.000	Slow
+param	3	Release	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Medium
+at	1.000	Slow
+param	4	Mix	unit	
+def	1.000000	10.0	default	1.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	5	Ratio	unit	
+def	0.000000	4:1	default	0.000000
+at	0.000	4:1
+at	0.500	12:1
+at	1.000	100:1
+param	6	SC High Pass Filter	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	100Hz
+at	1.000	300Hz
+param	7	Continuous Attack	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	8	Continuous Release	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	9	Stereo Link	unit	
+def	0.500000	50%	default	0.500000
+at	0.000	0%
+at	0.500	50%
+at	1.000	100%
+param	10	Bypass	unit	
+def	0.000000	In	default	0.000000
+at	0.000	In
+at	0.500	Byp
+at	1.000	Byp
+param	11	Continuous ON	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	12	Link ON	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	13	Analog ON	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On

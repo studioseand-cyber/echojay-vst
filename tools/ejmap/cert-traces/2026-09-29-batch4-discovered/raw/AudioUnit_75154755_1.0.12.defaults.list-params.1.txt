@@ -1,0 +1,64 @@
+probe: "SSL G3 MultiBusComp" | AudioUnit:Effects/aufx,G3mc,SSLN | uid=75154755 | arch=arm64 | format=AudioUnit
+
+0	Low-Mid Band Link		2	1	1	0
+1	High Threshold		2147483647	0	1	0
+2	Low Mix		2147483647	0	1	0
+3	Low HF Cutoff		2147483647	0	1	0
+4	Low Bell Frequency		2147483647	0	1	0
+5	Low Bell Gain		2147483647	0	1	0
+6	Low LF Cutoff		2147483647	0	1	0
+7	High Low Cut Band Follow		2	1	1	0
+8	Mid Drive Amount		2147483647	0	1	0
+9	High LF Cutoff		2147483647	0	1	0
+10	Mid Drive		2	1	1	0
+11	Mid Ratio		6	1	1	0
+12	Mid Attack		6	1	1	0
+13	Mid Bypass		2	1	1	0
+14	Mid HF Cutoff		2147483647	0	1	0
+15	Low Low Cut Band Follow		2	1	1	0
+16	Low Threshold		2147483647	0	1	0
+17	Low Release		5	1	1	0
+18	Mid Release		5	1	1	0
+19	Low Bell In		2	1	1	0
+20	Mix		2147483647	0	1	0
+21	High Drive Amount		2147483647	0	1	0
+22	Output Gain		2147483647	0	1	0
+23	Low Drive Amount		2147483647	0	1	0
+24	High Bell Q		2147483647	0	1	0
+25	High Bell In		2	1	1	0
+26	High Frequency		2147483647	0	1	0
+27	High Make-up		2147483647	0	1	0
+28	High Ext S/C		2	1	1	0
+29	Low Attack		6	1	1	0
+30	Low Bypass		2	1	1	0
+31	Mid Threshold		2147483647	0	1	0
+32	Input Gain		2147483647	0	1	0
+33	High HF Cutoff		2147483647	0	1	0
+34	High Drive		2	1	1	0
+35	Mid LF Cutoff		2147483647	0	1	0
+36	High Ratio		6	1	1	0
+37	Mid Low Cut Band Follow		2	1	1	0
+38	High Attack		6	1	1	0
+39	High Release		5	1	1	0
+40	Mid-High Band Link		2	1	1	0
+41	High Bypass		2	1	1	0
+42	Low Drive		2	1	1	0
+43	Low Ratio		6	1	1	0
+44	Low Bell Q		2147483647	0	1	0
+45	Mid High Cut Band Follow		2	1	1	0
+46	Mid Bell In		2	1	1	0
+47	Mid Bell Frequency		2147483647	0	1	0
+48	Mid Bell Gain		2147483647	0	1	0
+49	Low Frequency		2147483647	0	1	0
+50	Mid Make-up		2147483647	0	1	0
+51	Mid Ext S/C		2	1	1	0
+52	Low Make-up		2147483647	0	1	0
+53	Low Ext S/C		2	1	1	0
+54	High High Cut Band Follow		2	1	1	0
+55	Mid Mix		2147483647	0	1	0
+56	Bypass		2	1	1	0
+57	High Bell Frequency		2147483647	0	1	0
+58	High Bell Gain		2147483647	0	1	0
+59	Low High Cut Band Follow		2	1	1	0
+60	Mid Bell Q		2147483647	0	1	0
+61	High Mix		2147483647	0	1	0

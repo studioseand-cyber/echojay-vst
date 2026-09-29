@@ -1,0 +1,537 @@
+probe: "MDynamics" | AudioUnit:Effects/aumf,MAe$,Meld | uid=61516426 | arch=arm64 | format=AudioUnit
+
+param	0	Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	1	Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	2	Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	3	Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	4	Param 5	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	5	Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	6	Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	7	Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	8	Compressor -> Threshold	unit	
+def	0.309321	-20.0 dB	default	0.309321
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	9	Compressor -> Ratio	unit	
+def	0.259394	4.00 : 1	default	0.259394
+at	0.000	1.00 : 1
+at	0.500	7.99 : 1
+at	1.000	Infinity
+param	10	Compressor -> Knee	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	11	Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	12	Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	13	Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	14	Compressor -> Attack	unit	
+def	0.316228	10.0 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	15	Compressor -> Release	unit	
+def	0.314650	50 ms	default	0.314650
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	16	Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	17	Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	18	Compressor -> RMS	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	19	Compressor -> Release mode	unit	
+def	0.000000	Manual	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	20	Param 21	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	21	Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	22	Param 23	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	23	Param 24	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	24	Param 25	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	25	Detector -> Side-chain input	unit	
+def	0.000000	Off	default	0.500000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	26	Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	27	Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	28	Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	29	Detector -> Frequency	unit	
+def	0.492374	600.0 Hz	default	0.492374
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	30	Detector -> BW	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	31	Param 32	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	32	Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	33	Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	34	Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	35	Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	36	Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	37	Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	38	Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	39	Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	40	Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	41	Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	42	Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	43	Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	44	Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	45	Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	46	Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	47	Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	48	Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	49	Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	50	Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	51	Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	52	Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	53	Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	54	Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	55	Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	56	Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	57	Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	58	Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	59	Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	60	Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	61	Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	62	Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	63	Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	64	General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	65	General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	66	General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	67	General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	68	General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	69	General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	70	General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	71	Dynamic detection - Attack	unit	
+def	0.316228	10.0 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	72	Dynamic detection - Release	unit	
+def	0.314650	50 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	73	Dynamic detection - Release mode	unit	
+def	0.000000	Manual	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	74	Dynamic detection - Auto speed	unit	
+def	0.316085	1000 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	75	Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	76	Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	77	Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	78	Side-chain - Side-chain	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	79	Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	80	Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	81	Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	82	Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	83	Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	84	Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	85	Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	86	Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	87	Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	88	Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	89	Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	90	Processor 1 - Threshold	unit	
+def	0.309321	-20.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	91	Processor 1 - Ratio	unit	
+def	0.487950	4.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	92	Processor 1 - Knee size	unit	
+def	0.500000	50.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	93	Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	94	Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	95	Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	96	Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	97	Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	98	Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	99	Modulators - Mod 1 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	100	Modulators - Mod 2 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	101	Modulators - Mod 3 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	102	Modulators - Mod 4 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	103	Preset trigger - previous	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	104	Preset trigger - next	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	105	Device	unit	
+def	0.000000	Compressor	default	0.000000
+at	0.000	Compressor
+at	0.500	Peak Slammer
+at	1.000	Peak Slammer
+param	106	General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

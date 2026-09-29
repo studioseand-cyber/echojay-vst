@@ -1,0 +1,167 @@
+probe: "Unfiltered Audio Zip" | AudioUnit:Effects/aumf,uaZP,UnAu | uid=417a7643 | arch=arm64 | format=AudioUnit
+
+param	0	AGC	unit	
+def	0.000000	Disabled	default	0.000000
+at	0.000	Disabled
+at	0.500	Enabled
+at	1.000	Enabled
+param	1	Knee	unit	
+def	0.000000	0 dB	default	0.000000
+at	0.000	0 dB
+at	0.500	9.0 dB
+at	1.000	72.0 dB
+param	2	Peak	unit	
+def	0.000000	Disabled	default	0.000000
+at	0.000	Disabled
+at	0.500	Enabled
+at	1.000	Enabled
+param	3	Out Gain	unit	
+def	0.500000	0 dB	default	0.500000
+at	0.000	-inf dB
+at	0.500	0 dB
+at	1.000	18.0 dB
+param	4	Color	unit	
+def	0.000000	0.0%	default	0.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100%
+param	5	Ratio	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	7.19
+at	1.000	100
+param	6	Auto Threshold	unit	
+def	0.000000	Disabled	default	0.000000
+at	0.000	Disabled
+at	0.500	Enabled
+at	1.000	Enabled
+param	7	Analysis Mode	unit	
+def	0.000000	Amplitude	default	0.000000
+at	0.000	Amplitude
+at	0.500	Darkness
+at	1.000	Tonalness
+param	8	Modulation Control 1	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	9	Modulation Control 2	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	10	Modulation Control 3	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	11	Modulation Control 4	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	12	Modulation Control 5	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	13	Modulation Control 6	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	14	Modulation Control 7	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	15	Modulation Control 8	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	16	Modulation Control 9	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	17	Threshold	unit	
+def	1.000000	0.0 dB	default	1.000000
+at	0.000	-inf dB
+at	0.500	-40 dB
+at	1.000	0.0 dB
+param	18	Release	unit	
+def	0.299240	180 ms	default	0.299240
+at	0.000	1.00 ms
+at	0.500	501 ms
+at	1.000	2.000 s
+param	19	Env. Style	unit	
+def	0.000000	Classic	default	0.000000
+at	0.000	Classic
+at	0.500	Quick
+at	1.000	Extreme
+param	20	Modulation Control 10	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	21	Modulation Control 11	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	22	Modulation Control 12	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	23	Modulation Control 13	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	24	Modulation Control 14	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	25	Modulation Control 15	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	26	Modulation Control 16	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0.5
+at	1.000	1
+param	27	Color Mode	unit	
+def	0.000000	Contrast	default	0.000000
+at	0.000	Contrast
+at	0.500	High-Pass
+at	1.000	Bitcrush
+param	28	Dry/Wet	unit	
+def	1.000000	100%	default	1.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100%
+param	29	Attack	unit	
+def	0.100100	6.00 ms	default	0.100100
+at	0.000	1.00 ms
+at	0.500	126 ms
+at	1.000	500 ms
+param	30	Bypass	unit	
+def	0.000000	Disabled	default	0.000000
+at	0.000	Disabled
+at	0.500	Enabled
+at	1.000	Enabled
+param	31	Expand	unit	
+def	0.000000	Disabled	default	0.000000
+at	0.000	Disabled
+at	0.500	Enabled
+at	1.000	Enabled
+param	32	Filter	unit	
+def	0.500000	OFF	default	0.500000
+at	0.000	20 LP
+at	0.500	OFF
+at	1.000	2.00k HP

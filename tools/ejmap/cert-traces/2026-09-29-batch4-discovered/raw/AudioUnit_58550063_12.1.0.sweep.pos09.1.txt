@@ -1,0 +1,30 @@
+probe: "Abbey Road RS124 (m)" | AudioUnit:Effects/aufx,RS1M,ksWV | uid=58550063 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input Control	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	49
+param	0	0.500000	Input Control	5.0
+param	1	0.000000	Recovery	1
+param	2	0.000000	Super Fuse	Off
+param	3	0.000000	Unit Type	Studio
+param	4	0.000000	SC HP	20
+param	5	1.000000	Mix	100.0
+param	6	0.500000	Output Attenuator	0.0
+param	7	0.500000	Meter Selector	Gain Reduction
+param	8	0.000000	Auto Hold	Off
+param	9	0.000000	HF Roll-Off	Off
+stage	position
+pos	0	norm	0.600000	confirm_ms	39.08	slices	2	instack_match	0	getValue	0.600000	landed_by	pump	render_blocks	0	text_ms	20.9	reads	2	text	6.0
+hold	0	-54.00	level_db	-38.3595	in_rms_db	-57.0103	tone_frac	1.0000	ch	-38.3595	doubled	0	last_move_db	0.0028	final_move_db	0.0028	win	-41.3802,-38.3730,-38.3672,-38.3613,-38.3601,-38.3573	nonfinite	0
+hold	0	-48.00	level_db	-32.3593	in_rms_db	-51.0103	tone_frac	1.0000	ch	-32.3593	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-32.3742,-32.3586,-32.3608,-32.3585,-32.3608,-32.3585	nonfinite	0
+hold	0	-24.00	level_db	-22.2834	in_rms_db	-27.0103	tone_frac	1.0000	ch	-22.2834	doubled	0	last_move_db	0.0030	final_move_db	0.0030	win	-20.3786,-22.2824,-22.2854,-22.2824,-22.2854,-22.2824	nonfinite	0
+hold	0	-12.00	level_db	-18.5527	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.5527	doubled	0	last_move_db	0.0037	final_move_db	0.0037	win	-17.7406,-18.5514,-18.5551,-18.5514,-18.5551,-18.5515	nonfinite	0
+hold	0	-6.00	level_db	-16.7059	in_rms_db	-9.0103	tone_frac	1.0000	ch	-16.7059	doubled	0	last_move_db	0.0043	final_move_db	0.0043	win	-16.3023,-16.7044,-16.7087,-16.7045,-16.7087,-16.7044	nonfinite	0
+reread	0	steady
+timing	wall_ms	270.8	audio_s	7.500
+stage	done

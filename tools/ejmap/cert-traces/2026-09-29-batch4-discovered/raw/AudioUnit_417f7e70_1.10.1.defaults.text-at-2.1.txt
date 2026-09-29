@@ -1,0 +1,32 @@
+probe: "bx_opto Pedal" | AudioUnit:Effects/aufx,bxop,Brwx | uid=417f7e70 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Speed	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	2	Density	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	3	Level Trim	unit	
+def	1.000000	0.0 dB	default	1.000000
+at	0.000	-12.0 dB
+at	0.500	-6.0 dB
+at	1.000	0.0 dB
+param	4	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	5		unit	
+def	1.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	

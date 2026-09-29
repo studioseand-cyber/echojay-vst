@@ -1,0 +1,92 @@
+probe: "Bettermaker Bus Compressor DSP" | AudioUnit:Effects/aufx,Lx7x,Bmkr | uid=6f603a72 | arch=arm64 | format=AudioUnit
+
+param	0	SNAPSHOT	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	1	ENGAGE	unit	
+def	1.000000	ON	default	1.000000
+at	0.000	OFF
+at	0.500	OFF
+at	1.000	ON
+param	2	THRESHOLD	unit	
+def	0.750000	-5.00	default	0.750000
+at	0.000	-35.00
+at	0.500	-15.00
+at	1.000	5.00
+param	3	RATIO	unit	
+def	0.250000	2.00	default	0.250000
+at	0.000	1.00
+at	0.500	3.00
+at	1.000	5.00
+param	4	ATTACK	unit	
+def	0.499165	30.00	default	0.499165
+at	0.000	0.10
+at	0.500	30.10
+at	1.000	60.00
+param	5	RELEASE	unit	
+def	0.201681	250.00	default	0.201681
+at	0.000	10.00
+at	0.500	605.00
+at	1.000	1200.00
+param	6	AUTO RELEASE	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	OFF
+at	1.000	ON
+param	7	MIX	unit	
+def	1.000000	100.00	default	1.000000
+at	0.000	0.00
+at	0.500	50.00
+at	1.000	100.00
+param	8	OUTPUT	unit	
+def	0.400000	0.00	default	0.400000
+at	0.000	-10.00
+at	0.500	2.50
+at	1.000	15.00
+param	9	THD ENABLE	unit	
+def	1.000000	ON	default	1.000000
+at	0.000	OFF
+at	0.500	OFF
+at	1.000	ON
+param	10	THD	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	50.00
+at	1.000	100.00
+param	11	THD MIX	unit	
+def	1.000000	100.00	default	1.000000
+at	0.000	0.00
+at	0.500	50.00
+at	1.000	100.00
+param	12	SC HPF ENGAGE	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	OFF
+at	1.000	ON
+param	13	SC HPF FREQ	unit	
+def	0.000000	10.00	default	0.000000
+at	0.000	10.00
+at	0.500	1005.00
+at	1.000	2000.00
+param	14	SC MID ENGAGE	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	OFF
+at	1.000	ON
+param	15	DETECTOR	unit	
+def	0.000000	PEAK	default	0.000000
+at	0.000	PEAK
+at	0.500	PEAK
+at	1.000	RMS
+param	16	GAIN REDUCTION METER	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	17	EXTERNAL SIDE CHAIN	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	OFF
+at	1.000	ON

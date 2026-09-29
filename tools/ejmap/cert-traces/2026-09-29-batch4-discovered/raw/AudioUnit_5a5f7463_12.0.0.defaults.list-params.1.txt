@@ -1,0 +1,9 @@
+probe: "Kramer PIE (m)" | AudioUnit:Effects/aufx,PYEM,ksWV | uid=5a5f7463 | arch=arm64 | format=AudioUnit
+
+0	Decay		6	1	1	0
+1	Threshold	dB	2147483647	0	1	0
+2	Ratio		5	1	1	0
+3	Analog		3	1	1	0
+4	Output	dB	2147483647	0	1	0
+5	Meter Select		3	1	1	0
+6	VU Calibrate	dB	2147483647	0	1	0

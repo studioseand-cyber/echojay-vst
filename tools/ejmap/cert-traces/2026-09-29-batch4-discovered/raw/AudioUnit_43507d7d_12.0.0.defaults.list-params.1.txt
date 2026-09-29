@@ -1,0 +1,13 @@
+probe: "MaxxVolume (s)" | AudioUnit:Effects/aufx,IVLS,ksWV | uid=43507d7d | arch=arm64 | format=AudioUnit
+
+0	Low Level Thresh	dB	2147483647	0	1	0
+1	Low Level Gain	dB	2147483647	0	1	0
+2	Gate	dB	2147483647	0	1	0
+3	Leveler	dB	2147483647	0	1	0
+4	High Level Thresh	dB	2147483647	0	1	0
+5	High Level Gain	dB	2147483647	0	1	0
+6	Leveler On		2	1	1	0
+7	Gate On		2	1	1	0
+8	High Level Thresh On		2	1	1	0
+9	Low Level Thresh On		2	1	1	0
+10	ARC Type		2	1	1	0

@@ -1,0 +1,67 @@
+probe: "SSL LMC+" | AudioUnit:Effects/aufx,Bfai,SSLN | uid=70404b5f | arch=arm64 | format=AudioUnit
+
+param	0	Dry/Wet Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	1	EQ In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	EXT Sidechain	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Scoop	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	Split	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	5	Sidechain Listen	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	Output Gain	unit	
+def	0.650000	6.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	7	Low-pass Filter	unit	
+def	1.000000	30.0	default	1.000000
+at	0.000	3.0
+at	0.500	10.0
+at	1.000	30.0
+param	8	Auto Make-up Gain	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Input Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	10	High-pass Filter	unit	
+def	0.000000	15.0	default	0.000000
+at	0.000	15.0
+at	0.500	200.0
+at	1.000	500.0
+param	11	Amount	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	12	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

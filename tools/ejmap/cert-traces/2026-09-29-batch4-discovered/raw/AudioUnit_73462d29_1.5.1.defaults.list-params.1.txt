@@ -1,0 +1,39 @@
+probe: "Purple Audio MC 77" | AudioUnit:Effects/aumf,PA77,Brwx | uid=73462d29 | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	M/S		2	1	1	0
+2	Monomaker Freq		2147483647	0	1	0
+3	Stereowidth		2147483647	0	1	0
+4	SC HP Freq 		2147483647	0	1	0
+5	Headroom		2147483647	0	1	0
+6	Mix		2147483647	0	1	0
+7	Bank		4	1	1	0
+8	SCLink		2	1	1	0
+9	Link		3	1	1	0
+10	IO-Link		2	1	1	0
+11	Insert		2	1	1	0
+12	TMT Channel		20	1	1	0
+13	Stereo Mode		2	1	1	0
+14	Monitoring 		3	1	1	0
+15	Input L		2147483647	0	1	0
+16	Output L		2147483647	0	1	0
+17	Attack L		2147483647	0	1	0
+18	Release L		2147483647	0	1	0
+19	Ratio L		16	1	1	0
+20	Meter Mode L		2	1	1	0
+21	Meter IO L		2	1	1	0
+22	Bypass L		2	1	1	0
+23	Power L		2	1	1	0
+24	Input R		2147483647	0	1	0
+25	Output R		2147483647	0	1	0
+26	Attack R		2147483647	0	1	0
+27	Release R		2147483647	0	1	0
+28	Ratio R		16	1	1	0
+29	Meter Mode R		2	1	1	0
+30	Meter IO R		2	1	1	0
+31	Bypass R		2	1	1	0
+32	Power R		2	1	1	0
+33	VU Meter L		2147483647	0	1	0
+34	VU Meter R		2147483647	0	1	0
+35	GR Meter L		2147483647	0	1	0
+36	GR Meter R		2147483647	0	1	0

@@ -1,0 +1,18 @@
+probe: "elysia alpha mix" | AudioUnit:Effects/aufx,alp1,Elys | uid=45756f3a | arch=arm64 | format=AudioUnit
+
+0	Active		2	1	1	0
+1	Link		2	1	1	0
+2	Threshold		2147483647	0	1	0
+3	Feed Forward		2	1	1	0
+4	Attack		2147483647	0	1	0
+5	Attack Auto Fast		2	1	1	0
+6	Release		2147483647	0	1	0
+7	Release Auto Fast		2	1	1	0
+8	Ratio		2147483647	0	1	0
+9	SC Gain		2147483647	0	1	0
+10	SC On		2	1	1	0
+11	SC Freq		2147483647	0	1	0
+12	Warm		2	1	1	0
+13	Mix		2147483647	0	1	0
+14	Gain		2147483647	0	1	0
+15	Gain Reduction		2147483647	0	1	0

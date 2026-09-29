@@ -1,0 +1,5 @@
+probe: "OneKnob Pumper (m)" | AudioUnit:Effects/aufx,SP1M,ksWV | uid=59560063 | arch=arm64 | format=AudioUnit
+
+0	Pump		2147483647	0	1	0
+1	Offset		2147483647	0	1	0
+2	Rate		10	1	1	0

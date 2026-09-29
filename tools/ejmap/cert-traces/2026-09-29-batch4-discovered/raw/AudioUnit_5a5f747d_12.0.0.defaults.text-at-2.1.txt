@@ -1,0 +1,37 @@
+probe: "Kramer PIE (s)" | AudioUnit:Effects/aufx,PYES,ksWV | uid=5a5f747d | arch=arm64 | format=AudioUnit
+
+param	0	Decay	unit	
+def	0.400000	4	default	0.400000
+at	0.000	1
+at	0.500	4
+at	1.000	32
+param	1	Threshold	unit	dB
+def	0.600000	0	default	0.600000
+at	0.000	-24
+at	0.500	-4
+at	1.000	16
+param	2	Ratio	unit	
+def	0.500000	3:1	default	0.500000
+at	0.000	1:1
+at	0.500	3:1
+at	1.000	Limit
+param	3	Analog	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	50Hz
+at	0.500	60Hz
+at	1.000	Off
+param	4	Output	unit	dB
+def	0.667000	6.0	default	0.667000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	5	Meter Select	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	In
+at	0.500	GR
+at	1.000	Out
+param	6	VU Calibrate	unit	dB
+def	0.625000	18	default	0.625000
+at	0.000	8
+at	0.500	16
+at	1.000	24

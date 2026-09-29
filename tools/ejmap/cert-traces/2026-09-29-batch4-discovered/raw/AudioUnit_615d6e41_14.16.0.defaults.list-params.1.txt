@@ -1,0 +1,53 @@
+probe: "MModernCompressor" | AudioUnit:Effects/aumf,MMoC,Meld | uid=615d6e41 | arch=arm64 | format=AudioUnit
+
+0	Param 1		2147483647	0	1	0
+1	Param 2		2147483647	0	1	0
+2	Param 3		2147483647	0	1	0
+3	Param 4		2147483647	0	1	0
+4	Param 5		2147483647	0	1	0
+5	Param 6		2147483647	0	1	0
+6	Param 7		2147483647	0	1	0
+7	Param 8		2147483647	0	1	0
+8	Param 9		2147483647	0	1	0
+9	Param 10		2147483647	0	1	0
+10	Param 11		2147483647	0	1	0
+11	Param 12		2147483647	0	1	0
+12	Param 13		2147483647	0	1	0
+13	Param 14		2147483647	0	1	0
+14	Param 15		2147483647	0	1	0
+15	Param 16		2147483647	0	1	0
+16	Param 17		2147483647	0	1	0
+17	Param 18		2147483647	0	1	0
+18	Param 19		2147483647	0	1	0
+19	Param 20		2147483647	0	1	0
+20	Param 21		2147483647	0	1	0
+21	Param 22		2147483647	0	1	0
+22	Param 23		2147483647	0	1	0
+23	Param 24		2147483647	0	1	0
+24	Param 25		2147483647	0	1	0
+25	Param 26		2147483647	0	1	0
+26	Param 27		2147483647	0	1	0
+27	Param 28		2147483647	0	1	0
+28	Param 29		2147483647	0	1	0
+29	Param 30		2147483647	0	1	0
+30	Param 31		2147483647	0	1	0
+31	Param 32		2147483647	0	1	0
+32	Input gain		2147483647	0	1	0
+33	Output gain		2147483647	0	1	0
+34	Dry/Wet		2147483647	0	1	0
+35	Dynamics - Side-chain		2	1	1	0
+36	Dynamics - Attack		2147483647	0	1	0
+37	Dynamics - Release		2147483647	0	1	0
+38	Dynamics - RMS length		2147483647	0	1	0
+39	Dynamics - Hold		2147483647	0	1	0
+40	Dynamics - Mode		2147483647	0	1	0
+41	Compressor - Threshold		2147483647	0	1	0
+42	Compressor - Ratio		2147483647	0	1	0
+43	Compressor - Knee		2147483647	0	1	0
+44	Compressor - Range		2147483647	0	1	0
+45	Modulators - Mod 1 - Automated value		2147483647	0	1	0
+46	Modulators - Mod 2 - Automated value		2147483647	0	1	0
+47	Modulators - Mod 3 - Automated value		2147483647	0	1	0
+48	Modulators - Mod 4 - Automated value		2147483647	0	1	0
+49	Preset trigger - previous		2147483647	0	1	0
+50	Preset trigger - next		2147483647	0	1	0

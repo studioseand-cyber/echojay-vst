@@ -1,0 +1,237 @@
+probe: "LinMB (m)" | AudioUnit:Effects/aufx,LC5M,ksWV | uid=46450463 | arch=arm64 | format=AudioUnit
+
+param	0	Makeup Mode	unit	
+def	0.000000	Manual	default	0.000000
+at	0.000	Manual
+at	0.500	Manual
+at	1.000	Auto
+param	1	Adaptivity Level	unit	dB
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	-39.00
+at	1.000	12.00
+param	2	Band 1 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	3	Band 1 Range	unit	dB
+def	0.429000	-6.0	default	0.429000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	4	Band 1 Attack	unit	ms
+def	0.615000	34.99	default	0.615000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	5	Band 1 Release	unit	ms
+def	0.403000	80.90	default	0.403000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	6	Band 1 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	7	Band 1 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	8	Band 1 Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	9	Band 2 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	10	Band 2 Range	unit	dB
+def	0.429000	-6.0	default	0.429000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	11	Band 2 Attack	unit	ms
+def	0.549000	22.18	default	0.549000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	12	Band 2 Release	unit	ms
+def	0.302000	40.27	default	0.302000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	13	Band 2 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	14	Band 2 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	15	Band 2 Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	16	Band 3 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	17	Band 3 Range	unit	dB
+def	0.429000	-6.0	default	0.429000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	18	Band 3 Attack	unit	ms
+def	0.502000	16.03	default	0.502000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	19	Band 3 Release	unit	ms
+def	0.233000	25.00	default	0.233000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	20	Band 3 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	21	Band 3 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	22	Band 3 Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	23	Band 4 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	24	Band 4 Range	unit	dB
+def	0.429000	-6.0	default	0.429000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	25	Band 4 Attack	unit	ms
+def	0.333000	4.99	default	0.333000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	26	Band 4 Release	unit	ms
+def	0.100000	9.98	default	0.100000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	27	Band 4 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	28	Band 4 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	29	Band 4 Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	30	Band 5 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	31	Band 5 Range	unit	dB
+def	0.429000	-6.0	default	0.429000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	32	Band 5 Attack	unit	ms
+def	0.201000	2.00	default	0.201000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	33	Band 5 Release	unit	ms
+def	0.000000	5.00	default	0.000000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	34	Band 5 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	35	Band 5 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	36	Band 5 Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	37	Low Crossover	unit	Hz
+def	0.245547	92	default	0.246000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	38	LoMid Crossover	unit	Hz
+def	0.491936	545	default	0.492000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	39	HiMid Crossover	unit	Hz
+def	0.768000	4000	default	0.768000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	40	High Crossover	unit	Hz
+def	0.908997	11071	default	0.909000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	41	Dither Mode	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	42	Release Mode	unit	
+def	0.000000	ARC	default	0.000000
+at	0.000	ARC
+at	0.500	ARC
+at	1.000	Manual
+param	43	Behavior	unit	
+def	0.000000	Electro	default	0.000000
+at	0.000	Electro
+at	0.500	Electro
+at	1.000	Opto
+param	44	Knee	unit	
+def	0.667000	0.50	default	0.667000
+at	0.000	Soft
+at	0.500	0.38
+at	1.000	Hard
+param	45	Trim	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	0.0
+at	1.000	1.0
+param	46	Output Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0

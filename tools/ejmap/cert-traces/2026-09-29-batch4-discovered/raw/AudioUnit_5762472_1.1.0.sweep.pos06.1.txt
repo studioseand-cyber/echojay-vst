@@ -1,0 +1,156 @@
+probe: "TBTECH Cenozoix Compressor" | AudioUnit:Effects/aufx,0a6i,Tbtc | uid=5762472 | arch=arm64 | format=AudioUnit
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: Modules In/Out Effects will change latency to 0 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: Modules In/Out Effects will change latency to 4 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: The CompresorProcessor have been told that its latency now should be 4, the Host have been told., this log message gen at file: CompressorProcessor.cpp, line: 1147
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+
+sweep	proto	1	thr	19	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 0 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 0 before oversampling, and after oversampling it's 0 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 0, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: some one ask CompressorModuleV2 to give a latency. the compressor self ovsampled latency is 4, the lookahead enable state is false, so total oversampled latency is 4., this log message gen at file: dsp1d_CompressorModuleV2.cpp, line: 1530
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+miniwl_log: Modules In/Out Effects will change latency to 4 :, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1352
+miniwl_log: Module In/Out Effects latency change finished., this log message gen at file: dsp1d_SignalChainModule.cpp, line: 1369
+miniwl_log: ModuleLatencyCompDelayline old latency 0 eq to new latency 0, nothing changed about ModuleLatencyCompDelayline., this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 64
+miniwl_log: latency change captured by ModuleLatencyCompDelayline, oversampled latency is 4 and oversample ratio is 1, so we add 0 samples to make it integer, this log message gen at file: dsp1d_ModuleLatencyCompDelayline.cpp, line: 76
+miniwl_log: some one asking module to tell and fetching its latency, which is 4 before oversampling, and after oversampling it's 4 since the oversampling ratio is 1, and the latency of oversampling it self is 0, so the final value is 4, this log message gen at file: dsp1d_SignalChainModule.cpp, line: 935
+config	main_in	2	main_out	2	latency	4
+param	0	0.000000	Bypass	
+param	1	0.500000	MasterInput Gain	
+param	2	0.500000	MasterOutput Gain	
+param	3	0.500000	MasterInput Pan	
+param	4	0.500000	MasterOutput Pan	
+param	5	0.000000	MasterOutput Phase Invert	
+param	6	0.094488	Style	
+param	7	0.000000	Oversampling On	
+param	8	0.000000	Oversampling Realtime Ratio	
+param	9	0.000000	Enable Side Chain Monitoring	
+param	10	0.000000	MonitoringDelta	
+param	11	0.000000	Enable Ext. Side Chain	
+param	12	0.000000	Side Chain Mode	
+param	13	0.500000	Side Chain Gain	
+param	14	0.700000	Side Chain Stereo Linking	
+param	15	0.000000	Peak/RMS	
+param	16	0.000000	FFFB	
+param	17	0.000000	Odd/Even	
+param	18	0.500000	Input Gain	
+param	19	0.607843	Threshold	
+param	20	0.610000	Ratio	
+param	21	0.313559	Knee	
+param	22	1.000000	Range	
+param	23	0.384944	Att Time	
+param	24	0.490435	Rel Time	
+param	25	0.000000	Auto Rel	
+param	26	0.000000	Hold	
+param	27	0.000000	Lookahead On	
+param	28	0.000000	Lookahead Time	
+param	29	0.000000	Clamp	
+param	30	0.000000	De-Click	
+param	31	0.500000	Punch/Pump	
+param	32	0.500000	Tight	
+param	33	0.000000	Sensitive	
+param	34	0.500000	Output Gain	
+param	35	0.000000	Dry Mix	
+param	36	0.000000	Auto Makeup	
+param	37	1.000000	SC EQ Bypass	
+param	38	0.000000	SC EQ Band1 Used	
+param	39	0.000000	SC EQ Band1 Enabled	
+param	40	0.042254	SC EQ Band1 Type	
+param	41	0.000000	SC EQ Band1 Slope	
+param	42	0.234568	SC EQ Band1 Freq.	
+param	43	0.500000	SC EQ Band1 Gain	
+param	44	0.500000	SC EQ Band1 Q	
+param	45	0.000000	SC EQ Band2 Used	
+param	46	0.000000	SC EQ Band2 Enabled	
+param	47	0.042254	SC EQ Band2 Type	
+param	48	0.000000	SC EQ Band2 Slope	
+param	49	0.301560	SC EQ Band2 Freq.	
+param	50	0.500000	SC EQ Band2 Gain	
+param	51	0.500000	SC EQ Band2 Q	
+param	52	0.000000	SC EQ Band3 Used	
+param	53	0.000000	SC EQ Band3 Enabled	
+param	54	0.042254	SC EQ Band3 Type	
+param	55	0.000000	SC EQ Band3 Slope	
+param	56	0.368552	SC EQ Band3 Freq.	
+param	57	0.500000	SC EQ Band3 Gain	
+param	58	0.500000	SC EQ Band3 Q	
+param	59	0.000000	SC EQ Band4 Used	
+param	60	0.000000	SC EQ Band4 Enabled	
+param	61	0.042254	SC EQ Band4 Type	
+param	62	0.000000	SC EQ Band4 Slope	
+param	63	0.435544	SC EQ Band4 Freq.	
+param	64	0.500000	SC EQ Band4 Gain	
+param	65	0.500000	SC EQ Band4 Q	
+param	66	0.000000	SC EQ Band5 Used	
+param	67	0.000000	SC EQ Band5 Enabled	
+param	68	0.042254	SC EQ Band5 Type	
+param	69	0.000000	SC EQ Band5 Slope	
+param	70	0.502536	SC EQ Band5 Freq.	
+param	71	0.500000	SC EQ Band5 Gain	
+param	72	0.500000	SC EQ Band5 Q	
+param	73	0.000000	SC EQ Band6 Used	
+param	74	0.000000	SC EQ Band6 Enabled	
+param	75	0.042254	SC EQ Band6 Type	
+param	76	0.000000	SC EQ Band6 Slope	
+param	77	0.569529	SC EQ Band6 Freq.	
+param	78	0.500000	SC EQ Band6 Gain	
+param	79	0.500000	SC EQ Band6 Q	
+param	80	0.000000	SC EQ Band7 Used	
+param	81	0.000000	SC EQ Band7 Enabled	
+param	82	0.042254	SC EQ Band7 Type	
+param	83	0.000000	SC EQ Band7 Slope	
+param	84	0.636521	SC EQ Band7 Freq.	
+param	85	0.500000	SC EQ Band7 Gain	
+param	86	0.500000	SC EQ Band7 Q	
+param	87	0.000000	SC EQ Band8 Used	
+param	88	0.000000	SC EQ Band8 Enabled	
+param	89	0.042254	SC EQ Band8 Type	
+param	90	0.000000	SC EQ Band8 Slope	
+param	91	0.703513	SC EQ Band8 Freq.	
+param	92	0.500000	SC EQ Band8 Gain	
+param	93	0.500000	SC EQ Band8 Q	
+param	94	0.000000	CompressionDisplay	
+param	95	0.000000	Harmonic Style	
+param	96	0.000000	DriveOn	
+param	97	0.333333	Drive Input Gain	
+param	98	0.000000	Post	
+stage	position
+pos	0	norm	0.400000	confirm_ms	3.06	slices	1	instack_match	1	getValue	0.400000	landed_by	instack	render_blocks	0	text_ms	22.9	reads	2	text	
+hold	0	-24.00	level_db	-30.4403	in_rms_db	-27.0103	tone_frac	1.0000	ch	-30.4403,-30.4403	doubled	0	last_move_db	0.0051	final_move_db	0.0051	win	-29.8567,-30.4327,-30.4434,-30.4386,-30.4437,-30.4386	nonfinite	0
+hold	0	-12.00	level_db	-26.9418	in_rms_db	-15.0103	tone_frac	1.0000	ch	-26.9418,-26.9418	doubled	0	last_move_db	0.0054	final_move_db	0.0054	win	-26.0109,-26.9283,-26.9447,-26.9400,-26.9454,-26.9400	nonfinite	0
+hold	0	-6.00	level_db	-25.2375	in_rms_db	-9.0103	tone_frac	1.0000	ch	-25.2375,-25.2375	doubled	0	last_move_db	0.0055	final_move_db	0.0055	win	-24.8015,-25.2295,-25.2408,-25.2356,-25.2412,-25.2357	nonfinite	0
+reread	0	steady
+timing	wall_ms	86.5	audio_s	4.500
+stage	done

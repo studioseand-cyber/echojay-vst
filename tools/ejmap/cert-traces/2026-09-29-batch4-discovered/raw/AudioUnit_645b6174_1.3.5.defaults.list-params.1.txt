@@ -1,0 +1,1 @@
+probe: "VBC Rack" | AudioUnit:Effects/aufx,VBCk,SlDg | uid=645b6174 | arch=arm64 | format=AudioUnit

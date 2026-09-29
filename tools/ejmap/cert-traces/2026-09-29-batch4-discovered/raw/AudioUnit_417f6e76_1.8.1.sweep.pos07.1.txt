@@ -1,0 +1,36 @@
+probe: "bx_townhouse Buss Compressor" | AudioUnit:Effects/aumf,bxth,Brwx | uid=417f6e76 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	4	name	Thresh	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Bank	A
+param	1	1.000000	Comp In	On
+param	2	0.000000	Key In	Off
+param	3	0.000000	AutoFade	Off
+param	4	0.666667	Thresh	0.0 dB
+param	5	0.000000	Ratio	2:1
+param	6	0.600000	Attack	3 ms
+param	7	1.000000	Release	auto
+param	8	0.100000	MakeUp	+1.5 dB
+param	9	0.500000	FadeRate	7.2 s
+param	10	1.000000	Mix	100 %
+param	11	0.000000	SC Filter	Off
+param	12	0.400000	Virtual Gain	-100 dB
+param	13	0.500000	Headroom	0.0 dB
+param	14	1.000000	Gain Reduction	22.0 dB
+param	15	0.000000	Input	0.0 dB
+stage	position
+pos	0	norm	0.466667	confirm_ms	2.35	slices	1	instack_match	1	getValue	0.466667	landed_by	instack	render_blocks	0	text_ms	21.4	reads	2	text	-6.0 dB
+hold	0	-24.00	level_db	-24.5800	in_rms_db	-27.0103	tone_frac	1.0000	ch	-24.5800,-24.5800	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-24.5805,-24.5798,-24.5804,-24.5798,-24.5804,-24.5797	nonfinite	0
+hold	0	-12.00	level_db	-16.4334	in_rms_db	-15.0103	tone_frac	1.0000	ch	-16.4334,-16.4334	doubled	0	last_move_db	-0.0600	final_move_db	-0.0600	win	-15.9281,-16.1420,-16.2598,-16.3599,-16.4407,-16.5007	nonfinite	0
+hold	0	-6.00	level_db	-13.7262	in_rms_db	-9.0103	tone_frac	1.0000	ch	-13.7262,-13.7262	doubled	0	last_move_db	-0.0501	final_move_db	-0.0501	win	-13.2924,-13.4790,-13.5753,-13.6623,-13.7334,-13.7836	nonfinite	0
+reread	0	steady
+timing	wall_ms	45.6	audio_s	4.500
+stage	done

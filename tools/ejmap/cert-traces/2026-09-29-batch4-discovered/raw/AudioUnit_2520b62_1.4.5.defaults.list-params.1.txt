@@ -1,0 +1,20 @@
+probe: "Solid Dynamics" | AudioUnit:Effects/aufx,Ni$7,-NI- | uid=2520b62 | arch=arm64 | format=AudioUnit
+
+0	Knee Type		2	1	1	0
+1	Threshold Comp		2147483647	0	1	0
+2	Ratio		2147483647	0	1	0
+3	Atk Mode Comp		2	1	1	0
+4	Release Comp		2147483647	0	1	0
+5	Rel.Mode		2	1	1	0
+6	Output		2147483647	0	1	0
+7	Dry		2147483647	0	1	0
+8	Link L/R		2	1	1	0
+9	Boost		2	1	1	0
+10	-		2	1	1	0
+11	Mode		2	1	1	0
+12	Threshold G/E		2147483647	0	1	0
+13	Range		2147483647	0	1	0
+14	Atk Mode G/E		2	1	1	0
+15	Release G/E		2147483647	0	1	0
+16	SC Mode		2	1	1	0
+17	SC Gain		2147483647	0	1	0

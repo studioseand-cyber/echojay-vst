@@ -1,0 +1,82 @@
+probe: "SSL Blitzer" | AudioUnit:Effects/aufx,BLTZ,SSLN | uid=706a7e6c | arch=arm64 | format=AudioUnit
+
+param	0	Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	1	BLITZ!	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Drive	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.5
+at	1.000	11.0
+param	3	Ratio	unit	
+def	0.500000	4:1	default	0.000000
+at	0.000	1:1
+at	0.500	4:1
+at	1.000	20:1
+param	4	Transients	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.5
+at	1.000	11.0
+param	5	Release	unit	
+def	0.500000	250.0	default	0.500000
+at	0.000	50.0
+at	0.500	250.0
+at	1.000	1500.0
+param	6	Sidechain Listen	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Output Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-30.0
+at	0.500	0.0
+at	1.000	30.0
+param	8	Sidechain Q	unit	
+def	0.500000	1.00	default	0.500000
+at	0.000	0.10
+at	0.500	1.00
+at	1.000	10.00
+param	9	Auto Gain	unit	
+def	1.000000	On	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	Input Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-30.0
+at	0.500	0.0
+at	1.000	30.0
+param	11	Sidechain HPF	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	200
+at	1.000	2000
+param	12	Sidechain Frequency	unit	
+def	0.500000	1000	default	0.500000
+at	0.000	100
+at	0.500	1000
+at	1.000	10000
+param	13	Sidechain Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-36.0
+at	0.500	0.0
+at	1.000	36.0
+param	14	Attack	unit	
+def	0.500000	5.00	default	0.500000
+at	0.000	0.05
+at	0.500	5.00
+at	1.000	40.00
+param	15	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

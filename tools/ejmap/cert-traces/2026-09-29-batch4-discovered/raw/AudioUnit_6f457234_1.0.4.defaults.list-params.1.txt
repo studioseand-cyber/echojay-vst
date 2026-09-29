@@ -1,0 +1,41 @@
+probe: "Lindell 354E" | AudioUnit:Effects/aufx,LBc4,Brwx | uid=6f457234 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+0	Low Meter		2147483647	0	1	0
+1	Low In		2147483647	0	1	0
+2	Low Solo		2147483647	0	1	0
+3	Low Mid Side		2147483647	0	1	0
+4	Low Gain		2147483647	0	1	0
+5	Low Ratio		2147483647	0	1	0
+6	Low Threshold		2147483647	0	1	0
+7	Low Attack		2147483647	0	1	0
+8	Low Recovery		2147483647	0	1	0
+9	Mid Meter		2147483647	0	1	0
+10	Mid In		2147483647	0	1	0
+11	Mid Solo		2147483647	0	1	0
+12	Mid Mid Side		2147483647	0	1	0
+13	Mid Gain		2147483647	0	1	0
+14	Mid Ratio		2147483647	0	1	0
+15	Mid Threshold		2147483647	0	1	0
+16	Mid Attack		2147483647	0	1	0
+17	Mid Recovery		2147483647	0	1	0
+18	High Meter		2147483647	0	1	0
+19	High In		2147483647	0	1	0
+20	High Solo		2147483647	0	1	0
+21	High Mid Side		2147483647	0	1	0
+22	High Gain		2147483647	0	1	0
+23	High Ratio		2147483647	0	1	0
+24	High Threshold		2147483647	0	1	0
+25	High Attack		2147483647	0	1	0
+26	High Recovery		2147483647	0	1	0
+27	Mix		2147483647	0	1	0
+28	HPF		2147483647	0	1	0
+29	Master Gain		2147483647	0	1	0
+30	Low XOverParameter		2147483647	0	1	0
+31	High XOverParameter		2147483647	0	1	0
+32	Smash		2147483647	0	1	0
+33	Niveau		2147483647	0	1	0
+34	Link		2147483647	0	1	0
+35	Bypass		2147483647	0	1	0
+36	In Level		2147483647	0	1	0
+37	Out Level		2147483647	0	1	0

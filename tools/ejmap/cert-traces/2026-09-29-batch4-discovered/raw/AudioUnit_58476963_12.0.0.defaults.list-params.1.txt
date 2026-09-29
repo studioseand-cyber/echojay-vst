@@ -1,0 +1,5 @@
+probe: "Renaissance Axx (m)" | AudioUnit:Effects/aufx,RAXM,ksWV | uid=58476963 | arch=arm64 | format=AudioUnit
+
+0	Gain	dB	2147483647	0	1	0
+1	Threshold	dB	2147483647	0	1	0
+2	Attack	ms	2147483647	0	1	0

@@ -1,0 +1,20 @@
+probe: "NEOLD U17" | AudioUnit:Effects/aufx,NU17,Neol | uid=61453823 | arch=arm64 | format=AudioUnit
+
+0	Attack Time		2147483647	0	1	0
+1	Bank		2147483647	0	1	0
+2	Density	%	2147483647	0	1	0
+3	Mix		2147483647	0	1	0
+4	Emphasis		2147483647	0	1	0
+5	External SC		2	1	1	0
+6	Input	dB	2147483647	0	1	0
+7	Detector		2147483647	0	1	0
+8	Monitor		2	1	1	0
+9	Meter Mode		2147483647	0	1	0
+10	GR Meter		2147483647	0	0	0
+11	VU Meter		2147483647	0	0	0
+12	Output	dB	2147483647	0	1	0
+13	Power		2	1	1	0
+14	Release Time		2147483647	0	1	0
+15	Frequency		2147483647	0	1	0
+16	Shape		2147483647	0	1	0
+17	Torque	%	2147483647	0	1	0

@@ -1,0 +1,82 @@
+probe: "bx_townhouse Buss Compressor" | AudioUnit:Effects/aumf,bxth,Brwx | uid=417f6e76 | arch=arm64 | format=AudioUnit
+
+param	0	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	1	Comp In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Key In	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	AutoFade	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	Thresh	unit	
+def	0.666667	0.0 dB	default	0.666667
+at	0.000	-20.0 dB
+at	0.500	-5.0 dB
+at	1.000	+10.0 dB
+param	5	Ratio	unit	
+def	0.000000	2:1	default	0.000000
+at	0.000	2:1
+at	0.500	4:1
+at	1.000	10:1
+param	6	Attack	unit	
+def	0.600000	3 ms	default	0.600000
+at	0.000	0.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	7	Release	unit	
+def	1.000000	auto	default	1.000000
+at	0.000	0.1 s
+at	0.500	0.6 s
+at	1.000	auto
+param	8	MakeUp	unit	
+def	0.100000	+1.5 dB	default	0.100000
+at	0.000	0.0 dB
+at	0.500	+7.5 dB
+at	1.000	+15.0 dB
+param	9	FadeRate	unit	
+def	0.500000	7.2 s	default	0.500000
+at	0.000	1.0 s
+at	0.500	7.2 s
+at	1.000	57.7 s
+param	10	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	11	SC Filter	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	343 Hz
+at	1.000	666 Hz
+param	12	Virtual Gain	unit	
+def	0.400000	-100 dB	default	0.400000
+at	0.000	-oo dB
+at	0.500	-95 dB
+at	1.000	-70 dB
+param	13	Headroom	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-12.0 dB
+at	0.500	0.0 dB
+at	1.000	+12.0 dB
+param	14	Gain Reduction	unit	
+def	1.000000	22.0 dB	default	0.500000
+at	0.000	0.0 dB
+at	0.500	11.0 dB
+at	1.000	22.0 dB
+param	15	Input	unit	
+def	0.000000	0.0 dB	default	0.500000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB

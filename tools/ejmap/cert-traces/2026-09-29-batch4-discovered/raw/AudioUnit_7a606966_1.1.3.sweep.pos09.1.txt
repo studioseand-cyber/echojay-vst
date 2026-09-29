@@ -1,0 +1,26 @@
+probe: "SSL Fusion HF Compressor" | AudioUnit:Effects/aufx,HFCP,SSLN | uid=7a606966 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	53
+param	0	0.500000	X-Over	6.0
+param	1	0.500000	Threshold	0.0
+param	2	0.000000	Listen	Off
+param	3	0.500000	Output Trim	0.0
+param	4	1.000000	Mix	100
+param	5	0.000000	Auto Gain	Off
+param	6	0.500000	Input Trim	0.0
+param	7	0.000000	Bypass	Off
+stage	position
+pos	0	norm	0.600000	confirm_ms	2.75	slices	1	instack_match	1	getValue	0.600000	landed_by	instack	render_blocks	0	text_ms	21.9	reads	2	text	-2.0
+hold	0	-24.00	level_db	-27.0575	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0575,-27.0575	doubled	0	last_move_db	0.0055	final_move_db	0.0055	win	-38.7863,-29.0671,-27.0611,-27.0557,-27.0611,-27.0556	nonfinite	0
+hold	0	-12.00	level_db	-15.4777	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.4777,-15.4777	doubled	0	last_move_db	0.0054	final_move_db	0.0054	win	-15.4044,-15.4752,-15.4813,-15.4759,-15.4813,-15.4759	nonfinite	0
+hold	0	-6.00	level_db	-9.7121	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.7121,-9.7121	doubled	0	last_move_db	0.0045	final_move_db	0.0045	win	-9.7031,-9.7105,-9.7151,-9.7107,-9.7151,-9.7107	nonfinite	0
+reread	0	steady
+timing	wall_ms	107.0	audio_s	4.500
+stage	done

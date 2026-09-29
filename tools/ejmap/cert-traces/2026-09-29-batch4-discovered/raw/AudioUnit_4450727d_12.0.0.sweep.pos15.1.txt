@@ -1,0 +1,34 @@
+probe: "VComp (s)" | AudioUnit:Effects/aufx,NVCS,ksWV | uid=4450727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	in	1	Side-Chain Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+sidechain	1	Side-Chain Input Bus	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.350000	Input	-6.0 dB
+param	1	0.500000	Output	0.0 dB
+param	2	0.500000	Meter	GR
+param	3	0.000000	Analog	OFF
+param	4	0.000000	Limit	Off
+param	5	1.000000	Limit Level	12.0
+param	6	0.000000	Attack	Fast
+param	7	1.000000	Release Limiter	AUTO
+param	8	1.000000	Compress	On
+param	9	0.750000	Ratio	4:1
+param	10	1.000000	Release Compressor	AUTO
+param	11	0.000000	DeEsser	Off
+stage	position
+pos	0	norm	1.000000	confirm_ms	52.13	slices	4	instack_match	0	getValue	1.000000	landed_by	pump	render_blocks	0	text_ms	20.7	reads	2	text	18.0 dB
+hold	0	-54.00	level_db	-22.4519	in_rms_db	-57.0103	tone_frac	1.0000	ch	-22.4519,-22.4519	doubled	0	last_move_db	0.0029	final_move_db	0.0029	win	-23.0288,-22.5953,-22.4869,-22.4576,-22.4505,-22.4476	nonfinite	0
+hold	0	-48.00	level_db	-16.4469	in_rms_db	-51.0103	tone_frac	1.0000	ch	-16.4469,-16.4469	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-16.4480,-16.4464,-16.4479,-16.4464,-16.4479,-16.4464	nonfinite	0
+hold	0	-24.00	level_db	7.5532	in_rms_db	-27.0103	tone_frac	1.0000	ch	7.5532,7.5532	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	7.5517,7.5540,7.5517,7.5540,7.5517,7.5540	nonfinite	0
+hold	0	-12.00	level_db	19.5533	in_rms_db	-15.0103	tone_frac	1.0000	ch	19.5533,19.5533	doubled	0	last_move_db	0.0031	final_move_db	0.0031	win	19.5513,19.5544,19.5513,19.5544,19.5513,19.5544	nonfinite	0
+hold	0	-6.00	level_db	25.5535	in_rms_db	-9.0103	tone_frac	1.0000	ch	25.5535,25.5535	doubled	0	last_move_db	0.0037	final_move_db	0.0037	win	25.5510,25.5547,25.5510,25.5547,25.5510,25.5547	nonfinite	0
+reread	0	steady
+timing	wall_ms	105.9	audio_s	7.500
+stage	done

@@ -1,0 +1,32 @@
+probe: "PuigChild 660 (m)" | AudioUnit:Effects/aufx,FCHM,ksWV | uid=4c457963 | arch=arm64 | format=AudioUnit
+
+param	0	OnOff	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Mains	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	60Hz
+at	0.500	Off
+at	1.000	50Hz
+param	2	Input	unit	
+def	0.400000	12	default	0.300000
+at	0.000	20
+at	0.500	10
+at	1.000	0
+param	3	Threshold	unit	
+def	0.220000	2.2	default	0.250000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	4	Time Constant	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	5	Output	unit	
+def	0.508333	0.3 dB	default	0.500000
+at	0.000	-18.0 dB
+at	0.500	0.0 dB
+at	1.000	18.0 dB

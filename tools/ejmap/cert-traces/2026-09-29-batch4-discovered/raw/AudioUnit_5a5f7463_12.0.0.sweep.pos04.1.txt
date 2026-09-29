@@ -1,0 +1,25 @@
+probe: "Kramer PIE (m)" | AudioUnit:Effects/aufx,PYEM,ksWV | uid=5a5f7463 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.400000	Decay	4
+param	1	0.600000	Threshold	0
+param	2	0.500000	Ratio	3:1
+param	3	1.000000	Analog	Off
+param	4	0.667000	Output	6.0
+param	5	0.500000	Meter Select	GR
+param	6	0.625000	VU Calibrate	18
+stage	position
+pos	0	norm	0.266667	confirm_ms	52.35	slices	7	instack_match	0	getValue	0.266667	landed_by	pump	render_blocks	0	text_ms	20.7	reads	2	text	-14
+hold	0	-24.00	level_db	-27.7587	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.7587	doubled	0	last_move_db	0.0004	final_move_db	0.0004	win	-27.4986,-27.7586,-27.7590,-27.7586,-27.7590,-27.7586	nonfinite	0
+hold	0	-12.00	level_db	-23.4550	in_rms_db	-15.0103	tone_frac	1.0000	ch	-23.4550	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-23.3363,-23.4546,-23.4558,-23.4546,-23.4558,-23.4546	nonfinite	0
+hold	0	-6.00	level_db	-21.0973	in_rms_db	-9.0103	tone_frac	1.0000	ch	-21.0973	doubled	0	last_move_db	0.0020	final_move_db	0.0020	win	-21.0330,-21.0967,-21.0987,-21.0967,-21.0987,-21.0967	nonfinite	0
+reread	0	steady
+timing	wall_ms	109.1	audio_s	4.500
+stage	done

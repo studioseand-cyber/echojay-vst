@@ -1,0 +1,87 @@
+probe: "Maag MAGNUM-K" | AudioUnit:Effects/aumf,MaMK,Brwx | uid=6e665755 | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	Bank		4	1	1	0
+2	Input Attentuation 1		21	1	1	0
+3	Input Gain 1		21	1	1	0
+4	Range 1		4	1	1	0
+5	Ratio 1		21	1	1	0
+6	Threshold 1		21	1	1	0
+7	Sidechain 1		6	1	1	0
+8	Attack 1		21	1	1	0
+9	Release 1		21	1	1	0
+10	K Comp Threshold 1		21	1	1	0
+11	LMF Gain 1		21	1	1	0
+12	LMF Frequency 1		6	1	1	0
+13	Air Gain 1		21	1	1	0
+14	Air Band 1		6	1	1	0
+15	Make Up Gain 1		61	1	1	0
+16	Limiter Threshold 1		4	1	1	0
+17	FB/FF 1		2	1	1	0
+18	K Comp In 1		2	1	1	0
+19	LMF In 1		2	1	1	0
+20	LMF Bandwidth 1		2	1	1	0
+21	Air In 1		2	1	1	0
+22	Soft Limit 1		2	1	1	0
+23	Engage 1		2	1	1	0
+24	Input Attentuation 2		21	1	1	0
+25	Input Gain 2		21	1	1	0
+26	Range 2		4	1	1	0
+27	Ratio 2		21	1	1	0
+28	Threshold 2		21	1	1	0
+29	Sidechain 2		6	1	1	0
+30	Attack 2		21	1	1	0
+31	Release 2		21	1	1	0
+32	K Comp Threshold 2		21	1	1	0
+33	LMF Gain 2		21	1	1	0
+34	LMF Frequency 2		6	1	1	0
+35	Air Gain 2		21	1	1	0
+36	Air Band 2		6	1	1	0
+37	Make Up Gain 2		61	1	1	0
+38	Limiter Threshold 2		4	1	1	0
+39	FB/FF 2		2	1	1	0
+40	K Comp In 2		2	1	1	0
+41	LMF In 2		2	1	1	0
+42	LMF Bandwidth 2		2	1	1	0
+43	Air In 2		2	1	1	0
+44	Soft Limit 2		2	1	1	0
+45	Engage 2		2	1	1	0
+46	Sidechain Link		2	1	1	0
+47	Link		2	1	1	0
+48	Mix		61	1	1	0
+49	Mid Side		2	1	1	0
+50	TMT Channel		20	1	1	0
+51	Stereo Mode		2	1	1	0
+52	Mono Maker In		2	1	1	0
+53	Mono Maker		61	1	1	0
+54	Stereo Width In		2	1	1	0
+55	Stereo Width		61	1	1	0
+56	Monitoring		3	1	1	0
+57	Headroom		2147483647	0	1	0
+58	Switchable High Pass Position		2	1	1	0
+59	Switchable High Pass Frequency		5	1	1	0
+60	BX Engage		2	1	1	0
+61	Input Led 1		2147483647	0	1	0
+62	Peak In 1		2147483647	0	1	0
+63	Comp Led 1		2147483647	0	1	0
+64	KComp Led 1		2147483647	0	1	0
+65	Maeag1 Led 1		2147483647	0	1	0
+66	Maeag2 Led 1		2147483647	0	1	0
+67	Peak Out 1		2147483647	0	1	0
+68	Limit 1		2147483647	0	1	0
+69	Input Led 2		2147483647	0	1	0
+70	Peak In 2		2147483647	0	1	0
+71	Comp Led 2		2147483647	0	1	0
+72	KComp Led 2		2147483647	0	1	0
+73	Maeag1 Led 2		2147483647	0	1	0
+74	Maeag2 Led 2		2147483647	0	1	0
+75	Peak Out 2		2147483647	0	1	0
+76	Limit 2		2147483647	0	1	0
+77	Input 1		2147483647	0	1	0
+78	Input 2		2147483647	0	1	0
+79	Gain Red 1		2147483647	0	1	0
+80	Gain Red 2		2147483647	0	1	0
+81	Output1		2147483647	0	1	0
+82	Output2		2147483647	0	1	0
+83	Balance		2147483647	0	1	0
+84	Correlation		2147483647	0	1	0

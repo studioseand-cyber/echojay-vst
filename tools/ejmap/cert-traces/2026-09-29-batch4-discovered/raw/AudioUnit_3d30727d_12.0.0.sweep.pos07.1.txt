@@ -1,0 +1,29 @@
+probe: "CLA-76 (s)" | AudioUnit:Effects/aufx,76CS,ksWV | uid=3d30727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.375000	Input	-30.0
+param	1	0.625000	Output	-18.0
+param	2	0.333000	Attack	3.00
+param	3	0.500000	Release	4.00
+param	4	0.750000	Ratio	4
+param	5	1.000000	Analog	Off
+param	6	1.000000	Revision	Blacky
+param	7	0.000000	Meter	GR
+param	8	0.000000	Comp Off	Cmp On
+stage	position
+pos	0	norm	0.466667	confirm_ms	48.95	slices	3	instack_match	0	getValue	0.466667	landed_by	pump	render_blocks	0	text_ms	20.9	reads	2	text	-25.6
+hold	0	-54.00	level_db	-45.9713	in_rms_db	-57.0103	tone_frac	1.0000	ch	-45.9713,-45.9713	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-45.9719,-45.9711,-45.9718,-45.9711,-45.9718,-45.9711	nonfinite	0
+hold	0	-48.00	level_db	-39.9701	in_rms_db	-51.0103	tone_frac	1.0000	ch	-39.9701,-39.9701	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-39.9712,-39.9696,-39.9711,-39.9696,-39.9711,-39.9696	nonfinite	0
+hold	0	-24.00	level_db	-16.2043	in_rms_db	-27.0103	tone_frac	1.0000	ch	-16.2043,-16.2043	doubled	0	last_move_db	0.0017	final_move_db	0.0017	win	-16.1587,-16.1924,-16.2021,-16.2025,-16.2060,-16.2043	nonfinite	0
+hold	0	-12.00	level_db	-13.3625	in_rms_db	-15.0103	tone_frac	1.0000	ch	-13.3625,-13.3625	doubled	0	last_move_db	0.0200	final_move_db	0.0200	win	-13.4570,-13.7167,-13.5474,-13.4087,-13.3496,-13.3296	nonfinite	0
+hold	0	-6.00	level_db	-12.3897	in_rms_db	-9.0103	tone_frac	1.0000	ch	-12.3897,-12.3897	doubled	0	last_move_db	0.0037	final_move_db	0.0037	win	-12.2853,-12.3724,-12.3893,-12.3885,-12.3922,-12.3885	nonfinite	0
+reread	0	steady
+timing	wall_ms	121.4	audio_s	7.500
+stage	done

@@ -1,0 +1,34 @@
+probe: "SSL LMC+" | AudioUnit:Effects/aufx,Bfai,SSLN | uid=70404b5f | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	9	name	Input Gain	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	S/c Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	S/c Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Dry/Wet Mix	100
+param	1	1.000000	EQ In	On
+param	2	0.000000	EXT Sidechain	Off
+param	3	0.000000	Scoop	Off
+param	4	0.000000	Split	Off
+param	5	0.000000	Sidechain Listen	Off
+param	6	0.650000	Output Gain	6.0
+param	7	1.000000	Low-pass Filter	30.0
+param	8	0.000000	Auto Make-up Gain	Off
+param	9	0.500000	Input Gain	0.0
+param	10	0.000000	High-pass Filter	15.0
+param	11	0.500000	Amount	50
+param	12	0.000000	Bypass	Off
+stage	reference
+refpos	val	0.500000	text	0.0
+ref	-54.00	level_db	-51.0114	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-51.0114,-51.0114	win	-51.1212,-51.0112,-51.0117,-51.0112,-51.0117,-51.0112,-51.0117,-51.0112	nonfinite	0
+ref	-48.00	level_db	-45.0108	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-45.0108,-45.0108	win	-45.0134,-45.0096,-45.0134,-45.0096,-45.0134,-45.0096,-45.0134,-45.0096	nonfinite	0
+ref	-24.00	level_db	-21.0124	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-21.0124,-21.0124	win	-21.0087,-21.0142,-21.0087,-21.0142,-21.0087,-21.0142,-21.0087,-21.0142	nonfinite	0
+ref	-12.00	level_db	-17.3936	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-17.3936,-17.3936	win	-17.3555,-17.3924,-17.3959,-17.3924,-17.3959,-17.3924,-17.3959,-17.3924	nonfinite	0
+ref	-6.00	level_db	-15.9223	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-15.9223,-15.9223	win	-15.9011,-15.9220,-15.9229,-15.9220,-15.9229,-15.9220,-15.9229,-15.9220	nonfinite	0
+timing	wall_ms	53.8	audio_s	10.000
+stage	done

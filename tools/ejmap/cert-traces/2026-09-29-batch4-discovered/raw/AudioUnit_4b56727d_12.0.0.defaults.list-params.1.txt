@@ -1,0 +1,16 @@
+probe: "API-2500 (s)" | AudioUnit:Effects/aufx,APCS,ksWV | uid=4b56727d | arch=arm64 | format=AudioUnit
+
+0	Thresh	dB	2147483647	0	1	0
+1	Attack		7	1	1	0
+2	Ratio		7	1	1	0
+3	Release		7	1	1	0
+4	Knee		3	1	1	0
+5	Thrust		3	1	1	0
+6	Type		2	1	1	0
+7	Link Shape		4	1	1	0
+8	Analog		2	1	1	0
+9	Output		2147483647	0	1	0
+10	In		2	1	1	0
+11	Release Variable		2147483647	0	1	0
+12	L/R Link		7	1	1	0
+13	Makeup		2	1	1	0

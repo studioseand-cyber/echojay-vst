@@ -1,0 +1,47 @@
+probe: "SSLComp (s)" | AudioUnit:Effects/aufx,SLCS,ksWV | uid=594a727d | arch=arm64 | format=AudioUnit
+
+param	0	Thresh	unit	dB
+def	0.800000	9.0	default	0.800000
+at	0.000	-15.0
+at	0.500	0.0
+at	1.000	15.0
+param	1	Makeup	unit	dB
+def	0.400000	3.0	default	0.400000
+at	0.000	-5.0
+at	0.500	5.0
+at	1.000	15.0
+param	2	Attack	unit	
+def	0.400000	1ms	default	0.400000
+at	0.000	.1ms
+at	0.500	3ms
+at	1.000	30ms
+param	3	Release	unit	ms
+def	0.750000	1.2s	default	0.750000
+at	0.000	.1s
+at	0.500	.6s
+at	1.000	Auto
+param	4	Ratio	unit	
+def	0.500000	4:1	default	0.500000
+at	0.000	2:1
+at	0.500	4:1
+at	1.000	10:1
+param	5	Rate-S	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	10
+at	1.000	60
+param	6	IN	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	7	ANLG	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	8	AutoFade	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Out
+at	1.000	In

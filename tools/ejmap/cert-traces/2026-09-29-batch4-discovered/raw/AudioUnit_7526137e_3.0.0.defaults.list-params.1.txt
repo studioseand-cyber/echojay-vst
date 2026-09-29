@@ -1,0 +1,14 @@
+probe: "U73b Compressor" | AudioUnit:Effects/aufx,U73b,AdFd | uid=7526137e | arch=arm64 | format=AudioUnit
+
+0	Bypass		2	1	1	0
+1	Mode		3	1	1	0
+2	Release Time		6	1	1	0
+3	Input Level	dB	2147483647	0	1	0
+4	Output Level	dB	2147483647	0	1	0
+5	Key Input		5	1	1	0
+6	Meter		3	1	1	0
+7	HiPass		2	1	1	0
+8	Calibration	dB	2147483647	0	1	0
+9	Autovolume		2	1	1	0
+10	Oversampling		2	1	1	0
+11	Comp. Amount	%	2147483647	0	1	0

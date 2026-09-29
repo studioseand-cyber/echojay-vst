@@ -1,0 +1,57 @@
+probe: "Solid Bus Comp" | AudioUnit:Effects/aufx,Ni$6,-NI- | uid=2520b63 | arch=arm64 | format=AudioUnit
+
+param	0	Threshold	unit	
+def	0.597580	3.9 dB	default	0.500000
+at	0.000	3.9 dB
+at	0.500	3.9 dB
+at	1.000	3.9 dB
+param	1	Makeup	unit	
+def	0.289580	2.2 dB	default	0.200000
+at	0.000	2.2 dB
+at	0.500	2.2 dB
+at	1.000	2.2 dB
+param	2	Ratio	unit	
+def	0.600000	4	default	0.600000
+at	0.000	1.5
+at	0.500	4
+at	1.000	10
+param	3	-	unit	
+def	0.000000	-	default	0.000000
+at	0.000	-
+at	0.500	-
+at	1.000	-
+param	4	Attack	unit	
+def	1.000000	30 ms	default	0.400000
+at	0.000	0.1 ms
+at	0.500	3 ms
+at	1.000	30 ms
+param	5	Release	unit	
+def	0.000000	0.1 s	default	0.000000
+at	0.000	0.1 s
+at	0.500	0.8 s
+at	1.000	Auto
+param	6	Output	unit	
+def	1.000000	0.0 dB	default	1.000000
+at	0.000	-Inf dB
+at	0.500	-6.0 dB
+at	1.000	0.0 dB
+param	7	Dry	unit	
+def	0.000000	-Inf dB	default	1.000000
+at	0.000	-Inf dB
+at	0.500	-6.0 dB
+at	1.000	0.0 dB
+param	8	SC Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	SC Gain	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-20.0 dB
+at	0.500	0.0 dB
+at	1.000	+20.0 dB
+param	10	Link L/R	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

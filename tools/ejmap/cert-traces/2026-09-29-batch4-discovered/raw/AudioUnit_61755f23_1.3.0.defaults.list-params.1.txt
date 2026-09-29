@@ -1,0 +1,20 @@
+probe: "NEOLD V76U73" | AudioUnit:Effects/aufx,NeV7,Neol | uid=61755f23 | arch=arm64 | format=AudioUnit
+
+0	Attack Time		2	1	1	0
+1	Bank		2147483647	0	1	0
+2	Mix	%	2147483647	0	1	0
+3	Gain	dB	2147483647	0	1	0
+4	Low Cut		2147483647	0	1	0
+5	Detector		2	1	1	0
+6	Linear		2	1	1	0
+7	High Cut		2	1	1	0
+8	Meter Mode		2147483647	0	1	0
+9	Makeup Gain	dB	2147483647	0	1	0
+10	Mode		2147483647	0	1	0
+11	GR Meter		2147483647	0	0	0
+12	VU Meter		2147483647	0	0	0
+13	Power		2	1	1	0
+14	Release Time	s	2147483647	0	1	0
+15	SC Filter		2	1	1	0
+16	Send	dB	2147483647	0	1	0
+17	Trim	dB	2147483647	0	1	0

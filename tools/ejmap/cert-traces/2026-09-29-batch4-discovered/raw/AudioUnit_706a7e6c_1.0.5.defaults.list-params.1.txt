@@ -1,0 +1,18 @@
+probe: "SSL Blitzer" | AudioUnit:Effects/aufx,BLTZ,SSLN | uid=706a7e6c | arch=arm64 | format=AudioUnit
+
+0	Mix		2147483647	0	1	0
+1	BLITZ!		2	1	1	0
+2	Drive		2147483647	0	1	0
+3	Ratio		9	1	1	0
+4	Transients		2147483647	0	1	0
+5	Release		2147483647	0	1	0
+6	Sidechain Listen		2	1	1	0
+7	Output Gain		2147483647	0	1	0
+8	Sidechain Q		2147483647	0	1	0
+9	Auto Gain		2	1	1	0
+10	Input Gain		2147483647	0	1	0
+11	Sidechain HPF		2147483647	0	1	0
+12	Sidechain Frequency		2147483647	0	1	0
+13	Sidechain Gain		2147483647	0	1	0
+14	Attack		2147483647	0	1	0
+15	Bypass		2	1	1	0

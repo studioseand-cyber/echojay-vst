@@ -1,0 +1,222 @@
+probe: "SPL IRON" | AudioUnit:Effects/aufx,SPIR,SPL1 | uid=6175631b | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	M/S	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Monomaker Freq	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	200 Hz
+at	1.000	2.0 kHz
+param	3	Stereowidth	unit	
+def	0.500000	100 %	default	0.500000
+at	0.000	0 %
+at	0.500	100 %
+at	1.000	400 %
+param	4	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	5	Auto Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	HostSync
+at	1.000	AutoByp
+param	6	Interval	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Off
+param	7	Out Mode	unit	
+def	0.500000	Byp	default	0.500000
+at	0.000	TapeRO
+at	0.500	Byp
+at	1.000	AirBass
+param	8	Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	SC Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	SC HP Freq 	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	333 Hz
+at	1.000	666 Hz
+param	11	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	12	Headroom	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	+12.0
+param	13	TMT Channel	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	11
+at	1.000	20
+param	14	Stereo Mode	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Analog
+at	1.000	Digital
+param	15	Monitoring 	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Solo M
+at	1.000	Solo S
+param	16	Power L	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	17	Input L	unit	
+def	0.000000	2 dB	default	0.000000
+at	0.000	2 dB
+at	0.500	6 dB
+at	1.000	12 dB
+param	18	Input Sign L	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-
+at	0.500	0
+at	1.000	+
+param	19	Output L	unit	
+def	0.000000	2 dB	default	0.000000
+at	0.000	2 dB
+at	0.500	6 dB
+at	1.000	12 dB
+param	20	Output Sign L	unit	
+def	1.000000	+	default	1.000000
+at	0.000	-
+at	0.500	0
+at	1.000	+
+param	21	Meter L	unit	
+def	1.000000	GR	default	1.000000
+at	0.000	VU +10
+at	0.500	VU
+at	1.000	GR
+param	22	Threshold L	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	+20.0
+at	1.000	+40.0
+param	23	Tube Bias L	unit	
+def	1.000000	High	default	1.000000
+at	0.000	Low
+at	0.500	Mid
+at	1.000	High
+param	24	Attack L	unit	
+def	0.200000	2	default	0.200000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	25	Release L	unit	
+def	0.400000	3	default	0.400000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	26	Rectifier L	unit	
+def	0.600000	Sil	default	0.600000
+at	0.000	Ger1
+at	0.500	Led
+at	1.000	GeSi
+param	27	Side Chain EQ L	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	EQ2
+at	1.000	EXT
+param	28	Power R	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	29	Input R	unit	
+def	0.000000	2 dB	default	0.000000
+at	0.000	2 dB
+at	0.500	6 dB
+at	1.000	12 dB
+param	30	Input Sign R	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-
+at	0.500	0
+at	1.000	+
+param	31	Output R	unit	
+def	0.000000	2 dB	default	0.000000
+at	0.000	2 dB
+at	0.500	6 dB
+at	1.000	12 dB
+param	32	Output Sign R	unit	
+def	1.000000	+	default	1.000000
+at	0.000	-
+at	0.500	0
+at	1.000	+
+param	33	Meter R	unit	
+def	1.000000	GR	default	1.000000
+at	0.000	VU +10
+at	0.500	VU
+at	1.000	GR
+param	34	Threshold R	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	+20.0
+at	1.000	+40.0
+param	35	Tube Bias R	unit	
+def	1.000000	High	default	1.000000
+at	0.000	Low
+at	0.500	Mid
+at	1.000	High
+param	36	Attack R	unit	
+def	0.200000	2	default	0.200000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	37	Release R	unit	
+def	0.400000	3	default	0.400000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	38	Rectifier R	unit	
+def	0.600000	Sil	default	0.600000
+at	0.000	Ger1
+at	0.500	Led
+at	1.000	GeSi
+param	39	Side Chain EQ R	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	EQ2
+at	1.000	EXT
+param	40		unit	
+def	0.645455		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	41		unit	
+def	0.645455		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	42		unit	
+def	0.645455		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	43		unit	
+def	0.645455		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	

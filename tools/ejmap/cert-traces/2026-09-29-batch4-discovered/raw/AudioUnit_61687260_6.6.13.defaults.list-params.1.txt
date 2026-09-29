@@ -1,0 +1,20 @@
+probe: "SSL Native X-ValveComp v6" | AudioUnit:Effects/aufx,SNXV,SSLN | uid=61687260 | arch=arm64 | format=AudioUnit
+
+0	Mix		2147483647	0	1	0
+1	Hold		2147483647	0	1	0
+2	Knee		2147483647	0	1	0
+3	Peak		2	1	1	0
+4	Input Gain		2147483647	0	1	0
+5	Ratio		2147483647	0	1	0
+6	S/Chain Listen		2	1	1	0
+7	Valve In		2	1	1	0
+8	Threshold		2147483647	0	1	0
+9	Sidechain In		2	1	1	0
+10	Attack		2147483647	0	1	0
+11	Bypass		2	1	1	0
+12	High Cut		2147483647	0	1	0
+13	Low Cut		2147483647	0	1	0
+14	Release		2147483647	0	1	0
+15	Output Gain		2147483647	0	1	0
+16	Makeup Gain		2147483647	0	1	0
+17	Auto Gain		2	1	1	0

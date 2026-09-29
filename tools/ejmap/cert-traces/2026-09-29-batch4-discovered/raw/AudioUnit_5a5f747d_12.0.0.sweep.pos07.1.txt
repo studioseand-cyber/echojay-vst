@@ -1,0 +1,25 @@
+probe: "Kramer PIE (s)" | AudioUnit:Effects/aufx,PYES,ksWV | uid=5a5f747d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.400000	Decay	4
+param	1	0.600000	Threshold	0
+param	2	0.500000	Ratio	3:1
+param	3	1.000000	Analog	Off
+param	4	0.667000	Output	6.0
+param	5	0.500000	Meter Select	GR
+param	6	0.625000	VU Calibrate	18
+stage	position
+pos	0	norm	0.466667	confirm_ms	50.56	slices	6	instack_match	0	getValue	0.466667	landed_by	pump	render_blocks	0	text_ms	21.0	reads	2	text	-6
+hold	0	-24.00	level_db	-22.3133	in_rms_db	-27.0103	tone_frac	1.0000	ch	-22.3133,-22.3133	doubled	0	last_move_db	0.0004	final_move_db	0.0004	win	-22.2048,-22.3132,-22.3136,-22.3132,-22.3136,-22.3132	nonfinite	0
+hold	0	-12.00	level_db	-18.3645	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.3645,-18.3645	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-18.2488,-18.3641,-18.3653,-18.3641,-18.3654,-18.3641	nonfinite	0
+hold	0	-6.00	level_db	-16.1981	in_rms_db	-9.0103	tone_frac	1.0000	ch	-16.1981,-16.1981	doubled	0	last_move_db	0.0020	final_move_db	0.0020	win	-16.1318,-16.1975,-16.1995,-16.1975,-16.1995,-16.1975	nonfinite	0
+reread	0	steady
+timing	wall_ms	121.0	audio_s	4.500
+stage	done

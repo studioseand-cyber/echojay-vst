@@ -1,0 +1,12 @@
+probe: "Abbey Road RS124 (m)" | AudioUnit:Effects/aufx,RS1M,ksWV | uid=58550063 | arch=arm64 | format=AudioUnit
+
+0	Input Control		2147483647	0	1	0
+1	Recovery		6	1	1	0
+2	Super Fuse		2	1	1	0
+3	Unit Type		2	1	1	0
+4	SC HP	Hz	2147483647	0	1	0
+5	Mix		2147483647	0	1	0
+6	Output Attenuator	dB	2147483647	0	1	0
+7	Meter Selector		3	1	1	0
+8	Auto Hold		2	1	1	0
+9	HF Roll-Off		2	1	1	0

@@ -1,0 +1,37 @@
+probe: "SSL Native X-ValveComp v6" | AudioUnit:Effects/aufx,SNXV,SSLN | uid=61687260 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Mix	100.0
+param	1	0.000000	Hold	0.0
+param	2	0.500000	Knee	12.0
+param	3	0.000000	Peak	Off
+param	4	1.000000	Input Gain	0.0
+param	5	0.502337	Ratio	5.00
+param	6	0.000000	S/Chain Listen	Off
+param	7	1.000000	Valve In	On
+param	8	1.000000	Threshold	0.0
+param	9	0.000000	Sidechain In	Off
+param	10	0.524388	Attack	12.0
+param	11	0.000000	Bypass	Off
+param	12	1.000000	High Cut	20000
+param	13	0.000000	Low Cut	20
+param	14	0.504449	Release	100.0
+param	15	1.000000	Output Gain	0.0
+param	16	0.000000	Makeup Gain	0.0
+param	17	1.000000	Auto Gain	On
+set	17	0.000000	confirm_ms	3.0	getValue	0.000000	landed_by	instack	render_blocks	0	text	Off
+stage	position
+pos	0	norm	1.000000	confirm_ms	3.07	slices	1	instack_match	1	getValue	1.000000	landed_by	instack	render_blocks	0	text_ms	22.6	reads	2	text	0.0
+hold	0	-24.00	level_db	-24.0659	in_rms_db	-27.0103	tone_frac	1.0000	ch	-24.0659,-24.0659	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-24.0664,-24.0656,-24.0664,-24.0656,-24.0664,-24.0656	nonfinite	0
+hold	0	-12.00	level_db	-12.1621	in_rms_db	-15.0103	tone_frac	1.0000	ch	-12.1621,-12.1621	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-12.1631,-12.1616,-12.1631,-12.1616,-12.1631,-12.1616	nonfinite	0
+hold	0	-6.00	level_db	-6.4142	in_rms_db	-9.0103	tone_frac	0.9999	ch	-6.4142,-6.4142	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-6.4157,-6.4135,-6.4157,-6.4135,-6.4157,-6.4135	nonfinite	0
+reread	0	steady
+timing	wall_ms	45.3	audio_s	4.500
+stage	done

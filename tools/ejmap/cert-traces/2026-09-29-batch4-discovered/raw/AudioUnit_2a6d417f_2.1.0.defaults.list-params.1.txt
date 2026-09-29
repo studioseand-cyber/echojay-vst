@@ -1,0 +1,1 @@
+probe: "kHs Dynamics" | AudioUnit:Effects/aufx,ksot, kHs | uid=2a6d417f | arch=arm64 | format=AudioUnit

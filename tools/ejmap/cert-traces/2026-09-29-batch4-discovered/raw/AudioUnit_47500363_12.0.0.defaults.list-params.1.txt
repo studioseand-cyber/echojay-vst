@@ -1,0 +1,5 @@
+probe: "MV2 (m)" | AudioUnit:Effects/aufx,MV2M,ksWV | uid=47500363 | arch=arm64 | format=AudioUnit
+
+0	Low Level	dB	2147483647	0	1	0
+1	High Level	dB	2147483647	0	1	0
+2	Output Gain	dB	2147483647	0	1	0

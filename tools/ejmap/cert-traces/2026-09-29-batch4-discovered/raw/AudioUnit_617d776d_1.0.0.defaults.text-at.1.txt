@@ -1,0 +1,137 @@
+probe: "Kiive XTComp" | AudioUnit:Effects/aufx,Kaxc,Kiiv | uid=617d776d | arch=arm64 | format=AudioUnit
+
+param	0	Input Right	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	10.0
+param	1	INPUT	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	2	Type Left	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	2.5
+at	1.000	5.0
+param	3	Type Right	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	2.5
+at	1.000	5.0
+param	4	Sat Mix Left	unit	
+def	1.000000	1.0	default	1.000000
+at	0.000	0.0
+at	0.500	0.5
+at	1.000	1.0
+param	5	OUTPUT	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	6	Sat Left	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	7	Right Ratio	unit	
+def	0.571429	5.0	default	0.000000
+at	0.000	1.0
+at	0.500	4.5
+at	1.000	8.0
+param	8	Release Left	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	9	Comp Mix Right	unit	
+def	1.000000	1.0	default	1.000000
+at	0.000	0.0
+at	0.500	0.5
+at	1.000	1.0
+param	10	Comp Mix Left	unit	
+def	1.000000	1.0	default	1.000000
+at	0.000	0.0
+at	0.500	0.5
+at	1.000	1.0
+param	11	SC Left	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	3.5
+at	1.000	7.0
+param	12	SC Right	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	3.5
+at	1.000	7.0
+param	13	Sat Right	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	14	Input Left	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	10.0
+param	15	XT Mode	unit	
+def	0.500000	1.0	default	0.500000
+at	0.000	0.0
+at	0.500	1.0
+at	1.000	2.0
+param	16	Output Left	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	10.0
+param	17	Attack Left	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	18	Warmth Right	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	19	Warmth Left	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	20	Release Right	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	21	Output Right	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	10.0
+param	22	Left Ratio	unit	
+def	0.571429	5.0	default	0.000000
+at	0.000	1.0
+at	0.500	4.5
+at	1.000	8.0
+param	23	Sat Mix Right	unit	
+def	1.000000	1.0	default	1.000000
+at	0.000	0.0
+at	0.500	0.5
+at	1.000	1.0
+param	24	R Knee	unit	
+def	0.500000	1.0	default	0.500000
+at	0.000	0.0
+at	0.500	1.0
+at	1.000	2.0
+param	25	Attack Right	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	26	L Knee	unit	
+def	0.500000	1.0	default	0.500000
+at	0.000	0.0
+at	0.500	1.0
+at	1.000	2.0

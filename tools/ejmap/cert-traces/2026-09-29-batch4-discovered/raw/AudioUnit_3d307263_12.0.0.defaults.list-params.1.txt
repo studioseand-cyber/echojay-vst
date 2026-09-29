@@ -1,0 +1,11 @@
+probe: "CLA-76 (m)" | AudioUnit:Effects/aufx,76CM,ksWV | uid=3d307263 | arch=arm64 | format=AudioUnit
+
+0	Input		2147483647	0	1	0
+1	Output		2147483647	0	1	0
+2	Attack		2147483647	0	1	0
+3	Release		2147483647	0	1	0
+4	Ratio		5	1	1	0
+5	Analog		3	1	1	0
+6	Revision		2	1	1	0
+7	Meter		3	1	1	0
+8	Comp Off		2	1	1	0

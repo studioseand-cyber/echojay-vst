@@ -1,0 +1,427 @@
+probe: "Maag MAGNUM-K" | AudioUnit:Effects/aumf,MaMK,Brwx | uid=6e665755 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	1	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	2	Input Attentuation 1	unit	
+def	1.000000	0.00	default	1.000000
+at	0.000	-10.00
+at	0.500	-5.00
+at	1.000	0.00
+param	3	Input Gain 1	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	4	Range 1	unit	
+def	0.000000	4	default	0.000000
+at	0.000	4
+at	0.500	12
+at	1.000	16
+param	5	Ratio 1	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	6	Threshold 1	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	7	Sidechain 1	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	80 Hz
+at	1.000	EXT
+param	8	Attack 1	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	9	Release 1	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	10	K Comp Threshold 1	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	11	LMF Gain 1	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	12	LMF Frequency 1	unit	
+def	0.000000	SUB	default	0.000000
+at	0.000	SUB
+at	0.500	65/88 Hz
+at	1.000	1/1.4 kHz
+param	13	Air Gain 1	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	14	Air Band 1	unit	
+def	0.000000	10 kHz	default	0.000000
+at	0.000	10 kHz
+at	0.500	20 kHz
+at	1.000	40 kHz
+param	15	Make Up Gain 1	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	16	Limiter Threshold 1	unit	
+def	1.000000	-3 dBFS	default	1.000000
+at	0.000	-15 dBFS
+at	0.500	-7 dBFS
+at	1.000	-3 dBFS
+param	17	FB/FF 1	unit	
+def	0.000000	FB	default	0.000000
+at	0.000	FB
+at	0.500	FB
+at	1.000	FF
+param	18	K Comp In 1	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	19	LMF In 1	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	20	LMF Bandwidth 1	unit	
+def	0.000000	W	default	0.000000
+at	0.000	W
+at	0.500	W
+at	1.000	T
+param	21	Air In 1	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	22	Soft Limit 1	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	23	Engage 1	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	24	Input Attentuation 2	unit	
+def	1.000000	0.00	default	1.000000
+at	0.000	-10.00
+at	0.500	-5.00
+at	1.000	0.00
+param	25	Input Gain 2	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	26	Range 2	unit	
+def	0.000000	4	default	0.000000
+at	0.000	4
+at	0.500	12
+at	1.000	16
+param	27	Ratio 2	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	28	Threshold 2	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	29	Sidechain 2	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	80 Hz
+at	1.000	EXT
+param	30	Attack 2	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	31	Release 2	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	5.00
+at	1.000	10.00
+param	32	K Comp Threshold 2	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	33	LMF Gain 2	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	34	LMF Frequency 2	unit	
+def	0.000000	SUB	default	0.000000
+at	0.000	SUB
+at	0.500	65/88 Hz
+at	1.000	1/1.4 kHz
+param	35	Air Gain 2	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	36	Air Band 2	unit	
+def	0.000000	10 kHz	default	0.000000
+at	0.000	10 kHz
+at	0.500	20 kHz
+at	1.000	40 kHz
+param	37	Make Up Gain 2	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	38	Limiter Threshold 2	unit	
+def	1.000000	-3 dBFS	default	1.000000
+at	0.000	-15 dBFS
+at	0.500	-7 dBFS
+at	1.000	-3 dBFS
+param	39	FB/FF 2	unit	
+def	0.000000	FB	default	0.000000
+at	0.000	FB
+at	0.500	FB
+at	1.000	FF
+param	40	K Comp In 2	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	41	LMF In 2	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	42	LMF Bandwidth 2	unit	
+def	0.000000	W	default	0.000000
+at	0.000	W
+at	0.500	W
+at	1.000	T
+param	43	Air In 2	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	44	Soft Limit 2	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	45	Engage 2	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	46	Sidechain Link	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	47	Link	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	48	Mix	unit	
+def	1.000000	100.0 %	default	1.000000
+at	0.000	0.0 %
+at	0.500	50.0 %
+at	1.000	100.0 %
+param	49	Mid Side	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	50	TMT Channel	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	11
+at	1.000	20
+param	51	Stereo Mode	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Analog
+at	1.000	Digital
+param	52	Mono Maker In	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	53	Mono Maker	unit	
+def	0.000000	20 Hz	default	0.000000
+at	0.000	20 Hz
+at	0.500	663 Hz
+at	1.000	22 kHz
+param	54	Stereo Width In	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	55	Stereo Width	unit	
+def	0.500000	100 %	default	0.500000
+at	0.000	0 %
+at	0.500	100 %
+at	1.000	400 %
+param	56	Monitoring	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Mid
+at	1.000	Side
+param	57	Headroom	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-12.0 dB
+at	0.500	0.0 dB
+at	1.000	12.0 dB
+param	58	Switchable High Pass Position	unit	
+def	0.000000	PRE	default	0.000000
+at	0.000	PRE
+at	0.500	PRE
+at	1.000	POST
+param	59	Switchable High Pass Frequency	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	80 Hz
+at	1.000	220 Hz
+param	60	BX Engage	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	61	Input Led 1	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	62	Peak In 1	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	63	Comp Led 1	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	64	KComp Led 1	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	65	Maeag1 Led 1	unit	
+def	1.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	66	Maeag2 Led 1	unit	
+def	1.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	67	Peak Out 1	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	68	Limit 1	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	69	Input Led 2	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	70	Peak In 2	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	71	Comp Led 2	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	72	KComp Led 2	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	73	Maeag1 Led 2	unit	
+def	1.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	74	Maeag2 Led 2	unit	
+def	1.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	75	Peak Out 2	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	76	Limit 2	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	77	Input 1	unit	
+def	0.000000	-60.00	default	1.000000
+at	0.000	-60.00
+at	0.500	-30.00
+at	1.000	0.00
+param	78	Input 2	unit	
+def	0.000000	-60.00	default	1.000000
+at	0.000	-60.00
+at	0.500	-30.00
+at	1.000	0.00
+param	79	Gain Red 1	unit	
+def	0.000000	0.00	default	1.000000
+at	0.000	0.00
+at	0.500	-10.00
+at	1.000	-20.00
+param	80	Gain Red 2	unit	
+def	0.000000	0.00	default	1.000000
+at	0.000	0.00
+at	0.500	-10.00
+at	1.000	-20.00
+param	81	Output1	unit	
+def	0.000000	-60.00	default	1.000000
+at	0.000	-60.00
+at	0.500	-30.00
+at	1.000	0.00
+param	82	Output2	unit	
+def	0.000000	-60.00	default	1.000000
+at	0.000	-60.00
+at	0.500	-30.00
+at	1.000	0.00
+param	83	Balance	unit	
+def	0.500000	C	default	1.000000
+at	0.000	100 L
+at	0.500	C
+at	1.000	100 R
+param	84	Correlation	unit	
+def	0.500000	0.00	default	1.000000
+at	0.000	-1.00
+at	0.500	0.00
+at	1.000	1.00

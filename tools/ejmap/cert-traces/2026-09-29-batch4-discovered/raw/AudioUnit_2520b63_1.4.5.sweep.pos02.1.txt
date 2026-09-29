@@ -1,0 +1,31 @@
+probe: "Solid Bus Comp" | AudioUnit:Effects/aufx,Ni$6,-NI- | uid=2520b63 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.597580	Threshold	3.9 dB
+param	1	0.289580	Makeup	2.2 dB
+param	2	0.600000	Ratio	4
+param	3	0.000000	-	-
+param	4	1.000000	Attack	30 ms
+param	5	0.000000	Release	0.1 s
+param	6	1.000000	Output	  0.0 dB
+param	7	0.000000	Dry	-Inf dB
+param	8	0.000000	SC Mode	Off
+param	9	0.500000	SC Gain	0.0 dB
+param	10	1.000000	Link L/R	On
+stage	position
+pos	0	norm	0.133333	confirm_ms	501.31	slices	199	instack_match	0	getValue	0.133333	landed_by	render	render_blocks	1	text_ms	22.1	reads	2	text	-14.7 dB
+hold	0	-24.00	level_db	-31.3563	in_rms_db	-27.0103	tone_frac	1.0000	ch	-31.3563,-31.3563	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-30.1171,-31.3556,-31.3568,-31.3561,-31.3568,-31.3561	nonfinite	0
+hold	0	-12.00	level_db	-27.1732	in_rms_db	-15.0103	tone_frac	1.0000	ch	-27.1732,-27.1732	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-25.7544,-27.1725,-27.1742,-27.1727,-27.1742,-27.1727	nonfinite	0
+hold	0	-6.00	level_db	-25.2886	in_rms_db	-9.0103	tone_frac	1.0000	ch	-25.2886,-25.2886	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-24.6979,-25.2878,-25.2902,-25.2879,-25.2902,-25.2879	nonfinite	0
+reread	0	steady
+timing	wall_ms	558.0	audio_s	4.500
+stage	done

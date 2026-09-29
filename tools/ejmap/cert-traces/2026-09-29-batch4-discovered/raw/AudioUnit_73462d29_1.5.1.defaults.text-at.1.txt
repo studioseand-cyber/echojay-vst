@@ -1,0 +1,187 @@
+probe: "Purple Audio MC 77" | AudioUnit:Effects/aumf,PA77,Brwx | uid=73462d29 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	M/S	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Monomaker Freq	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	200 Hz
+at	1.000	2.0 kHz
+param	3	Stereowidth	unit	
+def	0.500000	100 %	default	0.500000
+at	0.000	0 %
+at	0.500	100 %
+at	1.000	400 %
+param	4	SC HP Freq 	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	333 Hz
+at	1.000	666 Hz
+param	5	Headroom	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-12.0 dB
+at	0.500	0.0 dB
+at	1.000	+12.0 dB
+param	6	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	7	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	8	SCLink	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Link	unit	
+def	0.500000	Std	default	0.500000
+at	0.000	Off
+at	0.500	Std
+at	1.000	Prop
+param	10	IO-Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Insert	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	TMT Channel	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	11
+at	1.000	20
+param	13	Stereo Mode	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Analog
+at	1.000	Digital
+param	14	Monitoring 	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Solo M
+at	1.000	Solo S
+param	15	Input L	unit	
+def	0.375000	-30.0 dB	default	0.375000
+at	0.000	-inf dB
+at	0.500	-24.0 dB
+at	1.000	0.0 dB
+param	16	Output L	unit	
+def	0.434000	-27.2 dB	default	0.434000
+at	0.000	-inf dB
+at	0.500	-24.0 dB
+at	1.000	0.0 dB
+param	17	Attack L	unit	
+def	0.402000	+3.2	default	0.402000
+at	0.000	Off
+at	0.500	+3.9
+at	1.000	+7.5
+param	18	Release L	unit	
+def	0.700000	5.2	default	0.700000
+at	0.000	1.0
+at	0.500	4.0
+at	1.000	7.0
+param	19	Ratio L	unit	
+def	0.066667	Ratio 4	default	0.066667
+at	0.000	No Buttons
+at	0.500	Ratio 20
+at	1.000	All Buttons
+param	20	Meter Mode L	unit	
+def	1.000000	GR	default	1.000000
+at	0.000	I/O
+at	0.500	I/O
+at	1.000	GR
+param	21	Meter IO L	unit	
+def	0.000000	OUT	default	0.000000
+at	0.000	OUT
+at	0.500	OUT
+at	1.000	IN
+param	22	Bypass L	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	23	Power L	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	24	Input R	unit	
+def	0.375000	-30.0 dB	default	0.375000
+at	0.000	-inf dB
+at	0.500	-24.0 dB
+at	1.000	0.0 dB
+param	25	Output R	unit	
+def	0.434000	-27.2 dB	default	0.434000
+at	0.000	-inf dB
+at	0.500	-24.0 dB
+at	1.000	0.0 dB
+param	26	Attack R	unit	
+def	0.402000	+3.2	default	0.402000
+at	0.000	Off
+at	0.500	+3.9
+at	1.000	+7.5
+param	27	Release R	unit	
+def	0.700000	5.2	default	0.700000
+at	0.000	1.0
+at	0.500	4.0
+at	1.000	7.0
+param	28	Ratio R	unit	
+def	0.066667	Ratio 4	default	0.066667
+at	0.000	No Buttons
+at	0.500	Ratio 20
+at	1.000	All Buttons
+param	29	Meter Mode R	unit	
+def	1.000000	GR	default	1.000000
+at	0.000	I/O
+at	0.500	I/O
+at	1.000	GR
+param	30	Meter IO R	unit	
+def	0.000000	OUT	default	0.000000
+at	0.000	OUT
+at	0.500	OUT
+at	1.000	IN
+param	31	Bypass R	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	32	Power R	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	33	VU Meter L	unit	
+def	0.048246	+0.04825	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	34	VU Meter R	unit	
+def	0.139248	+0.13925	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	35	GR Meter L	unit	
+def	1.000000	+1.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	36	GR Meter R	unit	
+def	1.000000	+1.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000

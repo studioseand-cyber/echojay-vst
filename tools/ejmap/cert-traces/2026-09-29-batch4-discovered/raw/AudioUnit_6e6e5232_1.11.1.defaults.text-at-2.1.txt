@@ -1,0 +1,117 @@
+probe: "Millennia TCL-2" | AudioUnit:Effects/aufx,MiC2,Brwx | uid=6e6e5232 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Stereo Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Mid/Side	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	In/Out 1	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	4	Meter 1	unit	
+def	0.000000	Level	default	0.000000
+at	0.000	Level
+at	0.500	Level
+at	1.000	GR
+param	5	Topology 1	unit	
+def	0.000000	Tube	default	0.000000
+at	0.000	Tube
+at	0.500	Tube
+at	1.000	J-FET
+param	6	Threshold 1	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	7	Attack 1	unit	
+def	0.000000	2.0 mS	default	0.000000
+at	0.000	2.0 mS
+at	0.500	50.0 mS
+at	1.000	100.0 mS
+param	8	Release 1	unit	
+def	0.000000	0.1 S	default	0.000000
+at	0.000	0.1 S
+at	0.500	1.5 S
+at	1.000	3.0 S
+param	9	Ratio 1	unit	
+def	0.000000	2.0:1	default	0.000000
+at	0.000	2.0:1
+at	0.500	6.0:1
+at	1.000	30.0:1
+param	10	Level 1	unit	
+def	0.470000	0.47	default	0.470000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	11	Mix 1	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	12	In/Out 2	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	13	Meter 2	unit	
+def	0.000000	Level	default	0.000000
+at	0.000	Level
+at	0.500	Level
+at	1.000	GR
+param	14	Topology 2	unit	
+def	0.000000	Tube	default	0.000000
+at	0.000	Tube
+at	0.500	Tube
+at	1.000	J-FET
+param	15	Threshold 2	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	16	Attack 2	unit	
+def	0.000000	2.0 mS	default	0.000000
+at	0.000	2.0 mS
+at	0.500	50.0 mS
+at	1.000	100.0 mS
+param	17	Release 2	unit	
+def	0.000000	0.1 S	default	0.000000
+at	0.000	0.1 S
+at	0.500	1.5 S
+at	1.000	3.0 S
+param	18	Ratio 2	unit	
+def	0.000000	2.0:1	default	0.000000
+at	0.000	2.0:1
+at	0.500	6.0:1
+at	1.000	30.0:1
+param	19	Level 2	unit	
+def	0.470000	0.47	default	0.470000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	20	Mix 2	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	21		unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	22		unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	

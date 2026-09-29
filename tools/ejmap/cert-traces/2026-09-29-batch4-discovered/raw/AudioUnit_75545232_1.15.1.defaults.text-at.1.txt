@@ -1,0 +1,97 @@
+probe: "Vertigo VSC-2" | AudioUnit:Effects/aufx,VSC2,Brwx | uid=75545232 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Link	unit	
+def	1.000000	Stereo	default	1.000000
+at	0.000	Mono
+at	0.500	Mono
+at	1.000	Stereo
+param	2	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	3	System A	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	4	Threshold A	unit	
+def	1.000000	+11.8 dB	default	1.000000
+at	0.000	-36.4 dB
+at	0.500	-18.4 dB
+at	1.000	+11.8 dB
+param	5	Ratio A	unit	
+def	0.200000	2:1	default	0.200000
+at	0.000	Soft
+at	0.500	4:1
+at	1.000	Brick
+param	6	Attack A	unit	
+def	0.800000	10 ms	default	0.800000
+at	0.000	0.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	7	Release A	unit	
+def	0.400000	0.6 s	default	0.400000
+at	0.000	0.1 s
+at	0.500	0.6 s
+at	1.000	Auto
+param	8	Make Up A	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	+5.3 dB
+at	1.000	+21.8 dB
+param	9	SC Filter A	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	60 Hz
+at	0.500	Off
+at	1.000	90 Hz
+param	10	System B	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	11	Threshold B	unit	
+def	1.000000	+11.8 dB	default	1.000000
+at	0.000	-36.4 dB
+at	0.500	-18.4 dB
+at	1.000	+11.8 dB
+param	12	Ratio B	unit	
+def	0.200000	2:1	default	0.200000
+at	0.000	Soft
+at	0.500	4:1
+at	1.000	Brick
+param	13	Attack B	unit	
+def	0.800000	10 ms	default	0.800000
+at	0.000	0.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	14	Release B	unit	
+def	0.400000	0.6 s	default	0.400000
+at	0.000	0.1 s
+at	0.500	0.6 s
+at	1.000	Auto
+param	15	Make Up B	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	+5.3 dB
+at	1.000	+21.8 dB
+param	16	SC Filter B	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	60 Hz
+at	0.500	Off
+at	1.000	90 Hz
+param	17	Gain Reduction A	unit	
+def	0.000000	0.0 dB	default	1.000000
+at	0.000	0.0 dB
+at	0.500	5.5 dB
+at	1.000	25.0 dB
+param	18	Gain Reduction B	unit	
+def	0.000000	0.0 dB	default	1.000000
+at	0.000	0.0 dB
+at	0.500	5.5 dB
+at	1.000	25.0 dB

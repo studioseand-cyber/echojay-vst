@@ -1,0 +1,193 @@
+probe: "Lindell 354E" | AudioUnit:Effects/aufx,LBc4,Brwx | uid=6f457234 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+param	0	Low Meter	unit	
+def	0.500000	Control	default	0.500000
+at	0.000	In
+at	0.500	Control
+at	1.000	Out
+param	1	Low In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	2	Low Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	3	Low Mid Side	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	Mid
+at	0.500	Off
+at	1.000	Side
+param	4	Low Gain	unit	
+def	0.142857	2.0dB	default	0.095238
+at	0.000	auto
+at	0.500	10.0dB
+at	1.000	20.0dB
+param	5	Low Ratio	unit	
+def	0.500000	3:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	3:1
+at	1.000	6:1
+param	6	Low Threshold	unit	
+def	0.533333	-4.0dB	default	0.333333
+at	0.000	-20.0dB
+at	0.500	-4.0dB
+at	1.000	10.0dB
+param	7	Low Attack	unit	
+def	0.666667	2mS	default	0.666667
+at	0.000	2uS
+at	0.500	2mS
+at	1.000	10mS
+param	8	Low Recovery	unit	
+def	1.000000	Auto	default	1.000000
+at	0.000	100mS
+at	0.500	800mS
+at	1.000	Auto
+param	9	Mid Meter	unit	
+def	0.500000	Control	default	0.500000
+at	0.000	In
+at	0.500	Control
+at	1.000	Out
+param	10	Mid In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	11	Mid Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	12	Mid Mid Side	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	Mid
+at	0.500	Off
+at	1.000	Side
+param	13	Mid Gain	unit	
+def	0.142857	2.0dB	default	0.190476
+at	0.000	auto
+at	0.500	10.0dB
+at	1.000	20.0dB
+param	14	Mid Ratio	unit	
+def	0.500000	3:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	3:1
+at	1.000	6:1
+param	15	Mid Threshold	unit	
+def	0.533333	-4.0dB	default	0.666667
+at	0.000	-20.0dB
+at	0.500	-4.0dB
+at	1.000	10.0dB
+param	16	Mid Attack	unit	
+def	0.666667	2mS	default	0.666667
+at	0.000	2uS
+at	0.500	2mS
+at	1.000	10mS
+param	17	Mid Recovery	unit	
+def	1.000000	Auto	default	1.000000
+at	0.000	100mS
+at	0.500	800mS
+at	1.000	Auto
+param	18	High Meter	unit	
+def	0.500000	Control	default	0.500000
+at	0.000	In
+at	0.500	Control
+at	1.000	Out
+param	19	High In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	20	High Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	21	High Mid Side	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	Mid
+at	0.500	Off
+at	1.000	Side
+param	22	High Gain	unit	
+def	0.142857	2.0dB	default	0.190476
+at	0.000	auto
+at	0.500	10.0dB
+at	1.000	20.0dB
+param	23	High Ratio	unit	
+def	0.500000	3:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	3:1
+at	1.000	6:1
+param	24	High Threshold	unit	
+def	0.533333	-4.0dB	default	0.600000
+at	0.000	-20.0dB
+at	0.500	-4.0dB
+at	1.000	10.0dB
+param	25	High Attack	unit	
+def	0.666667	2mS	default	0.666667
+at	0.000	2uS
+at	0.500	2mS
+at	1.000	10mS
+param	26	High Recovery	unit	
+def	1.000000	Auto	default	1.000000
+at	0.000	100mS
+at	0.500	800mS
+at	1.000	Auto
+param	27	Mix	unit	
+def	1.000000	100%	default	1.000000
+at	0.000	0%
+at	0.500	50%
+at	1.000	100%
+param	28	HPF	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	100Hz
+at	1.000	500Hz
+param	29	Master Gain	unit	
+def	0.333333	0.0dB	default	0.333333
+at	0.000	-10.0dB
+at	0.500	5.0dB
+at	1.000	20.0dB
+param	30	Low XOverParameter	unit	
+def	0.301030	200Hz	default	0.301030
+at	0.000	50Hz
+at	0.500	500Hz
+at	1.000	5000Hz
+param	31	High XOverParameter	unit	
+def	0.786176	5000Hz	default	0.786176
+at	0.000	200Hz
+at	0.500	1549Hz
+at	1.000	12000Hz
+param	32	Smash	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	33	Niveau	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	34	Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	35	Bypass	unit	
+def	0.000000	In	default	0.000000
+at	0.000	In
+at	0.500	Byp
+at	1.000	Byp
+param	36	In Level	unit	
+def	0.500000	0.0dB	default	0.500000
+at	0.000	-10.0dB
+at	0.500	0.0dB
+at	1.000	10.0dB
+param	37	Out Level	unit	
+def	0.500000	0.0dB	default	0.500000
+at	0.000	-10.0dB
+at	0.500	0.0dB
+at	1.000	10.0dB

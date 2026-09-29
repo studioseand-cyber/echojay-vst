@@ -1,0 +1,13 @@
+probe: "Solid Bus Comp" | AudioUnit:Effects/aufx,Ni$6,-NI- | uid=2520b63 | arch=arm64 | format=AudioUnit
+
+0	Threshold		2147483647	0	1	0
+1	Makeup		2147483647	0	1	0
+2	Ratio		2147483647	0	1	0
+3	-		2	1	1	0
+4	Attack		2147483647	0	1	0
+5	Release		2147483647	0	1	0
+6	Output		2147483647	0	1	0
+7	Dry		2147483647	0	1	0
+8	SC Mode		2	1	1	0
+9	SC Gain		2147483647	0	1	0
+10	Link L/R		2	1	1	0

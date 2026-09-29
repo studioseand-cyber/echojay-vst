@@ -1,0 +1,33 @@
+probe: "Lindell 7X-500" | AudioUnit:Effects/aufx,LBc2,Brwx | uid=6f457232 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.300000	Input	3.0
+param	1	0.300000	Output	3.0
+param	2	1.000000	Attack	Slow
+param	3	0.000000	Release	Fast
+param	4	1.000000	Mix	10.0
+param	5	0.000000	Ratio	4:1
+param	6	0.000000	SC High Pass Filter	OFF
+param	7	0.500000	Continuous Attack	5.0
+param	8	0.500000	Continuous Release	5.0
+param	9	0.500000	Stereo Link	50%
+param	10	0.000000	Bypass	In
+param	11	0.000000	Continuous ON	Off
+param	12	0.000000	Link ON	Off
+param	13	1.000000	Analog ON	On
+stage	reference
+refpos	val	0.300000	text	3.0
+ref	-54.00	level_db	-55.1997	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-55.1997,-55.1997	win	-55.1991,-55.1995,-55.1999,-55.1994,-55.2000,-55.1996,-55.2000,-55.1996	nonfinite	0
+ref	-48.00	level_db	-49.1998	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-49.1998,-49.1999	win	-49.2023,-49.1987,-49.2024,-49.1985,-49.2023,-49.1986,-49.2022,-49.1986	nonfinite	0
+ref	-24.00	level_db	-25.2117	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-25.2117,-25.2117	win	-25.2070,-25.2135,-25.2079,-25.2135,-25.2079,-25.2135,-25.2079,-25.2135	nonfinite	0
+ref	-12.00	level_db	-18.5514	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.5514,-18.5514	win	-16.7572,-18.0898,-18.4124,-18.5082,-18.5423,-18.5480,-18.5544,-18.5519	nonfinite	0
+ref	-6.00	level_db	-17.9712	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9999	ch	-17.9712,-17.9712	win	-17.6860,-17.9083,-17.9529,-17.9653,-17.9703,-17.9707,-17.9719,-17.9711	nonfinite	0
+timing	wall_ms	196.3	audio_s	10.000
+stage	done

@@ -1,0 +1,10 @@
+probe: "RCompressor (s)" | AudioUnit:Effects/aufx,URCS,ksWV | uid=5f54727d | arch=arm64 | format=AudioUnit
+
+0	Gain	dB	2147483647	0	1	0
+1	Threshold	dB	2147483647	0	1	0
+2	Attack	ms	2147483647	0	1	0
+3	Ratio		2147483647	0	1	0
+4	ARC / Manual		2	1	1	0
+5	Warm / Smooth		2	1	1	0
+6	Release	ms	2147483647	0	1	0
+7	Electro / Opto		2	1	1	0

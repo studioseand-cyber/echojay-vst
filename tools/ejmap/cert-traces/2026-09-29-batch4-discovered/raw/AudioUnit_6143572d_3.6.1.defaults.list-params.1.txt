@@ -1,0 +1,44 @@
+probe: "Pro Audio DSP DSM V3" | AudioUnit:Effects/aumf,BDM3,Brwx | uid=6143572d | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	Preset Bank		4	1	1	0
+2	In 1		2	1	1	0
+3	Frequency 1		2147483647	0	1	0
+4	Threshold 1		2147483647	0	1	0
+5	Q 1		2147483647	0	1	0
+6	In 2		2	1	1	0
+7	Frequency 2		2147483647	0	1	0
+8	Threshold 2		2147483647	0	1	0
+9	Q 2		2147483647	0	1	0
+10	In 3		2	1	1	0
+11	Frequency 3		2147483647	0	1	0
+12	Threshold 3		2147483647	0	1	0
+13	Q 3		2147483647	0	1	0
+14	Sidechain Gain		2147483647	0	1	0
+15	Threshold		2147483647	0	1	0
+16	Compressor Ratio		2147483647	0	1	0
+17	Expander Ratio		2147483647	0	1	0
+18	Out Gain		2147483647	0	1	0
+19	Attack		2147483647	0	1	0
+20	Release		2147483647	0	1	0
+21	Knee		2147483647	0	1	0
+22	LF Timing 		2147483647	0	1	0
+23	HF Timing		2147483647	0	1	0
+24	Master Wet/Dry		2147483647	0	1	0
+25	Master Out Gain		2147483647	0	1	0
+26	Process In		2	1	1	0
+27	Dynamic Mode		2	1	1	0
+28	Freeze Gain		2	1	1	0
+29	Link		2	1	1	0
+30	Limiter In		2	1	1	0
+31	Dither16		2	1	1	0
+32	Detector		3	1	1	0
+33	Capture		2	1	1	0
+34			2147483647	0	1	0
+35			2147483647	0	1	0
+36			2147483647	0	1	0
+37			2147483647	0	1	0
+38			2147483647	0	1	0
+39			2147483647	0	1	0
+40			2147483647	0	1	0
+41			2147483647	0	1	0

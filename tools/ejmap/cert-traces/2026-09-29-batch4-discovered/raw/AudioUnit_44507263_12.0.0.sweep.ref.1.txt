@@ -1,0 +1,33 @@
+probe: "VComp (m)" | AudioUnit:Effects/aufx,NVCM,ksWV | uid=44507263 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.350000	Input	-6.0 dB
+param	1	0.500000	Output	0.0 dB
+param	2	0.500000	Meter	GR
+param	3	0.000000	Analog	OFF
+param	4	0.000000	Limit	Off
+param	5	1.000000	Limit Level	12.0
+param	6	0.000000	Attack	Fast
+param	7	1.000000	Release Limiter	AUTO
+param	8	1.000000	Compress	On
+param	9	0.750000	Ratio	4:1
+param	10	1.000000	Release Compressor	AUTO
+param	11	0.000000	DeEsser	Off
+stage	reference
+refpos	val	0.350000	text	-6.0 dB
+ref	-54.00	level_db	-46.4473	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-46.4473	win	-47.0288,-46.5953,-46.4869,-46.4576,-46.4505,-46.4476,-46.4476,-46.4468	nonfinite	0
+ref	-48.00	level_db	-40.4466	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-40.4466	win	-40.4490,-40.4453,-40.4490,-40.4453,-40.4490,-40.4453,-40.4490,-40.4453	nonfinite	0
+ref	-24.00	level_db	-16.4481	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-16.4481	win	-16.4444,-16.4500,-16.4444,-16.4500,-16.4444,-16.4500,-16.4444,-16.4500	nonfinite	0
+ref	-12.00	level_db	-4.4465	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-4.4465	win	-4.4490,-4.4453,-4.4490,-4.4453,-4.4490,-4.4453,-4.4490,-4.4453	nonfinite	0
+ref	-6.00	level_db	1.5529	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	1.5529	win	1.5525,1.5531,1.5525,1.5531,1.5525,1.5531,1.5525,1.5531	nonfinite	0
+timing	wall_ms	68.8	audio_s	10.000
+stage	done

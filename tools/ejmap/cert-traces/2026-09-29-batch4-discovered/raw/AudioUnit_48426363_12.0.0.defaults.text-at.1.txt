@@ -1,0 +1,87 @@
+probe: "DPR-402 (m)" | AudioUnit:Effects/aufx,BDRM,ksWV | uid=48426363 | arch=arm64 | format=AudioUnit
+
+param	0	Input	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	1	Comp Mode	unit	
+def	0.000000	Comp	default	0.000000
+at	0.000	Comp
+at	0.500	De-Esser Wide
+at	1.000	De-Ess H.F
+param	2	Threshold	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	-50.0 dB
+at	0.500	-25.0 dB
+at	1.000	Out
+param	3	Ratio	unit	
+def	0.500000	4.0	default	0.500000
+at	0.000	Out
+at	0.500	4.0
+at	1.000	Inf
+param	4	Attack	unit	
+def	0.400000	1 ms	default	0.400000
+at	0.000	50 usec
+at	0.500	~2.5 ms
+at	1.000	100 msec
+param	5	Release	unit	
+def	0.400000	100 ms	default	0.400000
+at	0.000	5 msec
+at	0.500	~250 ms
+at	1.000	Auto
+param	6	De-Ess	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	Max
+at	0.500	5.0
+at	1.000	Out
+param	7	Freq	unit	
+def	1.000000	15.00 kHz	default	1.000000
+at	0.000	0.80 kHz
+at	0.500	1.50 kHz
+at	1.000	15.00 kHz
+param	8	Peak Lim	unit	
+def	1.000000	Out	default	1.000000
+at	0.000	-16.0 dB
+at	0.500	-8.0 dB
+at	1.000	Out
+param	9	Peak Lim Attack	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Fast
+at	1.000	Slow
+param	10	Noise	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	50.0
+at	1.000	100.0
+param	11	Output	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-20.0 dB
+at	0.500	0.0 dB
+at	1.000	20.0 dB
+param	12	Mon S.C	unit	
+def	0.000000	Audio	default	0.000000
+at	0.000	Audio
+at	0.500	Audio
+at	1.000	S.C
+param	13	Jumper	unit	
+def	0.000000	Normal Comp	default	0.000000
+at	0.000	Normal Comp
+at	0.500	Wide LF Cntrl Comp
+at	1.000	Exapnder HF Cntrl
+param	14	Mix	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100.0%
+param	15	DPR Bypass	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Ext S.C	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

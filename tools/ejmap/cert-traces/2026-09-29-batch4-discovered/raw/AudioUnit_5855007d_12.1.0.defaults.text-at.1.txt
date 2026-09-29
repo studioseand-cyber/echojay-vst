@@ -1,0 +1,117 @@
+probe: "Abbey Road RS124 (s)" | AudioUnit:Effects/aufx,RS1S,ksWV | uid=5855007d | arch=arm64 | format=AudioUnit
+
+param	0	Input Control	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	1	Recovery	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	2	Super Fuse	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Unit Type	unit	
+def	0.000000	Studio	default	0.000000
+at	0.000	Studio
+at	0.500	Studio
+at	1.000	Cutter
+param	4	SC HP	unit	Hz
+def	0.000000	20	default	0.000000
+at	0.000	20
+at	0.500	63
+at	1.000	200
+param	5	Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	6	Output Attenuator	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	7	Meter Selector	unit	
+def	0.500000	Gain Reduction	default	0.500000
+at	0.000	Input
+at	0.500	Gain Reduction
+at	1.000	Output
+param	8	Input Control R	unit	
+def	0.500000	5.0	default	0.500000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	9	Unit Type R	unit	
+def	0.000000	Studio	default	0.000000
+at	0.000	Studio
+at	0.500	Studio
+at	1.000	Cutter
+param	10	Recovery R	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	11	Super Fuse R	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	Mix R	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	13	SC HP R	unit	Hz
+def	0.000000	20	default	0.000000
+at	0.000	20
+at	0.500	63
+at	1.000	200
+param	14	Output Attenuator R	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	15	Meter Selector R	unit	
+def	0.500000	Gain Reduction	default	0.500000
+at	0.000	Input
+at	0.500	Gain Reduction
+at	1.000	Output
+param	16	Compressor Type	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Duo
+at	1.000	MS
+param	17	Monitor	unit	
+def	0.200000	Stereo	default	0.200000
+at	0.000	Left
+at	0.500	Right
+at	1.000	Side
+param	18	Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	19	Auto Hold	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	20	Auto Hold R	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	21	HF Roll-Off	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	22	HF Roll-Off R	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

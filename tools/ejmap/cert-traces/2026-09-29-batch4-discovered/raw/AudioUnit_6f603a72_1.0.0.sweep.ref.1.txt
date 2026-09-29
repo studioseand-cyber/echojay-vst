@@ -1,0 +1,37 @@
+probe: "Bettermaker Bus Compressor DSP" | AudioUnit:Effects/aufx,Lx7x,Bmkr | uid=6f603a72 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	THRESHOLD	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	SNAPSHOT	A
+param	1	1.000000	ENGAGE	ON
+param	2	0.750000	THRESHOLD	-5.00
+param	3	0.250000	RATIO	2.00
+param	4	0.499165	ATTACK	30.00
+param	5	0.201681	RELEASE	250.00
+param	6	0.000000	AUTO RELEASE	OFF
+param	7	1.000000	MIX	100.00
+param	8	0.400000	OUTPUT	0.00
+param	9	1.000000	THD ENABLE	ON
+param	10	0.000000	THD	0.00
+param	11	1.000000	THD MIX	100.00
+param	12	0.000000	SC HPF ENGAGE	OFF
+param	13	0.000000	SC HPF FREQ	10.00
+param	14	0.000000	SC MID ENGAGE	OFF
+param	15	0.000000	DETECTOR	PEAK
+param	16	0.000000	GAIN REDUCTION METER	0.00
+param	17	0.000000	EXTERNAL SIDE CHAIN	OFF
+stage	reference
+refpos	val	0.750000	text	-5.00
+ref	-24.00	level_db	-27.0061	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0061,-27.0061	win	-27.0066,-27.0059,-27.0066,-27.0059,-27.0066,-27.0059,-27.0066,-27.0059	nonfinite	0
+ref	-12.00	level_db	-15.0528	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0528,-15.0528	win	-15.0526,-15.0516,-15.0553,-15.0516,-15.0553,-15.0516,-15.0553,-15.0516	nonfinite	0
+ref	-6.00	level_db	-9.7667	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-9.7667,-9.7667	win	-9.7223,-9.7686,-9.7630,-9.7686,-9.7630,-9.7686,-9.7630,-9.7686	nonfinite	0
+timing	wall_ms	52.6	audio_s	6.000
+stage	done

@@ -1,0 +1,38 @@
+probe: "Bettermaker Bus Compressor DSP" | AudioUnit:Effects/aufx,Lx7x,Bmkr | uid=6f603a72 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	THRESHOLD	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	SNAPSHOT	A
+param	1	1.000000	ENGAGE	ON
+param	2	0.750000	THRESHOLD	-5.00
+param	3	0.250000	RATIO	2.00
+param	4	0.499165	ATTACK	30.00
+param	5	0.201681	RELEASE	250.00
+param	6	0.000000	AUTO RELEASE	OFF
+param	7	1.000000	MIX	100.00
+param	8	0.400000	OUTPUT	0.00
+param	9	1.000000	THD ENABLE	ON
+param	10	0.000000	THD	0.00
+param	11	1.000000	THD MIX	100.00
+param	12	0.000000	SC HPF ENGAGE	OFF
+param	13	0.000000	SC HPF FREQ	10.00
+param	14	0.000000	SC MID ENGAGE	OFF
+param	15	0.000000	DETECTOR	PEAK
+param	16	0.000000	GAIN REDUCTION METER	0.00
+param	17	0.000000	EXTERNAL SIDE CHAIN	OFF
+stage	position
+pos	0	norm	0.666667	confirm_ms	2.93	slices	1	instack_match	1	getValue	0.666667	landed_by	instack	render_blocks	0	text_ms	21.7	reads	2	text	-8.30
+hold	0	-24.00	level_db	-27.0061	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0061,-27.0061	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-27.0066,-27.0059,-27.0066,-27.0059,-27.0066,-27.0059	nonfinite	0
+hold	0	-12.00	level_db	-15.3390	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.3390,-15.3390	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-15.3213,-15.3385,-15.3400,-15.3385,-15.3400,-15.3385	nonfinite	0
+hold	0	-6.00	level_db	-10.5224	in_rms_db	-9.0103	tone_frac	1.0000	ch	-10.5224,-10.5224	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-10.4543,-10.5216,-10.5239,-10.5216,-10.5239,-10.5216	nonfinite	0
+reread	0	steady
+timing	wall_ms	47.8	audio_s	4.500
+stage	done

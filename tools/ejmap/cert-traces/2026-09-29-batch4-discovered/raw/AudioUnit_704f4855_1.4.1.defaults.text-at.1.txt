@@ -1,0 +1,222 @@
+probe: "Shadow Hills Class A Mastering Comp" | AudioUnit:Effects/aumf,SHRK,Brwx | uid=704f4855 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Hardwire Bypass	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	2	M/S	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Monomaker Freq	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	200 Hz
+at	1.000	2.0 kHz
+param	4	Stereowidth	unit	
+def	0.500000	100  %	default	0.500000
+at	0.000	0  %
+at	0.500	100  %
+at	1.000	400  %
+param	5	Monitoring	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Mid
+at	1.000	Side
+param	6	Mode	unit	
+def	1.000000	Stereo	default	1.000000
+at	0.000	Dual Mono
+at	0.500	Dual Mono
+at	1.000	Stereo
+param	7	Parameter Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	TMT Channel	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	11
+at	1.000	20
+param	9	Stereo Mode	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Analog
+at	1.000	Digital
+param	10	Mix	unit	
+def	1.000000	100  %	default	1.000000
+at	0.000	0  %
+at	0.500	50  %
+at	1.000	100  %
+param	11	Headroom	unit	
+def	0.500000	0.0  dB	default	0.500000
+at	0.000	-12.0  dB
+at	0.500	0.0  dB
+at	1.000	+12.0  dB
+param	12	Sidechain HP Freq	unit	
+def	0.108359	90  Hz	default	0.108359
+at	0.000	20  Hz
+at	0.500	343  Hz
+at	1.000	666  Hz
+param	13	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	14	Key In	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	15	VU Reference Level	unit	
+def	0.199526	-14.0 dB	default	0.199526
+at	0.000	-oo dB
+at	0.500	-6.0 dB
+at	1.000	0.0 dB
+param	16	Optical Bypass 1	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	17	Optical Threshold 1	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	18	Optical Gain 1	unit	
+def	0.260870	7	default	0.260870
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	19	Discrete Bypass 1	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	20	Discrete Threshold 1	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	21	Discrete Ratio 1	unit	
+def	0.400000	3:1	default	0.400000
+at	0.000	1.2:1
+at	0.500	3:1
+at	1.000	Flood
+param	22	Discrete Attack 1	unit	
+def	1.000000	30 ms	default	1.000000
+at	0.000	0.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	23	Discrete Recover 1	unit	
+def	0.000000	0.1 s	default	0.000000
+at	0.000	0.1 s
+at	0.500	0.5 s
+at	1.000	Dual
+param	24	Discrete Gain 1	unit	
+def	0.260870	7	default	0.260870
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	25	Sidechain Filter 1	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	26	Transformer 1	unit	
+def	1.000000	Nickel	default	1.000000
+at	0.000	Steel
+at	0.500	Iron
+at	1.000	Nickel
+param	27	Meter Select 1	unit	
+def	0.000000	Optical	default	0.000000
+at	0.000	Optical
+at	0.500	Discrete
+at	1.000	Output
+param	28	Optical Bypass 2	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	29	Optical Threshold 2	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	30	Optical Gain 2	unit	
+def	0.260870	7	default	0.260870
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	31	Discrete Bypass 2	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	32	Discrete Threshold 2	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	33	Discrete Ratio 2	unit	
+def	0.400000	3:1	default	0.400000
+at	0.000	1.2:1
+at	0.500	3:1
+at	1.000	Flood
+param	34	Discrete Attack 2	unit	
+def	1.000000	30 ms	default	1.000000
+at	0.000	0.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	35	Discrete Recover 2	unit	
+def	0.000000	0.1 s	default	0.000000
+at	0.000	0.1 s
+at	0.500	0.5 s
+at	1.000	Dual
+param	36	Discrete Gain 2	unit	
+def	0.260870	7	default	0.260870
+at	0.000	1
+at	0.500	13
+at	1.000	24
+param	37	Sidechain Filter 2	unit	
+def	0.000000	Out	default	0.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	38	Transformer 2	unit	
+def	1.000000	Nickel	default	1.000000
+at	0.000	Steel
+at	0.500	Iron
+at	1.000	Nickel
+param	39	Meter Select 2	unit	
+def	0.500000	Discrete	default	0.500000
+at	0.000	Optical
+at	0.500	Discrete
+at	1.000	Output
+param	40	VU Meter L	unit	
+def	0.631276		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	41	VU Meter R	unit	
+def	0.172922		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	42	GR Meter	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	43	Eye Meter	unit	
+def	0.000000		default	1.000000
+at	0.000	
+at	0.500	
+at	1.000	

@@ -1,0 +1,52 @@
+probe: "Low Control" | AudioUnit:Effects/aufx,LCtr,BLSA | uid=6f7a414b | arch=arm64 | format=AudioUnit
+
+param	0	Gain Reduction	unit	
+def	0.000000	-100.00	default	0.000000
+at	0.000	-100.00
+at	0.500	-6.02
+at	1.000	0.00
+param	1	Solo Low	unit	
+def	0.000000	Not Soloed	default	0.000000
+at	0.000	Not Soloed
+at	0.500	Not Soloed
+at	1.000	Soloed
+param	2	Low Gain	unit	
+def	0.333333	0.0	default	0.333333
+at	0.000	-12.0
+at	0.500	6.0
+at	1.000	24.0
+param	3	Enhance	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	4	Threshold	unit	
+def	0.687500	-20.0	default	0.687500
+at	0.000	-∞
+at	0.500	-32.0
+at	1.000	0.0
+param	5	Output Gain	unit	
+def	0.842105	0.0	default	0.842105
+at	0.000	-∞
+at	0.500	-26.0
+at	1.000	12.0
+param	6	Enhance State	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Compressor State	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	Compress Below	unit	
+def	0.157895	90	default	0.157895
+at	0.000	60
+at	0.500	155
+at	1.000	250
+param	9	Enhance Frequency	unit	
+def	0.250000	80	default	0.250000
+at	0.000	40
+at	0.500	120
+at	1.000	200

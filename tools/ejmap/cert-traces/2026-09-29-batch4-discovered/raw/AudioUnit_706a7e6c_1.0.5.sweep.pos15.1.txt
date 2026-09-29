@@ -1,0 +1,37 @@
+probe: "SSL Blitzer" | AudioUnit:Effects/aufx,BLTZ,SSLN | uid=706a7e6c | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	10	name	Input Gain	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Mix	100.0
+param	1	0.000000	BLITZ!	Off
+param	2	0.000000	Drive	0.0
+param	3	0.500000	Ratio	4:1
+param	4	0.000000	Transients	0.0
+param	5	0.500000	Release	250.0
+param	6	0.000000	Sidechain Listen	Off
+param	7	0.500000	Output Gain	0.0
+param	8	0.500000	Sidechain Q	1.00
+param	9	1.000000	Auto Gain	On
+param	10	0.500000	Input Gain	0.0
+param	11	0.000000	Sidechain HPF	OFF
+param	12	0.500000	Sidechain Frequency	1000
+param	13	0.500000	Sidechain Gain	0.0
+param	14	0.500000	Attack	5.00
+param	15	0.000000	Bypass	Off
+set	9	0.000000	confirm_ms	2.4	getValue	0.000000	landed_by	instack	render_blocks	0	text	Off
+stage	position
+pos	0	norm	1.000000	confirm_ms	2.53	slices	1	instack_match	1	getValue	1.000000	landed_by	instack	render_blocks	0	text_ms	22.5	reads	2	text	30.0
+hold	0	-54.00	level_db	-28.8490	in_rms_db	-57.0103	tone_frac	1.0000	ch	-28.8490,-28.8490	doubled	0	last_move_db	0.0006	final_move_db	0.0006	win	-28.7545,-28.8488,-28.8494,-28.8488,-28.8494,-28.8488	nonfinite	0
+hold	0	-48.00	level_db	-26.4543	in_rms_db	-51.0103	tone_frac	1.0000	ch	-26.4543,-26.4543	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-26.2529,-26.4538,-26.4553,-26.4538,-26.4553,-26.4538	nonfinite	0
+hold	0	-24.00	level_db	-21.7128	in_rms_db	-27.0103	tone_frac	1.0000	ch	-21.7128,-21.7128	doubled	0	last_move_db	0.0022	final_move_db	0.0022	win	-20.7623,-21.7121,-21.7143,-21.7121,-21.7143,-21.7121	nonfinite	0
+hold	0	-12.00	level_db	-20.1829	in_rms_db	-15.0103	tone_frac	1.0000	ch	-20.1829,-20.1829	doubled	0	last_move_db	0.0030	final_move_db	0.0030	win	-19.8212,-20.1819,-20.1848,-20.1819,-20.1848,-20.1819	nonfinite	0
+hold	0	-6.00	level_db	-19.5156	in_rms_db	-9.0103	tone_frac	1.0000	ch	-19.5156,-19.5156	doubled	0	last_move_db	0.0037	final_move_db	0.0037	win	-19.3624,-19.5143,-19.5180,-19.5143,-19.5180,-19.5143	nonfinite	0
+reread	0	steady
+timing	wall_ms	80.5	audio_s	7.500
+stage	done

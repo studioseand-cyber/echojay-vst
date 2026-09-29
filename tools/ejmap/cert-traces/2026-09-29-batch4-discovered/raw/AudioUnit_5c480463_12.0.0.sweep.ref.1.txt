@@ -1,0 +1,26 @@
+probe: "dbx-160 (m)" | AudioUnit:Effects/aufx,VN5M,ksWV | uid=5c480463 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	85
+param	0	0.500000	Input	0.0
+param	1	0.810000	Threshold	1.000
+param	2	0.500000	Compression	4.00
+param	3	0.500000	Output	0.0
+param	4	1.000000	Mix	100.0%
+param	5	0.000000	SC-HP	Off
+param	6	0.000000	Noise	Off
+stage	reference
+refpos	val	0.810000	text	1.000
+ref	-24.00	level_db	-26.6971	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9999	ch	-26.6971	win	-26.7274,-26.6977,-26.6959,-26.6977,-26.6959,-26.6977,-26.6959,-26.6977	nonfinite	0
+ref	-12.00	level_db	-14.6982	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	0.9999	ch	-14.6982	win	-14.7268,-14.6991,-14.6963,-14.6991,-14.6963,-14.6991,-14.6963,-14.6991	nonfinite	0
+ref	-6.00	level_db	-8.6970	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-8.6970	win	-8.7217,-8.6952,-8.7006,-8.6952,-8.7006,-8.6952,-8.7006,-8.6952	nonfinite	0
+timing	wall_ms	215.8	audio_s	6.000
+stage	done

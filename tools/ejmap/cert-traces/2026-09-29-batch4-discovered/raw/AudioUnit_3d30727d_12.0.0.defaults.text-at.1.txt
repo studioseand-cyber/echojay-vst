@@ -1,0 +1,47 @@
+probe: "CLA-76 (s)" | AudioUnit:Effects/aufx,76CS,ksWV | uid=3d30727d | arch=arm64 | format=AudioUnit
+
+param	0	Input	unit	
+def	0.375000	-30.0	default	0.375000
+at	0.000	-Inf
+at	0.500	-24.0
+at	1.000	0.0
+param	1	Output	unit	
+def	0.625000	-18.0	default	0.625000
+at	0.000	-Inf
+at	0.500	-24.0
+at	1.000	0.0
+param	2	Attack	unit	
+def	0.333000	3.00	default	0.333000
+at	0.000	1.00
+at	0.500	4.00
+at	1.000	7.00
+param	3	Release	unit	
+def	0.500000	4.00	default	0.500000
+at	0.000	1.00
+at	0.500	4.00
+at	1.000	7.00
+param	4	Ratio	unit	
+def	0.750000	4	default	0.750000
+at	0.000	20
+at	0.500	8
+at	1.000	All
+param	5	Analog	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	50Hz
+at	0.500	60Hz
+at	1.000	Off
+param	6	Revision	unit	
+def	1.000000	Blacky	default	1.000000
+at	0.000	Bluey
+at	0.500	Bluey
+at	1.000	Blacky
+param	7	Meter	unit	
+def	0.000000	GR	default	0.000000
+at	0.000	GR
+at	0.500	In
+at	1.000	Out
+param	8	Comp Off	unit	
+def	0.000000	Cmp On	default	0.000000
+at	0.000	Cmp On
+at	0.500	Cmp On
+at	1.000	Cmp Off

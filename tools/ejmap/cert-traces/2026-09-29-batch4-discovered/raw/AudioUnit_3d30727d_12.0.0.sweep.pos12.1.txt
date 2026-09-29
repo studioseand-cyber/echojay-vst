@@ -1,0 +1,29 @@
+probe: "CLA-76 (s)" | AudioUnit:Effects/aufx,76CS,ksWV | uid=3d30727d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.375000	Input	-30.0
+param	1	0.625000	Output	-18.0
+param	2	0.333000	Attack	3.00
+param	3	0.500000	Release	4.00
+param	4	0.750000	Ratio	4
+param	5	1.000000	Analog	Off
+param	6	1.000000	Revision	Blacky
+param	7	0.000000	Meter	GR
+param	8	0.000000	Comp Off	Cmp On
+stage	position
+pos	0	norm	0.800000	confirm_ms	46.09	slices	2	instack_match	0	getValue	0.800000	landed_by	pump	render_blocks	0	text_ms	21.2	reads	2	text	-9.6
+hold	0	-54.00	level_db	-29.2569	in_rms_db	-57.0103	tone_frac	1.0000	ch	-29.2569,-29.2569	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-29.2574,-29.2566,-29.2573,-29.2566,-29.2573,-29.2566	nonfinite	0
+hold	0	-48.00	level_db	-23.2492	in_rms_db	-51.0103	tone_frac	1.0000	ch	-23.2492,-23.2492	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-23.2503,-23.2487,-23.2502,-23.2487,-23.2502,-23.2487	nonfinite	0
+hold	0	-24.00	level_db	-12.6671	in_rms_db	-27.0103	tone_frac	1.0000	ch	-12.6671,-12.6671	doubled	0	last_move_db	0.0328	final_move_db	0.0328	win	-12.7713,-13.1302,-12.9197,-12.7476,-12.6438,-12.6111	nonfinite	0
+hold	0	-12.00	level_db	-9.7309	in_rms_db	-15.0103	tone_frac	1.0000	ch	-9.7309,-9.7309	doubled	0	last_move_db	0.0029	final_move_db	0.0029	win	-9.5118,-9.7873,-9.7220,-9.7290,-9.7333,-9.7304	nonfinite	0
+hold	0	-6.00	level_db	-7.5829	in_rms_db	-9.0103	tone_frac	1.0000	ch	-7.5829,-7.5829	doubled	0	last_move_db	0.0038	final_move_db	0.0038	win	-7.3140,-7.5684,-7.5846,-7.5818,-7.5853,-7.5816	nonfinite	0
+reread	0	steady
+timing	wall_ms	116.0	audio_s	7.500
+stage	done
