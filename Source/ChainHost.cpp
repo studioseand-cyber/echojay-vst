@@ -734,21 +734,21 @@ public:
     // R2 (21s-b, 24 Sep 2026): compareActive says whether an A/B COMPARE is running. The POST (match) trim is a
     // compare device from now on - it exists so the two sides of an A/B are level-matched - so it is applied ONLY
     // while a compare is active. The PRE trim is not affected: it protects a slot's input and is always in the path.
-    explicit SlotWetBlend(std::shared_ptr<std::atomic<float>> wet, std::shared_ptr<std::atomic<float>> trimDb = nullptr,
-                          std::shared_ptr<std::atomic<bool>> compareActive = nullptr,
+    // 21t-m (29 Sep 2026): the trimDb / compareActive parameters are GONE with the gain they drove.
+    explicit SlotWetBlend(std::shared_ptr<std::atomic<float>> wet,
                           std::shared_ptr<echojay::LevelTally> inTally = nullptr)
         : juce::AudioProcessor(BusesProperties()
               .withInput("Wet", juce::AudioChannelSet::stereo(), true)
               .withInput("Dry", juce::AudioChannelSet::stereo(), true)
               .withOutput("Out", juce::AudioChannelSet::stereo(), true)),
-          wet_(std::move(wet)), trimDb_(std::move(trimDb)), compareActive_(std::move(compareActive)) {}
+          wet_(std::move(wet)), inTally_(std::move(inTally)) {}
 
     // 21t-j (28 Sep 2026 general compressor rule): EVERY SLOT HAS AN OUTPUT GAIN. The level hold writes the
     // profile's own output control when the block names one; when it does not - and most compressors do not
     // publish one we can address - it writes THIS instead, so "the slot's output equals its input within 1 dB" is
     // a promise the product can keep on any plugin. It sits on the plugin's output BEFORE the out tally, so the
-    // sensor sees the held level and the loop closes. Distinct from trimDb_, which is the COMPARE trim and is only
-    // in circuit while an A/B is running.
+    // sensor sees the held level and the loop closes. It is now the slot's ONLY output-side gain: the compare
+    // trim that used to sit beside it was deleted in 21t-m.
     void setOutGainDb (float db) { outGainDb_.store (db, std::memory_order_relaxed); }
     float outGainDb() const { return outGainDb_.load (std::memory_order_relaxed); }
 
@@ -756,8 +756,6 @@ public:
     {
         smooth_.reset(sampleRate, 0.05);
         smooth_.setCurrentAndTargetValue(wet_ ? wet_->load(std::memory_order_relaxed) : 1.0f);
-        trimSmooth_.reset(sampleRate, 0.05);
-        trimSmooth_.setCurrentAndTargetValue(trimDb_ ? juce::Decibels::decibelsToGain(trimDb_->load(std::memory_order_relaxed)) : 1.0f);
         outSmooth_.reset(sampleRate, 0.05);
         outSmooth_.setCurrentAndTargetValue(juce::Decibels::decibelsToGain(outGainDb_.load(std::memory_order_relaxed)));
         // The tallies clear ONLY on a sample-rate change (a new source, or a
@@ -797,19 +795,11 @@ public:
         smooth_.setTargetValue(target);
 
         const int n = buffer.getNumSamples();
-        {   // 21m ruling 2: the per-slot unity-gain trim on the plugin's OUTPUT (inputs 0/1), before the out tally and before
-            // the blend - so the out tally, the wet blend and every downstream slot see the trimmed level
-            // R2: zero unless a compare is running. One read, no branch on the audio path beyond the one already here.
-            const bool comparing = compareActive_ != nullptr && compareActive_->load(std::memory_order_relaxed);
-            const float tdb = (comparing && trimDb_) ? trimDb_->load(std::memory_order_relaxed) : 0.0f;
-            if (std::abs(tdb) > 0.001f)
-            {
-                trimSmooth_.setTargetValue(juce::Decibels::decibelsToGain(tdb));
-                const int nch = buffer.getNumChannels();
-                for (int i = 0; i < n; ++i) { const float g = trimSmooth_.getNextValue(); for (int ch = 0; ch < juce::jmin(2, nch); ++ch) buffer.getWritePointer(ch)[i] *= g; }
-            }
-            else trimSmooth_.setCurrentAndTargetValue(1.0f);
-        }
+        // 21t-m (29 Sep 2026 ruling): THE THIRD GAIN IS GONE. A slot has exactly two EchoJay gains, IN (the
+        // pre-trim, which is the drive) and OUT (the slot output gain). The compare-only trim that used to be
+        // multiplied in here is deleted, not hidden: it is what the drive's post-cut landed in, so every rung of
+        // every loop raised the chain by a dB with nothing taking it back, and it is what Listen wrote its
+        // "match trims" into. Nothing multiplies here any more.
         {   // 21t-k item 3 (28 Sep 2026 ruling): THE OUT TAP SITS HERE, BEFORE THE SLOT'S OWN OUTPUT GAIN.
             // 21t-j deliberately put it AFTER, "so the hold is measured after it lands" - and that is exactly
             // what makes the sensor chase its own tail: the hold writes +12, the next window reads the slot 12
@@ -867,9 +857,6 @@ public:
 
 private:
     std::shared_ptr<std::atomic<float>> wet_;
-    std::shared_ptr<std::atomic<bool>>  compareActive_;   // R2 (21s-b): the post trim is a compare device
-    std::shared_ptr<std::atomic<float>> trimDb_;   // 21m ruling 2
-    juce::SmoothedValue<float> trimSmooth_ { 1.0f };
     juce::SmoothedValue<float>          smooth_;
     // Plain (dBFS RMS) on the slot legs: a threshold is set in the units the
     // detector sees, and out minus in cancels any weighting anyway.
@@ -1648,9 +1635,9 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.wet              = s.wet;
     info.preTrimDb        = s.preTrimDb;         // 21p item 3
     info.pictureText      = slotPictureText(i);  // 21p item 2
-    info.trimDb           = s.trimDb;            // 21m ruling 2
+    info.trimDb           = 0.0f;                // 21t-m: the compare trim is deleted; the field stays 0
     info.keepLevel        = s.keepLevel;
-    info.trimText         = slotTrimText(i);
+    info.trimText         = {};                  // 21t-m: no compare trim, no trim text
     info.manufacturer     = s.desc.manufacturerName;   // remote, 27 Aug
     info.settingsForModel = modelSettingsForSlot(i);   // local, 24 Aug
     info.hasLiveReads     = slotHasLiveReads(i);       // local, 24 Aug
@@ -2582,112 +2569,17 @@ void ChainHost::setMasterWet(float wet01)
     bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
 }
 
-void ChainHost::setSlotTrimDb(int i, float db)
-{
-    if (i < 0 || i >= (int) slots_.size()) return;
-    auto& s = slots_[(size_t) i];
-    if (! undoSuppressed_ && onScalarUndo && std::abs(s.trimDb - juce::jlimit(-12.0f, 12.0f, db)) >= 0.05f)
-        onScalarUndo("trim", i, (double) s.trimDb, (double) juce::jlimit(-12.0f, 12.0f, db), "trim " + s.desc.name, "trim" + juce::String(i));   // 21n item 3
-    s.trimDb = juce::jlimit(-12.0f, 12.0f, db);
-    if (s.trimShared) s.trimShared->store(s.trimDb, std::memory_order_relaxed);
-    bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
-}
-bool ChainHost::hasActiveTrims() const
-{
-    for (const auto& s : slots_)
-        if (! s.bypassed && std::abs(s.trimDb) >= 0.05f) return true;
-    return false;
-}
-float ChainHost::getSlotTrimDb(int i) const { return (i >= 0 && i < (int) slots_.size()) ? slots_[(size_t) i].trimDb : 0.0f; }
-void ChainHost::setSlotKeepLevel(int i, bool keep) { if (i >= 0 && i < (int) slots_.size()) { if (slots_[(size_t) i].keepLevel != keep) { if (onScalarUndo && ! undoSuppressed_) onScalarUndo("keep", i, slots_[(size_t) i].keepLevel, keep, juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name, {}); else pushUndo(juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name); } slots_[(size_t) i].keepLevel = keep; bumpChainRevision(); } }
-bool ChainHost::getSlotKeepLevel(int i) const { return i >= 0 && i < (int) slots_.size() && slots_[(size_t) i].keepLevel; }
-juce::String ChainHost::slotTrimText(int i) const
-{
-    if (i < 0 || i >= (int) slots_.size()) return {};
-    const auto& s = slots_[(size_t) i];
-    if (s.keepLevel) return "level kept";
-    if (std::abs(s.trimDb) < 0.05f) return {};
-    return (s.trimDb > 0 ? "+" : "") + juce::String(s.trimDb, 1) + " dB match";
-}
-juce::String ChainHost::trimTextForName(const juce::String& name) const
-{
-    const auto n = name.trim().toLowerCase();
-    for (int i = 0; i < (int) slots_.size(); ++i) if (slots_[(size_t) i].desc.name.trim().toLowerCase() == n) return slotTrimText(i);
-    return {};
-}
-int ChainHost::measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines, bool transportRolling)
-{
-    // R1 (21s-b): before anything is measured, the exempt slots are cleared of any trim they are carrying.
-    clearExemptTrims(exemptLevelSlot, exemptLimiterSlot, lines);
-    // ...and their picture carries the (now zero) pair, so the card and the log SHOW it rather than saying nothing.
-    for (int i : { exemptLevelSlot, exemptLimiterSlot })
-        if (i >= 0 && i < (int) slots_.size())
-        {
-            auto& e = slots_[(size_t) i];
-            e.picture.preTrimDb = e.preTrimDb;
-            e.picture.postTrimDb = e.trimDb;
-            e.picture.exempt = true;
-        }
-    // 21p items 1-3 (23 Sep 2026), under the binding principle: EVERY reading goes through the one gate first, a
-    // reading that fails writes NOTHING and is recorded as "no reading", and a slot that passes gets both trims -
-    // the PRE-trim that holds the plugin's input under -3 dBTP and the POST-trim that restores unity - plus the
-    // picture the strip and the Listen card show.
-    int changed = 0;
-    for (int i = 0; i < (int) slots_.size(); ++i)
-    {
-        auto& s = slots_[(size_t) i];
-        if (i == exemptLevelSlot || i == exemptLimiterSlot) continue;
-        if (s.desc.name == "EchoJay Level" || s.desc.name == "EchoJay Limiter") continue;
-        if (s.bypassed || s.blendNode == nullptr) continue;
-        const auto lv = getSlotLevels(i);
-        SlotPicture pic;
-        const auto gIn  = echojay::ReadingGate::check(lv.in.shortTermDb,  lv.in.truePeakDb,  transportRolling, lv.in.heardSeconds);
-        const auto gOut = echojay::ReadingGate::check(lv.out.shortTermDb, lv.out.truePeakDb, transportRolling, lv.out.heardSeconds);
-        if (! lv.measured || ! gIn.valid || ! gOut.valid)
-        {
-            pic.valid = false;
-            pic.why = ! lv.measured ? juce::String("no full window yet") : (gIn.valid ? gOut.why : gIn.why);
-            s.picture = pic;
-            if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": NO READING (" + pic.why + ") - nothing written");
-            continue;
-        }
-        pic.valid = true;
-        pic.inLufs = lv.in.shortTermDb;   pic.outLufs = lv.out.shortTermDb;
-        // R3: a dynamics-role slot reports how hard it is working - the LOUDNESS it removes, in - out.
-        // "dynamics" by the plugin's own category, the same word the catalogue uses - no new classification.
-        { const auto cat = s.desc.category.toLowerCase();
-          pic.dynamics = cat.contains("dynamic") || cat.contains("compress") || cat.contains("limit")
-                      || cat.contains("gate") || cat.contains("expand"); }
-        pic.inTpDb = lv.in.truePeakDb;    pic.outTpDb = lv.out.truePeakDb;
-        // GR only where the plugin exposes it: EchoJay's own limiter publishes a wall figure; nothing else does,
-        // and an out-minus-in difference is a level change, not gain reduction, so it is NOT reported as GR.
-        if (auto* lim = dynamic_cast<EedLimiterProcessor*>(getSlotProcessor(i)))
-        { pic.grDb = lim->gainReductionDb(); pic.grKnown = true; }
-        const float gainNow = lv.out.shortTermDb - lv.in.shortTermDb;
-        if (s.keepLevel)
-        {
-            pic.preTrimDb = s.preTrimDb; pic.postTrimDb = s.trimDb; s.picture = pic;
-            if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name + ": kept (" + juce::String(gainNow, 1) + " dB)");
-            continue;
-        }
-        // (3) the PRE-trim's job is the input: the peak ARRIVING at this slot, plus whatever pre-trim is already in
-        // place, must land under the ceiling. in.truePeakDb is the dry tap, i.e. before the pre-trim node.
-        const float wantPre = juce::jlimit(-24.0f, 0.0f, juce::jmin(0.0f, kSlotInputCeilingDb - pic.inTpDb));
-        if (std::abs(wantPre - s.preTrimDb) >= 0.1f) { setSlotPreTrimDb(i, wantPre); ++changed; }
-        // (the POST-trim then restores unity across the slot: out - in with the current trims already inside out)
-        const float wantPost = juce::jlimit(-12.0f, 12.0f, s.trimDb - gainNow);
-        if (std::abs(wantPost - s.trimDb) >= 0.1f) { setSlotTrimDb(i, wantPost); ++changed; }
-        pic.preTrimDb = s.preTrimDb; pic.postTrimDb = s.trimDb;
-        s.picture = pic;
-        if (lines) lines->add("slot " + juce::String(i) + " " + s.desc.name
-                              + ": in " + juce::String(pic.inTpDb, 1) + " dBTP out " + juce::String(pic.outTpDb, 1) + " dBTP"
-                              + (pic.grKnown ? " GR " + juce::String(pic.grDb, 1) + " dB" : juce::String())
-                              + " -> pre " + juce::String(s.preTrimDb, 1) + " dB, post " + juce::String(s.trimDb, 1) + " dB"
-                              + (pic.hot() ? "  [HOT: input over " + juce::String(kSlotInputCeilingDb, 0) + " dBTP]" : juce::String())
-                              + (pic.working() ? "  [WORKING: GR over " + juce::String(kFlagGrDb, 0) + " dB]" : juce::String()));
-    }
-    return changed;
-}
+// 21t-m (29 Sep 2026 ruling): THE THIRD GAIN IS DELETED, NOT HIDDEN.
+// setSlotTrimDb / getSlotTrimDb / hasActiveTrims / slotTrimText / measureUnityTrims lived here, along with the
+// compare-only gain in SlotWetBlend they drove. A slot has exactly two EchoJay gains: IN (setSlotPreTrimDb,
+// which is the drive) and OUT (setSlotOutGainDb, which the hold writes).
+// WHAT IT COST WHILE IT EXISTED, from Sean's 29 Sep logs:
+//   - the settle's drive mirrored its post-cut into it (pre=+1/+2/+3, post=-1/-2/-3), and it is compare-only,
+//     so every rung raised the chain by a dB and nothing took it back - the 21:53-21:54 compressor came out
+//     3 dB louder than it went in;
+//   - Listen wrote its "match trims" through measureUnityTrims, half of them into the LIVE pre-trim, under a
+//     log line reading "compare-only: the chain output does NOT move" - the 18:13 drop.
+
 // R1 (21s-b, 24 Sep 2026): THE EXEMPT SLOTS CARRY NO TRIM, EVER.
 // measureUnityTrims skips the Level and the Limiter, which meant it never WROTE a trim on them - and never
 // cleared one either. A pre-trim left on the Level slot by an earlier build sits in the path for the life of the
@@ -2700,7 +2592,9 @@ int ChainHost::clearExemptTrims(int levelSlot, int limiterSlot, juce::StringArra
     {
         if (i < 0 || i >= (int) slots_.size()) continue;
         auto& s = slots_[(size_t) i];
-        const float pre = s.preTrimDb, post = s.trimDb;
+        // 21t-m: only IN remains to clear - the compare-only post trim is deleted. OUT is NOT cleared here:
+        // it is what the hold wrote, deliberately, and clearing it would undo the level it is holding.
+        const float pre = s.preTrimDb;
         if (std::abs(pre) >= 0.05f)
         {
             setSlotPreTrimDb(i, 0.0f); ++cleared;
@@ -2708,15 +2602,23 @@ int ChainHost::clearExemptTrims(int levelSlot, int limiterSlot, juce::StringArra
             if (lines) lines->add(line);
             EchoJay_NSLog(("EJLoudness: " + line).toRawUTF8());
         }
-        if (std::abs(post) >= 0.05f)
-        {
-            setSlotTrimDb(i, 0.0f); ++cleared;
-            const auto line = "exempt trim cleared: " + s.desc.name + " post " + juce::String(post, 1);
-            if (lines) lines->add(line);
-            EchoJay_NSLog(("EJLoudness: " + line).toRawUTF8());
-        }
     }
     return cleared;
+}
+
+// 21t-m: KEEP-LEVEL IS NOT THE COMPARE TRIM and survives it. These three sat inside the deleted block and were
+// taken out with it by mistake; they are restored here, with slotTrimText reduced to the one thing it can still
+// say now that there is no match trim to report.
+void ChainHost::setSlotKeepLevel(int i, bool keep) { if (i >= 0 && i < (int) slots_.size()) { if (slots_[(size_t) i].keepLevel != keep) { if (onScalarUndo && ! undoSuppressed_) onScalarUndo("keep", i, slots_[(size_t) i].keepLevel, keep, juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name, {}); else pushUndo(juce::String(keep ? "keep level " : "match level ") + slots_[(size_t) i].desc.name); } slots_[(size_t) i].keepLevel = keep; bumpChainRevision(); } }
+bool ChainHost::getSlotKeepLevel(int i) const { return i >= 0 && i < (int) slots_.size() && slots_[(size_t) i].keepLevel; }
+
+juce::String ChainHost::trimTextForName(const juce::String& name) const
+{
+    const auto n = name.trim().toLowerCase();
+    for (int i = 0; i < (int) slots_.size(); ++i)
+        if (slots_[(size_t) i].desc.name.trim().toLowerCase() == n)
+            return slots_[(size_t) i].keepLevel ? juce::String("level kept") : juce::String();
+    return {};
 }
 
 void ChainHost::setSlotPreTrimDb(int i, float db)
@@ -2938,7 +2840,6 @@ void ChainHost::setSlotWet(int i, float wet01, WetSource src)
         s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
     else
         s.wetShared->store(s.wet, std::memory_order_relaxed);
-    if (!s.trimShared) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);   // 21m ruling 2
 }
 
 float ChainHost::getSlotWet(int i) const
@@ -6747,7 +6648,6 @@ void ChainHost::rebuildGraph()
                 s.wetShared = std::make_shared<std::atomic<float>>(s.wet);
             // 21m ruling 2: ONE trim atomic per slot for the slot's life. It is created here at most once;
             // a fresh atomic on every rebuild would leave the blend node reading the OLD one.
-            if (s.trimShared == nullptr) s.trimShared = std::make_shared<std::atomic<float>>(s.trimDb);
             if (s.preTrimShared == nullptr) s.preTrimShared = std::make_shared<std::atomic<float>>(s.preTrimDb);   // 21p item 3
             // 21t-k item 3: ONE in tally per slot, for the slot's life, filled by the pre-trim node and read by
             // the blend. Created here at most once, like trimShared - a fresh one on a rebuild would leave the
@@ -6761,7 +6661,7 @@ void ChainHost::rebuildGraph()
             if (prepared_ && sampleRate_ > 0.0) s.inTallyShared->prepare(sampleRate_);
             if (! s.preTrimNode) s.preTrimNode = graph_->addNode(std::make_unique<SlotPreTrim>(s.preTrimShared, s.inTallyShared));
             if (!s.blendNode)
-                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.trimShared, compareActive_, s.inTallyShared));
+                s.blendNode = graph_->addNode(std::make_unique<SlotWetBlend>(s.wetShared, s.inTallyShared));
             active.push_back({ s.node->nodeID, s.blendNode->nodeID, s.preTrimNode->nodeID });
         }
 
@@ -9455,7 +9355,6 @@ void ChainHost::restoreNextSlot(std::vector<RestoreItem> items, int idx,
                     {   // a restore is not an undo step (and undo/redo restore through here)
                         const bool sup = undoSuppressed_; undoSuppressed_ = true;
                         if (wasBypassed) setSlotBypassed(lastSlot, true);
-                        setSlotTrimDb(lastSlot, items[idx].trimDb);          // 21m ruling 2: persisted like the pre-gain
                         setSlotKeepLevel(lastSlot, items[idx].keepLevel);
                         undoSuppressed_ = sup;
                     }
@@ -10282,7 +10181,6 @@ juce::var ChainHost::buildChainSlotsVar() const
         // NOTE the server's slot normaliser (lib/dash/chains.js) whitelists
         // keys and drops this one until it learns it.
         o->setProperty("wet",          (double) s.wet);
-        o->setProperty("trimDb",       (double) s.trimDb);     // 21m ruling 2: the unity-gain trim
         o->setProperty("keepLevel",    s.keepLevel);
         // The AI's prose dial-in guidance is the closest thing this rack has
         // to a role, and it is display text rather than a short label, so it

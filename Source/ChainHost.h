@@ -1224,11 +1224,8 @@ public:
     void  setSlotWet(int i, float wet01, WetSource src);
     float getSlotWet(int i) const;
     // 21m ruling 2: the per-slot unity-gain trim
-    void  setSlotTrimDb(int i, float db);
-    float getSlotTrimDb(int i) const;
     void  setSlotKeepLevel(int i, bool keep);
     bool  getSlotKeepLevel(int i) const;
-    juce::String slotTrimText(int i) const;                 // "-2.3 dB match" / "kept" / ""
     juce::String trimTextForName(const juce::String& name) const;   // the chain card's line, by slot name
     // Measure every measured slot except the Level slot and the last limiter: trim = -(out - in) short-term, clamped +-12,
     // skipping kept slots. Returns how many trims changed; one log line per slot into `lines` when given.
@@ -1236,7 +1233,6 @@ public:
     // reading taken while the transport was stopped. Each slot that passes the gate gets TWO trims - a PRE-trim on
     // the plugin's input so no stage is hit above -3 dBTP, and the POST-trim that restores unity - and a PICTURE
     // (input peak, output peak, GR where the plugin exposes it) kept in state for the strip and the Listen card.
-    int   measureUnityTrims(int exemptLevelSlot, int exemptLimiterSlot, juce::StringArray* lines = nullptr, bool transportRolling = true);
     static constexpr float kSlotInputCeilingDb = -3.0f;   // the principle's line: no slot input above -3 dBTP
     static constexpr float kFlagGrDb = 3.0f;              // ...and no stage working harder than 3 dB
     struct SlotPicture
@@ -1256,18 +1252,20 @@ public:
     juce::String slotPictureText(int i) const;            // the line under the slot in the chain strip
     juce::StringArray listenCardLines() const;            // the per-slot picture for the Listen reply card, flags by name
     float getSlotPreTrimDb(int i) const;
+    // 21t-m (29 Sep 2026 ruling): setSlotTrimDb / getSlotTrimDb / slotTrimText / hasActiveTrims /
+    // measureUnityTrims / setCompareActive and the compare-only gain they drove are DELETED. A slot has exactly
+    // two EchoJay gains: IN (this pre-trim, which is the drive) and OUT (setSlotOutGainDb, which the hold
+    // writes). The third one was where the drive's post-cut landed - so every rung raised the chain and nothing
+    // took it back - and where Listen wrote its "match trims".
     void  setSlotPreTrimDb(int i, float db);
     // R2 (21s-b, 24 Sep 2026): the MATCH (post) trim is a COMPARE DEVICE. It is in the signal path only while an
     // A/B compare is running; the pre-trim, which protects a slot's input, is always in the path. One flag, shared
     // with every blend node, so the answer cannot differ per slot.
-    void setCompareActive(bool on) { if (compareActive_) compareActive_->store(on, std::memory_order_relaxed); }
-    bool compareActive() const { return compareActive_ && compareActive_->load(std::memory_order_relaxed); }
     // R1 (21s-b): the Level and Limiter slots are exempt from BOTH trims. Any value found on them is cleared and
     // said out loud, at build and at every Listen - a stale trim on an exempt slot is invisible otherwise.
     int clearExemptTrims(int levelSlot, int limiterSlot, juce::StringArray* lines = nullptr);
     // 21m ruling (unityChain capability): true when any live (non-bypassed) slot carries a non-zero trim - the rack
     // sits at unity because the trims made it so. False on an empty rack or before the first Listen.
-    bool  hasActiveTrims() const;
 
     // ===== 21m PER-RACK UNDO/REDO (22 Sep 2026) =====
     // 20 deep. A snapshot is the SAME pair a session save writes (buildChainSlotsVar +
@@ -2088,7 +2086,6 @@ private:
         // the user keeps this plugin's level. Persisted with the session like the pre-gain (a shared chain does not carry it).
         float                                    trimDb = 0.0f;
         bool                                     keepLevel = false;
-        std::shared_ptr<std::atomic<float>>      trimShared;
         // 21p item 3: the PRE-trim rides its own node ahead of the plugin (the blend node is after it), so the
         // plugin's input can be held under -3 dBTP while the dry tap the blend mixes stays untouched at unity.
         float                                    preTrimDb = 0.0f;
@@ -2152,7 +2149,6 @@ private:
     std::set<juce::String>            steppedSweepInFlight_;
     // The token a background sweep holds instead of holding this object: cleared in the destructor, so a sweep
     // that finishes after the host is gone does nothing rather than writing into freed memory.
-    std::shared_ptr<std::atomic<bool>> compareActive_ = std::make_shared<std::atomic<bool>> (false);   // R2 (21s-b)
     std::shared_ptr<std::atomic<bool>> sweepAlive_ = std::make_shared<std::atomic<bool>> (true);
     juce::StringArray                    mapsRequested_; // fps requested this session
     // fps whose fetch is IN FLIGHT (requested, no storeParamMaps answer

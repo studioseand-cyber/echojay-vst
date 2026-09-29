@@ -176,7 +176,8 @@ struct CalibLoop
     static constexpr int   kHoldMaxWrites   = 2;     // ruled: one correction, at most one refinement
     static constexpr float kHoldOpenDb      = 1.0f;  // ...the first write is owed above this
     static constexpr float kHoldRefineDb    = 0.5f;  // ...and the refinement above this
-    static constexpr float kHoldTotalSlackDb = 1.0f; // the total may exceed the first excess by this much, no more
+    // 21t-m (29 Sep 2026 ruling): the slot output gain's own range, and the ONLY thing that limits the hold.
+    static constexpr float kSlotGainMinDb = -24.0f, kSlotGainMaxDb = 12.0f;
     static constexpr int kFreshAfterWrite = 2;   // 21t-k item 3 (ruled 28 Sep 2026): two fresh windows per step
     // 21t-m item 5: how much of a window's worth of NEW heard audio makes a window judgeable. Two thirds - a
     // window is 3 s and a judged one must be most of that; Sean's 0.7 s sliver from a stopping transport is not.
@@ -1029,28 +1030,31 @@ struct CalibLoop
         refinement; the closing line is handed out when it is finished, so the sentence can state the total. */
     Step& holdStep (Step& s)
     {
-        // 21t-m (29 Sep 2026 ruling, replacing the named-output question): THE HOLD WRITES ECHOJAY'S OWN OUT,
-        // ALWAYS. Never a plugin's output control, whether or not the map names one - a plugin's own output is
-        // left exactly where the build put it. There is one write target and one residual, so there is nothing
-        // here to choose between: the slot has two EchoJay gains, IN and OUT, and the hold sets OUT.
+        // 21t-m (29 Sep 2026): THE HOLD WRITES ECHOJAY'S OWN OUT, ALWAYS, AND IT WRITES THE WHOLE RESIDUAL.
+        // Never a plugin's output control - a plugin's own output is left exactly where the build put it. The
+        // slot has two EchoJay gains, IN and OUT, and the hold sets OUT.
+        //
+        // THE CAP IS GONE (ruled, tonight). It read "the total may never exceed the first measured excess plus
+        // 1 dB", and on Sean's 21:54:16 compressor that turned a measured residual of 3.00 dB into a written
+        // -1.00 and told him "Output -1.0 dB, its limit - the slot is still 2.0 dB out". The cap was protecting
+        // against the wind-up that the once-after-landing rule had already made impossible, and all it did was
+        // stop the hold finishing its job. THE ONLY LIMIT IS THE CONTROL'S OWN RANGE.
         const float excess = levelResidualDb;
-        if (holdFirstExcessDb != holdFirstExcessDb) holdFirstExcessDb = excess;   // the budget this hold may spend
 
         const float threshold = holdWrites == 0 ? kHoldOpenDb : kHoldRefineDb;
         if (std::abs (excess) > threshold && holdWrites < kHoldMaxWrites)
         {
-            // The total may never exceed the first measured excess by more than kHoldTotalSlackDb (ruled).
-            const float cap     = std::abs (holdFirstExcessDb) + kHoldTotalSlackDb;
-            const float wasGain = slotGainDb;
-            float wantGain = juce::jlimit (holdBaseGainDb - cap, holdBaseGainDb + cap, slotGainDb - excess);
-            wantGain = juce::jlimit (-24.0f, 12.0f, wantGain);
+            const float wasGain  = slotGainDb;
+            const float wantGain = juce::jlimit (kSlotGainMinDb, kSlotGainMaxDb, slotGainDb - excess);
             if (std::abs (wantGain - wasGain) > 0.05f)
             {
                 slotGainDb = wantGain;
                 ++holdWrites;
                 levelTrimmedDb = slotGainDb - holdBaseGainDb;        // the WRITTEN TOTAL, absolute
                 levelHeld = true;
-                levelHoldClamped = std::abs ((holdBaseGainDb - holdFirstExcessDb) - slotGainDb) > 0.05f;
+                // CLAMPED means the CONTROL ran out - it is at an end of its range and the residual is not
+                // closed. Nothing else clamps any more, so this cannot be reported for any other reason.
+                levelHoldClamped = std::abs ((wasGain - excess) - wantGain) > 0.05f;
                 levelHoldLimitDb = slotGainDb;
                 freshWanted = kFreshAfterWrite;
                 judged = 0;
@@ -1058,7 +1062,7 @@ struct CalibLoop
                 s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
                 return s;
             }
-            levelHoldClamped = true; levelHoldLimitDb = slotGainDb;  // the cap or the control ran out
+            levelHoldClamped = true; levelHoldLimitDb = slotGainDb;  // the control is already at its end
         }
         // FINISHED: within the threshold, out of writes, or out of control. The closing line goes now, and it
         // states the written total.

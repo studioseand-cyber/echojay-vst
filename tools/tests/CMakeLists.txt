@@ -300,6 +300,10 @@ add_test(NAME probe_plist_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/probe_pli
 set_tests_properties(probe_plist_guard PROPERTIES LABELS "fast" TIMEOUT 600 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME temp_var_grep_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/temp_var_grep_guard/build_and_run.sh)
 set_tests_properties(temp_var_grep_guard PROPERTIES LABELS "fast" TIMEOUT 300 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+# 21t-m (29 Sep 2026): the role question never touches a string on the AUDIO thread. A grep guard because the
+# defect it pins is a grep-able shape and the gate should not need a two-process rig to catch it again.
+add_test(NAME rt_role_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/rt_role_guard/build_and_run.sh)
+set_tests_properties(rt_role_guard PROPERTIES LABELS "fast" TIMEOUT 120 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_test(NAME state_path_guard COMMAND bash ${CMAKE_SOURCE_DIR}/tools/state_path_guard/build_and_run.sh)
 set_tests_properties(state_path_guard PROPERTIES LABELS "fast" TIMEOUT 120 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 # 21t-d: one process, but the same shape - a real LinkProcessor against the Link archive, so it lives here.

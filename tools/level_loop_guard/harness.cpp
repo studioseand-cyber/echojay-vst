@@ -155,7 +155,8 @@ echojay::CalibLoop::Config passiveDriveCfg (const char* name)
     EchoJay's own slot output gain and every closing line. */
 struct RunResult
 {
-    std::vector<float> slotGainWrites;   // the VALUE the gain landed on, one entry per change
+    std::vector<float> slotGainWrites;   // the value OUT landed on, per HOLD write (21t-m)
+    std::vector<float> everyOutWrite;    // ...and every change to OUT, drive rungs included
     juce::String closing;
     juce::StringArray logLines;
     int windows = 0;
@@ -179,8 +180,21 @@ RunResult runLoop (Rig& r, int maxWindows, double secondsPerWindow = 3.0)
         r.proc.calibTick ({});
         ++out.windows;
         out.logLines.add (r.proc.calibLastLogLine());
+        // 21t-m: OUT is written by TWO things now - the drive's post-cut (every rung) and the hold. A change in
+        // the control is therefore no longer a proxy for "the hold wrote". The HOLD's writes are the ones whose
+        // window logged level-hold-slot; every other change is the drive doing its job.
         const float g = r.slotOut();
-        if (std::abs (g - lastGain) > 0.005f) { out.slotGainWrites.push_back (g); lastGain = g; wroteOnce = true; }
+        const bool heldThisWindow = ! out.logLines.isEmpty()
+                                    && out.logLines[out.logLines.size() - 1].contains ("level-hold-slot");
+        if (std::abs (g - lastGain) > 0.005f)
+        {
+            out.everyOutWrite.push_back (g);
+            if (heldThisWindow) { out.slotGainWrites.push_back (g); wroteOnce = true; }
+            lastGain = g;
+            // 21t-m: "it stays level" is counted from the HOLD's write, not from the drive's first rung. Between
+            // the two the plugin's own change is still uncorrected by design, and counting there would be asking
+            // the chain to be level before anything had corrected it.
+        }
         else if (wroteOnce)
         {
             const float ci = r.chainInDb(), co = r.chainOutDb();
@@ -198,8 +212,11 @@ void reportRun (const char* what, const RunResult& rr)
 {
     juce::String w;
     for (size_t i = 0; i < rr.slotGainWrites.size(); ++i) w += (i ? ", " : "") + juce::String (rr.slotGainWrites[i], 2);
-    std::printf ("    %s: %d window(s), %d write(s) to the slot output gain [%s]\n",
-                 what, rr.windows, (int) rr.slotGainWrites.size(), w.isEmpty() ? "none" : w.toRawUTF8());
+    juce::String ow;
+    for (size_t i = 0; i < rr.everyOutWrite.size(); ++i) ow += (i ? ", " : "") + juce::String (rr.everyOutWrite[i], 2);
+    std::printf ("    %s: %d window(s), %d HOLD write(s) [%s]; every OUT write [%s]\n",
+                 what, rr.windows, (int) rr.slotGainWrites.size(), w.isEmpty() ? "none" : w.toRawUTF8(),
+                 ow.isEmpty() ? "none" : ow.toRawUTF8());
     std::printf ("    %s: chain in %.2f, chain out %.2f (out-in %+.2f dB)\n",
                  what, rr.chainInAtEnd, rr.chainOutAtEnd, rr.chainOutAtEnd - rr.chainInAtEnd);
     std::printf ("    %s: closing line: %s\n", what, rr.closing.isEmpty() ? "(none)" : rr.closing.toRawUTF8());
@@ -232,9 +249,9 @@ void guardMain()
         std::printf ("    (1): IN (the drive) landed at %+.2f dB, the plugin adds +6.00 -> the hold owes %+.2f\n",
                      r.slotPreTrim(), -excess);
         if (! rr.slotGainWrites.empty())
-            check (std::abs (rr.slotGainWrites[0] + excess) <= 0.6f,
-                   "(1) ...and the FIRST write lands the whole correction: IN plus the plugin, within 0.6 dB",
-                   "wrote " + f1 (rr.slotGainWrites[0]) + ", owed " + f1 (-excess) + " dB");
+            check (std::abs (rr.slotGainWrites.back() + excess) <= 0.6f,
+                   "(1) ...and the HOLD's write lands the whole correction: IN plus the plugin, within 0.6 dB",
+                   "hold wrote " + f1 (rr.slotGainWrites.back()) + ", owed " + f1 (-excess) + " dB");
         if (rr.slotGainWrites.size() >= 2)
             check (std::abs (rr.slotGainWrites[1] - rr.slotGainWrites[0]) < 0.5f,
                    "(1) ...and a SECOND write, if there is one, is a refinement smaller than 0.5 dB",
@@ -245,6 +262,15 @@ void guardMain()
                    "-24.00, four times the excess)",
                    f1 (rr.slotGainWrites.back()) + " dB of " + f1 (std::abs (excess) + 1.0f) + " allowed");
 
+        // what the HOLD moved OUT by: its write, from the value the drive's last rung left
+        float holdTotalDb = 0.0f;
+        if (! rr.slotGainWrites.empty() && rr.everyOutWrite.size() >= 2)
+        {
+            float before = 0.0f;
+            for (size_t i = 0; i + 1 < rr.everyOutWrite.size(); ++i)
+                if (std::abs (rr.everyOutWrite[i + 1] - rr.slotGainWrites.back()) < 0.005f) before = rr.everyOutWrite[i];
+            holdTotalDb = rr.slotGainWrites.back() - before;
+        }
         const float d = rr.chainOutAtEnd - rr.chainInAtEnd;
         check (d == d && std::abs (d) <= 0.5f,
                "(1) the CHAIN OUT, measured after the hold's own slot output gain, equals the chain in within "
@@ -257,8 +283,10 @@ void guardMain()
                "(1) the closing sentence states the WRITTEN TOTAL  (RED as it stood: \"Output trimmed 6.0 dB\" "
                "with 24 dB written)", rr.closing);
         if (! rr.slotGainWrites.empty())
-            check (rr.closing.contains (juce::String (std::abs (rr.slotGainWrites.back()), 1)),
-                   "(1) ...and the number in it IS the total that was written",
+            // The sentence reports the hold's WRITTEN TOTAL - what the hold moved OUT by, measured from where
+            // the settle's last drive rung left it, not from zero. Here: OUT went -3 (drive) -> -9 (hold) = 6.
+            check (rr.closing.contains (juce::String (std::abs (holdTotalDb), 1)),
+                   "(1) ...and the number in it IS the total the HOLD moved OUT by, from where the drive left it",
                    "wrote " + f1 (rr.slotGainWrites.back()) + " | " + rr.closing);
     }
 
@@ -275,9 +303,9 @@ void guardMain()
                juce::String ((int) rr.slotGainWrites.size()) + " write(s)");
         const float excess2 = -6.0f + r.slotPreTrim();
         if (! rr.slotGainWrites.empty())
-            check (std::abs (rr.slotGainWrites[0] + excess2) <= 0.6f,
-                   "(2a) the first write is the whole correction the other way up too: IN plus the plugin",
-                   "wrote " + f1 (rr.slotGainWrites[0]) + ", owed " + f1 (-excess2) + " dB");
+            check (std::abs (rr.slotGainWrites.back() + excess2) <= 0.6f,
+                   "(2a) the hold's write is the whole correction the other way up too: IN plus the plugin",
+                   "hold wrote " + f1 (rr.slotGainWrites.back()) + ", owed " + f1 (-excess2) + " dB");
         const float d = rr.chainOutAtEnd - rr.chainInAtEnd;
         check (d == d && std::abs (d) <= 0.6f, "(2a) the chain out equals the chain in", f1 (d) + " dB");
     }
@@ -292,12 +320,12 @@ void guardMain()
         // OUT owes whatever IN added. What "nothing is owed" means here is that the hold writes nothing the
         // DRIVE did not put there - so the assertion is the write against IN, and the chain coming out level.
         check ((int) rr.slotGainWrites.size() <= 1,
-               "(2b) a unity plugin costs at most ONE write, and only for what the drive added",
-               juce::String ((int) rr.slotGainWrites.size()) + " write(s), IN at " + f1 (r.slotPreTrim()));
+               "(2b) a unity plugin costs at most ONE HOLD write",
+               juce::String ((int) rr.slotGainWrites.size()) + " hold write(s), IN at " + f1 (r.slotPreTrim()));
         if (! rr.slotGainWrites.empty())
-            check (std::abs (rr.slotGainWrites[0] + r.slotPreTrim()) <= 0.6f,
-                   "(2b) ...and that write is exactly minus the drive, nothing else",
-                   "wrote " + f1 (rr.slotGainWrites[0]) + ", IN " + f1 (r.slotPreTrim()) + " dB");
+            check (std::abs (rr.slotGainWrites.back() + r.slotPreTrim()) <= 0.6f,
+                   "(2b) ...and it is exactly minus the drive, nothing else",
+                   "hold wrote " + f1 (rr.slotGainWrites.back()) + ", IN " + f1 (r.slotPreTrim()) + " dB");
         const float d2b = rr.chainOutAtEnd - rr.chainInAtEnd;
         check (d2b == d2b && std::abs (d2b) <= 0.6f,
                "(2b) ...and the chain comes out where it went in", f1 (d2b) + " dB");
@@ -343,6 +371,58 @@ void guardMain()
         check (h.dynamicsSlotCount() == 0,
                "(1b) an EchoJay Gain is not a dynamics slot, so nothing is owed a loop here",
                juce::String (h.dynamicsSlotCount()) + " dynamics slot(s)");
+    }
+
+    // ---- (1c) THE DRIVE'S POST-CUT IS LIVE, AND THE HOLD WRITES THE WHOLE RESIDUAL (21t-m item 1) --------
+    {
+        std::printf ("\n-- (1c) the drive raises IN and lowers the LIVE OUT; the hold writes it all --\n");
+        // Sean's 21:53-21:54, ~/Desktop/ejlog_2206.txt: the settle drove pre=+1/+2/+3 with post=-1/-2/-3, the
+        // post landed in the COMPARE trim (not in the path), and the chain came out 3 dB louder. The hold then
+        // read "the plugin is 0.0 dB quieter out than in; residual before this write 3.00 dB; written total
+        // -1.00 dB" and told him "Output -1.0 dB, its limit - the slot is still 2.0 dB out".
+        //   131964  21:54:16.176  window 18 gr=0.2 pre=+3.0 post=-3.0 ... state=level-hold-slot
+        //   131965  21:54:16.176  slot 5 output gain set to -1.00 dB
+        Rig r (ChannelType::LeadVocal, 0.0f);   // a UNITY plugin: every dB at the chain output is EchoJay's own
+        auto& h = r.h;
+        check (h.getNumSlots() == 1, "(1c) fixture: one unity slot", juce::String (h.getNumSlots()) + " slot(s)");
+
+        // THE DRIVE, written the way the loop writes it: IN up a rung, OUT down by the same.
+        h.setSlotPreTrimDb (0, 3.0f);
+        h.setSlotOutGainDb (0, -3.0f);
+        feed (r.proc, r.prog, 12.0);
+        const float d = r.chainOutDb() - r.chainInDb();
+        check (d == d && std::abs (d) <= 0.5f,
+               "(1c) a drive of +3 with its post-cut is LEVEL at the chain output  (RED as it stood: the cut went "
+               "to the compare trim, which is only in circuit during an A/B, so the chain came out 3 dB louder)",
+               f1 (d) + " dB");
+
+        // ...AND THE HOLD WRITES THE WHOLE RESIDUAL. Stage Sean's state: IN +3, OUT still 0, so 3 dB is owed.
+        h.setSlotOutGainDb (0, 0.0f);
+        feed (r.proc, r.prog, 12.0);
+        echojay::CalibLoop l;
+        auto cfg = passiveDriveCfg ("EchoJay Compressor");
+        l.begin (cfg);
+        echojay::CalibLoop::Window w;
+        w.measured = true; w.silent = false; w.grDb = 2.5f; w.levelChangeDb = 0.0f; w.inTruePeakDb = -12.0f;
+        w.slotOutGainDb = 0.0f; w.slotPreTrimDb = 3.0f;      // the state at 21:54:16
+        float wrote = 0.0f; int writes = 0; float heard = 30.0f;
+        for (int i = 0; i < 12; ++i)
+        {
+            heard += 4.0f; w.heardSeconds = heard;
+            const auto st = l.onWindow (w, 3000.0);
+            if (st.writeSlotGain) { wrote = st.slotGainValue; ++writes; w.slotOutGainDb = st.slotGainValue; }
+        }
+        std::printf ("    (1c) residual 3.00 owed -> %d write(s), OUT %.2f dB\n", writes, wrote);
+        check (writes >= 1 && std::abs (wrote + 3.0f) <= 0.3f,
+               "(1c) the hold writes the WHOLE measured residual  (RED as it stood: residual 3.00, written -1.00, "
+               "reported to Sean as \"Output -1.0 dB, its limit\")",
+               juce::String (writes) + " write(s), OUT " + f1 (wrote) + " dB, owed -3.00");
+        check (writes <= 2, "(1c) ...in at most two writes", juce::String (writes) + " write(s)");
+        check (std::abs (l.levelTrimmedDb + 3.0f) <= 0.3f,
+               "(1c) ...and the sentence's written total is that same figure", f1 (l.levelTrimmedDb) + " dB");
+        check (! l.levelHoldClamped,
+               "(1c) ...and nothing reports a limit, because the control has 24 dB of range left",
+               l.levelHoldClamped ? "CLAMPED" : "not clamped");
     }
 
     // ---- (2c) A SLOT THAT NAMES AN OUTPUT CONTROL: the hold still writes EchoJay's OWN OUT --------------

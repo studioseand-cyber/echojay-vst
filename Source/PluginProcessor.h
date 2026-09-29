@@ -201,13 +201,18 @@ public:
     // start-prompt answer of Mix Bus no longer ANSWERS the music question on its own - it only makes the chain a
     // bus, which every other source can do too. The decision is echojay::decideChainIsMusic; this predicate is
     // gone as a reader and nothing else calls it.
-    bool selfKeyRoleIsMusic() const
-    {
-        return echojay::decideChainIsMusic (chainRole(),
-                                            channelType == ChannelType::VocalBus,
-                                            channelType == ChannelType::DrumBus,
-                                            chainHost.getHostTrackName());
-    }
+    /** THE ONE READER of the music question, and it reads ONE ATOMIC.
+        21t-m (29 Sep 2026): this is called from processBlock (PluginProcessor.cpp:1399, the audio thread) on
+        every block. The first cut of the item-5 ruling made it compute the answer here - which meant calling
+        ChainHost::getHostTrackName(), a juce::String RETURNED BY VALUE, on the audio thread: a ref-counted copy
+        (a heap operation in the real-time path) and an unsynchronised read of a string the message thread
+        mutates (ChainHost.cpp:2994). A racing ref count corrupts the shared object, and four Link rigs went red
+        with a juce::String reading as neither its value nor empty.
+        The ruling said the role is the one reader; it did not say which thread, and the implementation followed
+        it onto the wrong one. The verdict is computed by publishChainRole() - which already runs at every point
+        the three inputs change - and stored here. Nothing in this function may become more than a load: there is
+        a guard in the gate that fails if it does. */
+    bool selfKeyRoleIsMusic() const noexcept { return selfKeyIsMusic_.load (std::memory_order_relaxed); }
 
     // ---- 21t-m item 5 (29 Sep 2026 ruling): THE ROLE HAS THREE SOURCES ------------------------------------
     // "isBusRole reads only the start-prompt channelType, so a track named 'Mix Bus' with the prompt unanswered
@@ -1402,6 +1407,9 @@ private:
 
     ChannelType channelType { ChannelType::FullMix };
     int         selfPlacement_ = 0;   // 21t-m item 5: the Link's placement selector; 0 on V2, which has none
+    // 21t-m: the music verdict, computed on the message thread by publishChainRole() and READ on the audio
+    // thread. An atomic<bool> because that is the only shape this question may take in processBlock.
+    std::atomic<bool> selfKeyIsMusic_ { true };
     juce::String customChannelName;
     bool channelTypePromptDismissed = false;
     bool channelChosen = false;   // 21r item 7: persisted "the question has been answered"

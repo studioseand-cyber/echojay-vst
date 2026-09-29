@@ -33,7 +33,27 @@ int main()
     EchoJayProcessor bp; bp.prepareToPlay (48000.0, 512);
     const juce::String leaseId = "lease-guard-" + juce::String (juce::Time::currentTimeMillis());
     bp.borrowEngageBegin (uid, leaseId, true, true); pumpMs (300);
-    auto* bh = bp.borrowHost(); check (bh != nullptr && bp.borrowUid() == uid, "V2 side: a borrow session (the lease) is engaged on the Link " + uid);
+    auto* bh = bp.borrowHost();
+    // 21t-m: PRINT WHAT IT COMPARED, AND HOW LONG IT WAITED. This assertion failed in the 21t-m gate with no
+    // values in the message, and a bare FAIL is what turns a diagnosis into a guess - see the limiter-latency
+    // entry in MERGE for what that costs. It also waited a FIXED 300 ms for something the product does on the
+    // message thread, which on a loaded machine is a coin toss rather than a measurement: the wait is now
+    // bounded-and-reported, so "it never engaged" and "it engaged late" can never again look the same.
+    double engagedAfterMs = -1.0;
+    {
+        const double t0 = juce::Time::getMillisecondCounterHiRes();
+        for (int i = 0; i < 100 && ! bp.borrowActive(); ++i) pumpMs (50);
+        if (bp.borrowActive()) engagedAfterMs = juce::Time::getMillisecondCounterHiRes() - t0;
+    }
+    std::printf ("    the borrow engaged after %s\n",
+                 engagedAfterMs >= 0.0 ? (juce::String (engagedAfterMs, 0) + " ms").toRawUTF8()
+                                       : "NEVER (5 s)");
+    check (bh != nullptr && bp.borrowUid() == uid,
+           "V2 side: a borrow session (the lease) is engaged on the Link " + uid
+           + "  [host " + juce::String (bh != nullptr ? "yes" : "NULL")
+           + ", active " + juce::String (bp.borrowActive() ? "yes" : "no")
+           + ", borrowUid \"" + bp.borrowUid() + "\", engaged after "
+           + (engagedAfterMs >= 0.0 ? juce::String (engagedAfterMs, 0) + " ms" : juce::String ("NEVER")) + "]");
     if (! bh) return 2;
     for (const char* n : kSix) { const auto* d = BuiltinDeviceRegistry::instance().findByName (n); EchoJayBorrowHostTestAccess::loadBuiltin (*bh, BuiltinDeviceRegistry::descriptionFor (*d)); }
     bp.borrowRebaseAfterPush();

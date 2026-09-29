@@ -1588,6 +1588,15 @@ void EchoJayProcessor::publishChainRole()
 {
     const auto r = chainRole();
     chainHost.setChainRole(r);
+    // 21t-m: ...AND THE MUSIC VERDICT, computed HERE, on the message thread, because processBlock reads it on
+    // every block and may not compute it. See selfKeyRoleIsMusic() in the header for what computing it there
+    // cost. This function already runs at every point the three inputs change, which is exactly when the
+    // verdict can change.
+    selfKeyIsMusic_.store (echojay::decideChainIsMusic (r,
+                                                       channelType == ChannelType::VocalBus,
+                                                       channelType == ChannelType::DrumBus,
+                                                       chainHost.getHostTrackName()),
+                           std::memory_order_relaxed);
 }
 
 void EchoJayProcessor::setChannelType(ChannelType t)
@@ -1630,6 +1639,10 @@ void EchoJayProcessor::applyHostTrackNameIfDirty()
     juce::String n;
     { const juce::ScopedLock sl(hostTrackNameLock_); n = hostTrackNamePending_; }
     chainHost.setHostTrackName(n);   // the guard (change, or late first name) lives there
+    // 21t-m item 5: the TRACK NAME is one of the role's three sources, so the role and the music verdict are
+    // recomputed the moment it lands. This is the third of the three inputs; the other two (the prompt and the
+    // placement selector) publish from their own setters.
+    publishChainRole();
 }
 
 void EchoJayProcessor::timerCallback()
@@ -5517,7 +5530,9 @@ bool EchoJayProcessor::applyUndoEntry(echojay::UndoEntry& e, bool toBefore)
         ChainHost* h = rackFor(rack); if (h == nullptr) return false;
         const int i = h->slotForUndoTarget(slotId, hint); if (i < 0) return false;
         if (e.kind == "wet")  h->setSlotWet(i, (float)(double) v, ChainHost::WetSource::User);
-        if (e.kind == "trim") h->setSlotTrimDb(i, (float)(double) v);
+        // 21t-m: "trim" entries are the deleted compare-only gain. An old history entry of that kind is
+        // ignored rather than replayed onto a control that no longer exists.
+        if (e.kind == "trim") return false;
         if (e.kind == "keep") h->setSlotKeepLevel(i, (bool) v);
         if (e.kind == "dial") h->applySlotParamSnapshot(i, v);
         if (e.kind == "gesture") { auto* o = new juce::DynamicObject(); o->setProperty(juce::Identifier(juce::String((int) v.getProperty("index", juce::var()))), v.getProperty("value", juce::var())); h->applySlotParamSnapshot(i, juce::var(o)); }
@@ -6571,10 +6586,11 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
         EchoJay_NSLog(("EJThreshold: \"" + pluginName + "\" slot " + juce::String(slot + 1) + " listening, band "
                        + juce::String(bandLo, 1) + "-" + juce::String(bandHi, 1) + " dB, opening drive "
                        + juce::String(openingDrive, 1) + " dB").toRawUTF8());
-        // The opening drive is written the same way every later step is: pre-gain set, post-trim mirrored.
+        // The opening drive is written the same way every later step is: IN up a rung, the LIVE OUT down by the
+        // same (21t-m - it used to mirror into the compare-only trim, which is not in the path).
         if (auto* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
             if (slot >= 0 && slot < host->getNumSlots())
-            { host->setSlotPreTrimDb(slot, openingDrive); host->setSlotTrimDb(slot, -openingDrive); }
+            { host->setSlotPreTrimDb(slot, openingDrive); host->setSlotOutGainDb(slot, -openingDrive); }
     }
     calibStore(uid, loop);
 }
@@ -6641,7 +6657,7 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
             else
             {
                 host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
-                host->setSlotTrimDb   (cfg.slot, -cfg.startDb);
+                host->setSlotOutGainDb(cfg.slot, -cfg.startDb);   // 21t-m: the LIVE out, not the compare trim
             }
             // RESET POINT 1 of 4 (21t-j): THE BUILD. Both legs start counting here, so the first crest difference
             // describes the setting this build just made and nothing before it.
@@ -6751,8 +6767,12 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     if (step.logLine.isNotEmpty()) { calibLastLogLine_ = step.logLine; EchoJay_NSLog(step.logLine.toRawUTF8()); }
     if (step.writeDrive)
     {
-        host->setSlotPreTrimDb(loop.slot, step.newPre);
-        host->setSlotTrimDb   (loop.slot, step.newPost);
+                // 21t-m (29 Sep 2026 ruling): THE DRIVE RAISES IN BY A RUNG AND LOWERS THE LIVE OUT BY THE SAME.
+        // newPost used to go to setSlotTrimDb - the COMPARE trim, which is only in circuit during an A/B - so
+        // every rung of every loop raised the chain by a dB and nothing took it back. Sean's 21:53-21:54
+        // compressor ran pre=+1/+2/+3 with post=-1/-2/-3 and came out 3 dB louder.
+host->setSlotPreTrimDb(loop.slot, step.newPre);
+        host->setSlotOutGainDb(loop.slot, step.newPost);   // 21t-m: the LIVE out, not the compare trim
         // RESET POINT 2 of 4: a write to the ACTUATOR (EchoJay's own staging gain here).
         host->resetSlotShortTermStats(loop.slot, "the loop moved the drive");
         if (uid.isNotEmpty()) republishBorrowedRackSidecar();

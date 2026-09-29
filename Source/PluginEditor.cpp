@@ -8934,9 +8934,10 @@ int EchoJayEditor::chatTargetChannelWidth() const
 // 21m ruling (unityChain): the rack the turn is about - the local ChainHost, or the borrowed copy of a Link's rack
 bool EchoJayEditor::viewRackHasTrims()
 {
-    const juce::String uid = chainViewUid();
-    ChainHost* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
-    return h != nullptr && h->hasActiveTrims();
+    // 21t-m (29 Sep 2026 ruling): the compare-only trims this reported on are DELETED, so the answer is always
+    // no. The `unityChain` field it feeds stays on the wire - the server reads it - and now always says the
+    // chain is NOT carrying match trims, which after this round is simply true.
+    return false;
 }
 
 // ===== 21m per-rack undo/redo (22 Sep 2026) =====

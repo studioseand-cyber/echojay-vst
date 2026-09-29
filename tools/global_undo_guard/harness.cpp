@@ -70,9 +70,9 @@ int main()
       check (U.undoDepth() == n + 1 && U.top()->kind == "wet" && std::abs ((float)(double) U.top()->after - 0.4f) < 0.01f, "2. a wet gesture (two writes inside 300 ms) = ONE wet entry with the final value", U.top()->kind + " " + f1 ((float)(double) U.top()->after));
       U.undo(); check (std::abs (h.getSlotWet (1) - 1.0f) < 0.01f, "2. undo restores wet 1.0", f1 (h.getSlotWet (1)));
       U.redo(); check (std::abs (h.getSlotWet (1) - 0.4f) < 0.01f, "2. redo -> 0.4", f1 (h.getSlotWet (1))); }
-    { const int n = U.undoDepth(); h.setSlotTrimDb (1, -3.0f); check (U.undoDepth() == n + 1 && U.top()->kind == "trim", "3. a trim write is a TRIM entry", U.top()->kind);
-      U.undo(); check (std::abs (h.getSlotTrimDb (1)) < 0.01f, "3. undo restores trim 0", f1 (h.getSlotTrimDb (1)));
-      h.setSlotKeepLevel (1, true); check (U.top()->kind == "keep" && h.getSlotKeepLevel (1), "3. keep-level is a KEEP entry");
+    // 21t-m (29 Sep 2026 ruling): the "trim" undo kind is GONE with the compare-only gain it restored. Keep-level
+    // is a different flag and survives - it sat next door in the same block and is deliberately still asserted.
+    { h.setSlotKeepLevel (1, true); check (U.top()->kind == "keep" && h.getSlotKeepLevel (1), "3. keep-level is a KEEP entry");
       U.undo(); check (! h.getSlotKeepLevel (1), "3. undo clears keep"); }
     // ---- dial (assistant apply) ----
     { const int n = U.undoDepth();

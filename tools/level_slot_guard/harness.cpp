@@ -150,7 +150,9 @@ int main()
             host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*gn), 0);
             host->insertBuiltinAt (BuiltinDeviceRegistry::descriptionFor (*lv), 1);
             const int rev0 = host->getChainRevision(), val0 = host->getChainValueRevision();
-            host->setSlotTrimDb (0, -3.0f);
+            // 21t-m: the compare trim is deleted; the slot's OUT gain is the fourth value write now, and it is
+            // a better one - it is a control the product actually uses.
+            host->setSlotOutGainDb (0, -3.0f);
             host->setSlotPreTrimDb (0, -1.0f);
             host->setMasterWet (0.5f);
             host->setSlotWet (0, 0.75f, ChainHost::WetSource::User);

@@ -485,8 +485,12 @@ void LinkProcessor::calibTickOwnRack()
     if (step.logLine.isNotEmpty()) EchoJay_NSLog(step.logLine.toRawUTF8());
     if (step.writeDrive)
     {
-        chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
-        chainHost.setSlotTrimDb   (calibLoop_.slot, step.newPost);
+                // 21t-m (29 Sep 2026 ruling): THE DRIVE RAISES IN BY A RUNG AND LOWERS THE LIVE OUT BY THE SAME.
+        // newPost used to go to setSlotTrimDb - the COMPARE trim, which is only in circuit during an A/B - so
+        // every rung of every loop raised the chain by a dB and nothing took it back. Sean's 21:53-21:54
+        // compressor ran pre=+1/+2/+3 with post=-1/-2/-3 and came out 3 dB louder.
+chainHost.setSlotPreTrimDb(calibLoop_.slot, step.newPre);
+        chainHost.setSlotOutGainDb(calibLoop_.slot, step.newPost);   // 21t-m: the LIVE out, not the compare trim
         chainHost.resetSlotShortTermStats(calibLoop_.slot, "the loop moved the drive");   // 21t-j: both legs start again
     }
     // 21t-g item 2: the threshold actuator, the same write on this side - the loop is one header and a handover
@@ -3146,7 +3150,7 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     else
     {
         chainHost.setSlotPreTrimDb(slot, cfg.startDb);
-        chainHost.setSlotTrimDb   (slot, -cfg.startDb);
+        chainHost.setSlotOutGainDb(slot, -cfg.startDb);   // 21t-m: the LIVE out, not the deleted compare trim
         chainHost.resetSlotShortTermStats(slot, "the build set the drive");   // 21t-j: reset point 1, drive side
     }
     // The state rides the sidecar from the FIRST window, so V2 can render and close a loop this side started.
