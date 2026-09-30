@@ -4,6 +4,7 @@
 #include "ChainHost.h"
 #include "EJReadbackSearch.h"   // 21t-j: landing a dB target by readback
 #include "EedLimiterProcessor.h"   // 21p item 2: the one plugin that publishes its own GR
+#include "EedDeviceProcessor.h"    // 21t-m item 6b: a builtin's switches are in its schema, not in getParameters()
 #include "EedLatencyLog.h"
 #include "EJVariantPreference.h"
 #include "EJWavesAlias.h"
@@ -3203,7 +3204,14 @@ juce::String ChainHost::switchNamedAsActuator (int slotIndex, const juce::String
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return {};
     auto* proc = getSlotProcessor (slotIndex);
     if (proc == nullptr) return {};
-    for (const auto& want : controls)
+    // 21t-m item 6b (30 Sep 2026, measured): EchoJay's OWN devices expose no juce parameters at all - they are
+    // dialled through their schema, and EedDeviceProcessor never calls addParameter. So the loop below, which
+    // reads getParameters(), is blind to every builtin. A builtin's switches are declared in the schema (a
+    // `boolean` spec, or one with exactly two choices), so that is asked first and the same refusal covers both.
+    if (auto* dev = dynamic_cast<EedDeviceProcessor*> (proc))
+    {
+        const auto& sch = dev->paramSchema();
+        for (const auto& want : controls)
         {
             const auto id = want.trim();
             if (id.isEmpty()) continue;

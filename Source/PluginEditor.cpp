@@ -24700,6 +24700,23 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
     }
     if (why.isNotEmpty()) EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
     cfg.purpose = purpose;   // 21t-m item 2: a BUILD holds once and closes; an ASK moves one rung
+    // 21t-m item 6b (29 Sep 2026 ruling): A SWITCH IS NOT A DRIVE. Sean's 21:23:41.538 read
+    //   "EJParamApply:   Compress: manual  0.000  (unknown position \"-15\" (this control has Off | On))"
+    // - the block named `Compress`, a two-position switch, as VComp's actuator, and the loop then spent its
+    // windows trying to dial -15 dB into a boolean. Refused here, and said out loud: a loop that cannot move its
+    // actuator has nothing to measure, and silence would leave Sean watching a compressor that never changed.
+    if (! cfg.params.isEmpty())
+        if (const auto sw = host->switchNamedAsActuator (cfg.slot, cfg.params); sw.isNotEmpty())
+        {
+            const auto pName = (cfg.slot >= 0 && cfg.slot < host->getNumSlots())
+                                 ? host->getSlotInfo (cfg.slot).name : juce::String ("that plugin");
+            EchoJay_NSLog (("EJThreshold: NOT STARTED - the block names \"" + sw + "\" as " + pName
+                            + "'s actuator, and it is a two-position switch, not a continuous control").toRawUTF8());
+            appendLocalResultBubble ("The build named \"" + sw + "\" as the control to dial on " + pName
+                                     + ", but that is an on/off switch, not something I can move by dB - so I have "
+                                     "not touched it. " + pName + " is running at the settings the build gave it.");
+            return 0;
+        }
     // (c) A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING, NOT FROM ZERO. slot_pre_gain_db has already been
     // written on that slot by the build; opening at 0 would undo it in one move and spend the step budget climbing
     // back to where it started.

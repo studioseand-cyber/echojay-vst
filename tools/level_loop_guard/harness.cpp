@@ -1015,6 +1015,48 @@ void guardMain()
         }
     }
 
+    // ---- (6b) A SWITCH IS NOT AN ACTUATOR (21t-m item 6b, 29 Sep 2026) -----------------------------------
+    {
+        std::printf ("\n-- (6b) a two-position switch offered as the drive control --\n");
+        // Sean's 21:23:41.538: 'Compress: manual 0.000 (unknown position "-15" (this control has Off | On))'.
+        // The plan named an Off|On switch as the control to dial, and the loop tried to write -15 to it. A control
+        // with two discrete positions cannot take a dB, whatever it is called, so the loop must refuse it.
+        //
+        // MEASURED while writing this leg (30 Sep): EchoJay's own devices expose NO juce parameters -
+        // EedDeviceProcessor never calls addParameter - so the getParameters() test this started as was blind to
+        // every built-in and returned "" for both a switch and a knob. The product now asks the device's SCHEMA
+        // first (a `boolean` spec, or one with exactly two choices), which is where a built-in's switches live.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        check (lim != nullptr, "(6b) precondition: EchoJay Limiter is registered");
+        if (lim != nullptr)
+        {
+            EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+            pumpMs (200);
+            const int slot = 1;
+            check (r.h.getSlotInfo (slot).name.contains ("Limiter"),
+                   "(6b) precondition: the limiter landed in slot 2", r.h.getSlotInfo (slot).name);
+            if (auto* proc = r.h.getSlotProcessor (slot))
+                check (proc->getParameters().isEmpty(),
+                       "(6b) measured: the built-in publishes NO juce parameters, which is why the schema is asked "
+                       "- recorded, not assumed",
+                       juce::String (proc->getParameters().size()) + " juce parameter(s)");
+            // true_peak is declared boolean in EedLimiterProcessor::schema(); ceiling_db is a dB range.
+            check (r.h.switchNamedAsActuator (slot, { "true_peak" }) == "true_peak",
+                   "(6b) a BOOLEAN control named as the actuator is reported as a switch  (RED as it stood: "
+                   "nothing looked, and the loop wrote -15 dB to an Off|On control)",
+                   "\"" + r.h.switchNamedAsActuator (slot, { "true_peak" }) + "\"");
+            check (r.h.switchNamedAsActuator (slot, { "mode" }).isEmpty(),
+                   "(6b) ...a THREE-choice selector is not a switch - two positions is the test, not discreteness",
+                   "\"" + r.h.switchNamedAsActuator (slot, { "mode" }) + "\"");
+            check (r.h.switchNamedAsActuator (slot, { "ceiling_db" }).isEmpty(),
+                   "(6b) ...and a CONTINUOUS dB control is not either - the refusal cannot swallow a real actuator",
+                   "\"" + r.h.switchNamedAsActuator (slot, { "ceiling_db" }) + "\"");
+            check (r.h.switchNamedAsActuator (slot, { "no_such_control" }).isEmpty(),
+                   "(6b) ...nor a control the plugin does not have");
+        }
+    }
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }
