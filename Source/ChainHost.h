@@ -686,6 +686,10 @@ public:
         reports loops started against THIS, because "N of M dynamics slots" is the sentence that makes a
         build that landed nothing visible without reading rows. */
     int dynamicsSlotCount() const;
+    /** 21t-m item 6a: a slot is dynamics if its OWN category says so, or the map the plan dialled it from does.
+        "loops started 1 of 0 dynamics slots" was a loop running against a count that read only the first.
+        Takes an INDEX, not the slot: ChainSlot is private and forward-declared far below this line. */
+    bool slotIsDynamics (int slotIndex) const;
     /** Set by the editor after a build or an edit, for the headline above. */
     void setLoopsStarted (int n) { loopsStarted_ = n; }
     static constexpr int kMapFetchBoundMs = 4000;
@@ -1430,6 +1434,9 @@ public:
         settled read-back, the apply log) as one the model asked for. Several names means a paired L/R threshold:
         a pair left at two values is a different device, so they move together.
         Returns how many controls were actually written. Message thread. */
+    /** 21t-m item 6b: the name of a NAMED ACTUATOR control that is really a two-position switch, or empty.
+        A switch cannot carry a threshold or a drive, and the server named one ("Compress" on Waves VComp). */
+    juce::String switchNamedAsActuator (int slotIndex, const juce::StringArray& controls) const;
     int setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value);
     /** 21t-j (28 Sep 2026, B's contract note 3): LAND A dB TARGET BY READBACK SEARCH.
         The MC 77's Input profiles as three sampled points ("-inf" / -24.0 / 0.0), so a start around -30 cannot be

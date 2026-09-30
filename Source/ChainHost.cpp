@@ -3191,6 +3191,44 @@ bool ChainHost::landControlAtDb (int slotIndex, const juce::String& controlName,
     return r.landed;
 }
 
+// 21t-m item 6b (29 Sep 2026 ruling): A SWITCH IS NOT A DRIVE.
+// Sean's 21:23:41.538: "EJParamApply:   Compress: manual  0.000  (unknown position \"-15\" (this control has
+// Off | On))" - the server's calibration block named `Compress`, a two-position switch, as VComp's drive param,
+// and the loop then spent its windows trying to dial -15 dB into it. A control with two discrete positions
+// cannot express a threshold or a drive, so the client refuses the block instead of dialling a boolean, and says
+// so where Sean can read it. (B is fixing the map; this is the client not being fooled by it meanwhile.)
+// Returns the offending control's name, or empty when every named control can carry a continuous value.
+juce::String ChainHost::switchNamedAsActuator (int slotIndex, const juce::StringArray& controls) const
+{
+    if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return {};
+    auto* proc = getSlotProcessor (slotIndex);
+    if (proc == nullptr) return {};
+    for (const auto& want : controls)
+        {
+            const auto id = want.trim();
+            if (id.isEmpty()) continue;
+            if (const auto* spec = sch.find (id.toLowerCase().replaceCharacter (' ', '_').toStdString()))
+                if (spec->boolean || spec->choices.size() == 2)
+                    return id;
+        }
+    }
+    for (const auto& want : controls)
+    {
+        const auto wantLc = want.trim().toLowerCase();
+        if (wantLc.isEmpty()) continue;
+        for (auto* prm : proc->getParameters())
+        {
+            if (prm == nullptr) continue;
+            if (prm->getName (echojay::kParamNameQueryLen).trim().toLowerCase() != wantLc) continue;
+            // Two discrete positions is a switch however it is labelled - Off|On, In|Out, Bypass|Active.
+            if (prm->isDiscrete() && prm->getNumSteps() > 0 && prm->getNumSteps() <= 2)
+                return want.trim();
+            break;
+        }
+    }
+    return {};
+}
+
 int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value)
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size() || controls.isEmpty()) return 0;
@@ -4713,13 +4751,34 @@ void ChainHost::logDialSummary(const juce::String& reason) const
 int ChainHost::dynamicsSlotCount() const
 {
     int n = 0;
-    for (const auto& s : slots_)
-    {
-        const auto cat = s.desc.category.toLowerCase();
-        if (cat.contains("dynamic") || cat.contains("compress") || cat.contains("limit")
-            || cat.contains("gate") || cat.contains("expand")) ++n;
-    }
+    for (int i = 0; i < (int) slots_.size(); ++i)
+        if (slotIsDynamics(i)) ++n;
     return n;
+}
+
+// 21t-m item 6a (29 Sep 2026): THE PLAN'S CLASSIFICATION COUNTS TOO.
+// Sean's log read "EJDialSummary: loops started 1 of 0 dynamics slots" six times - one loop running against a
+// count of zero, which is a sentence that cannot be true. The slot was Waves VComp (s), and the count read only
+// desc.category, the plugin's OWN AU category, which for that plugin says nothing useful. The SERVER had
+// classified it correctly all along: "EJDialable: slot 2 (\"VComp (s)\") ... category=compressor". A slot is a
+// dynamics slot if EITHER says so - the plugin's own category or the map the plan dialled it from.
+bool ChainHost::slotIsDynamics (int slotIndex) const
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return false;
+    const auto& s = slots_[(size_t) slotIndex];
+
+    auto isDyn = [] (const juce::String& raw)
+    {
+        const auto c = raw.toLowerCase();
+        return c.contains("dynamic") || c.contains("compress") || c.contains("limit")
+            || c.contains("gate")    || c.contains("expand")   || c.contains("de-esser")
+            || c.contains("deesser");
+    };
+    if (isDyn (s.desc.category)) return true;
+    if (s.fp.isNotEmpty())
+        if (auto it = paramMaps_.find (s.fp); it != paramMaps_.end())
+            if (isDyn (it->second.getProperty ("category", juce::var()).toString())) return true;
+    return false;
 }
 
 const char* ChainHost::dialTriggerName(DialTrigger t)

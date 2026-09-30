@@ -964,6 +964,57 @@ void guardMain()
                third.fromLastOccurrenceOf ("window", true, false).substring (0, 40));
     }
 
+    // ---- (6a) THE PLAN'S CLASSIFICATION COUNTS TOO (21t-m item 6a, 29 Sep 2026) --------------------------
+    {
+        std::printf ("\n-- (6a) a dynamics slot the plugin's own category does not admit to --\n");
+        // Sean's 21:41:53 log, six times: "EJDialSummary: loops started 1 of 0 dynamics slots". One loop running
+        // against a count of zero is a sentence that cannot be true. The slot was Waves VComp (s); the count read
+        // desc.category only, and the SERVER had it right all along - "EJDialable: slot 2 (\"VComp (s)\") ...
+        // category=compressor".
+        //
+        // MEASURED while writing this leg (30 Sep): a BUILT-IN slot carries no fingerprint - getSlotIdentity(0).fp
+        // is empty for EchoJay Gain - so the map side of the OR cannot be keyed on one, and this rig holds only
+        // built-ins. What is provable here is the half that runs on every slot: the plugin's own category. The
+        // map half is proved by the compressor built-in, whose OWN category says compressor, and by the count
+        // reading BOTH: a chain of one dynamics and one not counts exactly one.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        check (r.h.getSlotIdentity (0).fp.isEmpty(),
+               "(6a) measured: a built-in slot carries no fingerprint, so the map half of the OR cannot be keyed "
+               "on one in this rig - recorded, not assumed",
+               "fp=\"" + r.h.getSlotIdentity (0).fp + "\"");
+        check (r.h.dynamicsSlotCount() == 0,
+               "(6a) an EchoJay Gain slot is not a dynamics slot", juce::String (r.h.dynamicsSlotCount()));
+        // THE MAP HALF, on a slot that HAS a fingerprint. Apple's AUDelay: on every Mac, not PACE-wrapped (the
+        // same plugin preflight_guard uses for that reason). Its own category is a delay - nothing dynamics about
+        // it - so the ONLY thing that can make it count is the map, which is exactly Sean's VComp.
+        juce::PluginDescription dly;
+        dly.name = "AUDelay"; dly.pluginFormatName = "AudioUnit";
+        dly.fileOrIdentifier = "AudioUnit:Effects/aufx,dely,appl";
+        dly.uniqueId = dly.deprecatedUid = (int) (juce::int64) juce::String ("64607a6d").getHexValue64();
+        r.h.loadPluginAsync (dly, ChainHost::LoadOrigin::User, {});
+        for (int k = 0; k < 40 && r.h.getNumSlots() < 2; ++k) pumpMs (100);
+        check (r.h.getNumSlots() == 2, "(6a) precondition: Apple's AUDelay loaded as slot 2 - without a REAL "
+               "plugin there is no fingerprint to key a map by, and this leg could not be written",
+               juce::String (r.h.getNumSlots()) + " slot(s)");
+        const auto fp2 = r.h.getSlotIdentity (1).fp;
+        check (fp2.isNotEmpty(), "(6a) precondition: it carries a fingerprint", fp2.substring (0, 16));
+        check (r.h.dynamicsSlotCount() == 0,
+               "(6a) precondition: a delay is not a dynamics slot by its OWN category",
+               juce::String (r.h.dynamicsSlotCount()));
+        if (fp2.isNotEmpty())
+        {
+            auto* m = new juce::DynamicObject(); m->setProperty ("category", "compressor");
+            auto* maps = new juce::DynamicObject(); maps->setProperty (fp2, juce::var (m));
+            r.h.storeParamMaps (juce::var (maps));
+            pumpMs (150);
+            check (r.h.dynamicsSlotCount() == 1,
+                   "(6a) a slot whose MAP says category=compressor IS a dynamics slot  (RED as it stood: the count "
+                   "read desc.category alone, so \"loops started 1 of 0 dynamics slots\" printed six times while "
+                   "a loop was running on Waves VComp)",
+                   juce::String (r.h.dynamicsSlotCount()) + " of " + juce::String (r.h.getNumSlots()));
+        }
+    }
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

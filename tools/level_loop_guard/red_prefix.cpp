@@ -206,6 +206,38 @@ void guardMain()
     check (d == d && std::abs (d) <= 0.5f, "the chain out equals the chain in", f1 (d) + " dB");
     check (rr.closing.contains ("in total to hold the level"),
            "the closing sentence states the WRITTEN TOTAL", rr.closing);
+
+    // ---- 21t-m item 6a: THE MAP'S CLASSIFICATION, on the PRE-FIX count ----------------------------------
+    // dynamicsSlotCount() exists on the pre-fix tree, so this leg compiles both sides of the fix and is the
+    // direct RED for 6a. Apple's AUDelay (on every Mac, not PACE-wrapped) is a slot that HAS a fingerprint -
+    // built-ins carry none - and its own category is a delay, so only the map can make it count.
+    {
+        std::printf ("\n-- item 6a: a dynamics slot only the MAP knows about --\n");
+        Rig r6 (ChannelType::LeadVocal, 6.0f);
+        juce::PluginDescription dly;
+        dly.name = "AUDelay"; dly.pluginFormatName = "AudioUnit";
+        dly.fileOrIdentifier = "AudioUnit:Effects/aufx,dely,appl";
+        dly.uniqueId = dly.deprecatedUid = (int) (juce::int64) juce::String ("64607a6d").getHexValue64();
+        r6.h.onNeedParamMaps = [] (const juce::StringArray&) {};   // pre-fix: called bare, and an empty one aborts
+        r6.h.loadPluginAsync (dly, ChainHost::LoadOrigin::User, [] (const juce::String&) {});
+        for (int k = 0; k < 40 && r6.h.getNumSlots() < 2; ++k) pumpMs (100);
+        check (r6.h.getNumSlots() == 2, "precondition: AUDelay loaded as slot 2",
+               juce::String (r6.h.getNumSlots()) + " slot(s)");
+        const auto fp = r6.h.getSlotIdentity (1).fp;
+        check (fp.isNotEmpty(), "precondition: it carries a fingerprint", fp.substring (0, 16));
+        if (fp.isNotEmpty())
+        {
+            auto* m = new juce::DynamicObject(); m->setProperty ("category", "compressor");
+            auto* maps = new juce::DynamicObject(); maps->setProperty (fp, juce::var (m));
+            r6.h.storeParamMaps (juce::var (maps));
+            pumpMs (150);
+            check (r6.h.dynamicsSlotCount() == 1,
+                   "item 6a: a slot whose MAP says category=compressor counts as a dynamics slot",
+                   juce::String (r6.h.dynamicsSlotCount()) + " of " + juce::String (r6.h.getNumSlots())
+                       + "  <-- PRE-FIX READS 0, which is Sean's \"loops started 1 of 0 dynamics slots\"");
+        }
+    }
+
     std::printf ("\n==== level_loop_guard PRE-FIX RED: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }
