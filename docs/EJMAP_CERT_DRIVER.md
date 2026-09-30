@@ -864,8 +864,20 @@ to a derivation and their disagreement was never used as evidence.
   implied ratio is 2.04 against 1.8 read back; townhouse's 2.22 against 2).
 - Pinned on the committed API-2500 and H-Comp traces as negative cases (G1, G2), with
   MCompressor and a saturated synthetic as positive controls (G3, G5).
-- Weakness, recorded: a sweep whose positions are so coarse that no position sits in the band at
-  all three levels cannot trip the refusal; its recorded slopes are then the evidence.
+- **The grid does not decide the conclusion** (ruled 30 Sep; the 0.25 dB bound is approved because
+  it rests on a derivation, not on a gap between clusters). A gain law is identical at every
+  level, so a position is in band at all three levels or at none, and a grid placed entirely
+  above the band would have escaped form A. Two fallback forms use data already computed:
+  B, when no position is in band at all three levels, refuses if every adjacent in-band level
+  pair is flat (at least two); C refuses if every engaged position, whatever the ceiling, is
+  flat (at least two). A real compressor at its ceiling is flat there and has slope at its
+  in-band positions; a gain law has slope nowhere. `levelDependence.refused_by` names the form.
+  Pinned: G6 (a gain law entirely above the band), G7 (pairs straddling the band edge), and G8,
+  a real compressor on a grid too coarse for form A, which must certify.
+- **Multiband candidates:** 997 Hz excites one band, so a candidate whose band does not cover
+  it shows nothing. A flat candidate is labelled as evidence of that ("uncertified for want of
+  an in-band tone"), not as pass-through or a defect, and `thresholdReview` says the map comes
+  after the human's pick, when that band's own ratio can be read.
 
 **`displayLinear` is not a field** (ruled 30 Sep, the fourth application of the split-verdict
 rule). Ten independent products carry both display numbers, and they disagree in both

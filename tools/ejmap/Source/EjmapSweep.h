@@ -503,6 +503,7 @@ struct Derived
     std::vector<std::optional<double>> dgdl;        // per position
     std::optional<double> dgdlMedian, dgdlPredicted, impliedRatio;
     juce::Array<int> levelFlat;                     // positions refused: readable at every level and flat across them
+    juce::String levelFlatBy;                       // which form fired: "in-band position" | "in-band pairs" | "every engaged position"
     juce::String roleFlag;                          // "not_a_threshold" when the guard refuses
     bool unlicensedSuspect = false;
     juce::String referenceNote;
@@ -761,6 +762,44 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             if (*d.dgdlMedian < 1.0) d.impliedRatio = 1.0 / (1.0 - *d.dgdlMedian);
         }
         if (d.ratio && *d.ratio > 1.0) d.dgdlPredicted = 1.0 - 1.0 / *d.ratio;
+        // THE GRID MUST NOT DECIDE THE CONCLUSION (ruled 30 Sep). A gain law is identical at every level, so a position
+        // is in band at all three or at none; reposition the grid so every position lands ABOVE the band and form A
+        // never fires. Two more forms, from data already computed:
+        //   B  no position in band at all three levels, but adjacent in-band level pairs exist: ALL of them flat (their
+        //      Delta g under kLevelFlatDb scaled to the pair's span), at least two, is not a threshold;
+        //   C  every position engaged (above kEngageDb at every level, whatever the ceiling) is flat across the levels,
+        //      and there are at least two such positions: not a threshold. A real compressor at its ceiling is flat at
+        //      that position and has slope at its in-band ones; a gain law has slope nowhere.
+        if (! d.levelFlat.isEmpty()) d.levelFlatBy = "in-band position";
+        else
+        {
+            bool anyAllInBand = false;
+            int pairs = 0, flatPairs = 0, engaged = 0, flatEngaged = 0;
+            const double span = d.levels.back() - d.levels.front();
+            for (int i = 0; i < n; ++i)
+            {
+                bool allIn = true, allEngaged = true; double gmin = 1e9, gmax = -1e9;
+                for (double L : d.levels)
+                {
+                    const auto g = d.reduction[levelKey (L)][(size_t) i];
+                    if (! g) { allIn = false; allEngaged = false; break; }
+                    if (*g <= kEngageDb) allEngaged = false;
+                    if (*g <= kEngageDb || *g >= kSaturateDb) allIn = false;
+                    gmin = juce::jmin (gmin, *g); gmax = juce::jmax (gmax, *g);
+                }
+                anyAllInBand = anyAllInBand || allIn;
+                if (allEngaged) { ++engaged; if (gmax - gmin < kLevelFlatDb) { ++flatEngaged; d.levelFlat.add (i); } }
+                for (size_t l = 0; l + 1 < d.levels.size(); ++l)
+                {
+                    const auto a = d.reduction[levelKey (d.levels[l])][(size_t) i], b = d.reduction[levelKey (d.levels[l + 1])][(size_t) i];
+                    if (a && b && *a > kEngageDb && *a < kSaturateDb && *b > kEngageDb && *b < kSaturateDb)
+                    { ++pairs; if (std::abs (*b - *a) < kLevelFlatDb * (d.levels[l + 1] - d.levels[l]) / span) ++flatPairs; }
+                }
+            }
+            if (! anyAllInBand && pairs >= 2 && flatPairs == pairs) d.levelFlatBy = "in-band pairs";
+            else if (engaged >= 2 && flatEngaged == engaged) d.levelFlatBy = "every engaged position";
+            else d.levelFlat.clear();
+        }
         if (! d.levelFlat.isEmpty())
         {
             juce::StringArray at;
@@ -768,7 +807,8 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             d.result = "unreadable";
             d.roleFlag = "not_a_threshold";
             d.reason = "not a threshold: reduction does not change with input level at position(s) " + at.joinIntoString (",")
-                       + " (a gain law; less than " + juce::String (kLevelFlatDb, 2) + " dB across " + juce::String (d.levels.back() - d.levels.front(), 0) + " dB of level)"
+                       + " (a gain law; less than " + juce::String (kLevelFlatDb, 2) + " dB across " + juce::String (d.levels.back() - d.levels.front(), 0) + " dB of level; by "
+                       + d.levelFlatBy + ")"
                        + (d.dgdlPredicted ? ", where the ratio read back predicts " + juce::String (*d.dgdlPredicted * (d.levels.back() - d.levels.front()), 1) + " dB" : juce::String())
                        + "; role flagged for review";
             return d;
@@ -1093,6 +1133,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         ld->setProperty ("dg_dl_per_position", per);
         ld->setProperty ("median_dg_dl", d.dgdlMedian ? juce::var (std::round (*d.dgdlMedian * 1000.0) / 1000.0) : juce::var());
         ld->setProperty ("implied_ratio", d.impliedRatio ? juce::var (std::round (*d.impliedRatio * 100.0) / 100.0) : juce::var());
+        if (d.levelFlatBy.isNotEmpty()) ld->setProperty ("refused_by", d.levelFlatBy);
         ld->setProperty ("rule", "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses");
         s->setProperty ("levelDependence", juce::var (ld));
     }

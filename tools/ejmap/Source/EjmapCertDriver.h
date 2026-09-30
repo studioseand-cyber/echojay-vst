@@ -1368,6 +1368,13 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         c->setProperty ("index", q.thr); c->setProperty ("name", q.thrName);
         juce::Array<juce::var> fl; for (auto& x : q.thrFlags) fl.add (x); c->setProperty ("flags", fl);
         c->setProperty ("thresholdSweep", one.written ? sweep::stripPrivate (one.sweepVar) : juce::var());
+        // A FLAT CANDIDATE IS EVIDENCE, NOT A DEFECT (ruled 30 Sep): 997 Hz excites one band, so a band that does not
+        // cover it shows nothing. Said on the candidate, so thresholdReview does not read as a dead end.
+        if (one.d.result == "flat")
+            c->setProperty ("reading", "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; "
+                                       "uncertified for want of an in-band tone (a per-band tone is a later feature)");
+        else if (one.d.result == "certified")
+            c->setProperty ("reading", "responds at 997 Hz: a curve to read");
         arr.add (juce::var (c));
         rep << one.report << "\n";
     }
@@ -1376,7 +1383,12 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         auto* rv = new juce::DynamicObject();
         rv->setProperty ("class", plan.cls);
         rv->setProperty ("candidates", (int) cands.size());
-        rv->setProperty ("note", "several controls hold the threshold role; each was swept with the others at their instantiate defaults; no thresholdSweep until a human picks");
+        rv->setProperty ("note", "several controls hold the threshold role; each was swept with the others at their instantiate defaults. "
+                                 "On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. "
+                                 "There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read");
+        int curves = 0, flats = 0;
+        for (const auto& [q, one] : cands) { if (one.d.result == "certified") ++curves; else if (one.d.result == "flat") ++flats; }
+        rv->setProperty ("curves", curves); rv->setProperty ("flats", flats);
         o->setProperty ("thresholdReview", juce::var (rv));
         o->setProperty ("thresholdCandidates", arr);
     }

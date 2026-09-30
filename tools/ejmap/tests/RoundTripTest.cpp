@@ -4587,6 +4587,24 @@ void testLevelDependence()
     const auto sd = derive (sweeptest::fromGains (sat), sweeptest::kLevels, -1);
     check (sd.result == "certified" && sd.levelFlat.isEmpty(),
            "level G5: a position saturated at every level (C1 at -100 dB, MCompressor at -80 dB) is NOT a gain law - excluded by the band");
+
+    // THE GRID MUST NOT DECIDE (ruled 30 Sep). Form C: a gain law whose every engaged position sits ABOVE the band
+    // (reposition API-2500's grid so nothing lands in band): flat at every engaged position - refused.
+    std::vector<std::array<std::optional<double>, 3>> above { { 2.0 - 30.0, 2.0 - 30.0, 2.0 - 30.0 }, { 2.0 - 20.0, 2.0 - 20.0, 2.0 - 20.0 },
+                                                              { 2.0 - 13.0, 2.0 - 13.0, 2.0 - 13.0 }, { 2.0 - 0.4, 2.0 - 0.4, 2.0 - 0.4 }, { 2.0, 2.0, 2.0 } };
+    const auto ga = derive (sweeptest::fromGains (above), sweeptest::kLevels, -1);
+    check (ga.result == "unreadable" && ga.roleFlag == "not_a_threshold" && ga.levelFlatBy == "every engaged position",
+           "level G6: a gain law entirely above the band still refuses - flat at every engaged position (" + ga.levelFlatBy + ")");
+    // Form B: a near-gain-law whose positions straddle the band edge, so none is in band at all three levels, but its
+    // adjacent in-band pairs are all flat - refused.
+    std::vector<std::array<std::optional<double>, 3>> straddle { { 2.0 - 11.9, 2.0 - 11.95, 2.0 - 12.0 }, { 2.0 - 0.45, 2.0 - 3.0, 2.0 - 3.02 }, { 2.0, 2.0, 2.0 } };
+    const auto gb = derive (sweeptest::fromGains (straddle), sweeptest::kLevels, -1);
+    check (gb.result == "unreadable" && gb.levelFlatBy == "in-band pairs",
+           "level G7: no position in band at all three levels, and every adjacent in-band pair flat - refused by the pairs (" + gb.levelFlatBy + ")");
+    // Control: a REAL compressor on a coarse grid - one position crosses the band between levels, one sits above it.
+    std::vector<std::array<std::optional<double>, 3>> coarse { { 2.0 - 13.0, 2.0 - 20.0, 2.0 - 27.0 }, { 2.0 - 0.3, 2.0 - 6.0, 2.0 - 11.5 }, { 2.0, 2.0, 2.0 } };
+    const auto gc = derive (sweeptest::fromGains (coarse), sweeptest::kLevels, -1);
+    check (gc.result == "certified" && gc.levelFlat.isEmpty(), "level G8 (control): a real compressor on a grid too coarse for form A certifies - its pairs and its engaged positions have slope");
 }
 
 int main (int, char**)
