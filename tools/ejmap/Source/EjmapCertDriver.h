@@ -1474,6 +1474,30 @@ inline bool composeAndReport (const juce::var& base, const sweep::Plan& plan, co
     return one.written;
 }
 
+// A LICENCE IS A PROPERTY OF THE PRODUCT, NOT OF A CANDIDATE (ruled 30 Sep, the third misfire of a licence inference
+// after the PACE bundle markers and the 3 dB reference test). If ANY candidate produced the input's tone, the plugin is
+// licensed, and a candidate whose reference was silent or off-tone at default is saying something about THAT STAGE (a
+// gate closed on the tone, a processor that mutes) - never about licensing. Such a candidate keeps the result its data
+// gave it and records the silent reference beside it. Only a product silent on every candidate stays licence-suspect.
+inline void resolveLicenceAtProductLevel (std::vector<std::pair<sweep::Plan, Derivation>>& cands, const sweep::Provenance& pv)
+{
+    bool producedAudio = false;
+    for (const auto& [q, one] : cands) producedAudio = producedAudio || ! one.d.unlicensedSuspect;
+    if (! producedAudio) return;
+    for (auto& [q, one] : cands)
+    {
+        if (! one.d.unlicensedSuspect) continue;
+        one.written = true;
+        one.sweepVar = sweep::composeThresholdSweep (one.d, one.dc, q, pv);
+        if (auto* o = one.sweepVar.getDynamicObject())
+            o->setProperty ("silentOrOffToneAtDefault", "this candidate's reference at default was not the input's tone (" + one.d.referenceNote.trim()
+                                                        + "); another candidate of the same product produced it, so this is a fact about the stage, not the licence");
+        one.report = one.report.replace ("NOT LICENSED suspected (silent, non-finite or not the input's tone at default): ",
+                                         "reference silent or off-tone at default, NOT a licence question (another candidate produced the tone): ")
+                               .replace ("no thresholdSweep written", "sweep written with its data's result '" + one.d.result + "'");
+    }
+}
+
 // SEVERAL CANDIDATES (ruled 30 Sep): one fixture carrying every candidate's sweep, labelled, and NO thresholdSweep - a
 // human reads the curves and picks. The fixture says so in `thresholdReview`.
 inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan& plan, const std::vector<std::pair<sweep::Plan, Derivation>>& cands,
@@ -1808,6 +1832,7 @@ inline int runCertSweep (const SweepOptions& opt)
                       + " (class " + plan.cls + ", " + juce::String ((int) plan.candidates.size()) + " candidates; the others at their instantiate defaults)";
         cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (run.first, run.second), pv, ci, outName) });
     }
+    resolveLicenceAtProductLevel (cands, pv);
     composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"));
     return 0;
 }
@@ -1857,6 +1882,7 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
         cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName()) });
     }
+    resolveLicenceAtProductLevel (cands, pv);
     composeCandidatesAndReport (base, plan, cands, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"));
     return 0;
 }

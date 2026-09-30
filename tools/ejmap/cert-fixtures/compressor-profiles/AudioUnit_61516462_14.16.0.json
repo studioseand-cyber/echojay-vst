@@ -8763,7 +8763,7 @@
       {
         "index": 16,
         "name": "Band 1 -> Threshold",
-        "result": "licence_suspect"
+        "result": "flat"
       },
       {
         "index": 24,
@@ -8773,7 +8773,7 @@
       {
         "index": 32,
         "name": "Band 3 -> Threshold",
-        "result": "licence_suspect"
+        "result": "nonmonotonic"
       },
       {
         "index": 40,
@@ -8858,7 +8858,7 @@
       {
         "index": 290,
         "name": "Band 6 - Gate - Threshold",
-        "result": "licence_suspect"
+        "result": "flat"
       },
       {
         "index": 295,
@@ -8877,7 +8877,95 @@
       "index": 16,
       "name": "Band 1 -> Threshold",
       "flags": [],
-      "thresholdSweep": null,
+      "thresholdSweep": {
+        "measuredAt": "20260930T133421.504+0100",
+        "host": "EJ Map 0.1.0 / arm64 / 48k",
+        "bridged": false,
+        "tone": {
+          "hz": 997.0,
+          "levels_dbfs": [
+            -24.0,
+            -12.0,
+            -6.0
+          ]
+        },
+        "level_convention": "peak",
+        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "ratioDuring": {
+          "position": "",
+          "value": null,
+          "assumed": false
+        },
+        "autoMakeupDisabled": false,
+        "positions": 16,
+        "positionNorms": [
+          0.0,
+          0.066667,
+          0.133333,
+          0.2,
+          0.266667,
+          0.333333,
+          0.4,
+          0.466667,
+          0.533333,
+          0.6,
+          0.666667,
+          0.733333,
+          0.8,
+          0.866667,
+          0.933333,
+          1.0
+        ],
+        "defaultGain_db": {
+          "-12": -29.77,
+          "-24": 0.0,
+          "-6": -35.770000000000003
+        },
+        "positionLandedBy": [
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack"
+        ],
+        "writeLanding": {
+          "instack": 16
+        },
+        "reduction_db": {
+          "-24": [],
+          "-12": [],
+          "-6": []
+        },
+        "engage": {
+          "-24": null,
+          "-12": null,
+          "-6": null
+        },
+        "thresholdDbEquivalent": [],
+        "levelDependence": {
+          "predicted_dg_dl": null,
+          "dg_dl_per_position": [],
+          "median_dg_dl": null,
+          "implied_ratio": null,
+          "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+        },
+        "result": "flat",
+        "passThroughAtDefaults": false,
+        "reason": "the ends differ by no more than 1 dB at every test level",
+        "displayOffsetDb": null,
+        "silentOrOffToneAtDefault": "this candidate's reference at default was not the input's tone (output at -12.00 is 0.0% the input's tone; output at -6.00 is 0.0% the input's tone;); another candidate of the same product produced it, so this is a fact about the stage, not the licence"
+      },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
     },
     {
@@ -9082,7 +9170,199 @@
       "index": 32,
       "name": "Band 3 -> Threshold",
       "flags": [],
-      "thresholdSweep": null
+      "thresholdSweep": {
+        "measuredAt": "20260930T133421.504+0100",
+        "host": "EJ Map 0.1.0 / arm64 / 48k",
+        "bridged": false,
+        "tone": {
+          "hz": 997.0,
+          "levels_dbfs": [
+            -24.0,
+            -12.0,
+            -6.0
+          ]
+        },
+        "level_convention": "peak",
+        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "ratioDuring": {
+          "position": "",
+          "value": null,
+          "assumed": false
+        },
+        "autoMakeupDisabled": false,
+        "positions": 16,
+        "positionNorms": [
+          0.0,
+          0.066667,
+          0.133333,
+          0.2,
+          0.266667,
+          0.333333,
+          0.4,
+          0.466667,
+          0.533333,
+          0.6,
+          0.666667,
+          0.733333,
+          0.8,
+          0.866667,
+          0.933333,
+          1.0
+        ],
+        "linearReference": {
+          "mode": "soft_end",
+          "position": 15,
+          "gain_db": {
+            "-24": 0.0,
+            "-12": 0.0,
+            "-6": -1.39
+          },
+          "spread_db": 1.39,
+          "unusable_beyond_db": 2.0
+        },
+        "defaultGain_db": {
+          "-12": 0.0,
+          "-24": 0.0,
+          "-6": -35.780000000000001
+        },
+        "positionLandedBy": [
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack"
+        ],
+        "writeLanding": {
+          "instack": 16
+        },
+        "reduction_db": {
+          "-24": [
+            5.76,
+            3.19,
+            0.29,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "-12": [
+            5.83,
+            4.58,
+            29.760000000000002,
+            1.76,
+            0.44,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "-6": [
+            7.42,
+            6.15,
+            34.359999999999999,
+            3.52,
+            2.32,
+            1.22,
+            0.2,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "sense": "lower_is_harder",
+        "engage": {
+          "-24": 1,
+          "-12": 3,
+          "-6": 5
+        },
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "levelDependence": {
+          "predicted_dg_dl": null,
+          "dg_dl_per_position": [
+            0.093,
+            0.164,
+            1.893,
+            0.196,
+            0.129,
+            0.068,
+            0.011,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "median_dg_dl": 0.261,
+          "implied_ratio": 1.35,
+          "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+        },
+        "result": "nonmonotonic",
+        "passThroughAtDefaults": false,
+        "reason": "reduction falls by more than 0.5 dB walking from the softer end (position 1 at -12.00)",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": -10.73,
+          "-24": 16.149999999999999,
+          "-6": -10.23,
+          "drift_db": 26.879999999999999,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        },
+        "silentOrOffToneAtDefault": "this candidate's reference at default was not the input's tone (output at -6.00 is 0.0% the input's tone;); another candidate of the same product produced it, so this is a fact about the stage, not the licence"
+      }
     },
     {
       "index": 40,
@@ -10800,7 +11080,95 @@
       "index": 290,
       "name": "Band 6 - Gate - Threshold",
       "flags": [],
-      "thresholdSweep": null,
+      "thresholdSweep": {
+        "measuredAt": "20260930T133421.504+0100",
+        "host": "EJ Map 0.1.0 / arm64 / 48k",
+        "bridged": false,
+        "tone": {
+          "hz": 997.0,
+          "levels_dbfs": [
+            -24.0,
+            -12.0,
+            -6.0
+          ]
+        },
+        "level_convention": "peak",
+        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "ratioDuring": {
+          "position": "",
+          "value": null,
+          "assumed": false
+        },
+        "autoMakeupDisabled": false,
+        "positions": 16,
+        "positionNorms": [
+          0.0,
+          0.066667,
+          0.133333,
+          0.2,
+          0.266667,
+          0.333333,
+          0.4,
+          0.466667,
+          0.533333,
+          0.6,
+          0.666667,
+          0.733333,
+          0.8,
+          0.866667,
+          0.933333,
+          1.0
+        ],
+        "defaultGain_db": {
+          "-12": -29.75,
+          "-24": 0.0,
+          "-6": -2.99
+        },
+        "positionLandedBy": [
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack"
+        ],
+        "writeLanding": {
+          "instack": 16
+        },
+        "reduction_db": {
+          "-24": [],
+          "-12": [],
+          "-6": []
+        },
+        "engage": {
+          "-24": null,
+          "-12": null,
+          "-6": null
+        },
+        "thresholdDbEquivalent": [],
+        "levelDependence": {
+          "predicted_dg_dl": null,
+          "dg_dl_per_position": [],
+          "median_dg_dl": null,
+          "implied_ratio": null,
+          "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+        },
+        "result": "flat",
+        "passThroughAtDefaults": false,
+        "reason": "the ends differ by no more than 1 dB at every test level",
+        "displayOffsetDb": null,
+        "silentOrOffToneAtDefault": "this candidate's reference at default was not the input's tone (output at -12.00 is 0.0% the input's tone;); another candidate of the same product produced it, so this is a fact about the stage, not the licence"
+      },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
     },
     {

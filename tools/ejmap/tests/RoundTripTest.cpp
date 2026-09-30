@@ -4675,6 +4675,30 @@ void testThresholdReviewNamesTheBand()
     check (cs[2].getProperty ("reading", "").toString().startsWith ("pass_through_at_defaults")
              && cs[0].getProperty ("reading", "").toString().startsWith ("no response at 997 Hz"),
            "review V5: a pass-through candidate's reading says so, and is not the band-coverage reading");
+
+    // A LICENCE IS A PROPERTY OF THE PRODUCT: a silent candidate beside one that produced the tone is a stage fact.
+    auto suspect = [] (int idx, const char* name, const char* dataResult, bool pass) {
+        ejmap::sweep::Plan q; q.thr = idx; q.thrName = name; q.norms = { 0.f, 0.5f, 1.f };
+        Derivation d; d.d.result = dataResult; d.d.passThroughAtDefaults = pass; d.d.unlicensedSuspect = true; d.written = false;
+        d.d.referenceNote = "the output is silent at every level; ";
+        d.report = "x\nNOT LICENSED suspected (silent, non-finite or not the input's tone at default): the output is silent at every level; no thresholdSweep written\n";
+        return std::make_pair (q, d); };
+    std::vector<std::pair<ejmap::sweep::Plan, Derivation>> mixed { cand (18, "Band 2 Thresh", "certified", false, true), suspect (30, "Gate Thresh", "flat", false),
+                                                                    suspect (34, "Proc 2 Thresh", "flat", true) };
+    resolveLicenceAtProductLevel (mixed, {});
+    check (mixed[1].second.written && mixed[1].second.sweepVar.getProperty ("result", "") == "flat"
+             && mixed[1].second.sweepVar.getProperty ("silentOrOffToneAtDefault", "").toString().contains ("silent at every level")
+             && mixed[1].second.report.contains ("NOT a licence question") && ! mixed[1].second.report.contains ("NOT LICENSED suspected"),
+           "review V6: beside a candidate that produced the tone, a silent-at-default candidate is WRITTEN with its data's result and the silent reference recorded - not licence-suspect");
+    composeCandidatesAndReport (base, plan, mixed, out, root.getChildFile ("f2.report.txt"));
+    const auto rv2 = juce::JSON::parse (out.loadFileAsString()).getProperty ("thresholdReview", {});
+    juce::StringArray vs2; for (int i = 0; i < rv2.getProperty ("verdicts", {}).size(); ++i) vs2.add (rv2.getProperty ("verdicts", {})[i].getProperty ("result", "").toString());
+    check (vs2 == juce::StringArray { "certified", "flat", "pass_through_at_defaults" } && (int) rv2.getProperty ("passThroughAtDefaults", {}).getProperty ("count", 0) == 1,
+           "review V7: and thresholdReview then reports what the data said - flat or pass-through - with no licence_suspect on a licensed product (" + vs2.joinIntoString (",") + ")");
+    std::vector<std::pair<ejmap::sweep::Plan, Derivation>> allSilent { suspect (30, "Gate Thresh", "flat", false), suspect (34, "Proc 2 Thresh", "flat", true) };
+    resolveLicenceAtProductLevel (allSilent, {});
+    check (! allSilent[0].second.written && ! allSilent[1].second.written,
+           "review V8: a product silent on EVERY candidate stays licence-suspect - no candidate produced the tone, so nothing says it is licensed");
     root.deleteRecursively();
 }
 

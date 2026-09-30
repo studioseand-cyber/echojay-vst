@@ -2983,7 +2983,7 @@
       {
         "index": 88,
         "name": "Processor 1 - Threshold",
-        "result": "licence_suspect"
+        "result": "nonmonotonic"
       },
       {
         "index": 93,
@@ -3091,7 +3091,199 @@
       "index": 88,
       "name": "Processor 1 - Threshold",
       "flags": [],
-      "thresholdSweep": null
+      "thresholdSweep": {
+        "measuredAt": "20260930T133558.758+0100",
+        "host": "EJ Map 0.1.0 / arm64 / 48k",
+        "bridged": false,
+        "tone": {
+          "hz": 997.0,
+          "levels_dbfs": [
+            -24.0,
+            -12.0,
+            -6.0
+          ]
+        },
+        "level_convention": "peak",
+        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "ratioDuring": {
+          "position": "",
+          "value": null,
+          "assumed": false
+        },
+        "autoMakeupDisabled": false,
+        "positions": 16,
+        "positionNorms": [
+          0.0,
+          0.066667,
+          0.133333,
+          0.2,
+          0.266667,
+          0.333333,
+          0.4,
+          0.466667,
+          0.533333,
+          0.6,
+          0.666667,
+          0.733333,
+          0.8,
+          0.866667,
+          0.933333,
+          1.0
+        ],
+        "linearReference": {
+          "mode": "soft_end",
+          "position": 15,
+          "gain_db": {
+            "-24": 4.34,
+            "-12": 4.34,
+            "-6": 4.34
+          },
+          "spread_db": 0.0,
+          "unusable_beyond_db": 2.0
+        },
+        "defaultGain_db": {
+          "-12": -29.760000000000002,
+          "-24": 0.06,
+          "-6": -22.100000000000001
+        },
+        "positionLandedBy": [
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack"
+        ],
+        "writeLanding": {
+          "instack": 16
+        },
+        "reduction_db": {
+          "-24": [
+            4.29,
+            4.29,
+            4.26,
+            4.13,
+            3.83,
+            3.35,
+            2.73,
+            2.03,
+            1.35,
+            0.75,
+            0.29,
+            0.04,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "-12": [
+            4.95,
+            4.95,
+            4.93,
+            4.82,
+            4.58,
+            4.17,
+            3.63,
+            3.01,
+            2.35,
+            1.69,
+            1.07,
+            0.53,
+            0.15,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "-6": [
+            5.24,
+            5.24,
+            5.21,
+            5.12,
+            40.090000000000003,
+            40.090000000000003,
+            4.03,
+            3.46,
+            2.84,
+            2.21,
+            1.59,
+            1.01,
+            0.49,
+            0.12,
+            0.0,
+            0.0
+          ]
+        },
+        "sense": "lower_is_harder",
+        "engage": {
+          "-24": 9,
+          "-12": 11,
+          "-6": 11
+        },
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "levelDependence": {
+          "predicted_dg_dl": null,
+          "dg_dl_per_position": [
+            0.053,
+            0.053,
+            0.053,
+            0.055,
+            2.014,
+            2.041,
+            0.073,
+            0.079,
+            0.083,
+            0.081,
+            0.072,
+            0.054,
+            0.027,
+            0.007,
+            0.0,
+            0.0
+          ],
+          "median_dg_dl": 0.068,
+          "implied_ratio": 1.07,
+          "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+        },
+        "result": "nonmonotonic",
+        "passThroughAtDefaults": false,
+        "reason": "reduction falls by more than 0.5 dB walking from the softer end (position 3 at -6.00)",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": -8.699999999999999,
+          "-24": -7.26,
+          "-6": -9.529999999999999,
+          "drift_db": 2.27,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        },
+        "silentOrOffToneAtDefault": "this candidate's reference at default was not the input's tone (output at -12.00 is 0.0% the input's tone; output at -6.00 is 0.7% the input's tone;); another candidate of the same product produced it, so this is a fact about the stage, not the licence"
+      }
     },
     {
       "index": 93,

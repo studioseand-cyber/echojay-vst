@@ -980,7 +980,22 @@ Sweeping both cost ~14 of 199 sweeps, concentrated on the heaviest products.
 
 Recorded, not diagnosed: **MDynamicsMB and MDynamicsMBLarge respond at 997 Hz on bands 2 AND 3**
 with near-identical curves (7.50 vs 7.42 dB at -6, position for position) — each band alone
-gives the full reduction, so the tone is not being split across a crossover. And the
-licence-suspect rule (silent at default) fired on 9 Melda gate/Processor-2 candidates; a gate
-closing on the tone is silent, not unlicensed. Wants a `silent_at_default` outcome distinct from
-the licence one.
+gives the full reduction, so the tone is not being split across a crossover. 
+**997 Hz sits ON MDynamicsMB's default crossover.** The defaults sidecar reads `Crossover ->
+Cross 2 = 1000 Hz` (Cross 1 200 Hz, Cross 3 4634 Hz, analog 24 dB/oct) on both MDynamicsMB and
+MDynamicsMBLarge. Bands 2 and 3 both responding with near-identical curves is therefore benign
+and expected — and the finding is about OUR TONE CHOICE for multibands, not about Melda: a
+fixed 997 Hz will land on any product whose crossover defaults to 1 kHz. The per-band tone
+(already logged as a later feature) is the fix; until then a multiband whose `responding` names
+two adjacent bands should be read against its crossover defaults before anything else.
+
+**A licence is a property of the PRODUCT, not of a candidate** (ruled 30 Sep; the third misfire
+of a licence inference, after the PACE bundle markers and the 3 dB reference test). The
+silent-at-default rule had flagged 9 Melda candidates as licence-suspect — every one a gate or a
+Processor-2 stage, silent because the stage closes on the tone — while other candidates of the
+same fixture produced it. `resolveLicenceAtProductLevel`: if ANY candidate produced the input's
+tone the plugin is licensed, and a silent candidate keeps the result its data gave it, with
+`silentOrOffToneAtDefault` recorded beside it; only a product silent on every candidate stays
+licence-suspect. Pins V6–V8, two mutants red. Re-derived: the 9 became 7 `flat` and 2
+`nonmonotonic` (MSpectralDynamics Processor 1, MDynamicsMBLarge Band 3), none pass-through; no
+`licence_suspect` remains in the 41.
