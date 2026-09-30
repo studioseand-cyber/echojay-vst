@@ -1,0 +1,57 @@
+probe: "PuigChild 670 (s)" | AudioUnit:Effects/aufx,FCHS,ksWV | uid=4c45797d | arch=arm64 | format=AudioUnit
+
+param	0	OnOff	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Link	unit	
+def	0.500000	Linked	default	0.500000
+at	0.000	Left/Right
+at	0.500	Linked
+at	1.000	Lat/Ver
+param	2	Mains	unit	
+def	0.500000	Off	default	0.500000
+at	0.000	60Hz
+at	0.500	Off
+at	1.000	50Hz
+param	3	Left Input	unit	
+def	0.400000	12	default	0.300000
+at	0.000	20
+at	0.500	10
+at	1.000	0
+param	4	Left Threshold	unit	
+def	0.220000	2.2	default	0.250000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	5	Left Time Constant	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	6	Left Output	unit	
+def	0.508333	0.3 dB	default	0.500000
+at	0.000	-18.0 dB
+at	0.500	0.0 dB
+at	1.000	18.0 dB
+param	7	Right Input	unit	
+def	0.400000	12	default	0.300000
+at	0.000	20
+at	0.500	10
+at	1.000	0
+param	8	Right Threshold	unit	
+def	0.220000	2.2	default	0.250000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	9	Right Time Constant	unit	
+def	0.000000	1	default	0.000000
+at	0.000	1
+at	0.500	3
+at	1.000	6
+param	10	Right Output	unit	
+def	0.508333	0.3 dB	default	0.500000
+at	0.000	-18.0 dB
+at	0.500	0.0 dB
+at	1.000	18.0 dB

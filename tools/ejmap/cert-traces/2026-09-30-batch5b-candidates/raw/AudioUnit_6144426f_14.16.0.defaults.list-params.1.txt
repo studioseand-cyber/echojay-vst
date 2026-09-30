@@ -1,0 +1,463 @@
+probe: "MTurboCompMB" | AudioUnit:Effects/aumf,MTCm,Meld | uid=6144426f | arch=arm64 | format=AudioUnit
+
+0	Param 1		2147483647	0	1	0
+1	Param 2		2147483647	0	1	0
+2	Param 3		2147483647	0	1	0
+3	Param 4		2147483647	0	1	0
+4	Param 5		2147483647	0	1	0
+5	Param 6		2147483647	0	1	0
+6	Param 7		2147483647	0	1	0
+7	Param 8		2147483647	0	1	0
+8	Param 9		2147483647	0	1	0
+9	Param 10		2147483647	0	1	0
+10	Param 11		2147483647	0	1	0
+11	Param 12		2147483647	0	1	0
+12	Param 13		2147483647	0	1	0
+13	Param 14		2147483647	0	1	0
+14	Param 15		2147483647	0	1	0
+15	Param 16		2147483647	0	1	0
+16	Param 17		2147483647	0	1	0
+17	Param 18		2147483647	0	1	0
+18	Param 19		2147483647	0	1	0
+19	Param 20		2147483647	0	1	0
+20	Param 21		2147483647	0	1	0
+21	Param 22		2147483647	0	1	0
+22	Param 23		2147483647	0	1	0
+23	Param 24		2147483647	0	1	0
+24	Param 25		2147483647	0	1	0
+25	Param 26		2147483647	0	1	0
+26	Param 27		2147483647	0	1	0
+27	Param 28		2147483647	0	1	0
+28	Param 29		2147483647	0	1	0
+29	Param 30		2147483647	0	1	0
+30	Param 31		2147483647	0	1	0
+31	Param 32		2147483647	0	1	0
+32	Band 1 Globals -> Input		2147483647	0	1	0
+33	Band 1 Globals -> Output		2147483647	0	1	0
+34	Band 1 Globals -> Dry/wet		2147483647	0	1	0
+35	Band 1 Globals -> Compression		2147483647	0	1	0
+36	Band 1 Globals -> Saturation		2147483647	0	1	0
+37	Band 1 - Param 6		2147483647	0	1	0
+38	Band 1 - Param 7		2147483647	0	1	0
+39	Band 1 - Param 8		2147483647	0	1	0
+40	Band 1 Compressor -> Threshold		2147483647	0	1	0
+41	Band 1 Compressor -> Ratio		2147483647	0	1	0
+42	Band 1 Compressor -> Soft		2147483647	0	1	0
+43	Band 1 - Param 12		2147483647	0	1	0
+44	Band 1 - Param 13		2147483647	0	1	0
+45	Band 1 - Param 14		2147483647	0	1	0
+46	Band 1 Compressor -> Attack		2147483647	0	1	0
+47	Band 1 Compressor -> Release		2147483647	0	1	0
+48	Band 1 - Param 17		2147483647	0	1	0
+49	Band 1 - Param 18		2147483647	0	1	0
+50	Band 1 Detector -> Side-chain input		2147483647	0	1	0
+51	Band 1 - Param 20		2147483647	0	1	0
+52	Band 1 Detector -> HP		2147483647	0	1	0
+53	Band 1 - Param 22		2147483647	0	1	0
+54	Band 1 Detector -> LP		2147483647	0	1	0
+55	Band 1 Detector -> Link channels		2147483647	0	1	0
+56	Band 1 Detector -> Gain		2147483647	0	1	0
+57	Band 1 Detector -> Frequency		2147483647	0	1	0
+58	Band 1 Detector -> BW		2147483647	0	1	0
+59	Band 1 - Param 28		2147483647	0	1	0
+60	Band 1 - Param 29		2147483647	0	1	0
+61	Band 1 - Param 30		2147483647	0	1	0
+62	Band 1 		2147483647	0	1	0
+63	Band 1 		2147483647	0	1	0
+64	Band 1 - Param 33		2147483647	0	1	0
+65	Band 1 - Param 34		2147483647	0	1	0
+66	Band 1 - Param 35		2147483647	0	1	0
+67	Band 1 - Param 36		2147483647	0	1	0
+68	Band 1 - Param 37		2147483647	0	1	0
+69	Band 1 - Param 38		2147483647	0	1	0
+70	Band 1 - Param 39		2147483647	0	1	0
+71	Band 1 - Param 40		2147483647	0	1	0
+72	Band 1 - Param 41		2147483647	0	1	0
+73	Band 1 - Param 42		2147483647	0	1	0
+74	Band 1 - Param 43		2147483647	0	1	0
+75	Band 1 - Param 44		2147483647	0	1	0
+76	Band 1 - Param 45		2147483647	0	1	0
+77	Band 1 - Param 46		2147483647	0	1	0
+78	Band 1 - Param 47		2147483647	0	1	0
+79	Band 1 - Param 48		2147483647	0	1	0
+80	Band 1 - Param 49		2147483647	0	1	0
+81	Band 1 - Param 50		2147483647	0	1	0
+82	Band 1 - Param 51		2147483647	0	1	0
+83	Band 1 - Param 52		2147483647	0	1	0
+84	Band 1 - Param 53		2147483647	0	1	0
+85	Band 1 - Param 54		2147483647	0	1	0
+86	Band 1 - Param 55		2147483647	0	1	0
+87	Band 1 - Param 56		2147483647	0	1	0
+88	Band 1 - Param 57		2147483647	0	1	0
+89	Band 1 - Param 58		2147483647	0	1	0
+90	Band 1 - Param 59		2147483647	0	1	0
+91	Band 1 - Param 60		2147483647	0	1	0
+92	Band 1 - Param 61		2147483647	0	1	0
+93	Band 1 - Param 62		2147483647	0	1	0
+94	Band 1 - Param 63		2147483647	0	1	0
+95	Band 1 - Param 64		2147483647	0	1	0
+96	Band 2 Globals -> Input		2147483647	0	1	0
+97	Band 2 Globals -> Output		2147483647	0	1	0
+98	Band 2 Globals -> Dry/wet		2147483647	0	1	0
+99	Band 2 Globals -> Compression		2147483647	0	1	0
+100	Band 2 Globals -> Saturation		2147483647	0	1	0
+101	Band 2 - Param 6		2147483647	0	1	0
+102	Band 2 - Param 7		2147483647	0	1	0
+103	Band 2 - Param 8		2147483647	0	1	0
+104	Band 2 Compressor -> Threshold		2147483647	0	1	0
+105	Band 2 Compressor -> Ratio		2147483647	0	1	0
+106	Band 2 Compressor -> Soft		2147483647	0	1	0
+107	Band 2 - Param 12		2147483647	0	1	0
+108	Band 2 - Param 13		2147483647	0	1	0
+109	Band 2 - Param 14		2147483647	0	1	0
+110	Band 2 Compressor -> Attack		2147483647	0	1	0
+111	Band 2 Compressor -> Release		2147483647	0	1	0
+112	Band 2 - Param 17		2147483647	0	1	0
+113	Band 2 - Param 18		2147483647	0	1	0
+114	Band 2 Detector -> Side-chain input		2147483647	0	1	0
+115	Band 2 - Param 20		2147483647	0	1	0
+116	Band 2 Detector -> HP		2147483647	0	1	0
+117	Band 2 - Param 22		2147483647	0	1	0
+118	Band 2 Detector -> LP		2147483647	0	1	0
+119	Band 2 Detector -> Link channels		2147483647	0	1	0
+120	Band 2 Detector -> Gain		2147483647	0	1	0
+121	Band 2 Detector -> Frequency		2147483647	0	1	0
+122	Band 2 Detector -> BW		2147483647	0	1	0
+123	Band 2 - Param 28		2147483647	0	1	0
+124	Band 2 - Param 29		2147483647	0	1	0
+125	Band 2 - Param 30		2147483647	0	1	0
+126	Band 2 		2147483647	0	1	0
+127	Band 2 		2147483647	0	1	0
+128	Band 2 - Param 33		2147483647	0	1	0
+129	Band 2 - Param 34		2147483647	0	1	0
+130	Band 2 - Param 35		2147483647	0	1	0
+131	Band 2 - Param 36		2147483647	0	1	0
+132	Band 2 - Param 37		2147483647	0	1	0
+133	Band 2 - Param 38		2147483647	0	1	0
+134	Band 2 - Param 39		2147483647	0	1	0
+135	Band 2 - Param 40		2147483647	0	1	0
+136	Band 2 - Param 41		2147483647	0	1	0
+137	Band 2 - Param 42		2147483647	0	1	0
+138	Band 2 - Param 43		2147483647	0	1	0
+139	Band 2 - Param 44		2147483647	0	1	0
+140	Band 2 - Param 45		2147483647	0	1	0
+141	Band 2 - Param 46		2147483647	0	1	0
+142	Band 2 - Param 47		2147483647	0	1	0
+143	Band 2 - Param 48		2147483647	0	1	0
+144	Band 2 - Param 49		2147483647	0	1	0
+145	Band 2 - Param 50		2147483647	0	1	0
+146	Band 2 - Param 51		2147483647	0	1	0
+147	Band 2 - Param 52		2147483647	0	1	0
+148	Band 2 - Param 53		2147483647	0	1	0
+149	Band 2 - Param 54		2147483647	0	1	0
+150	Band 2 - Param 55		2147483647	0	1	0
+151	Band 2 - Param 56		2147483647	0	1	0
+152	Band 2 - Param 57		2147483647	0	1	0
+153	Band 2 - Param 58		2147483647	0	1	0
+154	Band 2 - Param 59		2147483647	0	1	0
+155	Band 2 - Param 60		2147483647	0	1	0
+156	Band 2 - Param 61		2147483647	0	1	0
+157	Band 2 - Param 62		2147483647	0	1	0
+158	Band 2 - Param 63		2147483647	0	1	0
+159	Band 2 - Param 64		2147483647	0	1	0
+160	Band 3 Globals -> Input		2147483647	0	1	0
+161	Band 3 Globals -> Output		2147483647	0	1	0
+162	Band 3 Globals -> Dry/wet		2147483647	0	1	0
+163	Band 3 Globals -> Compression		2147483647	0	1	0
+164	Band 3 Globals -> Saturation		2147483647	0	1	0
+165	Band 3 - Param 6		2147483647	0	1	0
+166	Band 3 - Param 7		2147483647	0	1	0
+167	Band 3 - Param 8		2147483647	0	1	0
+168	Band 3 Compressor -> Threshold		2147483647	0	1	0
+169	Band 3 Compressor -> Ratio		2147483647	0	1	0
+170	Band 3 Compressor -> Soft		2147483647	0	1	0
+171	Band 3 - Param 12		2147483647	0	1	0
+172	Band 3 - Param 13		2147483647	0	1	0
+173	Band 3 - Param 14		2147483647	0	1	0
+174	Band 3 Compressor -> Attack		2147483647	0	1	0
+175	Band 3 Compressor -> Release		2147483647	0	1	0
+176	Band 3 - Param 17		2147483647	0	1	0
+177	Band 3 - Param 18		2147483647	0	1	0
+178	Band 3 Detector -> Side-chain input		2147483647	0	1	0
+179	Band 3 - Param 20		2147483647	0	1	0
+180	Band 3 Detector -> HP		2147483647	0	1	0
+181	Band 3 - Param 22		2147483647	0	1	0
+182	Band 3 Detector -> LP		2147483647	0	1	0
+183	Band 3 Detector -> Link channels		2147483647	0	1	0
+184	Band 3 Detector -> Gain		2147483647	0	1	0
+185	Band 3 Detector -> Frequency		2147483647	0	1	0
+186	Band 3 Detector -> BW		2147483647	0	1	0
+187	Band 3 - Param 28		2147483647	0	1	0
+188	Band 3 - Param 29		2147483647	0	1	0
+189	Band 3 - Param 30		2147483647	0	1	0
+190	Band 3 		2147483647	0	1	0
+191	Band 3 		2147483647	0	1	0
+192	Band 3 - Param 33		2147483647	0	1	0
+193	Band 3 - Param 34		2147483647	0	1	0
+194	Band 3 - Param 35		2147483647	0	1	0
+195	Band 3 - Param 36		2147483647	0	1	0
+196	Band 3 - Param 37		2147483647	0	1	0
+197	Band 3 - Param 38		2147483647	0	1	0
+198	Band 3 - Param 39		2147483647	0	1	0
+199	Band 3 - Param 40		2147483647	0	1	0
+200	Band 3 - Param 41		2147483647	0	1	0
+201	Band 3 - Param 42		2147483647	0	1	0
+202	Band 3 - Param 43		2147483647	0	1	0
+203	Band 3 - Param 44		2147483647	0	1	0
+204	Band 3 - Param 45		2147483647	0	1	0
+205	Band 3 - Param 46		2147483647	0	1	0
+206	Band 3 - Param 47		2147483647	0	1	0
+207	Band 3 - Param 48		2147483647	0	1	0
+208	Band 3 - Param 49		2147483647	0	1	0
+209	Band 3 - Param 50		2147483647	0	1	0
+210	Band 3 - Param 51		2147483647	0	1	0
+211	Band 3 - Param 52		2147483647	0	1	0
+212	Band 3 - Param 53		2147483647	0	1	0
+213	Band 3 - Param 54		2147483647	0	1	0
+214	Band 3 - Param 55		2147483647	0	1	0
+215	Band 3 - Param 56		2147483647	0	1	0
+216	Band 3 - Param 57		2147483647	0	1	0
+217	Band 3 - Param 58		2147483647	0	1	0
+218	Band 3 - Param 59		2147483647	0	1	0
+219	Band 3 - Param 60		2147483647	0	1	0
+220	Band 3 - Param 61		2147483647	0	1	0
+221	Band 3 - Param 62		2147483647	0	1	0
+222	Band 3 - Param 63		2147483647	0	1	0
+223	Band 3 - Param 64		2147483647	0	1	0
+224	Band 4 Globals -> Input		2147483647	0	1	0
+225	Band 4 Globals -> Output		2147483647	0	1	0
+226	Band 4 Globals -> Dry/wet		2147483647	0	1	0
+227	Band 4 Globals -> Compression		2147483647	0	1	0
+228	Band 4 Globals -> Saturation		2147483647	0	1	0
+229	Band 4 - Param 6		2147483647	0	1	0
+230	Band 4 - Param 7		2147483647	0	1	0
+231	Band 4 - Param 8		2147483647	0	1	0
+232	Band 4 Compressor -> Threshold		2147483647	0	1	0
+233	Band 4 Compressor -> Ratio		2147483647	0	1	0
+234	Band 4 Compressor -> Soft		2147483647	0	1	0
+235	Band 4 - Param 12		2147483647	0	1	0
+236	Band 4 - Param 13		2147483647	0	1	0
+237	Band 4 - Param 14		2147483647	0	1	0
+238	Band 4 Compressor -> Attack		2147483647	0	1	0
+239	Band 4 Compressor -> Release		2147483647	0	1	0
+240	Band 4 - Param 17		2147483647	0	1	0
+241	Band 4 - Param 18		2147483647	0	1	0
+242	Band 4 Detector -> Side-chain input		2147483647	0	1	0
+243	Band 4 - Param 20		2147483647	0	1	0
+244	Band 4 Detector -> HP		2147483647	0	1	0
+245	Band 4 - Param 22		2147483647	0	1	0
+246	Band 4 Detector -> LP		2147483647	0	1	0
+247	Band 4 Detector -> Link channels		2147483647	0	1	0
+248	Band 4 Detector -> Gain		2147483647	0	1	0
+249	Band 4 Detector -> Frequency		2147483647	0	1	0
+250	Band 4 Detector -> BW		2147483647	0	1	0
+251	Band 4 - Param 28		2147483647	0	1	0
+252	Band 4 - Param 29		2147483647	0	1	0
+253	Band 4 - Param 30		2147483647	0	1	0
+254	Band 4 		2147483647	0	1	0
+255	Band 4 		2147483647	0	1	0
+256	Band 4 - Param 33		2147483647	0	1	0
+257	Band 4 - Param 34		2147483647	0	1	0
+258	Band 4 - Param 35		2147483647	0	1	0
+259	Band 4 - Param 36		2147483647	0	1	0
+260	Band 4 - Param 37		2147483647	0	1	0
+261	Band 4 - Param 38		2147483647	0	1	0
+262	Band 4 - Param 39		2147483647	0	1	0
+263	Band 4 - Param 40		2147483647	0	1	0
+264	Band 4 - Param 41		2147483647	0	1	0
+265	Band 4 - Param 42		2147483647	0	1	0
+266	Band 4 - Param 43		2147483647	0	1	0
+267	Band 4 - Param 44		2147483647	0	1	0
+268	Band 4 - Param 45		2147483647	0	1	0
+269	Band 4 - Param 46		2147483647	0	1	0
+270	Band 4 - Param 47		2147483647	0	1	0
+271	Band 4 - Param 48		2147483647	0	1	0
+272	Band 4 - Param 49		2147483647	0	1	0
+273	Band 4 - Param 50		2147483647	0	1	0
+274	Band 4 - Param 51		2147483647	0	1	0
+275	Band 4 - Param 52		2147483647	0	1	0
+276	Band 4 - Param 53		2147483647	0	1	0
+277	Band 4 - Param 54		2147483647	0	1	0
+278	Band 4 - Param 55		2147483647	0	1	0
+279	Band 4 - Param 56		2147483647	0	1	0
+280	Band 4 - Param 57		2147483647	0	1	0
+281	Band 4 - Param 58		2147483647	0	1	0
+282	Band 4 - Param 59		2147483647	0	1	0
+283	Band 4 - Param 60		2147483647	0	1	0
+284	Band 4 - Param 61		2147483647	0	1	0
+285	Band 4 - Param 62		2147483647	0	1	0
+286	Band 4 - Param 63		2147483647	0	1	0
+287	Band 4 - Param 64		2147483647	0	1	0
+288	Band 5 Globals -> Input		2147483647	0	1	0
+289	Band 5 Globals -> Output		2147483647	0	1	0
+290	Band 5 Globals -> Dry/wet		2147483647	0	1	0
+291	Band 5 Globals -> Compression		2147483647	0	1	0
+292	Band 5 Globals -> Saturation		2147483647	0	1	0
+293	Band 5 - Param 6		2147483647	0	1	0
+294	Band 5 - Param 7		2147483647	0	1	0
+295	Band 5 - Param 8		2147483647	0	1	0
+296	Band 5 Compressor -> Threshold		2147483647	0	1	0
+297	Band 5 Compressor -> Ratio		2147483647	0	1	0
+298	Band 5 Compressor -> Soft		2147483647	0	1	0
+299	Band 5 - Param 12		2147483647	0	1	0
+300	Band 5 - Param 13		2147483647	0	1	0
+301	Band 5 - Param 14		2147483647	0	1	0
+302	Band 5 Compressor -> Attack		2147483647	0	1	0
+303	Band 5 Compressor -> Release		2147483647	0	1	0
+304	Band 5 - Param 17		2147483647	0	1	0
+305	Band 5 - Param 18		2147483647	0	1	0
+306	Band 5 Detector -> Side-chain input		2147483647	0	1	0
+307	Band 5 - Param 20		2147483647	0	1	0
+308	Band 5 Detector -> HP		2147483647	0	1	0
+309	Band 5 - Param 22		2147483647	0	1	0
+310	Band 5 Detector -> LP		2147483647	0	1	0
+311	Band 5 Detector -> Link channels		2147483647	0	1	0
+312	Band 5 Detector -> Gain		2147483647	0	1	0
+313	Band 5 Detector -> Frequency		2147483647	0	1	0
+314	Band 5 Detector -> BW		2147483647	0	1	0
+315	Band 5 - Param 28		2147483647	0	1	0
+316	Band 5 - Param 29		2147483647	0	1	0
+317	Band 5 - Param 30		2147483647	0	1	0
+318	Band 5 		2147483647	0	1	0
+319	Band 5 		2147483647	0	1	0
+320	Band 5 - Param 33		2147483647	0	1	0
+321	Band 5 - Param 34		2147483647	0	1	0
+322	Band 5 - Param 35		2147483647	0	1	0
+323	Band 5 - Param 36		2147483647	0	1	0
+324	Band 5 - Param 37		2147483647	0	1	0
+325	Band 5 - Param 38		2147483647	0	1	0
+326	Band 5 - Param 39		2147483647	0	1	0
+327	Band 5 - Param 40		2147483647	0	1	0
+328	Band 5 - Param 41		2147483647	0	1	0
+329	Band 5 - Param 42		2147483647	0	1	0
+330	Band 5 - Param 43		2147483647	0	1	0
+331	Band 5 - Param 44		2147483647	0	1	0
+332	Band 5 - Param 45		2147483647	0	1	0
+333	Band 5 - Param 46		2147483647	0	1	0
+334	Band 5 - Param 47		2147483647	0	1	0
+335	Band 5 - Param 48		2147483647	0	1	0
+336	Band 5 - Param 49		2147483647	0	1	0
+337	Band 5 - Param 50		2147483647	0	1	0
+338	Band 5 - Param 51		2147483647	0	1	0
+339	Band 5 - Param 52		2147483647	0	1	0
+340	Band 5 - Param 53		2147483647	0	1	0
+341	Band 5 - Param 54		2147483647	0	1	0
+342	Band 5 - Param 55		2147483647	0	1	0
+343	Band 5 - Param 56		2147483647	0	1	0
+344	Band 5 - Param 57		2147483647	0	1	0
+345	Band 5 - Param 58		2147483647	0	1	0
+346	Band 5 - Param 59		2147483647	0	1	0
+347	Band 5 - Param 60		2147483647	0	1	0
+348	Band 5 - Param 61		2147483647	0	1	0
+349	Band 5 - Param 62		2147483647	0	1	0
+350	Band 5 - Param 63		2147483647	0	1	0
+351	Band 5 - Param 64		2147483647	0	1	0
+352	Band 6 Globals -> Input		2147483647	0	1	0
+353	Band 6 Globals -> Output		2147483647	0	1	0
+354	Band 6 Globals -> Dry/wet		2147483647	0	1	0
+355	Band 6 Globals -> Compression		2147483647	0	1	0
+356	Band 6 Globals -> Saturation		2147483647	0	1	0
+357	Band 6 - Param 6		2147483647	0	1	0
+358	Band 6 - Param 7		2147483647	0	1	0
+359	Band 6 - Param 8		2147483647	0	1	0
+360	Band 6 Compressor -> Threshold		2147483647	0	1	0
+361	Band 6 Compressor -> Ratio		2147483647	0	1	0
+362	Band 6 Compressor -> Soft		2147483647	0	1	0
+363	Band 6 - Param 12		2147483647	0	1	0
+364	Band 6 - Param 13		2147483647	0	1	0
+365	Band 6 - Param 14		2147483647	0	1	0
+366	Band 6 Compressor -> Attack		2147483647	0	1	0
+367	Band 6 Compressor -> Release		2147483647	0	1	0
+368	Band 6 - Param 17		2147483647	0	1	0
+369	Band 6 - Param 18		2147483647	0	1	0
+370	Band 6 Detector -> Side-chain input		2147483647	0	1	0
+371	Band 6 - Param 20		2147483647	0	1	0
+372	Band 6 Detector -> HP		2147483647	0	1	0
+373	Band 6 - Param 22		2147483647	0	1	0
+374	Band 6 Detector -> LP		2147483647	0	1	0
+375	Band 6 Detector -> Link channels		2147483647	0	1	0
+376	Band 6 Detector -> Gain		2147483647	0	1	0
+377	Band 6 Detector -> Frequency		2147483647	0	1	0
+378	Band 6 Detector -> BW		2147483647	0	1	0
+379	Band 6 - Param 28		2147483647	0	1	0
+380	Band 6 - Param 29		2147483647	0	1	0
+381	Band 6 - Param 30		2147483647	0	1	0
+382	Band 6 		2147483647	0	1	0
+383	Band 6 		2147483647	0	1	0
+384	Band 6 - Param 33		2147483647	0	1	0
+385	Band 6 - Param 34		2147483647	0	1	0
+386	Band 6 - Param 35		2147483647	0	1	0
+387	Band 6 - Param 36		2147483647	0	1	0
+388	Band 6 - Param 37		2147483647	0	1	0
+389	Band 6 - Param 38		2147483647	0	1	0
+390	Band 6 - Param 39		2147483647	0	1	0
+391	Band 6 - Param 40		2147483647	0	1	0
+392	Band 6 - Param 41		2147483647	0	1	0
+393	Band 6 - Param 42		2147483647	0	1	0
+394	Band 6 - Param 43		2147483647	0	1	0
+395	Band 6 - Param 44		2147483647	0	1	0
+396	Band 6 - Param 45		2147483647	0	1	0
+397	Band 6 - Param 46		2147483647	0	1	0
+398	Band 6 - Param 47		2147483647	0	1	0
+399	Band 6 - Param 48		2147483647	0	1	0
+400	Band 6 - Param 49		2147483647	0	1	0
+401	Band 6 - Param 50		2147483647	0	1	0
+402	Band 6 - Param 51		2147483647	0	1	0
+403	Band 6 - Param 52		2147483647	0	1	0
+404	Band 6 - Param 53		2147483647	0	1	0
+405	Band 6 - Param 54		2147483647	0	1	0
+406	Band 6 - Param 55		2147483647	0	1	0
+407	Band 6 - Param 56		2147483647	0	1	0
+408	Band 6 - Param 57		2147483647	0	1	0
+409	Band 6 - Param 58		2147483647	0	1	0
+410	Band 6 - Param 59		2147483647	0	1	0
+411	Band 6 - Param 60		2147483647	0	1	0
+412	Band 6 - Param 61		2147483647	0	1	0
+413	Band 6 - Param 62		2147483647	0	1	0
+414	Band 6 - Param 63		2147483647	0	1	0
+415	Band 6 - Param 64		2147483647	0	1	0
+416	Dry/Wet		2147483647	0	1	0
+417	Input gain		2147483647	0	1	0
+418	Output gain		2147483647	0	1	0
+419	Crossover type		2147483647	0	1	0
+420	Crossover analog mode		2147483647	0	1	0
+421	Level crossover slope		2147483647	0	1	0
+422	Level crossover value		2147483647	0	1	0
+423	Crossover tone		2147483647	0	1	0
+424	Crossover smoothing		2147483647	0	1	0
+425	Crossover transient release		2147483647	0	1	0
+426	Crossover transient resolution		2147483647	0	1	0
+427	Crossover spectral resolution		2147483647	0	1	0
+428	Band gain 1		2147483647	0	1	0
+429	Band gain 2		2147483647	0	1	0
+430	Band gain 3		2147483647	0	1	0
+431	Band gain 4		2147483647	0	1	0
+432	Band gain 5		2147483647	0	1	0
+433	Band gain 6		2147483647	0	1	0
+434	Band limit 1		2147483647	0	1	0
+435	Band limit 2		2147483647	0	1	0
+436	Band limit 3		2147483647	0	1	0
+437	Band limit 4		2147483647	0	1	0
+438	Band limit 5		2147483647	0	1	0
+439	Band panorama 1		2147483647	0	1	0
+440	Band panorama 2		2147483647	0	1	0
+441	Band panorama 3		2147483647	0	1	0
+442	Band panorama 4		2147483647	0	1	0
+443	Band panorama 5		2147483647	0	1	0
+444	Band panorama 6		2147483647	0	1	0
+445	Band 1 - Device		2147483647	0	1	0
+446	Band 2 - Device		2147483647	0	1	0
+447	Band 3 - Device		2147483647	0	1	0
+448	Band 4 - Device		2147483647	0	1	0
+449	Band 5 - Device		2147483647	0	1	0
+450	Band 6 - Device		2147483647	0	1	0
+451	Modulators - Mod 1 - Automated value		2147483647	0	1	0
+452	Modulators - Mod 2 - Automated value		2147483647	0	1	0
+453	Modulators - Mod 3 - Automated value		2147483647	0	1	0
+454	Modulators - Mod 4 - Automated value		2147483647	0	1	0
+455	Modulators - Mod 5 - Automated value		2147483647	0	1	0
+456	Modulators - Mod 6 - Automated value		2147483647	0	1	0
+457	Modulators - Mod 7 - Automated value		2147483647	0	1	0
+458	Modulators - Mod 8 - Automated value		2147483647	0	1	0
+459	Preset trigger - previous		2147483647	0	1	0
+460	Preset trigger - next		2147483647	0	1	0

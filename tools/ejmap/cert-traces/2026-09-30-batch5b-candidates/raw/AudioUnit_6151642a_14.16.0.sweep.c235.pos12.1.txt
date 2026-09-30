@@ -1,0 +1,301 @@
+probe: "MDynamicsMB" | AudioUnit:Effects/aumf,MAe(,Meld | uid=6151642a | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	235	name	Band 5 - Processor 2 - Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Globals -> Input	0.00 dB
+param	1	0.500000	Globals -> Output	0.00 dB
+param	2	1.000000	Globals -> Dry/wet	100.0%
+param	3	0.500000	Globals -> Compression	0.00%
+param	4	0.500000	Globals -> Tone	0.00%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.333333	Crossover -> Slope	24dB/oct
+param	9	0.000000	Crossover -> Linear-phase	0.00%
+param	10	0.333333	Crossover -> Cross 1	200.0 Hz
+param	11	0.566323	Crossover -> Cross 2	1000 Hz
+param	12	0.788309	Crossover -> Cross 3	4634 Hz
+param	13	0.500000	Param 14	50.0%
+param	14	0.500000	Param 15	50.0%
+param	15	0.500000	Param 16	50.0%
+param	16	0.309321	Band 1 -> Threshold	-20.0 dB
+param	17	0.100316	Band 1 -> Ratio	2.00 : 1
+param	18	0.562341	Band 1 -> Attack	30 ms
+param	19	0.338637	Band 1 -> Release	80 ms
+param	20	0.500000	Band 1 -> Gain	0.00 dB
+param	21	0.000000	Band 1 -> Soft	0.00%
+param	22	0.500000	Param 23	50.0%
+param	23	0.500000	Param 24	50.0%
+param	24	0.309321	Band 2 -> Threshold	-20.0 dB
+param	25	0.100316	Band 2 -> Ratio	2.00 : 1
+param	26	0.494923	Band 2 -> Attack	18 ms
+param	27	0.301046	Band 2 -> Release	70 ms
+param	28	0.500000	Band 2 -> Gain	0.00 dB
+param	29	0.000000	Band 2 -> Soft	0.00%
+param	30	0.500000	Param 31	50.0%
+param	31	0.500000	Param 32	50.0%
+param	32	0.309321	Band 3 -> Threshold	-20.0 dB
+param	33	0.100316	Band 3 -> Ratio	2.00 : 1
+param	34	0.464785	Band 3 -> Attack	14 ms
+param	35	0.259117	Band 3 -> Release	60 ms
+param	36	0.500000	Band 3 -> Gain	0.00 dB
+param	37	0.000000	Band 3 -> Soft	0.00%
+param	38	0.500000	Param 39	50.0%
+param	39	0.500000	Param 40	50.0%
+param	40	0.309321	Band 4 -> Threshold	-20.0 dB
+param	41	0.100000	Band 4 -> Ratio	2.00 : 1
+param	42	0.427287	Band 4 -> Attack	10 ms
+param	43	0.259117	Band 4 -> Release	60 ms
+param	44	0.500000	Band 4 -> Gain	0.00 dB
+param	45	0.000000	Band 4 -> Soft	0.00%
+param	46	0.500000	Param 47	50.0%
+param	47	0.500000	Param 48	50.0%
+param	48	0.100000	Detector -> RMS length	1.0 ms
+param	49	0.000000	Detector -> Look-ahead	Off
+param	50	1.000000	Detector -> Release mode	Opto
+param	51	0.314800	Detector -> Auto speed	100 ms
+param	52	0.500000	Param 53	50.0%
+param	53	0.500000	Param 54	50.0%
+param	54	0.500000	Param 55	50.0%
+param	55	0.500000	Param 56	50.0%
+param	56	0.500000	Param 57	50.0%
+param	57	0.500000	Param 58	50.0%
+param	58	0.500000	Param 59	50.0%
+param	59	0.500000	Param 60	50.0%
+param	60	0.500000	Param 61	50.0%
+param	61	0.500000	Param 62	50.0%
+param	62	0.500000	Param 63	50.0%
+param	63	0.500000	Param 64	50.0%
+param	64	1.000000	Dry/Wet	100.0%
+param	65	0.500000	Input gain	0.00 dB
+param	66	0.500000	Output gain	0.00 dB
+param	67	0.500000	Temporary gain	0.00 dB
+param	68	0.000000	Crossover type	Analog
+param	69	0.428571	Crossover analog mode	24dB/oct
+param	70	0.500000	Level crossover slope	50.0%
+param	71	0.000000	Level crossover value	silence
+param	72	0.500000	Crossover tone	0.00 dB
+param	73	0.000000	Crossover smoothing	0.00%
+param	74	0.472871	Crossover transient release	50 ms
+param	75	0.500000	Crossover transient resolution	50 ms
+param	76	0.500000	Crossover spectral resolution	50.0%
+param	77	0.500000	Band gain 1	0.00 dB
+param	78	0.500000	Band gain 2	0.00 dB
+param	79	0.500000	Band gain 3	0.00 dB
+param	80	0.500000	Band gain 4	0.00 dB
+param	81	0.500000	Band gain 5	0.00 dB
+param	82	0.500000	Band gain 6	0.00 dB
+param	83	0.333333	Band limit 1	200.0 Hz
+param	84	0.566323	Band limit 2	1000 Hz
+param	85	0.788309	Band limit 3	4634 Hz
+param	86	0.447474	Band limit 4	440.0 Hz
+param	87	0.447474	Band limit 5	440.0 Hz
+param	88	0.500000	Band panorama 1	center
+param	89	0.491803	Band panorama 2	2% left
+param	90	0.500000	Band panorama 3	center
+param	91	0.500000	Band panorama 4	center
+param	92	0.500000	Band panorama 5	center
+param	93	0.500000	Band panorama 6	center
+param	94	0.500000	Band 1 - General parameters - Input gain	0.00 dB
+param	95	0.500000	Band 1 - General parameters - Output gain	0.00 dB
+param	96	0.500000	Band 1 - General parameters - Temp gain	0.00 dB
+param	97	1.000000	Band 1 - General parameters - Dry/Wet	100.0%
+param	98	0.500000	Band 1 - General parameters - Mode	Squared
+param	99	0.000000	Band 1 - General parameters - Maximize	0.00%
+param	100	1.000000	Band 1 - General parameters - Link channels	100.0%
+param	101	0.416179	Band 1 - Dynamic detection - Attack	30 ms
+param	102	0.354557	Band 1 - Dynamic detection - Release	80 ms
+param	103	1.000000	Band 1 - Dynamic detection - Release mode	Opto
+param	104	0.099504	Band 1 - Dynamic detection - Auto speed	100 ms
+param	105	0.000000	Band 1 - Dynamic detection - Peak hold	0 ms
+param	106	0.100000	Band 1 - Dynamic detection - RMS length	1.0 ms
+param	107	0.000000	Band 1 - Dynamic detection - Look-ahead	Off
+param	108	0.000000	Band 1 - Gate - Gate	Off
+param	109	0.191919	Band 1 - Gate - Threshold	-28.0 dB
+param	110	0.250000	Band 1 - Gate - Size	+6.00 dB
+param	111	0.250000	Band 1 - Gate - Knee	25.0%
+param	112	0.000000	Band 1 - Gate - Bottom	silence
+param	113	1.000000	Band 1 - Processor 1 - Processor 1	On
+param	114	0.309321	Band 1 - Processor 1 - Threshold	-20.0 dB
+param	115	0.377964	Band 1 - Processor 1 - Ratio	2.00 : 1
+param	116	0.000000	Band 1 - Processor 1 - Knee size	0.00%
+param	117	1.000000	Band 1 - Processor 1 - Range	+96.00 dB
+param	118	0.000000	Band 1 - Processor 2 - Processor 2	Off
+param	119	0.242424	Band 1 - Processor 2 - Threshold	-24.1 dB
+param	120	0.308607	Band 1 - Processor 2 - Ratio	1.00 : 1
+param	121	0.250000	Band 1 - Processor 2 - Knee size	25.0%
+param	122	1.000000	Band 1 - Processor 2 - Range	+96.00 dB
+param	123	0.500000	Band 2 - General parameters - Input gain	0.00 dB
+param	124	0.500000	Band 2 - General parameters - Output gain	0.00 dB
+param	125	0.500000	Band 2 - General parameters - Temp gain	0.00 dB
+param	126	1.000000	Band 2 - General parameters - Dry/Wet	100.0%
+param	127	0.500000	Band 2 - General parameters - Mode	Squared
+param	128	0.000000	Band 2 - General parameters - Maximize	0.00%
+param	129	1.000000	Band 2 - General parameters - Link channels	100.0%
+param	130	0.366284	Band 2 - Dynamic detection - Attack	18 ms
+param	131	0.342761	Band 2 - Dynamic detection - Release	70 ms
+param	132	1.000000	Band 2 - Dynamic detection - Release mode	Opto
+param	133	0.099504	Band 2 - Dynamic detection - Auto speed	100 ms
+param	134	0.000000	Band 2 - Dynamic detection - Peak hold	0 ms
+param	135	0.100000	Band 2 - Dynamic detection - RMS length	1.0 ms
+param	136	0.000000	Band 2 - Dynamic detection - Look-ahead	Off
+param	137	0.000000	Band 2 - Gate - Gate	Off
+param	138	0.191919	Band 2 - Gate - Threshold	-28.0 dB
+param	139	0.250000	Band 2 - Gate - Size	+6.00 dB
+param	140	0.250000	Band 2 - Gate - Knee	25.0%
+param	141	0.000000	Band 2 - Gate - Bottom	silence
+param	142	1.000000	Band 2 - Processor 1 - Processor 1	On
+param	143	0.309321	Band 2 - Processor 1 - Threshold	-20.0 dB
+param	144	0.377964	Band 2 - Processor 1 - Ratio	2.00 : 1
+param	145	0.000000	Band 2 - Processor 1 - Knee size	0.00%
+param	146	1.000000	Band 2 - Processor 1 - Range	+96.00 dB
+param	147	0.000000	Band 2 - Processor 2 - Processor 2	Off
+param	148	0.242424	Band 2 - Processor 2 - Threshold	-24.1 dB
+param	149	0.308607	Band 2 - Processor 2 - Ratio	1.00 : 1
+param	150	0.250000	Band 2 - Processor 2 - Knee size	25.0%
+param	151	1.000000	Band 2 - Processor 2 - Range	+96.00 dB
+param	152	0.500000	Band 3 - General parameters - Input gain	0.00 dB
+param	153	0.500000	Band 3 - General parameters - Output gain	0.00 dB
+param	154	0.500000	Band 3 - General parameters - Temp gain	0.00 dB
+param	155	1.000000	Band 3 - General parameters - Dry/Wet	100.0%
+param	156	0.500000	Band 3 - General parameters - Mode	Squared
+param	157	0.000000	Band 3 - General parameters - Maximize	0.00%
+param	158	1.000000	Band 3 - General parameters - Link channels	100.0%
+param	159	0.343979	Band 3 - Dynamic detection - Attack	14 ms
+param	160	0.329604	Band 3 - Dynamic detection - Release	60 ms
+param	161	1.000000	Band 3 - Dynamic detection - Release mode	Opto
+param	162	0.099504	Band 3 - Dynamic detection - Auto speed	100 ms
+param	163	0.000000	Band 3 - Dynamic detection - Peak hold	0 ms
+param	164	0.100000	Band 3 - Dynamic detection - RMS length	1.0 ms
+param	165	0.000000	Band 3 - Dynamic detection - Look-ahead	Off
+param	166	0.000000	Band 3 - Gate - Gate	Off
+param	167	0.191919	Band 3 - Gate - Threshold	-28.0 dB
+param	168	0.250000	Band 3 - Gate - Size	+6.00 dB
+param	169	0.250000	Band 3 - Gate - Knee	25.0%
+param	170	0.000000	Band 3 - Gate - Bottom	silence
+param	171	1.000000	Band 3 - Processor 1 - Processor 1	On
+param	172	0.309321	Band 3 - Processor 1 - Threshold	-20.0 dB
+param	173	0.377964	Band 3 - Processor 1 - Ratio	2.00 : 1
+param	174	0.000000	Band 3 - Processor 1 - Knee size	0.00%
+param	175	1.000000	Band 3 - Processor 1 - Range	+96.00 dB
+param	176	0.000000	Band 3 - Processor 2 - Processor 2	Off
+param	177	0.242424	Band 3 - Processor 2 - Threshold	-24.1 dB
+param	178	0.308607	Band 3 - Processor 2 - Ratio	1.00 : 1
+param	179	0.250000	Band 3 - Processor 2 - Knee size	25.0%
+param	180	1.000000	Band 3 - Processor 2 - Range	+96.00 dB
+param	181	0.500000	Band 4 - General parameters - Input gain	0.00 dB
+param	182	0.500000	Band 4 - General parameters - Output gain	0.00 dB
+param	183	0.500000	Band 4 - General parameters - Temp gain	0.00 dB
+param	184	1.000000	Band 4 - General parameters - Dry/Wet	100.0%
+param	185	0.500000	Band 4 - General parameters - Mode	Squared
+param	186	0.000000	Band 4 - General parameters - Maximize	0.00%
+param	187	1.000000	Band 4 - General parameters - Link channels	100.0%
+param	188	0.316228	Band 4 - Dynamic detection - Attack	10.0 ms
+param	189	0.329604	Band 4 - Dynamic detection - Release	60 ms
+param	190	1.000000	Band 4 - Dynamic detection - Release mode	Opto
+param	191	0.099504	Band 4 - Dynamic detection - Auto speed	100 ms
+param	192	0.000000	Band 4 - Dynamic detection - Peak hold	0 ms
+param	193	0.100000	Band 4 - Dynamic detection - RMS length	1.0 ms
+param	194	0.000000	Band 4 - Dynamic detection - Look-ahead	Off
+param	195	0.000000	Band 4 - Gate - Gate	Off
+param	196	0.191919	Band 4 - Gate - Threshold	-28.0 dB
+param	197	0.250000	Band 4 - Gate - Size	+6.00 dB
+param	198	0.250000	Band 4 - Gate - Knee	25.0%
+param	199	0.000000	Band 4 - Gate - Bottom	silence
+param	200	1.000000	Band 4 - Processor 1 - Processor 1	On
+param	201	0.309321	Band 4 - Processor 1 - Threshold	-20.0 dB
+param	202	0.377746	Band 4 - Processor 1 - Ratio	2.00 : 1
+param	203	0.000000	Band 4 - Processor 1 - Knee size	0.00%
+param	204	1.000000	Band 4 - Processor 1 - Range	+96.00 dB
+param	205	0.000000	Band 4 - Processor 2 - Processor 2	Off
+param	206	0.242424	Band 4 - Processor 2 - Threshold	-24.1 dB
+param	207	0.308607	Band 4 - Processor 2 - Ratio	1.00 : 1
+param	208	0.250000	Band 4 - Processor 2 - Knee size	25.0%
+param	209	1.000000	Band 4 - Processor 2 - Range	+96.00 dB
+param	210	0.500000	Band 5 - General parameters - Input gain	0.00 dB
+param	211	0.500000	Band 5 - General parameters - Output gain	0.00 dB
+param	212	0.500000	Band 5 - General parameters - Temp gain	0.00 dB
+param	213	1.000000	Band 5 - General parameters - Dry/Wet	100.0%
+param	214	0.500000	Band 5 - General parameters - Mode	Squared
+param	215	0.000000	Band 5 - General parameters - Maximize	0.00%
+param	216	1.000000	Band 5 - General parameters - Link channels	100.0%
+param	217	0.316228	Band 5 - Dynamic detection - Attack	10.0 ms
+param	218	0.375135	Band 5 - Dynamic detection - Release	100 ms
+param	219	0.000000	Band 5 - Dynamic detection - Release mode	Manual
+param	220	0.316085	Band 5 - Dynamic detection - Auto speed	1000 ms
+param	221	0.000000	Band 5 - Dynamic detection - Peak hold	0 ms
+param	222	0.100000	Band 5 - Dynamic detection - RMS length	1.0 ms
+param	223	0.000000	Band 5 - Dynamic detection - Look-ahead	Off
+param	224	0.000000	Band 5 - Gate - Gate	Off
+param	225	0.191919	Band 5 - Gate - Threshold	-28.0 dB
+param	226	0.250000	Band 5 - Gate - Size	+6.00 dB
+param	227	0.250000	Band 5 - Gate - Knee	25.0%
+param	228	0.000000	Band 5 - Gate - Bottom	silence
+param	229	1.000000	Band 5 - Processor 1 - Processor 1	On
+param	230	0.494949	Band 5 - Processor 1 - Threshold	-12.0 dB
+param	231	0.308607	Band 5 - Processor 1 - Ratio	1.00 : 1
+param	232	0.250000	Band 5 - Processor 1 - Knee size	25.0%
+param	233	1.000000	Band 5 - Processor 1 - Range	+96.00 dB
+param	234	0.000000	Band 5 - Processor 2 - Processor 2	Off
+param	235	0.242424	Band 5 - Processor 2 - Threshold	-24.1 dB
+param	236	0.308607	Band 5 - Processor 2 - Ratio	1.00 : 1
+param	237	0.250000	Band 5 - Processor 2 - Knee size	25.0%
+param	238	1.000000	Band 5 - Processor 2 - Range	+96.00 dB
+param	239	0.500000	Band 6 - General parameters - Input gain	0.00 dB
+param	240	0.500000	Band 6 - General parameters - Output gain	0.00 dB
+param	241	0.500000	Band 6 - General parameters - Temp gain	0.00 dB
+param	242	1.000000	Band 6 - General parameters - Dry/Wet	100.0%
+param	243	0.500000	Band 6 - General parameters - Mode	Squared
+param	244	0.000000	Band 6 - General parameters - Maximize	0.00%
+param	245	1.000000	Band 6 - General parameters - Link channels	100.0%
+param	246	0.316228	Band 6 - Dynamic detection - Attack	10.0 ms
+param	247	0.375135	Band 6 - Dynamic detection - Release	100 ms
+param	248	0.000000	Band 6 - Dynamic detection - Release mode	Manual
+param	249	0.316085	Band 6 - Dynamic detection - Auto speed	1000 ms
+param	250	0.000000	Band 6 - Dynamic detection - Peak hold	0 ms
+param	251	0.100000	Band 6 - Dynamic detection - RMS length	1.0 ms
+param	252	0.000000	Band 6 - Dynamic detection - Look-ahead	Off
+param	253	0.000000	Band 6 - Gate - Gate	Off
+param	254	0.191919	Band 6 - Gate - Threshold	-28.0 dB
+param	255	0.250000	Band 6 - Gate - Size	+6.00 dB
+param	256	0.250000	Band 6 - Gate - Knee	25.0%
+param	257	0.000000	Band 6 - Gate - Bottom	silence
+param	258	1.000000	Band 6 - Processor 1 - Processor 1	On
+param	259	0.494949	Band 6 - Processor 1 - Threshold	-12.0 dB
+param	260	0.308607	Band 6 - Processor 1 - Ratio	1.00 : 1
+param	261	0.250000	Band 6 - Processor 1 - Knee size	25.0%
+param	262	1.000000	Band 6 - Processor 1 - Range	+96.00 dB
+param	263	0.000000	Band 6 - Processor 2 - Processor 2	Off
+param	264	0.242424	Band 6 - Processor 2 - Threshold	-24.1 dB
+param	265	0.308607	Band 6 - Processor 2 - Ratio	1.00 : 1
+param	266	0.250000	Band 6 - Processor 2 - Knee size	25.0%
+param	267	1.000000	Band 6 - Processor 2 - Range	+96.00 dB
+param	268	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	269	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	270	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	271	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	272	0.000000	Preset trigger - previous	0.00
+param	273	0.000000	Preset trigger - next	0.00
+param	274	0.000000	Device	Compressor
+param	275	0.000000	Band 1 - General parameters - Invert	Off
+param	276	0.000000	Band 2 - General parameters - Invert	Off
+param	277	0.000000	Band 3 - General parameters - Invert	Off
+param	278	0.000000	Band 4 - General parameters - Invert	Off
+param	279	0.000000	Band 5 - General parameters - Invert	Off
+param	280	0.000000	Band 6 - General parameters - Invert	Off
+stage	position
+pos	0	norm	0.800000	confirm_ms	3.11	slices	1	instack_match	1	getValue	0.800000	landed_by	instack	render_blocks	0	text_ms	20.4	reads	2	text	-3.83 dB
+hold	0	-24.00	level_db	-27.0099	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.9391,-27.0818	doubled	0	last_move_db	0.0009	final_move_db	0.0009	win	-27.0216,-27.0096,-27.0105,-27.0096,-27.0105,-27.0096	nonfinite	0
+hold	0	-12.00	level_db	-15.0097	in_rms_db	-15.0103	tone_frac	1.0000	ch	-14.9389,-15.0817	doubled	0	last_move_db	0.0017	final_move_db	0.0017	win	-15.0213,-15.0091,-15.0109,-15.0091,-15.0109,-15.0091	nonfinite	0
+hold	0	-6.00	level_db	-12.0027	in_rms_db	-9.0103	tone_frac	1.0000	ch	-11.9322,-12.0744	doubled	0	last_move_db	0.0025	final_move_db	0.0025	win	-11.7779,-12.0019,-12.0044,-12.0019,-12.0044,-12.0019	nonfinite	0
+reread	0	steady
+timing	wall_ms	82.3	audio_s	4.500
+stage	done

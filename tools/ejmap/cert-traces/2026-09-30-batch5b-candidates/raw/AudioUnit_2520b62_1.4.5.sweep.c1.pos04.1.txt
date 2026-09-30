@@ -1,0 +1,38 @@
+probe: "Solid Dynamics" | AudioUnit:Effects/aufx,Ni$7,-NI- | uid=2520b62 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold Comp	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Knee Type	Soft
+param	1	0.930020	Threshold Comp	-17.9 dB
+param	2	0.774000	Ratio	4.0
+param	3	0.000000	Atk Mode Comp	Off
+param	4	0.000000	Release Comp	0.10 s
+param	5	0.000000	Rel.Mode	Off
+param	6	0.805000	Output	0.0 dB
+param	7	0.000000	Dry	-Inf dB
+param	8	1.000000	Link L/R	On
+param	9	0.000000	Boost	Off
+param	10	0.000000	-	-
+param	11	0.000000	Mode	Gate
+param	12	0.750000	Threshold G/E	0.0 dB
+param	13	0.000000	Range	0.0
+param	14	0.000000	Atk Mode G/E	Off
+param	15	0.500000	Release G/E	0.63 s
+param	16	0.000000	SC Mode	Off
+param	17	0.500000	SC Gain	0.0 dB
+stage	position
+pos	0	norm	0.266667	confirm_ms	502.00	slices	153	instack_match	0	getValue	0.266667	landed_by	render	render_blocks	1	text_ms	22.0	reads	2	text	2.0 dB
+hold	0	-24.00	level_db	-25.4029	in_rms_db	-27.0103	tone_frac	1.0000	ch	-25.4029,-25.4029	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-25.4022,-25.4027,-25.4034,-25.4027,-25.4034,-25.4027	nonfinite	0
+hold	0	-12.00	level_db	-14.5106	in_rms_db	-15.0103	tone_frac	1.0000	ch	-14.5106,-14.5106	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-14.3881,-14.5101,-14.5117,-14.5101,-14.5117,-14.5101	nonfinite	0
+hold	0	-6.00	level_db	-10.0020	in_rms_db	-9.0103	tone_frac	1.0000	ch	-10.0020,-10.0020	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-9.8327,-10.0012,-10.0035,-10.0012,-10.0035,-10.0012	nonfinite	0
+reread	0	steady
+timing	wall_ms	593.3	audio_s	4.500
+stage	done

@@ -1,0 +1,36 @@
+probe: "OTT" | AudioUnit:Effects/aufx,XfTT,XFER | uid=6155777e | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	6	name	Thresh M	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	OTTOut 1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	2
+param	0	1.000000	Depth	100
+param	1	0.500000	Time	100
+param	2	0.500000	In Gain	0.0
+param	3	0.500000	Out Gain	0.0
+param	4	0.000000	Clean XOV	OFF
+param	5	0.500000	Thresh L	100
+param	6	0.500000	Thresh M	100
+param	7	0.500000	Thresh H	100
+param	8	0.500000	Gain L	0.0
+param	9	0.500000	Gain M	0.0
+param	10	0.500000	Gain H	0.0
+param	11	0.000000	Byp Upwd L	--
+param	12	0.000000	Byp Upwd M	--
+param	13	0.000000	Byp Upwd H	--
+param	14	0.000000	Byp Dnwd L	--
+param	15	0.000000	Byp Dnwd M	--
+param	16	0.000000	Byp Dnwd H	--
+param	17	0.500000	Upwd Strgth	100
+param	18	0.500000	Dnwd Strgth	100
+stage	reference
+refpos	val	0.500000	text	100
+ref	-24.00	level_db	-24.7618	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-24.7618,-24.7618	win	-24.7238,-24.7606,-24.7641,-24.7606,-24.7641,-24.7606,-24.7641,-24.7606	nonfinite	0
+ref	-12.00	level_db	-23.6530	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	0.9998	ch	-23.6530,-23.6530	win	-23.4279,-23.6581,-23.6493,-23.6548,-23.6493,-23.6548,-23.6493,-23.6548	nonfinite	0
+ref	-6.00	level_db	-21.4524	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-21.4524,-21.4524	win	-21.4980,-21.4761,-21.4547,-21.4512,-21.4547,-21.4512,-21.4547,-21.4512	nonfinite	0
+timing	wall_ms	61.3	audio_s	6.000
+stage	done

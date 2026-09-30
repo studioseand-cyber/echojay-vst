@@ -1,0 +1,13 @@
+probe: "PuigChild 670 (s)" | AudioUnit:Effects/aufx,FCHS,ksWV | uid=4c45797d | arch=arm64 | format=AudioUnit
+
+0	OnOff		2	1	1	0
+1	Link		3	1	1	0
+2	Mains		3	1	1	0
+3	Left Input		21	1	1	0
+4	Left Threshold		2147483647	0	1	0
+5	Left Time Constant		6	1	1	0
+6	Left Output		2147483647	0	1	0
+7	Right Input		21	1	1	0
+8	Right Threshold		2147483647	0	1	0
+9	Right Time Constant		6	1	1	0
+10	Right Output		2147483647	0	1	0

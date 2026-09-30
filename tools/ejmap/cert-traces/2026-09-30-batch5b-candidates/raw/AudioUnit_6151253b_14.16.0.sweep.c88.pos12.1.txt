@@ -1,0 +1,127 @@
+probe: "MSpectralDynamics" | AudioUnit:Effects/aumf,MA$9,Meld | uid=6151253b | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	88	name	Processor 1 - Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	8192
+param	0	0.500000	Globals -> Input	0.00 dB
+param	1	0.833333	Globals -> Output	+10.00 dB
+param	2	0.300000	Globals -> Dry/wet	30.0%
+param	3	0.500000	Flattening -> Tone	0.00%
+param	4	0.000000	Flattening -> Brutality	0.00%
+param	5	0.000000	Flattening -> Compression	0.00%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.500000	Param 9	50.0%
+param	9	0.500000	Param 10	50.0%
+param	10	0.500000	Param 11	50.0%
+param	11	0.500000	Param 12	50.0%
+param	12	0.500000	Param 13	50.0%
+param	13	0.500000	Param 14	50.0%
+param	14	0.500000	Param 15	50.0%
+param	15	0.500000	Param 16	50.0%
+param	16	0.428571	Spectrum -> Resolution	10 ms
+param	17	0.000000	Spectrum -> Smoothness	1.0%
+param	18	0.500000	Param 19	50.0%
+param	19	0.500000	Param 20	50.0%
+param	20	0.500000	Param 21	50.0%
+param	21	0.500000	Param 22	50.0%
+param	22	0.500000	Param 23	50.0%
+param	23	0.500000	Param 24	50.0%
+param	24	0.500000	Param 25	50.0%
+param	25	0.500000	Param 26	50.0%
+param	26	0.500000	Param 27	50.0%
+param	27	0.500000	Param 28	50.0%
+param	28	0.500000	Param 29	50.0%
+param	29	0.500000	Param 30	50.0%
+param	30	0.500000	Param 31	50.0%
+param	31	0.500000	Param 32	50.0%
+param	32	0.500000	Param 33	50.0%
+param	33	0.500000	Param 34	50.0%
+param	34	0.500000	Param 35	50.0%
+param	35	0.500000	Param 36	50.0%
+param	36	0.500000	Param 37	50.0%
+param	37	0.500000	Param 38	50.0%
+param	38	0.500000	Param 39	50.0%
+param	39	0.500000	Param 40	50.0%
+param	40	0.500000	Param 41	50.0%
+param	41	0.500000	Param 42	50.0%
+param	42	0.500000	Param 43	50.0%
+param	43	0.500000	Param 44	50.0%
+param	44	0.500000	Param 45	50.0%
+param	45	0.500000	Param 46	50.0%
+param	46	0.500000	Param 47	50.0%
+param	47	0.500000	Param 48	50.0%
+param	48	0.500000	Param 49	50.0%
+param	49	0.500000	Param 50	50.0%
+param	50	0.500000	Param 51	50.0%
+param	51	0.500000	Param 52	50.0%
+param	52	0.500000	Param 53	50.0%
+param	53	0.500000	Param 54	50.0%
+param	54	0.500000	Param 55	50.0%
+param	55	0.500000	Param 56	50.0%
+param	56	0.500000	Param 57	50.0%
+param	57	0.500000	Param 58	50.0%
+param	58	0.500000	Param 59	50.0%
+param	59	0.500000	Param 60	50.0%
+param	60	0.500000	Param 61	50.0%
+param	61	0.500000	Param 62	50.0%
+param	62	0.500000	Param 63	50.0%
+param	63	0.500000	Param 64	50.0%
+param	64	0.666667	Spectrum - Quality	High
+param	65	0.428571	Spectrum - Resolution	10 ms
+param	66	0.050000	Spectrum - Smoothness	1.0%
+param	67	0.052000	Spectrum - Naturality	1.0%
+param	68	0.500000	Spectrum - Slope	+3.00 dB
+param	69	0.000000	Spectrum - Use maximum frequency	Off
+param	70	0.500000	General parameters - Input gain	0.00 dB
+param	71	0.708333	General parameters - Output gain	+10.00 dB
+param	72	0.500000	General parameters - Temp gain	0.00 dB
+param	73	0.300000	General parameters - Dry/Wet	30.0%
+param	74	1.000000	General parameters - Mode	Logarithmic
+param	75	0.177828	Dynamic detection - Attack	1.00 ms
+param	76	0.206987	Dynamic detection - Release	10 ms
+param	77	0.000000	Dynamic detection - Release mode	Manual
+param	78	0.316085	Dynamic detection - Auto speed	1000 ms
+param	79	0.000000	Dynamic detection - Peak hold	0 ms
+param	80	0.101000	Dynamic detection - RMS length	1.0 ms
+param	81	0.000000	Dynamic detection - Look-ahead	Off
+param	82	0.000000	Gate - Gate	Off
+param	83	0.317023	Gate - Threshold	-68.0 dB
+param	84	0.250000	Gate - Size	+6.00 dB
+param	85	0.250000	Gate - Knee	25.0%
+param	86	0.000000	Gate - Bottom	silence
+param	87	1.000000	Processor 1 - Processor 1	On
+param	88	0.000000	Processor 1 - Threshold	-80.0 dB
+param	89	0.409248	Processor 1 - Ratio	1.25 : 1
+param	90	1.000000	Processor 1 - Knee size	100.0%
+param	91	1.000000	Processor 1 - Range	+96.00 dB
+param	92	0.000000	Processor 2 - Processor 2	Off
+param	93	0.448339	Processor 2 - Threshold	-52.0 dB
+param	94	0.471405	Processor 2 - Ratio	1.50 : 1
+param	95	0.250000	Processor 2 - Knee size	25.0%
+param	96	1.000000	Processor 2 - Range	+96.00 dB
+param	97	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	98	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	99	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	100	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	101	0.000000	Preset trigger - previous	0.00
+param	102	0.000000	Preset trigger - next	0.00
+param	103	0.000000	Device	Flattening
+param	104	0.000000	Spectrum - Detector input	Input
+param	105	0.000000	General parameters - Invert	Off
+param	106	1.000000	Spectrum - Apply EQ	On
+stage	position
+pos	0	norm	0.800000	confirm_ms	2.54	slices	1	instack_match	1	getValue	0.800000	landed_by	instack	render_blocks	0	text_ms	20.3	reads	2	text	-15.3 dB
+hold	0	-24.00	level_db	-22.6667	in_rms_db	-27.0103	tone_frac	1.0000	ch	-22.6667,-22.6667	doubled	0	last_move_db	0.0049	final_move_db	0.0049	win	-27.6568,-22.6651,-22.6700,-22.6651,-22.6700,-22.6651	nonfinite	0
+hold	0	-12.00	level_db	-10.8158	in_rms_db	-15.0103	tone_frac	1.0000	ch	-10.8158,-10.8158	doubled	0	last_move_db	0.0044	final_move_db	0.0044	win	-15.2478,-10.8153,-10.8187,-10.8143,-10.8187,-10.8143	nonfinite	0
+hold	0	-6.00	level_db	-5.1605	in_rms_db	-9.0103	tone_frac	1.0000	ch	-5.1605,-5.1605	doubled	0	last_move_db	0.0039	final_move_db	0.0039	win	-8.1764,-5.1605,-5.1631,-5.1592,-5.1631,-5.1592	nonfinite	0
+reread	0	steady
+timing	wall_ms	139.0	audio_s	4.500
+stage	done

@@ -1,0 +1,12 @@
+[
+  {
+    "tag": "list-params",
+    "attempt": 1,
+    "file": "AudioUnit_75154755_1.0.12.defaults.list-params.1.txt",
+    "outcome": "SHOWED A WINDOW (PACEEdenExperience [pid 30605]) after 3.2 s; killed by the driver",
+    "clean": false,
+    "norm": -1.0,
+    "ms": 3163.758833408355713,
+    "slept_ms": 0.0
+  }
+]

@@ -1,0 +1,36 @@
+probe: "Vertigo VSC-2" | AudioUnit:Effects/aufx,VSC2,Brwx | uid=75545232 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	11	name	Threshold B	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Power	On
+param	1	1.000000	Link	Stereo
+param	2	0.000000	Bank	A
+param	3	1.000000	System A	In
+param	4	1.000000	Threshold A	+11.8 dB
+param	5	0.200000	Ratio A	2:1
+param	6	0.800000	Attack A	10 ms
+param	7	0.400000	Release A	0.6 s
+param	8	0.000000	Make Up A	0.0 dB
+param	9	0.500000	SC Filter A	Off
+param	10	1.000000	System B	In
+param	11	1.000000	Threshold B	+11.8 dB
+param	12	0.200000	Ratio B	2:1
+param	13	0.800000	Attack B	10 ms
+param	14	0.400000	Release B	0.6 s
+param	15	0.000000	Make Up B	0.0 dB
+param	16	0.500000	SC Filter B	Off
+param	17	0.000000	Gain Reduction A	0.0 dB
+param	18	0.000000	Gain Reduction B	0.0 dB
+stage	reference
+refpos	val	1.000000	text	+11.8 dB
+ref	-24.00	level_db	-26.9938	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.9938,-26.9938	win	-26.9943,-26.9936,-26.9943,-26.9936,-26.9943,-26.9936,-26.9943,-26.9936	nonfinite	0
+ref	-12.00	level_db	-14.9945	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-14.9945,-14.9945	win	-14.9969,-14.9933,-14.9969,-14.9932,-14.9969,-14.9933,-14.9969,-14.9932	nonfinite	0
+ref	-6.00	level_db	-8.9996	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-8.9996,-8.9996	win	-8.9960,-9.0015,-8.9959,-9.0015,-8.9960,-9.0015,-8.9959,-9.0015	nonfinite	0
+timing	wall_ms	44.9	audio_s	6.000
+stage	done

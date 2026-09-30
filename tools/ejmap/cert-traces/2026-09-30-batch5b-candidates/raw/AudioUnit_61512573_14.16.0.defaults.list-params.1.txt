@@ -1,0 +1,109 @@
+probe: "MSpectralDynamicsMini" | AudioUnit:Effects/aumf,MA$q,Meld | uid=61512573 | arch=arm64 | format=AudioUnit
+
+0	Globals -> Input		2147483647	0	1	0
+1	Globals -> Output		2147483647	0	1	0
+2	Globals -> Dry/wet		2147483647	0	1	0
+3	Flattening -> Tone		2147483647	0	1	0
+4	Flattening -> Brutality		2147483647	0	1	0
+5	Flattening -> Compression		2147483647	0	1	0
+6	Param 7		2147483647	0	1	0
+7	Param 8		2147483647	0	1	0
+8	Param 9		2147483647	0	1	0
+9	Param 10		2147483647	0	1	0
+10	Param 11		2147483647	0	1	0
+11	Param 12		2147483647	0	1	0
+12	Param 13		2147483647	0	1	0
+13	Param 14		2147483647	0	1	0
+14	Param 15		2147483647	0	1	0
+15	Param 16		2147483647	0	1	0
+16	Spectrum -> Resolution		2147483647	0	1	0
+17	Spectrum -> Smoothness		2147483647	0	1	0
+18	Param 19		2147483647	0	1	0
+19	Param 20		2147483647	0	1	0
+20	Param 21		2147483647	0	1	0
+21	Param 22		2147483647	0	1	0
+22	Param 23		2147483647	0	1	0
+23	Param 24		2147483647	0	1	0
+24	Param 25		2147483647	0	1	0
+25	Param 26		2147483647	0	1	0
+26	Param 27		2147483647	0	1	0
+27	Param 28		2147483647	0	1	0
+28	Param 29		2147483647	0	1	0
+29	Param 30		2147483647	0	1	0
+30	Param 31		2147483647	0	1	0
+31	Param 32		2147483647	0	1	0
+32	Param 33		2147483647	0	1	0
+33	Param 34		2147483647	0	1	0
+34	Param 35		2147483647	0	1	0
+35	Param 36		2147483647	0	1	0
+36	Param 37		2147483647	0	1	0
+37	Param 38		2147483647	0	1	0
+38	Param 39		2147483647	0	1	0
+39	Param 40		2147483647	0	1	0
+40	Param 41		2147483647	0	1	0
+41	Param 42		2147483647	0	1	0
+42	Param 43		2147483647	0	1	0
+43	Param 44		2147483647	0	1	0
+44	Param 45		2147483647	0	1	0
+45	Param 46		2147483647	0	1	0
+46	Param 47		2147483647	0	1	0
+47	Param 48		2147483647	0	1	0
+48	Param 49		2147483647	0	1	0
+49	Param 50		2147483647	0	1	0
+50	Param 51		2147483647	0	1	0
+51	Param 52		2147483647	0	1	0
+52	Param 53		2147483647	0	1	0
+53	Param 54		2147483647	0	1	0
+54	Param 55		2147483647	0	1	0
+55	Param 56		2147483647	0	1	0
+56	Param 57		2147483647	0	1	0
+57	Param 58		2147483647	0	1	0
+58	Param 59		2147483647	0	1	0
+59	Param 60		2147483647	0	1	0
+60	Param 61		2147483647	0	1	0
+61	Param 62		2147483647	0	1	0
+62	Param 63		2147483647	0	1	0
+63	Param 64		2147483647	0	1	0
+64	Spectrum - Quality		2147483647	0	1	0
+65	Spectrum - Resolution		2147483647	0	1	0
+66	Spectrum - Smoothness		2147483647	0	1	0
+67	Spectrum - Naturality		2147483647	0	1	0
+68	Spectrum - Slope		2147483647	0	1	0
+69	Spectrum - Use maximum frequency		2	1	1	0
+70	General parameters - Input gain		2147483647	0	1	0
+71	General parameters - Output gain		2147483647	0	1	0
+72	General parameters - Temp gain		2147483647	0	1	0
+73	General parameters - Dry/Wet		2147483647	0	1	0
+74	General parameters - Mode		2147483647	0	1	0
+75	Dynamic detection - Attack		2147483647	0	1	0
+76	Dynamic detection - Release		2147483647	0	1	0
+77	Dynamic detection - Release mode		2147483647	0	1	0
+78	Dynamic detection - Auto speed		2147483647	0	1	0
+79	Dynamic detection - Peak hold		2147483647	0	1	0
+80	Dynamic detection - RMS length		2147483647	0	1	0
+81	Dynamic detection - Look-ahead		2147483647	0	1	0
+82	Gate - Gate		2	1	1	0
+83	Gate - Threshold		2147483647	0	1	0
+84	Gate - Size		2147483647	0	1	0
+85	Gate - Knee		2147483647	0	1	0
+86	Gate - Bottom		2147483647	0	1	0
+87	Processor 1 - Processor 1		2	1	1	0
+88	Processor 1 - Threshold		2147483647	0	1	0
+89	Processor 1 - Ratio		2147483647	0	1	0
+90	Processor 1 - Knee size		2147483647	0	1	0
+91	Processor 1 - Range		2147483647	0	1	0
+92	Processor 2 - Processor 2		2	1	1	0
+93	Processor 2 - Threshold		2147483647	0	1	0
+94	Processor 2 - Ratio		2147483647	0	1	0
+95	Processor 2 - Knee size		2147483647	0	1	0
+96	Processor 2 - Range		2147483647	0	1	0
+97	Modulators - Mod 1 - Automated value		2147483647	0	1	0
+98	Modulators - Mod 2 - Automated value		2147483647	0	1	0
+99	Modulators - Mod 3 - Automated value		2147483647	0	1	0
+100	Modulators - Mod 4 - Automated value		2147483647	0	1	0
+101	Preset trigger - previous		2147483647	0	1	0
+102	Preset trigger - next		2147483647	0	1	0
+103	Device		2147483647	0	1	0
+104	Spectrum - Detector input		2147483647	0	1	0
+105	General parameters - Invert		2	1	1	0
+106	Spectrum - Apply EQ		2	1	1	0

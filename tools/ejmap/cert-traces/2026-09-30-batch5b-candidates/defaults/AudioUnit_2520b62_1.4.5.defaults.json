@@ -1,0 +1,480 @@
+{
+  "identity": "AudioUnit|2520b62|1.4.5",
+  "product": "Solid Dynamics",
+  "format": "AudioUnit",
+  "uid": "2520b62",
+  "version": "1.4.5",
+  "sampledAt": "2026-09-30",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Knee Type",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Soft",
+        "0.500": "Soft",
+        "1.000": "Hard"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Soft",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Threshold Comp",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-17.9 dB",
+        "0.500": "-17.9 dB",
+        "1.000": "-17.9 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -17.899999999999999,
+        "max": -17.899999999999999,
+        "at0": -17.899999999999999,
+        "at0_5": -17.899999999999999,
+        "at1": -17.899999999999999,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.93002,
+        "display": "-17.9 dB",
+        "declaredDefault": 0.333333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Ratio",
+      "unit": null,
+      "displayAt": {
+        "0.000": "4.0",
+        "0.500": "4.0",
+        "1.000": "Inf"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 4.0,
+        "max": 4.0,
+        "at0": 4.0,
+        "at0_5": 4.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.774,
+        "display": "4.0",
+        "declaredDefault": 0.774,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Atk Mode Comp",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Release Comp",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.10 s",
+        "0.500": "0.10 s",
+        "1.000": "0.10 s"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.1,
+        "max": 0.1,
+        "at0": 0.1,
+        "at0_5": 0.1,
+        "at1": 0.1,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.10 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Rel.Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Output",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-Inf dB",
+        "0.500": "0.0 dB",
+        "1.000": "0.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 0.0,
+        "at0": null,
+        "at0_5": 0.0,
+        "at1": 0.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.805,
+        "display": "0.0 dB",
+        "declaredDefault": 0.80442,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Dry",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-Inf dB",
+        "0.500": "-90.0 dB",
+        "1.000": "-90.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -90.0,
+        "max": -90.0,
+        "at0": null,
+        "at0_5": -90.0,
+        "at1": -90.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "-Inf dB",
+        "declaredDefault": 0.80442,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Link L/R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Boost",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "-",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-",
+        "0.500": "-",
+        "1.000": "-"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "-",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Gate",
+        "0.500": "Gate",
+        "1.000": "Expand"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Gate",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Threshold G/E",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "0.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 0.0,
+        "at0": 0.0,
+        "at0_5": 0.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.75,
+        "display": "0.0 dB",
+        "declaredDefault": 0.75,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Range",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "0.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 0.0,
+        "at0": 0.0,
+        "at0_5": 0.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Atk Mode G/E",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "Release G/E",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.63 s",
+        "0.500": "0.63 s",
+        "1.000": "0.63 s"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.63,
+        "max": 0.63,
+        "at0": 0.63,
+        "at0_5": 0.63,
+        "at1": 0.63,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.63 s",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "SC Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "SC Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-20.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -20.0,
+        "max": 20.0,
+        "at0": -20.0,
+        "at0_5": 0.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-30",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

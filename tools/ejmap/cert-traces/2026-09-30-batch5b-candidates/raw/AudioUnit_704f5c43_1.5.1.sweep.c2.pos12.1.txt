@@ -1,0 +1,53 @@
+probe: "Shadow Hills Mastering Compressor" | AudioUnit:Effects/aufx,SHMC,Brwx | uid=704f5c43 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Optical Threshold 1	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Hardwire Bypass	In
+param	1	1.000000	Optical Bypass 1	In
+param	2	0.000000	Optical Threshold 1	1
+param	3	0.260870	Optical Gain 1	7
+param	4	1.000000	Discrete Bypass 1	In
+param	5	0.000000	Discrete Threshold 1	1
+param	6	0.400000	Discrete Ratio 1	3:1
+param	7	1.000000	Discrete Attack 1	30 ms
+param	8	0.000000	Discrete Recover 1	0.1 s
+param	9	0.260870	Discrete Gain 1	7
+param	10	0.000000	Sidechain Filter 1	Out
+param	11	1.000000	Transformer 1	Nickel
+param	12	0.000000	Meter Select 1	Optical
+param	13	1.000000	Optical Bypass 2	In
+param	14	0.000000	Optical Threshold 2	1
+param	15	0.260870	Optical Gain 2	7
+param	16	1.000000	Discrete Bypass 2	In
+param	17	0.000000	Discrete Threshold 2	1
+param	18	0.400000	Discrete Ratio 2	3:1
+param	19	1.000000	Discrete Attack 2	30 ms
+param	20	0.000000	Discrete Recover 2	0.1 s
+param	21	0.260870	Discrete Gain 2	7
+param	22	0.000000	Sidechain Filter 2	Out
+param	23	1.000000	Transformer 2	Nickel
+param	24	0.500000	Meter Select 2	Discrete
+param	25	1.000000	Mode	Stereo
+param	26	1.000000	Mix	100 %
+param	27	0.108359	Sidechain HP Freq	90 Hz
+param	28	0.000000	Bank	A
+param	29	0.000000	Key In	Out
+param	30	0.199526	VU Reference Level	-14.0 dB
+param	31	0.673401	VU Meter 1	0.00 VU
+param	32	0.673401	VU Meter 2	0.00 VU
+stage	position
+pos	0	norm	0.521739	confirm_ms	3.04	slices	1	instack_match	1	getValue	0.521739	landed_by	instack	render_blocks	0	text_ms	21.1	reads	2	text	13
+hold	0	-24.00	level_db	-26.7171	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.7171,-26.7171	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-26.7176,-26.7169,-26.7176,-26.7169,-26.7176,-26.7169	nonfinite	0
+hold	0	-12.00	level_db	-19.7238	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.7238,-19.7238	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-19.6327,-19.7233,-19.7247,-19.7233,-19.7248,-19.7233	nonfinite	0
+hold	0	-6.00	level_db	-17.6472	in_rms_db	-9.0103	tone_frac	1.0000	ch	-17.6472,-17.6472	doubled	0	last_move_db	0.0021	final_move_db	0.0021	win	-17.6007,-17.6465,-17.6486,-17.6465,-17.6486,-17.6465	nonfinite	0
+reread	0	steady
+timing	wall_ms	53.7	audio_s	4.500
+stage	done

@@ -1,0 +1,882 @@
+{
+  "identity": "AudioUnit|704f5c43|1.5.1",
+  "product": "Shadow Hills Mastering Compressor",
+  "format": "AudioUnit",
+  "uid": "704f5c43",
+  "version": "1.5.1",
+  "sampledAt": "2026-09-30",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Hardwire Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Optical Bypass 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Optical Threshold 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "1",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Optical Gain 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.26087,
+        "display": "7",
+        "declaredDefault": 0.26087,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Discrete Bypass 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Discrete Threshold 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "1",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Discrete Ratio 1",
+      "unit": ":1",
+      "displayAt": {
+        "0.000": "1.2:1",
+        "0.500": "3:1",
+        "1.000": "Flood"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 1.2,
+        "max": 3.0,
+        "at0": 1.2,
+        "at0_5": 3.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "3:1",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Discrete Attack 1",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.1 ms",
+        "0.500": "1 ms",
+        "1.000": "30 ms"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 30.0,
+        "at0": 0.1,
+        "at0_5": 1.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "30 ms",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Discrete Recover 1",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.1 s",
+        "0.500": "0.5 s",
+        "1.000": "Dual"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 0.5,
+        "at0": 0.1,
+        "at0_5": 0.5,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.1 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Discrete Gain 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.26087,
+        "display": "7",
+        "declaredDefault": 0.26087,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Sidechain Filter 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Out",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Transformer 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Steel",
+        "0.500": "Iron",
+        "1.000": "Nickel"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Nickel",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Meter Select 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Optical",
+        "0.500": "Discrete",
+        "1.000": "Output"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Optical",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Optical Bypass 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Optical Threshold 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "1",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "Optical Gain 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.26087,
+        "display": "7",
+        "declaredDefault": 0.26087,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "Discrete Bypass 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Discrete Threshold 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "1",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "Discrete Ratio 2",
+      "unit": ":1",
+      "displayAt": {
+        "0.000": "1.2:1",
+        "0.500": "3:1",
+        "1.000": "Flood"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 1.2,
+        "max": 3.0,
+        "at0": 1.2,
+        "at0_5": 3.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "3:1",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 19,
+      "name": "Discrete Attack 2",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.1 ms",
+        "0.500": "1 ms",
+        "1.000": "30 ms"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 30.0,
+        "at0": 0.1,
+        "at0_5": 1.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "30 ms",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 20,
+      "name": "Discrete Recover 2",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.1 s",
+        "0.500": "0.5 s",
+        "1.000": "Dual"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 0.5,
+        "at0": 0.1,
+        "at0_5": 0.5,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.1 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 21,
+      "name": "Discrete Gain 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1",
+        "0.500": "13",
+        "1.000": "24"
+      },
+      "numSteps": 24,
+      "discrete": true,
+      "range": {
+        "min": 1.0,
+        "max": 24.0,
+        "at0": 1.0,
+        "at0_5": 13.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.26087,
+        "display": "7",
+        "declaredDefault": 0.26087,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 22,
+      "name": "Sidechain Filter 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Out",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 23,
+      "name": "Transformer 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Steel",
+        "0.500": "Iron",
+        "1.000": "Nickel"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Nickel",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 24,
+      "name": "Meter Select 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Optical",
+        "0.500": "Discrete",
+        "1.000": "Output"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Discrete",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 25,
+      "name": "Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Dual Mono",
+        "0.500": "Dual Mono",
+        "1.000": "Stereo"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Stereo",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 26,
+      "name": "Mix",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0 %",
+        "0.500": "50 %",
+        "1.000": "100 %"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100 %",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 27,
+      "name": "Sidechain HP Freq",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "20 Hz",
+        "0.500": "343 Hz",
+        "1.000": "666 Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 20.0,
+        "max": 666.0,
+        "at0": 20.0,
+        "at0_5": 343.0,
+        "at1": 666.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.108359,
+        "display": "90 Hz",
+        "declaredDefault": 0.108359,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 28,
+      "name": "Bank",
+      "unit": null,
+      "displayAt": {
+        "0.000": "A",
+        "0.500": "C",
+        "1.000": "D"
+      },
+      "numSteps": 4,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "A",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 29,
+      "name": "Key In",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Out",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 30,
+      "name": "VU Reference Level",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-oo dB",
+        "0.500": "-6.0 dB",
+        "1.000": "0.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -6.0,
+        "max": 0.0,
+        "at0": null,
+        "at0_5": -6.0,
+        "at1": 0.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.199526,
+        "display": "-14.0 dB",
+        "declaredDefault": 0.199526,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 31,
+      "name": "VU Meter 1",
+      "unit": "VU",
+      "displayAt": {
+        "0.000": "-oo VU",
+        "0.500": "-2.59 VU",
+        "1.000": "3.43 VU"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -2.59,
+        "max": 3.43,
+        "at0": null,
+        "at0_5": -2.59,
+        "at1": 3.43,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.673401,
+        "display": "0.00 VU",
+        "declaredDefault": 0.199526,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 32,
+      "name": "VU Meter 2",
+      "unit": "VU",
+      "displayAt": {
+        "0.000": "-oo VU",
+        "0.500": "-2.59 VU",
+        "1.000": "3.43 VU"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -2.59,
+        "max": 3.43,
+        "at0": null,
+        "at0_5": -2.59,
+        "at1": 3.43,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.673401,
+        "display": "0.00 VU",
+        "declaredDefault": 0.199526,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-30",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

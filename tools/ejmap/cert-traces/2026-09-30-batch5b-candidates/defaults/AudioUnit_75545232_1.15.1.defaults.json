@@ -1,0 +1,517 @@
+{
+  "identity": "AudioUnit|75545232|1.15.1",
+  "product": "Vertigo VSC-2",
+  "format": "AudioUnit",
+  "uid": "75545232",
+  "version": "1.15.1",
+  "sampledAt": "2026-09-30",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Power",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Link",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Mono",
+        "0.500": "Mono",
+        "1.000": "Stereo"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Stereo",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Bank",
+      "unit": null,
+      "displayAt": {
+        "0.000": "A",
+        "0.500": "C",
+        "1.000": "D"
+      },
+      "numSteps": 4,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "A",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "System A",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Threshold A",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-36.4 dB",
+        "0.500": "-18.4 dB",
+        "1.000": "+11.8 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -36.399999999999999,
+        "max": 11.800000000000001,
+        "at0": -36.399999999999999,
+        "at0_5": -18.399999999999999,
+        "at1": 11.800000000000001,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "+11.8 dB",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Ratio A",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Soft",
+        "0.500": "4:1",
+        "1.000": "Brick"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.2,
+        "display": "2:1",
+        "declaredDefault": 0.2,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Attack A",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.1 ms",
+        "0.500": "1 ms",
+        "1.000": "30 ms"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 30.0,
+        "at0": 0.1,
+        "at0_5": 1.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.8,
+        "display": "10 ms",
+        "declaredDefault": 0.8,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Release A",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.1 s",
+        "0.500": "0.6 s",
+        "1.000": "Auto"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 0.6,
+        "at0": 0.1,
+        "at0_5": 0.6,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "0.6 s",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Make Up A",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "+5.3 dB",
+        "1.000": "+21.8 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 21.800000000000001,
+        "at0": 0.0,
+        "at0_5": 5.3,
+        "at1": 21.800000000000001,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "SC Filter A",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "60 Hz",
+        "0.500": "Off",
+        "1.000": "90 Hz"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "min": 60.0,
+        "max": 90.0,
+        "at0": 60.0,
+        "at0_5": null,
+        "at1": 90.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Off",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "System B",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Threshold B",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-36.4 dB",
+        "0.500": "-18.4 dB",
+        "1.000": "+11.8 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -36.399999999999999,
+        "max": 11.800000000000001,
+        "at0": -36.399999999999999,
+        "at0_5": -18.399999999999999,
+        "at1": 11.800000000000001,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "+11.8 dB",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Ratio B",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Soft",
+        "0.500": "4:1",
+        "1.000": "Brick"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.2,
+        "display": "2:1",
+        "declaredDefault": 0.2,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Attack B",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.1 ms",
+        "0.500": "1 ms",
+        "1.000": "30 ms"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 30.0,
+        "at0": 0.1,
+        "at0_5": 1.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.8,
+        "display": "10 ms",
+        "declaredDefault": 0.8,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Release B",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.1 s",
+        "0.500": "0.6 s",
+        "1.000": "Auto"
+      },
+      "numSteps": 6,
+      "discrete": true,
+      "range": {
+        "min": 0.1,
+        "max": 0.6,
+        "at0": 0.1,
+        "at0_5": 0.6,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "0.6 s",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "Make Up B",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "+5.3 dB",
+        "1.000": "+21.8 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 21.800000000000001,
+        "at0": 0.0,
+        "at0_5": 5.3,
+        "at1": 21.800000000000001,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "SC Filter B",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "60 Hz",
+        "0.500": "Off",
+        "1.000": "90 Hz"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "min": 60.0,
+        "max": 90.0,
+        "at0": 60.0,
+        "at0_5": null,
+        "at1": 90.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Off",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Gain Reduction A",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "5.5 dB",
+        "1.000": "25.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 25.0,
+        "at0": 0.0,
+        "at0_5": 5.5,
+        "at1": 25.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "Gain Reduction B",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "5.5 dB",
+        "1.000": "25.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 25.0,
+        "at0": 0.0,
+        "at0_5": 5.5,
+        "at1": 25.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-30",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

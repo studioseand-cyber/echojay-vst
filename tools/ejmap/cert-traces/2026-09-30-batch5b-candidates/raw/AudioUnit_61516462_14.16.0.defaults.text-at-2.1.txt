@@ -1,0 +1,1587 @@
+probe: "MDynamicsMBLarge" | AudioUnit:Effects/aumf,MAe`,Meld | uid=61516462 | arch=arm64 | format=AudioUnit
+
+param	0	Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	1	Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	2	Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	3	Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	4	Globals -> Tone	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	5	Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	6	Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	7	Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	8	Crossover -> Slope	unit	
+def	0.333333	24dB/oct	default	0.333333
+at	0.000	6dB/oct
+at	0.500	48dB/oct
+at	1.000	120dB/oct
+param	9	Crossover -> Linear-phase	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	10	Crossover -> Cross 1	unit	
+def	0.333333	200.0 Hz	default	0.333333
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	11	Crossover -> Cross 2	unit	
+def	0.566323	1000 Hz	default	0.566323
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	12	Crossover -> Cross 3	unit	
+def	0.788309	4634 Hz	default	0.788309
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	13	Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	14	Param 15	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	15	Param 16	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	16	Band 1 -> Threshold	unit	
+def	0.309321	-20.0 dB	default	0.309321
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	17	Band 1 -> Ratio	unit	
+def	0.100316	2.00 : 1	default	0.100316
+at	0.000	1.00 : 1
+at	0.500	7.99 : 1
+at	1.000	Infinity
+param	18	Band 1 -> Attack	unit	
+def	0.562341	30 ms	default	0.562341
+at	0.000	0 ms
+at	0.500	19 ms
+at	1.000	300 ms
+param	19	Band 1 -> Release	unit	
+def	0.338637	80 ms	default	0.338637
+at	0.000	20 ms
+at	0.500	136 ms
+at	1.000	500 ms
+param	20	Band 1 -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	21	Band 1 -> Soft	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	22	Param 23	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	23	Param 24	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	24	Band 2 -> Threshold	unit	
+def	0.309321	-20.0 dB	default	0.309321
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	25	Band 2 -> Ratio	unit	
+def	0.100316	2.00 : 1	default	0.100316
+at	0.000	1.00 : 1
+at	0.500	7.99 : 1
+at	1.000	Infinity
+param	26	Band 2 -> Attack	unit	
+def	0.494923	18 ms	default	0.494923
+at	0.000	0 ms
+at	0.500	19 ms
+at	1.000	300 ms
+param	27	Band 2 -> Release	unit	
+def	0.301046	70 ms	default	0.301046
+at	0.000	20 ms
+at	0.500	136 ms
+at	1.000	500 ms
+param	28	Band 2 -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	29	Band 2 -> Soft	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	30	Param 31	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	31	Param 32	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	32	Band 3 -> Threshold	unit	
+def	0.309321	-20.0 dB	default	0.309321
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	33	Band 3 -> Ratio	unit	
+def	0.100316	2.00 : 1	default	0.100316
+at	0.000	1.00 : 1
+at	0.500	7.99 : 1
+at	1.000	Infinity
+param	34	Band 3 -> Attack	unit	
+def	0.464785	14 ms	default	0.464785
+at	0.000	0 ms
+at	0.500	19 ms
+at	1.000	300 ms
+param	35	Band 3 -> Release	unit	
+def	0.259117	60 ms	default	0.259117
+at	0.000	20 ms
+at	0.500	136 ms
+at	1.000	500 ms
+param	36	Band 3 -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	37	Band 3 -> Soft	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	38	Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	39	Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	40	Band 4 -> Threshold	unit	
+def	0.309321	-20.0 dB	default	0.309321
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	41	Band 4 -> Ratio	unit	
+def	0.100000	2.00 : 1	default	0.100000
+at	0.000	1.00 : 1
+at	0.500	7.99 : 1
+at	1.000	Infinity
+param	42	Band 4 -> Attack	unit	
+def	0.427287	10 ms	default	0.427287
+at	0.000	0 ms
+at	0.500	19 ms
+at	1.000	300 ms
+param	43	Band 4 -> Release	unit	
+def	0.259117	60 ms	default	0.259117
+at	0.000	20 ms
+at	0.500	136 ms
+at	1.000	500 ms
+param	44	Band 4 -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	45	Band 4 -> Soft	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	46	Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	47	Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	48	Detector -> RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	49	Detector -> Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	6.2 ms
+at	1.000	100 ms
+param	50	Detector -> Release mode	unit	
+def	1.000000	Opto	default	1.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	51	Detector -> Auto speed	unit	
+def	0.314800	100 ms	default	0.314800
+at	0.000	1.0 ms
+at	0.500	251 ms
+at	1.000	1000 ms
+param	52	Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	53	Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	54	Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	55	Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	56	Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	57	Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	58	Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	59	Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	60	Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	61	Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	62	Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	63	Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	64	Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	65	Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	66	Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	67	Temporary gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	68	Crossover type	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Disabled
+at	1.000	Reserved 4
+param	69	Crossover analog mode	unit	
+def	0.428571	24dB/oct	default	0.428571
+at	0.000	6dB/oct A
+at	0.500	48dB/oct
+at	1.000	120dB/oct
+param	70	Level crossover slope	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	71	Level crossover value	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-12.0 dB
+at	1.000	0.00 dB
+param	72	Crossover tone	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-12.00 dB
+at	0.500	0.00 dB
+at	1.000	+12.00 dB
+param	73	Crossover smoothing	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	74	Crossover transient release	unit	
+def	0.472871	50 ms	default	0.472871
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	75	Crossover transient resolution	unit	
+def	0.500000	50 ms	default	0.500000
+at	0.000	0 ms
+at	0.500	50 ms
+at	1.000	200 ms
+param	76	Crossover spectral resolution	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	77	Band gain 1	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	78	Band gain 2	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	79	Band gain 3	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	80	Band gain 4	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	81	Band gain 5	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	82	Band gain 6	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	83	Band limit 1	unit	
+def	0.333333	200.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	84	Band limit 2	unit	
+def	0.566323	1000 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	85	Band limit 3	unit	
+def	0.788309	4634 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	86	Band limit 4	unit	
+def	0.447474	440.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	87	Band limit 5	unit	
+def	0.447474	440.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	88	Band panorama 1	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	89	Band panorama 2	unit	
+def	0.491803	2% left	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	90	Band panorama 3	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	91	Band panorama 4	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	92	Band panorama 5	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	93	Band panorama 6	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	94	Band 1 - General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	95	Band 1 - General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	96	Band 1 - General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	97	Band 1 - General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	98	Band 1 - General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	99	Band 1 - General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	100	Band 1 - General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	101	Band 1 - Dynamic detection - Attack	unit	
+def	0.416179	30 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	102	Band 1 - Dynamic detection - Release	unit	
+def	0.354557	80 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	103	Band 1 - Dynamic detection - Release mode	unit	
+def	1.000000	Opto	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	104	Band 1 - Dynamic detection - Auto speed	unit	
+def	0.099504	100 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	105	Band 1 - Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	106	Band 1 - Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	107	Band 1 - Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	108	Band 1 - Side-chain - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	109	Band 1 - Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	110	Band 1 - Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	111	Band 1 - Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	112	Band 1 - Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	113	Band 1 - Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	114	Band 1 - Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	115	Band 1 - Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	116	Band 1 - Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	117	Band 1 - Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	118	Band 1 - Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	119	Band 1 - Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	120	Band 1 - Processor 1 - Threshold	unit	
+def	0.309321	-20.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	121	Band 1 - Processor 1 - Ratio	unit	
+def	0.377964	2.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	122	Band 1 - Processor 1 - Knee size	unit	
+def	0.000000	0.00%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	123	Band 1 - Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	124	Band 1 - Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	125	Band 1 - Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	126	Band 1 - Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	127	Band 1 - Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	128	Band 1 - Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	129	Band 2 - General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	130	Band 2 - General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	131	Band 2 - General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	132	Band 2 - General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	133	Band 2 - General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	134	Band 2 - General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	135	Band 2 - General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	136	Band 2 - Dynamic detection - Attack	unit	
+def	0.366284	18 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	137	Band 2 - Dynamic detection - Release	unit	
+def	0.342761	70 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	138	Band 2 - Dynamic detection - Release mode	unit	
+def	1.000000	Opto	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	139	Band 2 - Dynamic detection - Auto speed	unit	
+def	0.099504	100 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	140	Band 2 - Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	141	Band 2 - Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	142	Band 2 - Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	143	Band 2 - Side-chain - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	144	Band 2 - Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	145	Band 2 - Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	146	Band 2 - Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	147	Band 2 - Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	148	Band 2 - Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	149	Band 2 - Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	150	Band 2 - Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	151	Band 2 - Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	152	Band 2 - Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	153	Band 2 - Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	154	Band 2 - Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	155	Band 2 - Processor 1 - Threshold	unit	
+def	0.309321	-20.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	156	Band 2 - Processor 1 - Ratio	unit	
+def	0.377964	2.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	157	Band 2 - Processor 1 - Knee size	unit	
+def	0.000000	0.00%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	158	Band 2 - Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	159	Band 2 - Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	160	Band 2 - Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	161	Band 2 - Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	162	Band 2 - Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	163	Band 2 - Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	164	Band 3 - General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	165	Band 3 - General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	166	Band 3 - General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	167	Band 3 - General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	168	Band 3 - General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	169	Band 3 - General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	170	Band 3 - General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	171	Band 3 - Dynamic detection - Attack	unit	
+def	0.343979	14 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	172	Band 3 - Dynamic detection - Release	unit	
+def	0.329604	60 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	173	Band 3 - Dynamic detection - Release mode	unit	
+def	1.000000	Opto	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	174	Band 3 - Dynamic detection - Auto speed	unit	
+def	0.099504	100 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	175	Band 3 - Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	176	Band 3 - Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	177	Band 3 - Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	178	Band 3 - Side-chain - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	179	Band 3 - Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	180	Band 3 - Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	181	Band 3 - Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	182	Band 3 - Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	183	Band 3 - Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	184	Band 3 - Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	185	Band 3 - Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	186	Band 3 - Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	187	Band 3 - Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	188	Band 3 - Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	189	Band 3 - Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	190	Band 3 - Processor 1 - Threshold	unit	
+def	0.309321	-20.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	191	Band 3 - Processor 1 - Ratio	unit	
+def	0.377964	2.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	192	Band 3 - Processor 1 - Knee size	unit	
+def	0.000000	0.00%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	193	Band 3 - Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	194	Band 3 - Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	195	Band 3 - Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	196	Band 3 - Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	197	Band 3 - Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	198	Band 3 - Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	199	Band 4 - General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	200	Band 4 - General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	201	Band 4 - General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	202	Band 4 - General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	203	Band 4 - General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	204	Band 4 - General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	205	Band 4 - General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	206	Band 4 - Dynamic detection - Attack	unit	
+def	0.316228	10.0 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	207	Band 4 - Dynamic detection - Release	unit	
+def	0.329604	60 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	208	Band 4 - Dynamic detection - Release mode	unit	
+def	1.000000	Opto	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	209	Band 4 - Dynamic detection - Auto speed	unit	
+def	0.099504	100 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	210	Band 4 - Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	211	Band 4 - Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	212	Band 4 - Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	213	Band 4 - Side-chain - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	214	Band 4 - Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	215	Band 4 - Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	216	Band 4 - Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	217	Band 4 - Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	218	Band 4 - Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	219	Band 4 - Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	220	Band 4 - Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	221	Band 4 - Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	222	Band 4 - Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	223	Band 4 - Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	224	Band 4 - Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	225	Band 4 - Processor 1 - Threshold	unit	
+def	0.309321	-20.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	226	Band 4 - Processor 1 - Ratio	unit	
+def	0.377746	2.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	227	Band 4 - Processor 1 - Knee size	unit	
+def	0.000000	0.00%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	228	Band 4 - Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	229	Band 4 - Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	230	Band 4 - Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	231	Band 4 - Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	232	Band 4 - Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	233	Band 4 - Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	234	Band 5 - General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	235	Band 5 - General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	236	Band 5 - General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	237	Band 5 - General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	238	Band 5 - General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	239	Band 5 - General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	240	Band 5 - General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	241	Band 5 - Dynamic detection - Attack	unit	
+def	0.316228	10.0 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	242	Band 5 - Dynamic detection - Release	unit	
+def	0.375135	100 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	243	Band 5 - Dynamic detection - Release mode	unit	
+def	0.000000	Manual	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	244	Band 5 - Dynamic detection - Auto speed	unit	
+def	0.316085	1000 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	245	Band 5 - Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	246	Band 5 - Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	247	Band 5 - Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	248	Band 5 - Side-chain - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	249	Band 5 - Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	250	Band 5 - Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	251	Band 5 - Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	252	Band 5 - Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	253	Band 5 - Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	254	Band 5 - Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	255	Band 5 - Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	256	Band 5 - Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	257	Band 5 - Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	258	Band 5 - Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	259	Band 5 - Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	260	Band 5 - Processor 1 - Threshold	unit	
+def	0.494949	-12.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	261	Band 5 - Processor 1 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	262	Band 5 - Processor 1 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	263	Band 5 - Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	264	Band 5 - Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	265	Band 5 - Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	266	Band 5 - Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	267	Band 5 - Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	268	Band 5 - Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	269	Band 6 - General parameters - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	270	Band 6 - General parameters - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	271	Band 6 - General parameters - Temp gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	272	Band 6 - General parameters - Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	273	Band 6 - General parameters - Mode	unit	
+def	0.500000	Squared	default	0.500000
+at	0.000	Linear
+at	0.500	Squared
+at	1.000	Logarithmic
+param	274	Band 6 - General parameters - Maximize	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	275	Band 6 - General parameters - Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	276	Band 6 - Dynamic detection - Attack	unit	
+def	0.316228	10.0 ms	default	0.316228
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	277	Band 6 - Dynamic detection - Release	unit	
+def	0.375135	100 ms	default	0.375135
+at	0.000	1.0 ms
+at	0.500	313 ms
+at	1.000	5000 ms
+param	278	Band 6 - Dynamic detection - Release mode	unit	
+def	0.000000	Manual	default	0.000000
+at	0.000	Manual
+at	0.500	Linear 1
+at	1.000	Opto
+param	279	Band 6 - Dynamic detection - Auto speed	unit	
+def	0.316085	1000 ms	default	0.316085
+at	0.000	1.0 ms
+at	0.500	2501 ms
+at	1.000	10000 ms
+param	280	Band 6 - Dynamic detection - Peak hold	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	281	Band 6 - Dynamic detection - RMS length	unit	
+def	0.100000	1.0 ms	default	0.100000
+at	0.000	Peak
+at	0.500	25 ms
+at	1.000	100 ms
+param	282	Band 6 - Dynamic detection - Look-ahead	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	63 ms
+at	1.000	1000 ms
+param	283	Band 6 - Side-chain - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	284	Band 6 - Side-chain - Minimal	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	285	Band 6 - Side-chain - Maximal	unit	
+def	1.000000	Off	default	1.000000
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	Off
+param	286	Band 6 - Side-chain - Resonance	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	287	Band 6 - Side-chain - Side-chain gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	288	Band 6 - Side-chain - Use secondary input channel	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	289	Band 6 - Gate - Gate	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	290	Band 6 - Gate - Threshold	unit	
+def	0.191919	-28.0 dB	default	0.191919
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	291	Band 6 - Gate - Size	unit	
+def	0.250000	+6.00 dB	default	0.250000
+at	0.000	0.00 dB
+at	0.500	+12.00 dB
+at	1.000	+24.00 dB
+param	292	Band 6 - Gate - Knee	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	293	Band 6 - Gate - Bottom	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-92.0 dB
+at	1.000	-80.0 dB
+param	294	Band 6 - Processor 1 - Processor 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	295	Band 6 - Processor 1 - Threshold	unit	
+def	0.494949	-12.0 dB	default	0.494949
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	296	Band 6 - Processor 1 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	297	Band 6 - Processor 1 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	298	Band 6 - Processor 1 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	299	Band 6 - Processor 2 - Processor 2	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	300	Band 6 - Processor 2 - Threshold	unit	
+def	0.242424	-24.1 dB	default	0.242424
+at	0.000	-80.0 dB
+at	0.500	-11.9 dB
+at	1.000	0.00 dB
+param	301	Band 6 - Processor 2 - Ratio	unit	
+def	0.308607	1.00 : 1	default	0.308607
+at	0.000	1 : 3.00
+at	0.500	4.25 : 1
+at	1.000	Infinity
+param	302	Band 6 - Processor 2 - Knee size	unit	
+def	0.250000	25.0%	default	0.250000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	303	Band 6 - Processor 2 - Range	unit	
+def	1.000000	+96.00 dB	default	1.000000
+at	0.000	+1.00 dB
+at	0.500	+6.94 dB
+at	1.000	+96.00 dB
+param	304	Modulators - Mod 1 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	305	Modulators - Mod 2 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	306	Modulators - Mod 3 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	307	Modulators - Mod 4 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	308	Preset trigger - previous	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	309	Preset trigger - next	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	310	Device	unit	
+def	0.000000	Compressor	default	0.000000
+at	0.000	Compressor
+at	0.500	Over & Under
+at	1.000	Over & Under
+param	311	Band 1 - General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	312	Band 2 - General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	313	Band 3 - General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	314	Band 4 - General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	315	Band 5 - General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	316	Band 6 - General parameters - Invert	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

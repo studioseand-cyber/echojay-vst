@@ -1,0 +1,62 @@
+probe: "Pro Audio DSP DSM V3" | AudioUnit:Effects/aumf,BDM3,Brwx | uid=6143572d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Threshold 2	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	49
+param	0	1.000000	Power	On
+param	1	0.000000	Preset Bank	A
+param	2	1.000000	In 1	On
+param	3	0.565412	Frequency 1	2.00 kHz
+param	4	0.500000	Threshold 1	0.00 dB
+param	5	0.500000	Q 1	1.50
+param	6	1.000000	In 2	On
+param	7	0.772763	Frequency 2	6.00 kHz
+param	8	0.500000	Threshold 2	0.00 dB
+param	9	0.500000	Q 2	1.50
+param	10	1.000000	In 3	On
+param	11	0.869176	Frequency 3	10.00 kHz
+param	12	0.500000	Threshold 3	0.00 dB
+param	13	0.500000	Q 3	1.50
+param	14	0.500000	Sidechain Gain	0.00 dB
+param	15	0.666667	Threshold	0.00 dB
+param	16	0.255076	Compressor Ratio	2.00
+param	17	0.000000	Expander Ratio	1.00
+param	18	0.000000	Out Gain	0.00 dB
+param	19	0.205987	Attack	1.00 ms
+param	20	0.404214	Release	2.00 s
+param	21	0.263158	Knee	6.00 dB
+param	22	0.000000	LF Timing 	0.00
+param	23	0.000000	HF Timing	0.00
+param	24	1.000000	Master Wet/Dry	100 %
+param	25	1.000000	Master Out Gain	0.00 dB
+param	26	1.000000	Process In	On
+param	27	0.000000	Dynamic Mode	Compressor
+param	28	0.000000	Freeze Gain	Off
+param	29	0.000000	Link	Off
+param	30	0.000000	Limiter In	Off
+param	31	0.000000	Dither16	Off
+param	32	0.000000	Detector	Direct
+param	33	0.000000	Capture	Off
+param	34	0.000000		
+param	35	0.000000		
+param	36	0.000000		
+param	37	0.000000		
+param	38	0.000000		
+param	39	0.000000		
+param	40	0.000000		
+param	41	0.000000		
+stage	position
+pos	0	norm	0.866667	confirm_ms	3.04	slices	1	instack_match	1	getValue	0.866667	landed_by	instack	render_blocks	0	text_ms	20.2	reads	2	text	12.9 dB
+hold	0	-24.00	level_db	-27.0100	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0100,-27.0100	doubled	0	last_move_db	0.0019	final_move_db	0.0019	win	-27.0287,-27.0093,-27.0113,-27.0093,-27.0113,-27.0093	nonfinite	0
+hold	0	-12.00	level_db	-15.0099	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0099,-15.0099	doubled	0	last_move_db	0.0027	final_move_db	0.0027	win	-15.0280,-15.0090,-15.0116,-15.0090,-15.0116,-15.0090	nonfinite	0
+hold	0	-6.00	level_db	-9.0097	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.0097,-9.0097	doubled	0	last_move_db	0.0034	final_move_db	0.0034	win	-9.0251,-9.0086,-9.0120,-9.0086,-9.0120,-9.0086	nonfinite	0
+reread	0	steady
+timing	wall_ms	67.1	audio_s	4.500
+stage	done

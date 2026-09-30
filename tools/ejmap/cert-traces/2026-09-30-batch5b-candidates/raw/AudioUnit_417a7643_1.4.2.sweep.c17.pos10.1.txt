@@ -1,0 +1,54 @@
+probe: "Unfiltered Audio Zip" | AudioUnit:Effects/aumf,uaZP,UnAu | uid=417a7643 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	17	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	AGC	Disabled
+param	1	0.000000	Knee	0 dB
+param	2	0.000000	Peak	Disabled
+param	3	0.500000	Out Gain	0 dB
+param	4	0.000000	Color	0.0%
+param	5	0.000000	Ratio	1
+param	6	0.000000	Auto Threshold	Disabled
+param	7	0.000000	Analysis Mode	Amplitude
+param	8	0.000000	Modulation Control 1	0
+param	9	0.000000	Modulation Control 2	0
+param	10	0.000000	Modulation Control 3	0
+param	11	0.000000	Modulation Control 4	0
+param	12	0.000000	Modulation Control 5	0
+param	13	0.000000	Modulation Control 6	0
+param	14	0.000000	Modulation Control 7	0
+param	15	0.000000	Modulation Control 8	0
+param	16	0.000000	Modulation Control 9	0
+param	17	1.000000	Threshold	0.0 dB
+param	18	0.299240	Release	180 ms
+param	19	0.000000	Env. Style	Classic
+param	20	0.000000	Modulation Control 10	0
+param	21	0.000000	Modulation Control 11	0
+param	22	0.000000	Modulation Control 12	0
+param	23	0.000000	Modulation Control 13	0
+param	24	0.000000	Modulation Control 14	0
+param	25	0.000000	Modulation Control 15	0
+param	26	0.000000	Modulation Control 16	0
+param	27	0.000000	Color Mode	Contrast
+param	28	1.000000	Dry/Wet	100%
+param	29	0.100100	Attack	6.00 ms
+param	30	0.000000	Bypass	Disabled
+param	31	0.000000	Expand	Disabled
+param	32	0.500000	Filter	OFF
+set	5	0.421875	confirm_ms	3.1	getValue	0.421875	landed_by	instack	render_blocks	0	text	4.14
+stage	position
+pos	0	norm	0.666667	confirm_ms	2.65	slices	1	instack_match	1	getValue	0.666667	landed_by	instack	render_blocks	0	text_ms	20.1	reads	2	text	-26 dB
+hold	0	-24.00	level_db	-27.0102	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0102,-27.0102	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-27.1360,-27.0099,-27.0107,-27.0099,-27.0107,-27.0099	nonfinite	0
+hold	0	-12.00	level_db	-23.2323	in_rms_db	-15.0103	tone_frac	1.0000	ch	-23.2323,-23.2323	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-21.5390,-23.2288,-23.2334,-23.2318,-23.2334,-23.2318	nonfinite	0
+hold	0	-6.00	level_db	-21.7815	in_rms_db	-9.0103	tone_frac	1.0000	ch	-21.7815,-21.7815	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-20.9502,-21.7787,-21.7831,-21.7808,-21.7831,-21.7808	nonfinite	0
+reread	0	steady
+timing	wall_ms	69.8	audio_s	4.500
+stage	done

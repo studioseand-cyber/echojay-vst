@@ -1,0 +1,29 @@
+probe: "PuigChild 670 (s)" | AudioUnit:Effects/aufx,FCHS,ksWV | uid=4c45797d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Right Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	OnOff	On
+param	1	0.500000	Link	Linked
+param	2	0.500000	Mains	Off
+param	3	0.400000	Left Input	12
+param	4	0.220000	Left Threshold	2.2
+param	5	0.000000	Left Time Constant	1
+param	6	0.508333	Left Output	0.3 dB
+param	7	0.400000	Right Input	12
+param	8	0.220000	Right Threshold	2.2
+param	9	0.000000	Right Time Constant	1
+param	10	0.508333	Right Output	0.3 dB
+stage	position
+pos	0	norm	0.466667	confirm_ms	54.92	slices	6	instack_match	0	getValue	0.466667	landed_by	pump	render_blocks	0	text_ms	21.0	reads	2	text	4.7
+hold	0	-24.00	level_db	-25.1001	in_rms_db	-27.0103	tone_frac	1.0000	ch	-25.1001,-25.1001	doubled	0	last_move_db	0.0000	final_move_db	0.0000	win	-25.0996,-25.1000,-25.1001,-25.1000,-25.1001,-25.1000	nonfinite	0
+hold	0	-12.00	level_db	-13.9630	in_rms_db	-15.0103	tone_frac	1.0000	ch	-13.9630,-13.9630	doubled	0	last_move_db	0.0010	final_move_db	0.0010	win	-13.9597,-13.9626,-13.9636,-13.9627,-13.9637,-13.9627	nonfinite	0
+hold	0	-6.00	level_db	-10.9010	in_rms_db	-9.0103	tone_frac	1.0000	ch	-10.9010,-10.9010	doubled	0	last_move_db	0.0018	final_move_db	0.0018	win	-10.8866,-10.9000,-10.9021,-10.9003,-10.9022,-10.9004	nonfinite	0
+reread	0	steady
+timing	wall_ms	141.1	audio_s	4.500
+stage	done

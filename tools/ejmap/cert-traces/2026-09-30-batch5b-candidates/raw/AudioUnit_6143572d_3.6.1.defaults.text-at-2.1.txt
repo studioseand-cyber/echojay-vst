@@ -1,0 +1,212 @@
+probe: "Pro Audio DSP DSM V3" | AudioUnit:Effects/aumf,BDM3,Brwx | uid=6143572d | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Preset Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	2	In 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Frequency 1	unit	
+def	0.565412	2.00 kHz	default	0.565412
+at	0.000	100 Hz
+at	0.500	1.41 kHz
+at	1.000	20.0 kHz
+param	4	Threshold 1	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.0 dB
+at	0.500	0.00 dB
+at	1.000	24.0 dB
+param	5	Q 1	unit	
+def	0.500000	1.50	default	0.500000
+at	0.000	0.50
+at	0.500	1.50
+at	1.000	4.00
+param	6	In 2	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Frequency 2	unit	
+def	0.772763	6.00 kHz	default	0.772763
+at	0.000	100 Hz
+at	0.500	1.41 kHz
+at	1.000	20.0 kHz
+param	8	Threshold 2	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.0 dB
+at	0.500	0.00 dB
+at	1.000	24.0 dB
+param	9	Q 2	unit	
+def	0.500000	1.50	default	0.500000
+at	0.000	0.50
+at	0.500	1.50
+at	1.000	4.00
+param	10	In 3	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Frequency 3	unit	
+def	0.869176	10.00 kHz	default	0.869176
+at	0.000	100 Hz
+at	0.500	1.41 kHz
+at	1.000	20.0 kHz
+param	12	Threshold 3	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.0 dB
+at	0.500	0.00 dB
+at	1.000	24.0 dB
+param	13	Q 3	unit	
+def	0.500000	1.50	default	0.500000
+at	0.000	0.50
+at	0.500	1.50
+at	1.000	4.00
+param	14	Sidechain Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.0 dB
+at	0.500	0.00 dB
+at	1.000	24.0 dB
+param	15	Threshold	unit	
+def	0.666667	0.00 dB	default	0.666667
+at	0.000	-48.0 dB
+at	0.500	-12.0 dB
+at	1.000	24.0 dB
+param	16	Compressor Ratio	unit	
+def	0.255076	2.00	default	0.255076
+at	0.000	1.00
+at	0.500	3.33
+at	1.000	100.0
+param	17	Expander Ratio	unit	
+def	0.000000	1.00	default	0.000000
+at	0.000	1.00
+at	0.500	1.75
+at	1.000	4.00
+param	18	Out Gain	unit	
+def	0.000000	0.00 dB	default	0.000000
+at	0.000	0.00 dB
+at	0.500	12.0 dB
+at	1.000	24.0 dB
+param	19	Attack	unit	
+def	0.205987	1.00 ms	default	0.205987
+at	0.000	0.10 ms
+at	0.500	31.3 ms
+at	1.000	500 ms
+param	20	Release	unit	
+def	0.404214	2.00 s	default	0.404214
+at	0.000	20.0 ms
+at	0.500	3.77 s
+at	1.000	30.0 s
+param	21	Knee	unit	
+def	0.263158	6.00 dB	default	0.263158
+at	0.000	1.00 dB
+at	0.500	10.5 dB
+at	1.000	20.0 dB
+param	22	LF Timing 	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	23	HF Timing	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	24	Master Wet/Dry	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0.00 %
+at	0.500	50.0 %
+at	1.000	100 %
+param	25	Master Out Gain	unit	
+def	1.000000	0.00 dB	default	1.000000
+at	0.000	-24.0 dB
+at	0.500	-12.0 dB
+at	1.000	0.00 dB
+param	26	Process In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	27	Dynamic Mode	unit	
+def	0.000000	Compressor	default	0.000000
+at	0.000	Compressor
+at	0.500	Compressor
+at	1.000	Expander
+param	28	Freeze Gain	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	29	Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	30	Limiter In	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	31	Dither16	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	32	Detector	unit	
+def	0.000000	Direct	default	0.000000
+at	0.000	Direct
+at	0.500	Sidechain
+at	1.000	Max
+param	33	Capture	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	34		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	35		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	36		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	37		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	38		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	39		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	40		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	41		unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	

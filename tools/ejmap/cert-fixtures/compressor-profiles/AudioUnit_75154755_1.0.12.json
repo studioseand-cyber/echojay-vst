@@ -1,0 +1,18 @@
+{
+  "product": "SSL G3 MultiBusComp",
+  "uid": "75154755",
+  "version": "1.0.12",
+  "format": "AudioUnit",
+  "discovered": "mapped (server map state 3), category compressor, no fixture: defaults are sampled first",
+  "thresholdRefusal": {
+    "stage": "defaults",
+    "retry": "transient: a fact about the run; --retry-refused re-runs it once the reason is fixed",
+    "reason": "UNLICENSED ON HOST: defaults --list-params SHOWED A WINDOW (PACEEdenExperience [pid 30605]) after 3.2 s; killed by the driver",
+    "recordedAt": "20260930T134903.497+0100",
+    "host": "EJ Map 0.1.0",
+    "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+    "processes": 1,
+    "uncleanProcesses": 1,
+    "note": "stopped before a usable measurement: no thresholdSweep. The worklist skips a recorded refusal; re-run it with --retry-refused (after fixing what the reason names), or by deleting this file, or it re-runs on its own at a new installed version"
+  }
+}

@@ -1,0 +1,481 @@
+probe: "MTurboCompMB" | AudioUnit:Effects/aumf,MTCm,Meld | uid=6144426f | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	296	name	Band 5 Compressor -> Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Param 1	50.0%
+param	1	0.500000	Param 2	50.0%
+param	2	0.500000	Param 3	50.0%
+param	3	0.500000	Param 4	50.0%
+param	4	0.500000	Param 5	50.0%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.500000	Param 9	50.0%
+param	9	0.500000	Param 10	50.0%
+param	10	0.500000	Param 11	50.0%
+param	11	0.500000	Param 12	50.0%
+param	12	0.500000	Param 13	50.0%
+param	13	0.500000	Param 14	50.0%
+param	14	0.500000	Param 15	50.0%
+param	15	0.500000	Param 16	50.0%
+param	16	0.500000	Param 17	50.0%
+param	17	0.500000	Param 18	50.0%
+param	18	0.500000	Param 19	50.0%
+param	19	0.500000	Param 20	50.0%
+param	20	0.500000	Param 21	50.0%
+param	21	0.500000	Param 22	50.0%
+param	22	0.500000	Param 23	50.0%
+param	23	0.500000	Param 24	50.0%
+param	24	0.500000	Param 25	50.0%
+param	25	0.500000	Param 26	50.0%
+param	26	0.500000	Param 27	50.0%
+param	27	0.500000	Param 28	50.0%
+param	28	0.500000	Param 29	50.0%
+param	29	0.500000	Param 30	50.0%
+param	30	0.500000	Param 31	50.0%
+param	31	0.500000	Param 32	50.0%
+param	32	0.500000	Band 1 Globals -> Input	0.00 dB
+param	33	0.500000	Band 1 Globals -> Output	0.00 dB
+param	34	1.000000	Band 1 Globals -> Dry/wet	100.0%
+param	35	0.500000	Band 1 Globals -> Compression	0.00%
+param	36	0.100000	Band 1 Globals -> Saturation	10.0%
+param	37	0.500000	Band 1 - Param 6	50.0%
+param	38	0.500000	Band 1 - Param 7	50.0%
+param	39	0.500000	Band 1 - Param 8	50.0%
+param	40	0.200000	Band 1 Compressor -> Threshold	20.0%
+param	41	0.500000	Band 1 Compressor -> Ratio	50.0%
+param	42	0.000000	Band 1 Compressor -> Soft	0.00%
+param	43	0.500000	Band 1 - Param 12	50.0%
+param	44	0.500000	Band 1 - Param 13	50.0%
+param	45	0.500000	Band 1 - Param 14	50.0%
+param	46	1.000000	Band 1 Compressor -> Attack	100.0%
+param	47	0.500000	Band 1 Compressor -> Release	50.0%
+param	48	0.500000	Band 1 - Param 17	50.0%
+param	49	0.500000	Band 1 - Param 18	50.0%
+param	50	0.000000	Band 1 Detector -> Side-chain input	0.00%
+param	51	0.500000	Band 1 - Param 20	50.0%
+param	52	0.000000	Band 1 Detector -> HP	20.00 Hz
+param	53	0.500000	Band 1 - Param 22	50.0%
+param	54	1.000000	Band 1 Detector -> LP	20.0 kHz
+param	55	1.000000	Band 1 Detector -> Link channels	100.0%
+param	56	0.500000	Band 1 Detector -> Gain	0.00 dB
+param	57	0.490459	Band 1 Detector -> Frequency	600.0 Hz
+param	58	0.800000	Band 1 Detector -> BW	80.0%
+param	59	0.500000	Band 1 - Param 28	50.0%
+param	60	0.500000	Band 1 - Param 29	50.0%
+param	61	0.500000	Band 1 - Param 30	50.0%
+param	62	0.500000	Band 1 	0.00 dB
+param	63	0.500000	Band 1 	0.00 dB
+param	64	0.500000	Band 1 - Param 33	50.0%
+param	65	0.500000	Band 1 - Param 34	50.0%
+param	66	0.500000	Band 1 - Param 35	50.0%
+param	67	0.500000	Band 1 - Param 36	50.0%
+param	68	0.500000	Band 1 - Param 37	50.0%
+param	69	0.500000	Band 1 - Param 38	50.0%
+param	70	0.500000	Band 1 - Param 39	50.0%
+param	71	0.500000	Band 1 - Param 40	50.0%
+param	72	0.500000	Band 1 - Param 41	50.0%
+param	73	0.500000	Band 1 - Param 42	50.0%
+param	74	0.500000	Band 1 - Param 43	50.0%
+param	75	0.500000	Band 1 - Param 44	50.0%
+param	76	0.500000	Band 1 - Param 45	50.0%
+param	77	0.500000	Band 1 - Param 46	50.0%
+param	78	0.500000	Band 1 - Param 47	50.0%
+param	79	0.500000	Band 1 - Param 48	50.0%
+param	80	0.500000	Band 1 - Param 49	50.0%
+param	81	0.500000	Band 1 - Param 50	50.0%
+param	82	0.500000	Band 1 - Param 51	50.0%
+param	83	0.500000	Band 1 - Param 52	50.0%
+param	84	0.500000	Band 1 - Param 53	50.0%
+param	85	0.500000	Band 1 - Param 54	50.0%
+param	86	0.500000	Band 1 - Param 55	50.0%
+param	87	0.500000	Band 1 - Param 56	50.0%
+param	88	0.500000	Band 1 - Param 57	50.0%
+param	89	0.500000	Band 1 - Param 58	50.0%
+param	90	0.500000	Band 1 - Param 59	50.0%
+param	91	0.500000	Band 1 - Param 60	50.0%
+param	92	0.500000	Band 1 - Param 61	50.0%
+param	93	0.500000	Band 1 - Param 62	50.0%
+param	94	0.500000	Band 1 - Param 63	50.0%
+param	95	0.500000	Band 1 - Param 64	50.0%
+param	96	0.500000	Band 2 Globals -> Input	0.00 dB
+param	97	0.500000	Band 2 Globals -> Output	0.00 dB
+param	98	1.000000	Band 2 Globals -> Dry/wet	100.0%
+param	99	0.500000	Band 2 Globals -> Compression	0.00%
+param	100	0.100000	Band 2 Globals -> Saturation	10.0%
+param	101	0.500000	Band 2 - Param 6	50.0%
+param	102	0.500000	Band 2 - Param 7	50.0%
+param	103	0.500000	Band 2 - Param 8	50.0%
+param	104	0.200000	Band 2 Compressor -> Threshold	20.0%
+param	105	0.500000	Band 2 Compressor -> Ratio	50.0%
+param	106	0.000000	Band 2 Compressor -> Soft	0.00%
+param	107	0.500000	Band 2 - Param 12	50.0%
+param	108	0.500000	Band 2 - Param 13	50.0%
+param	109	0.500000	Band 2 - Param 14	50.0%
+param	110	1.000000	Band 2 Compressor -> Attack	100.0%
+param	111	0.500000	Band 2 Compressor -> Release	50.0%
+param	112	0.500000	Band 2 - Param 17	50.0%
+param	113	0.500000	Band 2 - Param 18	50.0%
+param	114	0.000000	Band 2 Detector -> Side-chain input	0.00%
+param	115	0.500000	Band 2 - Param 20	50.0%
+param	116	0.000000	Band 2 Detector -> HP	20.00 Hz
+param	117	0.500000	Band 2 - Param 22	50.0%
+param	118	1.000000	Band 2 Detector -> LP	20.0 kHz
+param	119	1.000000	Band 2 Detector -> Link channels	100.0%
+param	120	0.500000	Band 2 Detector -> Gain	0.00 dB
+param	121	0.490459	Band 2 Detector -> Frequency	600.0 Hz
+param	122	0.800000	Band 2 Detector -> BW	80.0%
+param	123	0.500000	Band 2 - Param 28	50.0%
+param	124	0.500000	Band 2 - Param 29	50.0%
+param	125	0.500000	Band 2 - Param 30	50.0%
+param	126	0.500000	Band 2 	0.00 dB
+param	127	0.500000	Band 2 	0.00 dB
+param	128	0.500000	Band 2 - Param 33	50.0%
+param	129	0.500000	Band 2 - Param 34	50.0%
+param	130	0.500000	Band 2 - Param 35	50.0%
+param	131	0.500000	Band 2 - Param 36	50.0%
+param	132	0.500000	Band 2 - Param 37	50.0%
+param	133	0.500000	Band 2 - Param 38	50.0%
+param	134	0.500000	Band 2 - Param 39	50.0%
+param	135	0.500000	Band 2 - Param 40	50.0%
+param	136	0.500000	Band 2 - Param 41	50.0%
+param	137	0.500000	Band 2 - Param 42	50.0%
+param	138	0.500000	Band 2 - Param 43	50.0%
+param	139	0.500000	Band 2 - Param 44	50.0%
+param	140	0.500000	Band 2 - Param 45	50.0%
+param	141	0.500000	Band 2 - Param 46	50.0%
+param	142	0.500000	Band 2 - Param 47	50.0%
+param	143	0.500000	Band 2 - Param 48	50.0%
+param	144	0.500000	Band 2 - Param 49	50.0%
+param	145	0.500000	Band 2 - Param 50	50.0%
+param	146	0.500000	Band 2 - Param 51	50.0%
+param	147	0.500000	Band 2 - Param 52	50.0%
+param	148	0.500000	Band 2 - Param 53	50.0%
+param	149	0.500000	Band 2 - Param 54	50.0%
+param	150	0.500000	Band 2 - Param 55	50.0%
+param	151	0.500000	Band 2 - Param 56	50.0%
+param	152	0.500000	Band 2 - Param 57	50.0%
+param	153	0.500000	Band 2 - Param 58	50.0%
+param	154	0.500000	Band 2 - Param 59	50.0%
+param	155	0.500000	Band 2 - Param 60	50.0%
+param	156	0.500000	Band 2 - Param 61	50.0%
+param	157	0.500000	Band 2 - Param 62	50.0%
+param	158	0.500000	Band 2 - Param 63	50.0%
+param	159	0.500000	Band 2 - Param 64	50.0%
+param	160	0.500000	Band 3 Globals -> Input	0.00 dB
+param	161	0.500000	Band 3 Globals -> Output	0.00 dB
+param	162	1.000000	Band 3 Globals -> Dry/wet	100.0%
+param	163	0.500000	Band 3 Globals -> Compression	0.00%
+param	164	0.100000	Band 3 Globals -> Saturation	10.0%
+param	165	0.500000	Band 3 - Param 6	50.0%
+param	166	0.500000	Band 3 - Param 7	50.0%
+param	167	0.500000	Band 3 - Param 8	50.0%
+param	168	0.200000	Band 3 Compressor -> Threshold	20.0%
+param	169	0.500000	Band 3 Compressor -> Ratio	50.0%
+param	170	0.000000	Band 3 Compressor -> Soft	0.00%
+param	171	0.500000	Band 3 - Param 12	50.0%
+param	172	0.500000	Band 3 - Param 13	50.0%
+param	173	0.500000	Band 3 - Param 14	50.0%
+param	174	1.000000	Band 3 Compressor -> Attack	100.0%
+param	175	0.500000	Band 3 Compressor -> Release	50.0%
+param	176	0.500000	Band 3 - Param 17	50.0%
+param	177	0.500000	Band 3 - Param 18	50.0%
+param	178	0.000000	Band 3 Detector -> Side-chain input	0.00%
+param	179	0.500000	Band 3 - Param 20	50.0%
+param	180	0.000000	Band 3 Detector -> HP	20.00 Hz
+param	181	0.500000	Band 3 - Param 22	50.0%
+param	182	1.000000	Band 3 Detector -> LP	20.0 kHz
+param	183	1.000000	Band 3 Detector -> Link channels	100.0%
+param	184	0.500000	Band 3 Detector -> Gain	0.00 dB
+param	185	0.490459	Band 3 Detector -> Frequency	600.0 Hz
+param	186	0.800000	Band 3 Detector -> BW	80.0%
+param	187	0.500000	Band 3 - Param 28	50.0%
+param	188	0.500000	Band 3 - Param 29	50.0%
+param	189	0.500000	Band 3 - Param 30	50.0%
+param	190	0.500000	Band 3 	0.00 dB
+param	191	0.500000	Band 3 	0.00 dB
+param	192	0.500000	Band 3 - Param 33	50.0%
+param	193	0.500000	Band 3 - Param 34	50.0%
+param	194	0.500000	Band 3 - Param 35	50.0%
+param	195	0.500000	Band 3 - Param 36	50.0%
+param	196	0.500000	Band 3 - Param 37	50.0%
+param	197	0.500000	Band 3 - Param 38	50.0%
+param	198	0.500000	Band 3 - Param 39	50.0%
+param	199	0.500000	Band 3 - Param 40	50.0%
+param	200	0.500000	Band 3 - Param 41	50.0%
+param	201	0.500000	Band 3 - Param 42	50.0%
+param	202	0.500000	Band 3 - Param 43	50.0%
+param	203	0.500000	Band 3 - Param 44	50.0%
+param	204	0.500000	Band 3 - Param 45	50.0%
+param	205	0.500000	Band 3 - Param 46	50.0%
+param	206	0.500000	Band 3 - Param 47	50.0%
+param	207	0.500000	Band 3 - Param 48	50.0%
+param	208	0.500000	Band 3 - Param 49	50.0%
+param	209	0.500000	Band 3 - Param 50	50.0%
+param	210	0.500000	Band 3 - Param 51	50.0%
+param	211	0.500000	Band 3 - Param 52	50.0%
+param	212	0.500000	Band 3 - Param 53	50.0%
+param	213	0.500000	Band 3 - Param 54	50.0%
+param	214	0.500000	Band 3 - Param 55	50.0%
+param	215	0.500000	Band 3 - Param 56	50.0%
+param	216	0.500000	Band 3 - Param 57	50.0%
+param	217	0.500000	Band 3 - Param 58	50.0%
+param	218	0.500000	Band 3 - Param 59	50.0%
+param	219	0.500000	Band 3 - Param 60	50.0%
+param	220	0.500000	Band 3 - Param 61	50.0%
+param	221	0.500000	Band 3 - Param 62	50.0%
+param	222	0.500000	Band 3 - Param 63	50.0%
+param	223	0.500000	Band 3 - Param 64	50.0%
+param	224	0.500000	Band 4 Globals -> Input	0.00 dB
+param	225	0.500000	Band 4 Globals -> Output	0.00 dB
+param	226	1.000000	Band 4 Globals -> Dry/wet	100.0%
+param	227	0.500000	Band 4 Globals -> Compression	0.00%
+param	228	0.100000	Band 4 Globals -> Saturation	10.0%
+param	229	0.500000	Band 4 - Param 6	50.0%
+param	230	0.500000	Band 4 - Param 7	50.0%
+param	231	0.500000	Band 4 - Param 8	50.0%
+param	232	0.200000	Band 4 Compressor -> Threshold	20.0%
+param	233	0.500000	Band 4 Compressor -> Ratio	50.0%
+param	234	0.000000	Band 4 Compressor -> Soft	0.00%
+param	235	0.500000	Band 4 - Param 12	50.0%
+param	236	0.500000	Band 4 - Param 13	50.0%
+param	237	0.500000	Band 4 - Param 14	50.0%
+param	238	1.000000	Band 4 Compressor -> Attack	100.0%
+param	239	0.500000	Band 4 Compressor -> Release	50.0%
+param	240	0.500000	Band 4 - Param 17	50.0%
+param	241	0.500000	Band 4 - Param 18	50.0%
+param	242	0.000000	Band 4 Detector -> Side-chain input	0.00%
+param	243	0.500000	Band 4 - Param 20	50.0%
+param	244	0.000000	Band 4 Detector -> HP	20.00 Hz
+param	245	0.500000	Band 4 - Param 22	50.0%
+param	246	1.000000	Band 4 Detector -> LP	20.0 kHz
+param	247	1.000000	Band 4 Detector -> Link channels	100.0%
+param	248	0.500000	Band 4 Detector -> Gain	0.00 dB
+param	249	0.490459	Band 4 Detector -> Frequency	600.0 Hz
+param	250	0.800000	Band 4 Detector -> BW	80.0%
+param	251	0.500000	Band 4 - Param 28	50.0%
+param	252	0.500000	Band 4 - Param 29	50.0%
+param	253	0.500000	Band 4 - Param 30	50.0%
+param	254	0.500000	Band 4 	0.00 dB
+param	255	0.500000	Band 4 	0.00 dB
+param	256	0.500000	Band 4 - Param 33	50.0%
+param	257	0.500000	Band 4 - Param 34	50.0%
+param	258	0.500000	Band 4 - Param 35	50.0%
+param	259	0.500000	Band 4 - Param 36	50.0%
+param	260	0.500000	Band 4 - Param 37	50.0%
+param	261	0.500000	Band 4 - Param 38	50.0%
+param	262	0.500000	Band 4 - Param 39	50.0%
+param	263	0.500000	Band 4 - Param 40	50.0%
+param	264	0.500000	Band 4 - Param 41	50.0%
+param	265	0.500000	Band 4 - Param 42	50.0%
+param	266	0.500000	Band 4 - Param 43	50.0%
+param	267	0.500000	Band 4 - Param 44	50.0%
+param	268	0.500000	Band 4 - Param 45	50.0%
+param	269	0.500000	Band 4 - Param 46	50.0%
+param	270	0.500000	Band 4 - Param 47	50.0%
+param	271	0.500000	Band 4 - Param 48	50.0%
+param	272	0.500000	Band 4 - Param 49	50.0%
+param	273	0.500000	Band 4 - Param 50	50.0%
+param	274	0.500000	Band 4 - Param 51	50.0%
+param	275	0.500000	Band 4 - Param 52	50.0%
+param	276	0.500000	Band 4 - Param 53	50.0%
+param	277	0.500000	Band 4 - Param 54	50.0%
+param	278	0.500000	Band 4 - Param 55	50.0%
+param	279	0.500000	Band 4 - Param 56	50.0%
+param	280	0.500000	Band 4 - Param 57	50.0%
+param	281	0.500000	Band 4 - Param 58	50.0%
+param	282	0.500000	Band 4 - Param 59	50.0%
+param	283	0.500000	Band 4 - Param 60	50.0%
+param	284	0.500000	Band 4 - Param 61	50.0%
+param	285	0.500000	Band 4 - Param 62	50.0%
+param	286	0.500000	Band 4 - Param 63	50.0%
+param	287	0.500000	Band 4 - Param 64	50.0%
+param	288	0.500000	Band 5 Globals -> Input	0.00 dB
+param	289	0.500000	Band 5 Globals -> Output	0.00 dB
+param	290	1.000000	Band 5 Globals -> Dry/wet	100.0%
+param	291	0.500000	Band 5 Globals -> Compression	0.00%
+param	292	0.100000	Band 5 Globals -> Saturation	10.0%
+param	293	0.500000	Band 5 - Param 6	50.0%
+param	294	0.500000	Band 5 - Param 7	50.0%
+param	295	0.500000	Band 5 - Param 8	50.0%
+param	296	0.200000	Band 5 Compressor -> Threshold	20.0%
+param	297	0.500000	Band 5 Compressor -> Ratio	50.0%
+param	298	0.000000	Band 5 Compressor -> Soft	0.00%
+param	299	0.500000	Band 5 - Param 12	50.0%
+param	300	0.500000	Band 5 - Param 13	50.0%
+param	301	0.500000	Band 5 - Param 14	50.0%
+param	302	1.000000	Band 5 Compressor -> Attack	100.0%
+param	303	0.500000	Band 5 Compressor -> Release	50.0%
+param	304	0.500000	Band 5 - Param 17	50.0%
+param	305	0.500000	Band 5 - Param 18	50.0%
+param	306	0.000000	Band 5 Detector -> Side-chain input	0.00%
+param	307	0.500000	Band 5 - Param 20	50.0%
+param	308	0.000000	Band 5 Detector -> HP	20.00 Hz
+param	309	0.500000	Band 5 - Param 22	50.0%
+param	310	1.000000	Band 5 Detector -> LP	20.0 kHz
+param	311	1.000000	Band 5 Detector -> Link channels	100.0%
+param	312	0.500000	Band 5 Detector -> Gain	0.00 dB
+param	313	0.490459	Band 5 Detector -> Frequency	600.0 Hz
+param	314	0.800000	Band 5 Detector -> BW	80.0%
+param	315	0.500000	Band 5 - Param 28	50.0%
+param	316	0.500000	Band 5 - Param 29	50.0%
+param	317	0.500000	Band 5 - Param 30	50.0%
+param	318	0.500000	Band 5 	0.00 dB
+param	319	0.500000	Band 5 	0.00 dB
+param	320	0.500000	Band 5 - Param 33	50.0%
+param	321	0.500000	Band 5 - Param 34	50.0%
+param	322	0.500000	Band 5 - Param 35	50.0%
+param	323	0.500000	Band 5 - Param 36	50.0%
+param	324	0.500000	Band 5 - Param 37	50.0%
+param	325	0.500000	Band 5 - Param 38	50.0%
+param	326	0.500000	Band 5 - Param 39	50.0%
+param	327	0.500000	Band 5 - Param 40	50.0%
+param	328	0.500000	Band 5 - Param 41	50.0%
+param	329	0.500000	Band 5 - Param 42	50.0%
+param	330	0.500000	Band 5 - Param 43	50.0%
+param	331	0.500000	Band 5 - Param 44	50.0%
+param	332	0.500000	Band 5 - Param 45	50.0%
+param	333	0.500000	Band 5 - Param 46	50.0%
+param	334	0.500000	Band 5 - Param 47	50.0%
+param	335	0.500000	Band 5 - Param 48	50.0%
+param	336	0.500000	Band 5 - Param 49	50.0%
+param	337	0.500000	Band 5 - Param 50	50.0%
+param	338	0.500000	Band 5 - Param 51	50.0%
+param	339	0.500000	Band 5 - Param 52	50.0%
+param	340	0.500000	Band 5 - Param 53	50.0%
+param	341	0.500000	Band 5 - Param 54	50.0%
+param	342	0.500000	Band 5 - Param 55	50.0%
+param	343	0.500000	Band 5 - Param 56	50.0%
+param	344	0.500000	Band 5 - Param 57	50.0%
+param	345	0.500000	Band 5 - Param 58	50.0%
+param	346	0.500000	Band 5 - Param 59	50.0%
+param	347	0.500000	Band 5 - Param 60	50.0%
+param	348	0.500000	Band 5 - Param 61	50.0%
+param	349	0.500000	Band 5 - Param 62	50.0%
+param	350	0.500000	Band 5 - Param 63	50.0%
+param	351	0.500000	Band 5 - Param 64	50.0%
+param	352	0.500000	Band 6 Globals -> Input	0.00 dB
+param	353	0.500000	Band 6 Globals -> Output	0.00 dB
+param	354	1.000000	Band 6 Globals -> Dry/wet	100.0%
+param	355	0.500000	Band 6 Globals -> Compression	0.00%
+param	356	0.100000	Band 6 Globals -> Saturation	10.0%
+param	357	0.500000	Band 6 - Param 6	50.0%
+param	358	0.500000	Band 6 - Param 7	50.0%
+param	359	0.500000	Band 6 - Param 8	50.0%
+param	360	0.200000	Band 6 Compressor -> Threshold	20.0%
+param	361	0.500000	Band 6 Compressor -> Ratio	50.0%
+param	362	0.000000	Band 6 Compressor -> Soft	0.00%
+param	363	0.500000	Band 6 - Param 12	50.0%
+param	364	0.500000	Band 6 - Param 13	50.0%
+param	365	0.500000	Band 6 - Param 14	50.0%
+param	366	1.000000	Band 6 Compressor -> Attack	100.0%
+param	367	0.500000	Band 6 Compressor -> Release	50.0%
+param	368	0.500000	Band 6 - Param 17	50.0%
+param	369	0.500000	Band 6 - Param 18	50.0%
+param	370	0.000000	Band 6 Detector -> Side-chain input	0.00%
+param	371	0.500000	Band 6 - Param 20	50.0%
+param	372	0.000000	Band 6 Detector -> HP	20.00 Hz
+param	373	0.500000	Band 6 - Param 22	50.0%
+param	374	1.000000	Band 6 Detector -> LP	20.0 kHz
+param	375	1.000000	Band 6 Detector -> Link channels	100.0%
+param	376	0.500000	Band 6 Detector -> Gain	0.00 dB
+param	377	0.490459	Band 6 Detector -> Frequency	600.0 Hz
+param	378	0.800000	Band 6 Detector -> BW	80.0%
+param	379	0.500000	Band 6 - Param 28	50.0%
+param	380	0.500000	Band 6 - Param 29	50.0%
+param	381	0.500000	Band 6 - Param 30	50.0%
+param	382	0.500000	Band 6 	0.00 dB
+param	383	0.500000	Band 6 	0.00 dB
+param	384	0.500000	Band 6 - Param 33	50.0%
+param	385	0.500000	Band 6 - Param 34	50.0%
+param	386	0.500000	Band 6 - Param 35	50.0%
+param	387	0.500000	Band 6 - Param 36	50.0%
+param	388	0.500000	Band 6 - Param 37	50.0%
+param	389	0.500000	Band 6 - Param 38	50.0%
+param	390	0.500000	Band 6 - Param 39	50.0%
+param	391	0.500000	Band 6 - Param 40	50.0%
+param	392	0.500000	Band 6 - Param 41	50.0%
+param	393	0.500000	Band 6 - Param 42	50.0%
+param	394	0.500000	Band 6 - Param 43	50.0%
+param	395	0.500000	Band 6 - Param 44	50.0%
+param	396	0.500000	Band 6 - Param 45	50.0%
+param	397	0.500000	Band 6 - Param 46	50.0%
+param	398	0.500000	Band 6 - Param 47	50.0%
+param	399	0.500000	Band 6 - Param 48	50.0%
+param	400	0.500000	Band 6 - Param 49	50.0%
+param	401	0.500000	Band 6 - Param 50	50.0%
+param	402	0.500000	Band 6 - Param 51	50.0%
+param	403	0.500000	Band 6 - Param 52	50.0%
+param	404	0.500000	Band 6 - Param 53	50.0%
+param	405	0.500000	Band 6 - Param 54	50.0%
+param	406	0.500000	Band 6 - Param 55	50.0%
+param	407	0.500000	Band 6 - Param 56	50.0%
+param	408	0.500000	Band 6 - Param 57	50.0%
+param	409	0.500000	Band 6 - Param 58	50.0%
+param	410	0.500000	Band 6 - Param 59	50.0%
+param	411	0.500000	Band 6 - Param 60	50.0%
+param	412	0.500000	Band 6 - Param 61	50.0%
+param	413	0.500000	Band 6 - Param 62	50.0%
+param	414	0.500000	Band 6 - Param 63	50.0%
+param	415	0.500000	Band 6 - Param 64	50.0%
+param	416	1.000000	Dry/Wet	100.0%
+param	417	0.500000	Input gain	0.00 dB
+param	418	0.500000	Output gain	0.00 dB
+param	419	0.000000	Crossover type	Analog
+param	420	0.428571	Crossover analog mode	24dB/oct
+param	421	0.500000	Level crossover slope	50.0%
+param	422	0.000000	Level crossover value	silence
+param	423	0.500000	Crossover tone	0.00 dB
+param	424	0.000000	Crossover smoothing	0.00%
+param	425	0.472871	Crossover transient release	50 ms
+param	426	0.500000	Crossover transient resolution	50 ms
+param	427	0.500000	Crossover spectral resolution	50.0%
+param	428	0.500000	Band gain 1	0.00 dB
+param	429	0.500000	Band gain 2	0.00 dB
+param	430	0.500000	Band gain 3	0.00 dB
+param	431	0.500000	Band gain 4	0.00 dB
+param	432	0.500000	Band gain 5	0.00 dB
+param	433	0.500000	Band gain 6	0.00 dB
+param	434	0.333333	Band limit 1	200.0 Hz
+param	435	0.666667	Band limit 2	2000 Hz
+param	436	0.447474	Band limit 3	440.0 Hz
+param	437	0.447474	Band limit 4	440.0 Hz
+param	438	0.447474	Band limit 5	440.0 Hz
+param	439	0.500000	Band panorama 1	center
+param	440	0.500000	Band panorama 2	center
+param	441	0.500000	Band panorama 3	center
+param	442	0.500000	Band panorama 4	center
+param	443	0.500000	Band panorama 5	center
+param	444	0.500000	Band panorama 6	center
+param	445	0.000000	Band 1 - Device	MSL E
+param	446	0.000000	Band 2 - Device	MSL E
+param	447	0.000000	Band 3 - Device	MSL E
+param	448	0.000000	Band 4 - Device	MSL E
+param	449	0.000000	Band 5 - Device	MSL E
+param	450	0.000000	Band 6 - Device	MSL E
+param	451	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	452	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	453	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	454	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	455	0.500000	Modulators - Mod 5 - Automated value	50.0%
+param	456	0.500000	Modulators - Mod 6 - Automated value	50.0%
+param	457	0.500000	Modulators - Mod 7 - Automated value	50.0%
+param	458	0.500000	Modulators - Mod 8 - Automated value	50.0%
+param	459	0.000000	Preset trigger - previous	0.00
+param	460	0.000000	Preset trigger - next	0.00
+stage	position
+pos	0	norm	0.066667	confirm_ms	3.03	slices	1	instack_match	1	getValue	0.066667	landed_by	instack	render_blocks	0	text_ms	20.9	reads	2	text	6.7%
+hold	0	-24.00	level_db	-25.7714	in_rms_db	-27.0103	tone_frac	1.0000	ch	-25.7714,-25.7714	doubled	0	last_move_db	0.0050	final_move_db	0.0050	win	-25.3656,-25.7673,-25.7747,-25.7697,-25.7747,-25.7697	nonfinite	0
+hold	0	-12.00	level_db	-17.5062	in_rms_db	-15.0103	tone_frac	1.0000	ch	-17.5062,-17.5062	doubled	0	last_move_db	0.0045	final_move_db	0.0045	win	-16.9078,-17.5039,-17.5093,-17.5047,-17.5093,-17.5048	nonfinite	0
+hold	0	-6.00	level_db	-14.4138	in_rms_db	-9.0103	tone_frac	1.0000	ch	-14.4138,-14.4138	doubled	0	last_move_db	0.0041	final_move_db	0.0041	win	-13.9993,-14.4117,-14.4164,-14.4125,-14.4165,-14.4124	nonfinite	0
+reread	0	steady
+timing	wall_ms	103.1	audio_s	4.500
+stage	done
