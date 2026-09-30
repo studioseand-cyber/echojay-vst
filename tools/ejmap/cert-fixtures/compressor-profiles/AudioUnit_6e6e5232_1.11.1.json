@@ -682,7 +682,10 @@
             "-6": 0.01
           },
           "spread_db": 0.0,
-          "unusable_beyond_db": 2.0
+          "response_db": 10.859999999999999,
+          "error_db": 0.0,
+          "error_fraction": 0.0,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": 0.01,
@@ -816,6 +819,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 10.859999999999999,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },
@@ -873,7 +878,10 @@
             "-6": 0.01
           },
           "spread_db": 0.0,
-          "unusable_beyond_db": 2.0
+          "response_db": 10.859999999999999,
+          "error_db": 0.0,
+          "error_fraction": 0.0,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": 0.01,
@@ -1007,6 +1015,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 10.859999999999999,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },

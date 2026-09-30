@@ -1022,6 +1022,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 26.82,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },
@@ -1232,6 +1234,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 29.289999999999999,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },
@@ -1442,6 +1446,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 26.82,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },

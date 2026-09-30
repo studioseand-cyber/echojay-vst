@@ -545,7 +545,10 @@
         "-6": 0.0
       },
       "spread_db": 0.0,
-      "unusable_beyond_db": 2.0
+      "response_db": 35.469999999999999,
+      "error_db": 0.0,
+      "error_fraction": 0.0,
+      "bar_fraction": 0.083
     },
     "defaultGain_db": {
       "-12": 0.0,
@@ -696,6 +699,9 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 35.469999999999999,
     "displayOffsetDb": 0.6,
     "displayOffsetSpread": {
       "positions": 7,

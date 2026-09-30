@@ -1,0 +1,138 @@
+probe: "AMEK Mastering Compressor" | AudioUnit:Effects/aumf,AMCm,Brwx | uid=624a5973 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	39	name	Threshold 2	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	0.000000	Bank	A
+param	2	0.000000	Monitoring	Stereo
+param	3	0.500000	Master In Gain	0.0 dB
+param	4	0.500000	Master Out Gain	0.0 dB
+param	5	1.000000	Param Link	On
+param	6	0.000000	Mid Side	Off
+param	7	1.000000	Mono Maker In	On
+param	8	0.000000	Mono Maker Freq	20 Hz
+param	9	0.500000	Stereo Width	100 %
+param	10	1.000000	Stereo Width In	On
+param	11	0.000000	Sidechain Link Mode	Max
+param	12	1.000000	Sidechain Link Amount	100 %
+param	13	0.000000	Stereo Mode	Analog
+param	14	0.000000	TMT Channel	0
+param	15	0.500000	VCA Clip	0.0 dB
+param	16	1.000000	VCA Clip In	On
+param	17	0.000000	Sidechain Listen	Off
+param	18	0.000000	Ambience	Off
+param	19	1.000000	Channel ON 1	In
+param	20	0.000000	Threshold 1	0.0 dB
+param	21	0.500000	Timing 1	1.9 ms
+param	22	0.000000	Release Hysteresis 1	70.0 ms
+param	23	0.000000	Fast 1	0.0 dB
+param	24	0.000000	Peak 1	0.0 dB
+param	25	0.500000	Ratio 1	2.0
+param	26	0.300000	Output 1	0.0 dB
+param	27	1.000000	Parallel Mix 1	100 %
+param	28	0.000000	External SC 1	Internal
+param	29	0.500000	Headroom 1	0.0 dB
+param	30	1.000000	SC Filter On 1	On
+param	31	0.000000	SC HPF Freq. 1	Off
+param	32	0.500000	SC Low Gain 1	0.0 dB
+param	33	0.500000	SC Low Freq 1	300 Hz
+param	34	1.000000	SC Low Type 1	Shelf
+param	35	0.500000	SC High Gain 1	0.0 dB
+param	36	0.500000	SC High Freq 1	3.0k Hz
+param	37	1.000000	SC High Type 1	Shelf
+param	38	1.000000	Channel ON 2	In
+param	39	0.000000	Threshold 2	0.0 dB
+param	40	0.500000	Timing 2	1.9 ms
+param	41	0.000000	Release Hysteresis 2	70.0 ms
+param	42	0.000000	Fast 2	0.0 dB
+param	43	0.000000	Peak 2	0.0 dB
+param	44	0.500000	Ratio 2	2.0
+param	45	0.300000	Output 2	0.0 dB
+param	46	1.000000	Parallel Mix 2	100 %
+param	47	0.000000	External SC 2	Internal
+param	48	0.500000	Headroom 2	0.0 dB
+param	49	1.000000	SC Filter On 2	On
+param	50	0.000000	SC HPF Freq. 2	Off
+param	51	0.500000	SC Low Gain 2	0.0 dB
+param	52	0.500000	SC Low Freq 2	300 Hz
+param	53	1.000000	SC Low Type 2	Shelf
+param	54	0.500000	SC High Gain 2	0.0 dB
+param	55	0.500000	SC High Freq 2	3.0k Hz
+param	56	1.000000	SC High Type 2	Shelf
+param	57	0.000000	M	0.00000
+param	58	0.000000	M	0.00000
+param	59	0.000000	M	0.00000
+param	60	0.000000	M	0.00000
+param	61	0.000000	M	0.00000
+param	62	0.000000	M	0.00000
+param	63	0.000000	M	0.00000
+param	64	0.000000	M	0.00000
+param	65	0.000000	M	0.00000
+param	66	0.000000	M	0.00000
+param	67	0.000000	M	0.00000
+param	68	0.000000	M	0.00000
+param	69	0.000000	M	0.00000
+param	70	0.000000	M	0.00000
+param	71	0.000000	M	0.00000
+param	72	0.000000	M	0.00000
+param	73	0.512500	M	+0.51250
+param	74	0.512500	M	+0.51250
+param	75	0.500000	M	+0.50000
+param	76	0.500000	M	+0.50000
+param	77	0.500000	M	+0.50000
+param	78	0.500000	M	+0.50000
+param	79	0.500000	M	+0.50000
+param	80	0.500000	M	+0.50000
+param	81	0.000000	S	0.00000
+param	82	0.000000	S	0.00000
+param	83	0.000000	S	0.00000
+param	84	0.000000	S	0.00000
+param	85	0.000000	S	0.00000
+param	86	0.000000	S	0.00000
+param	87	0.000000	S	0.00000
+param	88	0.000000	S	0.00000
+param	89	0.000000	F	0.00000
+param	90	0.000000	F	0.00000
+param	91	0.000000	F	0.00000
+param	92	0.000000	F	0.00000
+param	93	0.000000	F	0.00000
+param	94	0.000000	F	0.00000
+param	95	0.000000	F	0.00000
+param	96	0.000000	F	0.00000
+param	97	0.000000	P	0.00000
+param	98	0.000000	P	0.00000
+param	99	0.000000	P	0.00000
+param	100	0.000000	P	0.00000
+param	101	0.000000	P	0.00000
+param	102	0.000000	P	0.00000
+param	103	0.000000	P	0.00000
+param	104	0.000000	P	0.00000
+param	105	0.000000	R	0.00000
+param	106	0.000000	R	0.00000
+param	107	0.000000	R	0.00000
+param	108	0.000000	R	0.00000
+param	109	0.000000	R	0.00000
+param	110	0.000000	R	0.00000
+param	111	0.000000	R	0.00000
+param	112	0.000000	R	0.00000
+param	113	0.645448		+0.64545
+param	114	0.750000		+0.75000
+param	115	0.000000		0.00000
+stage	position
+pos	0	norm	0.866667	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.866667	landed_by	instack	render_blocks	0	text_ms	21.2	reads	2	text	17.3 dB
+hold	0	-54.00	level_db	-40.2733	in_rms_db	-57.0103	tone_frac	1.0000	ch	-40.1890,-40.3594	doubled	0	last_move_db	0.0045	final_move_db	0.0045	win	-40.2870,-40.2718,-40.2763,-40.2718,-40.2763,-40.2718	nonfinite	0
+hold	0	-48.00	level_db	-34.2734	in_rms_db	-51.0103	tone_frac	1.0000	ch	-34.1890,-34.3595	doubled	0	last_move_db	0.0040	final_move_db	0.0040	win	-34.2843,-34.2721,-34.2761,-34.2721,-34.2761,-34.2721	nonfinite	0
+hold	0	-24.00	level_db	-19.9838	in_rms_db	-27.0103	tone_frac	1.0000	ch	-19.9666,-20.0010	doubled	0	last_move_db	0.0033	final_move_db	0.0033	win	-18.7360,-19.9587,-19.9850,-19.9826,-19.9860,-19.9827	nonfinite	0
+hold	0	-12.00	level_db	-14.0827	in_rms_db	-15.0103	tone_frac	1.0000	ch	-14.0655,-14.1000	doubled	0	last_move_db	0.0026	final_move_db	0.0026	win	-13.0667,-14.0591,-14.0836,-14.0818,-14.0845,-14.0819	nonfinite	0
+hold	0	-6.00	level_db	-11.1428	in_rms_db	-9.0103	tone_frac	1.0000	ch	-11.1257,-11.1599	doubled	0	last_move_db	0.0019	final_move_db	0.0019	win	-10.4781,-11.1235,-11.1433,-11.1421,-11.1440,-11.1422	nonfinite	0
+reread	0	steady
+timing	wall_ms	259.5	audio_s	7.500
+stage	done

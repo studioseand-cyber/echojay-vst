@@ -2104,7 +2104,10 @@
         "-6": -0.21
       },
       "spread_db": 0.28,
-      "unusable_beyond_db": 2.0
+      "response_db": 7.65,
+      "error_db": 1.04,
+      "error_fraction": 0.136,
+      "bar_fraction": 0.083
     },
     "defaultGain_db": {
       "-12": -3.14,
@@ -2203,7 +2206,10 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "unreadable",
-    "reason": "position 0 at -24.00 sits 0.76 dB above the linear reference",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 7.65,
+    "reason": "position 2 at -24.00 sits 1.04 dB above the linear reference, 13.6% of the 7.65 dB response (bar 8.3%)",
     "displayOffsetDb": null
   }
 }

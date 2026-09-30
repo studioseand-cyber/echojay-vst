@@ -665,6 +665,9 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 29.800000000000001,
     "displayOffsetDb": null
   }
 }

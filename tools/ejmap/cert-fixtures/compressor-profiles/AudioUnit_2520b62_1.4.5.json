@@ -554,7 +554,10 @@
             "-6": -0.27
           },
           "spread_db": 0.78,
-          "unusable_beyond_db": 2.0
+          "response_db": 8.35,
+          "error_db": 0.78,
+          "error_fraction": 0.093,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": -4.0,
@@ -639,7 +642,6 @@
             8.35
           ]
         },
-        "sense": "higher_is_harder",
         "engage": {
           "-24": null,
           "-12": null,
@@ -655,15 +657,10 @@
         },
         "result": "unreadable",
         "passThroughAtDefaults": false,
-        "reason": "position 2 at -24.00 sits 0.60 dB above the linear reference",
-        "displayOffsetDb": null,
-        "displayEngage": {
-          "-12": 8.52,
-          "-24": null,
-          "-6": 9.08,
-          "drift_db": 0.55,
-          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
-        }
+        "notToneReadings": [],
+        "flatSpan_db": 8.35,
+        "reason": "the soft end is not linear: its gain spans 0.78 dB across the levels, 9.3% of the 8.35 dB response (bar 8.3%)",
+        "displayOffsetDb": null
       }
     },
     {
@@ -755,7 +752,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"

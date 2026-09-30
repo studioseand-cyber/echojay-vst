@@ -13021,7 +13021,11 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [
+          "11@-6.00"
+        ],
+        "flatSpan_db": 0.01,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -13078,7 +13082,10 @@
             "-6": -0.04
           },
           "spread_db": 0.24,
-          "unusable_beyond_db": 2.0
+          "response_db": 6.56,
+          "error_db": 1.09,
+          "error_fraction": 0.166,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": -2.5,
@@ -13145,7 +13152,7 @@
           ],
           "-6": [
             6.56,
-            35.729999999999997,
+            null,
             5.69,
             5.37,
             5.11,
@@ -13178,7 +13185,11 @@
         },
         "result": "unreadable",
         "passThroughAtDefaults": false,
-        "reason": "position 0 at -24.00 sits 0.86 dB above the linear reference",
+        "notToneReadings": [
+          "1@-6.00"
+        ],
+        "flatSpan_db": 6.56,
+        "reason": "position 2 at -24.00 sits 1.09 dB above the linear reference, 16.6% of the 6.56 dB response (bar 8.3%)",
         "displayOffsetDb": null
       }
     },
@@ -13271,7 +13282,12 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [
+          "14@-12.00",
+          "14@-6.00"
+        ],
+        "flatSpan_db": 0.3,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -13365,7 +13381,14 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [
+          "1@-6.00",
+          "10@-6.00",
+          "12@-12.00",
+          "12@-6.00"
+        ],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -13459,7 +13482,11 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [
+          "13@-6.00"
+        ],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -13553,7 +13580,11 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [
+          "13@-6.00"
+        ],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"

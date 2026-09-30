@@ -1007,3 +1007,49 @@ running a process — a permanent verdict manufactured from an empty record. `ne
 defaults are sampled for an unseen version, a discovered product, and any subject whose record
 carries no `controls`. Pin R9b. The 1-second live check earlier in the day showed the same "0
 threshold roles" on Millennia TCL-2 for the same reason.
+
+## 12. Reading before acceptance (ruled 30 Sep, after the zero-curve classification)
+
+Three of seven "responded but unreadable" verdicts were lost by 0.10, 0.36 and 0.67 dB against
+two absolute bars applied to a relative quantity. Order: the reading rules first, then the
+acceptance rules, each re-derived across the whole store from its committed traces.
+
+**Reading.** (1) A hold whose output is not the tone (`tone_frac` under 0.5) is not a reading:
+refused like a non-finite one and listed on the fixture as `notToneReadings`. It produced every
+`nonmonotonic` verdict in the candidate pile and hid inside "flat" ones. (2) The flat test reads
+every position, not the two ends: `flatSpan_db` is its number; ends that agree at every level
+while the middle differs is `unreadable: the response is not across the sweep`; the sense is
+read at whichever level the ends differ most (AMEK: 7 dB at -24, 0 at -6). (3) Pass-through is
+output = input plus a CONSTANT (`passThroughOffset_db`): dbx-160 at +0.31 dB, SSLComp at +3.00,
+Maag's K/limiter stages at +0.24, Shadow Hills' second stages at +1.13/+0.33. Pins T1-T3, F1-F3,
+P1-P2. Whole-store re-derivation (98 fixtures, 258 verdicts) changed 38: 14 flats became
+pass-through by a constant (9 more only gained the field), 8 nonmonotonic became certified, 4
+flats became unreadable (a 1.78 dB mid-sweep difference on four Melda candidates, identical to
+the hundredth - recorded, not chased), 2 unreadable became flat, 1 nonmonotonic became
+pass-through (MDrumLeveler: the spikes were its only readings). Auto-Tune's "three-way identity"
+in the earlier report was an artefact of the silent holds dominating the statistics: with them
+refused, Mod Comp 1 certifies and Mod Comp 2 / Opt B Comp 1 are pass-through.
+
+**Acceptance.** (4) Both reference guards are RELATIVE: the reference error as a fraction of the
+largest measured reduction, bar `kRefErrorFrac` = kSenseDb/kSaturateDb = 1/12 - the proportion
+the sense test already accepts, not a constant fitted to this sample. Recorded as
+`linearReference.{response_db, error_db, error_fraction, bar_fraction}`. Pins D4, D4b, D4c.
+Second re-derivation: 19 verdicts changed, all certified -> unreadable, and NONE of the three
+recovered (Lindell 354E Mid 17.0%, MTurboCompMB Band 2 16.6%, Solid Dynamics 9.3%). The
+distribution across all 83 soft-end references is the finding: 48 at <= 2% (single-band
+products) and a band at 8-19% that is EVERY MULTIBAND (C4, C6, C6-SC, LinMB, MDynamicsMB/Large,
+MTurboComp) plus SPL IRON, SSL Native Bus Compressor 2 and the Lindells - soft ends contaminated
+by the other stages compressing at their defaults. That is item 5's case, not a bar to loosen.
+The 1/12 bar also flips test D4's 1.2 dB-against-10 dB from accepted to refused (12%); D4 now
+pins both sides of the bar.
+
+**Fallback.** (5) `needsQuietFallback`: a sweep refused because the soft end is not linear, or
+because a reading sits above it, is re-swept at once with the per-position quiet reference
+(-54/-48 added), tagged `q.` + prefix; `linearReference.fallback` says why; re-derivation
+prefers the `q.` traces. Pins Q1-Q3. Live: AMEK certifies through it (both thresholds, every
+position linear at -48). OTT's quiet check fails (-48 minus -54 = -4.5 dB: it compresses upward
+at the quiet levels too) - no level is linear at any setting; unreadable and recorded so.
+
+**Queued, costed, NOT run:** the 16 products now refused for a contaminated soft end need the
+fallback live - about 29 fallback sweeps at five levels inside full product re-sweeps, roughly
+1.5 h (MDynamicsMB/Large re-sweep 22 candidates each before falling back on four).

@@ -410,7 +410,7 @@
       ],
       "tolerance_db": 0.1,
       "check_db": [
-        -6.0,
+        null,
         0.214,
         0.048,
         0.002,
@@ -539,7 +539,7 @@
     "skipped": [
       {
         "position": 0,
-        "reason": "quiet reference: -48 minus -54 is -0.00 dB, not 6 (compressed or noise floor)"
+        "reason": "quiet reference: -54 or -48 unreadable"
       },
       {
         "position": 1,
@@ -583,6 +583,9 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 17.75,
     "reason": "ratio unknown (no ratio control): no dB-equivalent map",
     "displayOffsetDb": null
   }

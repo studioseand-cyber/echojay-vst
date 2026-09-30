@@ -359,8 +359,8 @@
     "level_convention": "peak",
     "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
     "ratioDuring": {
-      "position": "2:1",
-      "value": 2.0,
+      "position": "",
+      "value": null,
       "assumed": false
     },
     "autoMakeupDisabled": false,
@@ -392,7 +392,10 @@
         "-6": -2.12
       },
       "spread_db": 1.83,
-      "unusable_beyond_db": 2.0
+      "response_db": 19.780000000000001,
+      "error_db": 1.83,
+      "error_fraction": 0.093,
+      "bar_fraction": 0.083
     },
     "defaultGain_db": {
       "-12": -1.2,
@@ -476,32 +479,12 @@
         0.0
       ]
     },
-    "sense": "lower_is_harder",
     "engage": {
-      "-24": 11,
-      "-12": 13,
-      "-6": 14
+      "-24": null,
+      "-12": null,
+      "-6": null
     },
-    "thresholdDbEquivalent": [
-      -45.100000000000001,
-      -42.200000000000003,
-      -39.5,
-      -37.0,
-      -33.899999999999999,
-      -30.100000000000001,
-      -27.300000000000001,
-      -24.699999999999999,
-      -22.399999999999999,
-      -20.199999999999999,
-      -18.300000000000001,
-      -16.699999999999999,
-      -12.4,
-      -11.1,
-      -7.2,
-      {
-        "above": -6.0
-      }
-    ],
+    "thresholdDbEquivalent": [],
     "holdDoubled": [
       0,
       1,
@@ -517,30 +500,17 @@
       11
     ],
     "levelDependence": {
-      "predicted_dg_dl": 0.5,
-      "dg_dl_per_position": [
-        0.513,
-        0.516,
-        0.485,
-        0.454,
-        0.419,
-        0.383,
-        0.343,
-        0.3,
-        0.258,
-        0.23,
-        0.183,
-        0.14,
-        0.096,
-        0.059,
-        0.028,
-        0.0
-      ],
-      "median_dg_dl": 0.255,
-      "implied_ratio": 1.34,
+      "predicted_dg_dl": null,
+      "dg_dl_per_position": [],
+      "median_dg_dl": null,
+      "implied_ratio": null,
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
-    "result": "certified",
+    "result": "unreadable",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 19.780000000000001,
+    "reason": "the soft end is not linear: its gain spans 1.83 dB across the levels, 9.3% of the 19.78 dB response (bar 8.3%)",
     "displayOffsetDb": null
   }
 }

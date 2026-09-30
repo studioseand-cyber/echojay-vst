@@ -382,7 +382,7 @@
         0.001,
         -0.0,
         0.001,
-        -0.0,
+        0.0,
         -0.0,
         -0.002,
         -0.006,
@@ -537,6 +537,9 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 46.450000000000003,
     "reason": "ratio unknown (no ratio control): no dB-equivalent map",
     "displayOffsetDb": null,
     "displayEngage": {

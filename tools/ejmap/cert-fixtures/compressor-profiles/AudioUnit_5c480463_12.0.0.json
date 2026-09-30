@@ -298,7 +298,11 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "flat",
-    "reason": "the ends differ by no more than 1 dB at every test level",
+    "passThroughAtDefaults": true,
+    "passThroughOffset_db": 0.31,
+    "notToneReadings": [],
+    "flatSpan_db": 0.0,
+    "reason": "passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading",
     "displayOffsetDb": null
   }
 }

@@ -1741,8 +1741,23 @@ inline int runCertSweep (const SweepOptions& opt)
     sweep::ProcessOut refOut;
     std::vector<sweep::ProcessOut> posOut;
     std::vector<std::pair<sweep::Plan, std::pair<sweep::ProcessOut, std::vector<sweep::ProcessOut>>>> candRuns;
+    // THE QUIET-LEVEL FALLBACK (ruled 30 Sep): a sweep whose soft end has no linear anchor is re-swept at once with the
+    // per-position quiet reference (levels -54/-48 added), tagged "q." + the candidate's prefix so both runs stay in the
+    // traces. The plan that comes back is the one to derive from. Same processes, same probe, one more pass.
+    auto sweepWithFallback = [&] (sweep::Plan q, const juce::String& prefix, sweep::ProcessOut& r, std::vector<sweep::ProcessOut>& ps) -> sweep::Plan
+    {
+        sweepFor (q, prefix, r, ps);
+        if (q.quietReference || windowSeen || overBudget()) return q;
+        const auto first = sweep::derive (sweep::mergeProcesses (r, ps), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+        if (! sweep::needsQuietFallback (first)) return q;
+        std::cout << "  soft end has no linear anchor (" << first.reason << "): re-sweeping with the quiet-level reference" << std::endl;
+        q.quietReference = true;
+        q.referenceFallbackNote = "quiet-level reference used because the soft end had no linear anchor: " + first.reason;
+        sweepFor (q, "q." + prefix, r, ps);
+        return q;
+    };
     if (plan.candidates.empty())
-        sweepFor (plan, "", refOut, posOut);
+        plan = sweepWithFallback (plan, "", refOut, posOut);
     else
         for (const auto& c : plan.candidates)
         {
@@ -1750,7 +1765,7 @@ inline int runCertSweep (const SweepOptions& opt)
             auto q = plan.forCandidate (c);
             sweep::applyCandidateControl (q, base);
             sweep::ProcessOut cr; std::vector<sweep::ProcessOut> cp;
-            sweepFor (q, "c" + juce::String (c.index) + ".", cr, cp);
+            q = sweepWithFallback (q, "c" + juce::String (c.index) + ".", cr, cp);
             candRuns.push_back ({ q, { cr, cp } });
         }
     opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
@@ -1874,10 +1889,16 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
     SweepRunInfo info;
     info.headline = "RE-DERIVED from traces (nothing measured) - " + fx.getProperty ("product", "").toString() + " -> " + fixtureOut.getFileName();
     if (! pv.diagnosticArm.isVoid()) info.armLine = "DIAGNOSTIC ARM '" + pv.diagnosticArm.getProperty ("label", "").toString() + "' (not the product's certification)";
+    // A "q."-prefixed run in the traces is the quiet-level fallback (ruled 30 Sep) and is the run to derive from.
+    auto fallbackNote = [&] (const juce::var& sweepVar) {
+        const auto n = sweepVar.getProperty ("linearReference", {}).getProperty ("fallback", "").toString();
+        return n.isNotEmpty() ? n : juce::String ("quiet-level reference used because the soft end had no linear anchor (re-derived from the q. traces)"); };
     if (plan.candidates.empty())
     {
         sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
-        if (! sweep::loadProcesses (processesJson, rawDir, ref, pos)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
+        if (sweep::loadProcesses (processesJson, rawDir, ref, pos, "q."))
+        { plan.quietReference = true; plan.referenceFallbackNote = fallbackNote (old); }
+        else if (! sweep::loadProcesses (processesJson, rawDir, ref, pos)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
         composeAndReport (base, plan, sweep::mergeProcesses (ref, pos), pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info);
         return 0;
     }
@@ -1887,7 +1908,14 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         auto q = plan.forCandidate (c);
         sweep::applyCandidateControl (q, base);
         sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
-        if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, "c" + juce::String (c.index) + ".")) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
+        if (sweep::loadProcesses (processesJson, rawDir, ref, pos, "q.c" + juce::String (c.index) + "."))
+        {
+            q.quietReference = true;
+            juce::var oldC;
+            for (const auto& x : *fx.getProperty ("thresholdCandidates", {}).getArray()) if ((int) x.getProperty ("index", -1) == c.index) oldC = x.getProperty ("thresholdSweep", {});
+            q.referenceFallbackNote = fallbackNote (oldC);
+        }
+        else if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, "c" + juce::String (c.index) + ".")) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
         cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName()) });

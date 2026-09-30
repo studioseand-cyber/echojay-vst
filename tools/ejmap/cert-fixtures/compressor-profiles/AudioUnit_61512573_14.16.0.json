@@ -2967,9 +2967,14 @@
     "class": "bands_or_stages",
     "candidates": 3,
     "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
-    "curves": 0,
+    "curves": 1,
     "flats": 2,
-    "responding": [],
+    "responding": [
+      {
+        "index": 88,
+        "name": "Processor 1 - Threshold"
+      }
+    ],
     "passThroughAtDefaults": {
       "count": 0,
       "candidates": []
@@ -2983,7 +2988,7 @@
       {
         "index": 88,
         "name": "Processor 1 - Threshold",
-        "result": "nonmonotonic"
+        "result": "certified"
       },
       {
         "index": 93,
@@ -3082,7 +3087,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [
+          "8@-12.00",
+          "8@-6.00",
+          "9@-6.00"
+        ],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -3139,7 +3150,10 @@
             "-6": 4.34
           },
           "spread_db": 0.0,
-          "unusable_beyond_db": 2.0
+          "response_db": 5.24,
+          "error_db": 0.0,
+          "error_fraction": 0.0,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": -0.61,
@@ -3199,14 +3213,14 @@
             1.69,
             1.07,
             0.53,
-            34.109999999999999,
+            null,
             0.0,
             0.0,
             0.0
           ],
           "-6": [
             5.24,
-            40.100000000000001,
+            null,
             5.21,
             5.12,
             4.9,
@@ -3217,7 +3231,7 @@
             2.21,
             1.59,
             1.01,
-            40.109999999999999,
+            null,
             0.12,
             0.0,
             0.0
@@ -3226,8 +3240,8 @@
         "sense": "lower_is_harder",
         "engage": {
           "-24": 9,
-          "-12": 12,
-          "-6": 12
+          "-12": 11,
+          "-6": 11
         },
         "thresholdDbEquivalent": [
           null,
@@ -3251,7 +3265,7 @@
           "predicted_dg_dl": null,
           "dg_dl_per_position": [
             0.053,
-            1.99,
+            null,
             0.053,
             0.055,
             0.059,
@@ -3262,7 +3276,7 @@
             0.081,
             0.072,
             0.054,
-            2.228,
+            null,
             0.007,
             0.0,
             0.0
@@ -3271,18 +3285,25 @@
           "implied_ratio": 1.07,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "nonmonotonic",
+        "result": "certified",
         "passThroughAtDefaults": false,
-        "reason": "reduction falls by more than 0.5 dB walking from the softer end (position 11 at -12.00)",
+        "notToneReadings": [
+          "1@-6.00",
+          "12@-12.00",
+          "12@-6.00"
+        ],
+        "flatSpan_db": 5.24,
+        "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null,
         "displayEngage": {
-          "-12": 2.11,
+          "-12": -8.699999999999999,
           "-24": -7.26,
-          "-6": -3.86,
-          "drift_db": 9.369999999999999,
+          "-6": -9.529999999999999,
+          "drift_db": 2.27,
           "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
         }
-      }
+      },
+      "reading": "responds at 997 Hz: a curve to read"
     },
     {
       "index": 93,
@@ -3373,7 +3394,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null,
         "silentOrOffToneAtDefault": "this candidate's reference at default was not the input's tone (output at -6.00 is 0.0% the input's tone;); another candidate of the same product produced it, so this is a fact about the stage, not the licence"
       },

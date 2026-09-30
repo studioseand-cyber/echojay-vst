@@ -4059,10 +4059,32 @@ void testSweepDerivation()
     nonLinear[5] = { 2.0, 2.0, -0.5 };
     check (derive (fromGains (nonLinear), kLevels, -1).result == "unreadable",
            "sweep D3: a soft end whose gains disagree by 2.5 dB is unusable - refuses");
+    // THE BAR IS RELATIVE (ruled 30 Sep, superseding the absolute 2.0): the soft end's spread as a fraction of the largest
+    // measured reduction, bar kSenseDb/kSaturateDb = 1/12. Against this curve's ~10 dB response, 1.2 dB is 12% - REFUSED,
+    // where the absolute bar accepted it; against a 30 dB response the same 1.2 dB is 4% and certifies.
     nonLinear[5] = { 2.0, 2.0, 0.8 };
     const auto within = derive (fromGains (nonLinear), kLevels, -1);
-    check (within.result == "certified" && within.softEndSpreadDb && std::abs (*within.softEndSpreadDb - 1.2) < 1e-9,
-           "sweep D4: 1.2 dB is noise against the reductions - it certifies, and the 1.2 is recorded as a number");
+    check (within.result == "unreadable" && within.softEndSpreadDb && std::abs (*within.softEndSpreadDb - 1.2) < 1e-9
+             && within.refErrorFrac && *within.refErrorFrac > kRefErrorFrac && within.reason.contains ("% of the"),
+           "sweep D4 (RELATIVE): 1.2 dB against a ~10 dB response is " + juce::String (within.refErrorFrac.value_or (0) * 100.0, 1)
+             + "% - over the 1/12 bar, refused, and the fraction is in the reason ('" + within.result + "')");
+    auto deep = clean;
+    for (auto& g : deep) for (auto& x : g) if (x) *x = 2.0 + (*x - 2.0) * 3.0;   // the same curve three times as deep (~30 dB)
+    deep[5] = { 2.0, 2.0, 0.8 };
+    const auto deepR = derive (fromGains (deep), kLevels, -1);
+    check (deepR.result == "certified" && deepR.refErrorFrac && *deepR.refErrorFrac < kRefErrorFrac,
+           "sweep D4b: the same 1.2 dB against a ~30 dB response is " + juce::String (deepR.refErrorFrac.value_or (0) * 100.0, 1) + "% - certifies");
+    // The below-reference guard has the same form: 0.86 dB above the reference against a 35 dB response passes (2%);
+    // 0.4 dB against a 2.5 dB response does not (16%), where the absolute 0.5 dB bar let it through.
+    auto over = deep; over[2] = { *deep[2][0], *deep[2][1], 0.8 + 0.86 };     // one reading 0.86 dB above the reference at -6
+    const auto overR = derive (fromGains (over), kLevels, -1);
+    std::vector<std::array<std::optional<double>, 3>> shallow;
+    for (int k = 0; k < 6; ++k) { const double r = (5 - k) * 0.5; shallow.push_back ({ 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.0 }); }
+    shallow[2] = { *shallow[2][0], *shallow[2][1], 2.0 + 0.4 };
+    const auto shallowR = derive (fromGains (shallow), kLevels, -1);
+    check (overR.result != "unreadable" && shallowR.result == "unreadable" && shallowR.reason.contains ("above the linear reference"),
+           "sweep D4c (RELATIVE below-reference): 0.86 dB over a ~30 dB response passes ('" + overR.result + "'), 0.4 dB over a ~2.5 dB response refuses ('"
+             + shallowR.result + "': " + shallowR.reason + ")");
 
     // GUARD 1: a reduction BELOW the linear reference by more than 0.5 dB.
     auto above = clean;
@@ -4097,7 +4119,7 @@ void testSweepDerivation()
     std::vector<std::array<std::optional<double>, 3>> pass (6, { 0.0, 0.0, 0.0 });
     const auto pt = derive (fromGains (pass), kLevels, -1);
     check (pt.result == "flat" && pt.reason.startsWith ("passthrough"), "sweep D11: output equal to input everywhere is flat with reason passthrough");
-    check (derive (fromGains (flat), kLevels, -1).reason.startsWith ("the ends differ"), "sweep D12: an ordinary flat keeps its plain reason");
+    check (derive (fromGains (flat), kLevels, -1).reason.startsWith ("no two positions differ"), "sweep D12: an ordinary flat keeps its plain reason");
     {
         // PASS-THROUGH IS ITS OWN RECORDED OUTCOME (ruled 30 Sep): a field, never re-derived from the reason string.
         Plan pl; pl.thr = 0; pl.thrName = "Thresh"; pl.norms = { 0.f, 0.2f, 0.4f, 0.6f, 0.8f, 1.f };
@@ -4107,6 +4129,66 @@ void testSweepDerivation()
         check (pt.passThroughAtDefaults && (bool) ptVar.getProperty ("passThroughAtDefaults", false)
                  && ! flatD.passThroughAtDefaults && ptVar.hasProperty ("passThroughAtDefaults") && ! (bool) flatVar.getProperty ("passThroughAtDefaults", true),
                "sweep D13: thresholdSweep.passThroughAtDefaults is true for the pass-through flat and false (present) for an ordinary flat");
+    }
+    {
+        // READING RULES (ruled 30 Sep). A curve like `clean` with ONE hold whose output is not the tone.
+        auto withNonTone = [] (Measured m, size_t pos, int level, double frac) {
+            auto& h = m.positions[pos].holds[levelKey (level == 0 ? -24.0 : level == 1 ? -12.0 : -6.0)];
+            h.toneFrac = frac; h.levelDb = h.inRmsDb - 35.0;   // 35 dB down and not the tone: the shape seen on six products
+            return m; };
+        std::vector<std::array<std::optional<double>, 3>> curve;   // the D1 shape over 8 positions: gain 2 dB when linear, reduction toward position 0
+        for (int k = 0; k < 8; ++k) { const double r = (7 - k) * 1.2; curve.push_back ({ 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.5 }); }
+        const auto clean = derive (fromGains (curve), kLevels, -1);
+        const auto spiked = derive (withNonTone (fromGains (curve), 3, 2, 0.0), kLevels, -1);
+        check (clean.result == "certified" && spiked.result == "certified" && ! spiked.gain.at (levelKey (-6.0))[3].has_value()
+                 && spiked.notTone == juce::StringArray { "3@-6.00" },
+               "sweep T1 (THE TONE GUARD): a hold whose output is not the tone (tone_frac 0) is refused as a reading and listed, and the curve around it still certifies ('" + spiked.reason + " / '"
+                 + spiked.result + "', " + spiked.notTone.joinIntoString (",") + ")");
+        auto legacy = withNonTone (fromGains (curve), 3, 2, -1.0);   // pre-29-Sep trace: no tone_frac printed
+        check (derive (legacy, kLevels, -1).gain.at (levelKey (-6.0))[3].has_value(), "sweep T2: a trace with no tone_frac (-1) is read as before");
+        Plan pl2; pl2.thr = 0; pl2.thrName = "Thresh"; pl2.norms = { 0.f, 0.14f, 0.29f, 0.43f, 0.57f, 0.71f, 0.86f, 1.f };
+        check ((bool) juce::JSON::parse (juce::JSON::toString (composeThresholdSweep (spiked, displayCheck (spiked, ""), pl2, {}))).getProperty ("notToneReadings", {}).isArray(),
+               "sweep T3: the refused readings are recorded on the fixture as notToneReadings");
+
+        // THE FLAT TEST READS EVERY POSITION: ends equal, a 20 dB drop in the middle.
+        std::vector<std::array<std::optional<double>, 3>> bump (6, { 0.0, 0.0, 0.0 });
+        bump[3] = { -20.0, -20.0, -20.0 };
+        const auto b = derive (fromGains (bump), kLevels, -1);
+        check (b.result != "flat" && b.flatSpanDb && *b.flatSpanDb > 19.0 && b.reason.contains ("not across the sweep"),
+               "sweep F1 (ALL POSITIONS): ends that agree with a 20 dB drop between them are NOT flat ('" + b.result + "': " + b.reason + ")");
+        check (derive (fromGains (flat), kLevels, -1).result == "flat", "sweep F2: an ordinary flat is still flat under the all-positions test");
+        std::vector<std::array<std::optional<double>, 3>> quietOnly (6);                   // AMEK's shape: ends differ 7 dB at -24, agree at -6
+        for (int k = 0; k < 6; ++k) quietOnly[(size_t) k] = { 2.0 - 1.4 * (double) (5 - k), 2.0 - 0.2 * (double) (5 - k), 2.0 };
+        const auto qo = derive (fromGains (quietOnly), kLevels, -1);
+        check (qo.result != "flat" && ! qo.reason.contains ("not across the sweep") && qo.sense.isNotEmpty(),
+               "sweep F3: ends that differ at the QUIET level only are a response across the sweep - the sense is read there, not called 'not across' from the loud level ('" + qo.result + "': " + qo.reason + ")");
+
+        // PASS-THROUGH IS INPUT PLUS A CONSTANT.
+        std::vector<std::array<std::optional<double>, 3>> offset (6, { 0.31, 0.31, 0.31 });
+        const auto po = derive (fromGains (offset), kLevels, -1);
+        check (po.result == "flat" && po.passThroughAtDefaults && po.passThroughOffsetDb && std::abs (*po.passThroughOffsetDb - 0.31) < 0.006
+                 && po.reason.contains ("plus a constant 0.31 dB"),
+               "sweep P1 (dbx-160): output = input + 0.31 dB at every reading is pass-through, with the constant recorded");
+        std::vector<std::array<std::optional<double>, 3>> mixed (6, { 0.31, 0.31, 0.31 });
+        mixed[2] = { 0.0, 0.0, 0.0 };
+        const auto pm = derive (fromGains (mixed), kLevels, -1);
+        check (pm.result == "flat" && ! pm.passThroughAtDefaults, "sweep P2: readings that differ by 0.31 dB are flat but NOT pass-through");
+
+        // THE QUIET-LEVEL FALLBACK is decided by one function on the derivation, and the fixture says it was used.
+        auto alwaysOn = curve; alwaysOn[7] = { 2.0, -1.0, -4.0 };                       // the soft end itself compresses 6 dB across the levels
+        const auto ao = derive (fromGains (alwaysOn), kLevels, -1);
+        check (ao.result == "unreadable" && needsQuietFallback (ao) && ! needsQuietFallback (clean) && ! needsQuietFallback (b),
+               "sweep Q1 (ALWAYS-ON): a soft end with no linear anchor is the ONE case that asks for the quiet-level reference; a curve and a mid-sweep bump do not ('" + ao.reason + "')");
+        Plan qp = pl2; qp.quietReference = true; qp.referenceFallbackNote = "quiet-level reference used because the soft end had no linear anchor: test";
+        auto quietRun = fromGains (alwaysOn);                                              // the re-sweep: the same positions with -54/-48 holds, linear (2 dB) at both
+        for (auto& pr : quietRun.positions)
+            for (double L : { -54.0, -48.0 }) { HoldReading h; h.present = true; h.inRmsDb = L - 3.0103; h.levelDb = h.inRmsDb + 2.0; pr.holds[levelKey (L)] = h; }
+        const auto aq = derive (quietRun, kLevels, -1, true);
+        const auto qv = composeThresholdSweep (aq, displayCheck (aq, ""), qp, {});
+        check (needsQuietFallback (shallowR), "sweep Q3: a reading above the reference (the soft end was not the floor) asks for the quiet-level reference too");
+        check (qv.getProperty ("linearReference", {}).getProperty ("mode", "") == "per_position_quiet"
+                 && qv.getProperty ("linearReference", {}).getProperty ("fallback", "").toString().contains ("no linear anchor"),
+               "sweep Q2: a fallback sweep records mode per_position_quiet and WHY it fell back, on the fixture");
     }
 }
 

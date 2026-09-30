@@ -671,7 +671,7 @@
           ],
           "tolerance_db": 0.1,
           "check_db": [
-            -6.0,
+            null,
             0.0,
             0.0,
             -0.0,
@@ -800,7 +800,7 @@
         "skipped": [
           {
             "position": 0,
-            "reason": "quiet reference: -48 minus -54 is 0.00 dB, not 6 (compressed or noise floor)"
+            "reason": "quiet reference: -54 or -48 unreadable"
           },
           {
             "position": 10,
@@ -853,6 +853,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 26.350000000000001,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },
@@ -911,7 +913,7 @@
           ],
           "tolerance_db": 0.1,
           "check_db": [
-            -6.0,
+            null,
             0.0,
             0.0,
             -0.0,
@@ -1040,7 +1042,7 @@
         "skipped": [
           {
             "position": 0,
-            "reason": "quiet reference: -48 minus -54 is 0.00 dB, not 6 (compressed or noise floor)"
+            "reason": "quiet reference: -54 or -48 unreadable"
           },
           {
             "position": 10,
@@ -1093,6 +1095,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 26.350000000000001,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },

@@ -923,7 +923,10 @@
         "-6": -3.11
       },
       "spread_db": 3.11,
-      "unusable_beyond_db": 2.0
+      "response_db": 9.859999999999999,
+      "error_db": 3.11,
+      "error_fraction": 0.316,
+      "bar_fraction": 0.083
     },
     "defaultGain_db": {
       "-12": -3.0,
@@ -953,9 +956,60 @@
       "pump": 15
     },
     "reduction_db": {
-      "-24": [],
-      "-12": [],
-      "-6": []
+      "-24": [
+        0.0,
+        -0.37,
+        -0.68,
+        -0.97,
+        -1.23,
+        -1.35,
+        -1.29,
+        -1.1,
+        -0.8,
+        -0.43,
+        -0.01,
+        0.42,
+        0.83,
+        1.18,
+        1.44,
+        1.51
+      ],
+      "-12": [
+        0.0,
+        0.2,
+        0.55,
+        1.02,
+        1.58,
+        2.2,
+        2.86,
+        3.56,
+        4.27,
+        4.99,
+        5.7,
+        6.37,
+        7.0,
+        7.54,
+        7.95,
+        8.17
+      ],
+      "-6": [
+        0.0,
+        0.48,
+        1.06,
+        1.72,
+        2.44,
+        3.19,
+        3.98,
+        4.77,
+        5.58,
+        6.37,
+        7.14,
+        7.88,
+        8.550000000000001,
+        9.140000000000001,
+        9.6,
+        9.859999999999999
+      ]
     },
     "engage": {
       "-24": null,
@@ -971,7 +1025,10 @@
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
     "result": "unreadable",
-    "reason": "the soft end is not linear: its gain spans 3.11 dB across the levels (unusable beyond 2.0)",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 9.859999999999999,
+    "reason": "the soft end is not linear: its gain spans 3.11 dB across the levels, 31.6% of the 9.86 dB response (bar 8.3%)",
     "displayOffsetDb": null
   }
 }

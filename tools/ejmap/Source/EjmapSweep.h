@@ -72,7 +72,15 @@ inline constexpr double kLinearDb     = 2.0;    // the soft end's gains disagree
 inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must differ by 6 dB within this
 inline constexpr double kSilentDb     = -90.0;  // an output below this at every level is silent
 inline constexpr double kToneFracMin  = 0.5;    // an output with less than half its power at the tone is not the input's tone
-inline constexpr double kBelowRefDb   = 0.5;    // a reduction below the linear reference by more than this refuses
+inline constexpr double kBelowRefDb   = 0.5;    // (superseded 30 Sep by kRefErrorFrac; kept for the record in older fixtures)
+// THE REFERENCE GUARDS ARE RELATIVE TO THE RESPONSE (ruled 30 Sep). Both reference errors - the soft end's spread across
+// the levels, and a reading sitting ABOVE the reference - were absolute bars (2.0 dB, 0.5 dB) applied to a relative
+// quantity: 0.86 dB against a 35.7 dB response is 2%, against a 2 dB response it is the whole curve. The bar is now the
+// fraction of the LARGEST MEASURED REDUCTION the reference error could explain, and the fraction is not fitted to this
+// sample: it is the proportion the sense test already accepts - a curve is resolved at kSenseDb against a band that
+// saturates at kSaturateDb, so the reference may consume no more of the response than that (1/12). Three candidates
+// lost by 0.10, 0.36 and 0.67 dB against the absolute bars are the case; if they do not recover, they do not.
+inline constexpr double kRefErrorFrac = kSenseDb / kSaturateDb;
 inline constexpr int    kMaxMoving    = 2;      // more positions than this still moving after the doubling refuses
 inline constexpr double kLevelFlatDb  = 0.25;   // reduction spanning less than this across the test levels, at a position
                                                 // inside the readable band at every level, is a GAIN LAW, not a threshold
@@ -100,6 +108,7 @@ struct Plan
     juce::String channel;                    // "L" when an L/R pair was reduced to channel A (spec 4.7)
     juce::StringArray linkStates;            // every control answering "link", as instantiated: recorded, never written
     bool quietReference = false;             // input-as-threshold: each position carries its own quiet reference
+    juce::String referenceFallbackNote;      // set when the quiet reference was used because the soft end had no linear anchor
     std::vector<double> probeLevels() const  // quiet to loud, as the probe renders them
     { return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 }; }
     // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled, the others held at their
@@ -480,6 +489,11 @@ struct Derived
 {
     juce::String result = "error", reason, sense;   // result: certified | flat | nonmonotonic | unreadable | error
     bool passThroughAtDefaults = false;             // flat BECAUSE the product does nothing at its instantiate defaults (its own category)
+    std::optional<double> passThroughOffsetDb;      // the constant the output sits at above the input when passThroughAtDefaults
+    juce::StringArray notTone;                      // "position@level" holds refused because the output was not the input's tone
+    std::optional<double> flatSpanDb;               // the largest reduction span across ALL positions at any level (the flat test's number)
+    std::optional<double> responseDb;               // the largest measured reduction against the reference (what a reference error is compared with)
+    std::optional<double> refErrorDb, refErrorFrac; // the reference error that was judged, and its fraction of the response
     std::vector<double> levels;                     // the TEST levels, ascending (quiet reference levels are separate)
     std::vector<float> norms;                       // ascending: position i is norms[i]
     std::vector<juce::String> texts;                // the display text read at each position
@@ -516,6 +530,16 @@ inline double median (std::vector<double> v)
     std::sort (v.begin(), v.end());
     const size_t n = v.size();
     return n % 2 ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+}
+
+// ALWAYS-ON ARCHITECTURES AND CONTAMINATED SOFT ENDS (ruled 30 Sep): when no position is linear - AMEK and OTT compress
+// at every setting; a multiband's other bands compress at their defaults - the soft-end reference has no anchor. The
+// QUIET-LEVEL reference built for input-as-threshold products is below threshold at every setting by construction, so
+// the driver re-sweeps such a candidate with it. One mechanism, reused; this is the decision.
+// A reading ABOVE the reference is the same disease from the other side: the soft end was not the floor.
+inline bool needsQuietFallback (const Derived& d)
+{
+    return d.result == "unreadable" && (d.reason.startsWith ("the soft end is not linear") || d.reason.contains ("above the linear reference"));
 }
 
 inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex, bool quietReference = false)
@@ -558,10 +582,17 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         d.texts.push_back (p->text);
         bool skip = p->processFailed || p->unlanded || p->unsteady;
         juce::String why = p->processFailed ? "process: " + p->failure : p->unlanded ? "write_unlanded" : "unsteady";
+        // A HOLD WHOSE OUTPUT IS NOT THE TONE IS NOT A MEASUREMENT (ruled 30 Sep). tone_frac was recorded on every hold
+        // since 29 Sep and never consulted per reading: isolated positions where the output was silent or not the tone
+        // (27-40 dB down, tone_frac 0.00, six products) produced every nonmonotonic verdict in the candidate pile and hid
+        // inside "flat" ones. Such a hold is refused like a non-finite one, and listed. A trace from before tone_frac
+        // existed (toneFrac -1) is read as before.
+        auto isTone = [&] (const HoldReading& h) { return h.toneFrac < 0.0 || h.toneFrac >= kToneFracMin; };
         auto usable = [&] (const juce::String& k) -> std::optional<double> {
             auto it = p->holds.find (k);
             if (it == p->holds.end() || ! it->second.present || it->second.nonFinite != 0) return std::nullopt;
             if (std::abs (it->second.finalMoveDb) > m.movingDb) return std::nullopt;
+            if (! isTone (it->second)) return std::nullopt;
             return it->second.levelDb - it->second.inRmsDb; };
         std::optional<double> quietCheck;
         if (quietReference && ! skip)
@@ -596,6 +627,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
                 doubled = doubled || it->second.doubled;
                 // STILL MOVING AFTER THE DOUBLING: not a steady state, so not used.
                 if (std::abs (it->second.finalMoveDb) > m.movingDb) moving = true;
+                else if (! isTone (it->second)) d.notTone.add (juce::String ((int) i) + "@" + k);   // refused, listed, not a reading
                 else g = it->second.levelDb - it->second.inRmsDb;
             }
             d.gain[k].push_back (g);
@@ -613,11 +645,16 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         return d;
     }
 
-    // PASS-THROUGH: every readable reading's output equals its input. Its own reason, so a human sees it (item 3).
+    // PASS-THROUGH: every readable reading's output is its input PLUS A CONSTANT (ruled 30 Sep: dbx-160 sits at +0.31 dB
+    // at every position and level and is as pass-through as an exact 0.00). Its own reason, so a human sees it.
     auto passThrough = [&] {
-        int readings = 0;
-        for (const auto& [k, v] : d.gain) for (auto g : v) if (g) { ++readings; if (std::abs (*g) > 0.01) return false; }
-        return readings > 0; };
+        int readings = 0; double gmin = 1e9, gmax = -1e9;
+        for (const auto& [k, v] : d.gain) for (auto g : v) if (g) { ++readings; gmin = juce::jmin (gmin, *g); gmax = juce::jmax (gmax, *g); }
+        if (readings == 0 || gmax - gmin > 0.02) return false;
+        d.passThroughOffsetDb = std::round ((gmin + gmax) * 50.0) / 100.0;
+        return true; };
+    auto passReason = [&] { return "passthrough: output equals input" + (std::abs (*d.passThroughOffsetDb) >= 0.01 ? " plus a constant " + juce::String (*d.passThroughOffsetDb, 2) + " dB" : juce::String())
+                                   + " within 0.01 dB at every reading"; };
 
     auto readableAll = [&] (int i) { for (double L : d.levels) if (! d.gain[levelKey (L)][(size_t) i]) return false; return true; };
     std::optional<int> lo, hi;
@@ -642,37 +679,76 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
                 d.reduction[levelKey (L)].push_back (g && lin ? std::optional<double> (*lin - *g) : std::nullopt);
             }
         }
-        bool flat = true;
+        // THE FLAT TEST READS EVERY POSITION (ruled 30 Sep): a test on the two ends alone read a 27-30 dB drop in the
+        // middle as "flat" - API-2500's wrong axis mirrored, false negatives this time.
+        double spanMax = 0.0;
         for (double L : d.levels)
         {
-            const auto a = d.reduction[levelKey (L)][(size_t) *lo], b = d.reduction[levelKey (L)][(size_t) *hi];
-            if (a && b && std::abs (*b - *a) > kSenseDb) flat = false;
+            double a = 1e9, b = -1e9;
+            for (const auto& g : d.reduction[levelKey (L)]) if (g) { a = juce::jmin (a, *g); b = juce::jmax (b, *g); }
+            if (b > a) spanMax = juce::jmax (spanMax, b - a);
         }
-        if (flat)
+        d.flatSpanDb = spanMax;
+        if (spanMax <= kSenseDb)
         {
             d.result = "flat";
             d.passThroughAtDefaults = passThrough();
-            d.reason = d.passThroughAtDefaults ? "passthrough: output equals input within 0.01 dB at every reading"
-                                               : "the ends differ by no more than 1 dB at every test level";
+            d.reason = d.passThroughAtDefaults ? passReason() : "no two positions differ by more than 1 dB at any test level";
             return d;
         }
-        const auto rl = d.reduction[kLoud][(size_t) *lo], rh = d.reduction[kLoud][(size_t) *hi];
+        juce::String kSense = kLoud; double endsMax = 0.0;
+        for (double L : d.levels)
+        {
+            const auto k = levelKey (L);
+            const auto a = d.reduction[k][(size_t) *lo], b = d.reduction[k][(size_t) *hi];
+            const double e = a && b ? std::abs (*b - *a) : 0.0;
+            if (e > endsMax) { endsMax = e; kSense = k; }
+        }
+        if (endsMax <= kSenseDb)
+        {
+            d.result = "unreadable";
+            d.reason = "the ends agree within 1 dB at every level but positions between them differ by " + juce::String (spanMax, 2)
+                       + " dB: the response is not across the sweep";
+            return d;
+        }
+        const auto rl = d.reduction[kSense][(size_t) *lo], rh = d.reduction[kSense][(size_t) *hi];
         higherHarder = rh.value_or (0.0) > rl.value_or (0.0);
     }
     else
     {
-        bool flat = true;
+        double spanMax = 0.0;
         for (double L : d.levels)
-            if (std::abs (*d.gain[levelKey (L)][(size_t) *hi] - *d.gain[levelKey (L)][(size_t) *lo]) > kSenseDb) flat = false;
-        if (flat)
+        {
+            double a = 1e9, b = -1e9;
+            for (const auto& g : d.gain[levelKey (L)]) if (g) { a = juce::jmin (a, *g); b = juce::jmax (b, *g); }
+            if (b > a) spanMax = juce::jmax (spanMax, b - a);
+        }
+        d.flatSpanDb = spanMax;
+        if (spanMax <= kSenseDb)
         {
             d.result = "flat";
             d.passThroughAtDefaults = passThrough();
-            d.reason = d.passThroughAtDefaults ? "passthrough: output equals input within 0.01 dB at every reading"
-                                               : "the ends differ by no more than 1 dB at every test level";
+            d.reason = d.passThroughAtDefaults ? passReason() : "no two positions differ by more than 1 dB at any test level";
             return d;
         }
-        higherHarder = *d.gain[kLoud][(size_t) *hi] < *d.gain[kLoud][(size_t) *lo];
+        // NOT FLAT, BUT THE ENDS AGREE AT EVERY LEVEL: the response is between the ends, not across them - not a curve to
+        // walk. The SENSE is read at the level whose ends differ most (AMEK's ends differ by 7 dB at -24 and agree at -6:
+        // the loud level alone would have called that "not across the sweep").
+        juce::String kSense = kLoud; double endsMax = 0.0;
+        for (double L : d.levels)
+        {
+            const auto k = levelKey (L);
+            const double e = std::abs (*d.gain[k][(size_t) *hi] - *d.gain[k][(size_t) *lo]);
+            if (e > endsMax) { endsMax = e; kSense = k; }
+        }
+        if (endsMax <= kSenseDb)
+        {
+            d.result = "unreadable";
+            d.reason = "the ends agree within 1 dB at every level but positions between them differ by " + juce::String (spanMax, 2)
+                       + " dB: the response is not across the sweep";
+            return d;
+        }
+        higherHarder = *d.gain[kSense][(size_t) *hi] < *d.gain[kSense][(size_t) *lo];
         d.softEnd = higherHarder ? lo : hi;
         // THE SOFT END'S LINEAR GAIN. Its disagreement across levels is RECORDED on every fixture; only beyond
         // kLinearDb is the data unusable (ruled 29 Sep: 0.63 is noise against 3-20 dB reductions, 4.91 is signal-sized).
@@ -684,13 +760,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             gmin = juce::jmin (gmin, g); gmax = juce::jmax (gmax, g);
         }
         d.softEndSpreadDb = gmax - gmin;
-        if (gmax - gmin > kLinearDb)
-        {
-            d.result = "unreadable";
-            d.reason = "the soft end is not linear: its gain spans " + juce::String (gmax - gmin, 2) + " dB across the levels (unusable beyond "
-                       + juce::String (kLinearDb, 1) + ")";
-            return d;
-        }
+        double response = 0.0;
         for (double L : d.levels)
         {
             const auto k = levelKey (L);
@@ -698,21 +768,48 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             {
                 const auto g = d.gain[k][(size_t) i];
                 d.reduction[k].push_back (g ? std::optional<double> (d.linearGain[k] - *g) : std::nullopt);
+                if (g) response = juce::jmax (response, d.linearGain[k] - *g);
             }
+        }
+        d.responseDb = response;
+        d.refErrorDb = gmax - gmin;
+        d.refErrorFrac = response > 0.0 ? (gmax - gmin) / response : 1e9;
+        if (*d.refErrorFrac > kRefErrorFrac)
+        {
+            d.result = "unreadable";
+            d.reason = "the soft end is not linear: its gain spans " + juce::String (gmax - gmin, 2) + " dB across the levels, "
+                       + juce::String (*d.refErrorFrac * 100.0, 1) + "% of the " + juce::String (response, 2) + " dB response (bar "
+                       + juce::String (kRefErrorFrac * 100.0, 1) + "%)";
+            return d;
         }
     }
     d.sense = higherHarder ? "higher_is_harder" : "lower_is_harder";
 
-    // GUARD: a reduction BELOW the linear reference means a reading carries history, or this is not a compressor's curve.
-    for (double L : d.levels)
-        for (int i = 0; i < n; ++i)
-            if (auto g = d.reduction[levelKey (L)][(size_t) i]; g && *g < -kBelowRefDb)
+    // GUARD: a reduction BELOW the linear reference means a reading carries history, or this is not a compressor's curve -
+    // when it is large against the response. Relative, like the soft-end guard (kRefErrorFrac).
+    {
+        double response = 0.0, worst = 0.0; int wi = -1; juce::String wk;
+        for (double L : d.levels)
+            for (int i = 0; i < n; ++i)
+                if (auto g = d.reduction[levelKey (L)][(size_t) i])
+                {
+                    response = juce::jmax (response, *g);
+                    if (-*g > worst) { worst = -*g; wi = i; wk = levelKey (L); }
+                }
+        if (! d.responseDb) d.responseDb = response;
+        if (worst > 0.0)
+        {
+            const double frac = response > 0.0 ? worst / response : 1e9;
+            if (! d.refErrorDb || worst > *d.refErrorDb) { d.refErrorDb = worst; d.refErrorFrac = frac; }
+            if (frac > kRefErrorFrac)
             {
                 d.result = "unreadable";
-                d.reason = "position " + juce::String (i) + " at " + levelKey (L) + " sits " + juce::String (-*g, 2)
-                           + " dB above the linear reference";
+                d.reason = "position " + juce::String (wi) + " at " + wk + " sits " + juce::String (worst, 2) + " dB above the linear reference, "
+                           + juce::String (frac * 100.0, 1) + "% of the " + juce::String (response, 2) + " dB response (bar " + juce::String (kRefErrorFrac * 100.0, 1) + "%)";
                 return d;
             }
+        }
+    }
 
     // R IS WHAT THE PLUGIN SAYS IT RAN AT: the text read back after a write when the ratio was written (the raise),
     // else the text it instantiated with. Never the value that was asked for. Read here, before the level guard,
@@ -1065,6 +1162,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         juce::Array<juce::var> chk;
         for (auto q : d.quietCheckDb) chk.add (q ? juce::var (std::round (*q * 1000.0) / 1000.0) : juce::var());
         ref->setProperty ("check_db", chk);
+        if (p.referenceFallbackNote.isNotEmpty()) ref->setProperty ("fallback", p.referenceFallbackNote);
         s->setProperty ("linearReference", juce::var (ref));
     }
     else if (d.softEnd)
@@ -1076,7 +1174,12 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         ref->setProperty ("position", *d.softEnd);
         ref->setProperty ("gain_db", juce::var (lg));
         ref->setProperty ("spread_db", round2 (d.softEndSpreadDb));
-        ref->setProperty ("unusable_beyond_db", kLinearDb);
+        // THE GUARD IS RELATIVE (ruled 30 Sep): the reference error judged, the response it was judged against, and the
+        // fraction, beside the bar. `unusable_beyond_db` is gone; a fixed dB never suited a relative quantity.
+        if (d.responseDb)   ref->setProperty ("response_db", round2 (*d.responseDb));
+        if (d.refErrorDb)   ref->setProperty ("error_db", round2 (*d.refErrorDb));
+        if (d.refErrorFrac) ref->setProperty ("error_fraction", std::round (*d.refErrorFrac * 1000.0) / 1000.0);
+        ref->setProperty ("bar_fraction", std::round (kRefErrorFrac * 1000.0) / 1000.0);
         s->setProperty ("linearReference", juce::var (ref));
     }
     if (! d.defaultGain.empty())
@@ -1145,6 +1248,11 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     // or the threshold, only that the product does nothing as instantiated (MaxxVolume, EMO-D5, DynOne3, C1 comp,
     // RCompressor). A precondition gap, named so the server half never re-derives it from the reason string.
     s->setProperty ("passThroughAtDefaults", d.passThroughAtDefaults);
+    if (d.passThroughOffsetDb) s->setProperty ("passThroughOffset_db", *d.passThroughOffsetDb);
+    // READINGS REFUSED BECAUSE THE OUTPUT WAS NOT THE TONE (position@level), and the flat test's own number: the largest
+    // reduction span across ALL positions at any level.
+    { juce::Array<juce::var> nt; for (const auto& x : d.notTone) nt.add (x); s->setProperty ("notToneReadings", nt); }
+    if (d.flatSpanDb) s->setProperty ("flatSpan_db", std::round (*d.flatSpanDb * 100.0) / 100.0);
     if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
     if (d.roleFlag.isNotEmpty()) s->setProperty ("roleFlag", d.roleFlag);
     // THE DISPLAY, AS NUMBERS, beside the map's result and never folded into it. displayLinear is unset on purpose.

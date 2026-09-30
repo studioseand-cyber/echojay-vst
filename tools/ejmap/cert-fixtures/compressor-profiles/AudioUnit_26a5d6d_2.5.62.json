@@ -1154,7 +1154,10 @@
             "-6": -6.98
           },
           "spread_db": 6.2,
-          "unusable_beyond_db": 2.0
+          "response_db": 1.58,
+          "error_db": 6.2,
+          "error_fraction": 3.92,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": -4.24,
@@ -1183,9 +1186,60 @@
           "instack": 16
         },
         "reduction_db": {
-          "-24": [],
-          "-12": [],
-          "-6": []
+          "-24": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.01,
+            0.01,
+            0.01,
+            0.03,
+            0.05,
+            0.11,
+            0.18,
+            0.25,
+            0.29,
+            0.31
+          ],
+          "-12": [
+            0.0,
+            0.0,
+            0.01,
+            0.02,
+            0.03,
+            0.08,
+            0.15,
+            0.24,
+            0.35,
+            0.56,
+            0.7,
+            0.84,
+            0.91,
+            0.96,
+            0.98,
+            0.99
+          ],
+          "-6": [
+            0.0,
+            0.02,
+            0.04,
+            0.07,
+            0.14,
+            0.4,
+            0.68,
+            0.88,
+            1.07,
+            1.3,
+            1.41,
+            1.5,
+            1.55,
+            1.57,
+            1.58,
+            1.58
+          ]
         },
         "engage": {
           "-24": null,
@@ -1202,7 +1256,9 @@
         },
         "result": "unreadable",
         "passThroughAtDefaults": false,
-        "reason": "the soft end is not linear: its gain spans 6.20 dB across the levels (unusable beyond 2.0)",
+        "notToneReadings": [],
+        "flatSpan_db": 1.58,
+        "reason": "the soft end is not linear: its gain spans 6.20 dB across the levels, 392.0% of the 1.58 dB response (bar 8.3%)",
         "displayOffsetDb": null
       }
     },
@@ -1258,7 +1314,10 @@
             "-6": -0.39
           },
           "spread_db": 0.27,
-          "unusable_beyond_db": 2.0
+          "response_db": 15.039999999999999,
+          "error_db": 0.27,
+          "error_fraction": 0.018,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": -4.24,
@@ -1392,6 +1451,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 15.039999999999999,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null,
         "displayEngage": {
@@ -1493,7 +1554,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.45,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -1587,7 +1650,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -1681,7 +1746,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -1775,7 +1842,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"

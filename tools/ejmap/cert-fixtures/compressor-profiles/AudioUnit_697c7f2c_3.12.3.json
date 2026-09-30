@@ -3473,6 +3473,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -3567,6 +3570,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -3661,6 +3667,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -3755,6 +3764,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -3849,6 +3861,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -3943,6 +3958,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4037,6 +4055,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4131,6 +4152,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4225,6 +4249,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4319,6 +4346,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4413,6 +4443,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4507,6 +4540,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4601,6 +4637,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4695,6 +4734,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
@@ -4789,6 +4831,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "passThroughOffset_db": 0.0,
+        "notToneReadings": [],
+        "flatSpan_db": 0.0,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },

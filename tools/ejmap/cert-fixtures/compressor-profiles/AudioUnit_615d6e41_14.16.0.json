@@ -1487,7 +1487,10 @@
         "-6": 0.0
       },
       "spread_db": 0.0,
-      "unusable_beyond_db": 2.0
+      "response_db": 35.5,
+      "error_db": 0.0,
+      "error_fraction": 0.0,
+      "bar_fraction": 0.083
     },
     "defaultGain_db": {
       "-12": 0.0,
@@ -1548,13 +1551,13 @@
         0.0,
         0.0,
         0.0,
-        29.760000000000002,
-        29.77,
+        null,
+        null,
         0.0
       ],
       "-6": [
         35.5,
-        22.649999999999999,
+        null,
         12.449999999999999,
         9.140000000000001,
         6.74,
@@ -1566,16 +1569,16 @@
         0.07,
         0.0,
         0.0,
-        35.770000000000003,
-        35.780000000000001,
+        null,
+        null,
         0.0
       ]
     },
     "sense": "lower_is_harder",
     "engage": {
       "-24": 3,
-      "-12": 14,
-      "-6": 14
+      "-12": 6,
+      "-6": 8
     },
     "thresholdDbEquivalent": [
       {
@@ -1611,7 +1614,7 @@
       "predicted_dg_dl": 0.5,
       "dg_dl_per_position": [
         0.5,
-        0.765,
+        null,
         0.5,
         0.463,
         0.374,
@@ -1623,16 +1626,24 @@
         0.004,
         0.0,
         0.0,
-        1.987,
-        1.988,
+        null,
+        null,
         0.0
       ],
       "median_dg_dl": 0.497,
       "implied_ratio": 1.99,
       "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
     },
-    "result": "nonmonotonic",
-    "reason": "reduction falls by more than 0.5 dB walking from the softer end (position 12 at -12.00)",
+    "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [
+      "1@-6.00",
+      "13@-12.00",
+      "13@-6.00",
+      "14@-12.00",
+      "14@-6.00"
+    ],
+    "flatSpan_db": 35.5,
     "displayOffsetDb": 3.0,
     "displayOffsetSpread": {
       "positions": 8,
@@ -1642,10 +1653,10 @@
       "convention": "peak"
     },
     "displayEngage": {
-      "-12": 11.98,
+      "-12": -3.1,
       "-24": -2.53,
-      "-6": 5.98,
-      "drift_db": 14.51,
+      "-6": -3.64,
+      "drift_db": 1.11,
       "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
     }
   }

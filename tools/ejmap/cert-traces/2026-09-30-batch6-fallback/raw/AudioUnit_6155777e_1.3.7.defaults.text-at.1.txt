@@ -1,0 +1,97 @@
+probe: "OTT" | AudioUnit:Effects/aufx,XfTT,XFER | uid=6155777e | arch=arm64 | format=AudioUnit
+
+param	0	Depth	unit	%
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	1	Time	unit	%
+def	0.500000	100	default	0.500000
+at	0.000	0
+at	0.500	100
+at	1.000	1000
+param	2	In Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-48
+at	0.500	0.0
+at	1.000	19.1
+param	3	Out Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-48
+at	0.500	0.0
+at	1.000	19.1
+param	4	Clean XOV	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	ON
+at	1.000	ON
+param	5	Thresh L	unit	%
+def	0.500000	100	default	0.500000
+at	0.000	0
+at	0.500	100
+at	1.000	200
+param	6	Thresh M	unit	%
+def	0.500000	100	default	0.500000
+at	0.000	0
+at	0.500	100
+at	1.000	200
+param	7	Thresh H	unit	%
+def	0.500000	100	default	0.500000
+at	0.000	0
+at	0.500	100
+at	1.000	200
+param	8	Gain L	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-inf
+at	0.500	0.0
+at	1.000	6.0
+param	9	Gain M	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-inf
+at	0.500	0.0
+at	1.000	6.0
+param	10	Gain H	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-inf
+at	0.500	0.0
+at	1.000	6.0
+param	11	Byp Upwd L	unit	
+def	0.000000	--	default	0.000000
+at	0.000	--
+at	0.500	BYPASS
+at	1.000	BYPASS
+param	12	Byp Upwd M	unit	
+def	0.000000	--	default	0.000000
+at	0.000	--
+at	0.500	BYPASS
+at	1.000	BYPASS
+param	13	Byp Upwd H	unit	
+def	0.000000	--	default	0.000000
+at	0.000	--
+at	0.500	BYPASS
+at	1.000	BYPASS
+param	14	Byp Dnwd L	unit	
+def	0.000000	--	default	0.000000
+at	0.000	--
+at	0.500	BYPASS
+at	1.000	BYPASS
+param	15	Byp Dnwd M	unit	
+def	0.000000	--	default	0.000000
+at	0.000	--
+at	0.500	BYPASS
+at	1.000	BYPASS
+param	16	Byp Dnwd H	unit	
+def	0.000000	--	default	0.000000
+at	0.000	--
+at	0.500	BYPASS
+at	1.000	BYPASS
+param	17	Upwd Strgth	unit	%
+def	0.500000	100	default	0.500000
+at	0.000	0
+at	0.500	100
+at	1.000	200
+param	18	Dnwd Strgth	unit	%
+def	0.500000	100	default	0.500000
+at	0.000	0
+at	0.500	100
+at	1.000	200

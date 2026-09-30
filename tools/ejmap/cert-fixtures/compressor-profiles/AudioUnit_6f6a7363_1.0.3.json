@@ -1309,7 +1309,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.3,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
@@ -1366,7 +1368,10 @@
             "-6": 0.81
           },
           "spread_db": 0.87,
-          "unusable_beyond_db": 2.0
+          "response_db": 10.539999999999999,
+          "error_db": 0.87,
+          "error_fraction": 0.082,
+          "bar_fraction": 0.083
         },
         "defaultGain_db": {
           "-12": -1.66,
@@ -1500,6 +1505,8 @@
         },
         "result": "certified",
         "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 10.539999999999999,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null
       },
@@ -1594,7 +1601,9 @@
         },
         "result": "flat",
         "passThroughAtDefaults": false,
-        "reason": "the ends differ by no more than 1 dB at every test level",
+        "notToneReadings": [],
+        "flatSpan_db": 0.08,
+        "reason": "no two positions differ by more than 1 dB at any test level",
         "displayOffsetDb": null
       },
       "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
