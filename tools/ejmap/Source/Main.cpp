@@ -593,16 +593,20 @@ namespace
                 return ejmap::cert::runProbeOnce (cwdFile (argAt (argc, argv, i + 1)),
                                                   rest, juce::jmax (1, argAt (argc, argv, i + 2).getIntValue()) * 1000);
             }
-            if (a == "--cert-sweep-census" && i + 1 < argc)
+            // --cert-sweep-census [fixturesDir]: the store defaults to ~/Library/ejmap/cert/fixtures, as the sweep's does.
+            if (a == "--cert-sweep-census")
             {
-                bool includePace = false;
+                bool includePace = false, retryRefused = false;
                 auto ledgerRoot = ejmap::cert::defaultEjmapLedger();
+                auto fixturesDir = i + 1 < argc && ! argAt (argc, argv, i + 1).startsWith ("--") ? cwdFile (argAt (argc, argv, i + 1))
+                                                                                                    : ejmap::cert::defaultCertRoot().getChildFile ("fixtures");
                 for (int j = 1; j < argc; ++j)
                 {
                     if (argAt (argc, argv, j) == "--include-pace") includePace = true;
+                    if (argAt (argc, argv, j) == "--retry-refused") retryRefused = true;
                     if (argAt (argc, argv, j) == "--ejmap-ledger" && j + 1 < argc) ledgerRoot = cwdFile (argAt (argc, argv, j + 1));
                 }
-                return ejmap::cert::runSweepCensus (cwdFile (argAt (argc, argv, i + 1)), ledgerRoot, includePace);
+                return ejmap::cert::runSweepCensus (fixturesDir, ledgerRoot, includePace, retryRefused);
             }
             if (a == "--cert-sweep-rederive" && i + 4 < argc)
                 return ejmap::cert::runSweepRederive (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)),
@@ -629,13 +633,18 @@ namespace
                     else if (k == "--timeout-s" && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
                     else if (k == "--reset-per-hold")            o.resetPerHold = true;
                     else if (k == "--include-pace")              o.includePace = true;
+                    else if (k == "--retry-refused")             o.retryRefused = true;
                 }
+                // THE DEFAULTS ARE THE HANDOVER PATH (EjmapCertDriver.h resolveCertPaths): ~/Library/ejmap/cert, its
+                // fixtures/ as the store, the probe beside this executable. A mapper types none of them.
+                ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 const bool all = a == "--cert-sweep-all";
-                if (o.fixtures == juce::File() || o.probe == juce::File() || o.out == juce::File() || (o.product.isEmpty() != all)
-                    || (o.extraSets.empty() != o.armLabel.isEmpty()) || (all && ! o.extraSets.empty()))
+                if ((o.product.isEmpty() != all) || (o.extraSets.empty() != o.armLabel.isEmpty()) || (all && ! o.extraSets.empty()))
                 {
-                    std::cerr << "usage: ejmap --cert-sweep --fixtures <dir> --probe <EchoJayProbe> --out <dir> --product <name>   (or --cert-sweep-all ... [--skip NAME]...)\n"
-                                 "       [--include-pace] [--timeout-s N per process] [--arm LABEL --set IDX:NORM ...] [--reset-per-hold]" << std::endl;
+                    std::cerr << "usage: ejmap --cert-sweep --product <name>   (or --cert-sweep-all [--skip NAME]...)\n"
+                                 "       [--fixtures <dir>  default ~/Library/ejmap/cert/fixtures] [--out <dir>  default ~/Library/ejmap/cert]\n"
+                                 "       [--probe <EchoJayProbe>  default: beside ejmap] [--include-pace] [--retry-refused] [--timeout-s N per process]\n"
+                                 "       [--arm LABEL --set IDX:NORM ...] [--reset-per-hold]" << std::endl;
                     return 2;
                 }
                 return all ? ejmap::cert::runSweepAll (o, skip) : ejmap::cert::runCertSweep (o);
@@ -655,12 +664,7 @@ namespace
                     else if (k == "--entitlements"  && j + 1 < argc) o.entitlements = cwdFile (v);
                     else if (k == "--include-pace")                  o.includePace = true;
                 }
-                if (o.fixtures == juce::File() || o.probe == juce::File() || o.out == juce::File())
-                {
-                    std::cerr << "usage: ejmap --cert-defaults --fixtures <dir> --probe <EchoJayProbe> --out <dir>\n"
-                                 "       [--timeout-s N] [--sign-identity ID --entitlements FILE] [--include-pace]" << std::endl;
-                    return 2;
-                }
+                ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return ejmap::cert::runCertDefaults (o);
             }
         }

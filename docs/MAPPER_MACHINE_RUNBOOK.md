@@ -14,6 +14,9 @@ BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
    13 Aug 2026). Fallback if the server's ever down: §A.
 3. **Map one plugin by hand** — confirms the machine maps and saves (§2 below).
 4. **Batch sweep** — the terminal loop (§3 below).
+4b. **Certify compressors** — the second loop (§3b below), after the sweep.
+    Needs mains, lid open, iLok in, and — on any Mac but the operator's — a
+    signed ejmap.app (§3b's blocker).
 5. **Zip and hand over** — zip `~/Library/ejmap`, send the zip to the operator
    (§4). **Do not rely on the app's Send All** — see §4 for why.
 
@@ -81,6 +84,82 @@ PY
 
 Or leave it — the 90 s watchdog kills a hanger and quarantines it after 3 tries.
 
+## §3b — Certify compressors (after the mapping sweep)
+
+Runs the threshold sweep on every mapped compressor that has no certification
+record yet. Same shape as §3: resumable, skips what is done, leave it running.
+Nothing to type but the loop — the results land in `~/Library/ejmap/cert/` and
+ride the §4 zip with everything else.
+
+**Before starting, every time — these cost real hours twice:**
+
+- **Mains.** Plug in and confirm; `pmset -g ps` must say `AC Power`. A sweep
+  that runs across a sleep is refused and re-run once, so a lid-closed or
+  battery-drained Mac wastes the run.
+- **Lid open.** Keep it open for the whole batch.
+- **iLok in.** `system_profiler SPUSBDataType | grep -A12 'iLok:' | grep 'Location ID'`
+  must print a port. Note the port; if a PACE product refuses mid-batch, check
+  whether it has changed — that is a drop, and the product needs `--retry-refused`.
+
+```
+for i in $(seq 1 20); do
+  "$BIN" --cert-sweep-all --include-pace
+done
+```
+
+Watch it climb in another tab:
+
+```
+ls ~/Library/ejmap/cert/fixtures/ | grep -vc defaults
+```
+
+What is left, and why the rest is not runnable:
+
+```
+"$BIN" --cert-sweep-census
+```
+
+Ctrl+C and re-run anytime. Stop when the census says nothing is runnable, or the
+count plateaus. A product that stops (hangs, shows a window, has no threshold,
+its reference is not the tone) writes a **refusal record** and is skipped from then
+on — so a hanger costs at most a few minutes, once. After fixing what the refusal
+names (iLok back in, hardware attached), put the refusals back with:
+
+```
+"$BIN" --cert-sweep-all --include-pace --retry-refused
+```
+
+A plugin you excluded in §3 (`operator_excluded`) is left alone here too.
+
+### BLOCKER on any Mac but the operator's: ejmap.app is not signed
+
+Certification hosts every plugin in a helper, `EchoJayProbe`, and **PACE refuses
+a helper without a real Team Identifier** — the driver checks the signature and
+stops before opening any plugin if it is ad-hoc or unsigned. Today nothing signs
+or notarises `ejmap.app`: `RELEASE.md` signs the two **plugins** (EchoJay V2 and
+Link), and the probe is a separate build artefact that ships nowhere. So on a
+mapper's Mac, **no PACE-wrapped compressor can be certified until a signed and
+notarised ejmap.app carrying the probe exists.** Native, licence-free products
+still run, but only with a probe copied by hand.
+
+What signing it needs, all recorded in `RELEASE.md` and all held on the
+operator's machine:
+
+- bundles/binaries: `Developer ID Application: Sean Donoghue (8BT5F9B887)`,
+  hardened runtime, `--timestamp`, the probe's own
+  `tools/au_instantiate_probe/EchoJayProbe.entitlements`
+- notarisation: keychain profile `EchoJayNotarize` (team 8BT5F9B887), then
+  `stapler staple`
+- the probe goes **inside** `ejmap.app/Contents/MacOS/EchoJayProbe` (the sweep
+  already looks for it there by default), so one `codesign --deep` covers both
+
+**Open question, not answered:** mapper machines have been loading PACE plugins
+through an unsigned ejmap.app for mapping. Either mapping tolerates something
+certification does not (in-process hosting under a GUI app vs a headless helper),
+or PACE products have been refusing on mappers' Macs and it went unnoticed in the
+sweep's outcome classes. Check a mapper's `~/Library/ejmap` for maps of
+PACE-wrapped products before assuming either.
+
 ## §4 — Zip and hand over (NOT Send All)
 
 The app's **Send All is unreliable** and eats mapping sessions: it can lose its
@@ -100,7 +179,12 @@ Verify the maps are in it before handing the machine back:
 unzip -l ~/Desktop/carl-ejmap.zip | grep -c 'maps/.*\.json'
 ```
 
-That count is the maps you swept — they're now safe off the machine.
+That count is the maps you swept — they're now safe off the machine. If §3b ran,
+check its records are in too:
+
+```
+unzip -l ~/Desktop/carl-ejmap.zip | grep -c 'cert/fixtures/.*\.json'
+```
 
 ---
 

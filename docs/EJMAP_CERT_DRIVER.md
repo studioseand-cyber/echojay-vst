@@ -907,3 +907,50 @@ is DynOne3 (15 candidates, about 11 min).
 positions instead of starting a fresh process). It is untested, and its failure mode is a
 quiet bias rather than an error.
 
+
+## 11. Where the work lands, what counts as a record, and the jam (ruled 30 Sep)
+
+**The store is the output directory.** `--cert-sweep` wrote everything under a mandatory
+`--out` with no default, and pruned its worklist against a separate `--fixtures`. Nothing was
+ever written to `~/Library/ejmap`, so on another Mac the handover (`zip -rq ~/Library/ejmap`,
+runbook §4) carried none of it; and "a second run skips what the first certified" was only
+true when the operator pointed `--fixtures` at `<out>/fixtures` by hand. Now `--out` defaults
+to `~/Library/ejmap/cert/`, `--fixtures` to `<out>/fixtures/`, and `--probe` to `EchoJayProbe`
+beside the running `ejmap` executable (`resolveCertPaths`). Explicit flags keep working for
+repo-store runs. Pins R4–R6.
+
+**A record is a sweep, a candidates fixture, or a refusal** (`sweepRecorded`). Only a
+`thresholdSweep` counted before, so a candidates fixture (which has none by design) went
+straight back on the worklist, the defaults sidecar (`<stem>.defaults.json`) was loaded as a
+second subject with no sweep, and a product stopped before any fixture existed was rediscovered
+on every batch. Pins R1–R3, R8–R9.
+
+**A refusal is written, at the stage it happened.** Every early exit — defaults would not
+sample, plan found no threshold, ratio search failed or found nothing at 4:1, a window
+appeared, the reference was not the input's tone — writes the fixture it has (the store's, or
+the discovered identity with no controls yet) with `thresholdRefusal {stage, reason,
+recordedAt, host, probe, processes, uncleanProcesses}` and no `thresholdSweep`. The worklist
+skips it; `--retry-refused` (iLok back in, hardware attached) puts refusals back, a new
+installed version re-runs on its own, deleting the file works too. The defaults-phase case is
+the one that mattered: a plugin that hangs on load has a map (it mapped, on some machine) and no
+fixture, so it was offered again on every batch — four minutes of timeouts each time, for ever.
+Pin R7 (a discovered identity, stage `defaults`), and a live run with `--timeout-s 1` on
+Millennia TCL-2: refused at `defaults`, absent from the next run's worklist, back with
+`--retry-refused`.
+
+**The per-product budget** (`kUncleanBudget` = 2). The mapper's sweep bounds a plugin at one
+90 s process; a certification is ~17 processes per candidate, each with its once-retry, so a
+plugin that hung on every load cost about 68 minutes before its fixture existed. After two
+processes end unclean (after their retry) the product stops and the refusal is written at stage
+`budget`, naming both. This also changes one tolerated case: a product with two flaky positions
+out of sixteen used to derive from the fourteen; it is now refused and says so. The defaults
+phase still stops on its first unclean process, which is within the budget.
+
+**The mapper's escape hatch reaches cert.** `categories.json` `disposition` other than `sweep`
+(`operator_excluded`, runbook §3 and §B) keeps a product out of cert discovery, with its `why`
+in the worklist report. Pin R10. Before this, a plugin excluded from mapping for hanging was
+still offered to the certification batch.
+
+What it does NOT do: there is no cross-run try counter (the mapper's 3-try quarantine). One
+refusal is permanent until acted on. A transient failure — iLok out for one run — therefore
+needs `--retry-refused`, which is why the runbook says to confirm the iLok before starting.

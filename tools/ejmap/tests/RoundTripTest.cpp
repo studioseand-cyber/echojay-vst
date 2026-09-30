@@ -4518,6 +4518,90 @@ void testDiscoveryFromMaps()
     root.deleteRecursively();
 }
 
+/** THE RECORD, THE STORE AND THE DEFAULT PATHS (ruled 30 Sep). A second run with DEFAULT flags, after a first run
+    certified a product, must not re-certify it - which was only ever true when --fixtures happened to point at
+    <out>/fixtures. And a product stopped in the defaults phase must leave a record, or it is rediscovered for ever. */
+void testCertRecordAndDefaultPaths()
+{
+    using namespace ejmap::cert;
+    const auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-record-" + juce::Uuid().toDashedString());
+    auto store = root.getChildFile ("fixtures");
+    store.createDirectory();
+    auto fx = [] (const char* uid, const char* extra) {
+        return juce::String (R"({"product": "P )") + uid + R"(", "uid": ")" + uid + R"(", "version": "1.0.0", "format": "AudioUnit")" + extra + "}"; };
+    store.getChildFile ("AudioUnit_aaaa0001_1.0.0.json").replaceWithText (fx ("aaaa0001", R"(, "thresholdSweep": {"result": "certified"})"));
+    store.getChildFile ("AudioUnit_aaaa0002_1.0.0.json").replaceWithText (fx ("aaaa0002", R"(, "thresholdCandidates": [{"index": 3}], "thresholdReview": {"curves": 1})"));
+    store.getChildFile ("AudioUnit_aaaa0003_1.0.0.json").replaceWithText (fx ("aaaa0003", R"(, "thresholdRefusal": {"stage": "defaults"})"));
+    store.getChildFile ("AudioUnit_aaaa0004_1.0.0.json").replaceWithText (fx ("aaaa0004", ""));
+    store.getChildFile ("AudioUnit_aaaa0004_1.0.0.defaults.json").replaceWithText (fx ("aaaa0004", R"(, "controls": [])"));
+    const auto loaded = loadFixtures (store);
+    check (loaded.size() == 4, "record R1: the defaults SIDECAR is not a subject - 5 files, 4 subjects (" + juce::String ((int) loaded.size()) + ")");
+    auto names = [] (const std::vector<Subject>& v) { juce::StringArray a; for (const auto& s : v) a.add (s.uid); return a; };
+    const auto part = partitionStore (loaded, false);
+    check (part.recorded == 3 && part.refused == 1 && names (part.toSweep) == juce::StringArray { "aaaa0004" },
+           "record R2: a sweep, a candidates fixture and a refusal are all RECORDS and leave the worklist; only the bare fixture stays ("
+             + names (part.toSweep).joinIntoString (",") + ")");
+    const auto retry = partitionStore (loaded, true);
+    check (retry.recorded == 2 && names (retry.toSweep).contains ("aaaa0003") && names (retry.toSweep).contains ("aaaa0004") && retry.toSweep.size() == 2,
+           "record R3: --retry-refused puts the refusal back on the list and leaves the sweep and the candidates alone");
+
+    SweepOptions o;
+    const auto exe = juce::File ("/Applications/ejmap.app/Contents/MacOS/ejmap");
+    resolveCertPaths (o, exe);
+    const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    check (o.out == home.getChildFile ("Library/ejmap/cert") && o.fixtures == o.out.getChildFile ("fixtures")
+             && o.probe == juce::File ("/Applications/ejmap.app/Contents/MacOS/EchoJayProbe"),
+           "record R4: with no flags the sweep lands in ~/Library/ejmap/cert, THE STORE IS <out>/fixtures, and the probe is beside ejmap (rides the handover zip)");
+    SweepOptions e; e.out = root; e.probe = root.getChildFile ("p");
+    resolveCertPaths (e, exe);
+    check (e.fixtures == root.getChildFile ("fixtures") && e.probe == root.getChildFile ("p"),
+           "record R5: an explicit --out moves the default store with it; an explicit --probe is kept");
+    Options d; d.fixtures = root.getChildFile ("repo-store");
+    resolveCertPaths (d, exe);
+    check (d.fixtures == root.getChildFile ("repo-store") && d.out == home.getChildFile ("Library/ejmap/cert"),
+           "record R6: an explicit --fixtures (a repo-store run) is kept, and --cert-defaults takes the same defaults");
+
+    // THE DEFAULTS-PHASE CASE: a discovered identity has no controls yet; its refusal must still be a record.
+    auto discovered = juce::JSON::parse (R"json({"product": "Hangs On Load", "uid": "bbbb0001", "version": "2.3.0", "format": "AudioUnit",
+                                              "discovered": "mapped (server map state 3)", "tester_id": "should not survive"})json");
+    const auto rec = writeRefusalRecord (store, discovered, "defaults", "ERROR: defaults --list-params timed out after 120.0 s (killed by the driver)", 2, 1,
+                                         "signed EchoJayProbe", "EJ Map 0.1.0");
+    const auto back = juce::JSON::parse (rec.loadFileAsString());
+    check (rec.getFileName() == "AudioUnit_bbbb0001_2.3.0.json" && back.getProperty ("thresholdRefusal", {}).getProperty ("stage", "") == "defaults"
+             && back.getProperty ("thresholdRefusal", {}).getProperty ("reason", "").toString().contains ("timed out")
+             && ! back.hasProperty ("thresholdSweep") && back.getProperty ("product", "") == "Hangs On Load" && ! back.hasProperty ("tester_id"),
+           "record R7 (THE DEFAULTS PHASE): a product stopped before its defaults sampled writes a fixture at its discovered identity, "
+           "naming the stage and reason, with no thresholdSweep and nothing private");
+    const auto again = partitionStore (loadFixtures (store), false);
+    check (again.recorded == 4 && again.refused == 2 && names (again.toSweep) == juce::StringArray { "aaaa0004" },
+           "record R8: the next run reads that refusal as a record - the product is not on the worklist again");
+    auto keys = std::set<juce::String>();
+    for (const auto& s : loadFixtures (store)) keys.insert (s.uid + "|" + s.version);
+    check (keys.count ("bbbb0001|2.3.0") == 1, "record R9: and discovery's fixture key sees it at the installed version, so it is not rediscovered either");
+
+    // THE MAPPER'S ESCAPE HATCH: a disposition other than sweep in categories.json is honoured by cert discovery.
+    auto led = root.getChildFile ("ledger");
+    led.createDirectory();
+    led.getChildFile ("map-state.json").replaceWithText (R"({"identities": {"AudioUnit|cccc0001|1.0.0": {"state": 3}, "AudioUnit|cccc0002|1.0.0": {"state": 3}, "AudioUnit|cccc0003|1.0.0": {"state": 3}}})");
+    led.getChildFile ("categories.json").replaceWithText (R"({"products": {
+        "hanger|test":  {"category": "compressor", "disposition": "operator_excluded", "why": "hangs on load", "mark_keys": ["AudioUnit|cccc0001"]},
+        "fine|test":    {"category": "compressor", "disposition": "sweep", "mark_keys": ["AudioUnit|cccc0002"]},
+        "nodisp|test":  {"category": "compressor", "mark_keys": ["AudioUnit|cccc0003"]}}})");
+    auto inst = [] (const char* name, int uid, const char* code) {
+        InstalledRecord r; r.desc.name = name; r.desc.uniqueId = uid; r.desc.version = "1.0.0"; r.desc.pluginFormatName = "AudioUnit";
+        r.desc.fileOrIdentifier = juce::String ("AudioUnit:Effects/") + code; r.identityKey = echojay::identityKeyForDescription (r.desc);
+        r.uidKey = "AudioUnit|" + juce::String::toHexString (uid).toLowerCase(); return r; };
+    const std::vector<InstalledRecord> installed { inst ("Hanger", 0xcccc0001, "aufx,hang,Test"), inst ("Fine", 0xcccc0002, "aufx,fine,Test"), inst ("NoDisp", 0xcccc0003, "aufx,nodi,Test") };
+    const auto in = loadDiscoveryInputs (led);
+    const auto disc = discoverCandidates (in, installed, {});
+    juce::StringArray cand; for (const auto& c : disc.candidates) cand.add (c.inst.desc.name);
+    check (cand == juce::StringArray { "Fine", "NoDisp" } && disc.excludedByDisposition.size() == 1 && disc.excludedByDisposition[0].contains ("hangs on load")
+             && in.notes.joinIntoString (" ").contains ("disposition other than sweep"),
+           "record R10: operator_excluded in categories.json keeps a mapped compressor out of the cert worklist, with its why; "
+           "disposition sweep and no disposition are both candidates (" + cand.joinIntoString (",") + ")");
+    root.deleteRecursively();
+}
+
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
 void testSleptProcessRetry()
 {
@@ -4665,6 +4749,7 @@ int main (int, char**)
     testExternalHardware();
     testSleepTimeouts();
     testDiscoveryFromMaps();
+    testCertRecordAndDefaultPaths();
     testSleptProcessRetry();
     testLevelDependence();
 

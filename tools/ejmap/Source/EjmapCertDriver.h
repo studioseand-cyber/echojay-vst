@@ -477,6 +477,19 @@ inline juce::String reachName (Subject::Reach r)
     return "?";
 }
 
+// WHAT COUNTS AS A RECORD (ruled 30 Sep). A fixture leaves the worklist when it records what happened to the product:
+// a threshold sweep, every candidate's sweep (no thresholdSweep by design, a human picks), or a REFUSAL - the product
+// was stopped before a usable measurement and the fixture says at which stage and why. Before this rule only a
+// thresholdSweep counted, so a candidates fixture went straight back on the list, and a product stopped in the defaults
+// phase wrote nothing and was rediscovered on every batch, forever.
+inline bool sweepRecorded (const juce::var& fixture)
+{
+    return fixture.getProperty ("thresholdSweep", {}).isObject()
+        || fixture.getProperty ("thresholdCandidates", {}).isArray()
+        || fixture.getProperty ("thresholdRefusal", {}).isObject();
+}
+inline bool refusalRecorded (const juce::var& fixture) { return fixture.getProperty ("thresholdRefusal", {}).isObject(); }
+
 inline std::vector<Subject> loadFixtures (const juce::File& dir)
 {
     std::vector<Subject> out;
@@ -484,6 +497,9 @@ inline std::vector<Subject> loadFixtures (const juce::File& dir)
     files.sort();
     for (const auto& f : files)
     {
+        // The defaults SIDECAR (<stem>.defaults.json) is the sample a sweep was planned on, kept beside the fixture; it is
+        // not a subject. Loaded as one it carried the same uid with no sweep, and re-entered the worklist every run.
+        if (f.getFileName().endsWith (".defaults.json")) continue;
         Subject s;
         s.fixtureFile = f;
         s.pushed = juce::JSON::parse (f.loadFileAsString());
@@ -1061,6 +1077,10 @@ struct DiscoveryInputs
     std::map<juce::String, int> mapState;                   // identity key -> MapState (0 unmapped .. 5 unknown)
     std::map<juce::String, juce::String> localMapCategory;  // identity key -> category, from a local map
     std::map<juce::String, juce::String> categoryByUid;     // "AudioUnit|uid" -> category, from categories.json
+    // "AudioUnit|uid" -> disposition, from categories.json, when it is anything but "sweep" - and its `why`. THE MAPPER'S
+    // ESCAPE HATCH REACHES CERT (ruled 30 Sep): the runbook excludes a plugin that hangs by writing operator_excluded here,
+    // and the certification batch must not open what the mapping sweep was told to leave alone.
+    std::map<juce::String, juce::String> dispositionByUid;
     juce::StringArray notes;                                // what was read, for the report
 };
 
@@ -1088,11 +1108,17 @@ inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
         for (const auto& p : prods->getProperties())
             if (const auto* mk = p.value.getProperty ("mark_keys", {}).getArray())
                 for (const auto& k : *mk)
-                    in.categoryByUid[k.toString().toLowerCase().replace ("audiounit|", "AudioUnit|").replace ("vst3|", "VST3|")]
-                        = p.value.getProperty ("category", "").toString();
+                {
+                    const auto uidKey = k.toString().toLowerCase().replace ("audiounit|", "AudioUnit|").replace ("vst3|", "VST3|");
+                    in.categoryByUid[uidKey] = p.value.getProperty ("category", "").toString();
+                    const auto disp = p.value.getProperty ("disposition", "").toString().trim();
+                    if (disp.isNotEmpty() && disp != "sweep")
+                        in.dispositionByUid[uidKey] = disp + (p.value.hasProperty ("why") ? " (" + p.value.getProperty ("why", "").toString() + ")" : juce::String());
+                }
     in.notes.add (juce::String (maps) + " local map(s), " + juce::String ((int) in.mapState.size()) + " map-state row(s)"
                   + (ms.getProperty ("fetched_at", "").toString().isNotEmpty() ? " (fetched " + ms.getProperty ("fetched_at", "").toString() + ")" : juce::String (" (never fetched)"))
-                  + ", " + juce::String ((int) in.categoryByUid.size()) + " categorised identities");
+                  + ", " + juce::String ((int) in.categoryByUid.size()) + " categorised identities"
+                  + (in.dispositionByUid.empty() ? juce::String() : ", " + juce::String ((int) in.dispositionByUid.size()) + " with a disposition other than sweep (honoured)"));
     return in;
 }
 
@@ -1113,7 +1139,7 @@ inline std::vector<InstalledRecord> installedAudioUnits()
 // THE PURE CORE: which installed products are candidates, and why the rest are not. `fixtureKeys` holds "uid|version"
 // (lowercase uid) for every fixture in the store.
 struct Candidate { InstalledRecord inst; juce::String category, mappedBy; };
-struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners; };
+struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners, excludedByDisposition; };
 
 inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vector<InstalledRecord>& installed,
                                      const std::set<juce::String>& fixtureKeys)
@@ -1129,6 +1155,8 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
         if (category.isEmpty()) if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end()) category = c->second;
         const auto fxKey = juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version;
         if (fixtureKeys.count (fxKey)) { ++d.excluded["fixture present at this version"]; continue; }
+        if (auto disp = in.dispositionByUid.find (r.uidKey); disp != in.dispositionByUid.end())
+        { ++d.excluded["disposition " + disp->second.upToFirstOccurrenceOf (" (", false, false) + " in categories.json"]; d.excludedByDisposition.add (r.desc.name + ": " + disp->second); continue; }
         if (category == "pitch") { d.tuners.add (r.desc.name); continue; }
         if (category != "compressor") { ++d.excluded[category.isEmpty() ? juce::String ("no category") : "category " + category]; continue; }
         d.candidates.push_back ({ r, category, local != in.localMapCategory.end() ? juce::String ("local map")
@@ -1141,8 +1169,25 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
 // in COVERAGE ORDER - a record at the installed version that has not been swept first (the sweep alone is missing),
 // then those that need defaults first (another version's record, or none). A fixture that already records a sweep is
 // certified and leaves the list.
+// THE STORE SIDE OF THE WORKLIST, pure: a fixture that records a sweep, every candidate's sweep, or a refusal stays out;
+// the rest go on. `retryRefused` puts the refusals back (the iLok is in now, the hardware is attached): the record
+// stays in the fixture until the re-run replaces it.
+struct StorePartition { std::vector<Subject> toSweep; int recorded = 0, refused = 0; };
+inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused)
+{
+    StorePartition p;
+    for (const auto& s : fromStore)
+    {
+        const bool refusal = refusalRecorded (s.pushed);
+        if (refusal) ++p.refused;
+        if (sweepRecorded (s.pushed) && ! (retryRefused && refusal)) ++p.recorded;
+        else p.toSweep.push_back (s);
+    }
+    return p;
+}
+
 inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace,
-                                           juce::StringArray& report)
+                                           juce::StringArray& report, bool retryRefused = false)
 {
     std::vector<Subject> fromStore;
     if (fixturesDir.isDirectory()) fromStore = loadFixtures (fixturesDir);
@@ -1153,11 +1198,9 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         fixtureKeys.insert (s.uid + "|" + s.version);
         storeUids.insert (s.uid);
     }
-    std::vector<Subject> out;
-    int certified = 0;
-    for (auto& s : fromStore)
-        if (s.pushed.getProperty ("thresholdSweep", {}).isObject()) ++certified;
-        else out.push_back (s);
+    const auto part = partitionStore (fromStore, retryRefused);
+    std::vector<Subject> out = part.toSweep;
+    const int certified = part.recorded;
 
     const auto in = loadDiscoveryInputs (ledgerRoot);
     const auto installed = installedAudioUnits();
@@ -1191,11 +1234,15 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         return rank (a) != rank (b) ? rank (a) < rank (b) : a.product.compareIgnoreCase (b.product) < 0; });
 
     report.add ("worklist: " + juce::String ((int) fromStore.size()) + " fixture(s) in the store (" + juce::String (certified)
-                + " already record a sweep), " + juce::String (added) + " discovered from the ledger at " + ledgerRoot.getFullPathName());
+                + " already record a sweep, candidates or a refusal; " + juce::String (part.refused) + " refusal(s)"
+                + (retryRefused ? ", RE-RUN this time (--retry-refused)" : juce::String()) + "), "
+                + juce::String (added) + " discovered from the ledger at " + ledgerRoot.getFullPathName());
     report.addArray (in.notes);
     juce::StringArray ex;
     for (const auto& [why, n] : disc.excluded) ex.add (juce::String (n) + " " + why);
     report.add ("installed AUs not discovered: " + ex.joinIntoString (", "));
+    if (! disc.excludedByDisposition.isEmpty())
+        report.add ("left alone by categories.json disposition: " + disc.excludedByDisposition.joinIntoString ("; "));
     if (! disc.tuners.isEmpty()) report.add ("pitch category, listed not swept (tuner certification is not built): " + disc.tuners.joinIntoString (", "));
     return out;
 }
@@ -1218,8 +1265,28 @@ struct SweepOptions
     juce::String product, hostVersion, armLabel;
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
     int timeoutMs = 120000;                          // per process
-    bool includePace = false, resetPerHold = false;
+    bool includePace = false, resetPerHold = false, retryRefused = false;
 };
+
+// WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
+// ~/Library/ejmap`, so anything written outside it never comes home: the sweep used to require --out with no default,
+// and an operator's choice of directory decided whether the work survived. Now:
+//   --out       defaults to ~/Library/ejmap/cert/            (traces, processes, reports, run.jsonl)
+//   --fixtures  defaults to <out>/fixtures/                  THE STORE IS THE OUTPUT DIRECTORY
+//   --probe     defaults to EchoJayProbe beside the running ejmap executable (inside ejmap.app once it ships there)
+// The second line is the one that matters: the worklist prunes against --fixtures and the sweep writes to
+// <out>/fixtures, so "a second run skips what the first certified" was only ever true when the two pointed at the
+// same place. With the defaults they do. Explicit flags keep working for repo-store runs.
+inline constexpr int kUncleanBudget = 2;     // unclean processes (after their once-retry) before a product is refused
+inline juce::File defaultCertRoot() { return defaultEjmapLedger().getChildFile ("cert"); }
+inline juce::File defaultProbeBeside (const juce::File& executable) { return executable.getSiblingFile ("EchoJayProbe"); }
+template <typename Opts>
+inline void resolveCertPaths (Opts& o, const juce::File& executable)
+{
+    if (o.out == juce::File())      o.out = defaultCertRoot();
+    if (o.fixtures == juce::File()) o.fixtures = o.out.getChildFile ("fixtures");
+    if (o.probe == juce::File())    o.probe = defaultProbeBeside (executable);
+}
 
 // The architecture the plugin RUNS in (ruling item 4): the bundle's own slices against this
 // host's. A bundle with no slice for the host runs bridged, out of process, under Rosetta.
@@ -1344,14 +1411,51 @@ inline Derivation deriveOne (const sweep::Plan& plan, const sweep::Measured& m, 
     return out;
 }
 
-inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
-                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info)
+// A REFUSAL IS A RECORD (ruled 30 Sep). A product stopped before a usable measurement - its defaults would not sample,
+// its plan found no threshold, its ratio search failed, a window appeared, its unclean-process budget ran out, or its
+// reference was not the input's tone - used to write NOTHING, so discovery offered it again on every batch: four
+// minutes of timeouts per batch per hanger, for ever. It now writes the fixture it has (the store's, or the discovered
+// identity with no controls yet) with `thresholdRefusal` naming the stage and the reason, and NO thresholdSweep. The
+// worklist treats that as recorded; --retry-refused, a new installed version, or deleting the file puts it back.
+inline juce::File writeRefusalRecord (const juce::File& fixturesDir, const juce::var& base, const juce::String& stage, const juce::String& reason,
+                                      int processes, int unclean, const juce::String& probeLabel, const juce::String& host)
+{
+    auto f = sweep::stripPrivate (juce::JSON::parse (juce::JSON::toString (base)));
+    if (auto* o = f.getDynamicObject())
+    {
+        o->removeProperty ("thresholdSweep"); o->removeProperty ("thresholdCandidates"); o->removeProperty ("thresholdReview");
+        auto* r = new juce::DynamicObject();
+        r->setProperty ("stage", stage);
+        r->setProperty ("reason", reason);
+        r->setProperty ("recordedAt", juce::Time::getCurrentTime().toISO8601 (false));
+        r->setProperty ("host", host);
+        r->setProperty ("probe", probeLabel);
+        r->setProperty ("processes", processes);
+        r->setProperty ("uncleanProcesses", unclean);
+        r->setProperty ("note", "stopped before a usable measurement: no thresholdSweep. The worklist skips a recorded refusal; "
+                                "re-run it with --retry-refused (after fixing what the reason names), or by deleting this file, "
+                                "or it re-runs on its own at a new installed version");
+        o->setProperty ("thresholdRefusal", juce::var (r));
+    }
+    fixturesDir.createDirectory();
+    auto out = fixturesDir.getChildFile (fixtureFileName (base));
+    out.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
+    return out;
+}
+
+// Returns whether a thresholdSweep was written; false is the licence-suspect case (silent, non-finite or off-tone at
+// default), which the caller records as a refusal.
+inline bool composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
+                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info, juce::String* whyNot = nullptr)
 {
     const auto one = deriveOne (plan, m, pv, info, fixtureOut.getFileName());
     if (one.written)
         fixtureOut.replaceWithText (juce::JSON::toString (sweep::composeFixture (base, one.sweepVar)) + "\n", false, false, "\n");
+    else if (whyNot != nullptr)
+        *whyNot = "not licensed suspected (silent, non-finite or not the input's tone at default): " + one.d.referenceNote;
     reportOut.replaceWithText (one.report, false, false, "\n");
     std::cout << one.report << std::flush;
+    return one.written;
 }
 
 // SEVERAL CANDIDATES (ruled 30 Sep): one fixture carrying every candidate's sweep, labelled, and NO thresholdSweep - a
@@ -1408,7 +1512,7 @@ inline int runCertSweep (const SweepOptions& opt)
     const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
 
     juce::StringArray wl;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl);
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused);
     const Subject* sp = nullptr;
     for (const auto& x : subjects) if (x.product == opt.product) { sp = &x; break; }
     if (sp == nullptr) { say ("SWEEP: '" + opt.product + "' is not on the worklist (" + wl.joinIntoString ("; ") + ")"); return 2; }
@@ -1430,6 +1534,12 @@ inline int runCertSweep (const SweepOptions& opt)
     juce::Array<juce::var> processes;
     bool windowSeen = false;
     juce::StringArray windows;
+    int unclean = 0;
+    juce::StringArray uncleanWhat;
+    auto overBudget = [&] { return unclean >= kUncleanBudget; };
+    juce::var base = s.pushed;               // the store's fixture, or the discovered identity; replaced by the sampled defaults below
+    // The trace stem for THIS product, known before its defaults are: a refusal's processes.json lands under it too.
+    const auto stem0 = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".sweep" + armTag;
     // THE RETRY RULE, as --cert-defaults: anything but a clean exit is re-run ONCE; a refusal (exit 3) and a
     // window are answers, not retried. Every attempt's output is kept.
     auto runProbe = [&] (const juce::String& stem, const juce::String& tag, const juce::StringArray& extra, float norm) -> ChildResult
@@ -1456,23 +1566,34 @@ inline int runCertSweep (const SweepOptions& opt)
         });
         auto r = a.r;
         if (a.sleptTwice) r.kind = ChildResult::Kind::sleptTwice;   // refused: unclean, and it says why
+        if (! r.cleanExit()) { ++unclean; uncleanWhat.add (tag + ": " + r.describe()); }
         return r;
     };
     auto licenceLine = [&] (const juce::String& what, const ChildResult& r) {
         const auto f = certoutcome::classifyFailure (s.licenceBound, r.windowsInTree);
         return (f == certoutcome::Failure::unlicensedOnHost ? "UNLICENSED ON HOST: " : "ERROR: ") + what + " " + r.describe(); };
+    // THE PER-PRODUCT BUDGET (ruled 30 Sep): the mapper's sweep bounds a plugin at one 90 s process; a certification is
+    // ~17 processes per candidate, each with a once-retry, so a plugin that hangs on every load cost ~68 minutes before
+    // its fixture existed. After kUncleanBudget processes end unclean (after their retry) the product stops, and the
+    // refusal is written THEN. The defaults phase stops on its first unclean process, as before - within the budget.
+    auto refuse = [&] (int rc, const juce::String& stage, const juce::String& reason) {
+        say ("SWEEP: " + s.product + " - " + reason);
+        opt.out.getChildFile (stem0 + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
+        const auto rec = writeRefusalRecord (opt.out.getChildFile ("fixtures"), base, stage, reason, processes.size(), unclean,
+                                             probeLabel, "EJ Map " + opt.hostVersion);
+        say ("SWEEP: refusal recorded at stage '" + stage + "' -> " + rec.getFileName() + " (skipped by the worklist until --retry-refused or a new version)");
+        return rc; };
 
     // AN UNSEEN VERSION: sample defaults first, then sweep, in one pass (ruled 29 Sep). The identity is the
     // INSTALLED component's, composed by the same composeFixture as --cert-defaults.
-    juce::var base = s.pushed;
     bool newIdentity = false;
     if (s.reach == Subject::Reach::versionMismatch || s.reach == Subject::Reach::unfixtured)
     {
         const auto dstem = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".defaults";
         auto lp = runProbe (dstem, "list-params", { "--list-params" }, -1.0f);
-        if (! lp.cleanExit()) { say ("SWEEP: " + s.product + " - " + licenceLine ("defaults --list-params", lp)); return 1; }
+        if (! lp.cleanExit()) return refuse (1, "defaults", licenceLine ("defaults --list-params", lp));
         auto ta = runProbe (dstem, "text-at", { "--text-at", "all" }, -1.0f);
-        if (! ta.cleanExit()) { say ("SWEEP: " + s.product + " - " + licenceLine ("defaults --text-at all", ta)); return 1; }
+        if (! ta.cleanExit()) return refuse (1, "defaults", licenceLine ("defaults --text-at all", ta));
         auto tb = runProbe (dstem, "text-at-2", { "--text-at", "all" }, -1.0f);
         const auto text = parseTextAt (ta.out);
         const auto scan = scanReadouts (text, tb);
@@ -1484,7 +1605,7 @@ inline int runCertSweep (const SweepOptions& opt)
     }
 
     auto plan = sweep::planFromFixture (base);
-    if (! plan.ok) { say ("SWEEP: " + s.product + " - " + plan.why); return 4; }
+    if (! plan.ok) return refuse (4, "plan", plan.why);
     for (auto x : opt.extraSets) plan.sets.push_back (x);
     const auto stem = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + ".sweep" + armTag;
 
@@ -1499,7 +1620,7 @@ inline int runCertSweep (const SweepOptions& opt)
         juce::StringArray gs;
         for (float g : grid) gs.add (juce::String (g, 6));
         const auto r = runProbe (stem, "ratio-search", { "--text-at-norms", juce::String (plan.ratioIndex), gs.joinIntoString (",") }, -1.0f);
-        if (windowSeen || ! r.cleanExit()) { say ("SWEEP: " + s.product + " - " + licenceLine ("ratio search", r)); return 1; }
+        if (windowSeen || ! r.cleanExit()) return refuse (1, "ratio", licenceLine ("ratio search", r));
         std::vector<sweep::GridPoint> pts;
         for (const auto& line : juce::StringArray::fromLines (r.out))
         {
@@ -1508,7 +1629,7 @@ inline int runCertSweep (const SweepOptions& opt)
         }
         juce::String chosenText;
         const auto norm = sweep::chooseRatioRaise (pts, chosenText);
-        if (! norm) { say ("SWEEP: " + s.product + " - ratio instantiates at '" + plan.ratioDefaultText + "' and no grid position reads 4:1 or more; not swept"); return 4; }
+        if (! norm) return refuse (4, "ratio", "ratio instantiates at '" + plan.ratioDefaultText + "' and no grid position reads 4:1 or more; not swept");
         plan.sets.push_back ({ plan.ratioIndex, *norm });
         std::cout << "  ratio raise: [" << plan.ratioIndex << "] '" << plan.ratioDefaultText << "' -> norm " << *norm << " (grid read '" << chosenText << "')" << std::endl;
     }
@@ -1530,13 +1651,13 @@ inline int runCertSweep (const SweepOptions& opt)
         std::cout << "  sweeping " << s.product << (tagPrefix.isNotEmpty() ? " candidate [" + juce::String (q.thr) + "] " + q.thrName : juce::String())
                   << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
                   << " - 1 reference + " << (int) q.norms.size() << " position processes" << std::endl;
-        if (! windowSeen)
+        if (! windowSeen && ! overBudget())
         {
             const auto r = runProbe (stem, tagPrefix + "ref", sweepArgs ("", "2.0"), -1.0f);
             refOut = { r.out, r.cleanExit(), r.describe(), -1.0f };
         }
         posOut.clear();
-        for (size_t k = 0; k < q.norms.size() && ! windowSeen; ++k)
+        for (size_t k = 0; k < q.norms.size() && ! windowSeen && ! overBudget(); ++k)
         {
             const auto tag = tagPrefix + "pos" + juce::String ((int) k).paddedLeft ('0', 2);
             const auto r = runProbe (stem, tag, sweepArgs (juce::String (q.norms[k], 6), "0"), q.norms[k]);
@@ -1551,6 +1672,7 @@ inline int runCertSweep (const SweepOptions& opt)
     else
         for (const auto& c : plan.candidates)
         {
+            if (windowSeen || overBudget()) break;
             auto q = plan.forCandidate (c);
             sweep::applyCandidateControl (q, base);
             sweep::ProcessOut cr; std::vector<sweep::ProcessOut> cp;
@@ -1577,11 +1699,13 @@ inline int runCertSweep (const SweepOptions& opt)
                 break;
             }
         const bool licence = certoutcome::classifyFailure (s.licenceBound, windows) == certoutcome::Failure::unlicensedOnHost;
-        say ("SWEEP: " + s.product + " - " + (licence ? "UNLICENSED ON HOST" : "STOPPED: A WINDOW (recorded, not called a licence fact)")
+        return refuse (licence ? 1 : 5, "window", juce::String (licence ? "UNLICENSED ON HOST" : "STOPPED: A WINDOW (recorded, not called a licence fact)")
              + ": a window appeared in the probe's tree (" + windows.joinIntoString (", ") + ") at stage " + stageSeen
              + "; the product was stopped at once, nothing derived");
-        return licence ? 1 : 5;
     }
+    if (overBudget())
+        return refuse (6, "budget", "stopped after " + juce::String (unclean) + " unclean processes (budget " + juce::String (kUncleanBudget)
+                       + ", each already re-run once): " + uncleanWhat.joinIntoString ("; ") + "; nothing derived");
 
     const auto m = plan.candidates.empty() ? sweep::mergeProcesses (refOut, posOut)
                                            : sweep::mergeProcesses (candRuns.front().second.first, candRuns.front().second.second);
@@ -1631,8 +1755,10 @@ inline int runCertSweep (const SweepOptions& opt)
     info.newIdentity = newIdentity;
     if (plan.candidates.empty())
     {
-        composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info);
-        return 0;
+        juce::String whyNot;
+        if (composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info, &whyNot))
+            return 0;
+        return refuse (1, "reference", whyNot);
     }
     std::vector<std::pair<sweep::Plan, Derivation>> cands;
     for (const auto& [q, run] : candRuns)
@@ -1697,7 +1823,7 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 {
     juce::StringArray wl;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl);
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused);
     std::cout << wl.joinIntoString ("\n") << std::endl;
     juce::StringArray done, refused;
     int n = 0;
@@ -1727,10 +1853,10 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 // instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
 // measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
 // the pushed fixture's controls; the real plan is made from the defaults sampled at the installed version.
-inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace)
+inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused = false)
 {
     juce::StringArray wl;
-    auto subjects = buildWorklist (fixturesDir, ledgerRoot, includePace, wl);
+    auto subjects = buildWorklist (fixturesDir, ledgerRoot, includePace, wl, retryRefused);
     int runnable = 0, runnableNewIdentity = 0, runnableDiscovered = 0;
     std::map<juce::String, juce::StringArray> notRunnable;
     juce::StringArray rows;
