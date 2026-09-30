@@ -1,0 +1,61 @@
+probe: "Drawmer 1973" | AudioUnit:Effects/aufx,0yow,SfTb | uid=26a5d6d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	36	name	S High Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input	2	Stereo	enabled
+bus	render	in	1	Side Chain Input	2	Stereo	enabled
+bus	render	out	0	Main Output	2	Stereo	enabled
+sidechain	1	Side Chain Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	4
+param	0	0.500000	Input Gain	0.0
+param	1	1.000000	Big	OFF
+param	2	0.360000	Low Threshold	0.0
+param	3	0.500000	Low Status	ON
+param	4	0.000000	Low Attack	0.2
+param	5	0.000000	Low Release	0.08 s
+param	6	0.380000	Low Gain	0.0
+param	7	0.500000	Low X-Over Freq	200
+param	8	0.360000	Mid Threshold	0.0
+param	9	0.500000	Mid Status	ON
+param	10	0.000000	Mid Attack	0.2
+param	11	0.000000	Mid Release	0.08 s
+param	12	0.380000	Mid Gain	0.0
+param	13	0.500000	High X-Over Freq	2.6
+param	14	1.000000	Air	OFF
+param	15	0.360000	High Threshold	0.0
+param	16	0.500000	High Status	ON
+param	17	0.000000	High Attack	0.2
+param	18	0.000000	High Release	0.08 s
+param	19	0.380000	High Gain	0.0
+param	20	0.000000	Mix	WET
+param	21	0.500000	Output Gain	0.0
+param	22	1.000000	Mode	STEREO
+param	23	1.000000	Sidechain	INTERNAL
+param	24	1.000000	S Big	OFF
+param	25	0.360000	S Low Threshold	0.0
+param	26	0.500000	S Low Status	ON
+param	27	0.000000	S Low Attack	0.2
+param	28	0.000000	S Low Release	0.08 s
+param	29	0.380000	S Low Gain	0.0
+param	30	0.360000	S Mid Threshold	0.0
+param	31	0.500000	S Mid Status	ON
+param	32	0.000000	S Mid Attack	0.2
+param	33	0.000000	S Mid Release	0.08 s
+param	34	0.380000	S Mid Gain	0.0
+param	35	1.000000	S Air	OFF
+param	36	0.360000	S High Threshold	0.0
+param	37	0.500000	S High Status	ON
+param	38	0.000000	S High Attack	0.2
+param	39	0.000000	S High Release	0.08 s
+param	40	0.380000	S High Gain	0.0
+stage	position
+pos	0	norm	0.800000	confirm_ms	2.46	slices	1	instack_match	1	getValue	0.800000	landed_by	instack	render_blocks	0	text_ms	23.0	reads	2	text	-25.7
+hold	0	-24.00	level_db	-27.7895	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.7895,-27.7895	doubled	0	last_move_db	0.0046	final_move_db	0.0046	win	-27.7897,-27.7879,-27.7925,-27.7879,-27.7925,-27.7879	nonfinite	0
+hold	0	-12.00	level_db	-19.2462	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.2462,-19.2462	doubled	0	last_move_db	0.0049	final_move_db	0.0049	win	-19.2404,-19.2446,-19.2495,-19.2446,-19.2495,-19.2446	nonfinite	0
+hold	0	-6.00	level_db	-16.5019	in_rms_db	-9.0103	tone_frac	1.0000	ch	-16.5019,-16.5019	doubled	0	last_move_db	0.0053	final_move_db	0.0053	win	-16.4970,-16.5002,-16.5055,-16.5002,-16.5054,-16.5002	nonfinite	0
+reread	0	steady
+timing	wall_ms	173.9	audio_s	4.500
+stage	done

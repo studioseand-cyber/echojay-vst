@@ -1,0 +1,66 @@
+probe: "Lindell MBC" | AudioUnit:Effects/aufx,Lmbc,Brwx | uid=6f6a7363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+sweep	proto	1	thr	7	name	Low Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	52
+param	0	0.000000	SC HPF	Off
+param	1	1.000000	Mix	100
+param	2	0.500000	THD	-0.00
+param	3	0.133333	Gain	2.00
+param	4	0.000000	Knee	SOFT
+param	5	0.000000	Smash	Off
+param	6	1.000000	High In	On
+param	7	0.500000	Low Threshold	-1.61
+param	8	0.000000	Bands Link	Off
+param	9	0.500000	Mid Release	0.500
+param	10	0.500000	Input Gain	-0.00
+param	11	1.000000	Low In	On
+param	12	1.000000	Mid In	On
+param	13	0.000000	Style	Feed Back
+param	14	0.750076	Mid-High Freq	5.00 kHz
+param	15	0.500000	High Release	0.500
+param	16	0.500000	Low Ratio	4:1
+param	17	0.000000	External Side Chain	Off
+param	18	0.500000	Low Attack	1 ms
+param	19	0.000000	High Gain	0.00
+param	20	0.000000	High Link	Off
+param	21	0.000000	High Solo	Off
+param	22	0.500000	Mid Ratio	4:1
+param	23	0.500000	Output Gain	-0.00
+param	24	0.000000	Mid Gain	0.00
+param	25	0.000000	Mid Link	Off
+param	26	0.000000	Mid Solo	Off
+param	27	1.000000	Manual Gain	On
+param	28	0.000000	Low Mid-Side Mode	Off
+param	29	0.500000	Meters Mode	GR
+param	30	0.363958	Low-Mid Freq	200 Hz
+param	31	0.500000	Low Release	0.500
+param	32	0.500000	High Attack	1 ms
+param	33	0.500000	High Ratio	4:1
+param	34	0.500000	Mid Attack	1 ms
+param	35	0.000000	High Mid-Side Mode	Off
+param	36	1.000000	Compress	On
+param	37	0.000000	Mid Mid-Side Mode	Off
+param	38	0.500000	Mid Threshold	-1.61
+param	39	0.000000	Bypass	Off
+param	40	0.000000	Low Gain	0.00
+param	41	0.000000	Low Link	Off
+param	42	0.000000	Low Solo	Off
+param	43	0.000000	Filter	OFF
+param	44	0.500000	High Threshold	-1.61
+stage	position
+pos	0	norm	0.200000	confirm_ms	2.45	slices	1	instack_match	1	getValue	0.200000	landed_by	instack	render_blocks	0	text_ms	20.3	reads	2	text	6.93
+hold	0	-24.00	level_db	-25.5066	in_rms_db	-27.0103	tone_frac	1.0000	ch	-25.5067,-25.5066	doubled	0	last_move_db	0.0052	final_move_db	0.0052	win	-25.5170,-25.5069,-25.5109,-25.5053,-25.5100,-25.5047	nonfinite	0
+hold	0	-12.00	level_db	-16.6735	in_rms_db	-15.0103	tone_frac	1.0000	ch	-16.6735,-16.6735	doubled	0	last_move_db	0.0067	final_move_db	0.0067	win	-16.5975,-16.6846,-16.6831,-16.6737,-16.6768,-16.6700	nonfinite	0
+hold	0	-6.00	level_db	-12.8447	in_rms_db	-9.0103	tone_frac	1.0000	ch	-12.8447,-12.8447	doubled	0	last_move_db	0.0062	final_move_db	0.0062	win	-12.8051,-12.8490,-12.8513,-12.8438,-12.8482,-12.8420	nonfinite	0
+reread	0	steady
+timing	wall_ms	174.4	audio_s	4.500
+stage	done

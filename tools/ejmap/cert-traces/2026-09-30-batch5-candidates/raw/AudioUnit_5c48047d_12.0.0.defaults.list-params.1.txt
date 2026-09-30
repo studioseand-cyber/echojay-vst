@@ -1,0 +1,17 @@
+probe: "dbx-160 (s)" | AudioUnit:Effects/aufx,VN5S,ksWV | uid=5c48047d | arch=arm64 | format=AudioUnit
+
+0	Input L/M	dB	2147483647	0	1	0
+1	Input R/S	dB	2147483647	0	1	0
+2	Threshold L/M		2147483647	0	1	0
+3	Threshold R/S		2147483647	0	1	0
+4	Compression L/M		2147483647	0	1	0
+5	Compression R/S		2147483647	0	1	0
+6	Output L		2147483647	0	1	0
+7	Output R		2147483647	0	1	0
+8	Mix L/M		2147483647	0	1	0
+9	Mix R/S		2147483647	0	1	0
+10	SC-HP L		2	1	1	0
+11	SC-HP R		2	1	1	0
+12	Noise		2147483647	0	1	0
+13	Comp Mode		3	1	1	0
+14	Monitor		4	1	1	0

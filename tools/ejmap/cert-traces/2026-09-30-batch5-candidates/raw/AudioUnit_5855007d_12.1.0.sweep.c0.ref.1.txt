@@ -1,0 +1,42 @@
+probe: "Abbey Road RS124 (s)" | AudioUnit:Effects/aufx,RS1S,ksWV | uid=5855007d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input Control	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	49
+param	0	0.500000	Input Control	5.0
+param	1	0.000000	Recovery	1
+param	2	0.000000	Super Fuse	Off
+param	3	0.000000	Unit Type	Studio
+param	4	0.000000	SC HP	20
+param	5	1.000000	Mix	100.0
+param	6	0.500000	Output Attenuator	0.0
+param	7	0.500000	Meter Selector	Gain Reduction
+param	8	0.500000	Input Control R	5.0
+param	9	0.000000	Unit Type R	Studio
+param	10	0.000000	Recovery R	1
+param	11	0.000000	Super Fuse R	Off
+param	12	1.000000	Mix R	100.0
+param	13	0.000000	SC HP R	20
+param	14	0.500000	Output Attenuator R	0.0
+param	15	0.500000	Meter Selector R	Gain Reduction
+param	16	0.000000	Compressor Type	Stereo
+param	17	0.200000	Monitor	Stereo
+param	18	1.000000	Link	On
+param	19	0.000000	Auto Hold	Off
+param	20	0.000000	Auto Hold R	Off
+param	21	0.000000	HF Roll-Off	Off
+param	22	0.000000	HF Roll-Off R	Off
+stage	reference
+refpos	val	0.500000	text	5.0
+ref	-54.00	level_db	-46.3558	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-46.3558,-46.3558	win	-48.8175,-46.3554,-46.3568,-46.3553,-46.3568,-46.3553,-46.3568,-46.3553	nonfinite	0
+ref	-48.00	level_db	-40.3564	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-40.3564,-40.3564	win	-40.3718,-40.3554,-40.3584,-40.3554,-40.3584,-40.3554,-40.3584,-40.3554	nonfinite	0
+ref	-24.00	level_db	-24.7238	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-24.7238,-24.7238	win	-23.4321,-24.7252,-24.7201,-24.7256,-24.7201,-24.7256,-24.7201,-24.7256	nonfinite	0
+ref	-12.00	level_db	-21.1071	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-21.1071,-21.1071	win	-20.2660,-21.1057,-21.1099,-21.1057,-21.1099,-21.1057,-21.1099,-21.1057	nonfinite	0
+ref	-6.00	level_db	-19.2118	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-19.2118,-19.2118	win	-18.7870,-19.2118,-19.2117,-19.2119,-19.2117,-19.2119,-19.2117,-19.2119	nonfinite	0
+timing	wall_ms	478.1	audio_s	10.000
+stage	done

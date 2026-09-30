@@ -1,0 +1,55 @@
+probe: "DPR-402 (s)" | AudioUnit:Effects/aufx,BDRS,ksWV | uid=4842637d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	7	name	Threshold R/S	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	in	1	Side-Chain Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+sidechain	1	Side-Chain Input Bus	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	85
+param	0	0.500000	Input L/M	0.0
+param	1	0.500000	Input R/S	0.0
+param	2	0.000000	Stereo Mode	Stereo
+param	3	0.666667	Monitor	STEREO
+param	4	0.000000	Comp Mode L/M	Comp
+param	5	0.000000	Comp Mode R/S	Comp
+param	6	1.000000	Threshold L/M	Out
+param	7	1.000000	Threshold R/S	Out
+param	8	0.500000	Ratio L/M	4.0
+param	9	0.500000	Ratio R/S	4.0
+param	10	0.400000	Attack L/M	1 ms
+param	11	0.400000	Attack R/S	1 ms
+param	12	0.400000	Release L/M	100 ms
+param	13	0.400000	Release R/S	100 ms
+param	14	1.000000	De-Ess L/M	Out
+param	15	1.000000	De-Ess R/S	Out
+param	16	1.000000	Freq L/M	15.00 kHz
+param	17	1.000000	Freq R/S	15.00 kHz
+param	18	1.000000	Peak Lim L/M	Out
+param	19	1.000000	Peak Lim R/S	Out
+param	20	0.000000	Peak Lim Attack L/M	Fast
+param	21	0.000000	Peak Lim Attack R/S	Fast
+param	22	0.000000	Noise	Off
+param	23	0.500000	Output L/M	0.0 dB
+param	24	0.500000	Output R/S	0.0 dB
+param	25	0.000000	Mon S.C L/M	Audio
+param	26	0.000000	Mon S.C R/S	Audio
+param	27	0.000000	Jumper L/M	Normal Comp
+param	28	0.000000	Jumper R/S	Normal Comp
+param	29	1.000000	Mix L/M	100.0%
+param	30	1.000000	Mix R/S	100.0%
+param	31	1.000000	DPR Bypass L/M	On
+param	32	1.000000	DPR Bypass R/S	On
+param	33	0.000000	Ext S.C L/M	Off
+param	34	0.000000	Ext S.C R/S	Off
+stage	position
+pos	0	norm	0.733333	confirm_ms	56.13	slices	6	instack_match	0	getValue	0.733333	landed_by	pump	render_blocks	0	text_ms	23.0	reads	2	text	-13.3 dB
+hold	0	-24.00	level_db	-27.0130	in_rms_db	-27.0103	tone_frac	0.9999	ch	-27.0130,-27.0130	doubled	0	last_move_db	-0.0019	final_move_db	-0.0019	win	-27.0434,-27.0136,-27.0118,-27.0136,-27.0118,-27.0136	nonfinite	0
+hold	0	-12.00	level_db	-17.3204	in_rms_db	-15.0103	tone_frac	0.9999	ch	-17.3204,-17.3204	doubled	0	last_move_db	-0.0027	final_move_db	-0.0027	win	-17.3061,-17.3214,-17.3186,-17.3213,-17.3186,-17.3214	nonfinite	0
+hold	0	-6.00	level_db	-14.6552	in_rms_db	-9.0103	tone_frac	0.9999	ch	-14.6552,-14.6552	doubled	0	last_move_db	-0.0034	final_move_db	-0.0034	win	-14.6178,-14.6563,-14.6529,-14.6563,-14.6529,-14.6563	nonfinite	0
+reread	0	steady
+timing	wall_ms	245.6	audio_s	4.500
+stage	done

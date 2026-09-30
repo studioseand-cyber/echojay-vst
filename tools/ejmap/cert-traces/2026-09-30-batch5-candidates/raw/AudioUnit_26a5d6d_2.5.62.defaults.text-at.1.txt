@@ -1,0 +1,207 @@
+probe: "Drawmer 1973" | AudioUnit:Effects/aufx,0yow,SfTb | uid=26a5d6d | arch=arm64 | format=AudioUnit
+
+param	0	Input Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	1	Big	unit	
+def	1.000000	OFF	default	1.000000
+at	0.000	ON
+at	0.500	OFF
+at	1.000	OFF
+param	2	Low Threshold	unit	dB
+def	0.360000	0.0	default	0.360000
+at	0.000	20.0
+at	0.500	-8.2
+at	1.000	-30.0
+param	3	Low Status	unit	
+def	0.500000	ON	default	0.500000
+at	0.000	BYPASS
+at	0.500	ON
+at	1.000	MUTE
+param	4	Low Attack	unit	ms
+def	0.000000	0.2	default	0.000000
+at	0.000	0.2
+at	0.500	10.0
+at	1.000	50.0
+param	5	Low Release	unit	
+def	0.000000	0.08 s	default	0.000000
+at	0.000	0.08 s
+at	0.500	F
+at	1.000	S
+param	6	Low Gain	unit	dB
+def	0.380000	0.0	default	0.380000
+at	0.000	-5.0
+at	0.500	3.5
+at	1.000	20.0
+param	7	Low X-Over Freq	unit	Hz
+def	0.500000	200	default	0.500000
+at	0.000	50
+at	0.500	200
+at	1.000	1300
+param	8	Mid Threshold	unit	dB
+def	0.360000	0.0	default	0.360000
+at	0.000	20.0
+at	0.500	-8.2
+at	1.000	-30.0
+param	9	Mid Status	unit	
+def	0.500000	ON	default	0.500000
+at	0.000	BYPASS
+at	0.500	ON
+at	1.000	MUTE
+param	10	Mid Attack	unit	ms
+def	0.000000	0.2	default	0.000000
+at	0.000	0.2
+at	0.500	10.0
+at	1.000	50.0
+param	11	Mid Release	unit	
+def	0.000000	0.08 s	default	0.000000
+at	0.000	0.08 s
+at	0.500	F
+at	1.000	S
+param	12	Mid Gain	unit	dB
+def	0.380000	0.0	default	0.380000
+at	0.000	-5.0
+at	0.500	3.5
+at	1.000	20.0
+param	13	High X-Over Freq	unit	kHz
+def	0.500000	2.6	default	0.500000
+at	0.000	1.0
+at	0.500	2.6
+at	1.000	14.0
+param	14	Air	unit	
+def	1.000000	OFF	default	1.000000
+at	0.000	ON
+at	0.500	OFF
+at	1.000	OFF
+param	15	High Threshold	unit	dB
+def	0.360000	0.0	default	0.360000
+at	0.000	20.0
+at	0.500	-8.2
+at	1.000	-30.0
+param	16	High Status	unit	
+def	0.500000	ON	default	0.500000
+at	0.000	BYPASS
+at	0.500	ON
+at	1.000	MUTE
+param	17	High Attack	unit	ms
+def	0.000000	0.2	default	0.000000
+at	0.000	0.2
+at	0.500	10.0
+at	1.000	50.0
+param	18	High Release	unit	
+def	0.000000	0.08 s	default	0.000000
+at	0.000	0.08 s
+at	0.500	F
+at	1.000	S
+param	19	High Gain	unit	dB
+def	0.380000	0.0	default	0.380000
+at	0.000	-5.0
+at	0.500	3.5
+at	1.000	20.0
+param	20	Mix	unit	
+def	0.000000	WET	default	0.000000
+at	0.000	WET
+at	0.500	5.0
+at	1.000	DRY
+param	21	Output Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	22	Mode	unit	
+def	1.000000	STEREO	default	1.000000
+at	0.000	SIDE
+at	0.500	MID
+at	1.000	STEREO
+param	23	Sidechain	unit	
+def	1.000000	INTERNAL	default	1.000000
+at	0.000	EXTERNAL
+at	0.500	INTERNAL
+at	1.000	INTERNAL
+param	24	S Big	unit	
+def	1.000000	OFF	default	1.000000
+at	0.000	ON
+at	0.500	OFF
+at	1.000	OFF
+param	25	S Low Threshold	unit	dB
+def	0.360000	0.0	default	0.360000
+at	0.000	20.0
+at	0.500	-8.2
+at	1.000	-30.0
+param	26	S Low Status	unit	
+def	0.500000	ON	default	0.500000
+at	0.000	BYPASS
+at	0.500	ON
+at	1.000	MUTE
+param	27	S Low Attack	unit	ms
+def	0.000000	0.2	default	0.000000
+at	0.000	0.2
+at	0.500	10.0
+at	1.000	50.0
+param	28	S Low Release	unit	
+def	0.000000	0.08 s	default	0.000000
+at	0.000	0.08 s
+at	0.500	F
+at	1.000	S
+param	29	S Low Gain	unit	dB
+def	0.380000	0.0	default	0.380000
+at	0.000	-5.0
+at	0.500	3.5
+at	1.000	20.0
+param	30	S Mid Threshold	unit	dB
+def	0.360000	0.0	default	0.360000
+at	0.000	20.0
+at	0.500	-8.2
+at	1.000	-30.0
+param	31	S Mid Status	unit	
+def	0.500000	ON	default	0.500000
+at	0.000	BYPASS
+at	0.500	ON
+at	1.000	MUTE
+param	32	S Mid Attack	unit	ms
+def	0.000000	0.2	default	0.000000
+at	0.000	0.2
+at	0.500	10.0
+at	1.000	50.0
+param	33	S Mid Release	unit	
+def	0.000000	0.08 s	default	0.000000
+at	0.000	0.08 s
+at	0.500	F
+at	1.000	S
+param	34	S Mid Gain	unit	dB
+def	0.380000	0.0	default	0.380000
+at	0.000	-5.0
+at	0.500	3.5
+at	1.000	20.0
+param	35	S Air	unit	
+def	1.000000	OFF	default	1.000000
+at	0.000	ON
+at	0.500	OFF
+at	1.000	OFF
+param	36	S High Threshold	unit	dB
+def	0.360000	0.0	default	0.360000
+at	0.000	20.0
+at	0.500	-8.2
+at	1.000	-30.0
+param	37	S High Status	unit	
+def	0.500000	ON	default	0.500000
+at	0.000	BYPASS
+at	0.500	ON
+at	1.000	MUTE
+param	38	S High Attack	unit	ms
+def	0.000000	0.2	default	0.000000
+at	0.000	0.2
+at	0.500	10.0
+at	1.000	50.0
+param	39	S High Release	unit	
+def	0.000000	0.08 s	default	0.000000
+at	0.000	0.08 s
+at	0.500	F
+at	1.000	S
+param	40	S High Gain	unit	dB
+def	0.380000	0.0	default	0.380000
+at	0.000	-5.0
+at	0.500	3.5
+at	1.000	20.0

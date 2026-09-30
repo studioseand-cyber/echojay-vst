@@ -1,0 +1,77 @@
+probe: "dbx-160 (s)" | AudioUnit:Effects/aufx,VN5S,ksWV | uid=5c48047d | arch=arm64 | format=AudioUnit
+
+param	0	Input L/M	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	1	Input R/S	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	2	Threshold L/M	unit	
+def	0.810000	1.000	default	0.810000
+at	0.000	0.010
+at	0.500	0.200
+at	1.000	3.000
+param	3	Threshold R/S	unit	
+def	0.810000	1.000	default	0.810000
+at	0.000	0.010
+at	0.500	0.200
+at	1.000	3.000
+param	4	Compression L/M	unit	
+def	0.500000	4.00	default	0.500000
+at	0.000	1.00
+at	0.500	4.00
+at	1.000	inf
+param	5	Compression R/S	unit	
+def	0.500000	4.00	default	0.500000
+at	0.000	1.00
+at	0.500	4.00
+at	1.000	inf
+param	6	Output L	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	7	Output R	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	8	Mix L/M	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100.0%
+param	9	Mix R/S	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.0%
+at	0.500	50.0%
+at	1.000	100.0%
+param	10	SC-HP L	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	SC-HP R	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	Noise	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	50.0
+at	1.000	100.0
+param	13	Comp Mode	unit	
+def	0.000000	STEREO	default	0.000000
+at	0.000	STEREO
+at	0.500	DUO
+at	1.000	MS
+param	14	Monitor	unit	
+def	0.666667	STEREO	default	0.666667
+at	0.000	LEFT
+at	0.500	STEREO
+at	1.000	RIGHT

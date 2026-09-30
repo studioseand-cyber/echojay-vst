@@ -1,0 +1,46 @@
+probe: "Kiive XTComp" | AudioUnit:Effects/aufx,Kaxc,Kiiv | uid=617d776d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	INPUT	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Input Right	0.0
+param	1	0.500000	INPUT	0.0
+param	2	0.000000	Type Left	0.0
+param	3	0.000000	Type Right	0.0
+param	4	1.000000	Sat Mix Left	1.0
+param	5	0.500000	OUTPUT	0.0
+param	6	0.000000	Sat Left	0.0
+param	7	0.571429	Right Ratio	5.0
+param	8	0.500000	Release Left	5.0
+param	9	1.000000	Comp Mix Right	1.0
+param	10	1.000000	Comp Mix Left	1.0
+param	11	0.000000	SC Left	0.0
+param	12	0.000000	SC Right	0.0
+param	13	0.000000	Sat Right	0.0
+param	14	0.500000	Input Left	0.0
+param	15	0.500000	XT Mode	1.0
+param	16	0.500000	Output Left	0.0
+param	17	0.500000	Attack Left	5.0
+param	18	0.000000	Warmth Right	0.0
+param	19	0.000000	Warmth Left	0.0
+param	20	0.500000	Release Right	5.0
+param	21	0.500000	Output Right	0.0
+param	22	0.571429	Left Ratio	5.0
+param	23	1.000000	Sat Mix Right	1.0
+param	24	0.500000	R Knee	1.0
+param	25	0.500000	Attack Right	5.0
+param	26	0.500000	L Knee	1.0
+stage	reference
+refpos	val	0.500000	text	0.0
+ref	-54.00	level_db	-52.0965	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-52.0965,-52.0965	win	-52.2753,-52.0962,-52.0972,-52.0962,-52.0972,-52.0962,-52.0972,-52.0962	nonfinite	0
+ref	-48.00	level_db	-46.0861	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-46.0861,-46.0861	win	-46.0897,-46.0849,-46.0884,-46.0850,-46.0884,-46.0850,-46.0884,-46.0850	nonfinite	0
+ref	-24.00	level_db	-22.1657	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-22.1657,-22.1657	win	-22.1550,-22.1676,-22.1620,-22.1676,-22.1620,-22.1675,-22.1620,-22.1675	nonfinite	0
+ref	-12.00	level_db	-18.0964	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.0964,-18.0964	win	-17.9479,-18.0951,-18.0990,-18.0951,-18.0990,-18.0951,-18.0990,-18.0951	nonfinite	0
+ref	-6.00	level_db	-17.1849	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-17.1849,-17.1849	win	-17.0994,-17.1848,-17.1852,-17.1848,-17.1851,-17.1848,-17.1852,-17.1849	nonfinite	0
+timing	wall_ms	351.8	audio_s	10.000
+stage	done

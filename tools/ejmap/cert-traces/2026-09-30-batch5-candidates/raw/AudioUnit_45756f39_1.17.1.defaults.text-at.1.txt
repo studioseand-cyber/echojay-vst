@@ -1,0 +1,237 @@
+probe: "elysia alpha master" | AudioUnit:Effects/aufx,alp2,Elys | uid=45756f39 | arch=arm64 | format=AudioUnit
+
+param	0	Active	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	MS Mode	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Threshold 1	unit	
+def	0.000000	+20.0 dB	default	0.000000
+at	0.000	+20.0 dB
+at	0.500	+2.0 dB
+at	1.000	-13.0 dB
+param	4	Feed Forward 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	5	Attack 1	unit	
+def	0.500000	26.0 ms	default	0.500000
+at	0.000	0.0 ms
+at	0.500	26.0 ms
+at	1.000	150.0 ms
+param	6	Attack Auto Fast 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Release 1	unit	
+def	0.500000	359.2 ms	default	0.500000
+at	0.000	60.0 ms
+at	0.500	359.2 ms
+at	1.000	1800.0 ms
+param	8	Release Auto Fast 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Ratio 1	unit	
+def	0.363636	1.5	default	0.363636
+at	0.000	1.1
+at	0.500	1.7
+at	1.000	2.4
+param	10	EQ Gain 1	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	3.3 dB
+at	0.500	0.0 dB
+at	1.000	3.3 dB
+param	11	EQ On 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	EQ Freq 1	unit	
+def	0.500000	155.0 Hz	default	0.500000
+at	0.000	20.0 Hz
+at	0.500	155.0 Hz
+at	1.000	2000.0 Hz
+param	13	EQ Freq x10 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	SC Gain 1	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-oo dB
+at	0.500	0.0 dB
+at	1.000	-oo dB
+param	15	SC On 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	SC Freq 1	unit	
+def	0.500000	310.0 Hz	default	0.500000
+at	0.000	30.0 Hz
+at	0.500	310.0 Hz
+at	1.000	3300.0 Hz
+param	17	Direct 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	18	Mix 1	unit	
+def	1.000000	100.0 %	default	1.000000
+at	0.000	0.0 %
+at	0.500	55.0 %
+at	1.000	100.0 %
+param	19	Compressed 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	20	Gain 1	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	4.0 dB
+at	1.000	12.0 dB
+param	21	Warm 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	22	Soft Clip 1	unit	
+def	0.000000	25.0 dB	default	0.000000
+at	0.000	25.0 dB
+at	0.500	15.0 dB
+at	1.000	3.0 dB
+param	23	Soft Clip On 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	24	Threshold 2	unit	
+def	0.000000	+20.0 dB	default	0.000000
+at	0.000	+20.0 dB
+at	0.500	+2.0 dB
+at	1.000	-13.0 dB
+param	25	Feed Forward 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	26	Attack 2	unit	
+def	0.500000	26.0 ms	default	0.500000
+at	0.000	0.0 ms
+at	0.500	26.0 ms
+at	1.000	150.0 ms
+param	27	Attack Auto Fast 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	28	Release 2	unit	
+def	0.500000	359.2 ms	default	0.500000
+at	0.000	60.0 ms
+at	0.500	359.2 ms
+at	1.000	1800.0 ms
+param	29	Release Auto Fast 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	30	Ratio 2	unit	
+def	0.363636	1.5	default	0.363636
+at	0.000	1.1
+at	0.500	1.7
+at	1.000	2.4
+param	31	EQ Gain 2	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	3.3 dB
+at	0.500	0.0 dB
+at	1.000	3.3 dB
+param	32	EQ On 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	33	EQ Freq 2	unit	
+def	0.500000	155.0 Hz	default	0.500000
+at	0.000	20.0 Hz
+at	0.500	155.0 Hz
+at	1.000	2000.0 Hz
+param	34	EQ Freq x10 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	35	SC Gain 2	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-oo dB
+at	0.500	0.0 dB
+at	1.000	-oo dB
+param	36	SC On 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	37	SC Freq 2	unit	
+def	0.500000	310.0 Hz	default	0.500000
+at	0.000	30.0 Hz
+at	0.500	310.0 Hz
+at	1.000	3300.0 Hz
+param	38	Direct 2	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	39	Mix 2	unit	
+def	1.000000	100.0 %	default	1.000000
+at	0.000	0.0 %
+at	0.500	55.0 %
+at	1.000	100.0 %
+param	40	Compressed 2	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	41	Gain 2	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	4.0 dB
+at	1.000	12.0 dB
+param	42	Warm 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	43	Soft Clip 2	unit	
+def	0.000000	25.0 dB	default	0.000000
+at	0.000	25.0 dB
+at	0.500	15.0 dB
+at	1.000	3.0 dB
+param	44	Soft Clip On 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	45	Gain Reduction 1	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	7.2 dB
+at	1.000	20.0 dB
+param	46	Gain Reduction 2	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	7.2 dB
+at	1.000	20.0 dB

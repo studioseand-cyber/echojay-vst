@@ -1,0 +1,109 @@
+probe: "MDynamics" | AudioUnit:Effects/aumf,MAe$,Meld | uid=61516426 | arch=arm64 | format=AudioUnit
+
+0	Globals -> Input		2147483647	0	1	0
+1	Globals -> Output		2147483647	0	1	0
+2	Globals -> Compression		2147483647	0	1	0
+3	Globals -> Dry/wet		2147483647	0	1	0
+4	Param 5		2147483647	0	1	0
+5	Param 6		2147483647	0	1	0
+6	Param 7		2147483647	0	1	0
+7	Param 8		2147483647	0	1	0
+8	Compressor -> Threshold		2147483647	0	1	0
+9	Compressor -> Ratio		2147483647	0	1	0
+10	Compressor -> Knee		2147483647	0	1	0
+11	Param 12		2147483647	0	1	0
+12	Param 13		2147483647	0	1	0
+13	Param 14		2147483647	0	1	0
+14	Compressor -> Attack		2147483647	0	1	0
+15	Compressor -> Release		2147483647	0	1	0
+16	Param 17		2147483647	0	1	0
+17	Param 18		2147483647	0	1	0
+18	Compressor -> RMS		2147483647	0	1	0
+19	Compressor -> Release mode		2147483647	0	1	0
+20	Param 21		2147483647	0	1	0
+21	Param 22		2147483647	0	1	0
+22	Param 23		2147483647	0	1	0
+23	Param 24		2147483647	0	1	0
+24	Param 25		2147483647	0	1	0
+25	Detector -> Side-chain input		2147483647	0	1	0
+26	Detector -> HP		2147483647	0	1	0
+27	Detector -> LP		2147483647	0	1	0
+28	Detector -> Gain		2147483647	0	1	0
+29	Detector -> Frequency		2147483647	0	1	0
+30	Detector -> BW		2147483647	0	1	0
+31	Param 32		2147483647	0	1	0
+32	Param 33		2147483647	0	1	0
+33	Param 34		2147483647	0	1	0
+34	Param 35		2147483647	0	1	0
+35	Param 36		2147483647	0	1	0
+36	Param 37		2147483647	0	1	0
+37	Param 38		2147483647	0	1	0
+38	Param 39		2147483647	0	1	0
+39	Param 40		2147483647	0	1	0
+40	Param 41		2147483647	0	1	0
+41	Param 42		2147483647	0	1	0
+42	Param 43		2147483647	0	1	0
+43	Param 44		2147483647	0	1	0
+44	Param 45		2147483647	0	1	0
+45	Param 46		2147483647	0	1	0
+46	Param 47		2147483647	0	1	0
+47	Param 48		2147483647	0	1	0
+48	Param 49		2147483647	0	1	0
+49	Param 50		2147483647	0	1	0
+50	Param 51		2147483647	0	1	0
+51	Param 52		2147483647	0	1	0
+52	Param 53		2147483647	0	1	0
+53	Param 54		2147483647	0	1	0
+54	Param 55		2147483647	0	1	0
+55	Param 56		2147483647	0	1	0
+56	Param 57		2147483647	0	1	0
+57	Param 58		2147483647	0	1	0
+58	Param 59		2147483647	0	1	0
+59	Param 60		2147483647	0	1	0
+60	Param 61		2147483647	0	1	0
+61	Param 62		2147483647	0	1	0
+62	Param 63		2147483647	0	1	0
+63	Param 64		2147483647	0	1	0
+64	General parameters - Input gain		2147483647	0	1	0
+65	General parameters - Output gain		2147483647	0	1	0
+66	General parameters - Temp gain		2147483647	0	1	0
+67	General parameters - Dry/Wet		2147483647	0	1	0
+68	General parameters - Mode		2147483647	0	1	0
+69	General parameters - Maximize		2147483647	0	1	0
+70	General parameters - Link channels		2147483647	0	1	0
+71	Dynamic detection - Attack		2147483647	0	1	0
+72	Dynamic detection - Release		2147483647	0	1	0
+73	Dynamic detection - Release mode		2147483647	0	1	0
+74	Dynamic detection - Auto speed		2147483647	0	1	0
+75	Dynamic detection - Peak hold		2147483647	0	1	0
+76	Dynamic detection - RMS length		2147483647	0	1	0
+77	Dynamic detection - Look-ahead		2147483647	0	1	0
+78	Side-chain - Side-chain		2	1	1	0
+79	Side-chain - Minimal		2147483647	0	1	0
+80	Side-chain - Maximal		2147483647	0	1	0
+81	Side-chain - Resonance		2147483647	0	1	0
+82	Side-chain - Side-chain gain		2147483647	0	1	0
+83	Side-chain - Use secondary input channel		2	1	1	0
+84	Gate - Gate		2	1	1	0
+85	Gate - Threshold		2147483647	0	1	0
+86	Gate - Size		2147483647	0	1	0
+87	Gate - Knee		2147483647	0	1	0
+88	Gate - Bottom		2147483647	0	1	0
+89	Processor 1 - Processor 1		2	1	1	0
+90	Processor 1 - Threshold		2147483647	0	1	0
+91	Processor 1 - Ratio		2147483647	0	1	0
+92	Processor 1 - Knee size		2147483647	0	1	0
+93	Processor 1 - Range		2147483647	0	1	0
+94	Processor 2 - Processor 2		2	1	1	0
+95	Processor 2 - Threshold		2147483647	0	1	0
+96	Processor 2 - Ratio		2147483647	0	1	0
+97	Processor 2 - Knee size		2147483647	0	1	0
+98	Processor 2 - Range		2147483647	0	1	0
+99	Modulators - Mod 1 - Automated value		2147483647	0	1	0
+100	Modulators - Mod 2 - Automated value		2147483647	0	1	0
+101	Modulators - Mod 3 - Automated value		2147483647	0	1	0
+102	Modulators - Mod 4 - Automated value		2147483647	0	1	0
+103	Preset trigger - previous		2147483647	0	1	0
+104	Preset trigger - next		2147483647	0	1	0
+105	Device		2147483647	0	1	0
+106	General parameters - Invert		2	1	1	0

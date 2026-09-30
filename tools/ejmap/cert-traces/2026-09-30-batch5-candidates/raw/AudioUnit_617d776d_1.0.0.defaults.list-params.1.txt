@@ -1,0 +1,29 @@
+probe: "Kiive XTComp" | AudioUnit:Effects/aufx,Kaxc,Kiiv | uid=617d776d | arch=arm64 | format=AudioUnit
+
+0	Input Right		2147483647	0	1	0
+1	INPUT		2147483647	0	1	0
+2	Type Left		2147483647	0	1	0
+3	Type Right		2147483647	0	1	0
+4	Sat Mix Left		2147483647	0	1	0
+5	OUTPUT		2147483647	0	1	0
+6	Sat Left		2147483647	0	1	0
+7	Right Ratio		2147483647	0	1	0
+8	Release Left		2147483647	0	1	0
+9	Comp Mix Right		2147483647	0	1	0
+10	Comp Mix Left		2147483647	0	1	0
+11	SC Left		2147483647	0	1	0
+12	SC Right		2147483647	0	1	0
+13	Sat Right		2147483647	0	1	0
+14	Input Left		2147483647	0	1	0
+15	XT Mode		2147483647	0	1	0
+16	Output Left		2147483647	0	1	0
+17	Attack Left		2147483647	0	1	0
+18	Warmth Right		2147483647	0	1	0
+19	Warmth Left		2147483647	0	1	0
+20	Release Right		2147483647	0	1	0
+21	Output Right		2147483647	0	1	0
+22	Left Ratio		2147483647	0	1	0
+23	Sat Mix Right		2147483647	0	1	0
+24	R Knee		2147483647	0	1	0
+25	Attack Right		2147483647	0	1	0
+26	L Knee		2147483647	0	1	0

@@ -1,0 +1,47 @@
+probe: "Kiive XTComp" | AudioUnit:Effects/aufx,Kaxc,Kiiv | uid=617d776d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	0	name	Input Right	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Input Right	0.0
+param	1	0.500000	INPUT	0.0
+param	2	0.000000	Type Left	0.0
+param	3	0.000000	Type Right	0.0
+param	4	1.000000	Sat Mix Left	1.0
+param	5	0.500000	OUTPUT	0.0
+param	6	0.000000	Sat Left	0.0
+param	7	0.571429	Right Ratio	5.0
+param	8	0.500000	Release Left	5.0
+param	9	1.000000	Comp Mix Right	1.0
+param	10	1.000000	Comp Mix Left	1.0
+param	11	0.000000	SC Left	0.0
+param	12	0.000000	SC Right	0.0
+param	13	0.000000	Sat Right	0.0
+param	14	0.500000	Input Left	0.0
+param	15	0.500000	XT Mode	1.0
+param	16	0.500000	Output Left	0.0
+param	17	0.500000	Attack Left	5.0
+param	18	0.000000	Warmth Right	0.0
+param	19	0.000000	Warmth Left	0.0
+param	20	0.500000	Release Right	5.0
+param	21	0.500000	Output Right	0.0
+param	22	0.571429	Left Ratio	5.0
+param	23	1.000000	Sat Mix Right	1.0
+param	24	0.500000	R Knee	1.0
+param	25	0.500000	Attack Right	5.0
+param	26	0.500000	L Knee	1.0
+stage	position
+pos	0	norm	0.600000	confirm_ms	2.54	slices	1	instack_match	1	getValue	0.600000	landed_by	instack	render_blocks	0	text_ms	22.3	reads	2	text	2.0
+hold	0	-54.00	level_db	-51.6127	in_rms_db	-57.0103	tone_frac	1.0000	ch	-51.6037,-51.6217	doubled	0	last_move_db	0.0010	final_move_db	0.0010	win	-51.7901,-51.6123,-51.6133,-51.6123,-51.6133,-51.6123	nonfinite	0
+hold	0	-48.00	level_db	-45.6017	in_rms_db	-51.0103	tone_frac	1.0000	ch	-45.5927,-45.6108	doubled	0	last_move_db	0.0018	final_move_db	0.0018	win	-45.6045,-45.6012,-45.6030,-45.6011,-45.6030,-45.6011	nonfinite	0
+hold	0	-24.00	level_db	-22.9534	in_rms_db	-27.0103	tone_frac	1.0000	ch	-22.9445,-22.9624	doubled	0	last_move_db	0.0026	final_move_db	0.0026	win	-22.9134,-22.9525,-22.9552,-22.9526,-22.9551,-22.9525	nonfinite	0
+hold	0	-12.00	level_db	-20.4242	in_rms_db	-15.0103	tone_frac	1.0000	ch	-20.4153,-20.4332	doubled	0	last_move_db	0.0033	final_move_db	0.0033	win	-20.2421,-20.4231,-20.4264,-20.4231,-20.4264,-20.4232	nonfinite	0
+hold	0	-6.00	level_db	-19.7148	in_rms_db	-9.0103	tone_frac	1.0000	ch	-19.7059,-19.7237	doubled	0	last_move_db	0.0039	final_move_db	0.0039	win	-19.6730,-19.7134,-19.7174,-19.7135,-19.7174,-19.7134	nonfinite	0
+reread	0	steady
+timing	wall_ms	274.8	audio_s	7.500
+stage	done

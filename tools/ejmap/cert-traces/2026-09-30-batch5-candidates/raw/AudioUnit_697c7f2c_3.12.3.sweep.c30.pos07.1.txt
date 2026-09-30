@@ -1,0 +1,132 @@
+probe: "DynOne3" | AudioUnit:Effects/aufx,Dyn3,Lpwg | uid=697c7f2c | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	30	name	S HMF Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	In	2	Stereo	enabled
+bus	render	out	0	Out	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	2080
+param	0	0.333333	C HMF Threshold	-40.0
+param	1	0.338502	C LF Ratio	3.00
+param	2	0.000000	Channel Link	0
+param	3	0.333333	LR MF Threshold	-40.0
+param	4	0.482250	S HF Release Max	400
+param	5	0.434143	S HF Release Min	300
+param	6	0.615572	LR LF Attack Max	400
+param	7	0.503294	LR LF Attack Min	300
+param	8	0.338502	LR LF Ratio	3.00
+param	9	0.000000	S MF Volume	-Inf dB
+param	10	0.000000	S HMF Volume	-Inf dB
+param	11	0.000000	Detection	0
+param	12	0.482250	C LMF Release Max	400
+param	13	0.434143	C LMF Release Min	300
+param	14	0.482250	S LF Release Max	400
+param	15	0.434143	S LF Release Min	300
+param	16	0.000000	C HMF Volume	-Inf dB
+param	17	1.000000	Gain reduction	
+param	18	0.615572	C HF Attack Max	400
+param	19	0.503294	C HF Attack Min	300
+param	20	0.333333	S HF Threshold	-40.0
+param	21	0.333333	C LF Threshold	-40.0
+param	22	0.482250	LR HF Release Max	400
+param	23	0.434143	LR HF Release Min	300
+param	24	0.482250	S LMF Release Max	400
+param	25	0.434143	S LMF Release Min	300
+param	26	0.333333	C MF Threshold	-40.0
+param	27	0.482250	LR LF Release Max	400
+param	28	0.434143	LR LF Release Min	300
+param	29	0.000000	LR LMF Volume	-Inf dB
+param	30	0.333333	S HMF Threshold	-40.0
+param	31	0.482250	LR LMF Release Max	400
+param	32	0.434143	LR LMF Release Min	300
+param	33	0.000000	S HF Volume	-Inf dB
+param	34	0.482250	C HMF Release Max	400
+param	35	0.434143	C HMF Release Min	300
+param	36	0.000000	C LF Volume	-Inf dB
+param	37	0.000000	LR LF Volume	-Inf dB
+param	38	0.338502	C HMF Ratio	3.00
+param	39	0.338502	S HF Ratio	3.00
+param	40	0.338502	LR HMF Ratio	3.00
+param	41	0.750000	Out Gain	0.0
+param	42	0.615572	S HF Attack Max	400
+param	43	0.503294	S HF Attack Min	300
+param	44	0.482250	S HMF Release Max	400
+param	45	0.434143	S HMF Release Min	300
+param	46	0.338502	S MF Ratio	3.00
+param	47	0.333333	S LF Threshold	-40.0
+param	48	0.615572	C MF Attack Max	400
+param	49	0.503294	C MF Attack Min	300
+param	50	0.333333	S MF Threshold	-40.0
+param	51	0.000000	C MF Volume	-Inf dB
+param	52	0.482250	LR HMF Release Max	400
+param	53	0.434143	LR HMF Release Min	300
+param	54	0.000000	LR MF Volume	-Inf dB
+param	55	0.333333	C LMF Threshold	-40.0
+param	56	0.333333	LR HMF Threshold	-40.0
+param	57	0.615572	C HMF Attack Max	400
+param	58	0.503294	C HMF Attack Min	300
+param	59	0.338502	S LMF Ratio	3.00
+param	60	0.338502	S LF Ratio	3.00
+param	61	0.500000	Weighting	50
+param	62	0.615572	C LF Attack Max	400
+param	63	0.503294	C LF Attack Min	300
+param	64	0.615572	C LMF Attack Max	400
+param	65	0.503294	C LMF Attack Min	300
+param	66	0.615572	LR HF Attack Max	400
+param	67	0.503294	LR HF Attack Min	300
+param	68	1.000000	Parallel Mode	1
+param	69	0.000000	LR HMF Volume	-Inf dB
+param	70	0.000000	C HF Volume	-Inf dB
+param	71	0.482250	C MF Release Max	400
+param	72	0.434143	C MF Release Min	300
+param	73	0.000000	LR HF Volume	-Inf dB
+param	74	0.615572	S MF Attack Max	400
+param	75	0.503294	S MF Attack Min	300
+param	76	1.000000	Auto Gain	1
+param	77	0.000000	S LMF Volume	-Inf dB
+param	78	0.333333	S LMF Threshold	-40.0
+param	79	0.615572	S HMF Attack Max	400
+param	80	0.503294	S HMF Attack Min	300
+param	81	0.333333	LR HF Threshold	-40.0
+param	82	0.000000	C LMF Volume	-Inf dB
+param	83	0.750000	In Gain	0.0
+param	84	0.338502	C HF Ratio	3.00
+param	85	0.615572	S LMF Attack Max	400
+param	86	0.503294	S LMF Attack Min	300
+param	87	0.338502	LR HF Ratio	3.00
+param	88	0.615572	S LF Attack Max	400
+param	89	0.503294	S LF Attack Min	300
+param	90	0.338502	C MF Ratio	3.00
+param	91	0.482250	C HF Release Max	400
+param	92	0.434143	C HF Release Min	300
+param	93	0.615572	LR HMF Attack Max	400
+param	94	0.503294	LR HMF Attack Min	300
+param	95	0.482250	S MF Release Max	400
+param	96	0.434143	S MF Release Min	300
+param	97	0.338502	LR MF Ratio	3.00
+param	98	0.482250	C LF Release Max	400
+param	99	0.434143	C LF Release Min	300
+param	100	0.000000	S LF Volume	-Inf dB
+param	101	0.615572	LR MF Attack Max	400
+param	102	0.503294	LR MF Attack Min	300
+param	103	0.333333	C HF Threshold	-40.0
+param	104	0.615572	LR LMF Attack Max	400
+param	105	0.503294	LR LMF Attack Min	300
+param	106	0.338502	S HMF Ratio	3.00
+param	107	0.333333	LR LMF Threshold	-40.0
+param	108	0.338502	C LMF Ratio	3.00
+param	109	0.500000	Global Band Trim	0.0
+param	110	0.338502	LR LMF Ratio	3.00
+param	111	0.333333	LR LF Threshold	-40.0
+param	112	0.482250	LR MF Release Max	400
+param	113	0.434143	LR MF Release Min	300
+stage	position
+pos	0	norm	0.466667	confirm_ms	2.33	slices	1	instack_match	1	getValue	0.466667	landed_by	instack	render_blocks	0	text_ms	21.6	reads	2	text	-32.0
+hold	0	-24.00	level_db	-27.0099	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0099,-27.0099	doubled	0	last_move_db	0.0024	final_move_db	0.0024	win	-27.8380,-27.0091,-27.0115,-27.0091,-27.0115,-27.0091	nonfinite	0
+hold	0	-12.00	level_db	-15.0100	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0100,-15.0100	doubled	0	last_move_db	0.0017	final_move_db	0.0017	win	-15.7809,-15.0095,-15.0111,-15.0095,-15.0111,-15.0095	nonfinite	0
+hold	0	-6.00	level_db	-9.0102	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.0102,-9.0102	doubled	0	last_move_db	0.0009	final_move_db	0.0009	win	-9.6149,-9.0099,-9.0107,-9.0099,-9.0107,-9.0099	nonfinite	0
+reread	0	steady
+timing	wall_ms	353.1	audio_s	4.500
+stage	done

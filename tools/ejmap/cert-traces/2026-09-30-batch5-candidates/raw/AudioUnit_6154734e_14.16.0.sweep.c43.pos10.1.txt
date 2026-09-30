@@ -1,0 +1,92 @@
+probe: "MDrumLeveler" | AudioUnit:Effects/aumf,MDrL,Meld | uid=6154734e | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	43	name	Detector - Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	960
+param	0	0.500000	Param 1	50.0%
+param	1	0.500000	Param 2	50.0%
+param	2	0.500000	Param 3	50.0%
+param	3	0.500000	Param 4	50.0%
+param	4	0.500000	Param 5	50.0%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.500000	Param 9	50.0%
+param	9	0.500000	Param 10	50.0%
+param	10	0.500000	Param 11	50.0%
+param	11	0.500000	Param 12	50.0%
+param	12	0.500000	Param 13	50.0%
+param	13	0.500000	Param 14	50.0%
+param	14	0.500000	Param 15	50.0%
+param	15	0.500000	Param 16	50.0%
+param	16	0.500000	Param 17	50.0%
+param	17	0.500000	Param 18	50.0%
+param	18	0.500000	Param 19	50.0%
+param	19	0.500000	Param 20	50.0%
+param	20	0.500000	Param 21	50.0%
+param	21	0.500000	Param 22	50.0%
+param	22	0.500000	Param 23	50.0%
+param	23	0.500000	Param 24	50.0%
+param	24	0.500000	Param 25	50.0%
+param	25	0.500000	Param 26	50.0%
+param	26	0.500000	Param 27	50.0%
+param	27	0.500000	Param 28	50.0%
+param	28	0.500000	Param 29	50.0%
+param	29	0.500000	Param 30	50.0%
+param	30	0.500000	Param 31	50.0%
+param	31	0.500000	Param 32	50.0%
+param	32	0.500000	General - Input gain	0.00 dB
+param	33	0.500000	General - Output gain	0.00 dB
+param	34	0.500000	General - Depth	50.0%
+param	35	0.447214	General - Look-ahead	20 ms
+param	36	0.000000	General - Gain min	-80.00 dB
+param	37	1.000000	General - Gain max	+80.00 dB
+param	38	0.000000	Envelope - Attack	0 ms
+param	39	0.472871	Envelope - Length	50 ms
+param	40	0.622333	Envelope - Release	150 ms
+param	41	1.000000	Envelope - Gate	0.00 dB
+param	42	0.470606	Detector - Retrigger	50 ms
+param	43	0.375000	Detector - Threshold	-50.00 dB
+param	44	0.472871	Detector - Resolution	5.0 ms
+param	45	1.000000	Detector - Threshold Max	0.00 dB
+param	46	0.500000	Detector - Detector gain	0.00 dB
+param	47	0.000000	Detector - Side-chain	Off
+param	48	1.000000	Detector - Transients	100.0%
+param	49	0.000000	Detector - Side-chain mode	Source
+param	50	1.000000	Prefiltering - Prefiltering	On
+param	51	0.000000	Prefiltering - Loudness	Off
+param	52	0.365637	Prefiltering - BP1	250.0 Hz
+param	53	0.000000	Prefiltering - BP1 Q	Off
+param	54	0.465980	Prefiltering - BP2	500.0 Hz
+param	55	0.000000	Prefiltering - BP2 Q	Off
+param	56	0.000000	Prefiltering - Listen	Off
+param	57	0.750000	Velocities - Velocity 1	-20.00 dB
+param	58	0.000000	Velocities - Velocity 2	Off
+param	59	0.000000	Velocities - Velocity 3	Off
+param	60	0.000000	Velocities - Velocity 4	Off
+param	61	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	62	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	63	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	64	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	65	0.000000	Preset trigger - previous	0.00
+param	66	0.000000	Preset trigger - next	0.00
+param	67	0.283465	MIDI output - Note	36
+param	68	1.000000	MIDI output - Compensate latency	On
+param	69	0.000000	MIDI output - MIDI output	Off
+param	70	0.500000	MIDI output - Velocity gain	0.00 dB
+param	71	0.000000	MIDI output - Mute audio output	Off
+stage	position
+pos	0	norm	0.666667	confirm_ms	2.53	slices	1	instack_match	1	getValue	0.666667	landed_by	instack	render_blocks	0	text_ms	20.1	reads	2	text	-26.67 dB
+hold	0	-24.00	level_db	-27.0108	in_rms_db	-27.0103	tone_frac	0.9999	ch	-27.0108,-27.0108	doubled	0	last_move_db	-0.0032	final_move_db	-0.0032	win	-27.3717,-27.0119,-27.0087,-27.0119,-27.0087,-27.0119	nonfinite	0
+hold	0	-12.00	level_db	-15.0107	in_rms_db	-15.0103	tone_frac	0.9999	ch	-15.0107,-15.0107	doubled	0	last_move_db	-0.0025	final_move_db	-0.0025	win	-15.3483,-15.0116,-15.0090,-15.0116,-15.0090,-15.0116	nonfinite	0
+hold	0	-6.00	level_db	-9.0106	in_rms_db	-9.0103	tone_frac	0.9999	ch	-9.0106,-9.0106	doubled	0	last_move_db	-0.0018	final_move_db	-0.0018	win	-11.7139,-9.0112,-9.0094,-9.0112,-9.0094,-9.0112	nonfinite	0
+reread	0	steady
+timing	wall_ms	31.6	audio_s	4.500
+stage	done

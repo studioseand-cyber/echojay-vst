@@ -1,0 +1,126 @@
+probe: "MDynamics" | AudioUnit:Effects/aumf,MAe$,Meld | uid=61516426 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	95	name	Processor 2 - Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Globals -> Input	0.00 dB
+param	1	0.500000	Globals -> Output	0.00 dB
+param	2	0.500000	Globals -> Compression	0.00%
+param	3	1.000000	Globals -> Dry/wet	100.0%
+param	4	0.500000	Param 5	50.0%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.309321	Compressor -> Threshold	-20.0 dB
+param	9	0.259394	Compressor -> Ratio	4.00 : 1
+param	10	0.500000	Compressor -> Knee	50.0%
+param	11	0.500000	Param 12	50.0%
+param	12	0.500000	Param 13	50.0%
+param	13	0.500000	Param 14	50.0%
+param	14	0.316228	Compressor -> Attack	10.0 ms
+param	15	0.314650	Compressor -> Release	50 ms
+param	16	0.500000	Param 17	50.0%
+param	17	0.500000	Param 18	50.0%
+param	18	0.100000	Compressor -> RMS	1.0 ms
+param	19	0.000000	Compressor -> Release mode	Manual
+param	20	0.500000	Param 21	50.0%
+param	21	0.500000	Param 22	50.0%
+param	22	0.500000	Param 23	50.0%
+param	23	0.500000	Param 24	50.0%
+param	24	0.500000	Param 25	50.0%
+param	25	0.000000	Detector -> Side-chain input	Off
+param	26	0.000000	Detector -> HP	20.00 Hz
+param	27	1.000000	Detector -> LP	20.0 kHz
+param	28	0.500000	Detector -> Gain	0.00 dB
+param	29	0.492374	Detector -> Frequency	600.0 Hz
+param	30	0.500000	Detector -> BW	50.0%
+param	31	0.500000	Param 32	50.0%
+param	32	0.500000	Param 33	50.0%
+param	33	0.500000	Param 34	50.0%
+param	34	0.500000	Param 35	50.0%
+param	35	0.500000	Param 36	50.0%
+param	36	0.500000	Param 37	50.0%
+param	37	0.500000	Param 38	50.0%
+param	38	0.500000	Param 39	50.0%
+param	39	0.500000	Param 40	50.0%
+param	40	0.500000	Param 41	50.0%
+param	41	0.500000	Param 42	50.0%
+param	42	0.500000	Param 43	50.0%
+param	43	0.500000	Param 44	50.0%
+param	44	0.500000	Param 45	50.0%
+param	45	0.500000	Param 46	50.0%
+param	46	0.500000	Param 47	50.0%
+param	47	0.500000	Param 48	50.0%
+param	48	0.500000	Param 49	50.0%
+param	49	0.500000	Param 50	50.0%
+param	50	0.500000	Param 51	50.0%
+param	51	0.500000	Param 52	50.0%
+param	52	0.500000	Param 53	50.0%
+param	53	0.500000	Param 54	50.0%
+param	54	0.500000	Param 55	50.0%
+param	55	0.500000	Param 56	50.0%
+param	56	0.500000	Param 57	50.0%
+param	57	0.500000	Param 58	50.0%
+param	58	0.500000	Param 59	50.0%
+param	59	0.500000	Param 60	50.0%
+param	60	0.500000	Param 61	50.0%
+param	61	0.500000	Param 62	50.0%
+param	62	0.500000	Param 63	50.0%
+param	63	0.500000	Param 64	50.0%
+param	64	0.500000	General parameters - Input gain	0.00 dB
+param	65	0.500000	General parameters - Output gain	0.00 dB
+param	66	0.500000	General parameters - Temp gain	0.00 dB
+param	67	1.000000	General parameters - Dry/Wet	100.0%
+param	68	0.500000	General parameters - Mode	Squared
+param	69	0.000000	General parameters - Maximize	0.00%
+param	70	1.000000	General parameters - Link channels	100.0%
+param	71	0.316228	Dynamic detection - Attack	10.0 ms
+param	72	0.314650	Dynamic detection - Release	50 ms
+param	73	0.000000	Dynamic detection - Release mode	Manual
+param	74	0.316085	Dynamic detection - Auto speed	1000 ms
+param	75	0.000000	Dynamic detection - Peak hold	0 ms
+param	76	0.100000	Dynamic detection - RMS length	1.0 ms
+param	77	0.000000	Dynamic detection - Look-ahead	Off
+param	78	1.000000	Side-chain - Side-chain	On
+param	79	0.000000	Side-chain - Minimal	Off
+param	80	1.000000	Side-chain - Maximal	Off
+param	81	0.500000	Side-chain - Resonance	50.0%
+param	82	0.500000	Side-chain - Side-chain gain	0.00 dB
+param	83	0.000000	Side-chain - Use secondary input channel	Off
+param	84	0.000000	Gate - Gate	Off
+param	85	0.191919	Gate - Threshold	-28.0 dB
+param	86	0.250000	Gate - Size	+6.00 dB
+param	87	0.250000	Gate - Knee	25.0%
+param	88	0.000000	Gate - Bottom	silence
+param	89	1.000000	Processor 1 - Processor 1	On
+param	90	0.309321	Processor 1 - Threshold	-20.0 dB
+param	91	0.487950	Processor 1 - Ratio	4.00 : 1
+param	92	0.500000	Processor 1 - Knee size	50.0%
+param	93	1.000000	Processor 1 - Range	+96.00 dB
+param	94	0.000000	Processor 2 - Processor 2	Off
+param	95	0.242424	Processor 2 - Threshold	-24.1 dB
+param	96	0.308607	Processor 2 - Ratio	1.00 : 1
+param	97	0.250000	Processor 2 - Knee size	25.0%
+param	98	1.000000	Processor 2 - Range	+96.00 dB
+param	99	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	100	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	101	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	102	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	103	0.000000	Preset trigger - previous	0.00
+param	104	0.000000	Preset trigger - next	0.00
+param	105	0.000000	Device	Compressor
+param	106	0.000000	General parameters - Invert	Off
+stage	reference
+refpos	val	0.242424	text	-24.1 dB
+ref	-24.00	level_db	-27.0102	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0102,-27.0102	win	-27.0107,-27.0099,-27.0107,-27.0099,-27.0107,-27.0099,-27.0107,-27.0099	nonfinite	0
+ref	-12.00	level_db	-19.1349	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.1349,-19.1349	win	-18.8440,-19.1337,-19.1374,-19.1337,-19.1374,-19.1337,-19.1374,-19.1337	nonfinite	0
+ref	-6.00	level_db	-17.7885	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-17.7885,-17.7885	win	-17.5721,-17.7903,-17.7848,-17.7903,-17.7848,-17.7903,-17.7848,-17.7903	nonfinite	0
+timing	wall_ms	36.8	audio_s	6.000
+stage	done

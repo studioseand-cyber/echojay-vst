@@ -1,0 +1,567 @@
+probe: "DynOne3" | AudioUnit:Effects/aufx,Dyn3,Lpwg | uid=697c7f2c | arch=arm64 | format=AudioUnit
+
+param	0	C HMF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	1	C LF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	2	Channel Link	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	3	LR MF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	4	S HF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	5	S HF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	6	LR LF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	7	LR LF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	8	LR LF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	9	S MF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	10	S HMF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	11	Detection	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	12	C LMF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	13	C LMF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	14	S LF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	15	S LF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	16	C HMF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	18	C HF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	19	C HF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	20	S HF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	21	C LF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	22	LR HF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	23	LR HF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	24	S LMF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	25	S LMF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	26	C MF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	27	LR LF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	28	LR LF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	29	LR LMF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	30	S HMF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	31	LR LMF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	32	LR LMF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	33	S HF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	34	C HMF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	35	C HMF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	36	C LF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	37	LR LF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	38	C HMF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	39	S HF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	40	LR HMF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	41	Out Gain	unit	
+def	0.750000	0.0	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	42	S HF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	43	S HF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	44	S HMF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	45	S HMF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	46	S MF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	47	S LF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	48	C MF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	49	C MF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	50	S MF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	51	C MF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	52	LR HMF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	53	LR HMF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	54	LR MF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	55	C LMF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	56	LR HMF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	57	C HMF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	58	C HMF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	59	S LMF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	60	S LF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	61	Weighting	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	62	C LF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	63	C LF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	64	C LMF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	65	C LMF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	66	LR HF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	67	LR HF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	68	Parallel Mode	unit	
+def	1.000000	1	default	1.000000
+at	0.000	0
+at	0.500	1
+at	1.000	1
+param	69	LR HMF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	70	C HF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	71	C MF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	72	C MF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	73	LR HF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	74	S MF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	75	S MF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	76	Auto Gain	unit	
+def	1.000000	1	default	1.000000
+at	0.000	0
+at	0.500	1
+at	1.000	1
+param	77	S LMF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	78	S LMF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	79	S HMF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	80	S HMF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	81	LR HF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	82	C LMF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	83	In Gain	unit	
+def	0.750000	0.0	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	84	C HF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	85	S LMF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	86	S LMF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	87	LR HF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	88	S LF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	89	S LF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	90	C MF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	91	C HF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	92	C HF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	93	LR HMF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	94	LR HMF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	95	S MF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	96	S MF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	97	LR MF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	98	C LF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	99	C LF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	100	S LF Volume	unit	
+def	0.000000	-Inf dB	default	0.750000
+at	0.000	-Inf dB
+at	0.500	-6.0
+at	1.000	12.0
+param	101	LR MF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	102	LR MF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	103	C HF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	104	LR LMF Attack Max	unit	
+def	0.615572	400	default	0.615572
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	105	LR LMF Attack Min	unit	
+def	0.503294	300	default	0.503294
+at	0.000	0
+at	0.500	297
+at	1.000	800
+param	106	S HMF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	107	LR LMF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	108	C LMF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	109	Global Band Trim	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-50.0
+at	0.500	0.0
+at	1.000	50.0
+param	110	LR LMF Ratio	unit	
+def	0.338502	3.00	default	0.338502
+at	0.000	0.80
+at	0.500	5.60
+at	1.000	20.00
+param	111	LR LF Threshold	unit	
+def	0.333333	-40.0	default	0.333333
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	112	LR MF Release Max	unit	
+def	0.482250	400	default	0.482250
+at	0.000	5
+at	0.500	442
+at	1.000	3000
+param	113	LR MF Release Min	unit	
+def	0.434143	300	default	0.434143
+at	0.000	5
+at	0.500	442
+at	1.000	3000

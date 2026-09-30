@@ -1,0 +1,317 @@
+probe: "Auto-Tune Vocal Compressor" | AudioUnit:Effects/aufx,Vxcp,Antr | uid=7663717a | arch=arm64 | format=AudioUnit
+PaceAP ThreadLoopBase::loop - Starting the license state callback loop...
+PaceAP ThreadLoopBase::loop - Starting the producer loop...
+PaceAP ThreadLoopBase::loop - Starting the queue creation loop...
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP:ExplicitLicenseCheck1(0000:0000) - 5 layers
+PaceAP - Stats: Current elapsed microseconds: 000000073805
+PaceAP:ExplicitLicenseCheck1(0000:0000) - Waiting because the queue is empty...
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - About to call the developer's license state callback with event 1...
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - Exiting.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+
+param	3	Comp Enable Slot 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	4	Comp Enable Slot 2	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	10	Dry / Wet Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	11	Input Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	12	Output Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	15	Mod Comp 1 Ratio	unit	
+def	0.245580	3.0	default	0.245580
+at	0.000	1.0
+at	0.500	10.0
+at	1.000	40.0
+param	16	Mod Comp 1 Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	30.0
+param	17	Mod Comp 1 Knee dB	unit	
+def	0.166667	10.0	default	0.166667
+at	0.000	0.0
+at	0.500	30.0
+at	1.000	60.0
+param	18	Mod Comp 1 Thresh dB	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	19	Mod Comp 1 Attack Ms	unit	
+def	0.267591	10.0	default	0.267591
+at	0.000	0.1
+at	0.500	50.0
+at	1.000	300.0
+param	20	Mod Comp 1 Release Ms	unit	
+def	0.264810	100	default	0.264810
+at	0.000	5
+at	0.500	500
+at	1.000	3000
+param	21	Mod Comp 1 Sidechain Ext	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	22	Mod Comp 1 Sidechain HPF	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	23	Mod Comp 1 Sidechain LPF	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	24	Mod Comp 1 Sidechain Surf	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	27	Mod Comp 2 Ratio	unit	
+def	0.245580	3.0	default	0.245580
+at	0.000	1.0
+at	0.500	10.0
+at	1.000	40.0
+param	28	Mod Comp 2 Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	30.0
+param	29	Mod Comp 2 Knee dB	unit	
+def	0.166667	10.0	default	0.166667
+at	0.000	0.0
+at	0.500	30.0
+at	1.000	60.0
+param	30	Mod Comp 2 Thresh dB	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	31	Mod Comp 2 Attack Ms	unit	
+def	0.267591	10.0	default	0.267591
+at	0.000	0.1
+at	0.500	50.0
+at	1.000	300.0
+param	32	Mod Comp 2 Release Ms	unit	
+def	0.264810	100	default	0.264810
+at	0.000	5
+at	0.500	500
+at	1.000	3000
+param	33	Mod Comp 2 Sidechain Ext	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	34	Mod Comp 2 Sidechain HPF	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	35	Mod Comp 2 Sidechain LPF	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	36	Mod Comp 2 Sidechain Surf	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	37	Opt A Comp 1 Warmth Enable	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	38	Opt A Comp 1 Gain Reduction dB	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	39	Opt A Comp 1 Output Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	40.0
+param	40	Opt A Comp 1 Warmth dB	unit	
+def	0.250000	3.0	default	0.250000
+at	0.000	0.0
+at	0.500	6.0
+at	1.000	12.0
+param	41	Opt A Comp 2 Warmth Enable	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	42	Opt A Comp 2 Gain Reduction dB	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	43	Opt A Comp 2 Output Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	40.0
+param	44	Opt A Comp 2 Warmth dB	unit	
+def	0.250000	3.0	default	0.250000
+at	0.000	0.0
+at	0.500	6.0
+at	1.000	12.0
+param	45	Opt B Comp 1 Warmth Enable	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	46	Opt B Comp 1 Threshold dB	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	47	Opt B Comp 1 Output Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	30.0
+param	48	Opt B Comp 1 Ratio	unit	
+def	0.125000	3.0	default	0.125000
+at	0.000	2.0
+at	0.500	6.0
+at	1.000	10.0
+param	49	Opt B Comp 1 Attack Ms	unit	
+def	0.247767	2.5	default	0.247767
+at	0.000	0.0
+at	0.500	16.0
+at	1.000	100.0
+param	50	Opt B Comp 1 Release Ms	unit	
+def	0.250000	4.0	default	0.250000
+at	0.000	0.0
+at	0.500	20.0
+at	1.000	100.0
+param	51	Opt B Comp 2 Warmth Enable	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	52	Opt B Comp 2 Threshold dB	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	53	Opt B Comp 2 Output Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-10.0
+at	0.500	0.0
+at	1.000	30.0
+param	54	Opt B Comp 2 Ratio	unit	
+def	0.125000	3.0	default	0.125000
+at	0.000	2.0
+at	0.500	6.0
+at	1.000	10.0
+param	55	Opt B Comp 2 Attack Ms	unit	
+def	0.247767	2.5	default	0.247767
+at	0.000	0.0
+at	0.500	16.0
+at	1.000	100.0
+param	56	Opt B Comp 2 Release Ms	unit	
+def	0.250000	4.0	default	0.250000
+at	0.000	0.0
+at	0.500	20.0
+at	1.000	100.0
+param	57	FET Comp 1 Warmth	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	58	FET Comp 1 Ratio	unit	
+def	0.000000	4:1	default	0.000000
+at	0.000	4:1
+at	0.500	12:1
+at	1.000	20:1
+param	59	FET Comp 1 Attack	unit	
+def	0.500000	4.0	default	0.500000
+at	0.000	1.0
+at	0.500	4.0
+at	1.000	7.0
+param	60	FET Comp 1 Release	unit	
+def	0.833333	6.0	default	0.833333
+at	0.000	1.0
+at	0.500	4.0
+at	1.000	7.0
+param	61	FET Comp 1 Input Level dB	unit	
+def	0.500000	-30.0	default	0.500000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	62	FET Comp 1 Output Level dB	unit	
+def	0.750000	-15.0	default	0.750000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	63	FET Comp 2 Warmth	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	64	FET Comp 2 Ratio	unit	
+def	0.000000	4:1	default	0.000000
+at	0.000	4:1
+at	0.500	12:1
+at	1.000	20:1
+param	65	FET Comp 2 Attack	unit	
+def	0.500000	4.0	default	0.500000
+at	0.000	1.0
+at	0.500	4.0
+at	1.000	7.0
+param	66	FET Comp 2 Release	unit	
+def	0.833333	6.0	default	0.833333
+at	0.000	1.0
+at	0.500	4.0
+at	1.000	7.0
+param	67	FET Comp 2 Input Level dB	unit	
+def	0.500000	-30.0	default	0.500000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	68	FET Comp 2 Output Level dB	unit	
+def	0.750000	-15.0	default	0.750000
+at	0.000	-60.0
+at	0.500	-30.0
+at	1.000	0.0
+param	69	Master Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	70	Gain Reduction	unit	
+def	1.000000	1.0000000	default	0.000000
+at	0.000	0.0000000
+at	0.500	0.5000000
+at	1.000	1.0000000

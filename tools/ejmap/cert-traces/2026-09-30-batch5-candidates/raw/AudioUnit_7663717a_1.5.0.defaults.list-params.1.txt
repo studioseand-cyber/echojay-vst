@@ -1,0 +1,93 @@
+probe: "Auto-Tune Vocal Compressor" | AudioUnit:Effects/aufx,Vxcp,Antr | uid=7663717a | arch=arm64 | format=AudioUnit
+PaceAP ThreadLoopBase::loop - Starting the license state callback loop...
+PaceAP ThreadLoopBase::loop - Starting the producer loop...
+PaceAP ThreadLoopBase::loop - Starting the queue creation loop...
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP:ExplicitLicenseCheck0(0000:0000) - 5 layers
+PaceAP - Stats: Current elapsed microseconds: 000000085324
+PaceAP:ExplicitLicenseCheck0(0000:0000) - Waiting because the queue is empty...
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - About to call the developer's license state callback with event 1...
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - Exiting.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+
+0	Plugin View		2147483647	0	0	0
+1	Comp Model Slot 1		2147483647	0	0	0
+2	Comp Model Slot 2		2147483647	0	0	0
+3	Comp Enable Slot 1		2147483647	0	1	0
+4	Comp Enable Slot 2		2147483647	0	1	0
+5	Comp Metering Slot 1		2147483647	0	0	0
+6	Comp Metering Slot 2		2147483647	0	0	0
+7	Input Type		2147483647	0	0	0
+8	Compression Level		2147483647	0	0	0
+9	Compression Style		2147483647	0	0	0
+10	Dry / Wet Mix		2147483647	0	1	0
+11	Input Gain dB		2147483647	0	1	0
+12	Output Gain dB		2147483647	0	1	0
+13	Mod Comp 1 Auto-Attack		2147483647	0	0	0
+14	Mod Comp 1 Auto-Release		2147483647	0	0	0
+15	Mod Comp 1 Ratio		2147483647	0	1	0
+16	Mod Comp 1 Gain dB		2147483647	0	1	0
+17	Mod Comp 1 Knee dB		2147483647	0	1	0
+18	Mod Comp 1 Thresh dB		2147483647	0	1	0
+19	Mod Comp 1 Attack Ms		2147483647	0	1	0
+20	Mod Comp 1 Release Ms		2147483647	0	1	0
+21	Mod Comp 1 Sidechain Ext		2147483647	0	1	0
+22	Mod Comp 1 Sidechain HPF		2147483647	0	1	0
+23	Mod Comp 1 Sidechain LPF		2147483647	0	1	0
+24	Mod Comp 1 Sidechain Surf		2147483647	0	1	0
+25	Mod Comp 2 Auto-Attack		2147483647	0	0	0
+26	Mod Comp 2 Auto-Release		2147483647	0	0	0
+27	Mod Comp 2 Ratio		2147483647	0	1	0
+28	Mod Comp 2 Gain dB		2147483647	0	1	0
+29	Mod Comp 2 Knee dB		2147483647	0	1	0
+30	Mod Comp 2 Thresh dB		2147483647	0	1	0
+31	Mod Comp 2 Attack Ms		2147483647	0	1	0
+32	Mod Comp 2 Release Ms		2147483647	0	1	0
+33	Mod Comp 2 Sidechain Ext		2147483647	0	1	0
+34	Mod Comp 2 Sidechain HPF		2147483647	0	1	0
+35	Mod Comp 2 Sidechain LPF		2147483647	0	1	0
+36	Mod Comp 2 Sidechain Surf		2147483647	0	1	0
+37	Opt A Comp 1 Warmth Enable		2147483647	0	1	0
+38	Opt A Comp 1 Gain Reduction dB		2147483647	0	1	0
+39	Opt A Comp 1 Output Gain dB		2147483647	0	1	0
+40	Opt A Comp 1 Warmth dB		2147483647	0	1	0
+41	Opt A Comp 2 Warmth Enable		2147483647	0	1	0
+42	Opt A Comp 2 Gain Reduction dB		2147483647	0	1	0
+43	Opt A Comp 2 Output Gain dB		2147483647	0	1	0
+44	Opt A Comp 2 Warmth dB		2147483647	0	1	0
+45	Opt B Comp 1 Warmth Enable		2147483647	0	1	0
+46	Opt B Comp 1 Threshold dB		2147483647	0	1	0
+47	Opt B Comp 1 Output Gain dB		2147483647	0	1	0
+48	Opt B Comp 1 Ratio		2147483647	0	1	0
+49	Opt B Comp 1 Attack Ms		2147483647	0	1	0
+50	Opt B Comp 1 Release Ms		2147483647	0	1	0
+51	Opt B Comp 2 Warmth Enable		2147483647	0	1	0
+52	Opt B Comp 2 Threshold dB		2147483647	0	1	0
+53	Opt B Comp 2 Output Gain dB		2147483647	0	1	0
+54	Opt B Comp 2 Ratio		2147483647	0	1	0
+55	Opt B Comp 2 Attack Ms		2147483647	0	1	0
+56	Opt B Comp 2 Release Ms		2147483647	0	1	0
+57	FET Comp 1 Warmth		2147483647	0	1	0
+58	FET Comp 1 Ratio		2147483647	0	1	0
+59	FET Comp 1 Attack		2147483647	0	1	0
+60	FET Comp 1 Release		2147483647	0	1	0
+61	FET Comp 1 Input Level dB		2147483647	0	1	0
+62	FET Comp 1 Output Level dB		2147483647	0	1	0
+63	FET Comp 2 Warmth		2147483647	0	1	0
+64	FET Comp 2 Ratio		2147483647	0	1	0
+65	FET Comp 2 Attack		2147483647	0	1	0
+66	FET Comp 2 Release		2147483647	0	1	0
+67	FET Comp 2 Input Level dB		2147483647	0	1	0
+68	FET Comp 2 Output Level dB		2147483647	0	1	0
+69	Master Bypass		2147483647	0	1	0
+70	Gain Reduction		2147483647	0	1	0

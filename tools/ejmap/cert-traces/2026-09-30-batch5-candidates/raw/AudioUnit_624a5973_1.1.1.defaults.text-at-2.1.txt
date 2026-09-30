@@ -1,0 +1,582 @@
+probe: "AMEK Mastering Compressor" | AudioUnit:Effects/aumf,AMCm,Brwx | uid=624a5973 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	2	Monitoring	unit	
+def	0.000000	Stereo	default	0.000000
+at	0.000	Stereo
+at	0.500	Mid
+at	1.000	Side
+param	3	Master In Gain	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	4	Master Out Gain	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	5	Param Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	Mid Side	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Mono Maker In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	Mono Maker Freq	unit	
+def	0.000000	20 Hz	default	0.000000
+at	0.000	20 Hz
+at	0.500	200 Hz
+at	1.000	2.0 kHz
+param	9	Stereo Width	unit	
+def	0.500000	100 %	default	0.500000
+at	0.000	0 %
+at	0.500	100 %
+at	1.000	400 %
+param	10	Stereo Width In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Sidechain Link Mode	unit	
+def	0.000000	Max	default	0.000000
+at	0.000	Max
+at	0.500	Max
+at	1.000	Avg
+param	12	Sidechain Link Amount	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	13	Stereo Mode	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Analog
+at	1.000	Digital
+param	14	TMT Channel	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	0
+at	1.000	0
+param	15	VCA Clip	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-6.0 dB
+at	0.500	0.0 dB
+at	1.000	6.0 dB
+param	16	VCA Clip In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	17	Sidechain Listen	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	18	Ambience	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	19	Channel ON 1	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	20	Threshold 1	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB
+param	21	Timing 1	unit	
+def	0.500000	1.9 ms	default	0.500000
+at	0.000	1.0 ms
+at	0.500	1.9 ms
+at	1.000	7.0 ms
+param	22	Release Hysteresis 1	unit	
+def	0.000000	70.0 ms	default	0.000000
+at	0.000	70.0 ms
+at	0.500	11.0 ms
+at	1.000	1.2 ms
+param	23	Fast 1	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB
+param	24	Peak 1	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB
+param	25	Ratio 1	unit	
+def	0.500000	2.0	default	0.500000
+at	0.000	1.1
+at	0.500	2.0
+at	1.000	40.0
+param	26	Output 1	unit	
+def	0.300000	0.0 dB	default	0.300000
+at	0.000	-6.0 dB
+at	0.500	+4.0 dB
+at	1.000	+14.0 dB
+param	27	Parallel Mix 1	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	28	External SC 1	unit	
+def	0.000000	Internal	default	0.000000
+at	0.000	Internal
+at	0.500	Internal
+at	1.000	External
+param	29	Headroom 1	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	30	SC Filter On 1	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	31	SC HPF Freq. 1	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Off
+param	32	SC Low Gain 1	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	33	SC Low Freq 1	unit	
+def	0.500000	300 Hz	default	0.500000
+at	0.000	50 Hz
+at	0.500	300 Hz
+at	1.000	1000 Hz
+param	34	SC Low Type 1	unit	
+def	1.000000	Shelf	default	1.000000
+at	0.000	Peak
+at	0.500	Peak
+at	1.000	Shelf
+param	35	SC High Gain 1	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	36	SC High Freq 1	unit	
+def	0.500000	3.0k Hz	default	0.500000
+at	0.000	200 Hz
+at	0.500	3.0k Hz
+at	1.000	12.0k Hz
+param	37	SC High Type 1	unit	
+def	1.000000	Shelf	default	1.000000
+at	0.000	Peak
+at	0.500	Peak
+at	1.000	Shelf
+param	38	Channel ON 2	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Out
+at	0.500	Out
+at	1.000	In
+param	39	Threshold 2	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB
+param	40	Timing 2	unit	
+def	0.500000	1.9 ms	default	0.500000
+at	0.000	1.0 ms
+at	0.500	1.9 ms
+at	1.000	7.0 ms
+param	41	Release Hysteresis 2	unit	
+def	0.000000	70.0 ms	default	0.000000
+at	0.000	70.0 ms
+at	0.500	11.0 ms
+at	1.000	1.2 ms
+param	42	Fast 2	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB
+param	43	Peak 2	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	10.0 dB
+at	1.000	20.0 dB
+param	44	Ratio 2	unit	
+def	0.500000	2.0	default	0.500000
+at	0.000	1.1
+at	0.500	2.0
+at	1.000	40.0
+param	45	Output 2	unit	
+def	0.300000	0.0 dB	default	0.300000
+at	0.000	-6.0 dB
+at	0.500	+4.0 dB
+at	1.000	+14.0 dB
+param	46	Parallel Mix 2	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	47	External SC 2	unit	
+def	0.000000	Internal	default	0.000000
+at	0.000	Internal
+at	0.500	Internal
+at	1.000	External
+param	48	Headroom 2	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	49	SC Filter On 2	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	50	SC HPF Freq. 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Off
+param	51	SC Low Gain 2	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	52	SC Low Freq 2	unit	
+def	0.500000	300 Hz	default	0.500000
+at	0.000	50 Hz
+at	0.500	300 Hz
+at	1.000	1000 Hz
+param	53	SC Low Type 2	unit	
+def	1.000000	Shelf	default	1.000000
+at	0.000	Peak
+at	0.500	Peak
+at	1.000	Shelf
+param	54	SC High Gain 2	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-15.0 dB
+at	0.500	0.0 dB
+at	1.000	+15.0 dB
+param	55	SC High Freq 2	unit	
+def	0.500000	3.0k Hz	default	0.500000
+at	0.000	200 Hz
+at	0.500	3.0k Hz
+at	1.000	12.0k Hz
+param	56	SC High Type 2	unit	
+def	1.000000	Shelf	default	1.000000
+at	0.000	Peak
+at	0.500	Peak
+at	1.000	Shelf
+param	57	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	58	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	59	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	60	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	61	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	62	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	63	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	64	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	65	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	66	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	67	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	68	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	69	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	70	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	71	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	72	M	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	73	M	unit	
+def	0.512500	+0.51250	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	74	M	unit	
+def	0.512500	+0.51250	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	75	M	unit	
+def	0.500000	+0.50000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	76	M	unit	
+def	0.500000	+0.50000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	77	M	unit	
+def	0.500000	+0.50000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	78	M	unit	
+def	0.500000	+0.50000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	79	M	unit	
+def	0.500000	+0.50000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	80	M	unit	
+def	0.500000	+0.50000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	81	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	82	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	83	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	84	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	85	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	86	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	87	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	88	S	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	89	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	90	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	91	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	92	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	93	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	94	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	95	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	96	F	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	97	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	98	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	99	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	100	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	101	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	102	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	103	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	104	P	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	105	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	106	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	107	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	108	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	109	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	110	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	111	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	112	R	unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	113		unit	
+def	0.645448	+0.64545	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	114		unit	
+def	0.750000	+0.75000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000
+param	115		unit	
+def	0.000000	0.00000	default	1.000000
+at	0.000	0.00000
+at	0.500	+0.50000
+at	1.000	+1.00000

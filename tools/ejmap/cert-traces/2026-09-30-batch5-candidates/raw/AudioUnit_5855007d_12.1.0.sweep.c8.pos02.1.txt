@@ -1,0 +1,43 @@
+probe: "Abbey Road RS124 (s)" | AudioUnit:Effects/aufx,RS1S,ksWV | uid=5855007d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Input Control R	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	49
+param	0	0.500000	Input Control	5.0
+param	1	0.000000	Recovery	1
+param	2	0.000000	Super Fuse	Off
+param	3	0.000000	Unit Type	Studio
+param	4	0.000000	SC HP	20
+param	5	1.000000	Mix	100.0
+param	6	0.500000	Output Attenuator	0.0
+param	7	0.500000	Meter Selector	Gain Reduction
+param	8	0.500000	Input Control R	5.0
+param	9	0.000000	Unit Type R	Studio
+param	10	0.000000	Recovery R	1
+param	11	0.000000	Super Fuse R	Off
+param	12	1.000000	Mix R	100.0
+param	13	0.000000	SC HP R	20
+param	14	0.500000	Output Attenuator R	0.0
+param	15	0.500000	Meter Selector R	Gain Reduction
+param	16	0.000000	Compressor Type	Stereo
+param	17	0.200000	Monitor	Stereo
+param	18	1.000000	Link	On
+param	19	0.000000	Auto Hold	Off
+param	20	0.000000	Auto Hold R	Off
+param	21	0.000000	HF Roll-Off	Off
+param	22	0.000000	HF Roll-Off R	Off
+stage	position
+pos	0	norm	0.133333	confirm_ms	51.40	slices	5	instack_match	0	getValue	0.133333	landed_by	pump	render_blocks	0	text_ms	22.7	reads	2	text	1.3
+hold	0	-54.00	level_db	-68.6050	in_rms_db	-57.0103	tone_frac	1.0000	ch	-68.6050,-68.6050	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-61.3880,-68.6045,-68.6060,-68.6045,-68.6060,-68.6045	nonfinite	0
+hold	0	-48.00	level_db	-62.6049	in_rms_db	-51.0103	tone_frac	1.0000	ch	-62.6049,-62.6049	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-62.6196,-62.6042,-62.6065,-62.6042,-62.6065,-62.6042	nonfinite	0
+hold	0	-24.00	level_db	-38.6068	in_rms_db	-27.0103	tone_frac	1.0000	ch	-38.6068,-38.6068	doubled	0	last_move_db	0.0030	final_move_db	0.0030	win	-38.6263,-38.6058,-38.6088,-38.6058,-38.6088,-38.6058	nonfinite	0
+hold	0	-12.00	level_db	-28.9160	in_rms_db	-15.0103	tone_frac	1.0000	ch	-28.9160,-28.9160	doubled	0	last_move_db	0.0037	final_move_db	0.0037	win	-28.4484,-28.9102,-28.9184,-28.9148,-28.9185,-28.9148	nonfinite	0
+hold	0	-6.00	level_db	-26.2307	in_rms_db	-9.0103	tone_frac	1.0000	ch	-26.2307,-26.2307	doubled	0	last_move_db	0.0043	final_move_db	0.0043	win	-25.7133,-26.2283,-26.2335,-26.2292,-26.2335,-26.2292	nonfinite	0
+reread	0	steady
+timing	wall_ms	401.1	audio_s	7.500
+stage	done

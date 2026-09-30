@@ -1,0 +1,111 @@
+probe: "Auto-Tune Vocal Compressor" | AudioUnit:Effects/aufx,Vxcp,Antr | uid=7663717a | arch=arm64 | format=AudioUnit
+PaceAP ThreadLoopBase::loop - Starting the license state callback loop...
+PaceAP ThreadLoopBase::loop - Starting the producer loop...
+PaceAP ThreadLoopBase::loop - Starting the queue creation loop...
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP:ExplicitLicenseCheck5(0000:0000) - 5 layers
+PaceAP - Stats: Current elapsed microseconds: 000000067039
+PaceAP:ExplicitLicenseCheck5(0000:0000) - Waiting because the queue is empty...
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - About to call the developer's license state callback with event 1...
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - Exiting.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with an iLok location (1) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+
+sweep	proto	1	thr	18	name	Mod Comp 1 Thresh dB	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Plugin View	1
+param	1	1.000000	Comp Model Slot 1	3
+param	2	0.333333	Comp Model Slot 2	1
+param	3	1.000000	Comp Enable Slot 1	On
+param	4	1.000000	Comp Enable Slot 2	On
+param	5	0.000000	Comp Metering Slot 1	0
+param	6	0.000000	Comp Metering Slot 2	0
+param	7	0.250000	Input Type	Alto/Tenor
+param	8	0.000000	Compression Level	0
+param	9	0.000000	Compression Style	0
+param	10	1.000000	Dry / Wet Mix	100
+param	11	0.500000	Input Gain dB	0.0
+param	12	0.500000	Output Gain dB	0.0
+param	13	0.000000	Mod Comp 1 Auto-Attack	Off
+param	14	0.000000	Mod Comp 1 Auto-Release	Off
+param	15	0.245580	Mod Comp 1 Ratio	3.0
+param	16	0.500000	Mod Comp 1 Gain dB	0.0
+param	17	0.166667	Mod Comp 1 Knee dB	10.0
+param	18	1.000000	Mod Comp 1 Thresh dB	0.0
+param	19	0.267591	Mod Comp 1 Attack Ms	10.0
+param	20	0.264810	Mod Comp 1 Release Ms	100
+param	21	0.000000	Mod Comp 1 Sidechain Ext	Off
+param	22	0.000000	Mod Comp 1 Sidechain HPF	Off
+param	23	0.000000	Mod Comp 1 Sidechain LPF	Off
+param	24	0.000000	Mod Comp 1 Sidechain Surf	Off
+param	25	0.000000	Mod Comp 2 Auto-Attack	Off
+param	26	0.000000	Mod Comp 2 Auto-Release	Off
+param	27	0.245580	Mod Comp 2 Ratio	3.0
+param	28	0.500000	Mod Comp 2 Gain dB	0.0
+param	29	0.166667	Mod Comp 2 Knee dB	10.0
+param	30	1.000000	Mod Comp 2 Thresh dB	0.0
+param	31	0.267591	Mod Comp 2 Attack Ms	10.0
+param	32	0.264810	Mod Comp 2 Release Ms	100
+param	33	0.000000	Mod Comp 2 Sidechain Ext	Off
+param	34	0.000000	Mod Comp 2 Sidechain HPF	Off
+param	35	0.000000	Mod Comp 2 Sidechain LPF	Off
+param	36	0.000000	Mod Comp 2 Sidechain Surf	Off
+param	37	0.000000	Opt A Comp 1 Warmth Enable	Off
+param	38	0.000000	Opt A Comp 1 Gain Reduction dB	0.0
+param	39	0.500000	Opt A Comp 1 Output Gain dB	0.0
+param	40	0.250000	Opt A Comp 1 Warmth dB	3.0
+param	41	0.000000	Opt A Comp 2 Warmth Enable	Off
+param	42	0.000000	Opt A Comp 2 Gain Reduction dB	0.0
+param	43	0.500000	Opt A Comp 2 Output Gain dB	0.0
+param	44	0.250000	Opt A Comp 2 Warmth dB	3.0
+param	45	0.000000	Opt B Comp 1 Warmth Enable	Off
+param	46	1.000000	Opt B Comp 1 Threshold dB	0.0
+param	47	0.500000	Opt B Comp 1 Output Gain dB	0.0
+param	48	0.125000	Opt B Comp 1 Ratio	3.0
+param	49	0.247767	Opt B Comp 1 Attack Ms	2.5
+param	50	0.250000	Opt B Comp 1 Release Ms	4.0
+param	51	0.000000	Opt B Comp 2 Warmth Enable	Off
+param	52	1.000000	Opt B Comp 2 Threshold dB	0.0
+param	53	0.500000	Opt B Comp 2 Output Gain dB	0.0
+param	54	0.125000	Opt B Comp 2 Ratio	3.0
+param	55	0.247767	Opt B Comp 2 Attack Ms	2.5
+param	56	0.250000	Opt B Comp 2 Release Ms	4.0
+param	57	0.000000	FET Comp 1 Warmth	Off
+param	58	0.000000	FET Comp 1 Ratio	4:1
+param	59	0.500000	FET Comp 1 Attack	4.0
+param	60	0.833333	FET Comp 1 Release	6.0
+param	61	0.500000	FET Comp 1 Input Level dB	-30.0
+param	62	0.750000	FET Comp 1 Output Level dB	-15.0
+param	63	0.000000	FET Comp 2 Warmth	Off
+param	64	0.000000	FET Comp 2 Ratio	4:1
+param	65	0.500000	FET Comp 2 Attack	4.0
+param	66	0.833333	FET Comp 2 Release	6.0
+param	67	0.500000	FET Comp 2 Input Level dB	-30.0
+param	68	0.750000	FET Comp 2 Output Level dB	-15.0
+param	69	0.000000	Master Bypass	Off
+param	70	0.000000	Gain Reduction	0.0000000
+stage	position
+pos	0	norm	0.333333	confirm_ms	2.45	slices	1	instack_match	1	getValue	0.333333	landed_by	instack	render_blocks	0	text_ms	20.2	reads	2	text	-40.0
+hold	0	-24.00	level_db	-37.6633	in_rms_db	-27.0103	tone_frac	1.0000	ch	-37.6633,-37.6633	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-31.3059,-37.6179,-37.6635,-37.6631,-37.6638,-37.6631	nonfinite	0
+hold	0	-12.00	level_db	-33.6619	in_rms_db	-15.0103	tone_frac	1.0000	ch	-33.6619,-33.6619	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-33.1323,-33.6614,-33.6630,-33.6614,-33.6630,-33.6614	nonfinite	0
+hold	0	-6.00	level_db	-31.6616	in_rms_db	-9.0103	tone_frac	1.0000	ch	-31.6616,-31.6616	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-31.4588,-31.6608,-31.6631,-31.6608,-31.6631,-31.6608	nonfinite	0
+reread	0	steady
+timing	wall_ms	66.1	audio_s	4.500
+stage	done

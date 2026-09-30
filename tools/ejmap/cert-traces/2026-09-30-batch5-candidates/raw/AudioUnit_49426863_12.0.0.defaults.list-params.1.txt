@@ -1,0 +1,45 @@
+probe: "EMO-D5 (m)" | AudioUnit:Effects/aufx,CDYM,ksWV | uid=49426863 | arch=arm64 | format=AudioUnit
+
+0	Gate On		2	1	1	0
+1	Gate Thresh	dB	2147483647	0	1	0
+2	GateExp		2	1	1	0
+3	Gate Attack	ms	2147483647	0	1	0
+4	Gate Rel	ms	2147483647	0	1	0
+5	Gate Hold	ms	2147483647	0	1	0
+6	Gate Close	dB	2147483647	0	1	0
+7	Gate Floor	dB	2147483647	0	1	0
+8	Gate Int Ext		2	1	1	0
+9	Gate Monitor		2	1	1	0
+10	Gate HPF On		2	1	1	0
+11	Gate HPF Freq	Hz	2147483647	0	1	0
+12	Gate Filter Link		2	1	1	0
+13	Gate LPF On		2	1	1	0
+14	Gate LPF Freq	Hz	2147483647	0	1	0
+15	Comp On		2	1	1	0
+16	Comp Thresh	dB	2147483647	0	1	0
+17	Comp Ratio		2147483647	0	1	0
+18	Comp Knee		3	1	1	0
+19	Comp Attack	ms	2147483647	0	1	0
+20	Comp Auto Manual		2	1	1	0
+21	Comp Rel	ms	2147483647	0	1	0
+22	Comp Int Ext		3	1	1	0
+23	Comp Monitor		2	1	1	0
+24	Comp HPF On		2	1	1	0
+25	Comp HPF Freq	Hz	2147483647	0	1	0
+26	Comp Filter Link		2	1	1	0
+27	Comp LPF Freq	Hz	2147483647	0	1	0
+28	Comp Mix	%	2147483647	0	1	0
+29	Leveller On		2	1	1	0
+30	Leveller Thresh	dB	2147483647	0	1	0
+31	Leveller Range		2147483647	0	1	0
+32	DeEsser On		2	1	1	0
+33	DeEsser Thresh	dB	2147483647	0	1	0
+34	DeEsser Monitor		2	1	1	0
+35	DeEsser Type		3	1	1	0
+36	DeEsser Freq	Hz	2147483647	0	1	0
+37	DeEsser Range		2147483647	0	1	0
+38	Limiter On		2	1	1	0
+39	Limiter Thresh	dB	2147483647	0	1	0
+40	Limiter Rel	ms	2147483647	0	1	0
+41	Makeup	dB	2147483647	0	1	0
+42	Comp LPF On		2	1	1	0

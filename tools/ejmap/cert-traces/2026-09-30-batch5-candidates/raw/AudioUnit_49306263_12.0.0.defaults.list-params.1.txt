@@ -1,0 +1,63 @@
+probe: "C6-SideChain (m)" | AudioUnit:Effects/aufx,C6SM,ksWV | uid=49306263 | arch=arm64 | format=AudioUnit
+
+0	Output Gain	dB	2147483647	0	1	0
+1	Release		2	1	1	0
+2	Behavior		2	1	1	0
+3	Knee		2147483647	0	1	0
+4	Low Crossover	Hz	2147483647	0	1	0
+5	Mid Crossover	Hz	2147483647	0	1	0
+6	High Crossover	Hz	2147483647	0	1	0
+7	Crossover Q		2147483647	0	1	0
+8	Band 1 Solo		2	1	1	0
+9	Band 1 Bypass		2	1	1	0
+10	Band 1 Threshold	dB	2147483647	0	1	0
+11	Band 1 Gain	dB	2147483647	0	1	0
+12	Band 1 Range	dB	2147483647	0	1	0
+13	Band 1 Attack	ms	2147483647	0	1	0
+14	Band 1 Release	ms	2147483647	0	1	0
+15	Band 1 SC		2	1	1	0
+16	Band 1 Q		2147483647	0	1	0
+17	Band 1 Frequency	Hz	2147483647	0	1	0
+18	Band 2 Solo		2	1	1	0
+19	Band 2 Bypass		2	1	1	0
+20	Band 2 Threshold	dB	2147483647	0	1	0
+21	Band 2 Gain	dB	2147483647	0	1	0
+22	Band 2 Range	dB	2147483647	0	1	0
+23	Band 2 Attack	ms	2147483647	0	1	0
+24	Band 2 Release	ms	2147483647	0	1	0
+25	Band 2 SC		2	1	1	0
+26	Band 3 Solo		2	1	1	0
+27	Band 3 Bypass		2	1	1	0
+28	Band 3 Threshold	dB	2147483647	0	1	0
+29	Band 3 Gain	dB	2147483647	0	1	0
+30	Band 3 Range	dB	2147483647	0	1	0
+31	Band 3 Attack	ms	2147483647	0	1	0
+32	Band 3 Release	ms	2147483647	0	1	0
+33	Band 3 SC		2	1	1	0
+34	Band 4 Solo		2	1	1	0
+35	Band 4 Bypass		2	1	1	0
+36	Band 4 Threshold	dB	2147483647	0	1	0
+37	Band 4 Gain	dB	2147483647	0	1	0
+38	Band 4 Range	dB	2147483647	0	1	0
+39	Band 4 Attack	ms	2147483647	0	1	0
+40	Band 4 Release	ms	2147483647	0	1	0
+41	Band 4 SC		2	1	1	0
+42	Band 5 Solo		2	1	1	0
+43	Band 5 Bypass		2	1	1	0
+44	Band 5 Threshold	dB	2147483647	0	1	0
+45	Band 5 Gain	dB	2147483647	0	1	0
+46	Band 5 Range	dB	2147483647	0	1	0
+47	Band 5 Attack	ms	2147483647	0	1	0
+48	Band 5 Release	ms	2147483647	0	1	0
+49	Band 5 SC		2	1	1	0
+50	Band 6 Solo		2	1	1	0
+51	Band 6 Bypass		2	1	1	0
+52	Band 6 Threshold	dB	2147483647	0	1	0
+53	Band 6 Gain	dB	2147483647	0	1	0
+54	Band 6 Range	dB	2147483647	0	1	0
+55	Band 6 Attack	ms	2147483647	0	1	0
+56	Band 6 Release	ms	2147483647	0	1	0
+57	Band 6 SC		2	1	1	0
+58	Band 6 Q		2147483647	0	1	0
+59	Band 6 Frequency	Hz	2147483647	0	1	0
+60	SC Mode		2	1	1	0

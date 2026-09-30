@@ -1,0 +1,37 @@
+probe: "DPR-402 (s)" | AudioUnit:Effects/aufx,BDRS,ksWV | uid=4842637d | arch=arm64 | format=AudioUnit
+
+0	Input L/M	dB	2147483647	0	1	0
+1	Input R/S	dB	2147483647	0	1	0
+2	Stereo Mode		3	1	1	0
+3	Monitor		4	1	1	0
+4	Comp Mode L/M		3	1	1	0
+5	Comp Mode R/S		3	1	1	0
+6	Threshold L/M		2147483647	0	1	0
+7	Threshold R/S		2147483647	0	1	0
+8	Ratio L/M		2147483647	0	1	0
+9	Ratio R/S		2147483647	0	1	0
+10	Attack L/M		11	1	1	0
+11	Attack R/S		11	1	1	0
+12	Release L/M		11	1	1	0
+13	Release R/S		11	1	1	0
+14	De-Ess L/M		2147483647	0	1	0
+15	De-Ess R/S		2147483647	0	1	0
+16	Freq L/M		2147483647	0	1	0
+17	Freq R/S		2147483647	0	1	0
+18	Peak Lim L/M		2147483647	0	1	0
+19	Peak Lim R/S		2147483647	0	1	0
+20	Peak Lim Attack L/M		2	1	1	0
+21	Peak Lim Attack R/S		2	1	1	0
+22	Noise		2147483647	0	1	0
+23	Output L/M		2147483647	0	1	0
+24	Output R/S		2147483647	0	1	0
+25	Mon S.C L/M		2	1	1	0
+26	Mon S.C R/S		2	1	1	0
+27	Jumper L/M		11	1	1	0
+28	Jumper R/S		11	1	1	0
+29	Mix L/M		2147483647	0	1	0
+30	Mix R/S		2147483647	0	1	0
+31	DPR Bypass L/M		2	1	1	0
+32	DPR Bypass R/S		2	1	1	0
+33	Ext S.C L/M		2	1	1	0
+34	Ext S.C R/S		2	1	1	0

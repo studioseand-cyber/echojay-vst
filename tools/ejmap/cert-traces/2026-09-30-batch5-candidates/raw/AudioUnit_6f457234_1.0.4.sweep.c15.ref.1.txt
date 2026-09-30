@@ -1,0 +1,56 @@
+probe: "Lindell 354E" | AudioUnit:Effects/aufx,LBc4,Brwx | uid=6f457234 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+sweep	proto	1	thr	15	name	Mid Threshold	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Low Meter	Control
+param	1	1.000000	Low In	On
+param	2	0.000000	Low Solo	Off
+param	3	0.500000	Low Mid Side	Off
+param	4	0.142857	Low Gain	2.0dB
+param	5	0.500000	Low Ratio	3:1
+param	6	0.533333	Low Threshold	-4.0dB
+param	7	0.666667	Low Attack	2mS
+param	8	1.000000	Low Recovery	Auto
+param	9	0.500000	Mid Meter	Control
+param	10	1.000000	Mid In	On
+param	11	0.000000	Mid Solo	Off
+param	12	0.500000	Mid Mid Side	Off
+param	13	0.142857	Mid Gain	2.0dB
+param	14	0.500000	Mid Ratio	3:1
+param	15	0.533333	Mid Threshold	-4.0dB
+param	16	0.666667	Mid Attack	2mS
+param	17	1.000000	Mid Recovery	Auto
+param	18	0.500000	High Meter	Control
+param	19	1.000000	High In	On
+param	20	0.000000	High Solo	Off
+param	21	0.500000	High Mid Side	Off
+param	22	0.142857	High Gain	2.0dB
+param	23	0.500000	High Ratio	3:1
+param	24	0.533333	High Threshold	-4.0dB
+param	25	0.666667	High Attack	2mS
+param	26	1.000000	High Recovery	Auto
+param	27	1.000000	Mix	100%
+param	28	0.000000	HPF	OFF
+param	29	0.333333	Master Gain	0.0dB
+param	30	0.301030	Low XOverParameter	200Hz
+param	31	0.786176	High XOverParameter	5000Hz
+param	32	0.000000	Smash	Off
+param	33	1.000000	Niveau	On
+param	34	0.000000	Link	Off
+param	35	0.000000	Bypass	In
+param	36	0.500000	In Level	0.0dB
+param	37	0.500000	Out Level	0.0dB
+stage	reference
+refpos	val	0.533333	text	-4.0dB
+ref	-24.00	level_db	-24.7741	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	1.0000	ch	-24.7741,-24.7741	win	-24.7511,-24.7602,-24.7649,-24.7676,-24.7709,-24.7724,-24.7747,-24.7754	nonfinite	0
+ref	-12.00	level_db	-18.2276	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.2276,-18.2276	win	-17.0479,-17.5873,-17.8183,-17.9784,-18.0985,-18.1761,-18.2362,-18.2709	nonfinite	0
+ref	-6.00	level_db	-15.9066	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9998	ch	-15.9066,-15.9066	win	-15.3228,-15.6205,-15.7253,-15.8056,-15.8502,-15.8890,-15.9055,-15.9254	nonfinite	0
+timing	wall_ms	121.7	audio_s	6.000
+stage	done

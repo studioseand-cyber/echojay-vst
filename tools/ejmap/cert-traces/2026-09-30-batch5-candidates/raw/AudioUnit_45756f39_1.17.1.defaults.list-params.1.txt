@@ -1,0 +1,49 @@
+probe: "elysia alpha master" | AudioUnit:Effects/aufx,alp2,Elys | uid=45756f39 | arch=arm64 | format=AudioUnit
+
+0	Active		2	1	1	0
+1	MS Mode		2	1	1	0
+2	Link		2	1	1	0
+3	Threshold 1		2147483647	0	1	0
+4	Feed Forward 1		2	1	1	0
+5	Attack 1		2147483647	0	1	0
+6	Attack Auto Fast 1		2	1	1	0
+7	Release 1		2147483647	0	1	0
+8	Release Auto Fast 1		2	1	1	0
+9	Ratio 1		2147483647	0	1	0
+10	EQ Gain 1		2147483647	0	1	0
+11	EQ On 1		2	1	1	0
+12	EQ Freq 1		2147483647	0	1	0
+13	EQ Freq x10 1		2	1	1	0
+14	SC Gain 1		2147483647	0	1	0
+15	SC On 1		2	1	1	0
+16	SC Freq 1		2147483647	0	1	0
+17	Direct 1		2	1	1	0
+18	Mix 1		2147483647	0	1	0
+19	Compressed 1		2	1	1	0
+20	Gain 1		2147483647	0	1	0
+21	Warm 1		2	1	1	0
+22	Soft Clip 1		2147483647	0	1	0
+23	Soft Clip On 1		2	1	1	0
+24	Threshold 2		2147483647	0	1	0
+25	Feed Forward 2		2	1	1	0
+26	Attack 2		2147483647	0	1	0
+27	Attack Auto Fast 2		2	1	1	0
+28	Release 2		2147483647	0	1	0
+29	Release Auto Fast 2		2	1	1	0
+30	Ratio 2		2147483647	0	1	0
+31	EQ Gain 2		2147483647	0	1	0
+32	EQ On 2		2	1	1	0
+33	EQ Freq 2		2147483647	0	1	0
+34	EQ Freq x10 2		2	1	1	0
+35	SC Gain 2		2147483647	0	1	0
+36	SC On 2		2	1	1	0
+37	SC Freq 2		2147483647	0	1	0
+38	Direct 2		2	1	1	0
+39	Mix 2		2147483647	0	1	0
+40	Compressed 2		2	1	1	0
+41	Gain 2		2147483647	0	1	0
+42	Warm 2		2	1	1	0
+43	Soft Clip 2		2147483647	0	1	0
+44	Soft Clip On 2		2	1	1	0
+45	Gain Reduction 1		2147483647	0	1	0
+46	Gain Reduction 2		2147483647	0	1	0

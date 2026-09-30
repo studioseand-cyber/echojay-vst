@@ -1,0 +1,65 @@
+probe: "elysia alpha master" | AudioUnit:Effects/aufx,alp2,Elys | uid=45756f39 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	24	name	Threshold 2	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Active	On
+param	1	1.000000	MS Mode	On
+param	2	1.000000	Link	On
+param	3	0.000000	Threshold 1	+20.0 dB
+param	4	0.000000	Feed Forward 1	Off
+param	5	0.500000	Attack 1	26.0 ms
+param	6	0.000000	Attack Auto Fast 1	Off
+param	7	0.500000	Release 1	359.2 ms
+param	8	0.000000	Release Auto Fast 1	Off
+param	9	0.363636	Ratio 1	1.5
+param	10	0.500000	EQ Gain 1	0.0 dB
+param	11	0.000000	EQ On 1	Off
+param	12	0.500000	EQ Freq 1	155.0 Hz
+param	13	0.000000	EQ Freq x10 1	Off
+param	14	0.500000	SC Gain 1	0.0 dB
+param	15	0.000000	SC On 1	Off
+param	16	0.500000	SC Freq 1	310.0 Hz
+param	17	1.000000	Direct 1	On
+param	18	1.000000	Mix 1	100.0 %
+param	19	1.000000	Compressed 1	On
+param	20	0.000000	Gain 1	0.0 dB
+param	21	0.000000	Warm 1	Off
+param	22	0.000000	Soft Clip 1	25.0 dB
+param	23	0.000000	Soft Clip On 1	Off
+param	24	0.000000	Threshold 2	+20.0 dB
+param	25	0.000000	Feed Forward 2	Off
+param	26	0.500000	Attack 2	26.0 ms
+param	27	0.000000	Attack Auto Fast 2	Off
+param	28	0.500000	Release 2	359.2 ms
+param	29	0.000000	Release Auto Fast 2	Off
+param	30	0.363636	Ratio 2	1.5
+param	31	0.500000	EQ Gain 2	0.0 dB
+param	32	0.000000	EQ On 2	Off
+param	33	0.500000	EQ Freq 2	155.0 Hz
+param	34	0.000000	EQ Freq x10 2	Off
+param	35	0.500000	SC Gain 2	0.0 dB
+param	36	0.000000	SC On 2	Off
+param	37	0.500000	SC Freq 2	310.0 Hz
+param	38	1.000000	Direct 2	On
+param	39	1.000000	Mix 2	100.0 %
+param	40	1.000000	Compressed 2	On
+param	41	0.000000	Gain 2	0.0 dB
+param	42	0.000000	Warm 2	Off
+param	43	0.000000	Soft Clip 2	25.0 dB
+param	44	0.000000	Soft Clip On 2	Off
+param	45	0.000000	Gain Reduction 1	0.0 dB
+param	46	0.000000	Gain Reduction 2	0.0 dB
+stage	position
+pos	0	norm	0.333333	confirm_ms	2.56	slices	1	instack_match	1	getValue	0.333333	landed_by	instack	render_blocks	0	text_ms	22.3	reads	2	text	+9.0 dB
+hold	0	-24.00	level_db	-27.0093	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0093,-27.0093	doubled	0	last_move_db	0.0045	final_move_db	0.0045	win	-27.0230,-27.0078,-27.0123,-27.0078,-27.0123,-27.0078	nonfinite	0
+hold	0	-12.00	level_db	-15.0599	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0599,-15.0599	doubled	0	last_move_db	0.0040	final_move_db	0.0040	win	-15.0727,-15.0586,-15.0625,-15.0586,-15.0625,-15.0586	nonfinite	0
+hold	0	-6.00	level_db	-9.8177	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.8177,-9.8177	doubled	0	last_move_db	0.0032	final_move_db	0.0032	win	-9.7360,-9.8166,-9.8199,-9.8166,-9.8199,-9.8166	nonfinite	0
+reread	0	steady
+timing	wall_ms	84.5	audio_s	4.500
+stage	done

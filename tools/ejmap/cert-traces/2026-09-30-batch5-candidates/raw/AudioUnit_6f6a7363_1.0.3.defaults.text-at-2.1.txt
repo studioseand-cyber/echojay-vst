@@ -1,0 +1,228 @@
+probe: "Lindell MBC" | AudioUnit:Effects/aufx,Lmbc,Brwx | uid=6f6a7363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+param	0	SC HPF	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	90.0 Hz
+at	1.000	400.0 Hz
+param	1	Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	2	THD	unit	
+def	0.500000	-0.00	default	0.500000
+at	0.000	-30.00
+at	0.500	-0.00
+at	1.000	30.00
+param	3	Gain	unit	
+def	0.133333	2.00	default	0.133333
+at	0.000	0.00
+at	0.500	9.00
+at	1.000	24.00
+param	4	Knee	unit	
+def	0.000000	SOFT	default	0.000000
+at	0.000	SOFT
+at	0.500	MED
+at	1.000	HARD
+param	5	Smash	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	High In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Low Threshold	unit	
+def	0.500000	-1.61	default	0.500000
+at	0.000	10.00
+at	0.500	-1.61
+at	1.000	-20.00
+param	8	Bands Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Mid Release	unit	
+def	0.500000	0.500	default	0.500000
+at	0.000	0.050
+at	0.500	0.500
+at	1.000	3.000
+param	10	Input Gain	unit	
+def	0.500000	-0.00	default	0.500000
+at	0.000	-10.00
+at	0.500	-0.00
+at	1.000	10.00
+param	11	Low In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	Mid In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	13	Style	unit	
+def	0.000000	Feed Back	default	0.000000
+at	0.000	Feed Back
+at	0.500	Feed Back
+at	1.000	Feed Forward
+param	14	Mid-High Freq	unit	
+def	0.750076	5.00 kHz	default	0.750076
+at	0.000	200 Hz
+at	0.500	1.55 kHz
+at	1.000	12.00 kHz
+param	15	High Release	unit	
+def	0.500000	0.500	default	0.500000
+at	0.000	0.050
+at	0.500	0.500
+at	1.000	3.000
+param	16	Low Ratio	unit	
+def	0.500000	4:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	4:1
+at	1.000	Inf
+param	17	External Side Chain	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	18	Low Attack	unit	
+def	0.500000	1 ms	default	0.500000
+at	0.000	0.03 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	19	High Gain	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	9.00
+at	1.000	24.00
+param	20	High Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	70 %
+at	1.000	100 %
+param	21	High Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	22	Mid Ratio	unit	
+def	0.500000	4:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	4:1
+at	1.000	Inf
+param	23	Output Gain	unit	
+def	0.500000	-0.00	default	0.500000
+at	0.000	-10.00
+at	0.500	-0.00
+at	1.000	10.00
+param	24	Mid Gain	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	9.00
+at	1.000	24.00
+param	25	Mid Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	70 %
+at	1.000	100 %
+param	26	Mid Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	27	Manual Gain	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	28	Low Mid-Side Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Mid
+at	1.000	Side
+param	29	Meters Mode	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	IN
+at	0.500	GR
+at	1.000	OUT
+param	30	Low-Mid Freq	unit	
+def	0.363958	200 Hz	default	0.363958
+at	0.000	50 Hz
+at	0.500	500 Hz
+at	1.000	5.00 kHz
+param	31	Low Release	unit	
+def	0.500000	0.500	default	0.500000
+at	0.000	0.050
+at	0.500	0.500
+at	1.000	3.000
+param	32	High Attack	unit	
+def	0.500000	1 ms	default	0.500000
+at	0.000	0.03 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	33	High Ratio	unit	
+def	0.500000	4:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	4:1
+at	1.000	Inf
+param	34	Mid Attack	unit	
+def	0.500000	1 ms	default	0.500000
+at	0.000	0.03 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	35	High Mid-Side Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Mid
+at	1.000	Side
+param	36	Compress	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	37	Mid Mid-Side Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Mid
+at	1.000	Side
+param	38	Mid Threshold	unit	
+def	0.500000	-1.61	default	0.500000
+at	0.000	10.00
+at	0.500	-1.61
+at	1.000	-20.00
+param	39	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	40	Low Gain	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	9.00
+at	1.000	24.00
+param	41	Low Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	70 %
+at	1.000	100 %
+param	42	Low Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	43	Filter	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	MED
+at	1.000	LOUD
+param	44	High Threshold	unit	
+def	0.500000	-1.61	default	0.500000
+at	0.000	10.00
+at	0.500	-1.61
+at	1.000	-20.00
