@@ -4544,6 +4544,26 @@ void testCertRecordAndDefaultPaths()
     const auto retry = partitionStore (loaded, true);
     check (retry.recorded == 2 && names (retry.toSweep).contains ("aaaa0003") && names (retry.toSweep).contains ("aaaa0004") && retry.toSweep.size() == 2,
            "record R3: --retry-refused puts the refusal back on the list and leaves the sweep and the candidates alone");
+    // TRANSIENT vs PERMANENT: a refusal the product cannot outgrow is not re-run by --retry-refused.
+    store.getChildFile ("AudioUnit_aaaa0005_1.0.0.json").replaceWithText (fx ("aaaa0005", R"(, "thresholdRefusal": {"stage": "plan"})"));
+    store.getChildFile ("AudioUnit_aaaa0006_1.0.0.json").replaceWithText (fx ("aaaa0006", R"(, "thresholdRefusal": {"stage": "ratio_none"})"));
+    store.getChildFile ("AudioUnit_aaaa0007_1.0.0.json").replaceWithText (fx ("aaaa0007", R"(, "thresholdRefusal": {"stage": "budget"})"));
+    store.getChildFile ("AudioUnit_aaaa0008_1.0.0.json").replaceWithText (fx ("aaaa0008", R"(, "thresholdRefusal": {"stage": "window"})"));
+    store.getChildFile ("AudioUnit_aaaa0009_1.0.0.json").replaceWithText (fx ("aaaa0009", R"(, "thresholdRefusal": {"stage": "ratio_search"})"));
+    store.getChildFile ("AudioUnit_aaaa000a_1.0.0.json").replaceWithText (fx ("aaaa000a", R"(, "thresholdRefusal": {"stage": "reference"})"));
+    const auto mixed = loadFixtures (store);
+    const auto tr = partitionStore (mixed, true);
+    const auto trNames = names (tr.toSweep);
+    check (tr.permanent == 2 && ! trNames.contains ("aaaa0005") && ! trNames.contains ("aaaa0006")
+             && trNames.contains ("aaaa0003") && trNames.contains ("aaaa0007") && trNames.contains ("aaaa0008") && trNames.contains ("aaaa0009") && trNames.contains ("aaaa000a"),
+           "record R3b: --retry-refused re-runs the TRANSIENT refusals (defaults, budget, window, ratio search, reference) and skips the PERMANENT ones (plan, no ratio at 4:1) ("
+             + trNames.joinIntoString (",") + ")");
+    const auto all = names (partitionStore (mixed, true, true).toSweep);
+    check (all.contains ("aaaa0005") && all.contains ("aaaa0006") && all.size() == 8,
+           "record R3c: --retry-refused-all is the override that re-runs the permanent ones too");
+    check (! names (partitionStore (mixed, false).toSweep).contains ("aaaa0007"), "record R3d: without either flag no refusal is re-run");
+    for (const char* u : { "aaaa0005", "aaaa0006", "aaaa0007", "aaaa0008", "aaaa0009", "aaaa000a" })
+        store.getChildFile (juce::String ("AudioUnit_") + u + "_1.0.0.json").deleteFile();
 
     SweepOptions o;
     const auto exe = juce::File ("/Applications/ejmap.app/Contents/MacOS/ejmap");
@@ -4569,7 +4589,8 @@ void testCertRecordAndDefaultPaths()
     const auto back = juce::JSON::parse (rec.loadFileAsString());
     check (rec.getFileName() == "AudioUnit_bbbb0001_2.3.0.json" && back.getProperty ("thresholdRefusal", {}).getProperty ("stage", "") == "defaults"
              && back.getProperty ("thresholdRefusal", {}).getProperty ("reason", "").toString().contains ("timed out")
-             && ! back.hasProperty ("thresholdSweep") && back.getProperty ("product", "") == "Hangs On Load" && ! back.hasProperty ("tester_id"),
+             && ! back.hasProperty ("thresholdSweep") && back.getProperty ("product", "") == "Hangs On Load" && ! back.hasProperty ("tester_id")
+             && back.getProperty ("thresholdRefusal", {}).getProperty ("retry", "").toString().startsWith ("transient"),
            "record R7 (THE DEFAULTS PHASE): a product stopped before its defaults sampled writes a fixture at its discovered identity, "
            "naming the stage and reason, with no thresholdSweep and nothing private");
     const auto again = partitionStore (loadFixtures (store), false);

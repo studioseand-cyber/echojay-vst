@@ -490,6 +490,17 @@ inline bool sweepRecorded (const juce::var& fixture)
 }
 inline bool refusalRecorded (const juce::var& fixture) { return fixture.getProperty ("thresholdRefusal", {}).isObject(); }
 
+// TRANSIENT OR PERMANENT (ruled 30 Sep). A refusal at these stages is a fact about the PRODUCT and a re-run cannot change
+// it: the plan found no threshold role, or the ratio never reads 4:1. Everything else is a fact about the RUN - a hang,
+// a window (the iLok was out), the budget, a sleep, a silent reference - and a re-run after fixing it is the point.
+// --retry-refused re-runs the transient ones; retrying the permanent ones indiscriminately would re-run the
+// uncertifiable on every batch, the very jam the record exists to escape. --retry-refused-all overrides.
+inline bool refusalIsPermanent (const juce::String& stage) { return stage == "plan" || stage == "ratio_none"; }
+inline bool refusalPermanent (const juce::var& fixture)
+{
+    return refusalRecorded (fixture) && refusalIsPermanent (fixture.getProperty ("thresholdRefusal", {}).getProperty ("stage", "").toString());
+}
+
 inline std::vector<Subject> loadFixtures (const juce::File& dir)
 {
     std::vector<Subject> out;
@@ -1172,22 +1183,24 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
 // THE STORE SIDE OF THE WORKLIST, pure: a fixture that records a sweep, every candidate's sweep, or a refusal stays out;
 // the rest go on. `retryRefused` puts the refusals back (the iLok is in now, the hardware is attached): the record
 // stays in the fixture until the re-run replaces it.
-struct StorePartition { std::vector<Subject> toSweep; int recorded = 0, refused = 0; };
-inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused)
+struct StorePartition { std::vector<Subject> toSweep; int recorded = 0, refused = 0, permanent = 0; };
+inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused, bool retryAll = false)
 {
     StorePartition p;
     for (const auto& s : fromStore)
     {
-        const bool refusal = refusalRecorded (s.pushed);
+        const bool refusal = refusalRecorded (s.pushed), permanent = refusalPermanent (s.pushed);
         if (refusal) ++p.refused;
-        if (sweepRecorded (s.pushed) && ! (retryRefused && refusal)) ++p.recorded;
+        if (permanent) ++p.permanent;
+        const bool retry = retryRefused && refusal && (retryAll || ! permanent);
+        if (sweepRecorded (s.pushed) && ! retry) ++p.recorded;
         else p.toSweep.push_back (s);
     }
     return p;
 }
 
 inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace,
-                                           juce::StringArray& report, bool retryRefused = false)
+                                           juce::StringArray& report, bool retryRefused = false, bool retryAll = false)
 {
     std::vector<Subject> fromStore;
     if (fixturesDir.isDirectory()) fromStore = loadFixtures (fixturesDir);
@@ -1198,7 +1211,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         fixtureKeys.insert (s.uid + "|" + s.version);
         storeUids.insert (s.uid);
     }
-    const auto part = partitionStore (fromStore, retryRefused);
+    const auto part = partitionStore (fromStore, retryRefused, retryAll);
     std::vector<Subject> out = part.toSweep;
     const int certified = part.recorded;
 
@@ -1234,8 +1247,9 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         return rank (a) != rank (b) ? rank (a) < rank (b) : a.product.compareIgnoreCase (b.product) < 0; });
 
     report.add ("worklist: " + juce::String ((int) fromStore.size()) + " fixture(s) in the store (" + juce::String (certified)
-                + " already record a sweep, candidates or a refusal; " + juce::String (part.refused) + " refusal(s)"
-                + (retryRefused ? ", RE-RUN this time (--retry-refused)" : juce::String()) + "), "
+                + " already record a sweep, candidates or a refusal; " + juce::String (part.refused) + " refusal(s), "
+                + juce::String (part.permanent) + " of them permanent"
+                + (retryRefused ? juce::String (retryAll ? "; ALL RE-RUN this time (--retry-refused-all)" : "; the transient ones RE-RUN this time (--retry-refused)") : juce::String()) + "), "
                 + juce::String (added) + " discovered from the ledger at " + ledgerRoot.getFullPathName());
     report.addArray (in.notes);
     juce::StringArray ex;
@@ -1265,7 +1279,7 @@ struct SweepOptions
     juce::String product, hostVersion, armLabel;
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
     int timeoutMs = 120000;                          // per process
-    bool includePace = false, resetPerHold = false, retryRefused = false;
+    bool includePace = false, resetPerHold = false, retryRefused = false, retryAll = false;
 };
 
 // WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
@@ -1426,6 +1440,8 @@ inline juce::File writeRefusalRecord (const juce::File& fixturesDir, const juce:
         o->removeProperty ("thresholdSweep"); o->removeProperty ("thresholdCandidates"); o->removeProperty ("thresholdReview");
         auto* r = new juce::DynamicObject();
         r->setProperty ("stage", stage);
+        r->setProperty ("retry", refusalIsPermanent (stage) ? "permanent: a fact about the product; --retry-refused skips it (--retry-refused-all does not)"
+                                                             : "transient: a fact about the run; --retry-refused re-runs it once the reason is fixed");
         r->setProperty ("reason", reason);
         r->setProperty ("recordedAt", juce::Time::getCurrentTime().toISO8601 (false));
         r->setProperty ("host", host);
@@ -1512,7 +1528,7 @@ inline int runCertSweep (const SweepOptions& opt)
     const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
 
     juce::StringArray wl;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused);
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll);
     const Subject* sp = nullptr;
     for (const auto& x : subjects) if (x.product == opt.product) { sp = &x; break; }
     if (sp == nullptr) { say ("SWEEP: '" + opt.product + "' is not on the worklist (" + wl.joinIntoString ("; ") + ")"); return 2; }
@@ -1581,7 +1597,8 @@ inline int runCertSweep (const SweepOptions& opt)
         opt.out.getChildFile (stem0 + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
         const auto rec = writeRefusalRecord (opt.out.getChildFile ("fixtures"), base, stage, reason, processes.size(), unclean,
                                              probeLabel, "EJ Map " + opt.hostVersion);
-        say ("SWEEP: refusal recorded at stage '" + stage + "' -> " + rec.getFileName() + " (skipped by the worklist until --retry-refused or a new version)");
+        say ("SWEEP: refusal recorded at stage '" + stage + "' (" + (refusalIsPermanent (stage) ? "permanent" : "transient") + ") -> " + rec.getFileName()
+             + " (skipped by the worklist until " + (refusalIsPermanent (stage) ? "--retry-refused-all" : "--retry-refused") + " or a new version)");
         return rc; };
 
     // AN UNSEEN VERSION: sample defaults first, then sweep, in one pass (ruled 29 Sep). The identity is the
@@ -1620,7 +1637,7 @@ inline int runCertSweep (const SweepOptions& opt)
         juce::StringArray gs;
         for (float g : grid) gs.add (juce::String (g, 6));
         const auto r = runProbe (stem, "ratio-search", { "--text-at-norms", juce::String (plan.ratioIndex), gs.joinIntoString (",") }, -1.0f);
-        if (windowSeen || ! r.cleanExit()) return refuse (1, "ratio", licenceLine ("ratio search", r));
+        if (windowSeen || ! r.cleanExit()) return refuse (1, "ratio_search", licenceLine ("ratio search", r));
         std::vector<sweep::GridPoint> pts;
         for (const auto& line : juce::StringArray::fromLines (r.out))
         {
@@ -1629,7 +1646,7 @@ inline int runCertSweep (const SweepOptions& opt)
         }
         juce::String chosenText;
         const auto norm = sweep::chooseRatioRaise (pts, chosenText);
-        if (! norm) return refuse (4, "ratio", "ratio instantiates at '" + plan.ratioDefaultText + "' and no grid position reads 4:1 or more; not swept");
+        if (! norm) return refuse (4, "ratio_none", "ratio instantiates at '" + plan.ratioDefaultText + "' and no grid position reads 4:1 or more; not swept");
         plan.sets.push_back ({ plan.ratioIndex, *norm });
         std::cout << "  ratio raise: [" << plan.ratioIndex << "] '" << plan.ratioDefaultText << "' -> norm " << *norm << " (grid read '" << chosenText << "')" << std::endl;
     }
@@ -1823,7 +1840,7 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 {
     juce::StringArray wl;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused);
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll);
     std::cout << wl.joinIntoString ("\n") << std::endl;
     juce::StringArray done, refused;
     int n = 0;
@@ -1853,10 +1870,10 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 // instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
 // measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
 // the pushed fixture's controls; the real plan is made from the defaults sampled at the installed version.
-inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused = false)
+inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused = false, bool retryAll = false)
 {
     juce::StringArray wl;
-    auto subjects = buildWorklist (fixturesDir, ledgerRoot, includePace, wl, retryRefused);
+    auto subjects = buildWorklist (fixturesDir, ledgerRoot, includePace, wl, retryRefused, retryAll);
     int runnable = 0, runnableNewIdentity = 0, runnableDiscovered = 0;
     std::map<juce::String, juce::StringArray> notRunnable;
     juce::StringArray rows;

@@ -930,8 +930,13 @@ sample, plan found no threshold, ratio search failed or found nothing at 4:1, a 
 appeared, the reference was not the input's tone — writes the fixture it has (the store's, or
 the discovered identity with no controls yet) with `thresholdRefusal {stage, reason,
 recordedAt, host, probe, processes, uncleanProcesses}` and no `thresholdSweep`. The worklist
-skips it; `--retry-refused` (iLok back in, hardware attached) puts refusals back, a new
-installed version re-runs on its own, deleting the file works too. The defaults-phase case is
+skips it; a new installed version re-runs on its own, deleting the file works too, and
+`--retry-refused` puts back the TRANSIENT ones — stages `defaults`, `ratio_search`, `window`,
+`budget`, `reference`, facts about the run (iLok back in, hardware attached). Stages `plan`
+and `ratio_none` are PERMANENT, facts about the product, and `--retry-refused` skips them
+(`refusalIsPermanent`; pins R3b–R3d): retrying them indiscriminately would re-run the
+uncertifiable on every batch, the jam the record exists to escape. `--retry-refused-all`
+overrides, for the operator after a rule change. The record carries `retry` saying which. The defaults-phase case is
 the one that mattered: a plugin that hangs on load has a map (it mapped, on some machine) and no
 fixture, so it was offered again on every batch — four minutes of timeouts each time, for ever.
 Pin R7 (a discovered identity, stage `defaults`), and a live run with `--timeout-s 1` on

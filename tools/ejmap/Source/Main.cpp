@@ -596,7 +596,7 @@ namespace
             // --cert-sweep-census [fixturesDir]: the store defaults to ~/Library/ejmap/cert/fixtures, as the sweep's does.
             if (a == "--cert-sweep-census")
             {
-                bool includePace = false, retryRefused = false;
+                bool includePace = false, retryRefused = false, retryAll = false;
                 auto ledgerRoot = ejmap::cert::defaultEjmapLedger();
                 auto fixturesDir = i + 1 < argc && ! argAt (argc, argv, i + 1).startsWith ("--") ? cwdFile (argAt (argc, argv, i + 1))
                                                                                                     : ejmap::cert::defaultCertRoot().getChildFile ("fixtures");
@@ -604,9 +604,10 @@ namespace
                 {
                     if (argAt (argc, argv, j) == "--include-pace") includePace = true;
                     if (argAt (argc, argv, j) == "--retry-refused") retryRefused = true;
+                    if (argAt (argc, argv, j) == "--retry-refused-all") retryRefused = retryAll = true;
                     if (argAt (argc, argv, j) == "--ejmap-ledger" && j + 1 < argc) ledgerRoot = cwdFile (argAt (argc, argv, j + 1));
                 }
-                return ejmap::cert::runSweepCensus (fixturesDir, ledgerRoot, includePace, retryRefused);
+                return ejmap::cert::runSweepCensus (fixturesDir, ledgerRoot, includePace, retryRefused, retryAll);
             }
             if (a == "--cert-sweep-rederive" && i + 4 < argc)
                 return ejmap::cert::runSweepRederive (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)),
@@ -634,6 +635,7 @@ namespace
                     else if (k == "--reset-per-hold")            o.resetPerHold = true;
                     else if (k == "--include-pace")              o.includePace = true;
                     else if (k == "--retry-refused")             o.retryRefused = true;
+                    else if (k == "--retry-refused-all")         o.retryRefused = o.retryAll = true;
                 }
                 // THE DEFAULTS ARE THE HANDOVER PATH (EjmapCertDriver.h resolveCertPaths): ~/Library/ejmap/cert, its
                 // fixtures/ as the store, the probe beside this executable. A mapper types none of them.
@@ -643,7 +645,7 @@ namespace
                 {
                     std::cerr << "usage: ejmap --cert-sweep --product <name>   (or --cert-sweep-all [--skip NAME]...)\n"
                                  "       [--fixtures <dir>  default ~/Library/ejmap/cert/fixtures] [--out <dir>  default ~/Library/ejmap/cert]\n"
-                                 "       [--probe <EchoJayProbe>  default: beside ejmap] [--include-pace] [--retry-refused] [--timeout-s N per process]\n"
+                                 "       [--probe <EchoJayProbe>  default: beside ejmap] [--include-pace] [--retry-refused | --retry-refused-all] [--timeout-s N per process]\n"
                                  "       [--arm LABEL --set IDX:NORM ...] [--reset-per-hold]" << std::endl;
                     return 2;
                 }

@@ -122,12 +122,19 @@ What is left, and why the rest is not runnable:
 Ctrl+C and re-run anytime. Stop when the census says nothing is runnable, or the
 count plateaus. A product that stops (hangs, shows a window, has no threshold,
 its reference is not the tone) writes a **refusal record** and is skipped from then
-on — so a hanger costs at most a few minutes, once. After fixing what the refusal
-names (iLok back in, hardware attached), put the refusals back with:
+on — so a hanger costs at most a few minutes, once. The record says whether it is
+**transient** (a fact about the run: hung, window, iLok out, slept, budget) or
+**permanent** (a fact about the product: no threshold role, no ratio at 4:1).
+After fixing what a transient refusal names (iLok back in, hardware attached),
+re-run just those with:
 
 ```
 "$BIN" --cert-sweep-all --include-pace --retry-refused
 ```
+
+That skips the permanent ones on purpose; re-running them every batch is the
+jam the record exists to escape. `--retry-refused-all` re-runs them too, for
+the operator after a rule change.
 
 A plugin you excluded in §3 (`operator_excluded`) is left alone here too.
 
