@@ -6574,9 +6574,14 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
       if (calibTargetIsBus(uid, whyNot))
       { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return; } }
     auto loop = calibLoad(uid);
+    // 21t-m item 6c: the listen overload stamps and tests the rack revision on the same terms as the drive one.
+    const int liveRev0 = [this, &uid]() -> int
+    { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid)) return h->getChainRevision();
+      return -1; }();
+    const bool rackMoved0 = loop.chainRev >= 0 && liveRev0 >= 0 && liveRev0 != loop.chainRev;
     // A NEW TARGET ON A RUNNING LOOP RESTARTS IT FROM THE CURRENT DRIVE (ruled): the band changed, the drive the
     // loop has already found has not, and throwing it away would re-walk ground already covered.
-    if (loop.running() && loop.slot == slot && loop.plugin == pluginName)
+    if (! rackMoved0 && loop.running() && loop.slot == slot && loop.plugin == pluginName)
     {
         loop.retarget(bandLo, bandHi);
         EchoJay_NSLog(("EJThreshold: \"" + pluginName + "\" re-targeted to " + juce::String(bandLo, 1) + "-"
@@ -6586,6 +6591,7 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
     else
     {
         loop.begin(pluginName, slot, bandLo, bandHi, openingDrive);
+        loop.chainRev = liveRev0;
         EchoJay_NSLog(("EJThreshold: \"" + pluginName + "\" slot " + juce::String(slot + 1) + " listening, band "
                        + juce::String(bandLo, 1) + "-" + juce::String(bandHi, 1) + " dB, opening drive "
                        + juce::String(openingDrive, 1) + " dB").toRawUTF8());
@@ -6633,7 +6639,19 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     // and the same actuator means the band moved and the work done stands. A different actuator (or a passive
     // pass arriving over a listen one) is a different loop and starts clean, or it would carry a drive figure
     // into a threshold pass and quote it in the closing line.
-    if (loop.running() && loop.slot == cfg.slot && loop.plugin == cfg.plugin
+    // 21t-m item 6c: ...and only while the RACK has not been restructured under it. Without this clause a
+    // "harder" after a rebuild would re-target the stale loop, and the tick would then cancel it - the user's
+    // ask would vanish. A stale loop falls through to begin(), which starts clean on the slot as it is now.
+    const int liveRev = [this, &uid]() -> int
+    { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid)) return h->getChainRevision();
+      return -1; }();
+    const bool rackMoved = loop.chainRev >= 0 && liveRev >= 0 && liveRev != loop.chainRev;
+    if (rackMoved && loop.running())
+        EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" starts CLEAN - the rack was rebuilt under the "
+                       "loop that was running (rev " + juce::String(loop.chainRev) + " -> "
+                       + juce::String(liveRev) + "), so nothing it measured still stands").toRawUTF8());
+    if (! rackMoved
+        && loop.running() && loop.slot == cfg.slot && loop.plugin == cfg.plugin
         && loop.mode == cfg.mode && loop.actuator == cfg.actuator)
     {
         // 21t-i: A RE-TARGET IS THE USER'S COMPARATIVE. It carries the block's step size, and in measure-and-ask
@@ -6662,6 +6680,7 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     }
 
     loop.begin(cfg);
+    loop.chainRev = liveRev;      // 21t-m item 6c: the rack this loop belongs to, checked on every tick
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
     EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
                    + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")
@@ -6723,6 +6742,30 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
                            + " - no window can be judged here").toRawUTF8());
         }
         return loop.card();
+    }
+
+    // 21t-m item 6c (29 Sep 2026 ruling): A LOOP THE RACK MOVED UNDER IS CANCELLED, WITH ITS PENDING ASK.
+    // Sean's 21:53:21: a new build replaced the rack ("staleness guards passed rev=46 slots=0 base=0 ops=7",
+    // then "EJPanel: rebuild slots=1") while the old loop for Empirical Labs Mike-E Comp was still running. Its
+    // window 116 fired at 21:53:21.738 and it re-posted its opening line at .740 - "Empirical Labs Mike-E Comp
+    // is on - play it and I'll tell you what it's doing" - for a plugin that was no longer there. The existing
+    // guard only asked whether the slot INDEX was in the rack, and it was: slot 1 now held EchoJay EQ.
+    //
+    // The identity tested is the RACK REVISION the loop was started against, not the plugin's name. A name is
+    // the PLAN's label for a slot ("VComp (s)" for a slot the host calls "VComp") and comparing it cancels loops
+    // that are perfectly valid - which is what a first cut of this did: it killed every loop in
+    // level_loop_guard, four cases' worth, because the harness names its fake compressor "Fake Comp +6".
+    // chainRevision covers add, remove and move and nothing else, so it says "rebuild or slot removal" exactly.
+    if (loop.chainRev >= 0 && host->getChainRevision() != loop.chainRev)
+    {
+        calibLastLogLine_ = "CANCELLED - the rack was rebuilt under this loop (rev " + juce::String (loop.chainRev)
+                          + " -> " + juce::String (host->getChainRevision()) + "), so \"" + loop.plugin
+                          + "\" at slot " + juce::String (loop.slot + 1)
+                          + " is not the slot it was started on; its pending line is dropped with it";
+        EchoJay_NSLog (("EJThreshold: " + calibLastLogLine_).toRawUTF8());
+        loop = {};                 // no loop, no ask, no closing line
+        calibStore (uid, loop);
+        return {};
     }
 
     const auto lv = host->getSlotLevels(loop.slot);

@@ -415,10 +415,34 @@ void LinkProcessor::calibTickOwnRack()
             const auto line = calibLoop_.onHandover();
             EchoJay_NSLog(line.toRawUTF8());
             calibLastWindowMs_ = juce::Time::getMillisecondCounterHiRes();
+            // 21t-m item 6c: THE HOST THAT TAKES OVER STAMPS ITS OWN REVISION. chainRevision is per-ChainHost,
+            // so the number V2 stamped means nothing here; comparing against it would cancel every loop the
+            // moment the lease came back, which is the opposite of what case (4) requires.
+            calibLoop_.chainRev = chainHost.getChainRevision();
         }
     }
     if (! calibLoop_.active()) return;
     if (calibLoop_.slot < 0 || calibLoop_.slot >= chainHost.getNumSlots()) return;
+
+    // 21t-m item 6c (29 Sep 2026 ruling): A LOOP THE RACK MOVED UNDER IS CANCELLED HERE TOO. Sean's log is the
+    // V2's, but a loop handed to the Link runs on the Link's own chain, and a rebuild there leaves exactly the
+    // same stale loop re-posting a line for a plugin that has gone. Same test, same counter, same cancellation.
+    if (calibLoop_.chainRev >= 0 && chainHost.getChainRevision() != calibLoop_.chainRev)
+    {
+        EchoJay_NSLog (("EJThreshold: CANCELLED - the rack was rebuilt under this loop (rev "
+                        + juce::String (calibLoop_.chainRev) + " -> "
+                        + juce::String (chainHost.getChainRevision()) + "), so \"" + calibLoop_.plugin
+                        + "\" at slot " + juce::String (calibLoop_.slot + 1)
+                        + " is not the slot it was started on; its pending line is dropped with it").toRawUTF8());
+        calibLoop_ = {};
+        {   // the same direct write the judged-window path below uses: V2 renders the card from this
+            auto rc = LinkShm::readRackSidecar (resolvedDir, instanceUid_);
+            if (! rc.valid) { rc.uid = instanceUid_; rc.valid = true; if (rc.revision < 0) rc.revision = 0; }
+            rc.calib = calibLoop_.toVar();
+            LinkShm::writeRackSidecar (resolvedDir, rc);
+        }
+        return;
+    }
 
     const double nowMs = juce::Time::getMillisecondCounterHiRes();
     if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;

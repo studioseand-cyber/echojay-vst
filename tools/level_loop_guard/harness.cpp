@@ -1057,6 +1057,62 @@ void guardMain()
         }
     }
 
+    // ---- (6c) A LOOP THE RACK MOVED UNDER (21t-m item 6c, 29 Sep 2026) -----------------------------------
+    {
+        std::printf ("\n-- (6c) a loop left running by a rebuild --\n");
+        // Sean's 21:53:21: a new build replaced the rack ("staleness guards passed rev=46 slots=0 base=0 ops=7",
+        // then "EJPanel: rebuild slots=1") while the loop for Empirical Labs Mike-E Comp was still running. Its
+        // window 116 fired at .738 and it re-posted its opening line at .740 - "Empirical Labs Mike-E Comp is on -
+        // play it and I'll tell you what it's doing" - for a plugin that was no longer in the rack. The old guard
+        // asked only whether the slot INDEX existed, and it did: slot 1 now held EchoJay EQ.
+        //
+        // The identity tested is the RACK REVISION, not the plugin's NAME. A first cut compared names and killed
+        // four other cases in this file, because a name is the PLAN's label for a slot and need not be the host's.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        const int revAtStart = r.h.getChainRevision();
+        r.proc.calibStart (uid, passiveDriveCfg ("Fake Comp +6"));
+        check (r.proc.calibLoad (uid).chainRev == revAtStart,
+               "(6c) the loop is stamped with the rack revision it was started against",
+               juce::String (r.proc.calibLoad (uid).chainRev) + " == " + juce::String (revAtStart));
+        // Judged windows first, on runLoop's pacing, so what follows cancels a loop that was demonstrably WORKING.
+        for (int k = 0; k < 4; ++k)
+        { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
+        check (r.proc.calibLoad (uid).running() && r.proc.calibLoad (uid).window >= 1,
+               "(6c) precondition: it judges windows normally while the rack is untouched - the cancel must not "
+               "be a loop that never ran",
+               "window " + juce::String (r.proc.calibLoad (uid).window));
+        // THE REBUILD: a structural change to the rack, which is what Sean's ops=7 edit was.
+        const auto* g2 = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (g2 != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*g2));
+        pumpMs (200);
+        check (r.h.getChainRevision() != revAtStart,
+               "(6c) precondition: the rebuild moved the rack revision",
+               juce::String (revAtStart) + " -> " + juce::String (r.h.getChainRevision()));
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0;
+        const auto said = r.proc.calibTick (uid);
+        const auto after = r.proc.calibLoad (uid);
+        check (! after.running(),
+               "(6c) the next tick CANCELS it - no loop survives a rebuild  (RED as it stood: the loop judged "
+               "window after window against whatever now held its slot)",
+               after.running() ? ("still running for \"" + after.plugin + "\"") : juce::String ("cancelled"));
+        check (said.isEmpty(),
+               "(6c) ...and it asks NOTHING - Sean's re-posted \"Mike-E Comp is on - play it\" was for a slot that "
+               "was gone",
+               said.isEmpty() ? juce::String ("(nothing said)") : said.substring (0, 60));
+        check (r.proc.calibLastLogLine().contains ("CANCELLED")
+                   && r.proc.calibLastLogLine().contains ("rebuilt"),
+               "(6c) ...and it says so in the log, so a cancellation does not read as a silence",
+               r.proc.calibLastLogLine().substring (0, 90));
+        // ...and the user's next ask starts CLEAN rather than re-targeting the cancelled loop.
+        r.proc.calibStart (uid, passiveDriveCfg ("Fake Comp +6"));
+        const auto fresh = r.proc.calibLoad (uid);
+        check (fresh.running() && fresh.window == 0 && fresh.chainRev == r.h.getChainRevision(),
+               "(6c) ...and the next ask starts a CLEAN loop on the rack as it now is, so the ask is not swallowed",
+               "window " + juce::String (fresh.window) + " rev " + juce::String (fresh.chainRev));
+    }
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

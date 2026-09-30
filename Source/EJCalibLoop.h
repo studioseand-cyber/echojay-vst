@@ -84,6 +84,11 @@ struct CalibLoop
     float  minDb       = -60.0f;       // the profile's range for the threshold control
     float  maxDb       = 12.0f;
     int    slot        = -1;
+    // 21t-m item 6c (29 Sep 2026 ruling): THE RACK REVISION THE LOOP WAS STARTED AGAINST. ChainHost's
+    // chainRevision covers STRUCTURE only - add, remove, move - which is exactly "rebuild or slot removal".
+    // A loop whose rack has been restructured underneath it is stale: its slot INDEX no longer means what it
+    // meant, whoever now occupies it. -1 is "not captured", which never cancels.
+    int    chainRev    = -1;
     float  lo          = 2.0f;         // the band, from the op's gr_target_db
     float  hi          = 3.0f;
     float  preDb       = 0.0f;         // the drive as it stands
@@ -1292,6 +1297,7 @@ struct CalibLoop
     {
         auto* o = new juce::DynamicObject();
         o->setProperty ("plugin", plugin);      o->setProperty ("slot", slot);
+        o->setProperty ("chainRev", chainRev);
         o->setProperty ("lo", (double) lo);     o->setProperty ("hi", (double) hi);
         o->setProperty ("preDb", (double) preDb);
         o->setProperty ("steps", steps);        o->setProperty ("window", window);
@@ -1355,6 +1361,7 @@ struct CalibLoop
         auto* o = v.getDynamicObject();
         if (o == nullptr) return c;
         c.plugin = o->getProperty ("plugin").toString();
+        c.chainRev = o->hasProperty ("chainRev") ? (int) o->getProperty ("chainRev") : -1;
         c.slot   = (int) o->getProperty ("slot");
         c.lo = (float) (double) o->getProperty ("lo");  c.hi = (float) (double) o->getProperty ("hi");
         c.preDb = (float) (double) o->getProperty ("preDb");

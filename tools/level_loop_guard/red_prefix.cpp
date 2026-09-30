@@ -238,6 +238,33 @@ void guardMain()
         }
     }
 
+    // ---- 21t-m item 6c: A LOOP LEFT RUNNING BY A REBUILD, on pre-fix APIs ------------------------------
+    // Uses only calibLoad().running()/window, both of which predate the fix, so this is the direct RED for 6c.
+    {
+        std::printf ("\n-- item 6c: a loop left running by a rebuild --\n");
+        Rig r7 (ChannelType::LeadVocal, 6.0f);
+        feed (r7.proc, r7.prog, 6.0);
+        const juce::String uid;
+        r7.proc.calibStart (uid, passiveDriveCfg ("Fake Comp +6"));
+        const auto rr7 = runLoop (r7, 4);
+        juce::ignoreUnused (rr7);
+        check (r7.proc.calibLoad (uid).running(), "precondition: the loop is running before the rebuild",
+               "window " + juce::String (r7.proc.calibLoad (uid).window));
+        const auto* g2 = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (g2 != nullptr)
+            EchoJayBorrowHostTestAccess::loadBuiltin (r7.h, BuiltinDeviceRegistry::descriptionFor (*g2));
+        pumpMs (200);
+        const int wBefore = r7.proc.calibLoad (uid).window;
+        runLoop (r7, 2);
+        const auto after = r7.proc.calibLoad (uid);
+        check (! after.running(),
+               "item 6c: the rebuild CANCELS the loop",
+               after.running() ? ("still running, window " + juce::String (wBefore) + " -> "
+                                  + juce::String (after.window)
+                                  + "  <-- PRE-FIX KEEPS JUDGING, which is Sean's re-posted \"Mike-E Comp is on\"")
+                                : juce::String ("cancelled"));
+    }
+
     std::printf ("\n==== level_loop_guard PRE-FIX RED: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }
