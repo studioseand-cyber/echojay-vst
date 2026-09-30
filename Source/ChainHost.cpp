@@ -4370,6 +4370,14 @@ void ChainHost::requestMapPrefetch()
             need.addIfNotAlreadyThere(kv.first);
     }
     if (need.isEmpty()) return;
+    // 21t-m (30 Sep 2026, measured): NO FETCHER, NO FETCH - AND NO ABORT. The two other onNeedParamMaps call
+    // sites test it (the mapAbsent branch and refetchStale); this one invoked it bare, and an unset
+    // std::function throws std::bad_function_call, which is an uncaught exception and terminates the host.
+    // The editor INSTALLS this callback (PluginEditor.cpp:8362) and CLEARS it on close (line 2874), so the
+    // reachable path is: close the EchoJay window, add a plugin, the process aborts. Found by level_loop_guard's
+    // (6a) leg, which loads Apple's AUDelay into a rig that has no editor - the first guard in the tree to load
+    // a REAL plugin into a ChainHost rather than a built-in, which is why nothing had hit it before.
+    if (! onNeedParamMaps) return;
     // Batch 100 fps per request. The endpoint accepts 500, but fps ride in
     // a GET URL and 500 of them is a ~32KB request line that dies at the
     // transport (observed live in the bootstrap harness); 100 is ~6.5KB.
@@ -6648,11 +6656,16 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
                     // absent on this machine); gone on plugin reload.
                     sessionLoadFailed_.addIfNotAlreadyThere(
                         sessionLoadKey(fullDesc.name, fullDesc.pluginFormatName));
-                    callback(err.isNotEmpty() ? err : "createPluginInstance returned nullptr");
+                    // 21t-m (30 Sep 2026, measured): the same function tests `callback` at four sites and
+                    // invoked it bare at four others, including this async completion. A caller that passes no
+                    // callback - the signature allows it, and level_slot_guard already does for built-ins - then
+                    // terminates the host with an uncaught std::bad_function_call as soon as a REAL plugin
+                    // finishes loading. Found by level_loop_guard's (6a) leg loading Apple's AUDelay.
+                    if (callback) callback(err.isNotEmpty() ? err : "createPluginInstance returned nullptr");
                     return;
                 }
                 completeLoad(std::move(inst), fullDesc, origin);
-                callback({});
+                if (callback) callback({});
             });
         return;
     }
@@ -6662,7 +6675,7 @@ void ChainHost::loadPluginAsync(const juce::PluginDescription& desc,
     const int validationMark = pushDeathMark("validation", desc);
 
     auto* vst3Fmt = getFormatByName("VST3");
-    if (!vst3Fmt) { callback("VST3 format not available"); return; }
+    if (!vst3Fmt) { if (callback) callback("VST3 format not available"); return; }
 
     auto vs   = std::make_shared<VST3ValState>();
     auto path = desc.fileOrIdentifier;
