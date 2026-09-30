@@ -1489,14 +1489,32 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         juce::Array<juce::var> fl; for (auto& x : q.thrFlags) fl.add (x); c->setProperty ("flags", fl);
         c->setProperty ("thresholdSweep", one.written ? sweep::stripPrivate (one.sweepVar) : juce::var());
         // A FLAT CANDIDATE IS EVIDENCE, NOT A DEFECT (ruled 30 Sep): 997 Hz excites one band, so a band that does not
-        // cover it shows nothing. Said on the candidate, so thresholdReview does not read as a dead end.
-        if (one.d.result == "flat")
+        // cover it shows nothing. Said on the candidate, so thresholdReview does not read as a dead end. A PASS-THROUGH
+        // flat is NOT that evidence: the product did nothing as instantiated, so the tone says nothing about its bands.
+        if (one.d.result == "flat" && one.d.passThroughAtDefaults)
+            c->setProperty ("reading", "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate "
+                                       "defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)");
+        else if (one.d.result == "flat")
             c->setProperty ("reading", "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; "
                                        "uncertified for want of an in-band tone (a per-band tone is a later feature)");
         else if (one.d.result == "certified")
             c->setProperty ("reading", "responds at 997 Hz: a curve to read");
         arr.add (juce::var (c));
         rep << one.report << "\n";
+    }
+    // ONE FIELD, NOT A SCAN (ruled 30 Sep): the responding candidates are NAMED here, index and name, and every candidate's
+    // verdict sits beside them. Two consumers deriving the same thing from the array is how the Waves untick bug happened;
+    // the server half reads thresholdReview.responding and nothing else.
+    auto ref = [] (const sweep::Plan& q) { auto* o = new juce::DynamicObject(); o->setProperty ("index", q.thr); o->setProperty ("name", q.thrName); return juce::var (o); };
+    juce::Array<juce::var> responding, verdicts, passThrough;
+    int curves = 0, flats = 0, passCount = 0;
+    for (const auto& [q, one] : cands)
+    {
+        const juce::String verdict = ! one.written ? "licence_suspect" : one.d.passThroughAtDefaults ? "pass_through_at_defaults" : one.d.result;
+        auto v = ref (q); v.getDynamicObject()->setProperty ("result", verdict); verdicts.add (v);
+        if (one.d.result == "certified") { ++curves; responding.add (ref (q)); }
+        else if (one.d.result == "flat" && one.d.passThroughAtDefaults) { ++passCount; passThrough.add (ref (q)); }
+        else if (one.d.result == "flat") ++flats;
     }
     if (auto* o = f.getDynamicObject())
     {
@@ -1505,10 +1523,15 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         rv->setProperty ("candidates", (int) cands.size());
         rv->setProperty ("note", "several controls hold the threshold role; each was swept with the others at their instantiate defaults. "
                                  "On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. "
-                                 "There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read");
-        int curves = 0, flats = 0;
-        for (const auto& [q, one] : cands) { if (one.d.result == "certified") ++curves; else if (one.d.result == "flat") ++flats; }
-        rv->setProperty ("curves", curves); rv->setProperty ("flats", flats);
+                                 "There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. "
+                                 "`responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result");
+        rv->setProperty ("curves", curves);
+        rv->setProperty ("flats", flats);                       // flats that ARE band-coverage evidence: pass-through is counted apart
+        rv->setProperty ("responding", responding);             // THE FIELD: which candidate(s) respond at 997 Hz, by index and name
+        auto* pt = new juce::DynamicObject();
+        pt->setProperty ("count", passCount); pt->setProperty ("candidates", passThrough);
+        rv->setProperty ("passThroughAtDefaults", juce::var (pt));
+        rv->setProperty ("verdicts", verdicts);                 // every candidate's result in one place, same index/name keys
         o->setProperty ("thresholdReview", juce::var (rv));
         o->setProperty ("thresholdCandidates", arr);
     }
@@ -1796,8 +1819,11 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
 {
     const auto fx = juce::JSON::parse (fixtureIn.loadFileAsString());
     auto old = fx.getProperty ("thresholdSweep", {});
+    // Provenance comes from the first candidate that HAS a sweep: the first may be a licence-suspect with none
+    // (MDynamicsMBLarge, whose Band 1 gate is silent at default).
     if (! old.isObject() && fx.getProperty ("thresholdCandidates", {}).isArray())
-        old = fx.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {});
+        for (const auto& c : *fx.getProperty ("thresholdCandidates", {}).getArray())
+            if (c.getProperty ("thresholdSweep", {}).isObject()) { old = c.getProperty ("thresholdSweep", {}); break; }
     if (! old.isObject()) { std::cout << "REDERIVE: " << fixtureIn.getFileName() << " has no thresholdSweep" << std::endl; return 2; }
     auto plan = sweep::planFromFixture (fx);
     if (! plan.ok) { std::cout << "REDERIVE: " << plan.why << std::endl; return 4; }

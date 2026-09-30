@@ -959,3 +959,28 @@ still offered to the certification batch.
 What it does NOT do: there is no cross-run try counter (the mapper's 3-try quarantine). One
 refusal is permanent until acted on. A transient failure — iLok out for one run — therefore
 needs `--retry-refused`, which is why the runbook says to confirm the iLok before starting.
+
+**`thresholdReview` names the band** (ruled 30 Sep, after batch 5b). "A consumer can derive it from
+the candidates array" is two places deriving the same thing, the shape of the Waves untick bug.
+`thresholdReview.responding` is now `[{index, name}]` for every candidate that certified;
+`verdicts` is `[{index, name, result}]` for all of them (`pass_through_at_defaults` and
+`licence_suspect` named as results there); `passThroughAtDefaults` is `{count, candidates}`.
+`flats` now counts band-coverage evidence only — pass-through flats sit in their own list, because
+a product that does nothing as instantiated says nothing about its bands. `thresholdSweep`
+gained `passThroughAtDefaults` (boolean, always present) for the same reason on single-threshold
+fixtures. Pins V1–V5, D13; all 41 candidate fixtures re-derived from their traces, candidate
+sweeps identical. Census: 34 of 199 candidates on 5 products (DynOne3, MaxxVolume ×2, EMO-D5
+×2) are pass-through, every one a whole-product case; C1 comp and RCompressor are the
+single-threshold members. Category named; what enables each one is NOT being hunted.
+
+Recorded, not built: **dedupe by identical read-back.** Ten products carry one control under two
+names with point-identical curves (six L/R or A/B channel pairs; four aliases inside one
+parameter list, e.g. Melda's "Band 2 -> Threshold" and "Band 2 - Processor 1 - Threshold").
+Sweeping both cost ~14 of 199 sweeps, concentrated on the heaviest products.
+
+Recorded, not diagnosed: **MDynamicsMB and MDynamicsMBLarge respond at 997 Hz on bands 2 AND 3**
+with near-identical curves (7.50 vs 7.42 dB at -6, position for position) — each band alone
+gives the full reduction, so the tone is not being split across a crossover. And the
+licence-suspect rule (silent at default) fired on 9 Melda gate/Processor-2 candidates; a gate
+closing on the tone is silent, not unlicensed. Wants a `silent_at_default` outcome distinct from
+the licence one.

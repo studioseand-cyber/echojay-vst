@@ -479,6 +479,7 @@ inline bool loadProcesses (const juce::File& processesJson, const juce::File& ra
 struct Derived
 {
     juce::String result = "error", reason, sense;   // result: certified | flat | nonmonotonic | unreadable | error
+    bool passThroughAtDefaults = false;             // flat BECAUSE the product does nothing at its instantiate defaults (its own category)
     std::vector<double> levels;                     // the TEST levels, ascending (quiet reference levels are separate)
     std::vector<float> norms;                       // ascending: position i is norms[i]
     std::vector<juce::String> texts;                // the display text read at each position
@@ -650,8 +651,9 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         if (flat)
         {
             d.result = "flat";
-            d.reason = passThrough() ? "passthrough: output equals input within 0.01 dB at every reading"
-                                     : "the ends differ by no more than 1 dB at every test level";
+            d.passThroughAtDefaults = passThrough();
+            d.reason = d.passThroughAtDefaults ? "passthrough: output equals input within 0.01 dB at every reading"
+                                               : "the ends differ by no more than 1 dB at every test level";
             return d;
         }
         const auto rl = d.reduction[kLoud][(size_t) *lo], rh = d.reduction[kLoud][(size_t) *hi];
@@ -665,8 +667,9 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         if (flat)
         {
             d.result = "flat";
-            d.reason = passThrough() ? "passthrough: output equals input within 0.01 dB at every reading"
-                                     : "the ends differ by no more than 1 dB at every test level";
+            d.passThroughAtDefaults = passThrough();
+            d.reason = d.passThroughAtDefaults ? "passthrough: output equals input within 0.01 dB at every reading"
+                                               : "the ends differ by no more than 1 dB at every test level";
             return d;
         }
         higherHarder = *d.gain[kLoud][(size_t) *hi] < *d.gain[kLoud][(size_t) *lo];
@@ -1138,6 +1141,10 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         s->setProperty ("levelDependence", juce::var (ld));
     }
     s->setProperty ("result", d.result);
+    // PASS-THROUGH AT DEFAULTS IS ITS OWN RECORDED OUTCOME (ruled 30 Sep): a flat that says nothing about band coverage
+    // or the threshold, only that the product does nothing as instantiated (MaxxVolume, EMO-D5, DynOne3, C1 comp,
+    // RCompressor). A precondition gap, named so the server half never re-derives it from the reason string.
+    s->setProperty ("passThroughAtDefaults", d.passThroughAtDefaults);
     if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
     if (d.roleFlag.isNotEmpty()) s->setProperty ("roleFlag", d.roleFlag);
     // THE DISPLAY, AS NUMBERS, beside the map's result and never folded into it. displayLinear is unset on purpose.

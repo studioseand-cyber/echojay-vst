@@ -426,9 +426,26 @@
   "thresholdReview": {
     "class": "bands_or_stages",
     "candidates": 2,
-    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read",
+    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
     "curves": 0,
-    "flats": 2
+    "flats": 2,
+    "responding": [],
+    "passThroughAtDefaults": {
+      "count": 0,
+      "candidates": []
+    },
+    "verdicts": [
+      {
+        "index": 2,
+        "name": "Threshold L/M",
+        "result": "flat"
+      },
+      {
+        "index": 3,
+        "name": "Threshold R/S",
+        "result": "flat"
+      }
+    ]
   },
   "thresholdCandidates": [
     {
@@ -519,6 +536,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },
@@ -612,6 +630,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },

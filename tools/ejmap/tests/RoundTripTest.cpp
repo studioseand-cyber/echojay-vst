@@ -4098,6 +4098,16 @@ void testSweepDerivation()
     const auto pt = derive (fromGains (pass), kLevels, -1);
     check (pt.result == "flat" && pt.reason.startsWith ("passthrough"), "sweep D11: output equal to input everywhere is flat with reason passthrough");
     check (derive (fromGains (flat), kLevels, -1).reason.startsWith ("the ends differ"), "sweep D12: an ordinary flat keeps its plain reason");
+    {
+        // PASS-THROUGH IS ITS OWN RECORDED OUTCOME (ruled 30 Sep): a field, never re-derived from the reason string.
+        Plan pl; pl.thr = 0; pl.thrName = "Thresh"; pl.norms = { 0.f, 0.2f, 0.4f, 0.6f, 0.8f, 1.f };
+        const auto ptVar = composeThresholdSweep (pt, displayCheck (pt, ""), pl, {});
+        const auto flatD = derive (fromGains (flat), kLevels, -1);
+        const auto flatVar = composeThresholdSweep (flatD, displayCheck (flatD, ""), pl, {});
+        check (pt.passThroughAtDefaults && (bool) ptVar.getProperty ("passThroughAtDefaults", false)
+                 && ! flatD.passThroughAtDefaults && ptVar.hasProperty ("passThroughAtDefaults") && ! (bool) flatVar.getProperty ("passThroughAtDefaults", true),
+               "sweep D13: thresholdSweep.passThroughAtDefaults is true for the pass-through flat and false (present) for an ordinary flat");
+    }
 }
 
 //==============================================================================
@@ -4623,6 +4633,51 @@ void testCertRecordAndDefaultPaths()
     root.deleteRecursively();
 }
 
+/** thresholdReview NAMES the responding candidate (ruled 30 Sep): one field the server half reads, not a scan two
+    consumers each re-implement. Pass-through candidates are listed apart and are not band evidence. */
+void testThresholdReviewNamesTheBand()
+{
+    using namespace ejmap::cert;
+    const auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-review-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+    auto cand = [] (int idx, const char* name, const char* result, bool pass, bool written) {
+        ejmap::sweep::Plan q; q.thr = idx; q.thrName = name;
+        Derivation d; d.d.result = result; d.d.passThroughAtDefaults = pass; d.written = written;
+        d.d.reason = pass ? "passthrough: output equals input within 0.01 dB at every reading" : "";
+        if (written) { auto* o = new juce::DynamicObject(); o->setProperty ("result", result); d.sweepVar = juce::var (o); }
+        return std::make_pair (q, d); };
+    ejmap::sweep::Plan plan; plan.cls = "bands_or_stages";
+    std::vector<std::pair<ejmap::sweep::Plan, Derivation>> cands {
+        cand (14, "Band 1 Thresh", "flat", false, true),
+        cand (18, "Band 2 Thresh", "certified", false, true),
+        cand (22, "Band 3 Thresh", "flat", true, true),
+        cand (26, "Band 4 Thresh", "nonmonotonic", false, true),
+        cand (30, "Gate Thresh", "", false, false) };
+    auto base = juce::JSON::parse (R"json({"product": "Multi", "uid": "abcd1234", "version": "1.0.0", "format": "AudioUnit"})json");
+    const auto out = root.getChildFile ("f.json");
+    composeCandidatesAndReport (base, plan, cands, out, root.getChildFile ("f.report.txt"));
+    const auto f = juce::JSON::parse (out.loadFileAsString());
+    const auto rv = f.getProperty ("thresholdReview", {});
+    const auto resp = rv.getProperty ("responding", {});
+    check (resp.isArray() && resp.size() == 1 && (int) resp[0].getProperty ("index", -1) == 18 && resp[0].getProperty ("name", "") == "Band 2 Thresh",
+           "review V1: thresholdReview.responding names the responding candidate by index AND name (" + juce::JSON::toString (resp, true) + ")");
+    const auto pt = rv.getProperty ("passThroughAtDefaults", {});
+    check ((int) pt.getProperty ("count", -1) == 1 && pt.getProperty ("candidates", {}).size() == 1
+             && (int) pt.getProperty ("candidates", {})[0].getProperty ("index", -1) == 22,
+           "review V2: passThroughAtDefaults lists the pass-through candidate by index, with its count");
+    check ((int) rv.getProperty ("curves", -1) == 1 && (int) rv.getProperty ("flats", -1) == 1,
+           "review V3: flats counts band-coverage evidence only - the pass-through flat is not in it (" + juce::String ((int) rv.getProperty ("flats", -1)) + ")");
+    const auto vd = rv.getProperty ("verdicts", {});
+    juce::StringArray vs; for (int i = 0; i < vd.size(); ++i) vs.add (juce::String ((int) vd[i].getProperty ("index", -1)) + "=" + vd[i].getProperty ("result", "").toString());
+    check (vs == juce::StringArray { "14=flat", "18=certified", "22=pass_through_at_defaults", "26=nonmonotonic", "30=licence_suspect" },
+           "review V4: verdicts carries every candidate's result under the same index key, pass-through and licence-suspect named (" + vs.joinIntoString (",") + ")");
+    const auto cs = f.getProperty ("thresholdCandidates", {});
+    check (cs[2].getProperty ("reading", "").toString().startsWith ("pass_through_at_defaults")
+             && cs[0].getProperty ("reading", "").toString().startsWith ("no response at 997 Hz"),
+           "review V5: a pass-through candidate's reading says so, and is not the band-coverage reading");
+    root.deleteRecursively();
+}
+
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
 void testSleptProcessRetry()
 {
@@ -4771,6 +4826,7 @@ int main (int, char**)
     testSleepTimeouts();
     testDiscoveryFromMaps();
     testCertRecordAndDefaultPaths();
+    testThresholdReviewNamesTheBand();
     testSleptProcessRetry();
     testLevelDependence();
 

@@ -1443,9 +1443,51 @@
   "thresholdReview": {
     "class": "bands_or_stages",
     "candidates": 6,
-    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read",
+    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
     "curves": 1,
-    "flats": 5
+    "flats": 5,
+    "responding": [
+      {
+        "index": 26,
+        "name": "Band 3 Threshold"
+      }
+    ],
+    "passThroughAtDefaults": {
+      "count": 0,
+      "candidates": []
+    },
+    "verdicts": [
+      {
+        "index": 10,
+        "name": "Band 1 Threshold",
+        "result": "flat"
+      },
+      {
+        "index": 19,
+        "name": "Band 2 Threshold",
+        "result": "flat"
+      },
+      {
+        "index": 26,
+        "name": "Band 3 Threshold",
+        "result": "certified"
+      },
+      {
+        "index": 33,
+        "name": "Band 4 Threshold",
+        "result": "flat"
+      },
+      {
+        "index": 40,
+        "name": "Band 5 Threshold",
+        "result": "flat"
+      },
+      {
+        "index": 47,
+        "name": "Band 6 Threshold",
+        "result": "flat"
+      }
+    ]
   },
   "thresholdCandidates": [
     {
@@ -1537,6 +1579,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },
@@ -1631,6 +1674,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },
@@ -1822,6 +1866,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "certified",
+        "passThroughAtDefaults": false,
         "reason": "ratio unknown (no ratio control): no dB-equivalent map",
         "displayOffsetDb": null,
         "displayEngage": {
@@ -1923,6 +1968,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },
@@ -2017,6 +2063,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },
@@ -2111,6 +2158,7 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": false,
         "reason": "the ends differ by no more than 1 dB at every test level",
         "displayOffsetDb": null
       },

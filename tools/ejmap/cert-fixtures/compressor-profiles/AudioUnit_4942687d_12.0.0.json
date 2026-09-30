@@ -1111,9 +1111,62 @@
   "thresholdReview": {
     "class": "bands_or_stages",
     "candidates": 5,
-    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read",
+    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
     "curves": 0,
-    "flats": 5
+    "flats": 0,
+    "responding": [],
+    "passThroughAtDefaults": {
+      "count": 5,
+      "candidates": [
+        {
+          "index": 1,
+          "name": "Gate Thresh"
+        },
+        {
+          "index": 16,
+          "name": "Comp Thresh"
+        },
+        {
+          "index": 30,
+          "name": "Leveller Thresh"
+        },
+        {
+          "index": 33,
+          "name": "DeEsser Thresh"
+        },
+        {
+          "index": 39,
+          "name": "Limiter Thresh"
+        }
+      ]
+    },
+    "verdicts": [
+      {
+        "index": 1,
+        "name": "Gate Thresh",
+        "result": "pass_through_at_defaults"
+      },
+      {
+        "index": 16,
+        "name": "Comp Thresh",
+        "result": "pass_through_at_defaults"
+      },
+      {
+        "index": 30,
+        "name": "Leveller Thresh",
+        "result": "pass_through_at_defaults"
+      },
+      {
+        "index": 33,
+        "name": "DeEsser Thresh",
+        "result": "pass_through_at_defaults"
+      },
+      {
+        "index": 39,
+        "name": "Limiter Thresh",
+        "result": "pass_through_at_defaults"
+      }
+    ]
   },
   "thresholdCandidates": [
     {
@@ -1205,10 +1258,11 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": true,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
-      "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
+      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
     },
     {
       "index": 16,
@@ -1299,10 +1353,11 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": true,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
-      "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
+      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
     },
     {
       "index": 30,
@@ -1393,10 +1448,11 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": true,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
-      "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
+      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
     },
     {
       "index": 33,
@@ -1487,10 +1543,11 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": true,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
-      "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
+      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
     },
     {
       "index": 39,
@@ -1581,10 +1638,11 @@
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
         "result": "flat",
+        "passThroughAtDefaults": true,
         "reason": "passthrough: output equals input within 0.01 dB at every reading",
         "displayOffsetDb": null
       },
-      "reading": "no response at 997 Hz: this candidate's band does not cover the test tone, or the control is not a threshold at it; uncertified for want of an in-band tone (a per-band tone is a later feature)"
+      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
     }
   ]
 }
