@@ -496,6 +496,16 @@ inline bool refusalRecorded (const juce::var& fixture) { return fixture.getPrope
 // --retry-refused re-runs the transient ones; retrying the permanent ones indiscriminately would re-run the
 // uncertifiable on every batch, the very jam the record exists to escape. --retry-refused-all overrides.
 inline bool refusalIsPermanent (const juce::String& stage) { return stage == "plan" || stage == "ratio_none"; }
+
+// A RETRIED REFUSAL MAY HAVE NO CONTROLS (found 30 Sep on SSL G3's first --retry-refused): a record written in the
+// defaults phase is the discovered identity and nothing else. Planned from as a fixture, it reads "0 controls hold
+// the threshold role" - a permanent refusal manufactured from an empty record. So defaults are sampled first for an
+// unseen version, a discovered product, AND any subject whose record carries no controls.
+inline bool needsDefaultsFirst (const Subject& s)
+{
+    return s.reach == Subject::Reach::versionMismatch || s.reach == Subject::Reach::unfixtured
+        || ! s.pushed.getProperty ("controls", {}).isArray();
+}
 inline bool refusalPermanent (const juce::var& fixture)
 {
     return refusalRecorded (fixture) && refusalIsPermanent (fixture.getProperty ("thresholdRefusal", {}).getProperty ("stage", "").toString());
@@ -1651,7 +1661,7 @@ inline int runCertSweep (const SweepOptions& opt)
     // AN UNSEEN VERSION: sample defaults first, then sweep, in one pass (ruled 29 Sep). The identity is the
     // INSTALLED component's, composed by the same composeFixture as --cert-defaults.
     bool newIdentity = false;
-    if (s.reach == Subject::Reach::versionMismatch || s.reach == Subject::Reach::unfixtured)
+    if (needsDefaultsFirst (s))
     {
         const auto dstem = "AudioUnit_" + juce::String::toHexString (s.desc.uniqueId).toLowerCase() + "_" + s.desc.version + ".defaults";
         auto lp = runProbe (dstem, "list-params", { "--list-params" }, -1.0f);

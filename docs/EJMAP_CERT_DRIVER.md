@@ -999,3 +999,11 @@ tone the plugin is licensed, and a silent candidate keeps the result its data ga
 licence-suspect. Pins V6–V8, two mutants red. Re-derived: the 9 became 7 `flat` and 2
 `nonmonotonic` (MSpectralDynamics Processor 1, MDynamicsMBLarge Band 3), none pass-through; no
 `licence_suspect` remains in the 41.
+
+**A retried refusal samples defaults first** (found 30 Sep on SSL G3's first `--retry-refused`). A
+record written in the defaults phase is the discovered identity and nothing else; planned from as
+a fixture it read "0 controls hold the threshold role" and wrote a PERMANENT refusal without
+running a process — a permanent verdict manufactured from an empty record. `needsDefaultsFirst`:
+defaults are sampled for an unseen version, a discovered product, and any subject whose record
+carries no `controls`. Pin R9b. The 1-second live check earlier in the day showed the same "0
+threshold roles" on Millennia TCL-2 for the same reason.

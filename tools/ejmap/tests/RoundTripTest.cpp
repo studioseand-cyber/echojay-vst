@@ -4609,6 +4609,15 @@ void testCertRecordAndDefaultPaths()
     auto keys = std::set<juce::String>();
     for (const auto& s : loadFixtures (store)) keys.insert (s.uid + "|" + s.version);
     check (keys.count ("bbbb0001|2.3.0") == 1, "record R9: and discovery's fixture key sees it at the installed version, so it is not rediscovered either");
+    {
+        // A RETRIED REFUSAL WITH NO CONTROLS samples defaults first; planned from as a fixture it would refuse "0 threshold roles" for ever.
+        Subject r; r.reach = Subject::Reach::reachable; r.pushed = back;                                   // the defaults-phase record: identity only
+        Subject withControls; withControls.reach = Subject::Reach::reachable;
+        withControls.pushed = juce::JSON::parse (R"json({"product": "P", "uid": "1", "version": "1", "controls": [], "thresholdRefusal": {"stage": "plan"}})json");
+        Subject disc; disc.reach = Subject::Reach::unfixtured; disc.pushed = withControls.pushed;
+        check (needsDefaultsFirst (r) && ! needsDefaultsFirst (withControls) && needsDefaultsFirst (disc),
+               "record R9b: a reachable subject whose record has NO controls (a defaults-phase refusal on retry) samples defaults first; one with controls plans from them; a discovered one always samples");
+    }
 
     // THE MAPPER'S ESCAPE HATCH: a disposition other than sweep in categories.json is honoured by cert discovery.
     auto led = root.getChildFile ("ledger");

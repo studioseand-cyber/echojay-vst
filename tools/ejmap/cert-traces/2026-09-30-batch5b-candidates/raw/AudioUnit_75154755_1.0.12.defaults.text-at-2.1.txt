@@ -1,0 +1,312 @@
+probe: "SSL G3 MultiBusComp" | AudioUnit:Effects/aufx,G3mc,SSLN | uid=75154755 | arch=arm64 | format=AudioUnit
+
+param	0	Low-Mid Band Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	High Threshold	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-40.0
+at	0.500	-20.0
+at	1.000	0.0
+param	2	Low Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	3	Low HF Cutoff	unit	
+def	1.000000	20000	default	1.000000
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	4	Low Bell Frequency	unit	
+def	0.165951	100	default	0.165951
+at	0.000	40
+at	0.500	632
+at	1.000	10000
+param	5	Low Bell Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	6	Low LF Cutoff	unit	
+def	0.000000	20	default	0.000000
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	7	High Low Cut Band Follow	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	Mid Drive Amount	unit	
+def	0.000000	1.0	default	0.000000
+at	0.000	1.0
+at	0.500	6.0
+at	1.000	11.0
+param	9	High LF Cutoff	unit	
+def	0.000000	20	default	0.000000
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	10	Mid Drive	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Mid Ratio	unit	
+def	0.200000	2	default	0.200000
+at	0.000	1.5
+at	0.500	3
+at	1.000	10
+param	12	Mid Attack	unit	
+def	0.800000	10 ms	default	0.800000
+at	0.000	.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	13	Mid Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	Mid HF Cutoff	unit	
+def	1.000000	20000	default	1.000000
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	15	Low Low Cut Band Follow	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Low Threshold	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-40.0
+at	0.500	-20.0
+at	1.000	0.0
+param	17	Low Release	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	.1 s
+at	0.500	.6 s
+at	1.000	AUTO
+param	18	Mid Release	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	.1 s
+at	0.500	.6 s
+at	1.000	AUTO
+param	19	Low Bell In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	20	Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	21	High Drive Amount	unit	
+def	0.000000	1.0	default	0.000000
+at	0.000	1.0
+at	0.500	6.0
+at	1.000	11.0
+param	22	Output Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	23	Low Drive Amount	unit	
+def	0.000000	1.0	default	0.000000
+at	0.000	1.0
+at	0.500	6.0
+at	1.000	11.0
+param	24	High Bell Q	unit	
+def	1.000000	8.00	default	1.000000
+at	0.000	0.50
+at	0.500	4.25
+at	1.000	8.00
+param	25	High Bell In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	26	High Frequency	unit	
+def	0.825707	6000	default	0.825707
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	27	High Make-up	unit	
+def	0.250000	0.0	default	0.250000
+at	0.000	-5.0
+at	0.500	5.0
+at	1.000	15.0
+param	28	High Ext S/C	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	29	Low Attack	unit	
+def	0.800000	10 ms	default	0.800000
+at	0.000	.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	30	Low Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	31	Mid Threshold	unit	
+def	1.000000	0.0	default	1.000000
+at	0.000	-40.0
+at	0.500	-20.0
+at	1.000	0.0
+param	32	Input Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	33	High HF Cutoff	unit	
+def	1.000000	20000	default	1.000000
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	34	High Drive	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	35	Mid LF Cutoff	unit	
+def	0.000000	20	default	0.000000
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	36	High Ratio	unit	
+def	0.200000	2	default	0.200000
+at	0.000	1.5
+at	0.500	3
+at	1.000	10
+param	37	Mid Low Cut Band Follow	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	38	High Attack	unit	
+def	0.800000	10 ms	default	0.800000
+at	0.000	.1 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	39	High Release	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	.1 s
+at	0.500	.6 s
+at	1.000	AUTO
+param	40	Mid-High Band Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	41	High Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	42	Low Drive	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	43	Low Ratio	unit	
+def	0.200000	2	default	0.200000
+at	0.000	1.5
+at	0.500	3
+at	1.000	10
+param	44	Low Bell Q	unit	
+def	0.733333	6.00	default	0.733333
+at	0.000	0.50
+at	0.500	4.25
+at	1.000	8.00
+param	45	Mid High Cut Band Follow	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	46	Mid Bell In	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	47	Mid Bell Frequency	unit	
+def	0.582975	1000	default	0.582975
+at	0.000	40
+at	0.500	632
+at	1.000	10000
+param	48	Mid Bell Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	49	Low Frequency	unit	
+def	0.259384	120	default	0.259384
+at	0.000	20
+at	0.500	632
+at	1.000	20000
+param	50	Mid Make-up	unit	
+def	0.250000	0.0	default	0.250000
+at	0.000	-5.0
+at	0.500	5.0
+at	1.000	15.0
+param	51	Mid Ext S/C	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	52	Low Make-up	unit	
+def	0.250000	0.0	default	0.250000
+at	0.000	-5.0
+at	0.500	5.0
+at	1.000	15.0
+param	53	Low Ext S/C	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	54	High High Cut Band Follow	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	55	Mid Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	56	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	57	High Bell Frequency	unit	
+def	1.000000	10000	default	1.000000
+at	0.000	40
+at	0.500	632
+at	1.000	10000
+param	58	High Bell Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	59	Low High Cut Band Follow	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	60	Mid Bell Q	unit	
+def	0.866667	7.00	default	0.866667
+at	0.000	0.50
+at	0.500	4.25
+at	1.000	8.00
+param	61	High Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0

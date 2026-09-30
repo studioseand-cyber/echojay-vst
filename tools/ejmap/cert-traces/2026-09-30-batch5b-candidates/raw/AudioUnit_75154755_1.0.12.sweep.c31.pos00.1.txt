@@ -1,0 +1,82 @@
+probe: "SSL G3 MultiBusComp" | AudioUnit:Effects/aufx,G3mc,SSLN | uid=75154755 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	31	name	Mid Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Ext S/C Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Ext S/C Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Low-Mid Band Link	Off
+param	1	1.000000	High Threshold	0.0
+param	2	1.000000	Low Mix	100.0
+param	3	1.000000	Low HF Cutoff	20000
+param	4	0.165951	Low Bell Frequency	100
+param	5	0.500000	Low Bell Gain	0.0
+param	6	0.000000	Low LF Cutoff	20
+param	7	1.000000	High Low Cut Band Follow	On
+param	8	0.000000	Mid Drive Amount	1.0
+param	9	0.000000	High LF Cutoff	20
+param	10	0.000000	Mid Drive	Off
+param	11	0.200000	Mid Ratio	2
+param	12	0.800000	Mid Attack	10 ms
+param	13	0.000000	Mid Bypass	Off
+param	14	1.000000	Mid HF Cutoff	20000
+param	15	1.000000	Low Low Cut Band Follow	On
+param	16	1.000000	Low Threshold	0.0
+param	17	1.000000	Low Release	AUTO
+param	18	1.000000	Mid Release	AUTO
+param	19	1.000000	Low Bell In	On
+param	20	1.000000	Mix	100.0
+param	21	0.000000	High Drive Amount	1.0
+param	22	0.500000	Output Gain	0.0
+param	23	0.000000	Low Drive Amount	1.0
+param	24	1.000000	High Bell Q	8.00
+param	25	1.000000	High Bell In	On
+param	26	0.825707	High Frequency	6000
+param	27	0.250000	High Make-up	0.0
+param	28	0.000000	High Ext S/C	Off
+param	29	0.800000	Low Attack	10 ms
+param	30	0.000000	Low Bypass	Off
+param	31	1.000000	Mid Threshold	0.0
+param	32	0.500000	Input Gain	0.0
+param	33	1.000000	High HF Cutoff	20000
+param	34	0.000000	High Drive	Off
+param	35	0.000000	Mid LF Cutoff	20
+param	36	0.200000	High Ratio	2
+param	37	1.000000	Mid Low Cut Band Follow	On
+param	38	0.800000	High Attack	10 ms
+param	39	1.000000	High Release	AUTO
+param	40	0.000000	Mid-High Band Link	Off
+param	41	0.000000	High Bypass	Off
+param	42	0.000000	Low Drive	Off
+param	43	0.200000	Low Ratio	2
+param	44	0.733333	Low Bell Q	6.00
+param	45	1.000000	Mid High Cut Band Follow	On
+param	46	1.000000	Mid Bell In	On
+param	47	0.582975	Mid Bell Frequency	1000
+param	48	0.500000	Mid Bell Gain	0.0
+param	49	0.259384	Low Frequency	120
+param	50	0.250000	Mid Make-up	0.0
+param	51	0.000000	Mid Ext S/C	Off
+param	52	0.250000	Low Make-up	0.0
+param	53	0.000000	Low Ext S/C	Off
+param	54	1.000000	High High Cut Band Follow	On
+param	55	1.000000	Mid Mix	100.0
+param	56	0.000000	Bypass	Off
+param	57	1.000000	High Bell Frequency	10000
+param	58	0.500000	High Bell Gain	0.0
+param	59	1.000000	Low High Cut Band Follow	On
+param	60	0.866667	Mid Bell Q	7.00
+param	61	1.000000	High Mix	100.0
+stage	position
+pos	0	norm	0.000000	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.000000	landed_by	instack	render_blocks	0	text_ms	21.9	reads	2	text	-40.0
+hold	0	-24.00	level_db	-37.2532	in_rms_db	-27.0103	tone_frac	0.9999	ch	-37.2532,-37.2532	doubled	1	last_move_db	-0.3658	final_move_db	-0.1107	win	-33.3789,-34.1838,-34.8429,-35.3831,-35.8317,-36.1975,-36.5067,-36.7521,-36.9588,-37.1238,-37.2644,-37.3751	nonfinite	0
+hold	0	-12.00	level_db	-33.0245	in_rms_db	-15.0103	tone_frac	1.0000	ch	-33.0245,-33.0245	doubled	1	last_move_db	-0.2371	final_move_db	-0.0579	win	-30.2617,-30.9997,-31.4711,-31.8433,-32.1473,-32.3845,-32.5830,-32.7319,-32.8579,-32.9512,-33.0328,-33.0906	nonfinite	0
+hold	0	-6.00	level_db	-31.3648	in_rms_db	-9.0103	tone_frac	1.0000	ch	-31.3648,-31.3648	doubled	1	last_move_db	-0.1214	final_move_db	-0.0248	win	-29.8863,-30.2957,-30.5569,-30.7550,-30.9194,-31.0408,-31.1461,-31.2188,-31.2849,-31.3281,-31.3709,-31.3957	nonfinite	0
+reread	0	steady
+timing	wall_ms	139.1	audio_s	9.000
+stage	done

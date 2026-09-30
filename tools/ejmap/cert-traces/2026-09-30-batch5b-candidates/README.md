@@ -21,3 +21,11 @@ position 2 and 7 of Band 2 Processor 1; 4.9-5.1 dB isolated positions on Band 2/
 three candidates nonmonotonic, while MDynamicsMBLarge's same bands are clean. And the
 licence-suspect rule (silent at default) fired on 9 Melda candidates that are GATE or
 Processor-2 stages - a gate closing on the tone is silent, not unlicensed.
+
+**SSL G3 MultiBusComp re-run 14:36-14:37, iLok re-seated (now on port 0x01120000 / 2 - a different
+port from the morning's 0x01130000 / 2) via `--retry-refused`:** 3 candidates, Mid Threshold
+responds, Low and High flat. Its fixture replaces the transient refusal in the store. Traces here
+under the same stems (`run-ssl-g3-retry.jsonl`, `ssl-g3-retry.log`). The FIRST retry attempt (14:34)
+exposed a defect: the refusal record has no controls, and the retry planned from it as a fixture and
+refused "0 threshold roles" without running a process - fixed (needsDefaultsFirst, pin R9b) before
+this run; that attempt's output was discarded.
