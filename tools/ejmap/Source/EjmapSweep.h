@@ -74,6 +74,8 @@ inline constexpr double kSilentDb     = -90.0;  // an output below this at every
 inline constexpr double kToneFracMin  = 0.5;    // an output with less than half its power at the tone is not the input's tone
 inline constexpr double kBelowRefDb   = 0.5;    // a reduction below the linear reference by more than this refuses
 inline constexpr int    kMaxMoving    = 2;      // more positions than this still moving after the doubling refuses
+inline constexpr double kLevelFlatDb  = 0.25;   // reduction spanning less than this across the test levels, at a position
+                                                // inside the readable band at every level, is a GAIN LAW, not a threshold
 inline constexpr double kDisplayDb    = 2.0;    // spec 7's bar, a TEST on displayOffsetDb (never the definition of linear)
 inline constexpr double kRatioTarget  = 4.0;    // spec 4.2: a 1:1 ratio is raised to the nearest position at or above 4:1
 
@@ -466,6 +468,12 @@ struct Derived
     juce::String ratioText, ratioInstantiated;      // ratioText is what the sweep RAN at (read back when it was written)
     juce::Array<int> holdDoubled, stillMoving, skipped;
     juce::StringArray skippedReasons;
+    // LEVEL DEPENDENCE (ruled 30 Sep): the axis that DEFINES a threshold. dg/dL per position, over the readable
+    // levels, against the textbook 1 - 1/R from the ratio read back.
+    std::vector<std::optional<double>> dgdl;        // per position
+    std::optional<double> dgdlMedian, dgdlPredicted, impliedRatio;
+    juce::Array<int> levelFlat;                     // positions refused: readable at every level and flat across them
+    juce::String roleFlag;                          // "not_a_threshold" when the guard refuses
     bool unlicensedSuspect = false;
     juce::String referenceNote;
     std::map<juce::String, double> defaultGain;     // out - in at the default settings: INFORMATION ONLY, never judged
@@ -672,6 +680,71 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
                 return d;
             }
 
+    // R IS WHAT THE PLUGIN SAYS IT RAN AT: the text read back after a write when the ratio was written (the raise),
+    // else the text it instantiated with. Never the value that was asked for. Read here, before the level guard,
+    // so a refused fixture still records the ratio it contradicts.
+    if (ratioIndex >= 0)
+    {
+        if (m.params.count (ratioIndex)) d.ratioInstantiated = m.params.at (ratioIndex).second;
+        d.ratioText = m.setTexts.count (ratioIndex) ? m.setTexts.at (ratioIndex) : d.ratioInstantiated;
+        d.ratio = ratioFromText (d.ratioText);
+    }
+
+    // LEVEL DEPENDENCE (ruled 30 Sep). Every other guard tests the curve ACROSS POSITIONS; this tests the axis that
+    // defines a threshold. Textbook: dg/dL = 1 - 1/R above threshold, so an 18 dB span of level moves reduction by
+    // 18 (1 - 1/R) dB - 0.86 dB even at 1.05:1. A position inside the readable band at every level whose reduction
+    // spans less than kLevelFlatDb across the levels is a GAIN LAW: API-2500 read 7.80 / 7.80 / 7.80 with a ratio of
+    // 4.0 read back, H-Comp 12.02 / 12.12 / 12.22. Both had certified. HARD REFUSE on any such position; RECORD dg/dL
+    // per position against the prediction (no tight bound: real compressors depart the textbook at depth).
+    // Saturated positions (above the readable band at every level: C1 at -100 dB, MCompressor at -80 dB) are flat for an
+    // honest reason and are excluded by the band condition.
+    {
+        const auto kQuiet = levelKey (d.levels.front());
+        for (int i = 0; i < n; ++i)
+        {
+            std::optional<double> slope;
+            const auto gq = d.reduction[kQuiet][(size_t) i], gl = d.reduction[kLoud][(size_t) i];
+            if (gq && gl) slope = (*gl - *gq) / (d.levels.back() - d.levels.front());
+            d.dgdl.push_back (slope);
+            bool readableAll = true; double gmin = 1e9, gmax = -1e9;
+            for (double L : d.levels)
+            {
+                const auto g = d.reduction[levelKey (L)][(size_t) i];
+                if (! g || *g <= kEngageDb || *g >= kSaturateDb) { readableAll = false; break; }
+                gmin = juce::jmin (gmin, *g); gmax = juce::jmax (gmax, *g);
+            }
+            if (readableAll && gmax - gmin < kLevelFlatDb) d.levelFlat.add (i);
+        }
+        // THE RECORD uses every ADJACENT pair of levels that are both inside the band: coarse sweeps (MCompressor's
+        // positions sit 5-11 dB apart) have no position in band at all three levels, yet plenty of in-band pairs.
+        std::vector<double> slopes;
+        for (int i = 0; i < n; ++i)
+            for (size_t l = 0; l + 1 < d.levels.size(); ++l)
+            {
+                const auto a = d.reduction[levelKey (d.levels[l])][(size_t) i], b = d.reduction[levelKey (d.levels[l + 1])][(size_t) i];
+                if (a && b && *a > kEngageDb && *a < kSaturateDb && *b > kEngageDb && *b < kSaturateDb)
+                    slopes.push_back ((*b - *a) / (d.levels[l + 1] - d.levels[l]));
+            }
+        if (! slopes.empty())
+        {
+            d.dgdlMedian = median (slopes);
+            if (*d.dgdlMedian < 1.0) d.impliedRatio = 1.0 / (1.0 - *d.dgdlMedian);
+        }
+        if (d.ratio && *d.ratio > 1.0) d.dgdlPredicted = 1.0 - 1.0 / *d.ratio;
+        if (! d.levelFlat.isEmpty())
+        {
+            juce::StringArray at;
+            for (int i : d.levelFlat) at.add (juce::String (i));
+            d.result = "unreadable";
+            d.roleFlag = "not_a_threshold";
+            d.reason = "not a threshold: reduction does not change with input level at position(s) " + at.joinIntoString (",")
+                       + " (a gain law; less than " + juce::String (kLevelFlatDb, 2) + " dB across " + juce::String (d.levels.back() - d.levels.front(), 0) + " dB of level)"
+                       + (d.dgdlPredicted ? ", where the ratio read back predicts " + juce::String (*d.dgdlPredicted * (d.levels.back() - d.levels.front()), 1) + " dB" : juce::String())
+                       + "; role flagged for review";
+            return d;
+        }
+    }
+
     // ENGAGE, and MONOTONICITY, walking from the softer end.
     bool nonmono = false;
     juce::String nonmonoWhere;
@@ -694,14 +767,6 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     }
 
     // THE dB-EQUIVALENT MAP: T = L - g R/(R-1), median over the levels that put g inside the readable band.
-    // R IS WHAT THE PLUGIN SAYS IT RAN AT: the text read back after a write when the ratio was written (the raise),
-    // else the text it instantiated with. Never the value that was asked for.
-    if (ratioIndex >= 0)
-    {
-        if (m.params.count (ratioIndex)) d.ratioInstantiated = m.params.at (ratioIndex).second;
-        d.ratioText = m.setTexts.count (ratioIndex) ? m.setTexts.at (ratioIndex) : d.ratioInstantiated;
-        d.ratio = ratioFromText (d.ratioText);
-    }
     for (int i = 0; i < n; ++i)
     {
         if (! d.ratio || *d.ratio <= 1.0) { d.tEquivalent.push_back ({}); continue; }
@@ -990,8 +1055,20 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         }
         s->setProperty ("skipped", sk);
     }
+    {
+        auto* ld = new juce::DynamicObject();
+        ld->setProperty ("predicted_dg_dl", d.dgdlPredicted ? juce::var (std::round (*d.dgdlPredicted * 1000.0) / 1000.0) : juce::var());
+        juce::Array<juce::var> per;
+        for (auto v : d.dgdl) per.add (v ? juce::var (std::round (*v * 1000.0) / 1000.0) : juce::var());
+        ld->setProperty ("dg_dl_per_position", per);
+        ld->setProperty ("median_dg_dl", d.dgdlMedian ? juce::var (std::round (*d.dgdlMedian * 1000.0) / 1000.0) : juce::var());
+        ld->setProperty ("implied_ratio", d.impliedRatio ? juce::var (std::round (*d.impliedRatio * 100.0) / 100.0) : juce::var());
+        ld->setProperty ("rule", "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses");
+        s->setProperty ("levelDependence", juce::var (ld));
+    }
     s->setProperty ("result", d.result);
     if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
+    if (d.roleFlag.isNotEmpty()) s->setProperty ("roleFlag", d.roleFlag);
     // THE DISPLAY, AS NUMBERS, beside the map's result and never folded into it. displayLinear is unset on purpose.
     s->setProperty ("displayOffsetDb", dc.offsetDb ? juce::var (std::round (*dc.offsetDb * 100.0) / 100.0) : juce::var());
     if (dc.positions > 0)

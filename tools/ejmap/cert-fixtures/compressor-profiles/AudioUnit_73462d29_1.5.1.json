@@ -1143,6 +1143,30 @@
       null,
       null
     ],
+    "levelDependence": {
+      "predicted_dg_dl": null,
+      "dg_dl_per_position": [
+        0.252,
+        0.252,
+        0.239,
+        0.209,
+        0.183,
+        0.218,
+        0.277,
+        0.366,
+        0.53,
+        0.673,
+        0.721,
+        0.735,
+        0.741,
+        0.743,
+        0.743,
+        0.743
+      ],
+      "median_dg_dl": 0.725,
+      "implied_ratio": 3.63,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
     "result": "nonmonotonic",
     "reason": "reduction falls by more than 0.5 dB walking from the softer end (position 3 at -6.00)",
     "displayOffsetDb": null,

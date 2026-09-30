@@ -455,6 +455,30 @@
         "reason": "quiet reference: -48 minus -54 is 0.00 dB, not 6 (compressed or noise floor)"
       }
     ],
+    "levelDependence": {
+      "predicted_dg_dl": 0.75,
+      "dg_dl_per_position": [
+        null,
+        -0.001,
+        -0.001,
+        0.089,
+        0.275,
+        0.464,
+        0.655,
+        0.788,
+        0.831,
+        0.815,
+        0.794,
+        0.765,
+        0.718,
+        0.678,
+        0.668,
+        0.667
+      ],
+      "median_dg_dl": 0.845,
+      "implied_ratio": 6.44,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
     "result": "certified",
     "displayOffsetDb": null
   }

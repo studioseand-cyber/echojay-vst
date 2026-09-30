@@ -669,6 +669,30 @@
         "above": -6.0
       }
     ],
+    "levelDependence": {
+      "predicted_dg_dl": 0.444,
+      "dg_dl_per_position": [
+        0.045,
+        0.287,
+        0.428,
+        0.52,
+        0.447,
+        0.336,
+        0.243,
+        0.163,
+        0.094,
+        0.032,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "median_dg_dl": 0.478,
+      "implied_ratio": 1.92,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
     "result": "certified",
     "displayOffsetDb": -0.15,
     "displayOffsetSpread": {

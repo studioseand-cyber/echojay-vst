@@ -846,6 +846,35 @@ non-empty worklist (F1), plus F2–F5.
 different things (the control surface by set-then-read, and the instantiate state twice), and
 merging them would couple two stages that fail differently.
 
+**Level dependence: the axis that DEFINES a threshold** (ruled 30 Sep). Every other guard tests
+the curve across positions. On 29 Sep API-2500 and H-Comp certified with reduction identical at
+−24, −12 and −6 dB: a make-up gain law, not compression. Three levels were collected as inputs
+to a derivation and their disagreement was never used as evidence.
+- Textbook: dg/dL = 1 − 1/R above threshold, so 18 dB of level moves reduction by
+  18 (1 − 1/R) dB. That's 0.86 dB even at 1.05:1. API-2500 moved 0.00 with a ratio of 4.0 read
+  back (13.5 dB predicted), so the guard cross-checks the ratio too.
+- **Hard refuse:** any position inside the readable band at every level whose reduction spans
+  less than 0.25 dB across the levels. The two false cases span 0.00–0.02 dB; the nearest honest
+  product spans 2.52. Saturated positions (above the band at every level: C1 at −100 dB,
+  MCompressor at −80 dB) are flat for an honest reason and are excluded by the band condition.
+  The fixture then carries `roleFlag: "not_a_threshold"`.
+- **Record:** `levelDependence` on every fixture: dg/dL per position, the median over adjacent
+  in-band level pairs, the implied ratio 1/(1 − median), and the textbook prediction from the
+  ratio read back. No tight bound: real compressors depart the textbook at depth (MCompressor's
+  implied ratio is 2.04 against 1.8 read back; townhouse's 2.22 against 2).
+- Pinned on the committed API-2500 and H-Comp traces as negative cases (G1, G2), with
+  MCompressor and a saturated synthetic as positive controls (G3, G5).
+- Weakness, recorded: a sweep whose positions are so coarse that no position sits in the band at
+  all three levels cannot trip the refusal; its recorded slopes are then the evidence.
+
+**`displayLinear` is not a field** (ruled 30 Sep, the fourth application of the split-verdict
+rule). Ten independent products carry both display numbers, and they disagree in both
+directions on 6 of 10: engage drift catches what the offset IQR misses, and the reverse. A single
+boolean was the wrong shape. Both numbers are recorded, and the consumer combines them: the
+server half knows whether it needs a trustworthy offset or only a usable map. An unexplained
+third cause of drift (C1's display steps are evenly spaced, yet it drifts 4.17 dB) means any bound
+set now would encode ignorance.
+
 **Noted for later, NOT built:** a silence-settle optimisation (render silence between
 positions instead of starting a fresh process). It is untested, and its failure mode is a
 quiet bias rather than an error.

@@ -513,6 +513,30 @@
       null,
       null
     ],
+    "levelDependence": {
+      "predicted_dg_dl": null,
+      "dg_dl_per_position": [
+        -0.0,
+        -0.0,
+        0.101,
+        0.214,
+        0.327,
+        0.436,
+        0.55,
+        0.663,
+        0.755,
+        0.755,
+        0.755,
+        0.755,
+        0.755,
+        0.755,
+        0.755,
+        0.755
+      ],
+      "median_dg_dl": 0.755,
+      "implied_ratio": 4.08,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
     "result": "certified",
     "reason": "ratio unknown (no ratio control): no dB-equivalent map",
     "displayOffsetDb": null

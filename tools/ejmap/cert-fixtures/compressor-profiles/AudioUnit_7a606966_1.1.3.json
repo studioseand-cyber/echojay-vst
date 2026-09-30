@@ -300,6 +300,13 @@
       "-6": null
     },
     "thresholdDbEquivalent": [],
+    "levelDependence": {
+      "predicted_dg_dl": null,
+      "dg_dl_per_position": [],
+      "median_dg_dl": null,
+      "implied_ratio": null,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
     "result": "flat",
     "reason": "the ends differ by no more than 1 dB at every test level",
     "displayOffsetDb": null

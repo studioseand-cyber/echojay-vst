@@ -4541,6 +4541,46 @@ void testSleptProcessRetry()
     check (answer.attempts == 1, "slept R4: a refusal (exit 3) is an answer even if the Mac slept - never retried");
 }
 
+//==============================================================================
+/** LEVEL DEPENDENCE (ruled 30 Sep): the axis that defines a threshold. API-2500 and H-Comp certified on 29 Sep with
+    reduction identical at -24, -12 and -6 - a make-up gain law - because every guard tested the curve across positions
+    and none across levels. Their committed traces are the negative cases. */
+void testLevelDependence()
+{
+    using namespace ejmap::sweep;
+    const auto tr = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-09-29-batch4-discovered");
+    auto fromTraces = [&] (const char* id, int ratioIndex) {
+        ProcessOut ref; std::vector<ProcessOut> pos;
+        const bool ok = loadProcesses (tr.getChildFile ("processes").getChildFile (juce::String (id) + ".sweep.processes.json"), tr.getChildFile ("raw"), ref, pos);
+        return std::make_pair (ok, derive (mergeProcesses (ref, pos), sweeptest::kLevels, ratioIndex)); };
+    const auto api = fromTraces ("AudioUnit_4b567263_12.0.0", 2);      // API-2500 (m): ratio [2] reads "4:1"
+    check (api.first && api.second.result == "unreadable" && api.second.roleFlag == "not_a_threshold"
+             && api.second.ratio && std::abs (*api.second.ratio - 4.0) < 1e-9 && api.second.impliedRatio && *api.second.impliedRatio < 1.05,
+           "level G1: API-2500 REFUSES as not a threshold - its reduction never moves with level, implying R = 1 against the 4.0 it read back");
+    const auto hc = fromTraces ("AudioUnit_494a7063_12.0.0", 1);       // H-Comp (m)
+    check (hc.first && hc.second.result == "unreadable" && hc.second.roleFlag == "not_a_threshold",
+           "level G2: H-Comp REFUSES as not a threshold (" + hc.second.reason.substring (0, 70) + ")");
+
+    // POSITIVE CONTROLS: MCompressor's Peak arm certifies, with its slope recorded against the textbook 1 - 1/1.8.
+    const auto adir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/mcompressor-rms-peak");
+    ProcessOut r; std::vector<ProcessOut> ps;
+    loadProcesses (adir.getChildFile ("processes.json"), adir.getChildFile ("raw"), r, ps);
+    const auto mc = derive (mergeProcesses (r, ps), sweeptest::kLevels, 6);
+    check (mc.result == "certified" && mc.dgdlPredicted && std::abs (*mc.dgdlPredicted - 0.444) < 0.01 && mc.dgdlMedian && *mc.dgdlMedian > 0.3,
+           "level G3: MCompressor stays certified; dg/dL is recorded (median " + juce::String (mc.dgdlMedian.value_or (0.0), 3) + ") against the predicted 0.444");
+    // A synthetic gain law inside the readable band refuses; the same curve with a SATURATED deepest position does not.
+    std::vector<std::array<std::optional<double>, 3>> gainLaw;
+    for (int k = 0; k < 6; ++k) { const double g = 8.0 - 1.4 * k; gainLaw.push_back ({ 2.0 - g, 2.0 - g, 2.0 - g }); }
+    const auto gl = derive (sweeptest::fromGains (gainLaw), sweeptest::kLevels, -1);
+    check (gl.result == "unreadable" && gl.roleFlag == "not_a_threshold", "level G4: a synthetic gain law (same reduction at every level) refuses");
+    std::vector<std::array<std::optional<double>, 3>> sat;
+    for (int k = 0; k < 6; ++k) { const double r0 = (5 - k) * 2.0; sat.push_back ({ 2.0 - r0 * 0.5, 2.0 - r0, 2.0 - r0 * 1.5 }); }
+    sat[0] = { 2.0 - 30.0, 2.0 - 30.0, 2.0 - 30.0 };                     // the deepest position at its ceiling
+    const auto sd = derive (sweeptest::fromGains (sat), sweeptest::kLevels, -1);
+    check (sd.result == "certified" && sd.levelFlat.isEmpty(),
+           "level G5: a position saturated at every level (C1 at -100 dB, MCompressor at -80 dB) is NOT a gain law - excluded by the band");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -4600,6 +4640,7 @@ int main (int, char**)
     testSleepTimeouts();
     testDiscoveryFromMaps();
     testSleptProcessRetry();
+    testLevelDependence();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;
