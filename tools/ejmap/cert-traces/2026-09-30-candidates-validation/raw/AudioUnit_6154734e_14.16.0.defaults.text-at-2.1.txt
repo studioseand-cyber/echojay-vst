@@ -1,0 +1,362 @@
+probe: "MDrumLeveler" | AudioUnit:Effects/aumf,MDrL,Meld | uid=6154734e | arch=arm64 | format=AudioUnit
+
+param	0	Param 1	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	1	Param 2	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	2	Param 3	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	3	Param 4	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	4	Param 5	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	5	Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	6	Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	7	Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	8	Param 9	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	9	Param 10	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	10	Param 11	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	11	Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	12	Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	13	Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	14	Param 15	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	15	Param 16	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	16	Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	17	Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	18	Param 19	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	19	Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	20	Param 21	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	21	Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	22	Param 23	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	23	Param 24	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	24	Param 25	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	25	Param 26	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	26	Param 27	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	27	Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	28	Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	29	Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	30	Param 31	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	31	Param 32	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	32	General - Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	33	General - Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	34	General - Depth	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	35	General - Look-ahead	unit	
+def	0.447214	20 ms	default	0.447214
+at	0.000	0 ms
+at	0.500	25 ms
+at	1.000	100 ms
+param	36	General - Gain min	unit	
+def	0.000000	-80.00 dB	default	0.000000
+at	0.000	-80.00 dB
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	37	General - Gain max	unit	
+def	1.000000	+80.00 dB	default	1.000000
+at	0.000	0.00 dB
+at	0.500	+40.00 dB
+at	1.000	+80.00 dB
+param	38	Envelope - Attack	unit	
+def	0.000000	0 ms	default	0.000000
+at	0.000	0 ms
+at	0.500	3.1 ms
+at	1.000	50 ms
+param	39	Envelope - Length	unit	
+def	0.472871	50 ms	default	0.472871
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	40	Envelope - Release	unit	
+def	0.622333	150 ms	default	0.622333
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	41	Envelope - Gate	unit	
+def	1.000000	0.00 dB	default	1.000000
+at	0.000	-40.00 dB
+at	0.500	-20.00 dB
+at	1.000	0.00 dB
+param	42	Detector - Retrigger	unit	
+def	0.470606	50 ms	default	0.470606
+at	0.000	1.0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	43	Detector - Threshold	unit	
+def	0.375000	-50.00 dB	default	0.375000
+at	0.000	-80.00 dB
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	44	Detector - Resolution	unit	
+def	0.472871	5.0 ms	default	0.472871
+at	0.000	0 ms
+at	0.500	6.2 ms
+at	1.000	100 ms
+param	45	Detector - Threshold Max	unit	
+def	1.000000	0.00 dB	default	1.000000
+at	0.000	-80.00 dB
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	46	Detector - Detector gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-48.00 dB
+at	0.500	0.00 dB
+at	1.000	+48.00 dB
+param	47	Detector - Side-chain	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	48	Detector - Transients	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	49	Detector - Side-chain mode	unit	
+def	0.000000	Source	default	0.000000
+at	0.000	Source
+at	0.500	Remove from input
+at	1.000	Present in both
+param	50	Prefiltering - Prefiltering	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	51	Prefiltering - Loudness	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	52	Prefiltering - BP1	unit	
+def	0.365637	250.0 Hz	default	0.365637
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	53	Prefiltering - BP1 Q	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	2.5750
+at	1.000	10.0000
+param	54	Prefiltering - BP2	unit	
+def	0.465980	500.0 Hz	default	0.465980
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	55	Prefiltering - BP2 Q	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	2.5750
+at	1.000	10.0000
+param	56	Prefiltering - Listen	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	57	Velocities - Velocity 1	unit	
+def	0.750000	-20.00 dB	default	0.750000
+at	0.000	Off
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	58	Velocities - Velocity 2	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	59	Velocities - Velocity 3	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	60	Velocities - Velocity 4	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	-40.00 dB
+at	1.000	0.00 dB
+param	61	Modulators - Mod 1 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	62	Modulators - Mod 2 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	63	Modulators - Mod 3 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	64	Modulators - Mod 4 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	65	Preset trigger - previous	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	66	Preset trigger - next	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	67	MIDI output - Note	unit	
+def	0.283465	36	default	0.283465
+at	0.000	0
+at	0.500	64
+at	1.000	127
+param	68	MIDI output - Compensate latency	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	69	MIDI output - MIDI output	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	70	MIDI output - Velocity gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	71	MIDI output - Mute audio output	unit	
+def	0.000000	Off	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

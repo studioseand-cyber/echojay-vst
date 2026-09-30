@@ -1246,16 +1246,18 @@ inline juce::String fixtureFileName (const juce::var& f)
 // never disagree about what a trace means (decision D2: re-compute, never re-measure).
 struct SweepRunInfo { juce::String headline, probeLabel, armLine; int processes = 0, retried = 0, sleptProcesses = 0; double sleptMs = 0; bool newIdentity = false; };
 
-inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
-                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info)
+struct Derivation { sweep::Derived d; sweep::DisplayCheck dc; juce::var sweepVar; juce::String report; bool written = false; };
+
+inline Derivation deriveOne (const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv, const SweepRunInfo& info,
+                             const juce::String& fixtureName)
 {
+    Derivation out;
     const std::vector<double> levels { -24.0, -12.0, -6.0 };
     const auto d = sweep::derive (m, levels, plan.ratioIndex, plan.quietReference);
     const auto dc = sweep::displayCheck (d, plan.thrUnit);
     const bool written = ! d.unlicensedSuspect;
-    if (written)
-        fixtureOut.replaceWithText (juce::JSON::toString (sweep::composeFixture (base, sweep::composeThresholdSweep (d, dc, plan, pv))) + "\n",
-                                    false, false, "\n");
+    out.d = d; out.dc = dc; out.written = written;
+    if (written) out.sweepVar = sweep::composeThresholdSweep (d, dc, plan, pv);
 
     int slicesTotal = 0, instack = 0, unl = 0, rer = 0, landed = 0, failedProc = 0; double confMax = 0;
     for (const auto& p : m.positions)
@@ -1337,7 +1339,48 @@ inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, co
         << "\n   offset IQR:      " << (dc.positions > 0 ? juce::String (dc.iqrDb, 2) + " dB over " + juce::String (dc.positions) + " positions (min "
                                                          + juce::String (dc.minDb, 2) + ", max " + juce::String (dc.maxDb, 2) + ")" : juce::String ("null"))
         << "\n3 displayOffsetDb: " << num (dc.offsetDb) << (dc.offsetDb ? juce::String (std::abs (*dc.offsetDb) <= sweep::kDisplayDb ? "  (inside spec 7's 2 dB bar)" : "  (outside spec 7's 2 dB bar)") : juce::String())
-        << "\n" << (written ? "fixture: " + fixtureOut.getFileName() : "NOT LICENSED suspected (silent, non-finite or not the input's tone at default): " + d.referenceNote + "no thresholdSweep written") << "\n";
+        << "\n" << (written ? "fixture: " + fixtureName : "NOT LICENSED suspected (silent, non-finite or not the input's tone at default): " + d.referenceNote + "no thresholdSweep written") << "\n";
+    out.report = rep;
+    return out;
+}
+
+inline void composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
+                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info)
+{
+    const auto one = deriveOne (plan, m, pv, info, fixtureOut.getFileName());
+    if (one.written)
+        fixtureOut.replaceWithText (juce::JSON::toString (sweep::composeFixture (base, one.sweepVar)) + "\n", false, false, "\n");
+    reportOut.replaceWithText (one.report, false, false, "\n");
+    std::cout << one.report << std::flush;
+}
+
+// SEVERAL CANDIDATES (ruled 30 Sep): one fixture carrying every candidate's sweep, labelled, and NO thresholdSweep - a
+// human reads the curves and picks. The fixture says so in `thresholdReview`.
+inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan& plan, const std::vector<std::pair<sweep::Plan, Derivation>>& cands,
+                                        const juce::File& fixtureOut, const juce::File& reportOut)
+{
+    auto f = sweep::stripPrivate (juce::JSON::parse (juce::JSON::toString (base)));
+    juce::Array<juce::var> arr;
+    juce::String rep;
+    for (const auto& [q, one] : cands)
+    {
+        auto* c = new juce::DynamicObject();
+        c->setProperty ("index", q.thr); c->setProperty ("name", q.thrName);
+        juce::Array<juce::var> fl; for (auto& x : q.thrFlags) fl.add (x); c->setProperty ("flags", fl);
+        c->setProperty ("thresholdSweep", one.written ? sweep::stripPrivate (one.sweepVar) : juce::var());
+        arr.add (juce::var (c));
+        rep << one.report << "\n";
+    }
+    if (auto* o = f.getDynamicObject())
+    {
+        auto* rv = new juce::DynamicObject();
+        rv->setProperty ("class", plan.cls);
+        rv->setProperty ("candidates", (int) cands.size());
+        rv->setProperty ("note", "several controls hold the threshold role; each was swept with the others at their instantiate defaults; no thresholdSweep until a human picks");
+        o->setProperty ("thresholdReview", juce::var (rv));
+        o->setProperty ("thresholdCandidates", arr);
+    }
+    fixtureOut.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
     reportOut.replaceWithText (rep, false, false, "\n");
     std::cout << rep << std::flush;
 }
@@ -1460,30 +1503,48 @@ inline int runCertSweep (const SweepOptions& opt)
 
     juce::StringArray sets;
     for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
-    juce::StringArray levelList;
-    for (double L : plan.probeLevels()) levelList.add (juce::String ((int) L));
-    auto sweepArgs = [&] (const juce::String& norms, const juce::String& ref) {
-        juce::StringArray a { "--sweep", "thr=" + juce::String (plan.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
-                              "hold=1.5", "discard=0.75", "win=0.25", "ref=" + ref, "moving_db=0.1",
-                              juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
-        if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
-        return a; };
-
-    std::cout << "  sweeping " << s.product << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
-              << " - 1 reference + " << (int) plan.norms.size() << " position processes" << std::endl;
+    // ONE SWEEP of one threshold control: a reference process, then one process per position. Called once for a single
+    // threshold, once per candidate when several hold the role (tags prefixed "c<index>." so the traces stay apart).
+    auto sweepFor = [&] (const sweep::Plan& q, const juce::String& tagPrefix, sweep::ProcessOut& refOut, std::vector<sweep::ProcessOut>& posOut)
+    {
+        juce::StringArray levelList;
+        for (double L : q.probeLevels()) levelList.add (juce::String ((int) L));
+        auto sweepArgs = [&] (const juce::String& norms, const juce::String& ref) {
+            juce::StringArray a { "--sweep", "thr=" + juce::String (q.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
+                                  "hold=1.5", "discard=0.75", "win=0.25", "ref=" + ref, "moving_db=0.1",
+                                  juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
+            if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+            return a; };
+        std::cout << "  sweeping " << s.product << (tagPrefix.isNotEmpty() ? " candidate [" + juce::String (q.thr) + "] " + q.thrName : juce::String())
+                  << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
+                  << " - 1 reference + " << (int) q.norms.size() << " position processes" << std::endl;
+        if (! windowSeen)
+        {
+            const auto r = runProbe (stem, tagPrefix + "ref", sweepArgs ("", "2.0"), -1.0f);
+            refOut = { r.out, r.cleanExit(), r.describe(), -1.0f };
+        }
+        posOut.clear();
+        for (size_t k = 0; k < q.norms.size() && ! windowSeen; ++k)
+        {
+            const auto tag = tagPrefix + "pos" + juce::String ((int) k).paddedLeft ('0', 2);
+            const auto r = runProbe (stem, tag, sweepArgs (juce::String (q.norms[k], 6), "0"), q.norms[k]);
+            posOut.push_back ({ r.out, r.cleanExit(), r.describe(), q.norms[k] });
+        }
+    };
     sweep::ProcessOut refOut;
-    if (! windowSeen)
-    {
-        const auto r = runProbe (stem, "ref", sweepArgs ("", "2.0"), -1.0f);
-        refOut = { r.out, r.cleanExit(), r.describe(), -1.0f };
-    }
     std::vector<sweep::ProcessOut> posOut;
-    for (size_t k = 0; k < plan.norms.size() && ! windowSeen; ++k)
-    {
-        const auto tag = "pos" + juce::String ((int) k).paddedLeft ('0', 2);
-        const auto r = runProbe (stem, tag, sweepArgs (juce::String (plan.norms[k], 6), "0"), plan.norms[k]);
-        posOut.push_back ({ r.out, r.cleanExit(), r.describe(), plan.norms[k] });
-    }
+    std::vector<std::pair<sweep::Plan, std::pair<sweep::ProcessOut, std::vector<sweep::ProcessOut>>>> candRuns;
+    if (plan.candidates.empty())
+        sweepFor (plan, "", refOut, posOut);
+    else
+        for (const auto& c : plan.candidates)
+        {
+            auto q = plan.forCandidate (c);
+            sweep::applyCandidateControl (q, base);
+            sweep::ProcessOut cr; std::vector<sweep::ProcessOut> cp;
+            sweepFor (q, "c" + juce::String (c.index) + ".", cr, cp);
+            candRuns.push_back ({ q, { cr, cp } });
+        }
     opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
     auto fixturesDir = opt.out.getChildFile ("fixtures");
     fixturesDir.createDirectory();
@@ -1510,7 +1571,8 @@ inline int runCertSweep (const SweepOptions& opt)
         return licence ? 1 : 5;
     }
 
-    const auto m = sweep::mergeProcesses (refOut, posOut);
+    const auto m = plan.candidates.empty() ? sweep::mergeProcesses (refOut, posOut)
+                                           : sweep::mergeProcesses (candRuns.front().second.first, candRuns.front().second.second);
     juce::String pluginArch = m.arch;
     bool bridged = false;
     const auto bundles = componentBundles();
@@ -1555,7 +1617,20 @@ inline int runCertSweep (const SweepOptions& opt)
         if (sl > 1000.0) { ++info.sleptProcesses; info.sleptMs += sl; }   // over a second: a sleep, not clock jitter
     }
     info.newIdentity = newIdentity;
-    composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info);
+    if (plan.candidates.empty())
+    {
+        composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info);
+        return 0;
+    }
+    std::vector<std::pair<sweep::Plan, Derivation>> cands;
+    for (const auto& [q, run] : candRuns)
+    {
+        SweepRunInfo ci = info;
+        ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " (flags " + q.thrFlags.joinIntoString (",") + ") - " + s.product
+                      + " (class " + plan.cls + ", " + juce::String ((int) plan.candidates.size()) + " candidates; the others at their instantiate defaults)";
+        cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (run.first, run.second), pv, ci, outName) });
+    }
+    composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"));
     return 0;
 }
 
@@ -1565,26 +1640,43 @@ inline int runCertSweep (const SweepOptions& opt)
 inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& processesJson, const juce::File& rawDir, const juce::File& fixtureOut)
 {
     const auto fx = juce::JSON::parse (fixtureIn.loadFileAsString());
-    const auto old = fx.getProperty ("thresholdSweep", {});
+    auto old = fx.getProperty ("thresholdSweep", {});
+    if (! old.isObject() && fx.getProperty ("thresholdCandidates", {}).isArray())
+        old = fx.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {});
     if (! old.isObject()) { std::cout << "REDERIVE: " << fixtureIn.getFileName() << " has no thresholdSweep" << std::endl; return 2; }
     auto plan = sweep::planFromFixture (fx);
     if (! plan.ok) { std::cout << "REDERIVE: " << plan.why << std::endl; return 4; }
     // The raise, as recorded: the fixture says it ran raised; the value itself is read back from the traces.
     if (old.getProperty ("ratioDuring", {}).hasProperty ("raisedFrom")) plan.ratioRaise = true;
-    sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
-    if (! sweep::loadProcesses (processesJson, rawDir, ref, pos)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
-    const auto m = sweep::mergeProcesses (ref, pos);
     sweep::Provenance pv;
     pv.measuredAt = old.getProperty ("measuredAt", "").toString();
     pv.host = old.getProperty ("host", "").toString();
     pv.bridged = (bool) old.getProperty ("bridged", false);
     pv.diagnosticArm = old.getProperty ("diagnosticArm", {});
     auto base = juce::JSON::parse (juce::JSON::toString (fx));
-    if (auto* o = base.getDynamicObject()) o->removeProperty ("thresholdSweep");
+    if (auto* o = base.getDynamicObject()) { o->removeProperty ("thresholdSweep"); o->removeProperty ("thresholdCandidates"); o->removeProperty ("thresholdReview"); }
     SweepRunInfo info;
     info.headline = "RE-DERIVED from traces (nothing measured) - " + fx.getProperty ("product", "").toString() + " -> " + fixtureOut.getFileName();
     if (! pv.diagnosticArm.isVoid()) info.armLine = "DIAGNOSTIC ARM '" + pv.diagnosticArm.getProperty ("label", "").toString() + "' (not the product's certification)";
-    composeAndReport (base, plan, m, pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info);
+    if (plan.candidates.empty())
+    {
+        sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
+        if (! sweep::loadProcesses (processesJson, rawDir, ref, pos)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
+        composeAndReport (base, plan, sweep::mergeProcesses (ref, pos), pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info);
+        return 0;
+    }
+    std::vector<std::pair<sweep::Plan, Derivation>> cands;
+    for (const auto& c : plan.candidates)
+    {
+        auto q = plan.forCandidate (c);
+        sweep::applyCandidateControl (q, base);
+        sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
+        if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, "c" + juce::String (c.index) + ".")) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
+        SweepRunInfo ci = info;
+        ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
+        cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName()) });
+    }
+    composeCandidatesAndReport (base, plan, cands, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"));
     return 0;
 }
 
@@ -1659,6 +1751,7 @@ inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledg
         if (fresh) ++runnableNewIdentity;
         if (discovered) ++runnableDiscovered;
         rows.add ("  " + s.product.paddedRight (' ', 40)
+                  + (! plan.candidates.empty() ? juce::String ((int) plan.candidates.size()) + " CANDIDATE thresholds (" + plan.cls + "), each swept and labelled for review; " : juce::String())
                   + (discovered ? "DISCOVERED at " + s.desc.version + ", " + s.detail + " (defaults first; plan after sampling)"
                      : fresh ? "NEW IDENTITY at installed " + s.desc.version + " (defaults first)" : juce::String ("at the fixture's version"))
                   + (s.licenceBound ? "  [licence-bound]" : ""));

@@ -102,6 +102,17 @@ struct Plan
     bool quietReference = false;             // input-as-threshold: each position carries its own quiet reference
     std::vector<double> probeLevels() const  // quiet to loud, as the probe renders them
     { return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 }; }
+    // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled, the others held at their
+    // instantiate defaults, and a human reads curves instead of guessing from names. thr stays -1; the driver loops.
+    struct Candidate { int index; juce::String name; juce::StringArray flags; bool quietReference; };
+    std::vector<Candidate> candidates;
+    Plan forCandidate (const Candidate& c) const
+    {
+        Plan q = *this;
+        q.candidates.clear();
+        q.thr = c.index; q.thrName = c.name; q.thrFlags = c.flags; q.quietReference = c.quietReference;
+        return q;
+    }
 };
 
 inline juce::var findControl (const juce::var& fixture, int index)
@@ -170,6 +181,15 @@ inline bool isSteppedControl (const juce::var& c)
     return (bool) c.getProperty ("discrete", false) && steps >= 2 && steps <= 64;
 }
 
+// The candidate's own unit and positions, from the fixture's control.
+inline void applyCandidateControl (Plan& p, const juce::var& fixture)
+{
+    const auto tc = findControl (fixture, p.thr);
+    p.thrUnit = tc.getProperty ("unit", {}).toString();
+    p.norms = positionsFor (tc);
+    p.stepped = p.norms.size() != 16 || (bool) tc.getProperty ("discrete", false);
+}
+
 inline Plan planFromFixture (const juce::var& fixture)
 {
     Plan p;
@@ -221,7 +241,14 @@ inline Plan planFromFixture (const juce::var& fixture)
             }
         }
     }
-    if (pick == nullptr)
+    if (pick == nullptr && thr.size() >= 2)
+    {
+        // EVERY CANDIDATE, LABELLED. The threshold's unit and positions are decided per candidate by the driver.
+        for (auto* t : thr) p.candidates.push_back ({ t->index, t->name, t->flags, t->flags.contains ("input_as_threshold") });
+        p.cls = cl.cls;
+        p.thr = -1;
+    }
+    else if (pick == nullptr)
     {
         p.why = "not swept: " + juce::String ((int) thr.size()) + " controls hold the threshold role (class " + cl.cls
                 + "); deferred to review after the sweep";
@@ -232,14 +259,17 @@ inline Plan planFromFixture (const juce::var& fixture)
             if (nametokens::controlAnswersTerm (c.getProperty ("name", {}).toString(), "link"))
                 p.linkStates.add ("[" + c.getProperty ("index", -1).toString() + "] " + c.getProperty ("name", {}).toString() + " = '"
                                   + c.getProperty ("defaultOnInstantiate", {}).getProperty ("display", {}).toString() + "'");
-    p.thr = pick->index;
-    p.thrName = pick->name;
-    p.thrFlags = pick->flags;
-    p.quietReference = p.thrFlags.contains ("input_as_threshold");
-    const auto tc = findControl (fixture, p.thr);
-    p.thrUnit = tc.getProperty ("unit", {}).toString();
-    p.norms = positionsFor (tc);
-    p.stepped = p.norms.size() != 16 || (bool) tc.getProperty ("discrete", false);
+    if (pick != nullptr)
+    {
+        p.thr = pick->index;
+        p.thrName = pick->name;
+        p.thrFlags = pick->flags;
+        p.quietReference = p.thrFlags.contains ("input_as_threshold");
+        const auto tc = findControl (fixture, p.thr);
+        p.thrUnit = tc.getProperty ("unit", {}).toString();
+        p.norms = positionsFor (tc);
+        p.stepped = p.norms.size() != 16 || (bool) tc.getProperty ("discrete", false);
+    }
 
     if (ratio.size() == 1) p.ratioIndex = ratio[0]->index;
     else p.ratioNote = ratio.empty() ? "no control holds the ratio role" : juce::String ((int) ratio.size()) + " controls hold the ratio role";
@@ -425,7 +455,7 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
 // THE TRACE, RE-READ: rebuild the processes from a run's processes.json and its raw files, the LAST attempt of each
 // tag winning, exactly as the driver merged them. This is what lets a fixture be re-derived without re-measuring.
 inline bool loadProcesses (const juce::File& processesJson, const juce::File& rawDir,
-                           ProcessOut& reference, std::vector<ProcessOut>& positions)
+                           ProcessOut& reference, std::vector<ProcessOut>& positions, const juce::String& tagPrefix = {})
 {
     const auto list = juce::JSON::parse (processesJson.loadFileAsString());
     const auto* a = list.getArray();
@@ -436,11 +466,11 @@ inline bool loadProcesses (const juce::File& processesJson, const juce::File& ra
         const auto f = rawDir.getChildFile (p.getProperty ("file", "").toString());
         return ProcessOut { f.loadFileAsString(), (bool) p.getProperty ("clean", false), p.getProperty ("outcome", "").toString(),
                             (float) (double) p.getProperty ("norm", -1.0) }; };
-    if (! last.count ("ref")) return false;
-    reference = toOut (last["ref"]);
+    if (! last.count (tagPrefix + "ref")) return false;
+    reference = toOut (last[tagPrefix + "ref"]);
     positions.clear();
-    for (const auto& [tag, p] : last)                  // "pos00".."pos15" sort in walk order
-        if (tag.startsWith ("pos")) positions.push_back (toOut (p));
+    for (const auto& [tag, p] : last)                  // "pos00".."pos15" sort in walk order; "c7.pos00" for candidate 7
+        if (tag.startsWith (tagPrefix + "pos")) positions.push_back (toOut (p));
     return ! positions.empty();
 }
 

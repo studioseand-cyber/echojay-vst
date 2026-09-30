@@ -4385,8 +4385,16 @@ void testSweepRatioAndPicks()
         const auto rev = planFromFixture (juce::var (o));
         check (rev.ok && rev.thr == 1, "pick K5: with the stepped pad listed FIRST, the continuous gain is still the pick");
     }
+    // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled; nothing is refused for having
+    // too many thresholds. A product refused at roles was never swept, so "review with curves in hand" had no curves.
     const auto fair = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_16616669_11.8.0.json").loadFileAsString()));
-    check (! fair.ok && fair.cls == "channels_lr", "pick K4: UAD Fairchild 670 (channels_lr) stays deferred to review - the L/R pick is for input-as-threshold only");
+    check (fair.ok && fair.thr == -1 && fair.candidates.size() == 4 && fair.cls == "channels_lr",
+           "pick K4: UAD Fairchild 670 (channels_lr) plans its FOUR thresholds as labelled candidates, not a refusal");
+    auto cq = fair.forCandidate (fair.candidates[1]);
+    check (cq.thr == fair.candidates[1].index && cq.candidates.empty() && cq.thrFlags.contains ("dc") == fair.candidates[1].flags.contains ("dc"),
+           "pick K6: a candidate's plan carries that control alone, with its own flags");
+    const auto amount = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString().replace ("Input Gain", "Wobble").replace ("Input Pad", "Wibble")));
+    check (! amount.ok, "pick K7: a product with NO threshold candidate is still refused at the roles stage");
 
     // THE CONVENTION'S POSITIVE CONTROL (spec 7, a test on displayOffsetDb): MCompressor with its detector at Peak lands
     // inside 2 dB of 0 in the peak convention. The 100 ms arm is a fact about Melda's detector, recorded, not a test.

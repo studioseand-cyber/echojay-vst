@@ -875,6 +875,22 @@ server half knows whether it needs a trustworthy offset or only a usable map. An
 third cause of drift (C1's display steps are evenly spaced, yet it drifts 4.17 dB) means any bound
 set now would encode ignorance.
 
+**Several thresholds: sweep every candidate, labelled** (ruled 30 Sep, correcting the earlier
+plan). "Review with curves in hand" was incoherent for a product refused at the roles stage: it
+was never swept, so there were no curves. Now a product with two or more threshold candidates
+and no pick (bands or stages, an L/R pair outside the input-as-threshold rule, several input
+controls) is not refused. Each candidate is swept in turn with every other control at its
+instantiate default, and the fixture carries `thresholdCandidates` (one labelled sweep each,
+with its own three results and level dependence) and `thresholdReview` (class, count), and NO
+`thresholdSweep` until a human picks from curves. Traces are tagged `c<index>.ref` /
+`c<index>.posNN`, and `--cert-sweep-rederive` re-derives every candidate. Validated on
+MDrumLeveler (2 candidates, 37 processes, re-derivation exact). Products with no candidate at all
+(amount-style, no threshold) are still refused at the roles stage.
+
+Cost, measured 30 Sep from batch 4's own position processes (a position process runs at about
+1.05× the product's instantiation): 42 products, 202 candidate sweeps, about 1.9 h. The largest
+is DynOne3 (15 candidates, about 11 min).
+
 **Noted for later, NOT built:** a silence-settle optimisation (render silence between
 positions instead of starting a fresh process). It is untested, and its failure mode is a
 quiet bias rather than an error.

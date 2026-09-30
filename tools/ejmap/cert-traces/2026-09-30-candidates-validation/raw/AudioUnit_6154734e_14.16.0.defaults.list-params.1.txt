@@ -1,0 +1,74 @@
+probe: "MDrumLeveler" | AudioUnit:Effects/aumf,MDrL,Meld | uid=6154734e | arch=arm64 | format=AudioUnit
+
+0	Param 1		2147483647	0	1	0
+1	Param 2		2147483647	0	1	0
+2	Param 3		2147483647	0	1	0
+3	Param 4		2147483647	0	1	0
+4	Param 5		2147483647	0	1	0
+5	Param 6		2147483647	0	1	0
+6	Param 7		2147483647	0	1	0
+7	Param 8		2147483647	0	1	0
+8	Param 9		2147483647	0	1	0
+9	Param 10		2147483647	0	1	0
+10	Param 11		2147483647	0	1	0
+11	Param 12		2147483647	0	1	0
+12	Param 13		2147483647	0	1	0
+13	Param 14		2147483647	0	1	0
+14	Param 15		2147483647	0	1	0
+15	Param 16		2147483647	0	1	0
+16	Param 17		2147483647	0	1	0
+17	Param 18		2147483647	0	1	0
+18	Param 19		2147483647	0	1	0
+19	Param 20		2147483647	0	1	0
+20	Param 21		2147483647	0	1	0
+21	Param 22		2147483647	0	1	0
+22	Param 23		2147483647	0	1	0
+23	Param 24		2147483647	0	1	0
+24	Param 25		2147483647	0	1	0
+25	Param 26		2147483647	0	1	0
+26	Param 27		2147483647	0	1	0
+27	Param 28		2147483647	0	1	0
+28	Param 29		2147483647	0	1	0
+29	Param 30		2147483647	0	1	0
+30	Param 31		2147483647	0	1	0
+31	Param 32		2147483647	0	1	0
+32	General - Input gain		2147483647	0	1	0
+33	General - Output gain		2147483647	0	1	0
+34	General - Depth		2147483647	0	1	0
+35	General - Look-ahead		2147483647	0	1	0
+36	General - Gain min		2147483647	0	1	0
+37	General - Gain max		2147483647	0	1	0
+38	Envelope - Attack		2147483647	0	1	0
+39	Envelope - Length		2147483647	0	1	0
+40	Envelope - Release		2147483647	0	1	0
+41	Envelope - Gate		2147483647	0	1	0
+42	Detector - Retrigger		2147483647	0	1	0
+43	Detector - Threshold		2147483647	0	1	0
+44	Detector - Resolution		2147483647	0	1	0
+45	Detector - Threshold Max		2147483647	0	1	0
+46	Detector - Detector gain		2147483647	0	1	0
+47	Detector - Side-chain		2	1	1	0
+48	Detector - Transients		2147483647	0	1	0
+49	Detector - Side-chain mode		2147483647	0	1	0
+50	Prefiltering - Prefiltering		2	1	1	0
+51	Prefiltering - Loudness		2	1	1	0
+52	Prefiltering - BP1		2147483647	0	1	0
+53	Prefiltering - BP1 Q		2147483647	0	1	0
+54	Prefiltering - BP2		2147483647	0	1	0
+55	Prefiltering - BP2 Q		2147483647	0	1	0
+56	Prefiltering - Listen		2	1	1	0
+57	Velocities - Velocity 1		2147483647	0	1	0
+58	Velocities - Velocity 2		2147483647	0	1	0
+59	Velocities - Velocity 3		2147483647	0	1	0
+60	Velocities - Velocity 4		2147483647	0	1	0
+61	Modulators - Mod 1 - Automated value		2147483647	0	1	0
+62	Modulators - Mod 2 - Automated value		2147483647	0	1	0
+63	Modulators - Mod 3 - Automated value		2147483647	0	1	0
+64	Modulators - Mod 4 - Automated value		2147483647	0	1	0
+65	Preset trigger - previous		2147483647	0	1	0
+66	Preset trigger - next		2147483647	0	1	0
+67	MIDI output - Note		2147483647	0	1	0
+68	MIDI output - Compensate latency		2	1	1	0
+69	MIDI output - MIDI output		2	1	1	0
+70	MIDI output - Velocity gain		2147483647	0	1	0
+71	MIDI output - Mute audio output		2	1	1	0
