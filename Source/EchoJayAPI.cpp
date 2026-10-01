@@ -72,17 +72,71 @@ namespace
 }
 #endif
 
+// ---- A RUNTIME BASE-URL OVERRIDE THAT WORKS IN EVERY BUILD (1 Oct 2026) -------------------------------------
+// An override already existed - ~/.echojay/dev.json, baseUrl + protectionBypass - but it is behind
+// ECHOJAY_DEV_TRANSPORT, which is defined only for Debug or when the CMake option is ON. Every build placed for
+// testing is Release with the option OFF, which is why Sean's logs read "devTransport=off": the override cannot be
+// switched on in the build he installs, so for his purposes it does not exist.
+//
+// This one is compiled in ALWAYS and read from a file, so it can be turned on and off without a rebuild:
+//
+//     echo "https://my-preview.vercel.app" > ~/Library/EchoJay/dev_base_url.txt      # on
+//     rm ~/Library/EchoJay/dev_base_url.txt                                          # off (the default)
+//
+// A Vercel preview with deployment protection also needs a bypass header, so an optional companion file is read
+// the same way; its VALUE is never logged, only whether one was loaded.
+//
+//     echo "<bypass secret>" > ~/Library/EchoJay/dev_bypass.txt
+//
+// Read ONCE per process, like dev.json: a config that appears mid-session is not worth a stat on every request.
+// Absent, empty or not http(s) => no override at all, and the plugin talks to production exactly as before.
+namespace
+{
+    struct FileOverride { juce::String baseUrl, bypass; };
+
+    const FileOverride& fileOverride()
+    {
+        static FileOverride fo = []
+        {
+            FileOverride out;
+            const auto dir = echojay::userAppData().getChildFile ("EchoJay");
+            const auto readOne = [&dir] (const char* name) -> juce::String
+            {
+                const auto f = dir.getChildFile (name);
+                if (! f.existsAsFile()) return {};
+                for (const auto& line : juce::StringArray::fromLines (f.loadFileAsString()))
+                    if (line.trim().isNotEmpty() && ! line.trim().startsWith ("#")) return line.trim();
+                return {};
+            };
+            const auto url = readOne ("dev_base_url.txt");
+            if (url.startsWithIgnoreCase ("http://") || url.startsWithIgnoreCase ("https://"))
+                out.baseUrl = url.trimCharactersAtEnd ("/");
+            else if (url.isNotEmpty())
+                EchoJay_NSLog (("EJNet: dev_base_url.txt says \"" + url
+                                + "\", which is not an http(s) URL - IGNORED, talking to production")
+                                   .toRawUTF8());
+            out.bypass = readOne ("dev_bypass.txt");
+            return out;
+        }();
+        return fo;
+    }
+}
+
 // Base URL for a request: the dev override when one is configured, otherwise
 // whatever the plugin normally talks to. In a release build this is the
 // identity function and the compiler removes it.
 juce::String EchoJayAPI::transportEndpoint(const juce::String& configured,
                                            const juce::String& forPath)
 {
+    // THE FILE OVERRIDE WINS when it is there: it is the one a tester can switch on in a placed build, so it has
+    // to be the one that decides. dev.json still works in a build that compiles it.
+    const auto& fo = fileOverride();
    #if ECHOJAY_DEV_TRANSPORT
     const auto& dt = devTransport();
-    const juce::String base = dt.baseUrl.isNotEmpty() ? dt.baseUrl : configured;
+    const juce::String base = fo.baseUrl.isNotEmpty() ? fo.baseUrl
+                            : (dt.baseUrl.isNotEmpty() ? dt.baseUrl : configured);
    #else
-    const juce::String base = configured;
+    const juce::String base = fo.baseUrl.isNotEmpty() ? fo.baseUrl : configured;
    #endif
 
     // Once per process, before the first request: which host, and why. A
@@ -104,8 +158,13 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured,
         // this file's life that was a chat call while the config fetch went
         // somewhere else entirely. Naming the first caller and stating the
         // scope stops one line being read as covering requests it never saw.
-        EchoJay_NSLog(("EJNet: base=" + juce::URL(base).getDomain()
-                       + " devTransport=" + dev + " bypass=" + byp
+        // THE WHOLE BASE URL, not just the domain: a preview is told apart from production by its host, and a
+        // tester who has just switched the file on needs to see the URL he wrote, not a domain that looks similar.
+        EchoJay_NSLog(("EJNet: base=" + base
+                       + " source=" + juce::String (fileOverride().baseUrl.isNotEmpty()
+                                                        ? "dev_base_url.txt" : "built-in")
+                       + " devTransport=" + dev
+                       + " bypass=" + juce::String (fileOverride().bypass.isNotEmpty() ? "present(file)" : byp)
                        + " (first resolved for "
                        + (forPath.isNotEmpty() ? forPath : juce::String("an unnamed request"))
                        + "; applies to every request routed through transportEndpoint)")
@@ -120,6 +179,9 @@ juce::String EchoJayAPI::transportEndpoint(const juce::String& configured,
 // Extra request headers the dev transport needs. Empty in a release build.
 juce::String EchoJayAPI::transportHeaders()
 {
+    // The file bypass first, for the same reason the file base URL wins: it is the one a placed build can use.
+    if (fileOverride().bypass.isNotEmpty())
+        return "x-vercel-protection-bypass: " + fileOverride().bypass + "\r\n";
    #if ECHOJAY_DEV_TRANSPORT
     const auto& dt = devTransport();
     if (dt.bypass.isNotEmpty())

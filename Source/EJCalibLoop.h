@@ -125,6 +125,9 @@ struct CalibLoop
     // COMP_PROFILE_SPEC_v1 items 3 and 4: what the one check found, for the closing line and the log. All
     // false/NaN means there was no profile, and the line then says "set as dialled, no profile yet".
     bool   hasProfile = false;
+    // The server's own word for it: `from_profile` on the calibration block, true when IT set this compressor
+    // open-loop from a profile. The plugin having a profile in its map payload is not the same statement.
+    bool   blockFromProfile = false;
     bool   profileChecked = false;
     bool   profileCorrected = false;
     bool   profileNotEngaging = false;
@@ -334,6 +337,13 @@ struct CalibLoop
         // nothing at all. This flag is the wire's own answer and the only thing that rule may consult.
         bool   startFromBlock = false;
         bool   dynamicsSlot = false;      // (l): set by the caller from ChainHost::slotIsDynamics - see the member
+        // COMP_PROFILE_SPEC_v1 section 6.6, AND WHERE THEY ACTUALLY LIVE (1 Oct 2026, against B's real output):
+        // expected_gr_db, expected_level_db and from_profile are fields of the CALIBRATION BLOCK for that
+        // compressor - `calibrations[]`, keyed by its own 1-based `slot` - not of the chain's slot object. The
+        // first cut read them off the chain entry and would have found nothing on a real reply.
+        float  expectedGrDb    = std::numeric_limits<float>::quiet_NaN();
+        float  expectedLevelDb = std::numeric_limits<float>::quiet_NaN();
+        bool   fromProfile = false;
         float  minDb = -60.0f, maxDb = 12.0f;
         float  stepDb = kStepDb;          // the block's "step"; 1 dB unless it says otherwise
         // 21t-i re-cut (27 Sep 2026 ruling): WHAT THE SENTENCE QUOTES COMES FROM THE BLOCK.
@@ -565,6 +575,23 @@ struct CalibLoop
             if (mn.isVoid() && o->hasProperty ("min_db") && out.actuator == Actuator::Threshold)
                 whyOut << "min_db null (the low end prints \"-inf\") - taking " << juce::String (kPracticalFloorDb, 0)
                        << " dB as the practical floor. ";
+        }
+
+        // ---- expected_gr_db / expected_level_db / from_profile (COMP_PROFILE_SPEC_v1) ----------------------
+        // A number or nothing. NaN means the block said nothing, which is today's behaviour for that slot - and is
+        // a different statement from 0 dB of expected gain reduction. expected_level_db is explicitly null on a
+        // threshold unit in the server's own output, so null must read as absent and not as zero.
+        {
+            auto num = [o] (const char* key) -> float
+            {
+                if (! o->hasProperty (key)) return std::numeric_limits<float>::quiet_NaN();
+                const auto v = o->getProperty (key);
+                if (v.isDouble() || v.isInt() || v.isInt64()) return (float) (double) v;
+                return std::numeric_limits<float>::quiet_NaN();
+            };
+            out.expectedGrDb    = num ("expected_gr_db");
+            out.expectedLevelDb = num ("expected_level_db");
+            out.fromProfile     = (bool) o->getProperty ("from_profile");
         }
 
         // ---- nudge: the user's comparative, passed through (21t-i re-cut, 27 Sep 2026 ruling) --------------

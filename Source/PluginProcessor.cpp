@@ -6707,8 +6707,13 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     // off for one and on for everything else. The answer is ChainHost::slotIsDynamics - the plugin's own category
     // OR the map's (item 6a) - and it is set HERE so every road in gets it without each caller remembering.
     if (auto* hd = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+    {
         cfg.dynamicsSlot = hd->slotIsDynamics(cfg.slot);
+        // The block's own expectations onto the slot: they travel on the CALIBRATION block, not the chain entry.
+        hd->setSlotExpectations(cfg.slot, cfg.expectedGrDb, cfg.expectedLevelDb);
+    }
     loop.begin(cfg);
+    loop.blockFromProfile = cfg.fromProfile;
     stampCompProfileOnLoop(uid, loop);   // COMP_PROFILE_SPEC_v1 items 3/4, behind the flag
     loop.slotIdent = liveIdent;   // (n): the slot+plugin this loop belongs to, checked on every tick
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
@@ -7151,8 +7156,10 @@ int EchoJayProcessor::calibStartMany(const juce::String& uid, const std::vector<
             continue;
         }
         cfg.dynamicsSlot = host->slotIsDynamics(cfg.slot);   // (l)
+        host->setSlotExpectations(cfg.slot, cfg.expectedGrDb, cfg.expectedLevelDb);
         echojay::CalibLoop c;
         c.begin(cfg);
+        c.blockFromProfile = cfg.fromProfile;
         stampCompProfileOnLoop(uid, c);                  // COMP_PROFILE_SPEC_v1: a companion is checked too
         c.slotIdent = host->slotIdentityKey(cfg.slot);   // (n)
         // (q) 30 Sep 2026: A COMPRESSOR BUILD WRITES NO IN. It is set as dialled; the hold moves OUT and nothing
