@@ -1136,3 +1136,43 @@ positions):**
   measured as a knee: knee width is not derived anywhere. The disagreement list is the knee
   detector Sean's `knee_db` would need; it is a lead, not a field.
 - The store was re-derived with the field; no verdict changed (258/258).
+
+## 15. Tuners (spec section 5), built 1 Oct - the harness, not yet a measurement
+
+**Installed and reachable on this Mac (read-only census):** real-time, native: Auto-Tune Access
+10.5.0, Auto-Tune EFX 9.0.1, Auto-Tune EFX+ 10.5.0, Auto-Tune Pro, Auto-Tune Artist (Antares, the
+five `pitch` products in categories.json), plus MetaTune 1.1.8 (Slate, categorised `Fx|Pitch
+Shift`) and bx_crispytuner 1.1.0 (categorised elsewhere). Hardware-conditional: four UAD Auto-Tune
+Realtime variants (`!UAD`). **Waves Tune Real-Time is NOT installed** - only "Waves Tune LT", the
+offline editor. **Melodyne** is ARA/offline-only: no real-time pitch path, uncertifiable by any
+harness, refused by name before any process (`araOnlyByName`, pin A1). First subject when mains
+returns: Auto-Tune Access.
+
+**Probe (`probe_pitch.h`, `--sweep-pitch`):** autocorrelation detector (window 2048, hop 512 at
+48 kHz; lag searched half an octave either side of the note, smallest near-best peak preferred -
+the first self-test read +30 cents as -1170, an octave error, and the range IS the guard), two
+generators (static detuned note; square vibrato alternating ±cents at `rate`, sine optional),
+cents per window for input and output, confidence beside each. `--pitch-selftest` runs without a
+plugin: six detunes within 0.5 cents, silence refused, the generator's flips in place.
+
+**EJ Map (`EjmapPitch.h`):** STRENGTH = 1 − residual/detune from the second half of a static hold;
+refused when the detector does not read the input's own detune (within 2 cents - a detector or
+routing fault refuses everything), when the output is silent or unconfident, when the
+steady-state IQR exceeds 3 cents. SPEED = the DURATION of each output transition after a flip,
+from 50% of its excursion to 10% and staying; read off the output trace alone, so a 150 ms plugin
+latency leaves it unchanged (pin V6; the mutant that anchors on the input flip is red). Refused
+when the late plateau is not a plateau (IQR over 3 cents - a 2 s time constant read as "settled in
+736 ms" before this guard), when fewer than 3 edges time, when edges disagree by more than 2×; a
+transition shorter than one window is reported as a BOUND ("faster than 21 ms"), never a number.
+Pins S1-S5, V1-V6, P1-P2, R1, A1; seven mutants red.
+
+**Plan:** every control with the tuner-lexicon "strength" role (strength / retune / speed /
+amount fold into one role on purpose) is swept with both generators, 8 positions (or every step),
+one process per generator; the two curves say which is which. Key/scale is a precondition like a
+ratio: the note is A3 (220 Hz), in every major scale and chromatic, so its instantiate text is
+recorded and nothing is written. `--cert-tuner --product NAME` writes `<out>/tuners/<identity>.json`
+with `pitchCandidates[]` + `pitchReview`; the defaults pass runs first, as for any unseen version.
+
+**Not yet run on a plugin** (battery all day): the live check is the next thing. Decision for Kathy
+recorded in the handover: whether tuner records join the compressor store (and `sweepRecorded`)
+or stay a separate `tuners/` directory as built.

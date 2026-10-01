@@ -612,6 +612,21 @@ namespace
             if (a == "--cert-sweep-rederive" && i + 4 < argc)
                 return ejmap::cert::runSweepRederive (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)),
                                                       cwdFile (argAt (argc, argv, i + 3)), cwdFile (argAt (argc, argv, i + 4)));
+            if (a == "--cert-tuner")
+            {
+                ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION;
+                for (int j = 1; j < argc; ++j)
+                {
+                    const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
+                    if      (k == "--product"   && j + 1 < argc) o.product = v;
+                    else if (k == "--probe"     && j + 1 < argc) o.probe = cwdFile (v);
+                    else if (k == "--out"       && j + 1 < argc) o.out = cwdFile (v);
+                    else if (k == "--timeout-s" && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
+                }
+                ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+                if (o.product.isEmpty()) { std::cerr << "usage: ejmap --cert-tuner --product <name> [--out <dir>] [--probe <EchoJayProbe>] [--timeout-s N]" << std::endl; return 2; }
+                return ejmap::cert::runCertTuner (o);
+            }
             if (a == "--cert-sweep" || a == "--cert-sweep-all")
             {
                 ejmap::cert::SweepOptions o;

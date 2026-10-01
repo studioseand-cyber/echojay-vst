@@ -4891,6 +4891,94 @@ void testEngageDetection()
     root.deleteRecursively();
 }
 
+/** TUNER DERIVATIONS (spec section 5, built 1 Oct): strength and speed from synthetic window traces, each guard refusing. */
+void testTunerDerivations()
+{
+    using namespace ejmap::pitch;
+    // A static hold: windows every 10.7 ms for 4 s; input at +30 cents; output converging to `residual` with time constant tau.
+    auto staticPos = [] (double detune, double inputRead, double residual, double tauMs, double jitter, bool silent = false) {
+        PitchPosition p; p.k = 0; p.norm = 0.5f; p.landed = true;
+        for (int i = 0; i < 370; ++i)
+        {
+            Window w; w.tMs = 21.3 + 10.667 * i; w.inC = inputRead; w.inConf = 0.999; w.target = detune;
+            w.outC = residual + (inputRead - residual) * std::exp (-w.tMs / tauMs) + jitter * ((i % 3) - 1);
+            w.outConf = 0.999; w.outDb = silent ? -90.0 : -20.0;
+            p.windows.push_back (w);
+        }
+        return p; };
+    const auto s1 = deriveStrength (staticPos (30.0, 30.0, 3.0, 100.0, 0.2), 30.0);
+    check (s1.result == "measured" && std::abs (s1.strength - 0.9) < 0.01 && std::abs (s1.residualCents - 3.0) < 0.3,
+           "tuner S1: +30 cents in, 3 cents residual at steady state -> strength 0.90 (" + s1.result + " " + juce::String (s1.strength, 3) + ": " + s1.reason + ")");
+    check (deriveStrength (staticPos (30.0, 20.0, 3.0, 100.0, 0.2), 30.0).result == "refused",
+           "tuner S2: the detector reading the INPUT at 20 cents when 30 were generated refuses everything (detector or routing fault)");
+    check (deriveStrength (staticPos (30.0, 30.0, 3.0, 100.0, 0.2, true), 30.0).result == "refused", "tuner S3: a silent output is not a reading");
+    const auto s4 = deriveStrength (staticPos (30.0, 30.0, 3.0, 100.0, 6.0), 30.0);
+    check (s4.result == "refused" && s4.reason.contains ("did not settle"), "tuner S4: an output that never settles (IQR over 3 cents) refuses (" + s4.reason + ")");
+    check (deriveStrength (staticPos (30.0, 30.0, 30.0, 100.0, 0.2), 30.0).strength == 0.0, "tuner S5: an untouched note is strength 0.0, measured, not refused");
+
+    // A square vibrato at 0.5 Hz for 6 s: the input flips +-30 every 1000 ms; the output inherits each step and decays
+    // back to the plateau with time constant tau (a slow tuner), or instantly (a fast one).
+    auto vibPos = [] (double detune, double tauMs, double strengthFrac, double jitter, std::function<double (int)> tauOfEdge = {}) {
+        PitchPosition p; p.k = 0; p.norm = 0.5f; p.landed = true;
+        for (int i = 0; i < 560; ++i)
+        {
+            Window w; w.tMs = 21.3 + 10.667 * i; const double half = 1000.0; const int seg = (int) std::floor (w.tMs / half);
+            const double target = seg % 2 == 0 ? detune : -detune; w.target = target; w.inC = target; w.inConf = 0.999;
+            const double plateau = target * (1.0 - strengthFrac);                       // where the tuner settles for this half
+            const double prev = (seg % 2 == 0 ? -detune : detune) * (1.0 - strengthFrac);
+            const double t = w.tMs - seg * half;
+            const double tau = tauOfEdge ? tauOfEdge (seg) : tauMs;
+            w.outC = seg == 0 ? plateau : plateau + ((prev + (target - (seg % 2 == 0 ? -detune : detune))) - plateau) * std::exp (-t / tau) + jitter * ((i % 3) - 1);
+            w.outConf = 0.999; w.outDb = -20.0;
+            p.windows.push_back (w);
+        }
+        return p; };
+    const auto v1 = deriveSpeed (vibPos (30.0, 60.0, 1.0, 0.2), 30.0, 0.5);
+    // excursion 60 cents decaying with tau 60 ms: from 50% (t = 0, the first window) to 10% (t = tau ln 10 = 138 ms) -> about 130-150 ms
+    check (v1.result == "measured" && v1.durationMs > 90.0 && v1.durationMs < 200.0 && v1.edges >= 3,
+           "tuner V1: a 60 ms time-constant retune reads as a transition of about 140 ms over every edge (" + v1.result + " " + juce::String (v1.durationMs, 0) + " ms, " + juce::String (v1.edges) + " edges: " + v1.reason + ")");
+    const auto v2 = deriveSpeed (vibPos (30.0, 2000.0, 1.0, 0.2), 30.0, 0.5);
+    check (v2.result == "refused" && v2.reason.contains ("not settled"), "tuner V2: a retune slower than the half period refuses - not settled before the next flip (" + v2.result + ": " + v2.reason + ", " + juce::String (v2.durationMs, 0) + " ms)");
+    const auto v3 = deriveSpeed (vibPos (30.0, 0.5, 1.0, 0.2), 30.0, 0.5);
+    check (v3.result == "bound" && v3.boundMs > 0.0, "tuner V3: a correction that completes within one window is a BOUND (faster than " + juce::String (v3.boundMs, 1) + " ms), not a number (" + v3.result + ": " + v3.reason + ", excursion " + juce::String (v3.excursionCents, 2) + ")");
+    const auto v4 = deriveSpeed (vibPos (30.0, 60.0, 1.0, 0.2, [] (int seg) { return seg % 2 ? 60.0 : 400.0; }), 30.0, 0.5);
+    check (v4.result == "refused" && v4.reason.contains ("disagree"), "tuner V4: edges whose durations differ by more than 2x refuse (" + v4.reason + ")");
+    // LATENCY MUST NOT CORRUPT THE DURATION: the same retune with the output 150 ms behind the input (a plugin latency).
+    auto late = vibPos (30.0, 60.0, 1.0, 0.2);
+    { std::vector<double> outs; for (const auto& w : late.windows) outs.push_back (w.outC);
+      const int shift = 14;   // 14 windows * 10.667 ms = 149 ms
+      for (size_t i = 0; i < late.windows.size(); ++i) late.windows[i].outC = i >= (size_t) shift ? outs[i - (size_t) shift] : outs[0]; }
+    const auto v6 = deriveSpeed (late, 30.0, 0.5);
+    check (v6.result == "measured" && std::abs (v6.durationMs - v1.durationMs) < 25.0,
+           "tuner V6 (LATENCY): a 150 ms plugin latency leaves the transition DURATION unchanged - it is read off the output trace, never against the input's clock ("
+             + juce::String (v6.durationMs, 0) + " vs " + juce::String (v1.durationMs, 0) + " ms)");
+    const auto v5 = deriveSpeed (vibPos (30.0, 60.0, 0.0, 0.2), 30.0, 0.5);
+    check (v5.result != "measured", "tuner V5: a tuner that corrects nothing shows no excursion to time (" + v5.result + ": " + v5.reason + ")");
+
+    // THE PARSER and the record.
+    const juce::String out = "pitch\tproto\t1\tctl\t3\tname\tRetune Speed\tpositions\t1\tgen\tstatic\tshape\tsquare\tnote_hz\t220.000\tcents\t30.00\trate_hz\t0.500\thold_s\t4.000\tdb\t-18.00\n"
+                             "config\tmain_in\t2\tmain_out\t2\tlatency\t256\tsr\t48000\twin\t2048\thop\t512\n"
+                             "param\t3\t0.500000\tRetune Speed\t20\n"
+                             "ppos\t0\tnorm\t0.500000\tconfirm_ms\t3.0\tlanded_by\tinstack\ttext\t20\n"
+                             "pwin\t0\tt_ms\t21.3\tin_cents\t30.00\tin_conf\t0.9990\tout_cents\t29.00\tout_conf\t0.9990\tout_db\t-20.00\tin_target\t30.00\n"
+                             "pdone\t0\twindows\t1\n";
+    const auto m = parsePitch (out);
+    check (m.ok && m.ctl == 3 && m.ctlName == "Retune Speed" && m.gen == "static" && m.latency == 256 && m.positions.size() == 1
+             && m.positions[0].windows.size() == 1 && std::abs (m.positions[0].windows[0].outC - 29.0) < 1e-9 && m.params.at (3).second == "20",
+           "tuner P1: the probe's pitch lines parse into control, generator, latency, positions and windows");
+    check (! parsePitch ("refused no parameter at index 9").ok && parsePitch ("refused no parameter at index 9").refused.contains ("no parameter"), "tuner P2: a refusal is carried, not parsed into nothing");
+    PitchMeasured st; st.ok = true; st.ctl = 3; st.ctlName = "Retune Speed"; st.noteHz = 220; st.cents = 30; st.positions = { staticPos (30.0, 30.0, 3.0, 100.0, 0.2) };
+    PitchMeasured vb; vb.ok = true; vb.ctl = 3; vb.ctlName = "Retune Speed"; vb.noteHz = 220; vb.cents = 30; vb.rateHz = 0.5; vb.shape = "square"; vb.positions = { vibPos (30.0, 60.0, 1.0, 0.2) };
+    const auto rec = composePitchSweep (st, vb, 7, "Chromatic");
+    const auto pos0 = rec.getProperty ("positions", {})[0];
+    check ((int) rec.getProperty ("strengthMeasured", 0) == 1 && (int) rec.getProperty ("speedMeasured", 0) == 1
+             && pos0.getProperty ("strength", {}).getProperty ("result", "") == "measured" && pos0.getProperty ("speed", {}).getProperty ("result", "") == "measured"
+             && rec.getProperty ("keyScale", {}).getProperty ("asInstantiated", "") == "Chromatic",
+           "tuner R1: the record carries both numbers per position, the key/scale as instantiated, and the counts");
+    check (ejmap::cert::araOnlyByName ("Melodyne") && ejmap::cert::araOnlyByName ("Waves Tune LT") && ! ejmap::cert::araOnlyByName ("Auto-Tune Access"),
+           "tuner A1: an ARA/offline-only tool is refused by name before any process; a real-time tuner is not");
+}
+
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
 void testSleptProcessRetry()
 {
@@ -5041,6 +5129,7 @@ int main (int, char**)
     testCertRecordAndDefaultPaths();
     testThresholdReviewNamesTheBand();
     testEngageDetection();
+    testTunerDerivations();
     testSleptProcessRetry();
     testLevelDependence();
 

@@ -46,6 +46,7 @@
 #include "EjmapFixtureReadout.h"
 #include "EjmapCertOutcome.h"
 #include "EjmapSweep.h"
+#include "EjmapPitch.h"
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
@@ -2019,6 +2020,120 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
     std::cout << std::flush;
     return refused.isEmpty() ? 0 : 1;
+}
+
+//==============================================================================
+// TUNER CERTIFICATION (--cert-tuner, spec section 5, built 1 Oct). One product: resolve it in the AU registry, sample
+// its defaults (the unseen-version path's probes), role its controls with the TUNER lexicon, then for every control
+// holding the strength role run the probe's pitch sweep twice - static (strength) and square vibrato (speed) - and
+// write <out>/tuners/<identity>.json with `pitchCandidates` (one record per candidate) and `pitchReview`. The probe
+// hosts all positions of one generator in ONE process (no compression history to reset between positions). An
+// ARA/offline-only tool is refused before any process by name.
+inline bool araOnlyByName (const juce::String& product)
+{
+    return product.containsIgnoreCase ("melodyne") || product.containsIgnoreCase ("waves tune lt") || product.containsIgnoreCase ("waves tune (");
+}
+
+inline int runCertTuner (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const SleepGuard sleepGuard ("EJ Map tuner certification");
+    auto outDir = opt.out.getChildFile ("tuners");
+    if (! outDir.createDirectory()) { say ("TUNER: cannot create " + outDir.getFullPathName()); return 2; }
+    const auto id = checkProbe (opt.probe, {}, {});
+    if (! id.ok) { say ("TUNER: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const juce::String probeLabel = "signed EchoJayProbe (feat/ejmap-cert), team " + id.team + ", cdhash " + id.cdhash;
+    if (araOnlyByName (opt.product))
+    { say ("TUNER: " + opt.product + " is an ARA/offline tool with no real-time pitch path: uncertifiable by any harness, refused before any process"); return 4; }
+    // Resolve the installed component by product name.
+    std::vector<InstalledRecord> hits;
+    for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.empty()) { say ("TUNER: '" + opt.product + "' is not an installed AudioUnit"); return 2; }
+    if (hits.size() > 1) { say ("TUNER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " components; refused"); return 2; }
+    Subject s; s.desc = hits[0].desc; s.product = s.desc.name; s.uid = juce::String::toHexString (s.desc.uniqueId).toLowerCase(); s.version = s.desc.version;
+    s.reach = Subject::Reach::unfixtured; s.installedUnique = true;
+    const auto stem = "AudioUnit_" + s.uid + "_" + s.version + ".tuner";
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+    auto ledger = opt.out.getChildFile ("run.jsonl");
+    juce::Array<juce::var> processes; bool windowSeen = false; juce::StringArray windows;
+    auto runProbe = [&] (const juce::String& tag, const juce::StringArray& extra) -> ChildResult
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), s.desc.name, s.desc.fileOrIdentifier, juce::String::toHexString (s.desc.uniqueId) };
+        args.addArray (extra);
+        const auto a = runWithRetry (args, opt.timeoutMs, [&] (int attempt, const ChildResult& r)
+        {
+            const auto file = stem + "." + tag + "." + juce::String (attempt) + ".txt";
+            raw.getChildFile (file).replaceWithText (r.out, false, false, "\n");
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("tag", tag); o->setProperty ("attempt", attempt); o->setProperty ("file", file);
+            o->setProperty ("outcome", r.describe()); o->setProperty ("clean", r.cleanExit()); o->setProperty ("ms", r.ms);
+            processes.add (juce::var (o));
+            ledger.appendText (juce::JSON::toString (juce::var (o), true) + "\n");
+            if (r.kind == ChildResult::Kind::uiShown) { windowSeen = true; windows.addArray (r.windowsInTree); }
+        });
+        auto r = a.r; if (a.sleptTwice) r.kind = ChildResult::Kind::sleptTwice; return r;
+    };
+    const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    auto lp = runProbe ("list-params", { "--list-params" });
+    if (! lp.cleanExit()) { say ("TUNER: " + s.product + " - defaults --list-params " + lp.describe()); return 1; }
+    auto ta = runProbe ("text-at", { "--text-at", "all" });
+    if (! ta.cleanExit()) { say ("TUNER: " + s.product + " - defaults --text-at all " + ta.describe()); return 1; }
+    auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, probeLabel, date);
+    if (auto* o = base.getDynamicObject()) o->setProperty ("category", "pitch");
+
+    // ROLES with the tuner lexicon: strength candidates, the key/scale control.
+    std::vector<roles::NamedControl> named;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs) named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), false });
+    const auto cl = roles::classify (named, roles::Category::tuner);
+    std::vector<const roles::ControlRole*> strength; int keyIndex = -1; juce::String keyText;
+    for (const auto& r : cl.controls)
+    {
+        if (r.role == "strength") strength.push_back (&r);
+        if (r.role == "key" && keyIndex < 0) { keyIndex = r.index; keyText = sweep::findControl (base, r.index).getProperty ("defaultOnInstantiate", {}).getProperty ("display", "").toString(); }
+    }
+    say ("TUNER: " + s.product + " " + s.version + ": " + juce::String ((int) strength.size()) + " strength candidate(s)"
+         + (keyIndex >= 0 ? ", key/scale [" + juce::String (keyIndex) + "] as instantiated '" + keyText + "'" : juce::String (", no key/scale control roled")));
+    juce::Array<juce::var> cands; int measuredAny = 0;
+    if (strength.empty()) say ("TUNER: no control holds the strength role: nothing to sweep (recorded)");
+    for (const auto* c : strength)
+    {
+        if (windowSeen) break;
+        const auto ctrl = sweep::findControl (base, c->index);
+        juce::StringArray norms;
+        if (sweep::isSteppedControl (ctrl)) { const int n = (int) ctrl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) norms.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
+        else for (int k = 0; k < 8; ++k) norms.add (juce::String ((float) k / 7.0f, 6));
+        const juce::String ctl = juce::String (c->index);
+        auto st = runProbe ("c" + ctl + ".static",  { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=static",  "note=220", "cents=30", "hold=4", "db=-18" });
+        auto vb = runProbe ("c" + ctl + ".vibrato", { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=vibrato", "shape=square", "rate=0.5", "note=220", "cents=30", "hold=6", "db=-18" });
+        const auto ms = pitch::parsePitch (st.cleanExit() ? st.out : juce::String ("refused " + st.describe()));
+        const auto mv = pitch::parsePitch (vb.cleanExit() ? vb.out : juce::String ("refused " + vb.describe()));
+        auto rec = pitch::composePitchSweep (ms, mv, keyIndex, keyText);
+        if (auto* o = rec.getDynamicObject())
+        {
+            o->setProperty ("index", c->index); o->setProperty ("name", c->name);
+            if (! ms.ok) o->setProperty ("staticRefused", ms.refused);
+            if (! mv.ok) o->setProperty ("vibratoRefused", mv.refused);
+        }
+        measuredAny += (int) rec.getProperty ("strengthMeasured", 0) + (int) rec.getProperty ("speedMeasured", 0);
+        say ("  [" + ctl + "] " + c->name + ": strength measured at " + rec.getProperty ("strengthMeasured", 0).toString() + " position(s), speed at " + rec.getProperty ("speedMeasured", 0).toString());
+        cands.add (rec);
+    }
+    opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
+    auto f = sweep::stripPrivate (base);
+    if (auto* o = f.getDynamicObject())
+    {
+        o->setProperty ("pitchCandidates", cands);
+        auto* rv = new juce::DynamicObject();
+        rv->setProperty ("candidates", cands.size()); rv->setProperty ("measured", measuredAny);
+        rv->setProperty ("windowSeen", windowSeen);
+        rv->setProperty ("note", "every control holding the strength role was swept with a static detuned note and a square vibrato; a control whose static residual moves across positions is a strength control, one whose transition duration moves is a speed control; the server half reads both");
+        o->setProperty ("pitchReview", juce::var (rv));
+    }
+    auto outFile = outDir.getChildFile ("AudioUnit_" + s.uid + "_" + s.version + ".json");
+    outFile.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
+    say ("TUNER: " + s.product + " -> " + outFile.getFileName() + (windowSeen ? "  (A WINDOW APPEARED: " + windows.joinIntoString (", ") + ")" : juce::String()));
+    return windowSeen ? 5 : 0;
 }
 
 //==============================================================================
