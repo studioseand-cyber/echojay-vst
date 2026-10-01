@@ -35,7 +35,7 @@ constexpr double kWindowMs = 400.0;
 
 struct Opt
 {
-    juce::String name, wav, jsonOut;
+    juce::String name, wav, jsonOut, file;
     juce::StringArray sets;
     double sr = 48000.0;
     double seconds = 20.0;
@@ -55,6 +55,7 @@ Opt parseArgs (int argc, char** argv)
         else if (a == "--json")    o.jsonOut = next();
         else if (a == "--sr")      o.sr = next().getDoubleValue();
         else if (a == "--seconds") o.seconds = next().getDoubleValue();
+        else if (a == "--file")    o.file = next();
         else if (a == "--list")    o.list = true;
     }
     return o;
@@ -180,7 +181,17 @@ Applied applyOne (juce::AudioPluginInstance& plug, const juce::String& spec)
     juce::AudioProcessorParameter* found = nullptr;
     for (auto* p : plug.getParameters())
         if (p != nullptr && p->getName (128).trim().equalsIgnoreCase (a.control)) { found = p; break; }
-    if (found == nullptr) { a.landed = "(no such control)"; return a; }
+    if (found == nullptr)
+    {
+        // SAY WHAT DOES EXIST. A tool that reports "(no such control)" and stops makes the next person guess at
+        // the spelling; the profile's control names have to match the plugin's exactly (spec section 3), so the
+        // list is the useful half of the answer.
+        juce::StringArray names;
+        for (auto* p : plug.getParameters())
+            if (p != nullptr && p->getName (128).trim().isNotEmpty()) names.add (p->getName (128).trim());
+        a.landed = "(no such control; this plugin has: " + names.joinIntoString (", ") + ")";
+        return a;
+    }
 
     auto settle = [&] { for (int i = 0; i < 6; ++i) { juce::Timer::callPendingTimersSynchronously();
                                                      CFRunLoopRunInMode (kCFRunLoopDefaultMode, 0.02, false); } };
@@ -232,9 +243,15 @@ int run (const Opt& o)
         if (f == nullptr || ! f->getName().containsIgnoreCase ("AudioUnit")) continue;
         // The identifier is "AudioUnit:Effects/aufx,xxxx,yyyy" and carries no plugin NAME, so filtering on it
         // finds nothing: every file is scanned and the DESCRIPTIONS are filtered by name below.
+        // --file NARROWS THE SCAN TO ONE COMPONENT, and it matters: scanning every AU on this machine walks
+        // UAD's and PACE's component registration, which killed this tool outright the first time it ran. A Waves
+        // plugin lives inside WaveShell, so `--file WaveShell` reaches EMO-D5 without loading anything else.
         const auto ids = f->searchPathsForPlugins (f->getDefaultLocationsToSearch(), true, false);
         for (const auto& id : ids)
+        {
+            if (o.file.isNotEmpty() && ! id.containsIgnoreCase (o.file)) continue;
             f->findAllTypesForFile (found, id);
+        }
     }
     if (o.name.isNotEmpty())
         for (int i = found.size(); --i >= 0;)
@@ -351,7 +368,9 @@ int main (int argc, char** argv)
     {
         std::printf ("comp_render_check - COMP_PROFILE_SPEC_v1 section 8 acceptance check\n"
                      "  --name \"EMO-D5 (s)\" --set \"Comp=On\" --set \"Comp Thresh=-20\" --set \"Comp Ratio=4\"\n"
-                     "  [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json] [--list]\n");
+                     "  [--file WaveShell] [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json] [--list]\n"
+                     "  --file narrows the SCAN to one component: without it every AU on the machine is walked,\n"
+                     "  which on a machine with UAD or PACE plugins can kill the process.\n");
         return 1;
     }
     return run (o);
