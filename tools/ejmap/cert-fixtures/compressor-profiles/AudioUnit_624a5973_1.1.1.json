@@ -3334,6 +3334,44 @@
           null,
           null
         ],
+        "thresholdEffective1dB": [
+          -8.9,
+          -10.9,
+          -17.800000000000001,
+          -20.399999999999999,
+          -21.399999999999999,
+          -22.0,
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [
@@ -3551,6 +3589,44 @@
           null,
           null,
           null
+        ],
+        "thresholdEffective1dB": [
+          -8.9,
+          -10.9,
+          -17.800000000000001,
+          -20.399999999999999,
+          -21.399999999999999,
+          -22.0,
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
         ],
         "levelDependence": {
           "predicted_dg_dl": null,

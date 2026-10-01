@@ -4174,6 +4174,35 @@ void testSweepDerivation()
         const auto pm = derive (fromGains (mixed), kLevels, -1);
         check (pm.result == "flat" && ! pm.passThroughAtDefaults, "sweep P2: readings that differ by 0.31 dB are flat but NOT pass-through");
 
+        // THE RATIO-FREE CURVE (Sean's eff_threshold_dbfs, 1 Oct): the level where GR reaches 1.0 dB, interpolated between
+        // the bracketing test levels; textbook puts it R/(R-1) dB above T. A guard: no bracket, no number. On `clean`
+        // (reduction r/2, r, 1.5r at -24/-12/-6 with r = (5-k)*1.5): position 0 is past 1 dB at -24; position 4 (r = 1.5:
+        // 0.75 / 1.5 / 2.25) crosses between -24 and -12 at t = 1/3 -> -20.0; position 5 (r = 0) never reaches it.
+        {
+            std::vector<std::array<std::optional<double>, 3>> cl;
+            for (int k = 0; k < 6; ++k) { const double r = (5 - k) * 1.5; cl.push_back ({ 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.5 }); }
+            const auto tx = derive (fromGains (cl), kLevels, -1);
+            const bool sized = tx.result == "certified" && tx.tEffective1dB.size() == 6;
+            check (sized, "sweep R0: the ratio-free curve is derived for every position of a certified sweep (" + tx.result + ", " + juce::String ((int) tx.tEffective1dB.size()) + ")");
+            if (sized)
+            {
+                check (tx.tEffective1dB[4].isDouble() && std::abs ((double) tx.tEffective1dB[4] - (-20.0)) < 0.05,
+                       "sweep R1 (RATIO-FREE): position 4 crosses 1 dB between (-24, 0.75) and (-12, 1.5) at -20.0 (" + juce::JSON::toString (tx.tEffective1dB[4], true) + ")");
+                check (tx.tEffective1dB[5].isObject() && tx.tEffective1dB[5].hasProperty ("above"), "sweep R2: GR never reaching 1 dB at the loudest level reads {above: -6}");
+                check (tx.tEffective1dB[0].isObject() && tx.tEffective1dB[0].hasProperty ("below"), "sweep R3: GR already past 1 dB at the quietest level reads {below: -24}");
+                check (tx.tEquivalent.size() == 6 && tx.tEquivalent[4].isVoid(), "sweep R3b: with no ratio control the R-based map is null where the ratio-free one has a number - that is the point");
+                Plan pr; pr.thr = 0; pr.thrName = "Thresh"; pr.norms = { 0.f, 0.2f, 0.4f, 0.6f, 0.8f, 1.f };
+                const auto rv = composeThresholdSweep (tx, displayCheck (tx, ""), pr, {});
+                check (rv.getProperty ("thresholdEffective1dB", {}).isArray() && rv.getProperty ("thresholdEffective1dB", {}).size() == 6
+                         && rv.getProperty ("thresholdDbEquivalent", {}).isArray(),
+                       "sweep R5: the fixture carries thresholdEffective1dB BESIDE thresholdDbEquivalent, both per position");
+            }
+            auto gap = cl; gap[4][1] = std::nullopt;   // position 4's -12 reading missing: the crossing has no bracket
+            const auto gx = derive (fromGains (gap), kLevels, -1);
+            check (gx.tEffective1dB.size() == 6 && gx.tEffective1dB[4].isVoid(),
+                   "sweep R4: a missing reading around the crossing gives null, never a guess (" + gx.result + ")");
+        }
+
         // THE QUIET-LEVEL FALLBACK is decided by one function on the derivation, and the fixture says it was used.
         auto alwaysOn = curve; alwaysOn[7] = { 2.0, -1.0, -4.0 };                       // the soft end itself compresses 6 dB across the levels
         const auto ao = derive (fromGains (alwaysOn), kLevels, -1);

@@ -1404,6 +1404,50 @@
           null,
           null
         ],
+        "thresholdEffective1dB": [
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          -6.2,
+          -9.5,
+          -10.4,
+          -13.9,
+          -17.399999999999999,
+          -19.199999999999999,
+          -20.199999999999999,
+          -20.899999999999999,
+          -21.399999999999999,
+          -21.800000000000001,
+          -22.100000000000001,
+          -22.399999999999999,
+          -22.600000000000001,
+          -22.800000000000001,
+          -23.399999999999999,
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [
@@ -1656,6 +1700,68 @@
           null,
           null
         ],
+        "thresholdEffective1dB": [
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          -8.800000000000001,
+          -11.5,
+          -16.300000000000001,
+          -19.0,
+          -21.100000000000001,
+          -23.199999999999999,
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [
@@ -1793,6 +1899,7 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
+        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1906,6 +2013,7 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
+        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],

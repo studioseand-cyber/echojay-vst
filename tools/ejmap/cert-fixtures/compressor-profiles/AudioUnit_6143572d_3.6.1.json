@@ -1279,6 +1279,50 @@
           null,
           null
         ],
+        "thresholdEffective1dB": [
+          -19.600000000000001,
+          -13.0,
+          -7.8,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [
@@ -1482,6 +1526,54 @@
           null,
           null
         ],
+        "thresholdEffective1dB": [
+          -6.4,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [
@@ -1602,6 +1694,7 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
+        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1780,6 +1873,48 @@
           null,
           null,
           null
+        ],
+        "thresholdEffective1dB": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -22.699999999999999,
+          -19.899999999999999,
+          -13.1,
+          -8.199999999999999,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
         ],
         "levelDependence": {
           "predicted_dg_dl": null,

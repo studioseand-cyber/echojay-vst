@@ -1143,6 +1143,36 @@
       null,
       null
     ],
+    "thresholdEffective1dB": [
+      -11.1,
+      -11.1,
+      -11.1,
+      -10.9,
+      -10.6,
+      -10.800000000000001,
+      -11.5,
+      -18.0,
+      -21.5,
+      -22.699999999999999,
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      }
+    ],
     "levelDependence": {
       "predicted_dg_dl": null,
       "dg_dl_per_position": [

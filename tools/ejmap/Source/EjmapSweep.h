@@ -556,6 +556,11 @@ struct Derived
     std::vector<std::optional<double>> quietCheckDb; // per position: (gain at -48) - (gain at -54); 0 for a linear quiet tone
     std::map<juce::String, std::optional<int>> engage;
     std::vector<juce::var> tEquivalent;             // number | {"above": L} | {"below": L} | null
+    // THE RATIO-FREE AMOUNT CURVE (Sean's definition, adopted ALONGSIDE ours, 1 Oct): the input level at which gain
+    // reduction reaches 1.0 dB at this position, interpolated between the two test levels that bracket it. Needs no
+    // ratio, so it survives where T = L - gR/(R-1) has none or breaks. Textbook: it sits R/(R-1) dB above T.
+    std::vector<juce::var> tEffective1dB;           // number | {"above": L} | {"below": L} | null
+    inline static constexpr double kEffectiveGrDb = 1.0;
     std::optional<double> ratio;
     juce::String ratioText, ratioInstantiated;      // ratioText is what the sweep RAN at (read back when it was written)
     juce::Array<int> holdDoubled, stillMoving, skipped;
@@ -992,6 +997,32 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         d.engage[k] = eng;
     }
 
+    // THE RATIO-FREE CURVE: at each position, the level where reduction crosses 1.0 dB (linear interpolation between the
+    // bracketing test levels, both readable). Reduction already 1 dB or more at the quietest level: {"below": L0}; still
+    // under 1 dB at the loudest: {"above": Ln}; a gap in the readings around the crossing: null. A GUARD, never a guess:
+    // the crossing is reported only when the two readings that bracket it exist.
+    for (int i = 0; i < n; ++i)
+    {
+        const auto& lv = d.levels;
+        auto gAt = [&] (size_t k) { return d.reduction[levelKey (lv[k])][(size_t) i]; };
+        juce::var out;
+        if (auto g0 = gAt (0); g0 && *g0 >= Derived::kEffectiveGrDb) { auto* o = new juce::DynamicObject(); o->setProperty ("below", lv.front()); out = juce::var (o); }
+        else if (auto gl = gAt (lv.size() - 1); gl && *gl < Derived::kEffectiveGrDb) { auto* o = new juce::DynamicObject(); o->setProperty ("above", lv.back()); out = juce::var (o); }
+        else
+            for (size_t k = 0; k + 1 < lv.size(); ++k)
+            {
+                const auto a = gAt (k), b = gAt (k + 1);
+                if (! a || ! b) continue;
+                if (*a < Derived::kEffectiveGrDb && *b >= Derived::kEffectiveGrDb)
+                {
+                    const double t = (Derived::kEffectiveGrDb - *a) / (*b - *a);
+                    out = std::round ((lv[k] + t * (lv[k + 1] - lv[k])) * 10.0) / 10.0;
+                    break;
+                }
+            }
+        d.tEffective1dB.push_back (out);
+    }
+
     // THE dB-EQUIVALENT MAP: T = L - g R/(R-1), median over the levels that put g inside the readable band.
     for (int i = 0; i < n; ++i)
     {
@@ -1273,6 +1304,9 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     juce::Array<juce::var> teq;
     for (const auto& t : d.tEquivalent) teq.add (t);
     s->setProperty ("thresholdDbEquivalent", teq);
+    // Sean's ratio-free curve beside ours (spec section 3 `eff_threshold_dbfs`): the level where GR reaches 1.0 dB, in
+    // THIS fixture's level convention (peak dBFS; his is sine RMS, 3.01 dB apart for a sine).
+    { juce::Array<juce::var> te; for (const auto& t : d.tEffective1dB) te.add (t); s->setProperty ("thresholdEffective1dB", te); }
     auto ints = [] (const juce::Array<int>& a) { juce::Array<juce::var> o; for (int i : a) o.add (i); return o; };
     if (! d.holdDoubled.isEmpty()) s->setProperty ("holdDoubled", ints (d.holdDoubled));
     if (! d.stillMoving.isEmpty()) s->setProperty ("stillMovingAfterDoubling", ints (d.stillMoving));

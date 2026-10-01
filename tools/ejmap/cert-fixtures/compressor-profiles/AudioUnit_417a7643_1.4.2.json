@@ -1012,6 +1012,7 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
+        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1204,6 +1205,50 @@
           -17.5,
           -12.1,
           -6.8,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
+        "thresholdEffective1dB": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -22.5,
+          -21.100000000000001,
+          -10.800000000000001,
+          {
+            "above": -6.0
+          },
           {
             "above": -6.0
           },

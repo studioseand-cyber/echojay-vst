@@ -564,6 +564,52 @@
         "above": -6.0
       }
     ],
+    "thresholdEffective1dB": [
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      -19.899999999999999,
+      -10.6,
+      {
+        "above": -6.0
+      }
+    ],
     "levelDependence": {
       "predicted_dg_dl": 0.758,
       "dg_dl_per_position": [

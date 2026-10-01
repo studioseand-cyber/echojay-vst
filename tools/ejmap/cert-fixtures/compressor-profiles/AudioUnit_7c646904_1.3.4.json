@@ -485,6 +485,7 @@
       "-6": null
     },
     "thresholdDbEquivalent": [],
+    "thresholdEffective1dB": [],
     "holdDoubled": [
       0,
       1,

@@ -1108,3 +1108,31 @@ product stays pass-through; the tried list says so. One defect found by the pin:
 getArray()` on a temporary dangles - the set read freed memory and E9 caught it.
 
 Live run on the six pass-through products: queued behind the fallback batch, mains permitting.
+
+## 14. The ratio-free amount curve, beside ours (1 Oct)
+
+Sean's `eff_threshold_dbfs` - the input level at which gain reduction reaches 1.0 dB - is now
+derived at every position as `thresholdSweep.thresholdEffective1dB[]`, ALONGSIDE
+`thresholdDbEquivalent[]` (T = L − g·R/(R−1)), not replacing it. It is interpolated between the
+two test levels that bracket the crossing; `{below: -24}` when GR is already past 1 dB at the
+quietest level, `{above: -6}` when it never reaches it, `null` when a reading around the crossing
+is missing (a guard: no bracket, no number). Needs no ratio. Pins R0–R5, three mutants red. Level
+convention is the fixture's (peak dBFS); his is sine RMS, 3.01 dB apart for a sine.
+
+**Where the two disagree, from the re-derived store (1 Oct, 98 fixtures, 1,114 certified
+positions):**
+
+- Both numeric on only **117** positions. The ratio-free curve gives a number on **245** positions
+  where the R-based map has none (no ratio control, or the ratio did not parse); the R-based map
+  gives one on 107 where the crossing is not bracketed; 645 are outside the measurable band for
+  both.
+- On the 117: eff − T has **median −0.40 dB, IQR −2.85…+0.75, range −6.4…+6.5**. Textbook says
+  the crossing sits **+R/(R−1)** above T (+1.2…+3.0 at the ratios in use). Measured against that
+  offset, **88 of 117 positions disagree by more than 1 dB**, and the disagreement is almost all
+  the SAME SIGN: the 1 dB crossing sits BELOW the R-based threshold by 2–6 dB (Lindell SBC −5.8,
+  Solid Bus Comp −4.5, DPR-402 −4.5, CLA-76 −3.5, SSL X-ValveComp −4.0, Tube-Tech CL 1B −5.2),
+  while the C1 family lands within 0.1 dB of T. Consistent with a soft knee (GR starts well below
+  the hard-knee-equivalent T the R-based extrapolation assumes) — recorded as the reading, NOT
+  measured as a knee: knee width is not derived anywhere. The disagreement list is the knee
+  detector Sean's `knee_db` would need; it is a lead, not a field.
+- The store was re-derived with the field; no verdict changed (258/258).

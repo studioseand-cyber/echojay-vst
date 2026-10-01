@@ -441,6 +441,38 @@
       null,
       null
     ],
+    "thresholdEffective1dB": [
+      null,
+      {
+        "above": -6.0
+      },
+      -18.800000000000001,
+      -23.699999999999999,
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
     "skipped": [
       {
         "position": 0,

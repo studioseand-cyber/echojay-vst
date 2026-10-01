@@ -304,6 +304,7 @@
       "-6": null
     },
     "thresholdDbEquivalent": [],
+    "thresholdEffective1dB": [],
     "skipped": [
       {
         "position": 5,

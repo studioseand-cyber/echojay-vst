@@ -621,6 +621,46 @@
         "above": -6.0
       }
     ],
+    "thresholdEffective1dB": [
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      -22.800000000000001,
+      -20.899999999999999,
+      -18.800000000000001,
+      -12.4,
+      -7.9,
+      {
+        "above": -6.0
+      },
+      {
+        "above": -6.0
+      }
+    ],
     "levelDependence": {
       "predicted_dg_dl": 0.75,
       "dg_dl_per_position": [
