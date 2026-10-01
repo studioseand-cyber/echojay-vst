@@ -1043,6 +1043,21 @@ by the other stages compressing at their defaults. That is item 5's case, not a 
 The 1/12 bar also flips test D4's 1.2 dB-against-10 dB from accepted to refused (12%); D4 now
 pins both sides of the bar.
 
+**Why the 19 refusals were correct, recorded (ruled 30 Sep).** The distribution is the result,
+not the three non-recoveries. Forty-eight references at or under 2% against a band at 8-19% that
+is every multiband, with a MECHANISM - the other stages compressing at their defaults - is the
+first bimodal split with a mechanism this work has found. Lindell 354E Mid at 17% was a
+contaminated reference, not a tight bar; loosening the bar to recover it would have shipped
+confident wrong maps for the whole 8-19% band. A bar is loosened when the population under it is
+continuous and the mechanism is noise; it is kept when the population is bimodal and the
+mechanism is systematic. This one is kept.
+
+**The discriminating prediction, stated before the fallback batch ran.** The multibands should
+recover: their contamination is other bands compressing, and a -48 dBFS tone is below all of
+them. SPL IRON and SSL Native Bus Compressor 2 are NOT multiband, so their contamination has a
+different cause and they may not. If they recover too, the mechanism is broader than "other
+stages"; if they do not, the diagnosis is confirmed specifically. Outcome below, once measured.
+
 **Fallback.** (5) `needsQuietFallback`: a sweep refused because the soft end is not linear, or
 because a reading sits above it, is re-swept at once with the per-position quiet reference
 (-54/-48 added), tagged `q.` + prefix; `linearReference.fallback` says why; re-derivation
@@ -1050,6 +1065,20 @@ prefers the `q.` traces. Pins Q1-Q3. Live: AMEK certifies through it (both thres
 position linear at -48). OTT's quiet check fails (-48 minus -54 = -4.5 dB: it compresses upward
 at the quiet levels too) - no level is linear at any setting; unreadable and recorded so.
 
-**Queued, costed, NOT run:** the 16 products now refused for a contaminated soft end need the
-fallback live - about 29 fallback sweeps at five levels inside full product re-sweeps, roughly
-1.5 h (MDynamicsMB/Large re-sweep 22 candidates each before falling back on four).
+**LEAD, not a curiosity (30 Sep):** 1.78 dB appears IDENTICALLY, to the hundredth, as the
+mid-sweep difference on four Melda candidates across three products (MDynamicsMB Band 3
+Processor 2, MDynamicsMBLarge Band 1 and Band 6 Processor 1, MDrumLeveler Threshold Max). Four
+independent measurements do not agree to 0.01 dB; this points at a shared code path or a fixed
+internal step in the plugin family, or in our hold window against it. Logged for a look when a
+Melda question is next open; not chased now.
+
+**The tone_frac guard retroactively invalidated two "findings" (30 Sep).** MDrumLeveler was
+classed "our tone does not suit the architecture" and Auto-Tune Vocal Compressor carried a
+"three-way identity and an 18 dB clamp"; both were built on non-tone readings. With those
+readings refused, MDrumLeveler is pass-through at defaults and Auto-Tune's Mod Comp 1 certifies
+while the other two are pass-through - no identity, no clamp. Any conclusion drawn from these
+sweeps before the guard existed is suspect for the same reason, and should be re-read from the
+re-derived store rather than from the earlier report.
+
+**The fallback batch (22 fixtures, 16 product names - the (m)/(s) pairs are separate): run
+30 Sep evening; outcome recorded in the batch-7 README and summarised here once measured.**
