@@ -4986,6 +4986,51 @@ void testTunerDerivations()
            "tuner A1: an ARA/offline-only tool is refused by name before any process; a real-time tuner is not");
 }
 
+/** THE JOIN KEY (ruled 1 Oct): every store record carries param_count from the probe's raw listing and map_fp from the one
+    shared fingerprint function; every record that has a local EJ Map map reproduces that map's fp. The five that len(controls)
+    got wrong (NEOLD U2A 11 vs 13 ...) are the reason this is pinned against the corpus and not against a formula. */
+void testMapFpJoinKey()
+{
+    using namespace ejmap::cert;
+    // The rule, pure: a fixture composed from 13 list rows and 11 text-at rows carries param_count 13 and the hash of 13.
+    Subject s; s.desc.pluginFormatName = "AudioUnit"; s.desc.uniqueId = 0x61755c26; s.desc.version = "1.1.0"; s.desc.name = "NEOLD U2A";
+    s.product = s.desc.name; s.uid = "61755c26"; s.version = "1.1.0";
+    std::map<int, ListRow> list; for (int i = 0; i < 13; ++i) { ListRow r; r.name = "P" + juce::String (i); list[i] = r; }
+    std::vector<TextAtRow> text; for (int i = 0; i < 11; ++i) { TextAtRow t; t.index = i; t.name = "P" + juce::String (i); t.defText = "0"; text.push_back (t); }
+    const auto fx = composeFixture (s, list, text, 0, 0, "probe", "2026-10-01");
+    check ((int) fx.getProperty ("param_count", 0) == 13 && fx.getProperty ("controls", {}).size() == 11
+             && fx.getProperty ("map_fp", "").toString() == echojay::fingerprintForDescription (s.desc, 13)
+             && fx.getProperty ("map_fp", "").toString() != echojay::fingerprintForDescription (s.desc, 11),
+           "mapfp M0: param_count is the list's size, not controls.length, and map_fp hashes it through the shared function");
+
+    // Against the corpus: every store record with a local map reproduces that map's fp. Skipped (said so) without the maps.
+    auto mapsDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/maps");
+    auto store = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-fixtures/profiles");
+    if (! mapsDir.isDirectory() || mapsDir.getNumberOfChildFiles (juce::File::findFiles, "*.json") < 100)
+    { std::cout << "mapfp M1: no corpus at " << mapsDir.getFullPathName() << ", skipped" << std::endl; return; }
+    std::map<juce::String, juce::String> fpByIdentity;
+    for (const auto& f : mapsDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        const auto m = juce::JSON::parse (f.loadFileAsString());
+        const auto id = m.getProperty ("identity", {});
+        if (id.isObject()) fpByIdentity[id.getProperty ("format", "").toString() + "|" + id.getProperty ("uid", "").toString().toLowerCase() + "|" + id.getProperty ("version", "").toString()] = m.getProperty ("fp", "").toString();
+    }
+    int withMap = 0, match = 0, noField = 0; juce::StringArray bad;
+    for (const auto& f : store.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        const auto j = juce::JSON::parse (f.loadFileAsString());
+        if (! j.hasProperty ("map_fp")) { ++noField; continue; }
+        const auto key = j.getProperty ("format", "").toString() + "|" + j.getProperty ("uid", "").toString().toLowerCase() + "|" + j.getProperty ("version", "").toString();
+        auto it = fpByIdentity.find (key);
+        if (it == fpByIdentity.end()) continue;
+        ++withMap;
+        if (it->second == j.getProperty ("map_fp", "").toString()) ++match; else bad.add (j.getProperty ("product", "").toString());
+    }
+    check (noField == 0, "mapfp M1a: every store record carries map_fp (" + juce::String (noField) + " without)");
+    check (withMap >= 90 && match == withMap, "mapfp M1: every store record with a local map reproduces the map's fp - " + juce::String (match) + " of "
+                                                + juce::String (withMap) + (bad.isEmpty() ? juce::String() : "; wrong: " + bad.joinIntoString (", ")));
+}
+
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
 void testSleptProcessRetry()
 {
@@ -5137,6 +5182,7 @@ int main (int, char**)
     testThresholdReviewNamesTheBand();
     testEngageDetection();
     testTunerDerivations();
+    testMapFpJoinKey();
     testSleptProcessRetry();
     testLevelDependence();
 

@@ -47,6 +47,7 @@
 #include "EjmapCertOutcome.h"
 #include "EjmapSweep.h"
 #include "EjmapPitch.h"
+#include "EchoJayParamMaps.h"   // fingerprintForDescription: the join key, one function for all three sides
 
 #include <CoreGraphics/CoreGraphics.h>
 #include <IOKit/pwr_mgt/IOPMLib.h>
@@ -736,6 +737,13 @@ inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListR
     o->setProperty ("probe", probeLabel);
     o->setProperty ("listParamsRc", listRc);
     o->setProperty ("textAtRc", textAtRc);
+    // THE JOIN KEY (ruled 1 Oct, the highest-stakes small fix): map_fp = SHA-256(format|uidHex|version|param_count) by the
+    // ONE shared function EchoJay and EJ Map's mapper use, with param_count from the probe's --list-params rows - the
+    // instance's getParameters().size() - and NEVER from controls.length: `controls` is built from the text-at rows and a
+    // parameter the text pass skipped is not a control (NEOLD U2A: 13 rows, 11 controls; 5 of 92 fixtures hashed wrong
+    // and would have failed the join SILENTLY). Reproduced against every local map: pin M1.
+    o->setProperty ("param_count", (int) list.size());
+    o->setProperty ("map_fp", echojay::fingerprintForDescription (s.desc, (int) list.size()));
     juce::Array<juce::var> controls;
     for (const auto& t : textAt)
     {

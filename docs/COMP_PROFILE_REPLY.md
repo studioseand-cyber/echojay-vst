@@ -48,10 +48,14 @@ NEOLD U2A 11 vs 13, NEOLD U17 16 vs 18, TBTECH Cenozoix 98 vs 99) all match when
 the probe's raw `--list-params` prints the full count (NEOLD U2A: 13 rows), and the fixture's
 `controls` array has fewer after composition. Cause not examined (logged as a lead).
 
-So: **the fixture will carry `param_count` from the probe's raw listing and `map_fp` computed
-by the shared function** — a small change, not yet made. Until it lands, take
-`plugin_id` (= our `identity`: `AudioUnit|<uid>|<version>`) + `version` and resolve server-side;
-do not compute from `controls.length`.
+**Changed 1 Oct (the field is new — read it, do not compute it):** every record now carries
+`param_count` (the probe's raw `--list-params` row count = `getParameters().size()`) and
+`map_fp` computed from it by the shared `fingerprintForDescription`. Backfilled on all 103
+records from their traces; **96 of 96 records that have a local EJ Map map reproduce that map's
+`fp`**, the five former misses included, and the suite pins that against the corpus (M1). Cause of
+the misses: `controls` is built from the text-at rows, and a parameter the text pass skipped was
+never a control. Join on `map_fp`; `plugin_id` + `version` remains the fallback when a record
+predates this field.
 
 ## 3. Which plugins we can load, and licence-bound ones
 
