@@ -115,8 +115,22 @@ struct Plan
     struct EngageWrite { int index = -1; juce::String name; float norm = 0.0f; juce::String fromDisplay; };
     std::vector<EngageWrite> engage;
     juce::StringArray engageTried;           // every candidate tried and refused, "name -> norm: verdict"
+    // THE PROFILE SWEEP (COMP_PROFILE_SPEC v1.1 section 4, built 1 Oct): -60..0 dBFS peak in 2 dB steps, ASCENDING inside
+    // every fresh per-position process (loud-to-quiet contaminates through release - arm B), 2.5 s hold, last 300 ms read,
+    // and the per-position quiet reference on EVERY product (-54 and -48 are steps of the grid). Nothing else changes.
+    bool profile = false;
+    double holdS = 1.5, discardS = 0.75, winS = 0.25;
+    std::vector<double> testLevels() const   // the levels the derivation reads reduction at
+    {
+        if (! profile) return { -24.0, -12.0, -6.0 };
+        std::vector<double> v; for (int L = -60; L <= 0; L += 2) v.push_back ((double) L); return v;
+    }
     std::vector<double> probeLevels() const  // quiet to loud, as the probe renders them
-    { return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 }; }
+    {
+        if (profile) return testLevels();                                    // -54 and -48 are in the grid: the quiet reference reads them
+        return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 };
+    }
+    void makeProfile() { profile = true; holdS = 2.5; discardS = 2.2; winS = 0.3; quietReference = true; if (referenceFallbackNote.isEmpty()) referenceFallbackNote = "profile sweep: the quiet-level reference on every product by design"; }
     // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled, the others held at their
     // instantiate defaults, and a human reads curves instead of guessing from names. thr stays -1; the driver loops.
     struct Candidate { int index; juce::String name; juce::StringArray flags; bool quietReference; };
@@ -125,7 +139,7 @@ struct Plan
     {
         Plan q = *this;
         q.candidates.clear();
-        q.thr = c.index; q.thrName = c.name; q.thrFlags = c.flags; q.quietReference = c.quietReference;
+        q.thr = c.index; q.thrName = c.name; q.thrFlags = c.flags; q.quietReference = profile ? true : c.quietReference;
         return q;
     }
 };
@@ -180,7 +194,30 @@ inline std::optional<double> ratioFromText (const juce::String& text)
 // THE RATIO RAISE's choice, from a grid the probe read (--text-at-norms): the position whose READ value is the
 // smallest at or above 4:1. Not the first norm: C1's ratio runs 0.5:1 -> infinity -> -5:1 and RCompressor's is
 // inverted (50 at 0, 0.5 at 1). Returns the norm, or nothing when no read value reaches 4:1.
+inline std::optional<double> displayNumber (const juce::String& text);   // defined with the display check below
 struct GridPoint { float norm; juce::String text; };
+// THE NEUTRAL SET (spec v1.1 section 3 `neutral`, built 1 Oct): where a role names it, the sweep is measured at mix
+// 100% wet, make-up 0, auto make-up off, drive at its cleanest. Each is chosen from the control's own texts on a grid
+// (the ratio raise's mechanism) and the text READ BACK after the write is what the record carries. A control whose
+// texts never parse to a number is left alone and recorded as "not set" - a guard, not a guess.
+inline std::optional<float> chooseNeutral (const std::vector<GridPoint>& grid, const juce::String& role, juce::String& chosenText)
+{
+    std::optional<float> best; double bestV = 1e18;
+    for (const auto& g : grid)
+    {
+        const auto v = displayNumber (g.text);
+        if (! v) continue;
+        const double cost = role == "mix_wet" ? std::abs (*v - 100.0) : role == "makeup_zero" ? std::abs (*v) : /* drive_cleanest */ *v;
+        if (cost < bestV) { bestV = cost; best = g.norm; chosenText = g.text; }
+    }
+    return best;
+}
+inline bool driveNamed (const juce::String& n)
+{
+    for (const char* t : { "drive", "saturation", "sat", "color", "colour", "harmonics", "warmth" }) if (nametokens::controlAnswersTerm (n, t)) return true;
+    return false;
+}
+
 inline std::optional<float> chooseRatioRaise (const std::vector<GridPoint>& grid, juce::String& chosenText)
 {
     std::optional<float> best;

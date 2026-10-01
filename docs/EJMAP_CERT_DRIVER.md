@@ -1232,3 +1232,24 @@ computing his map_fp; plugin_id + version is the fallback for records that preda
 `other` (several candidates, no human pick), 25 have no two-quiet-level reference (soft-end
 sweeps), the rest are flat / too few 1 dB crossings inside a 3-level sweep. That is the case for
 the profile sweep (section 18): 31 levels, the quiet reference on every position.
+
+## 18. The profile sweep (--profile), built 1 Oct
+
+`--cert-sweep --profile --product NAME` runs his section-4 method on our harness: −60..0 dBFS
+peak in 2 dB steps (31 levels), ASCENDING inside every fresh per-position process (loud-to-quiet
+contaminates through release, arm B), 2.5 s hold, last 300 ms read, the per-position quiet
+reference on every product by design (−54 and −48 are steps of the grid), 997 Hz kept and said in
+`measured.signal`. The NEUTRAL set is written as preconditions where a role names it - mix 100%
+wet, make-up 0, auto make-up off, drive at its cleanest (by name: drive / saturation / sat /
+color / harmonics / warmth) - each chosen on the control's own text grid by the ratio raise's
+mechanism and carried on the record with the text it READ BACK (`preconditions[]` with `role`);
+a control whose texts never parse is left alone and said. Engage detection and the quiet
+fallback run as before; the quick engage probe stays three levels. Re-derivation recognises a
+profile sweep by its 31-level grid. Pins N1–N9, four mutants red. Records from a profile sweep
+are what the exporter accepts.
+
+**Checked, not assumed (1 Oct):** Pro-C 2 is NOT installed on this Mac; no component named
+Logic Compressor exists outside Logic (Apple's AUDynamicsProcessor is the only Apple dynamics AU);
+the four Waves units here are all **V12.0.0** (his example keys 15.0.70 - a V15 map_fp will not
+match a V12 record); UAD 1176 / LA-2A are hardware-conditional. His first ten reachable here:
+Tube-Tech CL 1B, EMO-D5 (s), NEOLD U2A, NEOLD V76U73, Mike-E Comp, CLA-76, CLA-2A, VComp (8).

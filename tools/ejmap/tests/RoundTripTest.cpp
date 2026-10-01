@@ -5140,6 +5140,35 @@ void testProfileExport()
     check (! exportCompProfile (bad).ok && exportCompProfile (bad).refused.contains ("never_touch"), "export X13: an engage write naming a never_touch control refuses the export");
 }
 
+/** THE PROFILE SWEEP (spec v1.1 section 4) and the neutral set, built 1 Oct: the plan's levels, hold and reference; the
+    neutral chooser on a control's own texts; drive by name. */
+void testProfileSweepPlan()
+{
+    using namespace ejmap::sweep;
+    Plan p; p.thr = 0; p.thrName = "Threshold"; p.norms = { 0.f, 1.f };
+    p.candidates.push_back ({ 7, "Band 2", {}, false });
+    p.makeProfile();
+    const auto lv = p.testLevels();
+    bool asc = true; for (size_t i = 1; i < lv.size(); ++i) asc = asc && lv[i] > lv[i - 1];
+    check (lv.size() == 31 && lv.front() == -60.0 && lv.back() == 0.0 && asc && std::find (lv.begin(), lv.end(), -54.0) != lv.end() && std::find (lv.begin(), lv.end(), -48.0) != lv.end()
+             && p.probeLevels() == lv,
+           "profile N1: 31 levels -60..0 in 2 dB steps, ascending as the probe renders them, -54 and -48 on the grid for the quiet reference");
+    check (p.quietReference && p.holdS == 2.5 && p.winS == 0.3 && p.discardS == 2.2, "profile N2: quiet reference on by design, 2.5 s hold, last 300 ms read");
+    check (p.forCandidate (p.candidates[0]).quietReference && p.forCandidate (p.candidates[0]).profile,
+           "profile N3: a candidate of a profile plan keeps the quiet reference and the grid (a candidate's own flag would have reset it)");
+    Plan q; check (q.testLevels().size() == 3 && ! q.quietReference && q.holdS == 1.5, "profile N4: a certification plan is unchanged: three levels, 1.5 s");
+
+    std::vector<GridPoint> mix { { 0.0f, "0.0" }, { 0.5f, "50.0" }, { 1.0f, "100.0" } }, make { { 0.0f, "-12.0 dB" }, { 0.5f, "0.0 dB" }, { 1.0f, "+12.0 dB" } },
+                           drive { { 0.0f, "1.0" }, { 0.5f, "5.0" }, { 1.0f, "10.0" } }, words { { 0.0f, "Dry" }, { 1.0f, "Wet" } };
+    juce::String t;
+    check (chooseNeutral (mix, "mix_wet", t) == 1.0f && t == "100.0", "neutral N5: mix picks the text nearest 100 (" + t + ")");
+    check (chooseNeutral (make, "makeup_zero", t) == 0.5f && t == "0.0 dB", "neutral N6: make-up picks the text nearest 0 (" + t + ")");
+    check (chooseNeutral (drive, "drive_cleanest", t) == 0.0f, "neutral N7: drive picks the smallest numeric text");
+    check (! chooseNeutral (words, "mix_wet", t), "neutral N8: a control whose texts never parse to a number is NOT set - a guard, not a guess");
+    check (driveNamed ("Drive") && driveNamed ("Saturation") && driveNamed ("Input Sat") && ! driveNamed ("Threshold") && ! driveNamed ("Ratio"),
+           "neutral N9: drive / saturation by name; threshold and ratio never");
+}
+
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
 void testSleptProcessRetry()
 {
@@ -5293,6 +5322,7 @@ int main (int, char**)
     testTunerDerivations();
     testMapFpJoinKey();
     testProfileExport();
+    testProfileSweepPlan();
     testSleptProcessRetry();
     testLevelDependence();
 

@@ -1322,6 +1322,7 @@ struct SweepOptions
     std::vector<std::pair<int, float>> extraSets;    // a DIAGNOSTIC arm: a non-swept control moved on purpose
     int timeoutMs = 120000;                          // per process
     bool includePace = false, resetPerHold = false, retryRefused = false, retryAll = false;
+    bool profile = false;                            // the profile sweep (31 levels, 2.5 s, quiet reference everywhere)
 };
 
 // WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
@@ -1375,7 +1376,7 @@ inline Derivation deriveOne (const sweep::Plan& plan, const sweep::Measured& m, 
                              const juce::String& fixtureName)
 {
     Derivation out;
-    const std::vector<double> levels { -24.0, -12.0, -6.0 };
+    const auto levels = plan.testLevels();
     const auto d = sweep::derive (m, levels, plan.ratioIndex, plan.quietReference);
     const auto dc = sweep::displayCheck (d, plan.thrUnit);
     const bool written = ! d.unlicensedSuspect;
@@ -1714,6 +1715,7 @@ inline int runCertSweep (const SweepOptions& opt)
 
     auto plan = sweep::planFromFixture (base);
     if (! plan.ok) return refuse (4, "plan", plan.why);
+    if (opt.profile) plan.makeProfile();
     for (auto x : opt.extraSets) plan.sets.push_back (x);
     const auto stem = fixtureFileName (base).upToLastOccurrenceOf (".json", false, false) + ".sweep" + armTag;
 
@@ -1742,6 +1744,48 @@ inline int runCertSweep (const SweepOptions& opt)
         std::cout << "  ratio raise: [" << plan.ratioIndex << "] '" << plan.ratioDefaultText << "' -> norm " << *norm << " (grid read '" << chosenText << "')" << std::endl;
     }
 
+    // THE NEUTRAL SET, profile sweeps only: mix / make-up by role, drive by name; each chosen on the control's own text grid
+    // and written as a precondition. What could not be chosen is said. Never the threshold, the ratio, or an engage switch.
+    juce::StringArray neutralNotes;
+    if (opt.profile)
+    {
+        std::vector<roles::NamedControl> named;
+        if (const auto* cs = base.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs) named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), false });
+        const auto cl = roles::classify (named, roles::Category::compressor);
+        std::vector<std::pair<int, juce::String>> wanted;
+        for (const auto& r : cl.controls)
+        {
+            if (r.index == plan.thr || r.index == plan.ratioIndex) continue;
+            if (r.role == "mix") wanted.push_back ({ r.index, "mix_wet" });
+            else if (r.role == "makeup") wanted.push_back ({ r.index, "makeup_zero" });
+            else if (r.role.isEmpty() && sweep::driveNamed (r.name)) wanted.push_back ({ r.index, "drive_cleanest" });
+        }
+        for (const auto& [idx, role] : wanted)
+        {
+            if (windowSeen || overBudget()) break;
+            bool already = false; for (auto [i, v] : plan.sets) already = already || i == idx;
+            if (already) continue;
+            const auto ctl = sweep::findControl (base, idx);
+            std::vector<float> grid;
+            if (sweep::isSteppedControl (ctl)) { const int n = (int) ctl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) grid.push_back ((float) k / (float) juce::jmax (1, n - 1)); }
+            else for (int k = 0; k <= 32; ++k) grid.push_back ((float) k / 32.0f);
+            juce::StringArray gs; for (float g : grid) gs.add (juce::String (g, 6));
+            const auto r = runProbe (stem, "neutral-" + juce::String (idx), { "--text-at-norms", juce::String (idx), gs.joinIntoString (",") }, -1.0f);
+            if (! r.cleanExit()) { neutralNotes.add (role + " [" + juce::String (idx) + "]: grid read failed (" + r.describe() + "), not set"); continue; }
+            std::vector<sweep::GridPoint> pts;
+            for (const auto& line : juce::StringArray::fromLines (r.out))
+            {
+                const auto f = juce::StringArray::fromTokens (line, "\t", "");
+                if (f.size() >= 3 && f[0] == "at" && f[2] == "landed") pts.push_back ({ (float) f[1].getDoubleValue(), f[f.indexOf ("text") + 1] });
+            }
+            juce::String chosen;
+            const auto norm = sweep::chooseNeutral (pts, role, chosen);
+            if (! norm) { neutralNotes.add (role + " [" + juce::String (idx) + "] " + ctl.getProperty ("name", "").toString() + ": no numeric text on its grid, not set"); continue; }
+            plan.sets.push_back ({ idx, *norm }); plan.setRoles[idx] = role;
+            std::cout << "  neutral: [" << idx << "] " << ctl.getProperty ("name", "").toString() << " -> norm " << *norm << " ('" << chosen << "') for " << role << std::endl;
+        }
+    }
     juce::StringArray sets;
     for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
     // ONE SWEEP of one threshold control: a reference process, then one process per position. Called once for a single
@@ -1752,7 +1796,7 @@ inline int runCertSweep (const SweepOptions& opt)
         for (double L : q.probeLevels()) levelList.add (juce::String ((int) L));
         auto sweepArgs = [&] (const juce::String& norms, const juce::String& ref) {
             juce::StringArray a { "--sweep", "thr=" + juce::String (q.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
-                                  "hold=1.5", "discard=0.75", "win=0.25", "ref=" + ref, "moving_db=0.1",
+                                  "hold=" + juce::String (q.holdS, 2), "discard=" + juce::String (q.discardS, 2), "win=" + juce::String (q.winS, 2), "ref=" + ref, "moving_db=0.1",
                                   juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
             juce::StringArray all = sets;                                     // the plan's preconditions (ratio raise, auto make-up off)
             for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));   // plus the engage writes
@@ -1795,8 +1839,9 @@ inline int runCertSweep (const SweepOptions& opt)
             sweep::Plan t = q; t.engage = { w };
             sweep::ProcessOut tr; std::vector<sweep::ProcessOut> tp;
             sweep::Plan quick = t; quick.norms = { q.norms.front(), q.norms[q.norms.size() / 2], q.norms.back() };
+            if (quick.profile) { quick.profile = false; quick.quietReference = false; quick.holdS = 1.5; quick.discardS = 0.75; quick.winS = 0.25; }   // the quick probe stays quick
             sweepFor (quick, "eq" + juce::String (w.index) + "." + prefix, tr, tp);
-            const auto d = sweep::derive (sweep::mergeProcesses (tr, tp), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+            const auto d = sweep::derive (sweep::mergeProcesses (tr, tp), quick.testLevels(), q.ratioIndex, quick.quietReference);
             const bool hit = sweep::showsResponse (d);
             q.engageTried.add (w.name + " -> " + juce::String (w.norm, 1) + " (from '" + w.fromDisplay + "'): " + (hit ? "GAIN REDUCTION" : d.result + (d.reason.isNotEmpty() ? " - " + d.reason : juce::String())));
             std::cout << "    " << q.engageTried[q.engageTried.size() - 1] << std::endl;
@@ -1808,7 +1853,7 @@ inline int runCertSweep (const SweepOptions& opt)
     {
         sweepFor (q, prefix, r, ps);
         if (q.quietReference || windowSeen || overBudget()) return q;
-        auto first = sweep::derive (sweep::mergeProcesses (r, ps), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+        auto first = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
         if (first.result == "flat" && first.passThroughAtDefaults && q.engage.empty())
         {
             q = engageSearch (q, prefix);
@@ -1816,7 +1861,7 @@ inline int runCertSweep (const SweepOptions& opt)
             std::cout << "  engage verified: " << q.engage.front().name << " -> " << q.engage.front().norm << "; full sweep with the write" << std::endl;
             sweepFor (q, "e" + juce::String (q.engage.front().index) + "." + prefix, r, ps);
             if (windowSeen || overBudget()) return q;
-            first = sweep::derive (sweep::mergeProcesses (r, ps), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+            first = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
         }
         if (! sweep::needsQuietFallback (first)) return q;
         std::cout << "  soft end has no linear anchor (" << first.reason << "): re-sweeping with the quiet-level reference" << std::endl;
@@ -1980,6 +2025,8 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
     if (! plan.ok) { std::cout << "REDERIVE: " << plan.why << std::endl; return 4; }
     // The raise, as recorded: the fixture says it ran raised; the value itself is read back from the traces.
     if (old.getProperty ("ratioDuring", {}).hasProperty ("raisedFrom")) plan.ratioRaise = true;
+    // A profile sweep is recognised by its 31-level grid, and re-derived as one.
+    if (old.getProperty ("tone", {}).getProperty ("levels_dbfs", {}).size() > 3) plan.makeProfile();
     sweep::Provenance pv;
     pv.measuredAt = old.getProperty ("measuredAt", "").toString();
     pv.host = old.getProperty ("host", "").toString();

@@ -654,6 +654,7 @@ namespace
                     else if (k == "--include-pace")              o.includePace = true;
                     else if (k == "--retry-refused")             o.retryRefused = true;
                     else if (k == "--retry-refused-all")         o.retryRefused = o.retryAll = true;
+                    else if (k == "--profile")                   o.profile = true;
                 }
                 // THE DEFAULTS ARE THE HANDOVER PATH (EjmapCertDriver.h resolveCertPaths): ~/Library/ejmap/cert, its
                 // fixtures/ as the store, the probe beside this executable. A mapper types none of them.
@@ -663,7 +664,7 @@ namespace
                 {
                     std::cerr << "usage: ejmap --cert-sweep --product <name>   (or --cert-sweep-all [--skip NAME]...)\n"
                                  "       [--fixtures <dir>  default ~/Library/ejmap/cert/fixtures] [--out <dir>  default ~/Library/ejmap/cert]\n"
-                                 "       [--probe <EchoJayProbe>  default: beside ejmap] [--include-pace] [--retry-refused | --retry-refused-all] [--timeout-s N per process]\n"
+                                 "       [--probe <EchoJayProbe>  default: beside ejmap] [--include-pace] [--profile] [--retry-refused | --retry-refused-all] [--timeout-s N per process]\n"
                                  "       [--arm LABEL --set IDX:NORM ...] [--reset-per-hold]" << std::endl;
                     return 2;
                 }
