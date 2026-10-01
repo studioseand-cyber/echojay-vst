@@ -1,0 +1,57 @@
+probe: "Lindell 354E" | AudioUnit:Effects/aufx,LBc4,Brwx | uid=6f457234 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+sweep	proto	1	thr	24	name	High Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Low Meter	Control
+param	1	1.000000	Low In	On
+param	2	0.000000	Low Solo	Off
+param	3	0.500000	Low Mid Side	Off
+param	4	0.142857	Low Gain	2.0dB
+param	5	0.500000	Low Ratio	3:1
+param	6	0.533333	Low Threshold	-4.0dB
+param	7	0.666667	Low Attack	2mS
+param	8	1.000000	Low Recovery	Auto
+param	9	0.500000	Mid Meter	Control
+param	10	1.000000	Mid In	On
+param	11	0.000000	Mid Solo	Off
+param	12	0.500000	Mid Mid Side	Off
+param	13	0.142857	Mid Gain	2.0dB
+param	14	0.500000	Mid Ratio	3:1
+param	15	0.533333	Mid Threshold	-4.0dB
+param	16	0.666667	Mid Attack	2mS
+param	17	1.000000	Mid Recovery	Auto
+param	18	0.500000	High Meter	Control
+param	19	1.000000	High In	On
+param	20	0.000000	High Solo	Off
+param	21	0.500000	High Mid Side	Off
+param	22	0.142857	High Gain	2.0dB
+param	23	0.500000	High Ratio	3:1
+param	24	0.533333	High Threshold	-4.0dB
+param	25	0.666667	High Attack	2mS
+param	26	1.000000	High Recovery	Auto
+param	27	1.000000	Mix	100%
+param	28	0.000000	HPF	OFF
+param	29	0.333333	Master Gain	0.0dB
+param	30	0.301030	Low XOverParameter	200Hz
+param	31	0.786176	High XOverParameter	5000Hz
+param	32	0.000000	Smash	Off
+param	33	1.000000	Niveau	On
+param	34	0.000000	Link	Off
+param	35	0.000000	Bypass	In
+param	36	0.500000	In Level	0.0dB
+param	37	0.500000	Out Level	0.0dB
+stage	position
+pos	0	norm	0.933333	confirm_ms	3.07	slices	1	instack_match	1	getValue	0.933333	landed_by	instack	render_blocks	0	text_ms	21.1	reads	2	text	8.0dB
+hold	0	-24.00	level_db	-24.7703	in_rms_db	-27.0103	tone_frac	1.0000	ch	-24.7703,-24.7703	doubled	0	last_move_db	-0.0015	final_move_db	-0.0015	win	-24.7511,-24.7602,-24.7649,-24.7676,-24.7709,-24.7724	nonfinite	0
+hold	0	-12.00	level_db	-18.0833	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.0833,-18.0833	doubled	0	last_move_db	-0.0803	final_move_db	-0.0803	win	-17.0423,-17.5870,-17.8160,-17.9788,-18.0966,-18.1769	nonfinite	0
+hold	0	-6.00	level_db	-15.7168	in_rms_db	-9.0103	tone_frac	1.0000	ch	-15.7168,-15.7168	doubled	0	last_move_db	-0.0327	final_move_db	-0.0327	win	-15.2017,-15.4854,-15.5975,-15.6722,-15.7230,-15.7557	nonfinite	0
+reread	0	steady
+timing	wall_ms	98.7	audio_s	4.500
+stage	done

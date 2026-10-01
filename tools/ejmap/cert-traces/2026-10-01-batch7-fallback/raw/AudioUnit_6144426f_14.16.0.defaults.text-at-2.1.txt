@@ -1,0 +1,2307 @@
+probe: "MTurboCompMB" | AudioUnit:Effects/aumf,MTCm,Meld | uid=6144426f | arch=arm64 | format=AudioUnit
+
+param	0	Param 1	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	1	Param 2	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	2	Param 3	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	3	Param 4	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	4	Param 5	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	5	Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	6	Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	7	Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	8	Param 9	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	9	Param 10	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	10	Param 11	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	11	Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	12	Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	13	Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	14	Param 15	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	15	Param 16	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	16	Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	17	Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	18	Param 19	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	19	Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	20	Param 21	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	21	Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	22	Param 23	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	23	Param 24	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	24	Param 25	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	25	Param 26	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	26	Param 27	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	27	Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	28	Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	29	Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	30	Param 31	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	31	Param 32	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	32	Band 1 Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	33	Band 1 Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	34	Band 1 Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	35	Band 1 Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	36	Band 1 Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	37	Band 1 - Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	38	Band 1 - Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	39	Band 1 - Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	40	Band 1 Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	41	Band 1 Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	42	Band 1 Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	43	Band 1 - Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	44	Band 1 - Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	45	Band 1 - Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	46	Band 1 Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	47	Band 1 Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	48	Band 1 - Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	49	Band 1 - Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	50	Band 1 Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	51	Band 1 - Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	52	Band 1 Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	53	Band 1 - Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	54	Band 1 Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	55	Band 1 Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	56	Band 1 Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	57	Band 1 Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	58	Band 1 Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	59	Band 1 - Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	60	Band 1 - Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	61	Band 1 - Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	62	Band 1 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	63	Band 1 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	64	Band 1 - Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	65	Band 1 - Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	66	Band 1 - Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	67	Band 1 - Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	68	Band 1 - Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	69	Band 1 - Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	70	Band 1 - Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	71	Band 1 - Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	72	Band 1 - Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	73	Band 1 - Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	74	Band 1 - Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	75	Band 1 - Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	76	Band 1 - Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	77	Band 1 - Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	78	Band 1 - Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	79	Band 1 - Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	80	Band 1 - Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	81	Band 1 - Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	82	Band 1 - Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	83	Band 1 - Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	84	Band 1 - Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	85	Band 1 - Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	86	Band 1 - Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	87	Band 1 - Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	88	Band 1 - Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	89	Band 1 - Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	90	Band 1 - Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	91	Band 1 - Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	92	Band 1 - Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	93	Band 1 - Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	94	Band 1 - Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	95	Band 1 - Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	96	Band 2 Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	97	Band 2 Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	98	Band 2 Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	99	Band 2 Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	100	Band 2 Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	101	Band 2 - Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	102	Band 2 - Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	103	Band 2 - Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	104	Band 2 Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	105	Band 2 Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	106	Band 2 Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	107	Band 2 - Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	108	Band 2 - Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	109	Band 2 - Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	110	Band 2 Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	111	Band 2 Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	112	Band 2 - Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	113	Band 2 - Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	114	Band 2 Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	115	Band 2 - Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	116	Band 2 Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	117	Band 2 - Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	118	Band 2 Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	119	Band 2 Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	120	Band 2 Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	121	Band 2 Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	122	Band 2 Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	123	Band 2 - Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	124	Band 2 - Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	125	Band 2 - Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	126	Band 2 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	127	Band 2 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	128	Band 2 - Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	129	Band 2 - Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	130	Band 2 - Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	131	Band 2 - Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	132	Band 2 - Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	133	Band 2 - Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	134	Band 2 - Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	135	Band 2 - Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	136	Band 2 - Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	137	Band 2 - Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	138	Band 2 - Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	139	Band 2 - Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	140	Band 2 - Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	141	Band 2 - Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	142	Band 2 - Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	143	Band 2 - Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	144	Band 2 - Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	145	Band 2 - Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	146	Band 2 - Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	147	Band 2 - Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	148	Band 2 - Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	149	Band 2 - Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	150	Band 2 - Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	151	Band 2 - Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	152	Band 2 - Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	153	Band 2 - Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	154	Band 2 - Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	155	Band 2 - Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	156	Band 2 - Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	157	Band 2 - Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	158	Band 2 - Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	159	Band 2 - Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	160	Band 3 Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	161	Band 3 Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	162	Band 3 Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	163	Band 3 Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	164	Band 3 Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	165	Band 3 - Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	166	Band 3 - Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	167	Band 3 - Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	168	Band 3 Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	169	Band 3 Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	170	Band 3 Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	171	Band 3 - Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	172	Band 3 - Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	173	Band 3 - Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	174	Band 3 Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	175	Band 3 Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	176	Band 3 - Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	177	Band 3 - Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	178	Band 3 Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	179	Band 3 - Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	180	Band 3 Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	181	Band 3 - Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	182	Band 3 Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	183	Band 3 Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	184	Band 3 Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	185	Band 3 Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	186	Band 3 Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	187	Band 3 - Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	188	Band 3 - Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	189	Band 3 - Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	190	Band 3 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	191	Band 3 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	192	Band 3 - Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	193	Band 3 - Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	194	Band 3 - Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	195	Band 3 - Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	196	Band 3 - Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	197	Band 3 - Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	198	Band 3 - Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	199	Band 3 - Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	200	Band 3 - Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	201	Band 3 - Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	202	Band 3 - Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	203	Band 3 - Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	204	Band 3 - Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	205	Band 3 - Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	206	Band 3 - Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	207	Band 3 - Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	208	Band 3 - Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	209	Band 3 - Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	210	Band 3 - Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	211	Band 3 - Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	212	Band 3 - Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	213	Band 3 - Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	214	Band 3 - Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	215	Band 3 - Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	216	Band 3 - Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	217	Band 3 - Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	218	Band 3 - Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	219	Band 3 - Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	220	Band 3 - Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	221	Band 3 - Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	222	Band 3 - Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	223	Band 3 - Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	224	Band 4 Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	225	Band 4 Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	226	Band 4 Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	227	Band 4 Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	228	Band 4 Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	229	Band 4 - Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	230	Band 4 - Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	231	Band 4 - Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	232	Band 4 Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	233	Band 4 Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	234	Band 4 Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	235	Band 4 - Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	236	Band 4 - Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	237	Band 4 - Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	238	Band 4 Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	239	Band 4 Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	240	Band 4 - Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	241	Band 4 - Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	242	Band 4 Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	243	Band 4 - Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	244	Band 4 Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	245	Band 4 - Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	246	Band 4 Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	247	Band 4 Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	248	Band 4 Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	249	Band 4 Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	250	Band 4 Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	251	Band 4 - Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	252	Band 4 - Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	253	Band 4 - Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	254	Band 4 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	255	Band 4 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	256	Band 4 - Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	257	Band 4 - Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	258	Band 4 - Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	259	Band 4 - Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	260	Band 4 - Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	261	Band 4 - Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	262	Band 4 - Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	263	Band 4 - Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	264	Band 4 - Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	265	Band 4 - Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	266	Band 4 - Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	267	Band 4 - Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	268	Band 4 - Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	269	Band 4 - Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	270	Band 4 - Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	271	Band 4 - Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	272	Band 4 - Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	273	Band 4 - Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	274	Band 4 - Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	275	Band 4 - Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	276	Band 4 - Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	277	Band 4 - Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	278	Band 4 - Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	279	Band 4 - Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	280	Band 4 - Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	281	Band 4 - Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	282	Band 4 - Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	283	Band 4 - Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	284	Band 4 - Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	285	Band 4 - Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	286	Band 4 - Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	287	Band 4 - Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	288	Band 5 Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	289	Band 5 Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	290	Band 5 Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	291	Band 5 Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	292	Band 5 Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	293	Band 5 - Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	294	Band 5 - Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	295	Band 5 - Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	296	Band 5 Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	297	Band 5 Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	298	Band 5 Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	299	Band 5 - Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	300	Band 5 - Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	301	Band 5 - Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	302	Band 5 Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	303	Band 5 Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	304	Band 5 - Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	305	Band 5 - Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	306	Band 5 Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	307	Band 5 - Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	308	Band 5 Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	309	Band 5 - Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	310	Band 5 Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	311	Band 5 Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	312	Band 5 Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	313	Band 5 Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	314	Band 5 Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	315	Band 5 - Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	316	Band 5 - Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	317	Band 5 - Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	318	Band 5 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	319	Band 5 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	320	Band 5 - Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	321	Band 5 - Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	322	Band 5 - Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	323	Band 5 - Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	324	Band 5 - Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	325	Band 5 - Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	326	Band 5 - Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	327	Band 5 - Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	328	Band 5 - Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	329	Band 5 - Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	330	Band 5 - Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	331	Band 5 - Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	332	Band 5 - Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	333	Band 5 - Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	334	Band 5 - Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	335	Band 5 - Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	336	Band 5 - Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	337	Band 5 - Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	338	Band 5 - Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	339	Band 5 - Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	340	Band 5 - Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	341	Band 5 - Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	342	Band 5 - Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	343	Band 5 - Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	344	Band 5 - Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	345	Band 5 - Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	346	Band 5 - Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	347	Band 5 - Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	348	Band 5 - Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	349	Band 5 - Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	350	Band 5 - Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	351	Band 5 - Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	352	Band 6 Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	353	Band 6 Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	354	Band 6 Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	355	Band 6 Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	356	Band 6 Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	357	Band 6 - Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	358	Band 6 - Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	359	Band 6 - Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	360	Band 6 Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	361	Band 6 Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	362	Band 6 Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	363	Band 6 - Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	364	Band 6 - Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	365	Band 6 - Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	366	Band 6 Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	367	Band 6 Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	368	Band 6 - Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	369	Band 6 - Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	370	Band 6 Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	371	Band 6 - Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	372	Band 6 Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	373	Band 6 - Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	374	Band 6 Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	375	Band 6 Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	376	Band 6 Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	377	Band 6 Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	378	Band 6 Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	379	Band 6 - Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	380	Band 6 - Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	381	Band 6 - Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	382	Band 6 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	383	Band 6 	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	384	Band 6 - Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	385	Band 6 - Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	386	Band 6 - Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	387	Band 6 - Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	388	Band 6 - Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	389	Band 6 - Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	390	Band 6 - Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	391	Band 6 - Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	392	Band 6 - Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	393	Band 6 - Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	394	Band 6 - Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	395	Band 6 - Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	396	Band 6 - Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	397	Band 6 - Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	398	Band 6 - Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	399	Band 6 - Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	400	Band 6 - Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	401	Band 6 - Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	402	Band 6 - Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	403	Band 6 - Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	404	Band 6 - Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	405	Band 6 - Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	406	Band 6 - Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	407	Band 6 - Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	408	Band 6 - Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	409	Band 6 - Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	410	Band 6 - Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	411	Band 6 - Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	412	Band 6 - Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	413	Band 6 - Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	414	Band 6 - Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	415	Band 6 - Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	416	Dry/Wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	417	Input gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	418	Output gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	419	Crossover type	unit	
+def	0.000000	Analog	default	0.000000
+at	0.000	Analog
+at	0.500	Disabled
+at	1.000	Reserved 4
+param	420	Crossover analog mode	unit	
+def	0.428571	24dB/oct	default	0.428571
+at	0.000	6dB/oct A
+at	0.500	48dB/oct
+at	1.000	120dB/oct
+param	421	Level crossover slope	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	422	Level crossover value	unit	
+def	0.000000	silence	default	0.000000
+at	0.000	silence
+at	0.500	-12.0 dB
+at	1.000	0.00 dB
+param	423	Crossover tone	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-12.00 dB
+at	0.500	0.00 dB
+at	1.000	+12.00 dB
+param	424	Crossover smoothing	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	425	Crossover transient release	unit	
+def	0.472871	50 ms	default	0.472871
+at	0.000	0 ms
+at	0.500	63 ms
+at	1.000	1000 ms
+param	426	Crossover transient resolution	unit	
+def	0.500000	50 ms	default	0.500000
+at	0.000	0 ms
+at	0.500	50 ms
+at	1.000	200 ms
+param	427	Crossover spectral resolution	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	428	Band gain 1	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	429	Band gain 2	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	430	Band gain 3	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	431	Band gain 4	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	432	Band gain 5	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	433	Band gain 6	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	434	Band limit 1	unit	
+def	0.333333	200.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	435	Band limit 2	unit	
+def	0.666667	2000 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	436	Band limit 3	unit	
+def	0.447474	440.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	437	Band limit 4	unit	
+def	0.447474	440.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	438	Band limit 5	unit	
+def	0.447474	440.0 Hz	default	0.447474
+at	0.000	20.00 Hz
+at	0.500	632.5 Hz
+at	1.000	20.0 kHz
+param	439	Band panorama 1	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	440	Band panorama 2	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	441	Band panorama 3	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	442	Band panorama 4	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	443	Band panorama 5	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	444	Band panorama 6	unit	
+def	0.500000	center	default	0.500000
+at	0.000	100% left
+at	0.500	center
+at	1.000	100% right
+param	445	Band 1 - Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	446	Band 2 - Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	447	Band 3 - Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	448	Band 4 - Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	449	Band 5 - Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	450	Band 6 - Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	451	Modulators - Mod 1 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	452	Modulators - Mod 2 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	453	Modulators - Mod 3 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	454	Modulators - Mod 4 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	455	Modulators - Mod 5 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	456	Modulators - Mod 6 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	457	Modulators - Mod 7 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	458	Modulators - Mod 8 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	459	Preset trigger - previous	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00
+param	460	Preset trigger - next	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	0.50
+at	1.000	1.00

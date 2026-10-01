@@ -1,0 +1,39 @@
+probe: "Solid Dynamics" | AudioUnit:Effects/aufx,Ni$7,-NI- | uid=2520b62 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold Comp	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Knee Type	Soft
+param	1	0.930020	Threshold Comp	-17.9 dB
+param	2	0.774000	Ratio	4.0
+param	3	0.000000	Atk Mode Comp	Off
+param	4	0.000000	Release Comp	0.10 s
+param	5	0.000000	Rel.Mode	Off
+param	6	0.805000	Output	0.0 dB
+param	7	0.000000	Dry	-Inf dB
+param	8	1.000000	Link L/R	On
+param	9	0.000000	Boost	Off
+param	10	0.000000	-	-
+param	11	0.000000	Mode	Gate
+param	12	0.750000	Threshold G/E	0.0 dB
+param	13	0.000000	Range	0.0
+param	14	0.000000	Atk Mode G/E	Off
+param	15	0.500000	Release G/E	0.63 s
+param	16	0.000000	SC Mode	Off
+param	17	0.500000	SC Gain	0.0 dB
+stage	reference
+refpos	val	0.930020	text	-17.9 dB
+ref	-54.00	level_db	-52.0899	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-52.0899,-52.0899	win	-52.0904,-52.0896,-52.0904,-52.0896,-52.0904,-52.0896,-52.0904,-52.0896	nonfinite	0
+ref	-48.00	level_db	-46.0894	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-46.0894,-46.0894	win	-46.0918,-46.0882,-46.0918,-46.0882,-46.0918,-46.0882,-46.0918,-46.0882	nonfinite	0
+ref	-24.00	level_db	-25.3262	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-25.3262,-25.3262	win	-24.9106,-25.3280,-25.3225,-25.3280,-25.3225,-25.3280,-25.3225,-25.3280	nonfinite	0
+ref	-12.00	level_db	-19.0110	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.0110,-19.0110	win	-18.1865,-19.0097,-19.0135,-19.0098,-19.0135,-19.0098,-19.0135,-19.0098	nonfinite	0
+ref	-6.00	level_db	-16.8673	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-16.8673,-16.8673	win	-16.3611,-16.8671,-16.8678,-16.8671,-16.8678,-16.8671,-16.8678,-16.8671	nonfinite	0
+timing	wall_ms	75.7	audio_s	10.000
+stage	done

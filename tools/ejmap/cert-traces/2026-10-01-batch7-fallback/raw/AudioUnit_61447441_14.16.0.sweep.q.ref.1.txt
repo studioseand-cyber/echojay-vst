@@ -1,0 +1,94 @@
+probe: "MTurboComp" | AudioUnit:Effects/aumf,MTuC,Meld | uid=61447441 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Compressor -> Threshold	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Globals -> Input	0.00 dB
+param	1	0.500000	Globals -> Output	0.00 dB
+param	2	1.000000	Globals -> Dry/wet	100.0%
+param	3	0.500000	Globals -> Compression	0.00%
+param	4	0.100000	Globals -> Saturation	10.0%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.200000	Compressor -> Threshold	20.0%
+param	9	0.500000	Compressor -> Ratio	50.0%
+param	10	0.000000	Compressor -> Soft	0.00%
+param	11	0.500000	Param 12	50.0%
+param	12	0.500000	Param 13	50.0%
+param	13	0.500000	Param 14	50.0%
+param	14	1.000000	Compressor -> Attack	100.0%
+param	15	0.500000	Compressor -> Release	50.0%
+param	16	0.500000	Param 17	50.0%
+param	17	0.500000	Param 18	50.0%
+param	18	0.000000	Detector -> Side-chain input	0.00%
+param	19	0.500000	Param 20	50.0%
+param	20	0.000000	Detector -> HP	20.00 Hz
+param	21	0.500000	Param 22	50.0%
+param	22	1.000000	Detector -> LP	20.0 kHz
+param	23	1.000000	Detector -> Link channels	100.0%
+param	24	0.500000	Detector -> Gain	0.00 dB
+param	25	0.490459	Detector -> Frequency	600.0 Hz
+param	26	0.800000	Detector -> BW	80.0%
+param	27	0.500000	Param 28	50.0%
+param	28	0.500000	Param 29	50.0%
+param	29	0.500000	Param 30	50.0%
+param	30	0.500000		0.00 dB
+param	31	0.500000		0.00 dB
+param	32	0.500000	Param 33	50.0%
+param	33	0.500000	Param 34	50.0%
+param	34	0.500000	Param 35	50.0%
+param	35	0.500000	Param 36	50.0%
+param	36	0.500000	Param 37	50.0%
+param	37	0.500000	Param 38	50.0%
+param	38	0.500000	Param 39	50.0%
+param	39	0.500000	Param 40	50.0%
+param	40	0.500000	Param 41	50.0%
+param	41	0.500000	Param 42	50.0%
+param	42	0.500000	Param 43	50.0%
+param	43	0.500000	Param 44	50.0%
+param	44	0.500000	Param 45	50.0%
+param	45	0.500000	Param 46	50.0%
+param	46	0.500000	Param 47	50.0%
+param	47	0.500000	Param 48	50.0%
+param	48	0.500000	Param 49	50.0%
+param	49	0.500000	Param 50	50.0%
+param	50	0.500000	Param 51	50.0%
+param	51	0.500000	Param 52	50.0%
+param	52	0.500000	Param 53	50.0%
+param	53	0.500000	Param 54	50.0%
+param	54	0.500000	Param 55	50.0%
+param	55	0.500000	Param 56	50.0%
+param	56	0.500000	Param 57	50.0%
+param	57	0.500000	Param 58	50.0%
+param	58	0.500000	Param 59	50.0%
+param	59	0.500000	Param 60	50.0%
+param	60	0.500000	Param 61	50.0%
+param	61	0.500000	Param 62	50.0%
+param	62	0.500000	Param 63	50.0%
+param	63	0.500000	Param 64	50.0%
+param	64	0.000000	Device	MSL E
+param	65	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	66	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	67	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	68	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	69	0.500000	Modulators - Mod 5 - Automated value	50.0%
+param	70	0.500000	Modulators - Mod 6 - Automated value	50.0%
+param	71	0.500000	Modulators - Mod 7 - Automated value	50.0%
+param	72	0.500000	Modulators - Mod 8 - Automated value	50.0%
+stage	reference
+refpos	val	0.200000	text	20.0%
+ref	-54.00	level_db	-54.9208	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-54.9208,-54.9208	win	-54.9214,-54.9205,-54.9214,-54.9205,-54.9214,-54.9205,-54.9214,-54.9205	nonfinite	0
+ref	-48.00	level_db	-48.9209	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-48.9209,-48.9209	win	-48.9233,-48.9197,-48.9232,-48.9197,-48.9232,-48.9197,-48.9232,-48.9197	nonfinite	0
+ref	-24.00	level_db	-25.9342	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-25.9342,-25.9342	win	-25.6418,-25.9353,-25.9305,-25.9361,-25.9305,-25.9361,-25.9305,-25.9361	nonfinite	0
+ref	-12.00	level_db	-18.1496	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-18.1496,-18.1496	win	-17.4512,-18.1473,-18.1522,-18.1484,-18.1522,-18.1483,-18.1522,-18.1484	nonfinite	0
+ref	-6.00	level_db	-15.4726	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9999	ch	-15.4726,-15.4726	win	-14.9908,-15.4719,-15.4729,-15.4724,-15.4728,-15.4725,-15.4729,-15.4724	nonfinite	0
+timing	wall_ms	56.6	audio_s	10.000
+stage	done

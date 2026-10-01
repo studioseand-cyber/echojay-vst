@@ -1,0 +1,92 @@
+probe: "Solid Dynamics" | AudioUnit:Effects/aufx,Ni$7,-NI- | uid=2520b62 | arch=arm64 | format=AudioUnit
+
+param	0	Knee Type	unit	
+def	0.000000	Soft	default	0.000000
+at	0.000	Soft
+at	0.500	Soft
+at	1.000	Hard
+param	1	Threshold Comp	unit	
+def	0.930020	-17.9 dB	default	0.333333
+at	0.000	-17.9 dB
+at	0.500	-17.9 dB
+at	1.000	-17.9 dB
+param	2	Ratio	unit	
+def	0.774000	4.0	default	0.774000
+at	0.000	4.0
+at	0.500	4.0
+at	1.000	Inf
+param	3	Atk Mode Comp	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	Release Comp	unit	
+def	0.000000	0.10 s	default	0.000000
+at	0.000	0.10 s
+at	0.500	0.10 s
+at	1.000	0.10 s
+param	5	Rel.Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	Output	unit	
+def	0.805000	0.0 dB	default	0.804420
+at	0.000	-Inf dB
+at	0.500	0.0 dB
+at	1.000	0.0 dB
+param	7	Dry	unit	
+def	0.000000	-Inf dB	default	0.804420
+at	0.000	-Inf dB
+at	0.500	-90.0 dB
+at	1.000	-90.0 dB
+param	8	Link L/R	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Boost	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	-	unit	
+def	0.000000	-	default	0.000000
+at	0.000	-
+at	0.500	-
+at	1.000	-
+param	11	Mode	unit	
+def	0.000000	Gate	default	0.000000
+at	0.000	Gate
+at	0.500	Gate
+at	1.000	Expand
+param	12	Threshold G/E	unit	
+def	0.750000	0.0 dB	default	0.750000
+at	0.000	0.0 dB
+at	0.500	0.0 dB
+at	1.000	0.0 dB
+param	13	Range	unit	
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	0.0
+at	1.000	0.0
+param	14	Atk Mode G/E	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	15	Release G/E	unit	
+def	0.500000	0.63 s	default	0.500000
+at	0.000	0.63 s
+at	0.500	0.63 s
+at	1.000	0.63 s
+param	16	SC Mode	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	17	SC Gain	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-20.0 dB
+at	0.500	0.0 dB
+at	1.000	+20.0 dB

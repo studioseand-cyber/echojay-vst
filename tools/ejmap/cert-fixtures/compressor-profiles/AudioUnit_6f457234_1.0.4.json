@@ -4,10 +4,10 @@
   "format": "AudioUnit",
   "uid": "6f457234",
   "version": "1.0.4",
-  "sampledAt": "2026-09-30",
+  "sampledAt": "2026-10-01",
   "certified": false,
   "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
-  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "listParamsRc": 0,
   "textAtRc": 0,
   "controls": [
@@ -1001,8 +1001,8 @@
       }
     }
   ],
-  "defaultsSampledAt": "2026-09-30",
-  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "readoutCheck": {
     "method": "instantiate_twice",
     "instances": 2
@@ -1011,9 +1011,14 @@
     "class": "bands_or_stages",
     "candidates": 3,
     "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
-    "curves": 0,
+    "curves": 1,
     "flats": 2,
-    "responding": [],
+    "responding": [
+      {
+        "index": 15,
+        "name": "Mid Threshold"
+      }
+    ],
     "passThroughAtDefaults": {
       "count": 0,
       "candidates": []
@@ -1027,7 +1032,7 @@
       {
         "index": 15,
         "name": "Mid Threshold",
-        "result": "unreadable"
+        "result": "certified"
       },
       {
         "index": 24,
@@ -1042,7 +1047,7 @@
       "name": "Low Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T100240.908+0100",
+        "measuredAt": "20261001T143040.460+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -1139,7 +1144,7 @@
       "name": "Mid Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T100240.908+0100",
+        "measuredAt": "20261001T143040.460+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -1151,7 +1156,7 @@
           ]
         },
         "level_convention": "peak",
-        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)",
         "ratioDuring": {
           "position": "",
           "value": null,
@@ -1178,22 +1183,37 @@
           1.0
         ],
         "linearReference": {
-          "mode": "soft_end",
-          "position": 15,
-          "gain_db": {
-            "-24": 2.28,
-            "-12": 2.28,
-            "-6": -0.39
-          },
-          "spread_db": 2.67,
-          "response_db": 15.710000000000001,
-          "error_db": 2.67,
-          "error_fraction": 0.17,
-          "bar_fraction": 0.083
+          "mode": "per_position_quiet",
+          "levels_dbfs": [
+            -54,
+            -48
+          ],
+          "tolerance_db": 0.1,
+          "check_db": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 2.67 dB across the levels, 17.0% of the 15.71 dB response (bar 8.3%)"
         },
         "defaultGain_db": {
           "-12": -3.22,
-          "-24": 2.24,
+          "-24": 2.23,
+          "-48": 2.28,
+          "-54": 2.28,
           "-6": -6.9
         },
         "positionLandedBy": [
@@ -1228,13 +1248,13 @@
             2.5,
             1.37,
             0.04,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0
           ],
           "-12": [
             14.35,
@@ -1252,55 +1272,131 @@
             2.5,
             1.37,
             0.04,
-            0.0
+            -0.0
           ],
           "-6": [
-            15.710000000000001,
-            14.65,
-            13.56,
-            12.43,
-            11.26,
-            10.07,
-            8.859999999999999,
-            7.65,
-            6.44,
-            5.26,
-            4.13,
-            3.08,
-            2.14,
-            1.36,
-            0.73,
-            0.0
+            18.370000000000001,
+            17.32,
+            16.23,
+            15.09,
+            13.93,
+            12.73,
+            11.529999999999999,
+            10.31,
+            9.1,
+            7.92,
+            6.79,
+            5.74,
+            4.8,
+            4.03,
+            3.4,
+            2.67
           ]
         },
+        "sense": "lower_is_harder",
         "engage": {
-          "-24": null,
-          "-12": null,
-          "-6": null
+          "-24": 7,
+          "-12": 13,
+          "-6": 15
         },
-        "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "thresholdEffective1dB": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -21.800000000000001,
+          -21.300000000000001,
+          -20.800000000000001,
+          -20.300000000000001,
+          -19.199999999999999,
+          -15.199999999999999,
+          -10.300000000000001,
+          -9.699999999999999
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
-          "dg_dl_per_position": [],
-          "median_dg_dl": null,
-          "implied_ratio": null,
+          "dg_dl_per_position": [
+            0.609,
+            0.61,
+            0.604,
+            0.59,
+            0.564,
+            0.529,
+            0.502,
+            0.497,
+            0.504,
+            0.44,
+            0.377,
+            0.319,
+            0.267,
+            0.224,
+            0.189,
+            0.148
+          ],
+          "median_dg_dl": 0.503,
+          "implied_ratio": 2.01,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "unreadable",
+        "result": "certified",
         "passThroughAtDefaults": false,
         "notToneReadings": [],
         "flatSpan_db": 15.710000000000001,
-        "reason": "the soft end is not linear: its gain spans 2.67 dB across the levels, 17.0% of the 15.71 dB response (bar 8.3%)",
-        "displayOffsetDb": null
-      }
+        "reason": "ratio unknown (no ratio control): no dB-equivalent map",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": 19.539999999999999,
+          "-24": 19.539999999999999,
+          "-6": 21.899999999999999,
+          "drift_db": 2.36,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
+      },
+      "reading": "responds at 997 Hz: a curve to read"
     },
     {
       "index": 24,
       "name": "High Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T100240.908+0100",
+        "measuredAt": "20261001T143040.460+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {

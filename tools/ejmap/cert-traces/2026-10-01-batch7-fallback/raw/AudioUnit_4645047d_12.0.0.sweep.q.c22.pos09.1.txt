@@ -1,0 +1,67 @@
+probe: "LinMB (s)" | AudioUnit:Effects/aufx,LC5S,ksWV | uid=4645047d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	22	name	Band 3 Thresh	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	3840
+param	0	0.000000	Makeup Mode	Manual
+param	1	0.000000	Adaptivity Level	Off
+param	2	0.500000	Band 1 Gain	0.0
+param	3	0.429000	Band 1 Range	-6.0
+param	4	0.615000	Band 1 Attack	34.99
+param	5	0.403000	Band 1 Release	80.90
+param	6	0.000000	Band 1 Solo	Off
+param	7	0.000000	Band 1 Bypass	Off
+param	8	1.000000	Band 1 Thresh	0.0
+param	9	0.500000	Band 2 Gain	0.0
+param	10	0.429000	Band 2 Range	-6.0
+param	11	0.549000	Band 2 Attack	22.18
+param	12	0.302000	Band 2 Release	40.27
+param	13	0.000000	Band 2 Solo	Off
+param	14	0.000000	Band 2 Bypass	Off
+param	15	1.000000	Band 2 Thresh	0.0
+param	16	0.500000	Band 3 Gain	0.0
+param	17	0.429000	Band 3 Range	-6.0
+param	18	0.502000	Band 3 Attack	16.03
+param	19	0.233000	Band 3 Release	25.00
+param	20	0.000000	Band 3 Solo	Off
+param	21	0.000000	Band 3 Bypass	Off
+param	22	1.000000	Band 3 Thresh	0.0
+param	23	0.500000	Band 4 Gain	0.0
+param	24	0.429000	Band 4 Range	-6.0
+param	25	0.333000	Band 4 Attack	4.99
+param	26	0.100000	Band 4 Release	9.98
+param	27	0.000000	Band 4 Solo	Off
+param	28	0.000000	Band 4 Bypass	Off
+param	29	1.000000	Band 4 Thresh	0.0
+param	30	0.500000	Band 5 Gain	0.0
+param	31	0.429000	Band 5 Range	-6.0
+param	32	0.201000	Band 5 Attack	2.00
+param	33	0.000000	Band 5 Release	5.00
+param	34	0.000000	Band 5 Solo	Off
+param	35	0.000000	Band 5 Bypass	Off
+param	36	1.000000	Band 5 Thresh	0.0
+param	37	0.245547	Low Crossover	92
+param	38	0.491936	LoMid Crossover	545
+param	39	0.768000	HiMid Crossover	4000
+param	40	0.908997	High Crossover	11071
+param	41	1.000000	Dither Mode	On
+param	42	0.000000	Release Mode	ARC
+param	43	0.000000	Behavior	Electro
+param	44	0.667000	Knee	0.50
+param	45	0.000000	Trim	0.0
+param	46	0.500000	Output Gain	0.0
+stage	position
+pos	0	norm	0.600000	confirm_ms	59.33	slices	7	instack_match	0	getValue	0.600000	landed_by	pump	render_blocks	0	text_ms	21.2	reads	2	text	-32.0
+hold	0	-54.00	level_db	-57.1188	in_rms_db	-57.0103	tone_frac	0.9999	ch	-57.1188,-57.1188	doubled	0	last_move_db	-0.0014	final_move_db	-0.0014	win	-58.7831,-57.1193,-57.1179,-57.1193,-57.1179,-57.1193	nonfinite	0
+hold	0	-48.00	level_db	-51.3406	in_rms_db	-51.0103	tone_frac	0.9999	ch	-51.3406,-51.3406	doubled	0	last_move_db	-0.0022	final_move_db	-0.0022	win	-52.4869,-51.3413,-51.3391,-51.3413,-51.3391,-51.3413	nonfinite	0
+hold	0	-24.00	level_db	-30.7606	in_rms_db	-27.0103	tone_frac	0.9999	ch	-30.7606,-30.7606	doubled	0	last_move_db	-0.0029	final_move_db	-0.0029	win	-32.0069,-30.7611,-30.7584,-30.7616,-30.7587,-30.7616	nonfinite	0
+hold	0	-12.00	level_db	-19.7521	in_rms_db	-15.0103	tone_frac	0.9999	ch	-19.7521,-19.7521	doubled	0	last_move_db	-0.0036	final_move_db	-0.0036	win	-21.1700,-19.7531,-19.7496,-19.7533,-19.7497,-19.7533	nonfinite	0
+hold	0	-6.00	level_db	-13.9471	in_rms_db	-9.0103	tone_frac	0.9998	ch	-13.9471,-13.9471	doubled	0	last_move_db	-0.0042	final_move_db	-0.0042	win	-15.0969,-13.9484,-13.9442,-13.9485,-13.9443,-13.9485	nonfinite	0
+reread	0	steady
+timing	wall_ms	186.2	audio_s	7.500
+stage	done

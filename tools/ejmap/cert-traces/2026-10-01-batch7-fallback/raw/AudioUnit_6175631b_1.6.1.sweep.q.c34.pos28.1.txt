@@ -1,0 +1,66 @@
+probe: "SPL IRON" | AudioUnit:Effects/aufx,SPIR,SPL1 | uid=6175631b | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	34	name	Threshold R	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Power	On
+param	1	0.000000	M/S	Off
+param	2	0.000000	Monomaker Freq	Off
+param	3	0.500000	Stereowidth	100 %
+param	4	0.000000	Bank	A
+param	5	0.000000	Auto Bypass	Off
+param	6	0.000000	Interval	Off
+param	7	0.500000	Out Mode	Byp
+param	8	1.000000	Link	On
+param	9	0.000000	SC Link	Off
+param	10	0.000000	SC HP Freq 	Off
+param	11	1.000000	Mix	100 %
+param	12	0.500000	Headroom	0.0
+param	13	0.000000	TMT Channel	1
+param	14	0.000000	Stereo Mode	Analog
+param	15	0.000000	Monitoring 	Stereo
+param	16	1.000000	Power L	On
+param	17	0.000000	Input L	2 dB
+param	18	0.500000	Input Sign L	0
+param	19	0.000000	Output L	2 dB
+param	20	1.000000	Output Sign L	+
+param	21	1.000000	Meter L	GR
+param	22	0.000000	Threshold L	0.0
+param	23	1.000000	Tube Bias L	High
+param	24	0.200000	Attack L	2
+param	25	0.400000	Release L	3
+param	26	0.600000	Rectifier L	Sil
+param	27	0.000000	Side Chain EQ L	OFF
+param	28	1.000000	Power R	On
+param	29	0.000000	Input R	2 dB
+param	30	0.500000	Input Sign R	0
+param	31	0.000000	Output R	2 dB
+param	32	1.000000	Output Sign R	+
+param	33	1.000000	Meter R	GR
+param	34	0.000000	Threshold R	0.0
+param	35	1.000000	Tube Bias R	High
+param	36	0.200000	Attack R	2
+param	37	0.400000	Release R	3
+param	38	0.600000	Rectifier R	Sil
+param	39	0.000000	Side Chain EQ R	OFF
+param	40	0.084190		
+param	41	0.084190		
+param	42	0.645455		
+param	43	0.645455		
+stage	position
+pos	0	norm	0.700000	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.700000	landed_by	instack	render_blocks	0	text_ms	20.5	reads	2	text	+28.0
+hold	0	-54.00	level_db	-55.2072	in_rms_db	-57.0103	tone_frac	1.0000	ch	-55.2563,-55.1588	doubled	0	last_move_db	0.0009	final_move_db	0.0009	win	-55.1889,-55.2070,-55.2078,-55.2070,-55.2078,-55.2070	nonfinite	0
+hold	0	-48.00	level_db	-49.2071	in_rms_db	-51.0103	tone_frac	1.0000	ch	-49.2560,-49.1587	doubled	0	last_move_db	0.0017	final_move_db	0.0017	win	-49.2082,-49.2065,-49.2082,-49.2065,-49.2082,-49.2065	nonfinite	0
+hold	0	-24.00	level_db	-26.4824	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.5447,-26.4208	doubled	0	last_move_db	0.0025	final_move_db	0.0025	win	-26.3783,-26.4815,-26.4840,-26.4815,-26.4840,-26.4815	nonfinite	0
+hold	0	-12.00	level_db	-19.1073	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.1505,-19.0646	doubled	0	last_move_db	0.0041	final_move_db	0.0041	win	-18.9298,-19.1059,-19.1098,-19.1060,-19.1100,-19.1059	nonfinite	0
+hold	0	-6.00	level_db	-16.2854	in_rms_db	-9.0103	tone_frac	1.0000	ch	-16.3706,-16.2018	doubled	0	last_move_db	0.0038	final_move_db	0.0038	win	-16.1480,-16.2841,-16.2880,-16.2842,-16.2879,-16.2841	nonfinite	0
+reread	0	steady
+timing	wall_ms	91.0	audio_s	7.500
+stage	done

@@ -1,0 +1,14 @@
+probe: "SSL Native Bus Compressor 2" | AudioUnit:Effects/aufx,NBC2,SSLN | uid=7c646904 | arch=arm64 | format=AudioUnit
+
+0	Ratio		7	1	1	0
+1	Comp Bypass		2	1	1	0
+2	Threshold		2147483647	0	1	0
+3	Mix Lock		2	1	1	0
+4	Release		7	1	1	0
+5	Dry/Wet Mix		2147483647	0	1	0
+6	Makeup Gain		2147483647	0	1	0
+7	GroupSense		2147483647	0	1	0
+8	External S/C		2	1	1	0
+9	Sidechain HPF		2147483647	0	1	0
+10	Oversampling		3	1	1	0
+11	Attack		7	1	1	0

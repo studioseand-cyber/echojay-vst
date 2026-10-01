@@ -1,0 +1,62 @@
+probe: "SSL Native Bus Compressor 2" | AudioUnit:Effects/aufx,NBC2,SSLN | uid=7c646904 | arch=arm64 | format=AudioUnit
+
+param	0	Ratio	unit	
+def	0.166667	2:1	default	0.166667
+at	0.000	1.5:1
+at	0.500	4:1
+at	1.000	X
+param	1	Comp Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Threshold	unit	
+def	1.000000	20.0	default	1.000000
+at	0.000	-20.0
+at	0.500	0.0
+at	1.000	20.0
+param	3	Mix Lock	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	Release	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	0.1
+at	0.500	0.6
+at	1.000	AUTO
+param	5	Dry/Wet Mix	unit	
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	6	Makeup Gain	unit	
+def	0.250000	0.0	default	0.250000
+at	0.000	-5.0
+at	0.500	5.0
+at	1.000	15.0
+param	7	GroupSense	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	8388608
+at	1.000	16777215
+param	8	External S/C	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Sidechain HPF	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	102.5
+at	1.000	185.0
+param	10	Oversampling	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	2x
+at	1.000	4x
+param	11	Attack	unit	
+def	0.666667	10	default	0.666667
+at	0.000	0.1
+at	0.500	3
+at	1.000	30

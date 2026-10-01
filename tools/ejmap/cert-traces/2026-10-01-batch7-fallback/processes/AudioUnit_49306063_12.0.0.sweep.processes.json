@@ -1,0 +1,1222 @@
+[
+  {
+    "tag": "list-params",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.defaults.list-params.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 3812.643875002861023,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "text-at",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.defaults.text-at.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 17323.266249895095825,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "text-at-2",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.defaults.text-at-2.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 17390.767416596412659,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4067.413958430290222,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4037.280333280563354,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4083.101333260536194,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4064.775833249092102,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4052.375041604042053,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4053.473708271980286,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4053.677583336830139,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4041.638708353042603,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4078.89983332157135,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4058.127333283424377,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4066.863749980926514,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4046.535541653633118,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4043.294958353042603,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4055.898125052452087,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4245.185250043869019,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4065.786749958992004,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c10.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c10.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4067.812458276748657,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4058.959375023841858,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4090.87179172039032,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4463.640833377838135,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4094.074625015258789,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4057.362874984741211,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4047.217999935150146,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4099.643249988555908,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4098.070708274841309,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4113.892416715621948,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4061.360041618347168,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4057.810083270072937,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4073.922583341598511,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4087.7315833568573,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4059.678583383560181,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4050.600208401679993,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4081.864166736602783,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c19.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c19.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4042.143625020980835,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4035.146000027656555,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4049.806375026702881,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4036.812125086784363,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4038.49762499332428,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4022.748333334922791,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4040.325791597366333,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4048.887125015258789,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4032.483250021934509,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4037.100791692733765,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4039.856666684150696,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4028.084041714668274,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4045.186791658401489,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4019.677333235740662,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4056.677541732788086,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4009.266958236694336,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4089.986416697502136,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c26.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c26.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4031.177083373069763,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4101.996000051498413,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4065.037958383560181,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4126.351416707038879,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4121.648916602134705,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4128.703291654586792,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4264.164750099182129,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4130.030541777610779,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4104.81695830821991,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4093.986083388328552,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4223.986875057220459,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4311.794666647911072,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4085.467249989509583,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4062.479583263397217,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4085.463208317756653,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4140.249458312988281,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4073.805249929428101,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "q.c26.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.q.c26.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4110.63224995136261,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4021.62458336353302,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4048.768249988555908,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4046.658583402633667,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4059.435833334922791,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4098.115291714668274,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4060.422458291053772,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4049.284916639328003,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4041.82616662979126,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4093.733749985694885,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4050.394583344459534,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4068.144916653633118,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4048.770458340644836,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4053.75124990940094,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4041.630791664123535,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4088.340041637420654,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4235.276416659355164,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c33.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c33.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4063.532666683197021,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4016.821874976158142,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4016.946833372116089,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4056.411541700363159,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4338.187999963760376,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4033.031166672706604,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4034.30804169178009,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4034.715791702270508,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4094.851500034332275,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4250.445291638374329,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4075.830249905586243,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4103.566749930381775,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4068.441583395004272,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4074.5837082862854,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4163.028666615486145,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4055.41712498664856,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4054.247333407402039,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c40.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c40.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4086.226833343505859,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.ref",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.ref.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": -1.0,
+    "ms": 4098.16741669178009,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos00",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos00.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.0,
+    "ms": 4076.585041642189026,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos01",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos01.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.066666670143604,
+    "ms": 4076.43708324432373,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos02",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos02.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.133333340287209,
+    "ms": 4053.726166725158691,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos03",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos03.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.200000002980232,
+    "ms": 4068.459583401679993,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos04",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos04.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.266666680574417,
+    "ms": 4029.900541663169861,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos05",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos05.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.333333343267441,
+    "ms": 4070.039000034332275,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos06",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos06.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.400000005960464,
+    "ms": 4070.164499998092651,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos07",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos07.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.466666668653488,
+    "ms": 4072.570958256721497,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos08",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos08.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.533333361148834,
+    "ms": 4074.3089998960495,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos09",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos09.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.600000023841858,
+    "ms": 4031.18233335018158,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos10",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos10.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.666666686534882,
+    "ms": 4069.076375007629395,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos11",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos11.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.733333349227905,
+    "ms": 4039.187749981880188,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos12",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos12.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.800000011920929,
+    "ms": 4232.287458300590515,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos13",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos13.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.866666674613953,
+    "ms": 4073.029708385467529,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos14",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos14.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 0.933333337306976,
+    "ms": 4074.368416666984558,
+    "slept_ms": 0.0
+  },
+  {
+    "tag": "c47.pos15",
+    "attempt": 1,
+    "file": "AudioUnit_49306063_12.0.0.sweep.c47.pos15.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "norm": 1.0,
+    "ms": 4071.611708283424377,
+    "slept_ms": 0.0
+  }
+]

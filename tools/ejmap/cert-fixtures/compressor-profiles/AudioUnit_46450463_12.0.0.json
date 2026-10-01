@@ -1272,7 +1272,7 @@
       {
         "index": 22,
         "name": "Band 3 Thresh",
-        "result": "unreadable"
+        "result": "nonmonotonic"
       },
       {
         "index": 29,
@@ -1292,7 +1292,7 @@
       "name": "Band 1 Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T101000.052+0100",
+        "measuredAt": "20260930T190748.223+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1368,7 +1368,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1390,7 +1389,7 @@
       "name": "Band 2 Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T101000.052+0100",
+        "measuredAt": "20260930T190748.223+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1466,7 +1465,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1488,7 +1486,7 @@
       "name": "Band 3 Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T101000.052+0100",
+        "measuredAt": "20260930T190748.223+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1500,7 +1498,7 @@
           ]
         },
         "level_convention": "peak",
-        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)",
         "ratioDuring": {
           "position": "",
           "value": null,
@@ -1527,22 +1525,37 @@
           1.0
         ],
         "linearReference": {
-          "mode": "soft_end",
-          "position": 15,
-          "gain_db": {
-            "-24": -0.07,
-            "-12": -0.63,
-            "-6": -1.4
-          },
-          "spread_db": 1.33,
-          "response_db": 5.05,
-          "error_db": 1.33,
-          "error_fraction": 0.263,
-          "bar_fraction": 0.083
+          "mode": "per_position_quiet",
+          "levels_dbfs": [
+            -54,
+            -48
+          ],
+          "tolerance_db": 0.1,
+          "check_db": [
+            -0.098,
+            -0.177,
+            -0.316,
+            -0.53,
+            -0.805,
+            -1.038,
+            -1.052,
+            -0.811,
+            -0.473,
+            -0.222,
+            -0.088,
+            -0.03,
+            -0.01,
+            -0.003,
+            -0.001,
+            -0.0
+          ],
+          "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 1.33 dB across the levels, 26.3% of the 5.05 dB response (bar 8.3%)"
         },
         "defaultGain_db": {
           "-12": -0.63,
           "-24": -0.07,
+          "-48": -0.0,
+          "-54": -0.0,
           "-6": -1.4
         },
         "positionLandedBy": [
@@ -1569,80 +1582,159 @@
         },
         "reduction_db": {
           "-24": [
-            5.05,
-            5.05,
-            5.04,
-            5.02,
-            4.98,
-            4.92,
-            4.81,
-            4.61,
-            4.25,
-            3.68,
-            2.86,
-            1.89,
-            1.03,
-            0.44,
-            0.13,
-            0.0
+            0.09,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            2.81,
+            1.92,
+            1.09,
+            0.51,
+            0.2,
+            0.07
           ],
           "-12": [
-            4.5,
-            4.5,
-            4.49,
-            4.49,
-            4.48,
-            4.46,
-            4.43,
-            4.38,
-            4.28,
-            4.11,
-            3.8,
-            3.28,
-            2.52,
-            1.58,
-            0.66,
-            0.0
+            0.1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            4.31,
+            3.87,
+            3.14,
+            2.21,
+            1.29,
+            0.63
           ],
           "-6": [
-            3.73,
-            3.73,
-            3.73,
-            3.73,
-            3.72,
-            3.71,
-            3.7,
-            3.67,
-            3.62,
-            3.53,
-            3.37,
-            3.08,
-            2.6,
-            1.87,
-            0.92,
-            0.0
+            0.1,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            4.65,
+            4.44,
+            3.99,
+            3.27,
+            2.33,
+            1.4
           ]
         },
+        "sense": "higher_is_harder",
         "engage": {
-          "-24": null,
-          "-12": null,
-          "-6": null
+          "-24": 10,
+          "-12": 10,
+          "-6": 10
         },
-        "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "skipped": [
+          {
+            "position": 1,
+            "reason": "quiet reference: -48 minus -54 is 5.82 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 2,
+            "reason": "quiet reference: -48 minus -54 is 5.68 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 3,
+            "reason": "quiet reference: -48 minus -54 is 5.47 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 4,
+            "reason": "quiet reference: -48 minus -54 is 5.20 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 5,
+            "reason": "quiet reference: -48 minus -54 is 4.96 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 6,
+            "reason": "quiet reference: -48 minus -54 is 4.95 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 7,
+            "reason": "quiet reference: -48 minus -54 is 5.19 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 8,
+            "reason": "quiet reference: -48 minus -54 is 5.53 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 9,
+            "reason": "quiet reference: -48 minus -54 is 5.78 dB, not 6 (compressed or noise floor)"
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
-          "dg_dl_per_position": [],
-          "median_dg_dl": null,
-          "implied_ratio": null,
+          "dg_dl_per_position": [
+            0.001,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.102,
+            0.14,
+            0.161,
+            0.153,
+            0.118,
+            0.074
+          ],
+          "median_dg_dl": 0.141,
+          "implied_ratio": 1.16,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "unreadable",
+        "result": "nonmonotonic",
         "passThroughAtDefaults": false,
         "notToneReadings": [],
-        "flatSpan_db": 5.05,
-        "reason": "the soft end is not linear: its gain spans 1.33 dB across the levels, 26.3% of the 5.05 dB response (bar 8.3%)",
-        "displayOffsetDb": null
+        "flatSpan_db": 4.55,
+        "reason": "reduction falls by more than 0.5 dB walking from the softer end (position 11 at -24.00)",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": null,
+          "-24": null,
+          "-6": null,
+          "drift_db": null,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
       }
     },
     {
@@ -1650,7 +1742,7 @@
       "name": "Band 4 Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T101000.052+0100",
+        "measuredAt": "20260930T190748.223+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1726,7 +1818,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1748,7 +1839,7 @@
       "name": "Band 5 Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T101000.052+0100",
+        "measuredAt": "20260930T190748.223+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1824,7 +1915,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],

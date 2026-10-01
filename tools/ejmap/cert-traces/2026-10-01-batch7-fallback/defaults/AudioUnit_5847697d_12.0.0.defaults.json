@@ -1,0 +1,105 @@
+{
+  "identity": "AudioUnit|5847697d|12.0.0",
+  "product": "Renaissance Axx (s)",
+  "format": "AudioUnit",
+  "uid": "5847697d",
+  "version": "12.0.0",
+  "sampledAt": "2026-10-01",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-30.0",
+        "0.500": "-15.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 0.0,
+        "at0": -30.0,
+        "at0_5": -15.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "0.0",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-60.0",
+        "0.500": "-30.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -60.0,
+        "max": 0.0,
+        "at0": -60.0,
+        "at0_5": -30.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "0.0",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "25.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 50.0,
+        "at0": 0.0,
+        "at0_5": 25.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.1,
+        "display": "5.00",
+        "declaredDefault": 0.1,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

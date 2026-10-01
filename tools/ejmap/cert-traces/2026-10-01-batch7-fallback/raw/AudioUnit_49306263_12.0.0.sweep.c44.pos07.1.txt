@@ -1,0 +1,81 @@
+probe: "C6-SideChain (m)" | AudioUnit:Effects/aufx,C6SM,ksWV | uid=49306263 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	44	name	Band 5 Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	64
+param	0	0.500000	Output Gain	0.0
+param	1	1.000000	Release	Manual
+param	2	1.000000	Behavior	Opto
+param	3	0.666667	Knee	0.50
+param	4	0.245547	Low Crossover	92
+param	5	0.768000	Mid Crossover	4000
+param	6	0.908997	High Crossover	11071
+param	7	0.769231	Crossover Q	0.60
+param	8	0.000000	Band 1 Solo	Off
+param	9	0.000000	Band 1 Bypass	Off
+param	10	1.000000	Band 1 Threshold	0.0
+param	11	0.530556	Band 1 Gain	1.1
+param	12	0.571429	Band 1 Range	0.0
+param	13	0.501988	Band 1 Attack	16.03
+param	14	0.501997	Band 1 Release	160.31
+param	15	0.000000	Band 1 SC	Internal
+param	16	0.301428	Band 1 Q	1.65
+param	17	0.576000	Band 1 Frequency	1000
+param	18	0.000000	Band 2 Solo	Off
+param	19	0.000000	Band 2 Bypass	Off
+param	20	1.000000	Band 2 Threshold	0.0
+param	21	0.500000	Band 2 Gain	0.0
+param	22	0.380952	Band 2 Range	-8.0
+param	23	0.614991	Band 2 Attack	34.99
+param	24	0.302004	Band 2 Release	40.27
+param	25	0.000000	Band 2 SC	Internal
+param	26	0.000000	Band 3 Solo	Off
+param	27	0.000000	Band 3 Bypass	Off
+param	28	1.000000	Band 3 Threshold	0.0
+param	29	0.500000	Band 3 Gain	0.0
+param	30	0.380952	Band 3 Range	-8.0
+param	31	0.501988	Band 3 Attack	16.03
+param	32	0.232990	Band 3 Release	25.00
+param	33	0.000000	Band 3 SC	Internal
+param	34	0.000000	Band 4 Solo	Off
+param	35	0.000000	Band 4 Bypass	Off
+param	36	1.000000	Band 4 Threshold	0.0
+param	37	0.500000	Band 4 Gain	0.0
+param	38	0.380952	Band 4 Range	-8.0
+param	39	0.333044	Band 4 Attack	4.99
+param	40	0.100054	Band 4 Release	9.98
+param	41	0.000000	Band 4 SC	Internal
+param	42	0.000000	Band 5 Solo	Off
+param	43	0.000000	Band 5 Bypass	Off
+param	44	1.000000	Band 5 Threshold	0.0
+param	45	0.500000	Band 5 Gain	0.0
+param	46	0.380952	Band 5 Range	-8.0
+param	47	0.200687	Band 5 Attack	2.00
+param	48	0.000000	Band 5 Release	5.00
+param	49	0.000000	Band 5 SC	Internal
+param	50	0.000000	Band 6 Solo	Off
+param	51	0.000000	Band 6 Bypass	Off
+param	52	1.000000	Band 6 Threshold	0.0
+param	53	0.527778	Band 6 Gain	1.0
+param	54	0.571429	Band 6 Range	0.0
+param	55	0.501988	Band 6 Attack	16.03
+param	56	0.501997	Band 6 Release	160.31
+param	57	0.000000	Band 6 SC	Internal
+param	58	0.301428	Band 6 Q	1.65
+param	59	0.798988	Band 6 Frequency	5003
+param	60	0.000000	SC Mode	Split
+stage	position
+pos	0	norm	0.466667	confirm_ms	68.43	slices	10	instack_match	0	getValue	0.466667	landed_by	pump	render_blocks	0	text_ms	21.8	reads	2	text	-42.7
+hold	0	-24.00	level_db	-25.9244	in_rms_db	-27.0103	tone_frac	0.9998	ch	-25.9244	doubled	0	last_move_db	-0.0048	final_move_db	-0.0048	win	-25.9927,-25.9262,-25.9212,-25.9260,-25.9212,-25.9260	nonfinite	0
+hold	0	-12.00	level_db	-14.2834	in_rms_db	-15.0103	tone_frac	0.9998	ch	-14.2834	doubled	0	last_move_db	-0.0043	final_move_db	-0.0043	win	-14.2855,-14.2849,-14.2806,-14.2849,-14.2806,-14.2849	nonfinite	0
+hold	0	-6.00	level_db	-8.9284	in_rms_db	-9.0103	tone_frac	0.9999	ch	-8.9284	doubled	0	last_move_db	-0.0037	final_move_db	-0.0037	win	-8.9051,-8.9296,-8.9259,-8.9296,-8.9259,-8.9296	nonfinite	0
+reread	0	steady
+timing	wall_ms	161.1	audio_s	4.500
+stage	done

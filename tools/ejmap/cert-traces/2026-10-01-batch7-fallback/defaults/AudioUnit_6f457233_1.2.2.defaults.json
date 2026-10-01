@@ -1,0 +1,361 @@
+{
+  "identity": "AudioUnit|6f457233|1.2.2",
+  "product": "Lindell 254E",
+  "format": "AudioUnit",
+  "uid": "6f457233",
+  "version": "1.2.2",
+  "sampledAt": "2026-10-01",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Mix",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0%",
+        "0.500": "50%",
+        "1.000": "100%"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100%",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "HPF",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "20Hz",
+        "0.500": "89Hz",
+        "1.000": "400Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 20.0,
+        "max": 400.0,
+        "at0": 20.0,
+        "at0_5": 89.0,
+        "at1": 400.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "20Hz",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Limit",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Slow",
+        "1.000": "Fast"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Compress",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Slow",
+        "1.000": "Fast"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Fast",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Meter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "In",
+        "0.500": "Control",
+        "1.000": "Out"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Control",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0dB",
+        "0.500": "10dB",
+        "1.000": "20dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.1,
+        "display": "2dB",
+        "declaredDefault": 0.1,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Ratio",
+      "unit": ":1",
+      "displayAt": {
+        "0.000": "1.5:1",
+        "0.500": "3:1",
+        "1.000": "6:1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.5,
+        "max": 6.0,
+        "at0": 1.5,
+        "at0_5": 3.0,
+        "at1": 6.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "3:1",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Threshold",
+      "unit": "dBu",
+      "displayAt": {
+        "0.000": "-20dBu",
+        "0.500": "-4dBu",
+        "1.000": "10dBu"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -20.0,
+        "max": 10.0,
+        "at0": -20.0,
+        "at0_5": -4.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.533333,
+        "display": "-4dBu",
+        "declaredDefault": 0.533333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Compress Recovery",
+      "unit": "mS",
+      "displayAt": {
+        "0.000": "100mS",
+        "0.500": "800mS",
+        "1.000": "Auto"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 100.0,
+        "max": 800.0,
+        "at0": 100.0,
+        "at0_5": 800.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Auto",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Limit Level",
+      "unit": "dBu",
+      "displayAt": {
+        "0.000": "4.0dBu",
+        "0.500": "8.0dBu",
+        "1.000": "12.0dBu"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 4.0,
+        "max": 12.0,
+        "at0": 4.0,
+        "at0_5": 8.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "8.0dBu",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Limit Recovery",
+      "unit": "mS",
+      "displayAt": {
+        "0.000": "100mS",
+        "0.500": "800mS",
+        "1.000": "Auto"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 100.0,
+        "max": 800.0,
+        "at0": 100.0,
+        "at0_5": 800.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Auto",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "In",
+        "0.500": "Byp",
+        "1.000": "Byp"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "In",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Ext SideChain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "On",
+        "0.500": "Off",
+        "1.000": "Off"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "On",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

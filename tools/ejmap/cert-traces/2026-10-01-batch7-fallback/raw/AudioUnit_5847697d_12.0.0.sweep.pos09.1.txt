@@ -1,0 +1,21 @@
+probe: "Renaissance Axx (s)" | AudioUnit:Effects/aufx,RAXS,ksWV | uid=5847697d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	64
+param	0	1.000000	Gain	0.0
+param	1	1.000000	Threshold	0.0
+param	2	0.100000	Attack	5.00
+stage	position
+pos	0	norm	0.600000	confirm_ms	49.70	slices	6	instack_match	0	getValue	0.600000	landed_by	pump	render_blocks	0	text_ms	21.0	reads	2	text	-24.0
+hold	0	-24.00	level_db	-8.7531	in_rms_db	-27.0103	tone_frac	0.9998	ch	-8.7531,-8.7531	doubled	0	last_move_db	-0.0050	final_move_db	-0.0050	win	-8.6019,-8.7543,-8.7497,-8.7548,-8.7498,-8.7548	nonfinite	0
+hold	0	-12.00	level_db	-4.5079	in_rms_db	-15.0103	tone_frac	0.9998	ch	-4.5079,-4.5079	doubled	0	last_move_db	-0.0054	final_move_db	-0.0054	win	-4.4182,-4.5081,-4.5038,-4.5094,-4.5044,-4.5098	nonfinite	0
+hold	0	-6.00	level_db	-3.5402	in_rms_db	-9.0103	tone_frac	0.9998	ch	-3.5402,-3.5402	doubled	0	last_move_db	-0.0055	final_move_db	-0.0055	win	-3.5051,-3.5404,-3.5365,-3.5421,-3.5366,-3.5421	nonfinite	0
+reread	0	steady
+timing	wall_ms	88.4	audio_s	4.500
+stage	done

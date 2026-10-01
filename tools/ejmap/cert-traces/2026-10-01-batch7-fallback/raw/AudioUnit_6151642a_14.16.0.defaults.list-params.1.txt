@@ -1,0 +1,283 @@
+probe: "MDynamicsMB" | AudioUnit:Effects/aumf,MAe(,Meld | uid=6151642a | arch=arm64 | format=AudioUnit
+
+0	Globals -> Input		2147483647	0	1	0
+1	Globals -> Output		2147483647	0	1	0
+2	Globals -> Dry/wet		2147483647	0	1	0
+3	Globals -> Compression		2147483647	0	1	0
+4	Globals -> Tone		2147483647	0	1	0
+5	Param 6		2147483647	0	1	0
+6	Param 7		2147483647	0	1	0
+7	Param 8		2147483647	0	1	0
+8	Crossover -> Slope		2147483647	0	1	0
+9	Crossover -> Linear-phase		2147483647	0	1	0
+10	Crossover -> Cross 1		2147483647	0	1	0
+11	Crossover -> Cross 2		2147483647	0	1	0
+12	Crossover -> Cross 3		2147483647	0	1	0
+13	Param 14		2147483647	0	1	0
+14	Param 15		2147483647	0	1	0
+15	Param 16		2147483647	0	1	0
+16	Band 1 -> Threshold		2147483647	0	1	0
+17	Band 1 -> Ratio		2147483647	0	1	0
+18	Band 1 -> Attack		2147483647	0	1	0
+19	Band 1 -> Release		2147483647	0	1	0
+20	Band 1 -> Gain		2147483647	0	1	0
+21	Band 1 -> Soft		2147483647	0	1	0
+22	Param 23		2147483647	0	1	0
+23	Param 24		2147483647	0	1	0
+24	Band 2 -> Threshold		2147483647	0	1	0
+25	Band 2 -> Ratio		2147483647	0	1	0
+26	Band 2 -> Attack		2147483647	0	1	0
+27	Band 2 -> Release		2147483647	0	1	0
+28	Band 2 -> Gain		2147483647	0	1	0
+29	Band 2 -> Soft		2147483647	0	1	0
+30	Param 31		2147483647	0	1	0
+31	Param 32		2147483647	0	1	0
+32	Band 3 -> Threshold		2147483647	0	1	0
+33	Band 3 -> Ratio		2147483647	0	1	0
+34	Band 3 -> Attack		2147483647	0	1	0
+35	Band 3 -> Release		2147483647	0	1	0
+36	Band 3 -> Gain		2147483647	0	1	0
+37	Band 3 -> Soft		2147483647	0	1	0
+38	Param 39		2147483647	0	1	0
+39	Param 40		2147483647	0	1	0
+40	Band 4 -> Threshold		2147483647	0	1	0
+41	Band 4 -> Ratio		2147483647	0	1	0
+42	Band 4 -> Attack		2147483647	0	1	0
+43	Band 4 -> Release		2147483647	0	1	0
+44	Band 4 -> Gain		2147483647	0	1	0
+45	Band 4 -> Soft		2147483647	0	1	0
+46	Param 47		2147483647	0	1	0
+47	Param 48		2147483647	0	1	0
+48	Detector -> RMS length		2147483647	0	1	0
+49	Detector -> Look-ahead		2147483647	0	1	0
+50	Detector -> Release mode		2147483647	0	1	0
+51	Detector -> Auto speed		2147483647	0	1	0
+52	Param 53		2147483647	0	1	0
+53	Param 54		2147483647	0	1	0
+54	Param 55		2147483647	0	1	0
+55	Param 56		2147483647	0	1	0
+56	Param 57		2147483647	0	1	0
+57	Param 58		2147483647	0	1	0
+58	Param 59		2147483647	0	1	0
+59	Param 60		2147483647	0	1	0
+60	Param 61		2147483647	0	1	0
+61	Param 62		2147483647	0	1	0
+62	Param 63		2147483647	0	1	0
+63	Param 64		2147483647	0	1	0
+64	Dry/Wet		2147483647	0	1	0
+65	Input gain		2147483647	0	1	0
+66	Output gain		2147483647	0	1	0
+67	Temporary gain		2147483647	0	1	0
+68	Crossover type		2147483647	0	1	0
+69	Crossover analog mode		2147483647	0	1	0
+70	Level crossover slope		2147483647	0	1	0
+71	Level crossover value		2147483647	0	1	0
+72	Crossover tone		2147483647	0	1	0
+73	Crossover smoothing		2147483647	0	1	0
+74	Crossover transient release		2147483647	0	1	0
+75	Crossover transient resolution		2147483647	0	1	0
+76	Crossover spectral resolution		2147483647	0	1	0
+77	Band gain 1		2147483647	0	1	0
+78	Band gain 2		2147483647	0	1	0
+79	Band gain 3		2147483647	0	1	0
+80	Band gain 4		2147483647	0	1	0
+81	Band gain 5		2147483647	0	1	0
+82	Band gain 6		2147483647	0	1	0
+83	Band limit 1		2147483647	0	1	0
+84	Band limit 2		2147483647	0	1	0
+85	Band limit 3		2147483647	0	1	0
+86	Band limit 4		2147483647	0	1	0
+87	Band limit 5		2147483647	0	1	0
+88	Band panorama 1		2147483647	0	1	0
+89	Band panorama 2		2147483647	0	1	0
+90	Band panorama 3		2147483647	0	1	0
+91	Band panorama 4		2147483647	0	1	0
+92	Band panorama 5		2147483647	0	1	0
+93	Band panorama 6		2147483647	0	1	0
+94	Band 1 - General parameters - Input gain		2147483647	0	1	0
+95	Band 1 - General parameters - Output gain		2147483647	0	1	0
+96	Band 1 - General parameters - Temp gain		2147483647	0	1	0
+97	Band 1 - General parameters - Dry/Wet		2147483647	0	1	0
+98	Band 1 - General parameters - Mode		2147483647	0	1	0
+99	Band 1 - General parameters - Maximize		2147483647	0	1	0
+100	Band 1 - General parameters - Link channels		2147483647	0	1	0
+101	Band 1 - Dynamic detection - Attack		2147483647	0	1	0
+102	Band 1 - Dynamic detection - Release		2147483647	0	1	0
+103	Band 1 - Dynamic detection - Release mode		2147483647	0	1	0
+104	Band 1 - Dynamic detection - Auto speed		2147483647	0	1	0
+105	Band 1 - Dynamic detection - Peak hold		2147483647	0	1	0
+106	Band 1 - Dynamic detection - RMS length		2147483647	0	1	0
+107	Band 1 - Dynamic detection - Look-ahead		2147483647	0	1	0
+108	Band 1 - Gate - Gate		2	1	1	0
+109	Band 1 - Gate - Threshold		2147483647	0	1	0
+110	Band 1 - Gate - Size		2147483647	0	1	0
+111	Band 1 - Gate - Knee		2147483647	0	1	0
+112	Band 1 - Gate - Bottom		2147483647	0	1	0
+113	Band 1 - Processor 1 - Processor 1		2	1	1	0
+114	Band 1 - Processor 1 - Threshold		2147483647	0	1	0
+115	Band 1 - Processor 1 - Ratio		2147483647	0	1	0
+116	Band 1 - Processor 1 - Knee size		2147483647	0	1	0
+117	Band 1 - Processor 1 - Range		2147483647	0	1	0
+118	Band 1 - Processor 2 - Processor 2		2	1	1	0
+119	Band 1 - Processor 2 - Threshold		2147483647	0	1	0
+120	Band 1 - Processor 2 - Ratio		2147483647	0	1	0
+121	Band 1 - Processor 2 - Knee size		2147483647	0	1	0
+122	Band 1 - Processor 2 - Range		2147483647	0	1	0
+123	Band 2 - General parameters - Input gain		2147483647	0	1	0
+124	Band 2 - General parameters - Output gain		2147483647	0	1	0
+125	Band 2 - General parameters - Temp gain		2147483647	0	1	0
+126	Band 2 - General parameters - Dry/Wet		2147483647	0	1	0
+127	Band 2 - General parameters - Mode		2147483647	0	1	0
+128	Band 2 - General parameters - Maximize		2147483647	0	1	0
+129	Band 2 - General parameters - Link channels		2147483647	0	1	0
+130	Band 2 - Dynamic detection - Attack		2147483647	0	1	0
+131	Band 2 - Dynamic detection - Release		2147483647	0	1	0
+132	Band 2 - Dynamic detection - Release mode		2147483647	0	1	0
+133	Band 2 - Dynamic detection - Auto speed		2147483647	0	1	0
+134	Band 2 - Dynamic detection - Peak hold		2147483647	0	1	0
+135	Band 2 - Dynamic detection - RMS length		2147483647	0	1	0
+136	Band 2 - Dynamic detection - Look-ahead		2147483647	0	1	0
+137	Band 2 - Gate - Gate		2	1	1	0
+138	Band 2 - Gate - Threshold		2147483647	0	1	0
+139	Band 2 - Gate - Size		2147483647	0	1	0
+140	Band 2 - Gate - Knee		2147483647	0	1	0
+141	Band 2 - Gate - Bottom		2147483647	0	1	0
+142	Band 2 - Processor 1 - Processor 1		2	1	1	0
+143	Band 2 - Processor 1 - Threshold		2147483647	0	1	0
+144	Band 2 - Processor 1 - Ratio		2147483647	0	1	0
+145	Band 2 - Processor 1 - Knee size		2147483647	0	1	0
+146	Band 2 - Processor 1 - Range		2147483647	0	1	0
+147	Band 2 - Processor 2 - Processor 2		2	1	1	0
+148	Band 2 - Processor 2 - Threshold		2147483647	0	1	0
+149	Band 2 - Processor 2 - Ratio		2147483647	0	1	0
+150	Band 2 - Processor 2 - Knee size		2147483647	0	1	0
+151	Band 2 - Processor 2 - Range		2147483647	0	1	0
+152	Band 3 - General parameters - Input gain		2147483647	0	1	0
+153	Band 3 - General parameters - Output gain		2147483647	0	1	0
+154	Band 3 - General parameters - Temp gain		2147483647	0	1	0
+155	Band 3 - General parameters - Dry/Wet		2147483647	0	1	0
+156	Band 3 - General parameters - Mode		2147483647	0	1	0
+157	Band 3 - General parameters - Maximize		2147483647	0	1	0
+158	Band 3 - General parameters - Link channels		2147483647	0	1	0
+159	Band 3 - Dynamic detection - Attack		2147483647	0	1	0
+160	Band 3 - Dynamic detection - Release		2147483647	0	1	0
+161	Band 3 - Dynamic detection - Release mode		2147483647	0	1	0
+162	Band 3 - Dynamic detection - Auto speed		2147483647	0	1	0
+163	Band 3 - Dynamic detection - Peak hold		2147483647	0	1	0
+164	Band 3 - Dynamic detection - RMS length		2147483647	0	1	0
+165	Band 3 - Dynamic detection - Look-ahead		2147483647	0	1	0
+166	Band 3 - Gate - Gate		2	1	1	0
+167	Band 3 - Gate - Threshold		2147483647	0	1	0
+168	Band 3 - Gate - Size		2147483647	0	1	0
+169	Band 3 - Gate - Knee		2147483647	0	1	0
+170	Band 3 - Gate - Bottom		2147483647	0	1	0
+171	Band 3 - Processor 1 - Processor 1		2	1	1	0
+172	Band 3 - Processor 1 - Threshold		2147483647	0	1	0
+173	Band 3 - Processor 1 - Ratio		2147483647	0	1	0
+174	Band 3 - Processor 1 - Knee size		2147483647	0	1	0
+175	Band 3 - Processor 1 - Range		2147483647	0	1	0
+176	Band 3 - Processor 2 - Processor 2		2	1	1	0
+177	Band 3 - Processor 2 - Threshold		2147483647	0	1	0
+178	Band 3 - Processor 2 - Ratio		2147483647	0	1	0
+179	Band 3 - Processor 2 - Knee size		2147483647	0	1	0
+180	Band 3 - Processor 2 - Range		2147483647	0	1	0
+181	Band 4 - General parameters - Input gain		2147483647	0	1	0
+182	Band 4 - General parameters - Output gain		2147483647	0	1	0
+183	Band 4 - General parameters - Temp gain		2147483647	0	1	0
+184	Band 4 - General parameters - Dry/Wet		2147483647	0	1	0
+185	Band 4 - General parameters - Mode		2147483647	0	1	0
+186	Band 4 - General parameters - Maximize		2147483647	0	1	0
+187	Band 4 - General parameters - Link channels		2147483647	0	1	0
+188	Band 4 - Dynamic detection - Attack		2147483647	0	1	0
+189	Band 4 - Dynamic detection - Release		2147483647	0	1	0
+190	Band 4 - Dynamic detection - Release mode		2147483647	0	1	0
+191	Band 4 - Dynamic detection - Auto speed		2147483647	0	1	0
+192	Band 4 - Dynamic detection - Peak hold		2147483647	0	1	0
+193	Band 4 - Dynamic detection - RMS length		2147483647	0	1	0
+194	Band 4 - Dynamic detection - Look-ahead		2147483647	0	1	0
+195	Band 4 - Gate - Gate		2	1	1	0
+196	Band 4 - Gate - Threshold		2147483647	0	1	0
+197	Band 4 - Gate - Size		2147483647	0	1	0
+198	Band 4 - Gate - Knee		2147483647	0	1	0
+199	Band 4 - Gate - Bottom		2147483647	0	1	0
+200	Band 4 - Processor 1 - Processor 1		2	1	1	0
+201	Band 4 - Processor 1 - Threshold		2147483647	0	1	0
+202	Band 4 - Processor 1 - Ratio		2147483647	0	1	0
+203	Band 4 - Processor 1 - Knee size		2147483647	0	1	0
+204	Band 4 - Processor 1 - Range		2147483647	0	1	0
+205	Band 4 - Processor 2 - Processor 2		2	1	1	0
+206	Band 4 - Processor 2 - Threshold		2147483647	0	1	0
+207	Band 4 - Processor 2 - Ratio		2147483647	0	1	0
+208	Band 4 - Processor 2 - Knee size		2147483647	0	1	0
+209	Band 4 - Processor 2 - Range		2147483647	0	1	0
+210	Band 5 - General parameters - Input gain		2147483647	0	1	0
+211	Band 5 - General parameters - Output gain		2147483647	0	1	0
+212	Band 5 - General parameters - Temp gain		2147483647	0	1	0
+213	Band 5 - General parameters - Dry/Wet		2147483647	0	1	0
+214	Band 5 - General parameters - Mode		2147483647	0	1	0
+215	Band 5 - General parameters - Maximize		2147483647	0	1	0
+216	Band 5 - General parameters - Link channels		2147483647	0	1	0
+217	Band 5 - Dynamic detection - Attack		2147483647	0	1	0
+218	Band 5 - Dynamic detection - Release		2147483647	0	1	0
+219	Band 5 - Dynamic detection - Release mode		2147483647	0	1	0
+220	Band 5 - Dynamic detection - Auto speed		2147483647	0	1	0
+221	Band 5 - Dynamic detection - Peak hold		2147483647	0	1	0
+222	Band 5 - Dynamic detection - RMS length		2147483647	0	1	0
+223	Band 5 - Dynamic detection - Look-ahead		2147483647	0	1	0
+224	Band 5 - Gate - Gate		2	1	1	0
+225	Band 5 - Gate - Threshold		2147483647	0	1	0
+226	Band 5 - Gate - Size		2147483647	0	1	0
+227	Band 5 - Gate - Knee		2147483647	0	1	0
+228	Band 5 - Gate - Bottom		2147483647	0	1	0
+229	Band 5 - Processor 1 - Processor 1		2	1	1	0
+230	Band 5 - Processor 1 - Threshold		2147483647	0	1	0
+231	Band 5 - Processor 1 - Ratio		2147483647	0	1	0
+232	Band 5 - Processor 1 - Knee size		2147483647	0	1	0
+233	Band 5 - Processor 1 - Range		2147483647	0	1	0
+234	Band 5 - Processor 2 - Processor 2		2	1	1	0
+235	Band 5 - Processor 2 - Threshold		2147483647	0	1	0
+236	Band 5 - Processor 2 - Ratio		2147483647	0	1	0
+237	Band 5 - Processor 2 - Knee size		2147483647	0	1	0
+238	Band 5 - Processor 2 - Range		2147483647	0	1	0
+239	Band 6 - General parameters - Input gain		2147483647	0	1	0
+240	Band 6 - General parameters - Output gain		2147483647	0	1	0
+241	Band 6 - General parameters - Temp gain		2147483647	0	1	0
+242	Band 6 - General parameters - Dry/Wet		2147483647	0	1	0
+243	Band 6 - General parameters - Mode		2147483647	0	1	0
+244	Band 6 - General parameters - Maximize		2147483647	0	1	0
+245	Band 6 - General parameters - Link channels		2147483647	0	1	0
+246	Band 6 - Dynamic detection - Attack		2147483647	0	1	0
+247	Band 6 - Dynamic detection - Release		2147483647	0	1	0
+248	Band 6 - Dynamic detection - Release mode		2147483647	0	1	0
+249	Band 6 - Dynamic detection - Auto speed		2147483647	0	1	0
+250	Band 6 - Dynamic detection - Peak hold		2147483647	0	1	0
+251	Band 6 - Dynamic detection - RMS length		2147483647	0	1	0
+252	Band 6 - Dynamic detection - Look-ahead		2147483647	0	1	0
+253	Band 6 - Gate - Gate		2	1	1	0
+254	Band 6 - Gate - Threshold		2147483647	0	1	0
+255	Band 6 - Gate - Size		2147483647	0	1	0
+256	Band 6 - Gate - Knee		2147483647	0	1	0
+257	Band 6 - Gate - Bottom		2147483647	0	1	0
+258	Band 6 - Processor 1 - Processor 1		2	1	1	0
+259	Band 6 - Processor 1 - Threshold		2147483647	0	1	0
+260	Band 6 - Processor 1 - Ratio		2147483647	0	1	0
+261	Band 6 - Processor 1 - Knee size		2147483647	0	1	0
+262	Band 6 - Processor 1 - Range		2147483647	0	1	0
+263	Band 6 - Processor 2 - Processor 2		2	1	1	0
+264	Band 6 - Processor 2 - Threshold		2147483647	0	1	0
+265	Band 6 - Processor 2 - Ratio		2147483647	0	1	0
+266	Band 6 - Processor 2 - Knee size		2147483647	0	1	0
+267	Band 6 - Processor 2 - Range		2147483647	0	1	0
+268	Modulators - Mod 1 - Automated value		2147483647	0	1	0
+269	Modulators - Mod 2 - Automated value		2147483647	0	1	0
+270	Modulators - Mod 3 - Automated value		2147483647	0	1	0
+271	Modulators - Mod 4 - Automated value		2147483647	0	1	0
+272	Preset trigger - previous		2147483647	0	1	0
+273	Preset trigger - next		2147483647	0	1	0
+274	Device		2147483647	0	1	0
+275	Band 1 - General parameters - Invert		2	1	1	0
+276	Band 2 - General parameters - Invert		2	1	1	0
+277	Band 3 - General parameters - Invert		2	1	1	0
+278	Band 4 - General parameters - Invert		2	1	1	0
+279	Band 5 - General parameters - Invert		2	1	1	0
+280	Band 6 - General parameters - Invert		2	1	1	0

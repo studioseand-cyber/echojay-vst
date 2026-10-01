@@ -1080,8 +1080,16 @@ while the other two are pass-through - no identity, no clamp. Any conclusion dra
 sweeps before the guard existed is suspect for the same reason, and should be re-read from the
 re-derived store rather than from the earlier report.
 
-**The fallback batch (22 fixtures, 16 product names - the (m)/(s) pairs are separate): run
-30 Sep evening; outcome recorded in the batch-7 README and summarised here once measured.**
+**The fallback batch, measured (22 fixtures, 16 product names; 30 Sep evening + 1 Oct 13:44-14:31):
+24 candidates on 18 products RECOVERED through the quiet-level reference, 0 failed the quiet check
+like OTT, 3 still refused (LinMB (m/s) Band 3 and MDynamicsMBLarge Band 3 Processor 1: nonmonotonic
+on the positions the quiet check allows), 2 not run (SSLGChannel (m/s): no map, not discoverable
+once their fixture is lifted - queued separately). THE PREDICTION: the multibands recovered as
+predicted - AND SO DID SPL IRON (41 of 41 quiet checks) AND SSL NATIVE BUS COMPRESSOR 2 (8 of 16).
+The mechanism is therefore broader than "other stages": a single-band compressor whose soft end
+still compresses at -24..-6 dBFS contaminates its own reference, and the same quiet reference
+repairs it. The 8-19% band was two causes with one cure; the diagnosis "other stages" was right
+for the multibands and incomplete as a mechanism. Full table in the batch-7 README.
 
 ## 13. Engage detection (spec section 3 `engage`, built 1 Oct)
 

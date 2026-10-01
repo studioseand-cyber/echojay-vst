@@ -1,0 +1,367 @@
+probe: "MTurboComp" | AudioUnit:Effects/aumf,MTuC,Meld | uid=61447441 | arch=arm64 | format=AudioUnit
+
+param	0	Globals -> Input	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-40.00 dB
+at	0.500	0.00 dB
+at	1.000	+40.00 dB
+param	1	Globals -> Output	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-20.00 dB
+at	0.500	0.00 dB
+at	1.000	+20.00 dB
+param	2	Globals -> Dry/wet	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	3	Globals -> Compression	unit	
+def	0.500000	0.00%	default	0.500000
+at	0.000	-100.0%
+at	0.500	0.00%
+at	1.000	+100.0%
+param	4	Globals -> Saturation	unit	
+def	0.100000	10.0%	default	0.100000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	5	Param 6	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	6	Param 7	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	7	Param 8	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	8	Compressor -> Threshold	unit	
+def	0.200000	20.0%	default	0.200000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	9	Compressor -> Ratio	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	10	Compressor -> Soft	unit	
+def	0.000000	0.00%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	11	Param 12	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	12	Param 13	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	13	Param 14	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	14	Compressor -> Attack	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	15	Compressor -> Release	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	16	Param 17	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	17	Param 18	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	18	Detector -> Side-chain input	unit	
+def	0.000000	0.00%	default	0.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	19	Param 20	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	20	Detector -> HP	unit	
+def	0.000000	20.00 Hz	default	0.000000
+at	0.000	20.00 Hz
+at	0.500	141.4 Hz
+at	1.000	1000 Hz
+param	21	Param 22	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	22	Detector -> LP	unit	
+def	1.000000	20.0 kHz	default	1.000000
+at	0.000	100.00 Hz
+at	0.500	1414 Hz
+at	1.000	20.0 kHz
+param	23	Detector -> Link channels	unit	
+def	1.000000	100.0%	default	1.000000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	24	Detector -> Gain	unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	25	Detector -> Frequency	unit	
+def	0.490459	600.0 Hz	default	0.490459
+at	0.000	40.00 Hz
+at	0.500	632.5 Hz
+at	1.000	10000 Hz
+param	26	Detector -> BW	unit	
+def	0.800000	80.0%	default	0.800000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	27	Param 28	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	28	Param 29	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	29	Param 30	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	30		unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	31		unit	
+def	0.500000	0.00 dB	default	0.500000
+at	0.000	-24.00 dB
+at	0.500	0.00 dB
+at	1.000	+24.00 dB
+param	32	Param 33	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	33	Param 34	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	34	Param 35	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	35	Param 36	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	36	Param 37	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	37	Param 38	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	38	Param 39	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	39	Param 40	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	40	Param 41	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	41	Param 42	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	42	Param 43	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	43	Param 44	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	44	Param 45	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	45	Param 46	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	46	Param 47	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	47	Param 48	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	48	Param 49	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	49	Param 50	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	50	Param 51	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	51	Param 52	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	52	Param 53	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	53	Param 54	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	54	Param 55	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	55	Param 56	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	56	Param 57	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	57	Param 58	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	58	Param 59	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	59	Param 60	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	60	Param 61	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	61	Param 62	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	62	Param 63	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	63	Param 64	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	64	Device	unit	
+def	0.000000	MSL E	default	0.000000
+at	0.000	MSL E
+at	0.500	Fairmeld
+at	1.000	Meldei Multi
+param	65	Modulators - Mod 1 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	66	Modulators - Mod 2 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	67	Modulators - Mod 3 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	68	Modulators - Mod 4 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	69	Modulators - Mod 5 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	70	Modulators - Mod 6 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	71	Modulators - Mod 7 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%
+param	72	Modulators - Mod 8 - Automated value	unit	
+def	0.500000	50.0%	default	0.500000
+at	0.000	0.00%
+at	0.500	50.0%
+at	1.000	100.0%

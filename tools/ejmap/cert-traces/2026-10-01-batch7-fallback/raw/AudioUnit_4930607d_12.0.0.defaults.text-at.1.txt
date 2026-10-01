@@ -1,0 +1,272 @@
+probe: "C6 (s)" | AudioUnit:Effects/aufx,C6QS,ksWV | uid=4930607d | arch=arm64 | format=AudioUnit
+
+param	0	Output Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	1	Release	unit	
+def	1.000000	Manual	default	0.000000
+at	0.000	ARC
+at	0.500	ARC
+at	1.000	Manual
+param	2	Behavior	unit	
+def	1.000000	Opto	default	0.000000
+at	0.000	Electro
+at	0.500	Electro
+at	1.000	Opto
+param	3	Knee	unit	
+def	0.666667	0.50	default	0.667000
+at	0.000	Soft
+at	0.500	0.38
+at	1.000	Hard
+param	4	Low Crossover	unit	Hz
+def	0.245547	92	default	0.246000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	5	Mid Crossover	unit	Hz
+def	0.768000	4000	default	0.768000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	6	High Crossover	unit	Hz
+def	0.908997	11071	default	0.909000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	7	Crossover Q	unit	
+def	0.769231	0.60	default	0.769000
+at	0.000	0.10
+at	0.500	0.43
+at	1.000	0.75
+param	8	Band 1 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	9	Band 1 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	10	Band 1 Threshold	unit	dB
+def	1.000000	0.0	default	0.559000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	11	Band 1 Gain	unit	dB
+def	0.530556	1.1	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	12	Band 1 Range	unit	dB
+def	0.571429	0.0	default	0.381000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	13	Band 1 Attack	unit	ms
+def	0.501988	16.03	default	0.201000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	14	Band 1 Release	unit	ms
+def	0.501997	160.31	default	0.302000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	15	Band 1 Q	unit	
+def	0.301428	1.65	default	0.301000
+at	0.000	0.35
+at	0.500	4.60
+at	1.000	60.00
+param	16	Band 1 Frequency	unit	Hz
+def	0.576000	1000	default	0.257000
+at	0.000	16
+at	0.500	578
+at	1.000	21357
+param	17	Band 2 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	18	Band 2 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	19	Band 2 Threshold	unit	dB
+def	1.000000	0.0	default	0.663000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	20	Band 2 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	21	Band 2 Range	unit	dB
+def	0.380952	-8.0	default	0.381000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	22	Band 2 Attack	unit	ms
+def	0.614991	34.99	default	0.615000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	23	Band 2 Release	unit	ms
+def	0.302004	40.27	default	0.302000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	24	Band 3 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	25	Band 3 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	26	Band 3 Threshold	unit	dB
+def	1.000000	0.0	default	0.760000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	27	Band 3 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	28	Band 3 Range	unit	dB
+def	0.380952	-8.0	default	0.381000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	29	Band 3 Attack	unit	ms
+def	0.501988	16.03	default	0.502000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	30	Band 3 Release	unit	ms
+def	0.232990	25.00	default	0.233000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	31	Band 4 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	32	Band 4 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	33	Band 4 Threshold	unit	dB
+def	1.000000	0.0	default	0.624000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	34	Band 4 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	35	Band 4 Range	unit	dB
+def	0.380952	-8.0	default	0.381000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	36	Band 4 Attack	unit	ms
+def	0.333044	4.99	default	0.333000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	37	Band 4 Release	unit	ms
+def	0.100054	9.98	default	0.100000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	38	Band 5 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	39	Band 5 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	40	Band 5 Threshold	unit	dB
+def	1.000000	0.0	default	0.559000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	41	Band 5 Gain	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	42	Band 5 Range	unit	dB
+def	0.380952	-8.0	default	0.381000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	43	Band 5 Attack	unit	ms
+def	0.200687	2.00	default	0.201000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	44	Band 5 Release	unit	ms
+def	0.000000	5.00	default	0.000000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	45	Band 6 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Solo
+param	46	Band 6 Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	Bypass
+param	47	Band 6 Threshold	unit	dB
+def	1.000000	0.0	default	0.559000
+at	0.000	-80.0
+at	0.500	-40.0
+at	1.000	0.0
+param	48	Band 6 Gain	unit	dB
+def	0.527778	1.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	49	Band 6 Range	unit	dB
+def	0.571429	0.0	default	0.381000
+at	0.000	-24.0
+at	0.500	-3.0
+at	1.000	18.0
+param	50	Band 6 Attack	unit	ms
+def	0.501988	16.03	default	0.201000
+at	0.000	0.50
+at	0.500	15.81
+at	1.000	500.00
+param	51	Band 6 Release	unit	ms
+def	0.501997	160.31	default	0.233000
+at	0.000	5.00
+at	0.500	158.11
+at	1.000	5000.00
+param	52	Band 6 Q	unit	
+def	0.301428	1.65	default	0.301000
+at	0.000	0.35
+at	0.500	4.60
+at	1.000	60.00
+param	53	Band 6 Frequency	unit	Hz
+def	0.798988	5003	default	0.728000
+at	0.000	16
+at	0.500	578
+at	1.000	21357

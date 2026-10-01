@@ -1,0 +1,95 @@
+probe: "MTurboComp" | AudioUnit:Effects/aumf,MTuC,Meld | uid=61447441 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	8	name	Compressor -> Threshold	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Side-chain	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Side-chain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.500000	Globals -> Input	0.00 dB
+param	1	0.500000	Globals -> Output	0.00 dB
+param	2	1.000000	Globals -> Dry/wet	100.0%
+param	3	0.500000	Globals -> Compression	0.00%
+param	4	0.100000	Globals -> Saturation	10.0%
+param	5	0.500000	Param 6	50.0%
+param	6	0.500000	Param 7	50.0%
+param	7	0.500000	Param 8	50.0%
+param	8	0.200000	Compressor -> Threshold	20.0%
+param	9	0.500000	Compressor -> Ratio	50.0%
+param	10	0.000000	Compressor -> Soft	0.00%
+param	11	0.500000	Param 12	50.0%
+param	12	0.500000	Param 13	50.0%
+param	13	0.500000	Param 14	50.0%
+param	14	1.000000	Compressor -> Attack	100.0%
+param	15	0.500000	Compressor -> Release	50.0%
+param	16	0.500000	Param 17	50.0%
+param	17	0.500000	Param 18	50.0%
+param	18	0.000000	Detector -> Side-chain input	0.00%
+param	19	0.500000	Param 20	50.0%
+param	20	0.000000	Detector -> HP	20.00 Hz
+param	21	0.500000	Param 22	50.0%
+param	22	1.000000	Detector -> LP	20.0 kHz
+param	23	1.000000	Detector -> Link channels	100.0%
+param	24	0.500000	Detector -> Gain	0.00 dB
+param	25	0.490459	Detector -> Frequency	600.0 Hz
+param	26	0.800000	Detector -> BW	80.0%
+param	27	0.500000	Param 28	50.0%
+param	28	0.500000	Param 29	50.0%
+param	29	0.500000	Param 30	50.0%
+param	30	0.500000		0.00 dB
+param	31	0.500000		0.00 dB
+param	32	0.500000	Param 33	50.0%
+param	33	0.500000	Param 34	50.0%
+param	34	0.500000	Param 35	50.0%
+param	35	0.500000	Param 36	50.0%
+param	36	0.500000	Param 37	50.0%
+param	37	0.500000	Param 38	50.0%
+param	38	0.500000	Param 39	50.0%
+param	39	0.500000	Param 40	50.0%
+param	40	0.500000	Param 41	50.0%
+param	41	0.500000	Param 42	50.0%
+param	42	0.500000	Param 43	50.0%
+param	43	0.500000	Param 44	50.0%
+param	44	0.500000	Param 45	50.0%
+param	45	0.500000	Param 46	50.0%
+param	46	0.500000	Param 47	50.0%
+param	47	0.500000	Param 48	50.0%
+param	48	0.500000	Param 49	50.0%
+param	49	0.500000	Param 50	50.0%
+param	50	0.500000	Param 51	50.0%
+param	51	0.500000	Param 52	50.0%
+param	52	0.500000	Param 53	50.0%
+param	53	0.500000	Param 54	50.0%
+param	54	0.500000	Param 55	50.0%
+param	55	0.500000	Param 56	50.0%
+param	56	0.500000	Param 57	50.0%
+param	57	0.500000	Param 58	50.0%
+param	58	0.500000	Param 59	50.0%
+param	59	0.500000	Param 60	50.0%
+param	60	0.500000	Param 61	50.0%
+param	61	0.500000	Param 62	50.0%
+param	62	0.500000	Param 63	50.0%
+param	63	0.500000	Param 64	50.0%
+param	64	0.000000	Device	MSL E
+param	65	0.500000	Modulators - Mod 1 - Automated value	50.0%
+param	66	0.500000	Modulators - Mod 2 - Automated value	50.0%
+param	67	0.500000	Modulators - Mod 3 - Automated value	50.0%
+param	68	0.500000	Modulators - Mod 4 - Automated value	50.0%
+param	69	0.500000	Modulators - Mod 5 - Automated value	50.0%
+param	70	0.500000	Modulators - Mod 6 - Automated value	50.0%
+param	71	0.500000	Modulators - Mod 7 - Automated value	50.0%
+param	72	0.500000	Modulators - Mod 8 - Automated value	50.0%
+stage	position
+pos	0	norm	0.266667	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.266667	landed_by	instack	render_blocks	0	text_ms	20.5	reads	2	text	26.7%
+hold	0	-54.00	level_db	-55.4208	in_rms_db	-57.0103	tone_frac	1.0000	ch	-55.4208,-55.4208	doubled	0	last_move_db	0.0009	final_move_db	0.0009	win	-55.4214,-55.4204,-55.4214,-55.4204,-55.4214,-55.4204	nonfinite	0
+hold	0	-48.00	level_db	-49.4211	in_rms_db	-51.0103	tone_frac	1.0000	ch	-49.4211,-49.4211	doubled	0	last_move_db	0.0018	final_move_db	0.0018	win	-49.4223,-49.4206,-49.4223,-49.4206,-49.4223,-49.4206	nonfinite	0
+hold	0	-24.00	level_db	-26.0721	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.0721,-26.0721	doubled	0	last_move_db	0.0025	final_move_db	0.0025	win	-25.8707,-26.0706,-26.0738,-26.0713,-26.0738,-26.0712	nonfinite	0
+hold	0	-12.00	level_db	-17.9209	in_rms_db	-15.0103	tone_frac	1.0000	ch	-17.9209,-17.9209	doubled	0	last_move_db	0.0032	final_move_db	0.0032	win	-17.2776,-17.9190,-17.9230,-17.9198,-17.9231,-17.9199	nonfinite	0
+hold	0	-6.00	level_db	-20.0726	in_rms_db	-9.0103	tone_frac	0.3220	ch	-20.0726,-20.0726	doubled	0	last_move_db	0.0029	final_move_db	0.0029	win	-14.6964,-15.1691,-15.1736,-15.3112,-44.7590,-44.7562	nonfinite	0
+reread	0	steady
+timing	wall_ms	52.5	audio_s	7.500
+stage	done

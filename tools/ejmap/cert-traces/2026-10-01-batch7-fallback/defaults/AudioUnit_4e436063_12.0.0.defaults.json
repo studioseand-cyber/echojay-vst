@@ -1,0 +1,963 @@
+{
+  "identity": "AudioUnit|4e436063|12.0.0",
+  "product": "C4 (m)",
+  "format": "AudioUnit",
+  "uid": "4e436063",
+  "version": "12.0.0",
+  "sampledAt": "2026-10-01",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Release",
+      "unit": null,
+      "displayAt": {
+        "0.000": "ARC",
+        "0.500": "ARC",
+        "1.000": "Manual"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "ARC",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Behavior",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Electro",
+        "0.500": "Electro",
+        "1.000": "Opto"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Electro",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Knee",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Soft",
+        "0.500": "0.38",
+        "1.000": "Hard"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.667,
+        "display": "0.50",
+        "declaredDefault": 0.667,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Output Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-18.0",
+        "0.500": "0.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -18.0,
+        "max": 18.0,
+        "at0": -18.0,
+        "at0_5": 0.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Low Crossover",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "16",
+        "0.500": "578",
+        "1.000": "21357"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 16.0,
+        "max": 21357.0,
+        "at0": 16.0,
+        "at0_5": 578.0,
+        "at1": 21357.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.246,
+        "display": "92",
+        "declaredDefault": 0.246,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Mid Crossover",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "16",
+        "0.500": "578",
+        "1.000": "21357"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 16.0,
+        "max": 21357.0,
+        "at0": 16.0,
+        "at0_5": 578.0,
+        "at1": 21357.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.768,
+        "display": "4000",
+        "declaredDefault": 0.768,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "High Crossover",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "16",
+        "0.500": "578",
+        "1.000": "21357"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 16.0,
+        "max": 21357.0,
+        "at0": 16.0,
+        "at0_5": 578.0,
+        "at1": 21357.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.909,
+        "display": "11071",
+        "declaredDefault": 0.909,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Crossover Q",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.10",
+        "0.500": "0.43",
+        "1.000": "0.75"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.1,
+        "max": 0.75,
+        "at0": 0.1,
+        "at0_5": 0.43,
+        "at1": 0.75,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.769,
+        "display": "0.60",
+        "declaredDefault": 0.769,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Band 1 Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-18.0",
+        "0.500": "0.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -18.0,
+        "max": 18.0,
+        "at0": -18.0,
+        "at0_5": 0.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Band 1 Range",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-24.0",
+        "0.500": "-3.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -24.0,
+        "max": 18.0,
+        "at0": -24.0,
+        "at0_5": -3.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.381,
+        "display": "-8.0",
+        "declaredDefault": 0.381,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Band 1 Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.50",
+        "0.500": "15.81",
+        "1.000": "500.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.5,
+        "max": 500.0,
+        "at0": 0.5,
+        "at0_5": 15.81,
+        "at1": 500.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.615,
+        "display": "34.99",
+        "declaredDefault": 0.615,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Band 1 Release",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "5.00",
+        "0.500": "158.11",
+        "1.000": "5000.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 5.0,
+        "max": 5000.0,
+        "at0": 5.0,
+        "at0_5": 158.110000000000014,
+        "at1": 5000.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.302,
+        "display": "40.27",
+        "declaredDefault": 0.302,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Band 1 Solo",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Solo"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Band 1 Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Bypass"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Band 1 Thresh",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-80.0",
+        "0.500": "-40.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -80.0,
+        "max": 0.0,
+        "at0": -80.0,
+        "at0_5": -40.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.663,
+        "display": "-27.0",
+        "declaredDefault": 0.663,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "Band 2 Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-18.0",
+        "0.500": "0.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -18.0,
+        "max": 18.0,
+        "at0": -18.0,
+        "at0_5": 0.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "Band 2 Range",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-24.0",
+        "0.500": "-3.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -24.0,
+        "max": 18.0,
+        "at0": -24.0,
+        "at0_5": -3.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.381,
+        "display": "-8.0",
+        "declaredDefault": 0.381,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Band 2 Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.50",
+        "0.500": "15.81",
+        "1.000": "500.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.5,
+        "max": 500.0,
+        "at0": 0.5,
+        "at0_5": 15.81,
+        "at1": 500.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.502,
+        "display": "16.03",
+        "declaredDefault": 0.502,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "Band 2 Release",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "5.00",
+        "0.500": "158.11",
+        "1.000": "5000.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 5.0,
+        "max": 5000.0,
+        "at0": 5.0,
+        "at0_5": 158.110000000000014,
+        "at1": 5000.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.233,
+        "display": "25.00",
+        "declaredDefault": 0.233,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 19,
+      "name": "Band 2 Solo",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Solo"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 20,
+      "name": "Band 2 Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Bypass"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 21,
+      "name": "Band 2 Thresh",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-80.0",
+        "0.500": "-40.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -80.0,
+        "max": 0.0,
+        "at0": -80.0,
+        "at0_5": -40.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.76,
+        "display": "-19.2",
+        "declaredDefault": 0.76,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 22,
+      "name": "Band 3 Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-18.0",
+        "0.500": "0.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -18.0,
+        "max": 18.0,
+        "at0": -18.0,
+        "at0_5": 0.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 23,
+      "name": "Band 3 Range",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-24.0",
+        "0.500": "-3.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -24.0,
+        "max": 18.0,
+        "at0": -24.0,
+        "at0_5": -3.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.381,
+        "display": "-8.0",
+        "declaredDefault": 0.381,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 24,
+      "name": "Band 3 Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.50",
+        "0.500": "15.81",
+        "1.000": "500.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.5,
+        "max": 500.0,
+        "at0": 0.5,
+        "at0_5": 15.81,
+        "at1": 500.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.333,
+        "display": "4.99",
+        "declaredDefault": 0.333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 25,
+      "name": "Band 3 Release",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "5.00",
+        "0.500": "158.11",
+        "1.000": "5000.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 5.0,
+        "max": 5000.0,
+        "at0": 5.0,
+        "at0_5": 158.110000000000014,
+        "at1": 5000.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.1,
+        "display": "9.98",
+        "declaredDefault": 0.1,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 26,
+      "name": "Band 3 Solo",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Solo"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 27,
+      "name": "Band 3 Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Bypass"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 28,
+      "name": "Band 3 Thresh",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-80.0",
+        "0.500": "-40.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -80.0,
+        "max": 0.0,
+        "at0": -80.0,
+        "at0_5": -40.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.624,
+        "display": "-30.1",
+        "declaredDefault": 0.624,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 29,
+      "name": "Band 4 Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-18.0",
+        "0.500": "0.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -18.0,
+        "max": 18.0,
+        "at0": -18.0,
+        "at0_5": 0.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 30,
+      "name": "Band 4 Range",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-24.0",
+        "0.500": "-3.0",
+        "1.000": "18.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -24.0,
+        "max": 18.0,
+        "at0": -24.0,
+        "at0_5": -3.0,
+        "at1": 18.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.381,
+        "display": "-8.0",
+        "declaredDefault": 0.381,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 31,
+      "name": "Band 4 Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.50",
+        "0.500": "15.81",
+        "1.000": "500.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.5,
+        "max": 500.0,
+        "at0": 0.5,
+        "at0_5": 15.81,
+        "at1": 500.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.201,
+        "display": "2.00",
+        "declaredDefault": 0.201,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 32,
+      "name": "Band 4 Release",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "5.00",
+        "0.500": "158.11",
+        "1.000": "5000.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 5.0,
+        "max": 5000.0,
+        "at0": 5.0,
+        "at0_5": 158.110000000000014,
+        "at1": 5000.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "5.00",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 33,
+      "name": "Band 4 Solo",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Solo"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 34,
+      "name": "Band 4 Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Bypass"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 35,
+      "name": "Band 4 Thresh",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-80.0",
+        "0.500": "-40.0",
+        "1.000": "0.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -80.0,
+        "max": 0.0,
+        "at0": -80.0,
+        "at0_5": -40.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.559,
+        "display": "-35.3",
+        "declaredDefault": 0.559,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

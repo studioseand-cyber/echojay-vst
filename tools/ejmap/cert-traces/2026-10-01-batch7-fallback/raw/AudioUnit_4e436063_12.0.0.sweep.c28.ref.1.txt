@@ -1,0 +1,53 @@
+probe: "C4 (m)" | AudioUnit:Effects/aufx,DEQM,ksWV | uid=4e436063 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	28	name	Band 3 Thresh	positions	0	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	64
+param	0	0.000000	Release	ARC
+param	1	0.000000	Behavior	Electro
+param	2	0.667000	Knee	0.50
+param	3	0.500000	Output Gain	0.0
+param	4	0.246000	Low Crossover	92
+param	5	0.768000	Mid Crossover	4000
+param	6	0.909000	High Crossover	11071
+param	7	0.769000	Crossover Q	0.60
+param	8	0.500000	Band 1 Gain	0.0
+param	9	0.381000	Band 1 Range	-8.0
+param	10	0.615000	Band 1 Attack	34.99
+param	11	0.302000	Band 1 Release	40.27
+param	12	0.000000	Band 1 Solo	Off
+param	13	0.000000	Band 1 Bypass	Off
+param	14	0.663000	Band 1 Thresh	-27.0
+param	15	0.500000	Band 2 Gain	0.0
+param	16	0.381000	Band 2 Range	-8.0
+param	17	0.502000	Band 2 Attack	16.03
+param	18	0.233000	Band 2 Release	25.00
+param	19	0.000000	Band 2 Solo	Off
+param	20	0.000000	Band 2 Bypass	Off
+param	21	0.760000	Band 2 Thresh	-19.2
+param	22	0.500000	Band 3 Gain	0.0
+param	23	0.381000	Band 3 Range	-8.0
+param	24	0.333000	Band 3 Attack	4.99
+param	25	0.100000	Band 3 Release	9.98
+param	26	0.000000	Band 3 Solo	Off
+param	27	0.000000	Band 3 Bypass	Off
+param	28	0.624000	Band 3 Thresh	-30.1
+param	29	0.500000	Band 4 Gain	0.0
+param	30	0.381000	Band 4 Range	-8.0
+param	31	0.201000	Band 4 Attack	2.00
+param	32	0.000000	Band 4 Release	5.00
+param	33	0.000000	Band 4 Solo	Off
+param	34	0.000000	Band 4 Bypass	Off
+param	35	0.559000	Band 4 Thresh	-35.3
+stage	reference
+refpos	val	0.624000	text	-30.1
+ref	-24.00	level_db	-28.2454	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-28.2454	win	-28.2134,-28.2468,-28.2422,-28.2469,-28.2422,-28.2469,-28.2422,-28.2469	nonfinite	0
+ref	-12.00	level_db	-19.1003	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.1003	win	-18.9057,-19.0982,-19.1038,-19.0985,-19.1039,-19.0985,-19.1039,-19.0985	nonfinite	0
+ref	-6.00	level_db	-14.5322	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9999	ch	-14.5322	win	-14.4508,-14.5327,-14.5305,-14.5330,-14.5306,-14.5330,-14.5306,-14.5330	nonfinite	0
+timing	wall_ms	68.9	audio_s	6.000
+stage	done

@@ -1,0 +1,34 @@
+probe: "SSL Native Bus Compressor 2" | AudioUnit:Effects/aufx,NBC2,SSLN | uid=7c646904 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Threshold	positions	1	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Key Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Key Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.166667	Ratio	2:1
+param	1	0.000000	Comp Bypass	Off
+param	2	1.000000	Threshold	20.0
+param	3	0.000000	Mix Lock	Off
+param	4	1.000000	Release	AUTO
+param	5	1.000000	Dry/Wet Mix	100.0
+param	6	0.250000	Makeup Gain	0.0
+param	7	0.000000	GroupSense	0
+param	8	0.000000	External S/C	Off
+param	9	0.000000	Sidechain HPF	OFF
+param	10	0.000000	Oversampling	OFF
+param	11	0.666667	Attack	10
+stage	position
+pos	0	norm	0.400000	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.400000	landed_by	instack	render_blocks	0	text_ms	21.6	reads	2	text	-4.0
+hold	0	-54.00	level_db	-57.1543	in_rms_db	-57.0103	tone_frac	1.0000	ch	-57.1543,-57.1543	doubled	0	last_move_db	-0.0088	final_move_db	-0.0088	win	-57.0819,-57.1077,-57.1281,-57.1428,-57.1556,-57.1644	nonfinite	0
+hold	0	-48.00	level_db	-51.3271	in_rms_db	-51.0103	tone_frac	1.0000	ch	-51.3271,-51.3271	doubled	0	last_move_db	-0.0096	final_move_db	-0.0096	win	-51.2419,-51.2718,-51.2967,-51.3134,-51.3292,-51.3388	nonfinite	0
+hold	0	-24.00	level_db	-30.8172	in_rms_db	-27.0103	tone_frac	1.0000	ch	-30.8171,-30.8174	doubled	1	last_move_db	-0.1413	final_move_db	-0.0196	win	-29.0133,-29.5383,-29.9028,-30.1663,-30.3640,-30.5053,-30.6151,-30.6894,-30.7493,-30.7881,-30.8220,-30.8417	nonfinite	0
+hold	0	-12.00	level_db	-23.7645	in_rms_db	-15.0103	tone_frac	1.0000	ch	-23.7642,-23.7648	doubled	1	last_move_db	-0.1469	final_move_db	-0.0120	win	-21.6257,-22.3393,-22.8011,-23.1135,-23.3353,-23.4822,-23.5915,-23.6586,-23.7122,-23.7420,-23.7698,-23.7818	nonfinite	0
+hold	0	-6.00	level_db	-20.8090	in_rms_db	-9.0103	tone_frac	1.0000	ch	-20.8085,-20.8094	doubled	0	last_move_db	-0.0811	final_move_db	-0.0811	win	-19.7524,-20.2138,-20.5064,-20.6940,-20.8273,-20.9083	nonfinite	0
+reread	0	steady
+timing	wall_ms	70.9	audio_s	10.500
+stage	done

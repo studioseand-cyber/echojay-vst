@@ -1444,9 +1444,14 @@
     "class": "bands_or_stages",
     "candidates": 6,
     "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
-    "curves": 0,
+    "curves": 1,
     "flats": 5,
-    "responding": [],
+    "responding": [
+      {
+        "index": 26,
+        "name": "Band 3 Threshold"
+      }
+    ],
     "passThroughAtDefaults": {
       "count": 0,
       "candidates": []
@@ -1465,7 +1470,7 @@
       {
         "index": 26,
         "name": "Band 3 Threshold",
-        "result": "unreadable"
+        "result": "certified"
       },
       {
         "index": 33,
@@ -1490,7 +1495,7 @@
       "name": "Band 1 Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T090306.731+0100",
+        "measuredAt": "20260930T192417.649+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1566,7 +1571,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1588,7 +1592,7 @@
       "name": "Band 2 Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T090306.731+0100",
+        "measuredAt": "20260930T192417.649+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1664,7 +1668,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1686,7 +1689,7 @@
       "name": "Band 3 Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T090306.731+0100",
+        "measuredAt": "20260930T192417.649+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1698,7 +1701,7 @@
           ]
         },
         "level_convention": "peak",
-        "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
+        "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)",
         "ratioDuring": {
           "position": "",
           "value": null,
@@ -1725,22 +1728,37 @@
           1.0
         ],
         "linearReference": {
-          "mode": "soft_end",
-          "position": 15,
-          "gain_db": {
-            "-24": 1.09,
-            "-12": 0.73,
-            "-6": 0.08
-          },
-          "spread_db": 1.0,
-          "response_db": 7.53,
-          "error_db": 1.0,
-          "error_fraction": 0.133,
-          "bar_fraction": 0.083
+          "mode": "per_position_quiet",
+          "levels_dbfs": [
+            -54,
+            -48
+          ],
+          "tolerance_db": 0.1,
+          "check_db": [
+            -0.276,
+            -0.482,
+            -0.802,
+            -1.196,
+            -1.51,
+            -1.518,
+            -1.174,
+            -0.702,
+            -0.331,
+            -0.132,
+            -0.047,
+            -0.015,
+            -0.004,
+            -0.001,
+            0.0,
+            0.0
+          ],
+          "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 1.00 dB across the levels, 13.3% of the 7.53 dB response (bar 8.3%)"
         },
         "defaultGain_db": {
           "-12": 0.73,
           "-24": 1.09,
+          "-48": 1.12,
+          "-54": 1.12,
           "-6": 0.08
         },
         "positionLandedBy": [
@@ -1767,88 +1785,172 @@
         },
         "reduction_db": {
           "-24": [
-            7.53,
-            7.51,
-            7.48,
-            7.43,
-            7.34,
-            7.16,
-            6.84,
-            6.31,
-            5.44,
-            4.23,
-            2.85,
-            1.58,
-            0.73,
-            0.28,
-            0.07,
-            0.0
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            2.82,
+            1.6,
+            0.77,
+            0.31,
+            0.11,
+            0.04
           ],
           "-12": [
-            7.18,
-            7.18,
-            7.17,
-            7.16,
-            7.13,
-            7.09,
-            7.01,
-            6.85,
-            6.58,
-            6.11,
-            5.34,
-            4.2,
-            2.83,
-            1.52,
-            0.54,
-            0.0
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            5.67,
+            4.57,
+            3.22,
+            1.92,
+            0.94,
+            0.4
           ],
           "-6": [
-            6.54,
-            6.54,
-            6.54,
-            6.53,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
             6.52,
-            6.49,
-            6.45,
-            6.37,
-            6.23,
-            5.98,
-            5.54,
-            4.8,
-            3.72,
-            2.37,
-            1.01,
-            0.0
+            5.82,
+            4.75,
+            3.41,
+            2.05,
+            1.04
           ]
         },
+        "sense": "lower_is_harder",
         "engage": {
-          "-24": null,
-          "-12": null,
-          "-6": null
+          "-24": 12,
+          "-12": 14,
+          "-6": 15
         },
-        "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "skipped": [
+          {
+            "position": 0,
+            "reason": "quiet reference: -48 minus -54 is 5.72 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 1,
+            "reason": "quiet reference: -48 minus -54 is 5.52 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 2,
+            "reason": "quiet reference: -48 minus -54 is 5.20 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 3,
+            "reason": "quiet reference: -48 minus -54 is 4.80 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 4,
+            "reason": "quiet reference: -48 minus -54 is 4.49 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 5,
+            "reason": "quiet reference: -48 minus -54 is 4.48 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 6,
+            "reason": "quiet reference: -48 minus -54 is 4.83 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 7,
+            "reason": "quiet reference: -48 minus -54 is 5.30 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 8,
+            "reason": "quiet reference: -48 minus -54 is 5.67 dB, not 6 (compressed or noise floor)"
+          },
+          {
+            "position": 9,
+            "reason": "quiet reference: -48 minus -54 is 5.87 dB, not 6 (compressed or noise floor)"
+          }
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
-          "dg_dl_per_position": [],
-          "median_dg_dl": null,
-          "implied_ratio": null,
+          "dg_dl_per_position": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0.205,
+            0.234,
+            0.222,
+            0.172,
+            0.108,
+            0.056
+          ],
+          "median_dg_dl": 0.223,
+          "implied_ratio": 1.29,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "unreadable",
+        "result": "certified",
         "passThroughAtDefaults": false,
         "notToneReadings": [],
-        "flatSpan_db": 7.53,
-        "reason": "the soft end is not linear: its gain spans 1.00 dB across the levels, 13.3% of the 7.53 dB response (bar 8.3%)",
-        "displayOffsetDb": null
-      }
+        "flatSpan_db": 5.47,
+        "reason": "ratio unknown (no ratio control): no dB-equivalent map",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": 9.130000000000001,
+          "-24": 9.68,
+          "-6": 8.83,
+          "drift_db": 0.84,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
+      },
+      "reading": "responds at 997 Hz: a curve to read"
     },
     {
       "index": 33,
       "name": "Band 4 Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T090306.731+0100",
+        "measuredAt": "20260930T192417.649+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1924,7 +2026,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1946,7 +2047,7 @@
       "name": "Band 5 Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T090306.731+0100",
+        "measuredAt": "20260930T192417.649+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -2022,7 +2123,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -2044,7 +2144,7 @@
       "name": "Band 6 Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T090306.731+0100",
+        "measuredAt": "20260930T192417.649+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -2120,7 +2220,6 @@
           "-6": null
         },
         "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],

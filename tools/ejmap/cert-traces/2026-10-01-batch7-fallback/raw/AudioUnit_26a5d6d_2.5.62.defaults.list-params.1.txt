@@ -1,0 +1,43 @@
+probe: "Drawmer 1973" | AudioUnit:Effects/aufx,0yow,SfTb | uid=26a5d6d | arch=arm64 | format=AudioUnit
+
+0	Input Gain	dB	2147483647	0	1	0
+1	Big		2147483647	0	1	0
+2	Low Threshold	dB	2147483647	0	1	0
+3	Low Status		2147483647	0	1	0
+4	Low Attack	ms	2147483647	0	1	0
+5	Low Release		2147483647	0	1	0
+6	Low Gain	dB	2147483647	0	1	0
+7	Low X-Over Freq	Hz	2147483647	0	1	0
+8	Mid Threshold	dB	2147483647	0	1	0
+9	Mid Status		2147483647	0	1	0
+10	Mid Attack	ms	2147483647	0	1	0
+11	Mid Release		2147483647	0	1	0
+12	Mid Gain	dB	2147483647	0	1	0
+13	High X-Over Freq	kHz	2147483647	0	1	0
+14	Air		2147483647	0	1	0
+15	High Threshold	dB	2147483647	0	1	0
+16	High Status		2147483647	0	1	0
+17	High Attack	ms	2147483647	0	1	0
+18	High Release		2147483647	0	1	0
+19	High Gain	dB	2147483647	0	1	0
+20	Mix		2147483647	0	1	0
+21	Output Gain	dB	2147483647	0	1	0
+22	Mode		2147483647	0	1	0
+23	Sidechain		2147483647	0	1	0
+24	S Big		2147483647	0	1	0
+25	S Low Threshold	dB	2147483647	0	1	0
+26	S Low Status		2147483647	0	1	0
+27	S Low Attack	ms	2147483647	0	1	0
+28	S Low Release		2147483647	0	1	0
+29	S Low Gain	dB	2147483647	0	1	0
+30	S Mid Threshold	dB	2147483647	0	1	0
+31	S Mid Status		2147483647	0	1	0
+32	S Mid Attack	ms	2147483647	0	1	0
+33	S Mid Release		2147483647	0	1	0
+34	S Mid Gain	dB	2147483647	0	1	0
+35	S Air		2147483647	0	1	0
+36	S High Threshold	dB	2147483647	0	1	0
+37	S High Status		2147483647	0	1	0
+38	S High Attack	ms	2147483647	0	1	0
+39	S High Release		2147483647	0	1	0
+40	S High Gain	dB	2147483647	0	1	0

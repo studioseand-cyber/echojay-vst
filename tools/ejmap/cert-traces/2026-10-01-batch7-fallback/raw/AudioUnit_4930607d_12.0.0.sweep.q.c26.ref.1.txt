@@ -1,0 +1,73 @@
+probe: "C6 (s)" | AudioUnit:Effects/aufx,C6QS,ksWV | uid=4930607d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	26	name	Band 3 Threshold	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	64
+param	0	0.500000	Output Gain	0.0
+param	1	1.000000	Release	Manual
+param	2	1.000000	Behavior	Opto
+param	3	0.666667	Knee	0.50
+param	4	0.245547	Low Crossover	92
+param	5	0.768000	Mid Crossover	4000
+param	6	0.908997	High Crossover	11071
+param	7	0.769231	Crossover Q	0.60
+param	8	0.000000	Band 1 Solo	Off
+param	9	0.000000	Band 1 Bypass	Off
+param	10	1.000000	Band 1 Threshold	0.0
+param	11	0.530556	Band 1 Gain	1.1
+param	12	0.571429	Band 1 Range	0.0
+param	13	0.501988	Band 1 Attack	16.03
+param	14	0.501997	Band 1 Release	160.31
+param	15	0.301428	Band 1 Q	1.65
+param	16	0.576000	Band 1 Frequency	1000
+param	17	0.000000	Band 2 Solo	Off
+param	18	0.000000	Band 2 Bypass	Off
+param	19	1.000000	Band 2 Threshold	0.0
+param	20	0.500000	Band 2 Gain	0.0
+param	21	0.380952	Band 2 Range	-8.0
+param	22	0.614991	Band 2 Attack	34.99
+param	23	0.302004	Band 2 Release	40.27
+param	24	0.000000	Band 3 Solo	Off
+param	25	0.000000	Band 3 Bypass	Off
+param	26	1.000000	Band 3 Threshold	0.0
+param	27	0.500000	Band 3 Gain	0.0
+param	28	0.380952	Band 3 Range	-8.0
+param	29	0.501988	Band 3 Attack	16.03
+param	30	0.232990	Band 3 Release	25.00
+param	31	0.000000	Band 4 Solo	Off
+param	32	0.000000	Band 4 Bypass	Off
+param	33	1.000000	Band 4 Threshold	0.0
+param	34	0.500000	Band 4 Gain	0.0
+param	35	0.380952	Band 4 Range	-8.0
+param	36	0.333044	Band 4 Attack	4.99
+param	37	0.100054	Band 4 Release	9.98
+param	38	0.000000	Band 5 Solo	Off
+param	39	0.000000	Band 5 Bypass	Off
+param	40	1.000000	Band 5 Threshold	0.0
+param	41	0.500000	Band 5 Gain	0.0
+param	42	0.380952	Band 5 Range	-8.0
+param	43	0.200687	Band 5 Attack	2.00
+param	44	0.000000	Band 5 Release	5.00
+param	45	0.000000	Band 6 Solo	Off
+param	46	0.000000	Band 6 Bypass	Off
+param	47	1.000000	Band 6 Threshold	0.0
+param	48	0.527778	Band 6 Gain	1.0
+param	49	0.571429	Band 6 Range	0.0
+param	50	0.501988	Band 6 Attack	16.03
+param	51	0.501997	Band 6 Release	160.31
+param	52	0.301428	Band 6 Q	1.65
+param	53	0.798988	Band 6 Frequency	5003
+stage	reference
+refpos	val	1.000000	text	0.0
+ref	-54.00	level_db	-55.8875	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	0.9998	ch	-55.8875,-55.8875	win	-55.9654,-55.8894,-55.8843,-55.8891,-55.8843,-55.8891,-55.8843,-55.8891	nonfinite	0
+ref	-48.00	level_db	-49.8858	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-49.8858,-49.8858	win	-49.9098,-49.8840,-49.8893,-49.8840,-49.8893,-49.8840,-49.8893,-49.8840	nonfinite	0
+ref	-24.00	level_db	-25.9234	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9999	ch	-25.9234,-25.9234	win	-25.9470,-25.9242,-25.9219,-25.9242,-25.9219,-25.9242,-25.9219,-25.9242	nonfinite	0
+ref	-12.00	level_db	-14.2831	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	0.9999	ch	-14.2831,-14.2831	win	-14.2865,-14.2839,-14.2816,-14.2839,-14.2816,-14.2839,-14.2816,-14.2839	nonfinite	0
+ref	-6.00	level_db	-8.9269	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-8.9269,-8.9269	win	-8.9071,-8.9251,-8.9304,-8.9251,-8.9304,-8.9251,-8.9304,-8.9251	nonfinite	0
+timing	wall_ms	188.9	audio_s	10.000
+stage	done

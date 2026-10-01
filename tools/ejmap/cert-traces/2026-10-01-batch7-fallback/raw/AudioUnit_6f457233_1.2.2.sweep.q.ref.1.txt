@@ -1,0 +1,35 @@
+probe: "Lindell 254E" | AudioUnit:Effects/aufx,LBc3,Brwx | uid=6f457233 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+sweep	proto	1	thr	7	name	Threshold	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	1.000000	Mix	100%
+param	1	0.000000	HPF	20Hz
+param	2	0.000000	Limit	Off
+param	3	1.000000	Compress	Fast
+param	4	0.500000	Meter	Control
+param	5	0.100000	Gain	2dB
+param	6	0.500000	Ratio	3:1
+param	7	0.533333	Threshold	-4dBu
+param	8	1.000000	Compress Recovery	Auto
+param	9	0.500000	Limit Level	8.0dBu
+param	10	1.000000	Limit Recovery	Auto
+param	11	0.000000	Bypass	In
+param	12	0.000000	Ext SideChain	On
+stage	reference
+refpos	val	0.533333	text	-4dBu
+ref	-54.00	level_db	-54.7333	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-54.7333,-54.7333	win	-54.7314,-54.7329,-54.7335,-54.7329,-54.7336,-54.7331,-54.7336,-54.7331	nonfinite	0
+ref	-48.00	level_db	-48.7328	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-48.7328,-48.7328	win	-48.7353,-48.7316,-48.7353,-48.7315,-48.7353,-48.7316,-48.7352,-48.7316	nonfinite	0
+ref	-24.00	level_db	-25.1245	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-25.1245,-25.1245	win	-25.0076,-25.0673,-25.0835,-25.1042,-25.1091,-25.1219,-25.1213,-25.1303	nonfinite	0
+ref	-12.00	level_db	-19.0336	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-19.0336,-19.0336	win	-17.7572,-18.3398,-18.5919,-18.7662,-18.8953,-18.9790,-19.0426,-19.0797	nonfinite	0
+ref	-6.00	level_db	-16.8768	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-16.8768,-16.8768	win	-16.3132,-16.5968,-16.7059,-16.7781,-16.8272,-16.8583,-16.8797,-16.8923	nonfinite	0
+timing	wall_ms	95.9	audio_s	10.000
+stage	done

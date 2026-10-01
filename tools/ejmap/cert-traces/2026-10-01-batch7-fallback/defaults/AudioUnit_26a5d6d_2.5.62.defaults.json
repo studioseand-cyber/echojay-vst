@@ -1,0 +1,1055 @@
+{
+  "identity": "AudioUnit|26a5d6d|2.5.62",
+  "product": "Drawmer 1973",
+  "format": "AudioUnit",
+  "uid": "26a5d6d",
+  "version": "2.5.62",
+  "sampledAt": "2026-09-30",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Input Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-12.0",
+        "0.500": "0.0",
+        "1.000": "12.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -12.0,
+        "max": 12.0,
+        "at0": -12.0,
+        "at0_5": 0.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Big",
+      "unit": null,
+      "displayAt": {
+        "0.000": "ON",
+        "0.500": "OFF",
+        "1.000": "OFF"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "OFF",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Low Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "-8.2",
+        "1.000": "-30.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": -8.199999999999999,
+        "at1": -30.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.36,
+        "display": "0.0",
+        "declaredDefault": 0.36,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Low Status",
+      "unit": null,
+      "displayAt": {
+        "0.000": "BYPASS",
+        "0.500": "ON",
+        "1.000": "MUTE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "ON",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Low Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.2",
+        "0.500": "10.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.2,
+        "max": 50.0,
+        "at0": 0.2,
+        "at0_5": 10.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.2",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Low Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.08 s",
+        "0.500": "F",
+        "1.000": "S"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.08 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Low Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-5.0",
+        "0.500": "3.5",
+        "1.000": "20.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -5.0,
+        "max": 20.0,
+        "at0": -5.0,
+        "at0_5": 3.5,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.38,
+        "display": "0.0",
+        "declaredDefault": 0.38,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Low X-Over Freq",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "50",
+        "0.500": "200",
+        "1.000": "1300"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 50.0,
+        "max": 1300.0,
+        "at0": 50.0,
+        "at0_5": 200.0,
+        "at1": 1300.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "200",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Mid Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "-8.2",
+        "1.000": "-30.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": -8.199999999999999,
+        "at1": -30.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.36,
+        "display": "0.0",
+        "declaredDefault": 0.36,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Mid Status",
+      "unit": null,
+      "displayAt": {
+        "0.000": "BYPASS",
+        "0.500": "ON",
+        "1.000": "MUTE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "ON",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Mid Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.2",
+        "0.500": "10.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.2,
+        "max": 50.0,
+        "at0": 0.2,
+        "at0_5": 10.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.2",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Mid Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.08 s",
+        "0.500": "F",
+        "1.000": "S"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.08 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Mid Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-5.0",
+        "0.500": "3.5",
+        "1.000": "20.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -5.0,
+        "max": 20.0,
+        "at0": -5.0,
+        "at0_5": 3.5,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.38,
+        "display": "0.0",
+        "declaredDefault": 0.38,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "High X-Over Freq",
+      "unit": "kHz",
+      "displayAt": {
+        "0.000": "1.0",
+        "0.500": "2.6",
+        "1.000": "14.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.0,
+        "max": 14.0,
+        "at0": 1.0,
+        "at0_5": 2.6,
+        "at1": 14.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "2.6",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Air",
+      "unit": null,
+      "displayAt": {
+        "0.000": "ON",
+        "0.500": "OFF",
+        "1.000": "OFF"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "OFF",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "High Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "-8.2",
+        "1.000": "-30.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": -8.199999999999999,
+        "at1": -30.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.36,
+        "display": "0.0",
+        "declaredDefault": 0.36,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "High Status",
+      "unit": null,
+      "displayAt": {
+        "0.000": "BYPASS",
+        "0.500": "ON",
+        "1.000": "MUTE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "ON",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "High Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.2",
+        "0.500": "10.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.2,
+        "max": 50.0,
+        "at0": 0.2,
+        "at0_5": 10.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.2",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "High Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.08 s",
+        "0.500": "F",
+        "1.000": "S"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.08 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 19,
+      "name": "High Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-5.0",
+        "0.500": "3.5",
+        "1.000": "20.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -5.0,
+        "max": 20.0,
+        "at0": -5.0,
+        "at0_5": 3.5,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.38,
+        "display": "0.0",
+        "declaredDefault": 0.38,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 20,
+      "name": "Mix",
+      "unit": null,
+      "displayAt": {
+        "0.000": "WET",
+        "0.500": "5.0",
+        "1.000": "DRY"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "WET",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 21,
+      "name": "Output Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-12.0",
+        "0.500": "0.0",
+        "1.000": "12.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -12.0,
+        "max": 12.0,
+        "at0": -12.0,
+        "at0_5": 0.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 22,
+      "name": "Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "SIDE",
+        "0.500": "MID",
+        "1.000": "STEREO"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "STEREO",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 23,
+      "name": "Sidechain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "EXTERNAL",
+        "0.500": "INTERNAL",
+        "1.000": "INTERNAL"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "INTERNAL",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 24,
+      "name": "S Big",
+      "unit": null,
+      "displayAt": {
+        "0.000": "ON",
+        "0.500": "OFF",
+        "1.000": "OFF"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "OFF",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 25,
+      "name": "S Low Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "-8.2",
+        "1.000": "-30.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": -8.199999999999999,
+        "at1": -30.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.36,
+        "display": "0.0",
+        "declaredDefault": 0.36,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 26,
+      "name": "S Low Status",
+      "unit": null,
+      "displayAt": {
+        "0.000": "BYPASS",
+        "0.500": "ON",
+        "1.000": "MUTE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "ON",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 27,
+      "name": "S Low Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.2",
+        "0.500": "10.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.2,
+        "max": 50.0,
+        "at0": 0.2,
+        "at0_5": 10.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.2",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 28,
+      "name": "S Low Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.08 s",
+        "0.500": "F",
+        "1.000": "S"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.08 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 29,
+      "name": "S Low Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-5.0",
+        "0.500": "3.5",
+        "1.000": "20.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -5.0,
+        "max": 20.0,
+        "at0": -5.0,
+        "at0_5": 3.5,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.38,
+        "display": "0.0",
+        "declaredDefault": 0.38,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 30,
+      "name": "S Mid Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "-8.2",
+        "1.000": "-30.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": -8.199999999999999,
+        "at1": -30.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.36,
+        "display": "0.0",
+        "declaredDefault": 0.36,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 31,
+      "name": "S Mid Status",
+      "unit": null,
+      "displayAt": {
+        "0.000": "BYPASS",
+        "0.500": "ON",
+        "1.000": "MUTE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "ON",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 32,
+      "name": "S Mid Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.2",
+        "0.500": "10.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.2,
+        "max": 50.0,
+        "at0": 0.2,
+        "at0_5": 10.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.2",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 33,
+      "name": "S Mid Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.08 s",
+        "0.500": "F",
+        "1.000": "S"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.08 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 34,
+      "name": "S Mid Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-5.0",
+        "0.500": "3.5",
+        "1.000": "20.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -5.0,
+        "max": 20.0,
+        "at0": -5.0,
+        "at0_5": 3.5,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.38,
+        "display": "0.0",
+        "declaredDefault": 0.38,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 35,
+      "name": "S Air",
+      "unit": null,
+      "displayAt": {
+        "0.000": "ON",
+        "0.500": "OFF",
+        "1.000": "OFF"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "OFF",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 36,
+      "name": "S High Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "-8.2",
+        "1.000": "-30.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": -8.199999999999999,
+        "at1": -30.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.36,
+        "display": "0.0",
+        "declaredDefault": 0.36,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 37,
+      "name": "S High Status",
+      "unit": null,
+      "displayAt": {
+        "0.000": "BYPASS",
+        "0.500": "ON",
+        "1.000": "MUTE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "ON",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 38,
+      "name": "S High Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.2",
+        "0.500": "10.0",
+        "1.000": "50.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.2,
+        "max": 50.0,
+        "at0": 0.2,
+        "at0_5": 10.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.2",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 39,
+      "name": "S High Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.08 s",
+        "0.500": "F",
+        "1.000": "S"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.08 s",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 40,
+      "name": "S High Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-5.0",
+        "0.500": "3.5",
+        "1.000": "20.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -5.0,
+        "max": 20.0,
+        "at0": -5.0,
+        "at0_5": 3.5,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.38,
+        "display": "0.0",
+        "declaredDefault": 0.38,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-30",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

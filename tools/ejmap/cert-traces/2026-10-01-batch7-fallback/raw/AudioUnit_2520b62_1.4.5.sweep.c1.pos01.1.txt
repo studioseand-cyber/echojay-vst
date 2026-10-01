@@ -1,0 +1,38 @@
+probe: "Solid Dynamics" | AudioUnit:Effects/aufx,Ni$7,-NI- | uid=2520b62 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Threshold Comp	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	in	1	Input #2	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+sidechain	1	Input #2	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	Knee Type	Soft
+param	1	0.930020	Threshold Comp	-17.9 dB
+param	2	0.774000	Ratio	4.0
+param	3	0.000000	Atk Mode Comp	Off
+param	4	0.000000	Release Comp	0.10 s
+param	5	0.000000	Rel.Mode	Off
+param	6	0.805000	Output	0.0 dB
+param	7	0.000000	Dry	-Inf dB
+param	8	1.000000	Link L/R	On
+param	9	0.000000	Boost	Off
+param	10	0.000000	-	-
+param	11	0.000000	Mode	Gate
+param	12	0.750000	Threshold G/E	0.0 dB
+param	13	0.000000	Range	0.0
+param	14	0.000000	Atk Mode G/E	Off
+param	15	0.500000	Release G/E	0.63 s
+param	16	0.000000	SC Mode	Off
+param	17	0.500000	SC Gain	0.0 dB
+stage	position
+pos	0	norm	0.066667	confirm_ms	500.32	slices	191	instack_match	0	getValue	0.066667	landed_by	render	render_blocks	1	text_ms	22.0	reads	2	text	8.0 dB
+hold	0	-24.00	level_db	-26.1868	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.1868,-26.1868	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-26.1873,-26.1866,-26.1873,-26.1866,-26.1873,-26.1866	nonfinite	0
+hold	0	-12.00	level_db	-14.4829	in_rms_db	-15.0103	tone_frac	1.0000	ch	-14.4829,-14.4829	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-14.4533,-14.4824,-14.4839,-14.4824,-14.4839,-14.4824	nonfinite	0
+hold	0	-6.00	level_db	-9.3077	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.3077,-9.3077	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-9.2191,-9.3069,-9.3092,-9.3069,-9.3092,-9.3069	nonfinite	0
+reread	0	steady
+timing	wall_ms	566.8	audio_s	4.500
+stage	done

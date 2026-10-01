@@ -1,0 +1,33 @@
+probe: "SSL Native Bus Compressor 2" | AudioUnit:Effects/aufx,NBC2,SSLN | uid=7c646904 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	Threshold	positions	0	levels	5
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Key Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Key Input	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.166667	Ratio	2:1
+param	1	0.000000	Comp Bypass	Off
+param	2	1.000000	Threshold	20.0
+param	3	0.000000	Mix Lock	Off
+param	4	1.000000	Release	AUTO
+param	5	1.000000	Dry/Wet Mix	100.0
+param	6	0.250000	Makeup Gain	0.0
+param	7	0.000000	GroupSense	0
+param	8	0.000000	External S/C	Off
+param	9	0.000000	Sidechain HPF	OFF
+param	10	0.000000	Oversampling	OFF
+param	11	0.666667	Attack	10
+stage	reference
+refpos	val	1.000000	text	20.0
+ref	-54.00	level_db	-57.0206	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-57.0206,-57.0206	win	-57.0152,-57.0162,-57.0182,-57.0185,-57.0200,-57.0199,-57.0211,-57.0208	nonfinite	0
+ref	-48.00	level_db	-51.0320	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-51.0320,-51.0320	win	-51.0278,-51.0261,-51.0312,-51.0287,-51.0332,-51.0303,-51.0345,-51.0313	nonfinite	0
+ref	-24.00	level_db	-27.3333	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-27.3333,-27.3333	win	-27.1632,-27.2181,-27.2490,-27.2830,-27.2997,-27.3226,-27.3306,-27.3467	nonfinite	0
+ref	-12.00	level_db	-16.2120	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	1.0000	ch	-16.2120,-16.2121	win	-15.7431,-15.8838,-15.9921,-16.0686,-16.1339,-16.1774,-16.2174,-16.2415	nonfinite	0
+ref	-6.00	level_db	-11.2387	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	1.0000	ch	-11.2386,-11.2388	win	-10.7100,-10.8766,-10.9960,-11.0849,-11.1531,-11.2033,-11.2423,-11.2707	nonfinite	0
+timing	wall_ms	64.6	audio_s	10.000
+stage	done
