@@ -2299,7 +2299,7 @@ inline int runCertTuner (const SweepOptions& opt)
 // EXPORT (--export-profile <record> <out.json> | --export-profiles <store> <outDir>): every record through the one
 // exporter; a refusal is printed with its reason and nothing is written for it. The report is the per-product line Sean
 // asked for: profile emitted / emitted with fit over 1.5 / not possible and why.
-inline int runExportProfiles (const juce::File& in, const juce::File& out, bool whole)
+inline int runExportProfiles (const juce::File& in, const juce::File& out, bool whole, const juce::String& candidate = {})
 {
     juce::Array<juce::File> files;
     if (whole) files = in.findChildFiles (juce::File::findFiles, false, "*.json"); else files.add (in);
@@ -2308,7 +2308,8 @@ inline int runExportProfiles (const juce::File& in, const juce::File& out, bool 
     for (const auto& f : files)
     {
         if (f.getFileName().endsWith (".defaults.json")) continue;
-        const auto rec = juce::JSON::parse (f.loadFileAsString());
+        auto rec = juce::JSON::parse (f.loadFileAsString());
+        if (candidate.isNotEmpty()) { juce::String why; auto v = profile::candidateAsSingle (rec, candidate, why); if (v.isVoid()) { std::cout << "NOT POSSIBLE   " << f.getFileName() << ": " << why << std::endl; ++refused; continue; } rec = v; }
         const auto e = profile::exportCompProfile (rec);
         const auto name = rec.getProperty ("product", f.getFileNameWithoutExtension()).toString();
         if (! e.ok) { ++refused; std::cout << "NOT POSSIBLE   " << name << ": " << e.refused << std::endl; continue; }
@@ -2329,14 +2330,15 @@ inline int runExportProfiles (const juce::File& in, const juce::File& out, bool 
 // through the signed probe in one fresh process (with -54/-48 for the position's own quiet reference), measure GR. Pass
 // is within 0.5 dB of g. The ratio NORM is not in his profile (only the control name and the value), so it comes from
 // our record's preconditions - said in the result, because it is a gap in the contract.
-inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g)
+inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g, const juce::String& candidate = {})
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {});
     if (! id.ok) { say ("TONE: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
     const auto profile = juce::JSON::parse (profileFile.loadFileAsString());
-    const auto record  = juce::JSON::parse (recordFile.loadFileAsString());
+    auto record  = juce::JSON::parse (recordFile.loadFileAsString());
     if (! profile.isObject() || ! record.isObject()) { say ("TONE: cannot read the profile or the record"); return 2; }
+    if (candidate.isNotEmpty()) { juce::String why; record = profile::candidateAsSingle (record, candidate, why); if (record.isVoid()) { say ("TONE: " + why); return 2; } }
     const auto product = profile.getProperty ("plugin", {}).getProperty ("name", "").toString();
     std::vector<InstalledRecord> hits;
     for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
@@ -2357,8 +2359,11 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         for (const auto& x : *pre)
             if (x.getProperty ("role", "").toString() == "ratio_raise")
             { addWrite ("ratio", (int) x.getProperty ("index", -1), (double) x.getProperty ("norm", 0.0), "reference ratio - NORM from our record; his profile carries only the value"); ratioNote = "ratio norm taken from the record's preconditions"; }
-    const auto plan = sweep::planFromFixture (record);
+    auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("TONE: the record has no plan: " + plan.why); return 4; }
+    if (record.getProperty ("pickedCandidate", {}).isObject())
+    { for (const auto& c : plan.candidates) if (c.index == (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) plan = plan.forCandidate (c); plan.candidates.clear(); }
+    if (plan.thr < 0) { say ("TONE: the record has several threshold candidates; pass --candidate NAME"); return 4; }
     const double Lpeak = Lrms + profile::kPeakToSineRmsDb;
     juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
                              "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (pick.norm, 6),
@@ -2402,20 +2407,31 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 // nearest -18 dBFS RMS), two sweeps in fresh processes - the sine and the two-tone at the same RMS - over the profile grid
 // with the quiet reference; the level where each reaches 2 dB; f = shift / 3.01. Written INTO the record's thresholdSweep
 // as `detector {fraction, sine_in_at_2db, twotone_in_at_2db, hz2, position_norm}`; the exporter reads it.
-inline int runDetector (const SweepOptions& opt, const juce::File& recordFile)
+inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, const juce::String& candidate = {})
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {});
     if (! id.ok) { say ("DETECTOR: ABORTED - " + id.why); return 3; }
     auto record = juce::JSON::parse (recordFile.loadFileAsString());
-    const auto sweepVar = record.getProperty ("thresholdSweep", {});
-    if (! sweepVar.isObject()) { say ("DETECTOR: the record has no thresholdSweep (candidates or refusal)"); return 2; }
+    // A multi-threshold record: measure the detector on the picked candidate, and write the result INTO that candidate.
+    int candIndex = -1;
+    if (candidate.isNotEmpty() && ! record.getProperty ("thresholdSweep", {}).isObject())
+    {
+        juce::String why; const auto view = profile::candidateAsSingle (record, candidate, why);
+        if (view.isVoid()) { say ("DETECTOR: " + why); return 2; }
+        candIndex = (int) view.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+    }
+    auto sweepVar = candIndex >= 0 ? [&] { for (const auto& c : *record.getProperty ("thresholdCandidates", {}).getArray()) if ((int) c.getProperty ("index", -1) == candIndex) return c.getProperty ("thresholdSweep", {}); return juce::var(); }()
+                                   : record.getProperty ("thresholdSweep", {});
+    if (! sweepVar.isObject()) { say ("DETECTOR: the record has no thresholdSweep (candidates: pass --candidate NAME; or a refusal)"); return 2; }
     const auto product = record.getProperty ("product", "").toString();
     std::vector<InstalledRecord> hits;
     for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("DETECTOR: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("DETECTOR: no plan: " + plan.why); return 4; }
+    if (candIndex >= 0) { for (const auto& c : plan.candidates) if (c.index == candIndex) plan = plan.forCandidate (c); plan.candidates.clear(); }
+    if (plan.thr < 0) { say ("DETECTOR: several threshold candidates; pass --candidate NAME"); return 4; }
     plan.makeProfile();
     // the position: numeric 2 dB point nearest -18 dBFS RMS (= -14.99 peak)
     const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto inAt = sweepVar.getProperty ("inAtGr", {});

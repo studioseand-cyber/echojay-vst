@@ -50,7 +50,7 @@ degrade. Leave it running:
 ```
 for i in $(seq 1 60); do
   rm -f ~/Library/ejmap/sweep-active.marker
-  "$BIN" --sweep --limit 25
+  "$BIN" --sweep --sweep-limit 25
 done
 ```
 

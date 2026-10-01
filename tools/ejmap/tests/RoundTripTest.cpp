@@ -5288,6 +5288,25 @@ void testProfileExport()
         check (xo.ok && (double) xo.profile.getProperty ("detector_f", 0.0) == 1.0 && std::abs ((double) xo.profile.getProperty ("detector_f_raw", 0.0) - 1.3) < 1e-6,
                "detector D5: a measured fraction outside 0..1 is clamped for the server and kept raw beside it");
     }
+    {
+        // THE PICK BY NAME on a multi-threshold record: the named candidate's sweep becomes THE sweep, the rest drop, and the
+        // view says which was picked; a wrong name is refused with the candidate list.
+        auto multi = record (16, true, false, "", "certified");
+        const auto sweepOf = multi.getProperty ("thresholdSweep", {});
+        juce::Array<juce::var> cands;
+        for (const char* nm : { "Gate Thresh", "Comp Thresh" }) { auto* c = new juce::DynamicObject(); c->setProperty ("index", nm[0] == 'G' ? 1 : 16); c->setProperty ("name", nm); c->setProperty ("thresholdSweep", sweepOf); cands.add (juce::var (c)); }
+        multi.getDynamicObject()->removeProperty ("thresholdSweep"); multi.getDynamicObject()->setProperty ("thresholdCandidates", cands);
+        juce::String why;
+        check (! exportCompProfile (multi).ok && exportCompProfile (multi).refused.contains ("other"), "pick C1: a multi-threshold record unpicked is topology other, no profile");
+        const auto view = candidateAsSingle (multi, "Comp Thresh", why);
+        check (view.isObject() && view.getProperty ("thresholdSweep", {}).isObject() && ! view.hasProperty ("thresholdCandidates")
+                 && view.getProperty ("pickedCandidate", {}).getProperty ("name", "") == "Comp Thresh" && (int) view.getProperty ("pickedCandidate", {}).getProperty ("index", -1) == 16,
+               "pick C2: the named candidate becomes the single sweep, the others drop, and the pick is recorded");
+        const auto ve = exportCompProfile (view);
+        check (ve.ok && ve.profile.getProperty ("topology", "") == "threshold", "pick C3: the picked view exports as topology threshold (" + ve.refused + ")");
+        check (candidateAsSingle (multi, "Nope", why).isVoid() && why.contains ("Gate Thresh") && why.contains ("Comp Thresh"), "pick C4: a name that is not a candidate is refused with the candidate list (" + why + ")");
+        check (candidateAsSingle (rec, "anything", why) == rec, "pick C5: a single-sweep record passes through untouched");
+    }
     auto bad = record (16, true, false, "", "certified");
     bad.getProperty ("thresholdSweep", {}).getProperty ("engageWrites", {}).getProperty ("writes", {})[0].getDynamicObject()->setProperty ("control", "Bypass");
     check (! exportCompProfile (bad).ok && exportCompProfile (bad).refused.contains ("never_touch"), "export X13: an engage write naming a never_touch control refuses the export");

@@ -614,11 +614,14 @@ namespace
                                                       cwdFile (argAt (argc, argv, i + 3)), cwdFile (argAt (argc, argv, i + 4)));
             // EXPORT TO SEAN'S ej_comp_profile/1 (COMP_PROFILE_SPEC v1.1), one exporter in EjmapProfileExport.h.
             if ((a == "--export-profile" && i + 2 < argc) || (a == "--export-profiles" && i + 2 < argc))
-                return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles");
+            {
+                juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
+                return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
+            }
             // --cert-tone-check <profile.json> <record.json> [--out DIR] [--probe P] [--L -18] [--g 2]
             if (a == "--cert-tone-check" && i + 2 < argc)
             {
-                ejmap::cert::SweepOptions o; double L = -18.0, g = 2.0;
+                ejmap::cert::SweepOptions o; double L = -18.0, g = 2.0; juce::String cand;
                 for (int j = 1; j < argc; ++j)
                 {
                     const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
@@ -626,17 +629,18 @@ namespace
                     else if (k == "--out"   && j + 1 < argc) o.out = cwdFile (v);
                     else if (k == "--L"     && j + 1 < argc) L = v.getDoubleValue();
                     else if (k == "--g"     && j + 1 < argc) g = v.getDoubleValue();
+                    else if (k == "--candidate" && j + 1 < argc) cand = v;
                 }
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
-                return ejmap::cert::runToneCheck (o, cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), L, g);
+                return ejmap::cert::runToneCheck (o, cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), L, g, cand);
             }
             if (a == "--cert-detector" && i + 1 < argc)
             {
-                ejmap::cert::SweepOptions o;
+                ejmap::cert::SweepOptions o; juce::String cand;
                 for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
-                    if (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v); else if (k == "--out" && j + 1 < argc) o.out = cwdFile (v); }
+                    if (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v); else if (k == "--out" && j + 1 < argc) o.out = cwdFile (v); else if (k == "--candidate" && j + 1 < argc) cand = v; }
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
-                return ejmap::cert::runDetector (o, cwdFile (argAt (argc, argv, i + 1)));
+                return ejmap::cert::runDetector (o, cwdFile (argAt (argc, argv, i + 1)), cand);
             }
             if (a == "--cert-tuner")
             {

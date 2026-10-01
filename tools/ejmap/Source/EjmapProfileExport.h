@@ -80,6 +80,7 @@ struct Export { bool ok = false; juce::String refused; juce::var profile; juce::
 inline juce::String topologyOf (const juce::var& f, const juce::var& sweep, const sweep::Plan& plan)
 {
     if (f.hasProperty ("thresholdCandidates")) return "other";                 // several candidates: bands, stages, spectral, always-on
+    // a picked candidate: the human chose the amount control, and the server treats the product as that one threshold
     const auto flags = sweep.getProperty ("roleFlag", "").toString();
     if (flags.contains ("input_as_threshold") || plan.thrFlags.contains ("input_as_threshold") || plan.thrFlags.contains ("peak_reduction")) return "input_drive";
     return "threshold";
@@ -142,6 +143,33 @@ inline Fit fitModel (const std::vector<double>& levels, const std::vector<std::v
     return best;
 }
 
+// A MULTI-THRESHOLD RECORD, ONE CANDIDATE PICKED (1 Oct, for EMO-D5's Comp Thresh): the human's pick his section 3 asks
+// for, applied by NAME. Returns a single-sweep view of the record - the candidate's thresholdSweep as THE sweep, the
+// others dropped, `pickedCandidate` saying which - or nothing when the name is not a candidate. The exporter, the tone
+// check and the detector all take this view, so one pick serves all three.
+inline juce::var candidateAsSingle (const juce::var& record, const juce::String& candidateName, juce::String& why)
+{
+    if (record.getProperty ("thresholdSweep", {}).isObject()) return record;              // already single
+    const auto* cs = record.getProperty ("thresholdCandidates", {}).getArray();
+    if (cs == nullptr) { why = "no threshold candidates on the record"; return {}; }
+    for (const auto& c : *cs)
+        if (c.getProperty ("name", "").toString() == candidateName)
+        {
+            if (! c.getProperty ("thresholdSweep", {}).isObject()) { why = "candidate '" + candidateName + "' has no sweep"; return {}; }
+            auto v = juce::JSON::parse (juce::JSON::toString (record));                   // deep copy
+            auto* o = v.getDynamicObject();
+            o->setProperty ("thresholdSweep", c.getProperty ("thresholdSweep", {}));
+            o->removeProperty ("thresholdCandidates"); o->removeProperty ("thresholdReview");
+            auto* pk = new juce::DynamicObject(); pk->setProperty ("index", c.getProperty ("index", -1)); pk->setProperty ("name", candidateName);
+            pk->setProperty ("note", "one of several threshold candidates, picked by name for the profile (his section 3: a human picks)");
+            o->setProperty ("pickedCandidate", juce::var (pk));
+            return v;
+        }
+    juce::StringArray names; for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString());
+    why = "'" + candidateName + "' is not a candidate of this record (candidates: " + names.joinIntoString (", ") + ")";
+    return {};
+}
+
 inline Export exportCompProfile (const juce::var& f)
 {
     Export e;
@@ -154,7 +182,12 @@ inline Export exportCompProfile (const juce::var& f)
     if (sweepVar.getProperty ("level_convention", "").toString() != "peak") return refuse ("level convention is not peak: cannot convert to sine_rms_dbfs");
     if (! f.hasProperty ("map_fp") || f.getProperty ("map_fp", "").toString().length() != 64) return refuse ("no 64-hex map_fp on the record");
 
-    const auto plan = sweep::planFromFixture (f);
+    auto plan = sweep::planFromFixture (f);
+    if (f.getProperty ("pickedCandidate", {}).isObject())                                   // the pick decides the amount control
+    {
+        for (const auto& c : plan.candidates) if (c.index == (int) f.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) plan = plan.forCandidate (c);
+        plan.candidates.clear();
+    }
     const auto lr = sweepVar.getProperty ("linearReference", {});
     const bool quiet = lr.getProperty ("mode", "").toString() == "per_position_quiet";
     // STATIC GAIN from the two-quiet-level reference, or no profile.
