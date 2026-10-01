@@ -109,6 +109,11 @@ struct Plan
     juce::StringArray linkStates;            // every control answering "link", as instantiated: recorded, never written
     bool quietReference = false;             // input-as-threshold: each position carries its own quiet reference
     juce::String referenceFallbackNote;      // set when the quiet reference was used because the soft end had no linear anchor
+    // ENGAGE WRITES (spec section 3 `engage`, built 1 Oct): the switch(es) the product needed before its threshold did
+    // anything, found by the two-sweep test (GR with the write, none without). Written as preconditions; recorded.
+    struct EngageWrite { int index = -1; juce::String name; float norm = 0.0f; juce::String fromDisplay; };
+    std::vector<EngageWrite> engage;
+    juce::StringArray engageTried;           // every candidate tried and refused, "name -> norm: verdict"
     std::vector<double> probeLevels() const  // quiet to loud, as the probe renders them
     { return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 }; }
     // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled, the others held at their
@@ -199,6 +204,48 @@ inline void applyCandidateControl (Plan& p, const juce::var& fixture)
     p.stepped = p.norms.size() != 16 || (bool) tc.getProperty ("discrete", false);
 }
 
+// ENGAGE CANDIDATES (1 Oct). Which controls might be the switch a product needs before it compresses. Two sources, as
+// ruled: the NAME (on / enable / engage / active / in, or the stage word the threshold carries - "Comp Thresh" pairs
+// with "Comp On") and the SHAPE (two steps, instantiated at one extreme). A candidate is never a control a profile must
+// not write: bypass, power, standby, and the monitor/listen switches that route a sidechain to the output. The write
+// is the OTHER extreme from the instantiate value. Ordered: name-and-shape first, then shape alone, then name alone;
+// within a rank, the one sharing the threshold's first word first. The search is a guard's: it refuses a candidate
+// that shows no GR, and the product stays pass-through when every candidate is refused - that is an answer.
+inline bool neverTouchName (const juce::String& n)
+{
+    for (const char* t : { "bypass", "byp", "power", "standby", "monitor", "listen", "solo", "mute" })
+        if (nametokens::controlAnswersTerm (n, t)) return true;
+    return false;
+}
+inline std::vector<Plan::EngageWrite> engageCandidates (const juce::var& fixture, const juce::String& thresholdName)
+{
+    struct Ranked { Plan::EngageWrite w; int rank; bool affine; };
+    std::vector<Ranked> out;
+    const auto thrFirst = juce::StringArray::fromTokens (thresholdName, " -_/", "")[0].toLowerCase();
+    if (const auto* cs = fixture.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const auto n = c.getProperty ("name", {}).toString();
+            if (n.isEmpty() || n == thresholdName || neverTouchName (n)) continue;
+            const bool twoStep = (int) c.getProperty ("numSteps", 0) == 2;
+            bool named = false;
+            for (const char* t : { "on", "enable", "enabled", "engage", "active", "in" }) named = named || nametokens::controlAnswersTerm (n, t);
+            if (! twoStep && ! named) continue;
+            const auto d = c.getProperty ("defaultOnInstantiate", {});
+            const double norm = (double) d.getProperty ("normalised", 0.0);
+            Plan::EngageWrite w;
+            w.index = (int) c.getProperty ("index", -1); w.name = n;
+            w.norm = norm >= 0.5 ? 0.0f : 1.0f;
+            w.fromDisplay = d.getProperty ("display", "").toString();
+            const auto first = juce::StringArray::fromTokens (n, " -_/", "")[0].toLowerCase();
+            out.push_back ({ w, twoStep && named ? 0 : twoStep ? 1 : 2, first.isNotEmpty() && first == thrFirst });
+        }
+    std::stable_sort (out.begin(), out.end(), [] (const Ranked& a, const Ranked& b) {
+        return a.rank != b.rank ? a.rank < b.rank : a.affine != b.affine ? a.affine : a.w.index < b.w.index; });
+    std::vector<Plan::EngageWrite> ws;
+    for (auto& r : out) ws.push_back (r.w);
+    return ws;
+}
 inline Plan planFromFixture (const juce::var& fixture)
 {
     Plan p;
@@ -540,6 +587,15 @@ inline double median (std::vector<double> v)
 inline bool needsQuietFallback (const Derived& d)
 {
     return d.result == "unreadable" && (d.reason.startsWith ("the soft end is not linear") || d.reason.contains ("above the linear reference"));
+}
+
+// "GR with the write": the response the two-sweep test looks for in the quick probe. Not flat, not pass-through, and a
+// span above the sense resolution somewhere - whatever the final verdict would be.
+inline bool showsResponse (const Derived& d)
+{
+    if (d.result == "error") return false;
+    if (d.result == "flat") return false;
+    return (d.flatSpanDb && *d.flatSpanDb > kSenseDb) || (d.responseDb && *d.responseDb > kSenseDb) || d.result == "certified" || d.result == "nonmonotonic";
 }
 
 inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex, bool quietReference = false)
@@ -1248,6 +1304,27 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     // or the threshold, only that the product does nothing as instantiated (MaxxVolume, EMO-D5, DynOne3, C1 comp,
     // RCompressor). A precondition gap, named so the server half never re-derives it from the reason string.
     s->setProperty ("passThroughAtDefaults", d.passThroughAtDefaults);
+    // ENGAGE (spec section 3): the writes the product needed, verified by the two-sweep test - GR with them, pass-through
+    // without - and every candidate tried and refused. Absent when the product compressed as instantiated.
+    if (! p.engage.empty() || ! p.engageTried.isEmpty())
+    {
+        juce::Array<juce::var> ew;
+        for (const auto& w : p.engage)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("index", w.index); o->setProperty ("control", w.name); o->setProperty ("norm", w.norm);
+            o->setProperty ("from", w.fromDisplay);
+            o->setProperty ("verified", true);
+            o->setProperty ("verifiedBy", "two sweeps: gain reduction with this write, pass-through at the instantiate defaults without it");
+            ew.add (juce::var (o));
+        }
+        auto* es = new juce::DynamicObject();
+        es->setProperty ("writes", ew);
+        juce::Array<juce::var> tried; for (const auto& t : p.engageTried) tried.add (t);
+        es->setProperty ("tried", tried);
+        es->setProperty ("found", ! p.engage.empty());
+        s->setProperty ("engageWrites", juce::var (es));    // not "engage": that key is the engage POSITIONS per level
+    }
     if (d.passThroughOffsetDb) s->setProperty ("passThroughOffset_db", *d.passThroughOffsetDb);
     // READINGS REFUSED BECAUSE THE OUTPUT WAS NOT THE TONE (position@level), and the flat test's own number: the largest
     // reduction span across ALL positions at any level.

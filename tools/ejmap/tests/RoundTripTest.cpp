@@ -4793,6 +4793,75 @@ void testThresholdReviewNamesTheBand()
     root.deleteRecursively();
 }
 
+/** ENGAGE DETECTION (spec section 3, built 1 Oct): the candidate rule, the response test, the record, and the trace run
+    a re-derivation picks. The live two-sweep test itself runs plugins and is checked on the six pass-through products. */
+void testEngageDetection()
+{
+    using namespace ejmap::cert;
+    using namespace ejmap::sweep;
+    auto fx = juce::JSON::parse (R"json({"product": "EMO-D5 (s)", "uid": "1", "version": "1", "format": "AudioUnit", "controls": [
+        {"index": 0,  "name": "Gate On",      "numSteps": 2,          "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}},
+        {"index": 15, "name": "Comp On",      "numSteps": 2,          "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}},
+        {"index": 16, "name": "Comp Thresh",  "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0"}},
+        {"index": 23, "name": "Comp Monitor", "numSteps": 2,          "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}},
+        {"index": 28, "name": "Comp Mix",     "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 1.0, "display": "100.0"}},
+        {"index": 40, "name": "Bypass",       "numSteps": 2,          "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}},
+        {"index": 41, "name": "Power",        "numSteps": 2,          "defaultOnInstantiate": {"normalised": 1.0, "display": "On"}},
+        {"index": 42, "name": "Auto Manual",  "numSteps": 2,          "defaultOnInstantiate": {"normalised": 1.0, "display": "Auto"}},
+        {"index": 43, "name": "Sidechain In", "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 0.0, "display": "0"}}]})json");
+    const auto cs = engageCandidates (fx, "Comp Thresh");
+    juce::StringArray names; for (const auto& c : cs) names.add (c.name + "->" + juce::String (c.norm, 1));
+    check (! cs.empty() && cs[0].name == "Comp On" && cs[0].norm == 1.0f && cs[0].fromDisplay == "Off",
+           "engage E1: the two-step switch sharing the threshold's stage word ranks first, written to the OTHER extreme (" + names.joinIntoString (", ") + ")");
+    check (names.contains ("Gate On->1.0") && names.contains ("Auto Manual->0.0") && names.contains ("Sidechain In->1.0"),
+           "engage E2: other two-step switches and name-matched controls are candidates; a two-step at 1 is written to 0");
+    check (! names.joinIntoString (",").contains ("Monitor") && ! names.joinIntoString (",").contains ("Bypass") && ! names.joinIntoString (",").contains ("Power")
+             && ! names.joinIntoString (",").contains ("Comp Thresh") && ! names.joinIntoString (",").contains ("Comp Mix"),
+           "engage E3: bypass, power and monitor are NEVER candidates, nor the threshold itself, nor a continuous control without an engage word (" + names.joinIntoString (", ") + ")");
+    check (names.indexOf ("Comp On->1.0") < names.indexOf ("Gate On->1.0") && names.indexOf ("Gate On->1.0") < names.indexOf ("Sidechain In->1.0"),
+           "engage E4: order is name-and-shape (affine first), then shape alone, then name alone");
+
+    using namespace sweeptest;
+    std::vector<std::array<std::optional<double>, 3>> pass (6, { 0.0, 0.0, 0.0 }), clean;
+    for (int k = 0; k < 6; ++k) { const double r = (5 - k) * 1.5; clean.push_back ({ 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.5 }); }
+    check (! showsResponse (derive (fromGains (pass), kLevels, -1)) && showsResponse (derive (fromGains (clean), kLevels, -1)),
+           "engage E5: the quick probe's test - pass-through is NOT a response, a curve is");
+
+    Plan p; p.thr = 16; p.thrName = "Comp Thresh"; p.norms = { 0.f, 0.5f, 1.f };
+    p.engage = { cs[0] }; p.engageTried = { "Gate On -> 1.0 (from 'Off'): flat - passthrough" , "Comp On -> 1.0 (from 'Off'): GAIN REDUCTION" };
+    const auto d = derive (fromGains (clean), kLevels, -1);
+    const auto v = composeThresholdSweep (d, displayCheck (d, ""), p, {});
+    const auto eg = v.getProperty ("engageWrites", {});
+    check (eg.isObject() && (bool) eg.getProperty ("found", false) && eg.getProperty ("writes", {}).size() == 1
+             && eg.getProperty ("writes", {})[0].getProperty ("control", "") == "Comp On" && (bool) eg.getProperty ("writes", {})[0].getProperty ("verified", false)
+             && eg.getProperty ("tried", {}).size() == 2,
+           "engage E6: the fixture records the verified write (control, norm, from, verified) and every candidate tried");
+    Plan none = p; none.engage.clear(); none.engageTried.clear();
+    check (! composeThresholdSweep (d, displayCheck (d, ""), none, {}).hasProperty ("engageWrites"), "engage E7: a product that compressed as instantiated carries no engage record");
+    Plan triedAll = p; triedAll.engage.clear();
+    const auto vt = composeThresholdSweep (d, displayCheck (d, ""), triedAll, {}).getProperty ("engageWrites", {});
+    check (vt.isObject() && ! (bool) vt.getProperty ("found", true) && vt.getProperty ("tried", {}).size() == 2,
+           "engage E8: a product that stayed pass-through records found=false and what was tried - that is an answer");
+
+    // THE TRACE RUN a re-derivation picks: q.e15.c16. over e15.c16. over c16.; the quick probes (eq15.) never.
+    const auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-engage-" + juce::Uuid().toDashedString());
+    root.createDirectory();
+    auto pj = root.getChildFile ("p.json");
+    pj.replaceWithText (R"json([{"tag": "c16.ref"}, {"tag": "c16.pos00"}, {"tag": "eq15.c16.ref"}, {"tag": "eq15.c16.pos00"}, {"tag": "e15.c16.ref"}, {"tag": "e15.c16.pos00"}])json");
+    const auto r1 = resolveTraceRun (pj, "c16.");
+    pj.replaceWithText (R"json([{"tag": "c16.ref"}, {"tag": "eq15.c16.ref"}, {"tag": "e15.c16.ref"}, {"tag": "q.e15.c16.ref"}, {"tag": "q.e15.c16.pos00"}])json");
+    const auto r2 = resolveTraceRun (pj, "c16.");
+    pj.replaceWithText (R"json([{"tag": "c16.ref"}, {"tag": "eq15.c16.ref"}, {"tag": "eq15.c16.pos00"}])json");
+    const auto r3 = resolveTraceRun (pj, "c16.");
+    check (r1.prefix == "e15.c16." && r1.engageIndex == 15 && ! r1.quiet && r2.prefix == "q.e15.c16." && r2.quiet && r2.engageIndex == 15
+             && r3.prefix == "c16." && r3.engageIndex == -1,
+           "engage E9: re-derivation picks the engaged run, then its quiet fallback, and never a quick probe (" + r1.prefix + " / " + r2.prefix + " / " + r3.prefix + ")");
+    Plan q; restoreEngage (q, v);
+    check (q.engage.size() == 1 && q.engage[0].index == 15 && q.engage[0].norm == 1.0f && q.engageTried.size() == 2,
+           "engage E10: the plan is restored from the fixture's engage record for re-derivation");
+    root.deleteRecursively();
+}
+
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
 void testSleptProcessRetry()
 {
@@ -4942,6 +5011,7 @@ int main (int, char**)
     testDiscoveryFromMaps();
     testCertRecordAndDefaultPaths();
     testThresholdReviewNamesTheBand();
+    testEngageDetection();
     testSleptProcessRetry();
     testLevelDependence();
 

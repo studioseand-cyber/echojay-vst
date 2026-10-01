@@ -1082,3 +1082,29 @@ re-derived store rather than from the earlier report.
 
 **The fallback batch (22 fixtures, 16 product names - the (m)/(s) pairs are separate): run
 30 Sep evening; outcome recorded in the batch-7 README and summarised here once measured.**
+
+## 13. Engage detection (spec section 3 `engage`, built 1 Oct)
+
+A candidate whose first sweep reads `pass_through_at_defaults` is tried with each ENGAGE CANDIDATE
+in turn: a quick probe of three positions (soft, middle, hard) at the three levels with that one
+write as a precondition. The first candidate whose probe shows gain reduction (`showsResponse`:
+not flat, a span above the sense resolution) is VERIFIED - gain reduction with the write,
+pass-through without it (the sweep just taken) - and the full 16-position sweep is re-run with
+the write, tagged `e<idx>.` + prefix (quick probes `eq<idx>.`). The fixture records
+`thresholdSweep.engageWrites {writes[{index, control, norm, from, verified, verifiedBy}], tried[],
+found}`. A product that shows nothing with every candidate stays pass-through and records
+`found: false` with the tried list: that is an answer, not a failure.
+
+Candidates (`engageCandidates`, pure): from the NAME (on / enable / engage / active / in) and from
+the SHAPE (two steps, instantiated at one extreme); never bypass, power, standby, monitor, listen,
+solo, mute (`neverTouchName`), never the threshold itself. Written to the OTHER extreme from the
+instantiate value. Ordered name-and-shape, then shape, then name; within a rank the control
+sharing the threshold's first word first ("Comp On" for "Comp Thresh"). Pins E1-E10, six
+mutants red. Re-derivation picks the engaged run and its quiet fallback by tag (`resolveTraceRun`)
+and restores the writes from the fixture (`restoreEngage`).
+
+Not built: combinations (two switches needed at once). If no single candidate shows GR the
+product stays pass-through; the tried list says so. One defect found by the pin: `JSON::parse(...).
+getArray()` on a temporary dangles - the set read freed memory and E9 caught it.
+
+Live run on the six pass-through products: queued behind the fallback batch, mains permitting.

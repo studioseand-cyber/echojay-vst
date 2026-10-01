@@ -1720,7 +1720,9 @@ inline int runCertSweep (const SweepOptions& opt)
             juce::StringArray a { "--sweep", "thr=" + juce::String (q.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
                                   "hold=1.5", "discard=0.75", "win=0.25", "ref=" + ref, "moving_db=0.1",
                                   juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
-            if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+            juce::StringArray all = sets;                                     // the plan's preconditions (ratio raise, auto make-up off)
+            for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));   // plus the engage writes
+            if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
             return a; };
         std::cout << "  sweeping " << s.product << (tagPrefix.isNotEmpty() ? " candidate [" + juce::String (q.thr) + "] " + q.thrName : juce::String())
                   << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
@@ -1744,16 +1746,49 @@ inline int runCertSweep (const SweepOptions& opt)
     // THE QUIET-LEVEL FALLBACK (ruled 30 Sep): a sweep whose soft end has no linear anchor is re-swept at once with the
     // per-position quiet reference (levels -54/-48 added), tagged "q." + the candidate's prefix so both runs stay in the
     // traces. The plan that comes back is the one to derive from. Same processes, same probe, one more pass.
+    // THE ENGAGE SEARCH (spec section 3, built 1 Oct): a candidate that reads pass-through at the instantiate defaults
+    // is tried with each engage candidate in turn - a QUICK probe of three positions with the write - and the first
+    // that shows gain reduction is verified (GR with the write, pass-through without: the sweep just taken). The full
+    // sweep is then re-run with the write as a precondition, tagged "e<idx>." + prefix. Every refused candidate is
+    // recorded. If none shows GR the product stays pass-through, and the fixture lists what was tried.
+    auto engageSearch = [&] (sweep::Plan q, const juce::String& prefix) -> sweep::Plan
+    {
+        const auto cands = sweep::engageCandidates (base, q.thrName);
+        std::cout << "  pass-through at defaults: trying " << (int) cands.size() << " engage candidate(s)" << std::endl;
+        for (const auto& w : cands)
+        {
+            if (windowSeen || overBudget()) break;
+            sweep::Plan t = q; t.engage = { w };
+            sweep::ProcessOut tr; std::vector<sweep::ProcessOut> tp;
+            sweep::Plan quick = t; quick.norms = { q.norms.front(), q.norms[q.norms.size() / 2], q.norms.back() };
+            sweepFor (quick, "eq" + juce::String (w.index) + "." + prefix, tr, tp);
+            const auto d = sweep::derive (sweep::mergeProcesses (tr, tp), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+            const bool hit = sweep::showsResponse (d);
+            q.engageTried.add (w.name + " -> " + juce::String (w.norm, 1) + " (from '" + w.fromDisplay + "'): " + (hit ? "GAIN REDUCTION" : d.result + (d.reason.isNotEmpty() ? " - " + d.reason : juce::String())));
+            std::cout << "    " << q.engageTried[q.engageTried.size() - 1] << std::endl;
+            if (hit) { q.engage = { w }; return q; }
+        }
+        return q;
+    };
     auto sweepWithFallback = [&] (sweep::Plan q, const juce::String& prefix, sweep::ProcessOut& r, std::vector<sweep::ProcessOut>& ps) -> sweep::Plan
     {
         sweepFor (q, prefix, r, ps);
         if (q.quietReference || windowSeen || overBudget()) return q;
-        const auto first = sweep::derive (sweep::mergeProcesses (r, ps), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+        auto first = sweep::derive (sweep::mergeProcesses (r, ps), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+        if (first.result == "flat" && first.passThroughAtDefaults && q.engage.empty())
+        {
+            q = engageSearch (q, prefix);
+            if (q.engage.empty()) return q;                                      // stays pass-through; the tried list rides the fixture
+            std::cout << "  engage verified: " << q.engage.front().name << " -> " << q.engage.front().norm << "; full sweep with the write" << std::endl;
+            sweepFor (q, "e" + juce::String (q.engage.front().index) + "." + prefix, r, ps);
+            if (windowSeen || overBudget()) return q;
+            first = sweep::derive (sweep::mergeProcesses (r, ps), { -24.0, -12.0, -6.0 }, q.ratioIndex, false);
+        }
         if (! sweep::needsQuietFallback (first)) return q;
         std::cout << "  soft end has no linear anchor (" << first.reason << "): re-sweeping with the quiet-level reference" << std::endl;
         q.quietReference = true;
         q.referenceFallbackNote = "quiet-level reference used because the soft end had no linear anchor: " + first.reason;
-        sweepFor (q, "q." + prefix, r, ps);
+        sweepFor (q, "q." + (q.engage.empty() ? juce::String() : "e" + juce::String (q.engage.front().index) + ".") + prefix, r, ps);
         return q;
     };
     if (plan.candidates.empty())
@@ -1865,6 +1900,38 @@ inline int runCertSweep (const SweepOptions& opt)
 // RE-DERIVE A SWEEP FROM ITS TRACES (--cert-sweep-rederive): nothing is measured. The plan comes from the fixture's
 // own controls, the provenance (when, where, bridged, the diagnostic arm) from its existing thresholdSweep, and the
 // readings from processes.json and the raw files. A rule change is applied to every past sweep this way.
+// WHICH RUN TO RE-DERIVE FROM (1 Oct): the traces may hold the first pass (prefix), an engaged full sweep ("e<idx>." +
+// prefix), a quiet-level fallback ("q." + ...), or both. The latest in that order is the run the fixture was composed
+// from, and the plan is restored to match: engage writes from the fixture's own `engage` record.
+struct TraceRun { juce::String prefix; bool quiet = false; int engageIndex = -1; };
+inline TraceRun resolveTraceRun (const juce::File& processesJson, const juce::String& prefix)
+{
+    std::set<juce::String> tags;
+    const auto list = juce::JSON::parse (processesJson.loadFileAsString());   // held: getArray() on a temporary dangles
+    if (const auto* a = list.getArray())
+        for (const auto& p : *a) tags.insert (p.getProperty ("tag", "").toString());
+    int eidx = -1;
+    for (const auto& t : tags)
+        if (t.startsWith ("e") && t.endsWith ("." + prefix + "ref") && ! t.startsWith ("eq"))
+            eidx = t.substring (1).upToFirstOccurrenceOf (".", false, false).getIntValue();
+    TraceRun r;
+    const juce::String e = eidx >= 0 ? "e" + juce::String (eidx) + "." : juce::String();
+    if (tags.count ("q." + e + prefix + "ref")) { r.prefix = "q." + e + prefix; r.quiet = true; }
+    else r.prefix = e + prefix;
+    r.engageIndex = eidx;
+    return r;
+}
+inline void restoreEngage (sweep::Plan& q, const juce::var& oldSweep)
+{
+    const auto eg = oldSweep.getProperty ("engageWrites", {});
+    if (const auto* ws = eg.getProperty ("writes", {}).getArray())
+        for (const auto& w : *ws)
+            q.engage.push_back ({ (int) w.getProperty ("index", -1), w.getProperty ("control", "").toString(),
+                                  (float) (double) w.getProperty ("norm", 0.0), w.getProperty ("from", "").toString() });
+    if (const auto* tr = eg.getProperty ("tried", {}).getArray())
+        for (const auto& t : *tr) q.engageTried.add (t.toString());
+}
+
 inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& processesJson, const juce::File& rawDir, const juce::File& fixtureOut)
 {
     const auto fx = juce::JSON::parse (fixtureIn.loadFileAsString());
@@ -1896,9 +1963,10 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
     if (plan.candidates.empty())
     {
         sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
-        if (sweep::loadProcesses (processesJson, rawDir, ref, pos, "q."))
-        { plan.quietReference = true; plan.referenceFallbackNote = fallbackNote (old); }
-        else if (! sweep::loadProcesses (processesJson, rawDir, ref, pos)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
+        const auto run = resolveTraceRun (processesJson, "");
+        if (run.quiet) { plan.quietReference = true; plan.referenceFallbackNote = fallbackNote (old); }
+        if (run.engageIndex >= 0) restoreEngage (plan, old);
+        if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
         composeAndReport (base, plan, sweep::mergeProcesses (ref, pos), pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info);
         return 0;
     }
@@ -1908,14 +1976,12 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         auto q = plan.forCandidate (c);
         sweep::applyCandidateControl (q, base);
         sweep::ProcessOut ref; std::vector<sweep::ProcessOut> pos;
-        if (sweep::loadProcesses (processesJson, rawDir, ref, pos, "q.c" + juce::String (c.index) + "."))
-        {
-            q.quietReference = true;
-            juce::var oldC;
-            for (const auto& x : *fx.getProperty ("thresholdCandidates", {}).getArray()) if ((int) x.getProperty ("index", -1) == c.index) oldC = x.getProperty ("thresholdSweep", {});
-            q.referenceFallbackNote = fallbackNote (oldC);
-        }
-        else if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, "c" + juce::String (c.index) + ".")) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
+        juce::var oldC;
+        for (const auto& x : *fx.getProperty ("thresholdCandidates", {}).getArray()) if ((int) x.getProperty ("index", -1) == c.index) oldC = x.getProperty ("thresholdSweep", {});
+        const auto run = resolveTraceRun (processesJson, "c" + juce::String (c.index) + ".");
+        if (run.quiet) { q.quietReference = true; q.referenceFallbackNote = fallbackNote (oldC); }
+        if (run.engageIndex >= 0 || oldC.hasProperty ("engageWrites")) restoreEngage (q, oldC);
+        if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
         cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName()) });
