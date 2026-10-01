@@ -11,7 +11,7 @@ namespace echojay
 
     ```json
     "track_level": { "loud_rms_dbfs": -18.4, "loud_peak_dbfs": -6.2,
-                     "window": "400ms_rms_p95", "heard_s": 90 }
+                     "window": "400ms_p95", "heard_s": 90 }
     ```
 
     `loud_rms_dbfs` is the 95th percentile of 400 ms RMS over what has been HEARD, measured on the track
@@ -120,7 +120,13 @@ public:
         // TWO DECIMALS, because the convention test in section 5 is "-3.01" and one decimal cannot express it.
         o->setProperty ("loud_rms_dbfs",  juce::String (r.loudRmsDbfs, 2).getDoubleValue());
         o->setProperty ("loud_peak_dbfs", juce::String (r.loudPeakDbfs, 2).getDoubleValue());
-        o->setProperty ("window", "400ms_rms_p95");
+        // THE LABEL IS THE SPEC'S, VERBATIM: "400ms_p95" (COMP_PROFILE_SPEC_v1 section 5, v1.4 - and v1.3
+        // before it). This read "400ms_rms_p95", which was the v1 label and described only the RMS figure. It
+        // stopped being true at v1.3, when loud_peak_dbfs was defined over THE SAME windows: the window is a
+        // 400 ms p95 window shared by both figures, and naming it after one of them was wrong as well as
+        // non-conforming. Found by feeding the server's own generated request through this guard - B's side
+        // already sends the spec's string, so the two disagreed and only the plugin was out.
+        o->setProperty ("window", "400ms_p95");
         o->setProperty ("heard_s", (int) std::lround (r.heardSeconds));
         return juce::var (o);
     }

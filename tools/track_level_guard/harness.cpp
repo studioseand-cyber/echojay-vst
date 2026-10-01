@@ -1,6 +1,6 @@
 // track_level_guard - COMP_PROFILE_SPEC_v1 section 5, the level the plugin sends with a build.
 //
-//   "track_level": { "loud_rms_dbfs": -18.4, "loud_peak_dbfs": -6.2, "window": "400ms_rms_p95", "heard_s": 90 }
+//   "track_level": { "loud_rms_dbfs": -18.4, "loud_peak_dbfs": -6.2, "window": "400ms_p95", "heard_s": 90 }
 //
 // The 95th percentile of 400 ms RMS over what has been HEARD, on the track PRE-CHAIN, plus the loud-phrase peak;
 // null under 20 s heard. Driven on SYNTHETIC signals whose levels this file chose, so every expected number is
@@ -151,8 +151,15 @@ void guardMain()
                        && o->hasProperty ("window") && o->hasProperty ("heard_s"),
                    "(5) with the four fields the spec names, and no others",
                    juce::JSON::toString (v));
-            check (o->getProperty ("window").toString() == "400ms_rms_p95",
-                   "(5) window says how it was measured", o->getProperty ("window").toString());
+            // THE SPEC'S STRING, VERBATIM (COMP_PROFILE_SPEC_v1 section 5): "400ms_p95". This leg pinned
+            // "400ms_rms_p95" - the v1 label, which named the window after the RMS figure and stopped being true
+            // at v1.3, when loud_peak_dbfs was defined over THE SAME windows. Both the product and this leg
+            // carried the stale string, so the leg agreed with the bug and could never catch it; the server's own
+            // generated request is what disagreed. A leg is not evidence when it was written from the same
+            // misreading as the code it checks.
+            check (o->getProperty ("window").toString() == "400ms_p95",
+                   "(5) window is the spec's label verbatim, and names the window both figures share",
+                   o->getProperty ("window").toString());
             check (std::abs ((float) (double) o->getProperty ("loud_rms_dbfs") - -18.4f) <= 0.5f,
                    "(5) ...and the number is the spec's own example value for a take at that level",
                    juce::String ((double) o->getProperty ("loud_rms_dbfs")));

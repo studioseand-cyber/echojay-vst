@@ -124,6 +124,23 @@ void guardMain()
                "detector_f is present (v1.4 requires it; the SERVER gates on it, the plugin only passes the two "
                "level figures it needs)",
                po->getProperty ("detector_f").toString());
+
+        // detector_f = 0 IS A VALUE, NOT AN ABSENCE - and B's real EMO-D5 profile carries exactly 0, so this is
+        // the live case and not a hypothetical. Spec section 6 makes f the server's own threshold input
+        // (L = loud_rms + f x (loud_peak - loud_rms - 3.01)); at f = 0 that is simply the RMS level. The plugin
+        // never reads f at all, which is why there is deliberately no plugin-side "profile without detector_f is
+        // refused" rule: that is the SERVER's gate (1 Oct ruling - the server is the single gate, and only the
+        // map_fp JOIN stays here, because identity is "is this profile for this slot", not "is it good enough").
+        // What this leg protects against is someone later adding that rule as a TRUTHINESS test, which would
+        // reject every pure-RMS unit in the catalogue while looking perfectly reasonable in review.
+        {
+            const auto f = po->getProperty ("detector_f");
+            check (f.isDouble() || f.isInt() || f.isInt64(),
+                   "detector_f is a number on the wire", f.toString());
+            check (ChainHost::readCompProfile (profile).usable,
+                   "a profile whose detector_f is 0 is USED - zero is pure-RMS detection, not a missing field",
+                   "detector_f=" + f.toString());
+        }
         check (po->hasProperty ("never_touch"),
                "never_touch is present, so the plugin can honour it");
         check (po->hasProperty ("static_gain_db"),
@@ -270,16 +287,28 @@ void guardMain()
                    "CONVENTION agrees (plain RMS: a full-scale sine is -3.01, not 0)",
                    juce::String ((double) so->getProperty ("loud_rms_dbfs")) + " vs the server's "
                        + juce::String (wantRms, 2));
-            const auto mineWin = so->getProperty ("window").toString();
+            // THIS WAS THE GUARD'S OWN DEFECT, and it is the reason the label was wrong for a whole day.
+            // The first cut noted a disagreement as "a MISMATCH for B, not a plugin fault" and, when the two
+            // agreed, called check (true, ...) - an assertion that cannot fail, which proves nothing and merely
+            // prints. Worse, the note asserted the spec said "400ms_rms_p95"; the spec says "400ms_p95" and has
+            // since v1.3, so the guard argued the plugin's case from a premise the contract contradicted and
+            // turned a plugin bug into a complaint about the server. A check must be able to fail, and the side
+            // it indicts must be read off the CONTRACT, not assumed. So: the label is asserted against the spec's
+            // own string, and the server's generated request is asserted against the same string - either side
+            // that drifts is named, by name, and neither gets the benefit of the doubt.
+            const auto mineWin  = so->getProperty ("window").toString();
             const auto theirWin = tl->getProperty ("window").toString();
-            if (mineWin != theirWin)
-                note ("MISMATCH for B, not a plugin fault: the plugin sends window=\"" + mineWin
-                      + "\" because COMP_PROFILE_SPEC_v1 section 5 prints exactly that, and the server's generated "
-                        "request says \"" + theirWin + "\". The spec is the contract, so the server's generator is "
-                        "the side to change - unless the server VALIDATES the label, in which case say so and the "
-                        "plugin will follow. Written up in the handoff.");
-            else
-                check (true, "...and the window label agrees", mineWin);
+            const juce::String specWin ("400ms_p95");   // COMP_PROFILE_SPEC_v1 section 5, verbatim
+            check (mineWin == specWin,
+                   "the plugin's window label is the spec's string verbatim (section 5)",
+                   "plugin sends \"" + mineWin + "\", spec says \"" + specWin + "\"");
+            check (theirWin == specWin,
+                   "...and so is the server's, in its own generated request - if THIS is the red one it is B's "
+                   "side to change, and the plugin is already right",
+                   "server sends \"" + theirWin + "\", spec says \"" + specWin + "\"");
+            check (mineWin == theirWin,
+                   "...so the two agree on the wire",
+                   mineWin + " vs " + theirWin);
         }
     }
     else note ("the request carries no track_level: nothing to compare.");

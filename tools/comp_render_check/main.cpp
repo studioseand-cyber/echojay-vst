@@ -376,7 +376,7 @@ int run (const Opt& o)
     j << "  \"sample_rate\": " << juce::String (o.sr, 0) << ",\n";
     j << "  \"signal\": \"" << signalName << "\",\n";
     j << "  \"seconds\": " << juce::String (in.getNumSamples() / o.sr, 2) << ",\n";
-    j << "  \"window\": \"400ms_rms_p95\",\n";
+    j << "  \"window\": \"400ms_p95\",\n";   // the spec's label verbatim (section 5); "400ms_rms_p95" was v1's
     j << "  \"controls\": [\n";
     for (size_t i = 0; i < applied.size(); ++i)
         j << "    " << (i ? "," : "") << "{ \"control\": \"" << applied[i].control << "\", \"asked\": \""
