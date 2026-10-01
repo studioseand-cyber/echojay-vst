@@ -1374,9 +1374,13 @@ public:
         usable. Cheap enough to call per build. */
     struct CompProfileInfo
     {
-        bool usable = false;          // present, schema matches, topology handled, fit trusted
-        juce::String plugin, mapFp, topology, whyNot;
-        float maxErrorDb = 0.0f;
+        // (v1.4) `usable` means only "this is an object I can read". The SERVER is the single gate on whether a
+        // profile is good enough to use - it only attaches one that passed its validator - so nothing here judges.
+        bool usable = false;
+        bool hasAmount = false;       // informational: without it there is nothing to correct WITH
+        juce::String plugin, mapFp, topology, schema, whyNot;
+        float maxErrorDb = 0.0f;      // v1.2's fit.max_error_db, logged only
+        float pointErrorDb = 0.0f;    // v1.3+'s quality.point_error_db, logged only
     };
     static CompProfileInfo readCompProfile (const juce::var& profile);
     /** COMP_PROFILE_SPEC_v1: the whole profile path is behind this, default OFF. With it off, behaviour is

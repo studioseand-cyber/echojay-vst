@@ -112,26 +112,58 @@ void guardMain()
                info.plugin + " / " + info.topology + " / err " + juce::String (info.maxErrorDb, 2));
     }
 
-    std::printf ("\n-- (2b) a profile that cannot be trusted is reported ABSENT, not half-used --\n");
+    std::printf ("\n-- (2b) THE SERVER IS THE SINGLE GATE: the plugin uses what it is given (spec v1.4) --\n");
     if (fp.isNotEmpty())
     {
-        // "fit.max_error_db: over 1.5 dB means the profile is not trusted and the server treats it as no profile."
+        // SUPERSEDED 1 Oct 2026: these legs asserted the plugin's OWN trust checks - schema, topology and
+        // fit.max_error_db over 1.5. v1.4 names quality.point_error_db as THE trust gate and it is the SERVER's:
+        // "it only attaches a comp_profile that passed its validator, so the plugin uses any comp_profile it
+        // receives. One set of rules, in one place." Two copies of a rule is one too many - they drift, and v1.3
+        // retiring `fit` for `quality` is exactly how that drift showed up. So the assertions are inverted: what
+        // was refused is now used.
+        //
+        // Sean's own case: no `fit` block at all, and a quality.point_error_db of 0.2.
+        {
+            auto prof = profileVar (fp);
+            auto* o = prof.getDynamicObject();
+            o->removeProperty ("fit");
+            auto* q = new juce::DynamicObject(); q->setProperty ("point_error_db", 0.2);
+            q->setProperty ("method", "hold 2.5 s vs 5 s");
+            o->setProperty ("quality", juce::var (q));
+            publishProfile (h, fp, prof);
+            check (h.slotCompProfile (0).isObject(),
+                   "(2b) a profile with NO fit block and quality.point_error_db 0.2 IS USED  (RED as it stood: the "
+                   "plugin ran its own fit.max_error_db gate, a rule that v1.3 had already retired - a second copy "
+                   "of the server's rule, drifting)",
+                   h.slotCompProfile (0).isObject() ? juce::String ("used") : juce::String ("REFUSED"));
+        }
+        // ...and what the old gates refused is now used, because the server already decided.
         publishProfile (h, fp, profileVar (fp, "threshold", 2.0f));
-        check (h.slotCompProfile (0).isVoid(),
-               "(2b) a fit worse than 1.5 dB is no profile  (a bad fit must not quietly become a dialled "
-               "threshold)");
-        // "other: anything else. The server does not auto-set it; it is treated as no profile."
-        publishProfile (h, fp, profileVar (fp, "other", 0.4f));
-        check (h.slotCompProfile (0).isVoid(), "(2b) topology \"other\" is no profile");
-        publishProfile (h, fp, profileVar (fp, "threshold", 0.4f, "ej_comp_profile/2"));
-        check (h.slotCompProfile (0).isVoid(), "(2b) a schema this client does not know is no profile");
-        publishProfile (h, fp, profileVar (fp, "threshold", 0.4f, "ej_comp_profile/1", false));
-        check (h.slotCompProfile (0).isVoid(), "(2b) and a profile with no amount control is no profile");
-        // ...while input_drive IS handled, because the spec names it as a topology the client must take.
-        publishProfile (h, fp, profileVar (fp, "input_drive", 0.4f));
         check (h.slotCompProfile (0).isObject(),
-               "(2b) ...but input_drive is usable: the spec names it alongside threshold");
-        publishProfile (h, fp, profileVar (fp, "threshold"));   // leave a good one for what follows
+               "(2b) a fit worse than 1.5 dB is USED - that judgement is the server's");
+        publishProfile (h, fp, profileVar (fp, "other", 0.4f));
+        check (h.slotCompProfile (0).isObject(),
+               "(2b) topology \"other\" is USED - the server does not attach one it will not set");
+        publishProfile (h, fp, profileVar (fp, "threshold", 0.4f, "ej_comp_profile/2"));
+        check (h.slotCompProfile (0).isObject(),
+               "(2b) a schema this client has not seen is USED - the server validated it");
+        publishProfile (h, fp, profileVar (fp, "threshold", 0.4f, "ej_comp_profile/1", false));
+        check (h.slotCompProfile (0).isObject(),
+               "(2b) and a profile with NO amount control is used too: it names the compressor in the line, there "
+               "is simply nothing to correct WITH");
+        {   // ...and the one thing that is still read off it: whether there IS an amount control.
+            const auto info = ChainHost::readCompProfile (h.slotCompProfile (0));
+            check (info.usable && ! info.hasAmount,
+                   "(2b) ...which is reported rather than hidden", info.hasAmount ? "has amount" : "no amount");
+        }
+        // THE ONE REFUSAL THAT REMAINS is not a trust judgement: a profile for ANOTHER BINARY.
+        publishProfile (h, fp, profileVar (fp.substring (0, 12)));
+        check (h.slotCompProfile (0).isVoid(),
+               "(2b) a profile whose map_fp is not this slot's full fingerprint is still refused - that is not "
+               "\"is this profile good\" but \"is this profile FOR THIS SLOT\", and using one measured on another "
+               "binary would dial a threshold from somewhere else");
+        publishProfile (h, fp, profileVar (fp));
+        check (h.slotCompProfile (0).isObject(), "(2b) ...and the slot's own fingerprint is used");
     }
 
     std::printf ("\n-- (2c) the block's expectations are stored on the slot --\n");

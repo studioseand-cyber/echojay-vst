@@ -94,7 +94,7 @@ That worktree is at `scratchpad/p1gate` and can be removed with `git worktree re
 ## PART 2 — the plugin side of measured compressor profiles
 
 `docs/COMP_PROFILE_SPEC_v1.md` is the spec, copied verbatim from `~/Desktop/COMP_PROFILE_SPEC_v1.md`. **It is now
-v1.3** (the file's own status line reads `DRAFT v1.2`; v1.1 brought the full 64-hex `map_fp`,
+v1.4** (the file's own status line reads `DRAFT v1.2`; v1.1 brought the full 64-hex `map_fp`,
 `measured.reference_ratio` and `controls_norm`, and v1.2 is Kathy's review — measured GR points replacing the
 threshold formula, 997 Hz, the RMS convention pinned, stepped controls, `detector`, tighter acceptance).
 
@@ -133,7 +133,7 @@ one the plugin rounds to — a position nobody chose. Adjacent rather than neare
 one move even when the ideal lies past the next detent; at the last detent it stays put. A continuous control still
 interpolates exactly.
 
-`track_level_guard` 25 assertions GREEN · `comp_profile_guard` 49 assertions GREEN.
+`track_level_guard` 25 assertions GREEN · `comp_profile_guard` 50 assertions GREEN.
 
 ### v1.3 (Kathy's second review) — two changes landed
 
@@ -156,20 +156,52 @@ done nothing** while reporting success. That is worse than a wrong move. The cur
 whose `in_at_gr_dbfs["1"]` is `null` is left out, because the sweep never reached 1 dB there and it cannot anchor
 anything. Five assertions, including the empty-curve RED.
 
-### Still owed from v1.2 and v1.3, NOT done
+### v1.4 — the server is the single gate, and the tone check exists
 
-- **§8's tone check**: "a 997 Hz tone at L through the same settings lands within 0.5 dB of g". `comp_render_check`
-  measures a vocal-shaped signal only; it needs a `--tone <dBFS>` mode to render a 997 Hz sine at L and report the
-  GR on it. That is the check that "catches calculation errors the 1 dB vocal tolerance would hide", so it matters.
+**The plugin's own profile trust check is GONE.** v1.4 names `quality.point_error_db` as *the* trust gate and it is
+the server's: it only attaches a `comp_profile` that passed its validator, so **the plugin uses any `comp_profile` it
+receives**. What was removed: the `fit.max_error_db > 1.5` gate, the schema check and the topology check. Two copies
+of a rule is one too many — they drift, and **v1.3 retiring `fit` for `quality` is exactly how that drift showed
+up**: the plugin was still enforcing a field the contract had already replaced.
+
+`readCompProfile` now *reads* rather than *judges*: `usable` means only "this is an object I can read", and the
+fields are parsed for the log and the closing line. Both quality figures are logged when present (v1.2's
+`fit.max_error_db`, v1.3+'s `quality.point_error_db`) so a profile's own number is visible beside what it did —
+logged, never acted on. A profile with no amount control is used too: it names the compressor in the line, there is
+simply nothing to correct *with*, and that is reported rather than hidden.
+
+**One refusal I kept, and it is a judgement call.** A profile whose `map_fp` is not this slot's full 64-hex
+fingerprint is still refused. That is not "is this profile good" — which is the server's call — but "is this profile
+**for this slot**", and using one measured on another binary would dial a threshold from somewhere else. You asked
+for that check explicitly when v1.1 landed and have not withdrawn it. Say the word if the server owns that too.
+
+**`comp_render_check --tone <dBFS>`** (spec §8): renders a **997 Hz** sine at that RMS through the given settings and
+reports GR under its own `tone_check` key, with the 0.5 dB tolerance printed beside it. 997 Hz, not 1000 — §4 puts it
+"off the 1000 Hz default crossover some multiband compressors use". It opens with a 1 s fade so a compressor's attack
+is not measured against a step, and a level above a full-scale sine's −3.01 dBFS RMS is clamped and **said so**
+(`clamped_to_full_scale`) rather than silently clipped.
+
+Proven in both directions on `AUDynamicsProcessor`:
+
+```
+--tone -10  --set "Compression Threshold=-20"   →  loud_rms_in_dbfs -10.00,  gr_db 12.94
+--tone -30  --set "Compression Threshold=-10"   →  loud_rms_in_dbfs -30.00,  gr_db  0.00
+```
+
+The tone renders at **exactly** the requested RMS, which is the part the tool controls, and with the threshold 20 dB
+above the tone the measurement reads **0.00** — so a GR figure from it means compression and not an artefact. I am
+**not** claiming the 12.94 matches a predicted ratio: `AUDynamicsProcessor` exposes no compression ratio (its
+parameters are Compression Threshold, Headroom, Expansion Ratio, Expansion Threshold, Attack, Release, Master Gain),
+so there is nothing to predict against. The number to trust is the zero.
+
+### Still owed from v1.2, v1.3 and v1.4, NOT done
+
 - **§6's new computation is server-side** (measured `in_at_gr_dbfs` points replacing the threshold formula). Nothing
   owed here beyond what is already sent, but note the plugin now sends `loud_peak_dbfs` to two decimals, which is
   what `detector: "peak"` needs (`loud_peak_dbfs - 3.01`).
-- **v1.3's `quality` block replaces the model-fit gate.** The profile now carries
-  `quality: { point_error_db, repeats }` where v1.2 had `fit.max_error_db`. My trust check still reads
-  `fit.max_error_db > 1.5` and refuses on it. That is **safe but incomplete**: a v1.3 profile has no `fit` block, so
-  the field reads 0 and the profile passes — nothing is wrongly refused, but the new quality gate is not honoured.
-  Whoever picks this up needs the thresholds Sean/Kathy want on `point_error_db` and `repeats` before it can be
-  written; I did not invent them.
+- **`detector_f` is REQUIRED in v1.4** and feeds `L = loud_rms + f x (loud_peak - loud_rms - 3.01)`. That
+  computation is the server's, and the plugin already sends both figures it needs to two decimals. Nothing owed here
+  — noted only so nobody looks for it on this side.
 - **§11 version matching**: profiles key to the plugin version they were swept on. Waves on the EJ Maps Mac is V12;
   this machine runs 15.0.70, so a V12 profile will not match. Nothing to build — it is a sweeping instruction — but
   it is the likeliest reason a first real profile fails to join.

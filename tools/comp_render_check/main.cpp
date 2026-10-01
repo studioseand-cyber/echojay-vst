@@ -39,6 +39,8 @@ struct Opt
     juce::StringArray sets;
     double sr = 48000.0;
     double seconds = 20.0;
+    bool  tone = false;          // spec section 8: the 997 Hz tone check
+    float toneDbfs = -18.0f;     // L, as sine RMS dBFS
 };
 
 Opt parseArgs (int argc, char** argv)
@@ -55,6 +57,7 @@ Opt parseArgs (int argc, char** argv)
         else if (a == "--sr")      o.sr = next().getDoubleValue();
         else if (a == "--seconds") o.seconds = next().getDoubleValue();
         else if (a == "--id")      o.id = next();
+        else if (a == "--tone")   { o.tone = true; o.toneDbfs = next().getFloatValue(); }
     }
     return o;
 }
@@ -105,6 +108,36 @@ void makeSpeechLike (juce::AudioBuffer<float>& buf, double sr, double seconds, f
     const float loudRms = cnt > 0 ? (float) std::sqrt (sum / (double) cnt) : 1.0f;
     const float want = juce::Decibels::decibelsToGain (phraseRmsDbfs);
     buf.applyGain (loudRms > 0.0f ? want / loudRms : 1.0f);
+}
+
+/** A 997 Hz SINE AT AN EXACT RMS dBFS (spec section 8): "a 997 Hz tone at L through the same settings lands within
+    0.5 dB of g. The tone check catches calculation errors the 1 dB vocal tolerance would hide."
+
+    997 Hz, not 1000: section 4 says it is "off the 1000 Hz default crossover some multiband compressors use". The
+    level is stated as RMS, on the same convention as everything else here - a sine of amplitude a has RMS a/sqrt(2),
+    so the amplitude for a wanted RMS in dBFS is 10^(db/20) * sqrt(2). A full-scale sine is therefore -3.01 dBFS RMS,
+    and asking for anything above that is impossible: it is clamped and said out loud rather than silently clipped.
+
+    It opens with a 1 s fade so a compressor's attack is not measured against a step, and the measurement windows
+    that matter are well past it. */
+void makeTone (juce::AudioBuffer<float>& buf, double sr, double seconds, float rmsDbfs, bool& clampedOut)
+{
+    const float maxRms = -3.0103f;
+    clampedOut = rmsDbfs > maxRms;
+    const float use = juce::jmin (rmsDbfs, maxRms);
+    const int n = (int) std::lround (sr * seconds);
+    buf.setSize (1, n);
+    const float amp = juce::Decibels::decibelsToGain (use) * std::sqrt (2.0f);
+    const double inc = 2.0 * juce::MathConstants<double>::pi * 997.0 / sr;
+    double phase = 0.0;
+    auto* d = buf.getWritePointer (0);
+    const int fade = (int) std::lround (sr);
+    for (int i = 0; i < n; ++i)
+    {
+        const float env = i < fade ? (float) i / (float) fade : 1.0f;
+        d[i] = amp * env * (float) std::sin (phase);
+        phase += inc;
+    }
 }
 
 std::vector<float> windowRmsDb (const juce::AudioBuffer<float>& b, double sr)
@@ -282,7 +315,13 @@ int run (const Opt& o)
 
     juce::AudioBuffer<float> in;
     juce::String signalName;
-    if (o.wav.isNotEmpty() && juce::File (o.wav).existsAsFile())
+    bool toneClamped = false;
+    if (o.tone)
+    {
+        makeTone (in, o.sr, juce::jmax (6.0, o.seconds), o.toneDbfs, toneClamped);
+        signalName = "tone:997hz_" + juce::String (juce::jmin (o.toneDbfs, -3.0103f), 2) + "dbfs_rms";
+    }
+    else if (o.wav.isNotEmpty() && juce::File (o.wav).existsAsFile())
     {
         juce::AudioFormatManager afm; afm.registerBasicFormats();
         std::unique_ptr<juce::AudioFormatReader> rd (afm.createReaderFor (juce::File (o.wav)));
@@ -349,6 +388,19 @@ int run (const Opt& o)
     j << "  \"loud_rms_out_dbfs\": " << juce::String (loudWet, 2) << ",\n";
     j << "  \"static_gain_db\": " << juce::String (staticGain, 2) << ",\n";
     j << "  \"gr_loud_db\": " << juce::String (grLoud, 2) << "\n";
+    if (o.tone)
+    {
+        // ON A TONE every window is the same window, so "the loud phrases" is the tone itself and gr_loud_db IS the
+        // tone's gain reduction. Reported under its own name so a tone run cannot be mistaken for a vocal one.
+        j << "  ,\"tone_check\": {\n";
+        j << "     \"requested_rms_dbfs\": " << juce::String (o.toneDbfs, 2) << ",\n";
+        j << "     \"rendered_rms_dbfs\": " << juce::String (juce::jmin (o.toneDbfs, -3.0103f), 2) << ",\n";
+        j << "     \"clamped_to_full_scale\": " << (toneClamped ? "true" : "false") << ",\n";
+        j << "     \"gr_db\": " << juce::String (grLoud, 2) << ",\n";
+        j << "     \"tolerance_db\": 0.5,\n";
+        j << "     \"note\": \"spec section 8: a 997 Hz tone at L must land within 0.5 dB of the target g\"\n";
+        j << "  }\n";
+    }
     j << "}\n";
     std::printf ("%s", j.toRawUTF8());
     if (o.jsonOut.isNotEmpty()) juce::File (o.jsonOut).replaceWithText (j);
@@ -366,6 +418,8 @@ int main (int argc, char** argv)
     {
         std::printf ("comp_render_check - COMP_PROFILE_SPEC_v1 section 8 acceptance check\n"
                      "  --id \"AudioUnit:Effects/aufx,dcmp,appl\" --set \"Compression Threshold=-30\"\n"
+                     "  [--tone <dBFS>]  a 997 Hz sine at that RMS instead of the vocal-shaped signal, for the\n"
+                     "                   section 8 tone check: GR on it must be within 0.5 dB of the target.\n"
                      "  [--name \"...\"] [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json]\n"
                      "\n"
                      "  --id is REQUIRED and names ONE AudioComponent. This tool never scans: resolving a name by\n"

@@ -1,6 +1,6 @@
 # EchoJay compressor profiles: spec v1
 
-Status: DRAFT v1.3, 1 Oct 2026. v1.3 (Kathy's second review): measured point quality replaces the model-fit gate, detector_f replaces the detector label, loud_peak_dbfs defined, sweep ceiling -3.01 RMS, in_at_gr_dbfs is the only threshold field read. v1.1: full 64-hex map_fp, measured.reference_ratio, controls_norm. v1.2 (from Kathy's review): measured GR points replace the threshold formula, 997 Hz, RMS convention pinned, stepped controls, detector, tighter acceptance.
+Status: DRAFT v1.4, 1 Oct 2026. v1.4 (Kathy's third review): detector_f required, point quality is the hold-doubling test, monotonic rule skips nulls and allows equal neighbours. v1.3 (Kathy's second review): measured point quality replaces the model-fit gate, detector_f replaces the detector label, loud_peak_dbfs defined, sweep ceiling -3.01 RMS, in_at_gr_dbfs is the only threshold field read. v1.1: full 64-hex map_fp, measured.reference_ratio, controls_norm. v1.2 (from Kathy's review): measured GR points replace the threshold formula, 997 Hz, RMS convention pinned, stepped controls, detector, tighter acceptance.
 This file is the contract between the three. If a side needs to change it, change this file first, bump the minor version, and say so.
 
 ## 1. Why
@@ -75,7 +75,7 @@ New approach: measure each compressor once, offline, with test tones (EJ Maps). 
   "time": { "attack_ms": 9.8, "release_ms": 80.0, "program_dependent": false },
   "detector_f": 0.0,
   "fit": { "max_error_db": 0.4, "points": 341 },
-  "quality": { "point_error_db": 0.2, "repeats": 2 },
+  "quality": { "point_error_db": 0.2, "method": "hold 2.5 s vs 5 s" },
   "notes": ""
 }
 ```
@@ -96,13 +96,13 @@ New approach: measure each compressor once, offline, with test tones (EJ Maps). 
 - `eff_threshold_dbfs` (v1.3: optional, informational): identical to `in_at_gr_dbfs["1"]` by definition. The server never reads it; `in_at_gr_dbfs` is the only threshold field it uses.
 - `amount.curve[].in_at_gr_dbfs` (v1.2, required): for that position, at the reference ratio, the measured input level where GR reaches exactly 1, 2 and 3 dB, read from the raw sweep by interpolation, not from a fitted model. `null` where the sweep never reached it. The sweep tops out at a 0 dBFS peak sine, which is -3.01 dBFS RMS, so no value above -3.01 can exist. This is what the server matches on (section 6), so knee and ratio need no modelling.
 - `amount.stepped` (v1.2): true when the amount control has detents. The curve then lists every detent, and the server only ever picks a listed point, never an interpolated norm.
-- `detector_f` (v1.3, optional, 0..1): how much the unit's detector responds to peaks above RMS. Measured with a two-tone test at the same RMS as the sine: 0 = pure RMS response, 1 = full peak response. Because the two-tone passes through the unit's real attack, f already reflects how much of the peaks it actually reacts to. Missing or null is treated as 0 (RMS), which errs toward less compression.
+- `detector_f` (v1.4, REQUIRED, 0..1): how much the unit's detector responds to peaks above RMS. Measured with a two-tone test at the same RMS as the sine: 0 = pure RMS response, 1 = full peak response. Because the two-tone passes through the unit's real attack, f already reflects how much of the peaks it actually reacts to. A profile without it is not used: guessing 0 on a peak-sensitive unit makes the server pick a threshold about 9 dB too low on a typical vocal (RMS -18.4, peak -6.2), so the unit compresses far harder than asked.
 - `ratio`: a curve if the ratio is adjustable, else `fixed` with one measured ratio and knee. For program-dependent units (opto), give the ratio measured at 2-4 dB GR.
 - `static_gain_db`: output minus input well below threshold, with `neutral` applied.
 - `level_coupling` (`input_drive` only): `{ "control": "Input", "gain_db_per_point": [{ "norm": 0.3, "gain_db": -6.0 }, ...] }`: how much the amount control itself changes level below threshold, so the hold can predict OUT.
 - `time`: measured when possible, else omit. `program_dependent: true` for opto and auto-release units.
 - `fit.max_error_db` (v1.3: informational only, not a gate): worst error against a threshold + ratio + knee model. Soft-knee and opto units legitimately miss that model, so it must not reject them.
-- `quality.point_error_db` (v1.3, required): worst disagreement between repeated measurements of the same `in_at_gr_dbfs` point. This is the trust gate: over 0.5 dB, the server treats the profile as no profile. The server also rejects a profile whose points are not monotonic: within a position, `in_at_gr_dbfs` must rise from 1 to 2 to 3 dB, and across positions the values must move in one direction.
+- `quality.point_error_db` (v1.4, required): worst disagreement on any `in_at_gr_dbfs` point between the normal sweep and a repeat with the hold doubled (5 s instead of 2.5 s). A point that moves when the hold doubles hadn't settled, which catches slow opto and auto-release units. Identical repeats are not a test, because plugin DSP is deterministic. Systematic errors (stray tones in the reading, makeup coupling, a contaminated reference) are caught by EJ Maps' own checks before export, listed in `notes`. This is the trust gate: over 0.5 dB, the server treats the profile as no profile. The server also rejects a profile whose points are not monotonic: within a position, `in_at_gr_dbfs` must rise from 1 to 2 to 3 dB, and across positions the values must move in one direction. Nulls are skipped, and equal neighbouring values are allowed, so positions that sit past the sweep range don't fail it.
 
 ## 4. Measurement method (recommended)
 
@@ -134,7 +134,7 @@ Per build, on the existing build request, for the track (pre-chain):
 
 Inputs: profile, target GR g (default 2.0 dB; never above 3.0), and L, the vocal level in the profile's sine-RMS terms:
 
-L = loud_rms + f x (loud_peak - loud_rms - 3.01), where f = `detector_f` (0 when missing).
+L = loud_rms + f x (loud_peak - loud_rms - 3.01), where f = `detector_f` (required; no profile is used without it).
 
 At f = 0 this is the RMS level; at f = 1 it is the peak level expressed as an equivalent sine RMS.
 

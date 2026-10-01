@@ -4869,43 +4869,53 @@ juce::var ChainHost::slotCompProfile (int slotIndex) const
             return {};
         }
     }
-    // A profile that is not usable is reported ABSENT, so every caller takes the no-profile road rather than each
-    // having to re-decide. The reason is logged once here, where the decision is made.
+    // NO TRUST CHECK HERE (v1.4): the server attached it, so it is used. The one thing still logged is what it
+    // says about itself, so a profile's quality figure and topology are visible beside what it actually did.
     const auto info = readCompProfile (prof);
     if (! info.usable)
     {
         EchoJay_NSLog(("EJCompProfile: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
-                       + "\") has a profile that CANNOT be used - " + info.whyNot
-                       + "; treating it as no profile").toRawUTF8());
+                       + "\") - the comp_profile is " + info.whyNot + ", so there is nothing to read")
+                          .toRawUTF8());
         return {};
     }
+    EchoJay_NSLog(("EJCompProfile: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
+                   + "\") using the profile the server attached: schema=" + info.schema
+                   + " topology=" + info.topology
+                   + (info.pointErrorDb > 0.0f
+                          ? " quality.point_error_db=" + juce::String(info.pointErrorDb, 2) : juce::String())
+                   + (info.maxErrorDb > 0.0f
+                          ? " fit.max_error_db=" + juce::String(info.maxErrorDb, 2) : juce::String())
+                   + (info.hasAmount ? juce::String() : juce::String(" (no amount control: nothing to correct with)")))
+                      .toRawUTF8());
     return prof;
 }
 
+// THE SERVER IS THE SINGLE GATE (1 Oct 2026 ruling, spec v1.4). It only attaches a `comp_profile` that passed its
+// own validator - v1.4 names `quality.point_error_db` as THE trust gate and `detector_f` as required - so the plugin
+// uses any comp_profile it receives. The checks this used to make (schema, topology, and `fit.max_error_db` over
+// 1.5 dB) were the server's rules written a second time here, and two copies of a rule is one rule too many: they
+// drift, and when they disagree nobody knows which one decided. v1.3 had already retired `fit` for `quality`, which
+// is exactly how that drift shows up.
+//
+// What is left is READING, not judging: the fields are parsed for the log line and for the closing sentence, and
+// `usable` says only "this is an object I can read", never "this is good enough to use".
 ChainHost::CompProfileInfo ChainHost::readCompProfile (const juce::var& profile)
 {
     CompProfileInfo i;
     auto* o = profile.getDynamicObject();
     if (o == nullptr) { i.whyNot = "not an object"; return i; }
-    const auto schema = o->getProperty ("schema").toString();
-    if (schema != "ej_comp_profile/1")
-    { i.whyNot = "schema is \"" + schema + "\", not ej_comp_profile/1"; return i; }
     if (auto* pl = o->getProperty ("plugin").getDynamicObject())
     { i.plugin = pl->getProperty ("name").toString(); i.mapFp = pl->getProperty ("map_fp").toString(); }
     i.topology = o->getProperty ("topology").toString();
-    // "other: anything else. The server does not auto-set it; it is treated as no profile." (spec section 3)
-    if (i.topology != "threshold" && i.topology != "input_drive")
-    { i.whyNot = "topology \"" + i.topology + "\" is not one this client handles"; return i; }
-    // "fit.max_error_db: over 1.5 dB means the profile is not trusted and the server treats it as no profile."
+    i.schema   = o->getProperty ("schema").toString();
+    // Informational only, and from EITHER generation: v1.2 carried fit.max_error_db, v1.3 onward carries
+    // quality.point_error_db. Logged so a profile's own quality figure is visible beside what it did, never acted on.
+    if (auto* q = o->getProperty ("quality").getDynamicObject())
+        i.pointErrorDb = (float) (double) q->getProperty ("point_error_db");
     if (auto* fit = o->getProperty ("fit").getDynamicObject())
-    {
         i.maxErrorDb = (float) (double) fit->getProperty ("max_error_db");
-        if (i.maxErrorDb > 1.5f)
-        { i.whyNot = "fit.max_error_db is " + juce::String (i.maxErrorDb, 2) + " dB, over the 1.5 dB it may be";
-          return i; }
-    }
-    if (! o->getProperty ("amount").isObject())
-    { i.whyNot = "no amount control"; return i; }
+    i.hasAmount = o->getProperty ("amount").isObject();
     i.usable = true;
     return i;
 }
