@@ -309,6 +309,77 @@ The Link has NOT been through the gate on this branch; only the three comp guard
    With the flag OFF you should see **none** of the `EJCompProfile:` lines. That is the control case: if they
    appear with the flag off, stop and say so.
 
+
+### CORRECTION, later the same night: reds 3-5 were MY GATE, not the product
+
+Everything above about reds 3-5 being "plausibly ours" and about the placed build carrying a V2 crash is
+**WITHDRAWN**. The sequence of claims I made, and what actually turned out to be true:
+
+| I said | Truth |
+|---|---|
+| it's load under `-j 2` | no - identical at `-j 1` |
+| the guards trigger a forbidden AU scan | no - registry plist metadata only, never instantiates, cannot raise iLok |
+| introduced by letters `(l)`-`(q)` | no - `ba61a36` is clean, V2 side GREEN |
+| then: by `7c348a8` | no - also clean, and its Source is **identical** to the gate commit |
+| so the placed build carries a crash | **no. It does not.** |
+
+**What it actually was.** Item 1 says to build `cmake --build build-release --target EchoJayLink EchoJayProbe`.
+I ran exactly that. It does not build the **V2** archive, so `libEchoJay V2_SharedCode.a` stayed as
+`feat/comp-profiles` had left it. The V2-side harnesses compile the CURRENT headers
+(`harness_build.py` adds `-I Source`) and link that archive. Kathy headers + feat-branch archive = different
+struct layouts for the same types, so `LinkSlotInfo.uid` was read at the wrong offset and came out as a garbage
+character pointer: `EXC_BAD_ACCESS at 0x800` in `juce::operator==`. Not a dangling string. A layout mismatch.
+
+**Proven both directions at one commit**, which is the only reason I believe it:
+
+```
+9d47209, V2 archive stale (the gate run, 23:01 and 23:22)  -> segfault, rc=139, 8 link-side FAILs
+9d47209, V2 archive rebuilt, nothing else changed (00:22)   -> v2 side GREEN, 0 segfaults, 3 link-side FAILs
+```
+
+Every base-commit run I did (`0e2cfa9`, `ba61a36`, `7c348a8`) rebuilt `EchoJay` as well, which is why they all
+came back clean - I had controlled for the deciding variable without realising it, and then read the clean results
+as evidence about the letters.
+
+**The real finding underneath, and it IS pre-existing:** `level_match_guard` case (1), 3 assertions. The trims
+move but land on the wrong values (`asked 1.10, reads 0.30`), identically at `0e2cfa9`, `ba61a36`, `7c348a8` and
+`9d47209`. That is a genuine pre-existing defect, and it is the thing the crash was hiding.
+
+**The harness gap that let this happen, and it is one line's worth of thinking.** `dbc0e91` already added exactly
+this protection - "the two-process guards refuse a Link archive older than the headers" - and it guards the
+**Link** archive only. The V2 archive has no such check. So the guard refuses a stale Link archive and silently
+links a stale V2 one, which is the asymmetry that cost tonight's gate. **This is the second time this class of
+mistake has produced a false attribution on these same guards** (the first was four guards judged in a worktree
+with no `build-release` artefacts, withdrawn a session ago). Twice is a pattern, and it belongs in the harness as
+a refusal, not in my habits.
+
+**Gate verdict after the correction - unchanged, but now for the right reasons:**
+
+| # | Red | Whose |
+|---|---|---|
+| 1 | `calib_link_guard` (f) settle budget | **OURS** - one rule in two places, (m) updated one. Real. |
+| 2 | `level_loop_guard` scribble (6a) | **OURS** - reproduces, unexplained |
+| 3-5 | the three V2-side guards | **NOT the product** - my stale V2 archive. Underneath: case (1), pre-existing |
+
+Still NOT pushed, because red 1 is ours. That part of the ruling was right all along.
+
+**Confirmed on the other two as well**, at `feat/comp-profiles` with both archives freshly built from the same
+tree (00:28):
+
+```
+lease_id_guard       rc=0  segfaults=0  FAILs=0   link side GREEN, v2 side GREEN  ==== GREEN ====
+role_snapshot_guard  rc=0  segfaults=0  FAILs=0   link side GREEN, v2 side GREEN  ==== GREEN ====
+level_match_guard                                 v2 side GREEN, 3 link-side FAILs (case (1), pre-existing)
+```
+
+So of the five reds, **two were pure artefact and are green**, and the third reduces to the pre-existing case (1).
+The gate's real content is red 1 (ours) and red 2 (ours, unexplained).
+
+**The rule this produces, for the gate script and for whoever runs it next:** the fast gate must rebuild
+**every** archive its two-process guards link - `EchoJay` and `EchoJayLink`, not just the Link - or refuse to run.
+Building one and not the other is not a partial check; it is a check whose failures are meaningless, and it cost
+this gate five reds, three wrong attributions and most of a night.
+
 ---
 
 ## EARLIER — the day session of 1 Oct (unchanged below this line)
