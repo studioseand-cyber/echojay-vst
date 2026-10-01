@@ -59,6 +59,10 @@ static juce::File appSupportDir()
 
 juce::File ChainHost::getPluginListFile()   { return appSupportDir().getChildFile("chain_plugins.xml"); }
 juce::File ChainHost::getEntriesCacheFile() { return appSupportDir().getChildFile("chain_entries.xml"); }
+// (n) 30 Sep 2026 ruling: EVERY LOG LINE NUMBERS SLOTS THE SAME WAY - 1-BASED, which is what EJThreshold and the
+// wire already use and what the user sees on the cards. EJDialSummary, EJParamApply, EJDialable, EJRangeCheck and
+// EJStaleMap printed the 0-based index, so the same slot appeared as 2 and 3 in one log and the two had to be
+// mentally reconciled on every read.
 juce::File ChainHost::getParamMapsCacheFile() { return appSupportDir().getChildFile("param_maps.json"); }
 juce::File ChainHost::getBlacklistFile()  { return appSupportDir().getChildFile("chain_blacklist.txt"); }
 juce::File ChainHost::getDeadmanFile()    { return appSupportDir().getChildFile("chain_load_deadman.txt"); }
@@ -1635,6 +1639,7 @@ ChainHost::SlotInfo ChainHost::getSlotInfo(int i) const
     info.format           = s.desc.pluginFormatName;
     info.wet              = s.wet;
     info.preTrimDb        = s.preTrimDb;         // 21p item 3
+    info.outGainDb        = getSlotOutGainDb(i);  // Build 2: the OUT the hold writes, read from the same control
     info.pictureText      = slotPictureText(i);  // 21p item 2
     info.trimDb           = 0.0f;                // 21t-m: the compare trim is deleted; the field stays 0
     info.keepLevel        = s.keepLevel;
@@ -2625,6 +2630,13 @@ juce::String ChainHost::trimTextForName(const juce::String& name) const
 void ChainHost::setSlotPreTrimDb(int i, float db)
 {
     if (i < 0 || i >= (int) slots_.size()) return;
+    // 30 Sep 2026 ruling: A NaN MUST NEVER REACH A WRITE, and the refusal lives on the write path itself so it
+    // holds for every caller, not only the one that was caught. A guard run printed "slot 1 output gain set to
+    // nan dB" and "pre=nan post=nan", and PASSED, because the hold wrote a real number over the top of it.
+    if (! std::isfinite (db))
+    { EchoJay_NSLog(("ChainHost: REFUSED a non-finite slot IN (pre-gain) on slot " + juce::String(i + 1)
+                     + " - the value is left at " + juce::String(slots_[(size_t) i].preTrimDb, 2)
+                     + " dB").toRawUTF8()); return; }
     auto& s = slots_[(size_t) i];
     // 21t-d (25 Sep 2026): the range opens upward to +12 dB. It was attenuation-only (21p item 3, so a stage
     // could not be hit above -3 dBTP), and the calibration loop's whole purpose is the opposite move - driving a
@@ -3103,6 +3115,10 @@ void ChainHost::resetSlotShortTermStats (int slotIndex, const juce::String& why)
 void ChainHost::setSlotOutGainDb (int slotIndex, float db)
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size()) return;
+    // 30 Sep 2026 ruling: the same refusal on the OUT, for the same reason (see setSlotPreTrimDb).
+    if (! std::isfinite (db))
+    { EchoJay_NSLog(("ChainHost: REFUSED a non-finite slot OUT (output gain) on slot " + juce::String(slotIndex + 1)
+                     + " - the value is left where it was").toRawUTF8()); return; }
     auto& s = slots_[(size_t) slotIndex];
     if (s.blendNode == nullptr) return;
     if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor()))
@@ -3240,6 +3256,11 @@ juce::String ChainHost::switchNamedAsActuator (int slotIndex, const juce::String
 int ChainHost::setSlotControlsToValue (int slotIndex, const juce::StringArray& controls, float value)
 {
     if (slotIndex < 0 || slotIndex >= (int) slots_.size() || controls.isEmpty()) return 0;
+    // 30 Sep 2026 ruling: the actuator write refuses a non-finite value too, so all three doors the loop and the
+    // hold can write through are covered by the same rule (see setSlotPreTrimDb).
+    if (! std::isfinite (value))
+    { EchoJay_NSLog(("ChainHost: REFUSED a non-finite actuator value for \"" + controls.joinIntoString(" + ")
+                     + "\" on slot " + juce::String(slotIndex + 1)).toRawUTF8()); return 0; }
     auto& s = slots_[(size_t) slotIndex];
     // A BUILT-IN IS NOT A HOSTED PLUGIN, and this path is the hosted one: it needs a fingerprinted param map and
     // ends in applySettings, which dynamic_casts the processor to AudioPluginInstance. A built-in deliberately has
@@ -3336,7 +3357,7 @@ ChainHost::applyStructuredSettings (int slotIndex,
     int pending = 0; for (const auto& r : results) if (r.pendingSettle) ++pending;
     if (pending > 0)
     {
-        EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + slot.desc.name + "\"): " + juce::String(pending)
+        EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex + 1) + " (\"" + slot.desc.name + "\"): " + juce::String(pending)
                        + " write(s) mismatched on the immediate read - verifying after a message-loop settle (bound " + juce::String(kSettleBoundMs) + " ms)").toRawUTF8());
         SettleJob job; job.slot = slotIndex; job.map = map; job.results = results; job.t0 = juce::Time::currentTimeMillis();
         settleJobs_.push_back (std::move (job));
@@ -3376,7 +3397,7 @@ void ChainHost::settleTick()
                                 r.staleDisplayKept, r.requestedValue, r.outOfRange,
                                 r.index, r.anchorsUnverified, r.beforeText });
         int reverted = 0; for (const auto& r : job.results) if (r.readbackMismatch) ++reverted;
-        EchoJay_NSLog(("EJParamApply: slot " + juce::String(job.slot) + " settled after " + juce::String((int) (now - job.t0)) + " ms / "
+        EchoJay_NSLog(("EJParamApply: slot " + juce::String(job.slot + 1) + " settled after " + juce::String((int) (now - job.t0)) + " ms / "
                        + juce::String(job.ticks) + " tick(s): " + juce::String((int) report.size()) + " result(s), " + juce::String(reverted) + " reverted").toRawUTF8());
         if (job.slot < (int) slots_.size()) { recordApplyReport (job.slot, job.map, report); bumpChainRevision(); }
         it = settleJobs_.erase (it);
@@ -3693,7 +3714,7 @@ void ChainHost::completeLoad(std::unique_ptr<juce::AudioPluginInstance> inst,
             if (mapsRequested_.contains(liveFp))
                 pendingMapFps_.addIfNotAlreadyThere(liveFp);
         }
-        EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(newSlotIdx)
+        EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(newSlotIdx + 1)
                        + " \"" + slots_[(size_t)newSlotIdx].desc.name + "\""
                        + " indexed=" + (indexedFp.isEmpty() ? juce::String("(none)")
                                                             : indexedFp.substring(0, 12))
@@ -4029,7 +4050,7 @@ bool ChainHost::settleStaleRung(int i)
     if (rung == echojay::StaleRung::unmapped && s.structuredSettings.isVoid())
         return false;
     s.staleSettled = true;
-    EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(i) + " \"" + s.desc.name + "\""
+    EchoJay_NSLog(("EJStaleMap: slot=" + juce::String(i + 1) + " \"" + s.desc.name + "\""
                    + " indexed=" + s.staleIndexedFp.substring(0, 12)
                    + " live=" + s.fp.substring(0, 12)
                    + " rung=" + echojay::staleRungName(rung)).toRawUTF8());
@@ -4694,7 +4715,7 @@ juce::String ChainHost::dialSummaryRow(int i) const
     const int requested = countRequestedSettings(s.structuredSettings, keys, shape);
     juce::String notDialableReason;
     const bool notDialable = ejSlotNotDialable(*this, builtin, s.fp, s.dialStatus, notDialableReason, s.nearMapNote);
-    return "EJDialSummary:   slot " + juce::String(i)
+    return "EJDialSummary:   slot " + juce::String(i + 1)
          + " (\"" + s.desc.name + "\")"
          + (builtin ? " builtin" : "")
          + "  settings_structured=" + (hasSettings ? "y" : "n")
@@ -4753,15 +4774,75 @@ void ChainHost::logDialSummary(const juce::String& reason) const
     // build logged "0 loop(s) started" and nothing else said that a compressor had been left at the server's
     // opening guess: this is the line that makes it visible without reading the rows.
     const int dyn = dynamicsSlotCount();
-    if (dyn > 0 || loopsStarted_ >= 0)
-        EchoJay_NSLog(("EJDialSummary: loops started "
-                       + juce::String(juce::jmax(0, loopsStarted_)) + " of " + juce::String(dyn)
-                       + " dynamics slots"
-                       + (loopsStarted_ < 0 ? juce::String(" (nothing has reported a start on this rack)")
-                          : (juce::jmax(0, loopsStarted_) < dyn
-                               ? juce::String(" - a dynamics slot with no loop is running at the settings the "
-                                              "build gave it")
-                               : juce::String())) ).toRawUTF8());
+    // (o) 30 Sep 2026 ruling: THE COUNT IS OF LOOPS STILL ALIVE, AND THE DEAD ONES ARE NAMED. "loops started 1 of
+    // 1" was true of a loop that had died in silence a minute earlier, so the headline agreed with itself while
+    // nothing was running. When the owner has reported a live count this uses it; before that it falls back to the
+    // started count, which is all it can honestly say.
+    if (dyn > 0 || loopsStarted_ >= 0 || loopsAlive_ >= 0)
+        EchoJay_NSLog(loopsWatchdogLine().toRawUTF8());
+}
+
+// (n) 30 Sep 2026 ruling: THE SLOT'S IDENTITY, for the calibration loop's cancel test. Index plus the plugin's
+// own uid/fingerprint, so a parameter write, a map arrival or a settle can never look like a rack change - only a
+// different plugin AT THAT INDEX can. A built-in carries no fingerprint, so its NAME stands in: both sides of the
+// comparison come from the host, so they cannot disagree the way a plan's label and a host's name can.
+// (o) 30 Sep 2026 ruling: THE WATCHDOG LINE, composed once. One statement, two destinations - the log and any
+// caller that wants to read what the log says - so what a guard reads and what Sean reads cannot drift apart.
+// The count is of loops still ALIVE, and the dead ones are named: "loops started 1 of 1" was true of a loop that
+// had died in silence a minute earlier, so the headline agreed with itself while nothing was running.
+juce::String ChainHost::loopsWatchdogLine() const
+{
+    const int dyn = dynamicsSlotCount();
+    const int shown = loopsAlive_ >= 0 ? loopsAlive_ : juce::jmax(0, loopsStarted_);
+    juce::String l;
+    l << "EJDialSummary: loops " << (loopsAlive_ >= 0 ? "alive " : "started ")
+      << juce::String(shown) << " of " << juce::String(dyn) << " dynamics slots";
+    if (loopsDead_.isNotEmpty()) l << " - ended: " << loopsDead_;
+    if (loopsStarted_ < 0 && loopsAlive_ < 0)
+        l << " (nothing has reported a start on this rack)";
+    else if (shown < dyn && loopsDead_.isEmpty())
+        l << " - a dynamics slot with no loop is running at the settings the build gave it";
+    return l;
+}
+
+juce::String ChainHost::slotIdentityKey (int slotIndex) const
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return {};
+    const auto& s = slots_[(size_t) slotIndex];
+    const auto id = getSlotIdentity (slotIndex);
+    // NAMED FIELDS, not a concatenation (30 Sep 2026, second ruling on (n)): "fp|uid" made an ABSENT field and a
+    // DIFFERENT field look alike. A loop stamped before the fingerprint was known and compared after it filled in
+    // saw "|uid" -> "fp|uid" and cancelled itself - the same false cancel through another door.
+    juce::String k;
+    k << "uid=" << id.uid.trim() << ";fp=" << id.fp.trim() << ";name=" << s.desc.name.trim();
+    return k;
+}
+
+// ...and the comparison that goes with it: FIELD BY FIELD, and only on fields BOTH sides have. uid decides
+// whenever both carry one; fp only when both are non-empty; the name only for a built-in, which has neither. When
+// there is nothing comparable the answer is "still the same slot", because a cancel must never be a guess.
+bool ChainHost::slotIdentityStillMatches (const juce::String& stamped, const juce::String& now)
+{
+    if (stamped.isEmpty() || now.isEmpty()) return true;
+    auto field = [] (const juce::String& k, const char* name) -> juce::String
+    {
+        const auto at = k.indexOf (juce::String (name) + "=");
+        if (at < 0) return {};
+        return k.substring (at + (int) std::strlen (name) + 1).upToFirstOccurrenceOf (";", false, false).trim();
+    };
+    const auto uidA = field (stamped, "uid"), uidB = field (now, "uid");
+    if (uidA.isNotEmpty() && uidB.isNotEmpty())
+    {
+        if (uidA != uidB) return false;
+        const auto fpA = field (stamped, "fp"), fpB = field (now, "fp");
+        if (fpA.isNotEmpty() && fpB.isNotEmpty() && fpA != fpB) return false;
+        return true;
+    }
+    const auto fpA = field (stamped, "fp"), fpB = field (now, "fp");
+    if (fpA.isNotEmpty() && fpB.isNotEmpty()) return fpA == fpB;
+    const auto nmA = field (stamped, "name"), nmB = field (now, "name");
+    if (nmA.isNotEmpty() && nmB.isNotEmpty()) return nmA == nmB;
+    return true;
 }
 
 int ChainHost::dynamicsSlotCount() const
@@ -4851,7 +4932,7 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
 {
     auto& s = slots_[(size_t) slotIndex];
     collapseFlatDuplicates(s.structuredSettings, report, s.desc.name);
-    EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex) + " (\"" + s.desc.name + "\"), "
+    EchoJay_NSLog(("EJParamApply: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name + "\"), "
                    + juce::String((int)report.size()) + " result(s)").toRawUTF8());
     juce::StringArray appliedSummary;
     s.dialManual.clear();
@@ -4926,7 +5007,7 @@ juce::StringArray ChainHost::recordApplyReport(int slotIndex, const juce::var& m
     // turn out to be common on healthy (non-diverged) turns, the exposure
     // is not communicating ranges to the model well enough - a finding
     // nothing else can currently see.
-    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex)
+    EchoJay_NSLog(("EJRangeCheck: slot=" + juce::String(slotIndex + 1)
                    + " \"" + s.desc.name + "\""
                    + " requested=" + juce::String((int) report.size())
                    + " outOfRange=" + juce::String(s.dialOutOfRange.size())
@@ -4998,7 +5079,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         // per-call: logDialSummary answers it once the build is done.
         if (trigger == DialTrigger::slotLoaded || trigger == DialTrigger::mapArrived)
         {
-            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                            + "\") no settings yet [" + dialTriggerName(trigger)
                            + "] -- EXPECTED ORDERING, not a fault. Settings are attached "
                              "after load; see the EJDialSummary line for what actually dialled.")
@@ -5008,7 +5089,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
 
         // settings-attached with nothing attached: a real contradiction.
         jassertfalse;
-        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                        + "\") NO SETTINGS at dial time [" + dialTriggerName(trigger)
                        + "] -- settings were attached and are not here. This IS the fault."
                          "  appVersion=" + juce::String(JucePlugin_VersionString))
@@ -5063,7 +5144,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         if (deviceMissing)
         {
             s.dialStatus = DialStatus::none;
-            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                            + "\") BUILT-IN WITH NO DEVICE -- isBuiltinSlot is true but the slot "
                              "holds no EedDeviceProcessor. This is a routing fault, NOT a payload "
                              "one; the settings were never offered to anything.").toRawUTF8());
@@ -5105,7 +5186,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
                 for (auto& kv : o->getProperties()) got.add(kv.name.toString());
             else if (s.structuredSettings.isArray())
                 got.add("(bare array)");
-            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+            EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                            + "\") BUILT-IN PAYLOAD NOT UNDERSTOOD -- device present, resolved "
                              "neither accepted shape. got keys: [" + got.joinIntoString(", ")
                            + "]  wanted: \"params\":{...}" + (isBuiltinSlot(slotIndex)
@@ -5137,7 +5218,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
 
     if (s.structuredSettings.getDynamicObject() == nullptr)
     {
-        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                        + "\") SETTINGS NOT AN OBJECT -- present but unusable")
                           .toRawUTF8());
         return;
@@ -5147,7 +5228,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         // Settings arrived for a slot with no fingerprint. The fp is computed
         // at load, so this says the LOAD did not complete -- not that the
         // corpus is missing anything.
-        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                        + "\") NO FINGERPRINT -- settings present but the slot never learned "
                          "its fp at load; no lookup is possible").toRawUTF8());
         s.dialStatus = DialStatus::pending;
@@ -5201,7 +5282,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
         const bool inFlight  = mapFetchInFlight(s.fp);            // exact fetch OR fallback lookup still out
         const bool everAsked = mapsRequested_.contains(s.fp) || fallbackRequested_.contains(s.fp);
         s.dialStatus = inFlight ? DialStatus::pending : DialStatus::noMap;
-        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+        EchoJay_NSLog(("EJDial: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                        + "\") NO MAP for fp=" + s.fp.substring(0, 12)
                        + "  fetch_requested=" + (everAsked ? "y" : "n")
                        + "  in_flight=" + (inFlight ? "y" : "n")
@@ -5249,7 +5330,7 @@ void ChainHost::applyStructuredIfReady(int slotIndex, DialTrigger trigger)
     // transport/parse drop - the two now look different in the log.
     {
         auto dv = it->second.getProperty("dialable", juce::var());
-        EchoJay_NSLog(("EJDialable: slot " + juce::String(slotIndex) + " (\"" + s.desc.name
+        EchoJay_NSLog(("EJDialable: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
                        + "\") fp=" + s.fp.substring(0, 12)
                        + " dialable=" + (dv.isBool() ? (((bool) dv) ? "true" : "false") : "ABSENT")
                        + " category=" + it->second.getProperty("category", juce::var()).toString()
@@ -9032,6 +9113,17 @@ bool ChainHost::dialStateSettled() const
     // this never needs its own timeout.
     for (const auto& s : slots_)
         if (s.dialStatus == DialStatus::pending) return false;
+    // (n) 30 Sep 2026 ruling: ...AND EVERY DEFERRED SETTLE AND IN-FLIGHT FALLBACK SERVE ON THE BUILD. Sean's
+    // 19:03:33.473 read "leased build settled (dial settled, slot landed)" while TrueVerb's settle was still to
+    // arrive (.478) and two EJFallback serves were in flight (.478, .497). Per-slot dialStatus alone cannot see
+    // those: a slot whose fetch is unanswered is not pending here, it is waiting for a map, and one of those
+    // serves then dialled a slot and moved the rack revision under a loop that had just started.
+    for (const auto& s : slots_)
+        if (s.fp.isNotEmpty() && mapFetchInFlight (s.fp)) return false;
+    // ...AND EVERY PENDING SETTLE JOB (30 Sep 2026, second ruling on (n)). The 19:03:33 settle that landed after
+    // the gate was a DEFERRED settle, and the settle job itself moves the rack revision - so the gate has to wait
+    // for the job, not only for the fetch that will feed it.
+    if (! settleJobs_.empty()) return false;
     return true;
 }
 

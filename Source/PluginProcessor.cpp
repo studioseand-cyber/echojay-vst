@@ -2625,7 +2625,7 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
         const int origin = origins[(size_t) i];
         if (origin < 0)
         {
-            EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \""
+            EchoJay_NSLog(("EJApply: slot " + juce::String(i + 1) + " \""
                 + bh->getSlotInfo(i).name + "\" CREATED here - no pulled "
                   "state, never withheld, edited by definition -> CREATE")
                 .toRawUTF8());
@@ -2645,7 +2645,7 @@ std::vector<std::pair<bool, bool>> EchoJayProcessor::borrowSlotVerdicts()
         }
         const bool edited = nowB64 != r.baselineB64;
         const auto action = LinkShm::BorrowCommit::classify(withheld, edited);
-        EchoJay_NSLog(("EJApply: slot " + juce::String(i) + " \"" + r.name
+        EchoJay_NSLog(("EJApply: slot " + juce::String(i + 1) + " \"" + r.name
             + "\" hadState=" + (r.hadState ? "Y" : "N")
             + " seeded=" + (seeded ? "Y" : "N")
             + " -> withheld=" + (withheld ? "Y" : "N")
@@ -6568,17 +6568,18 @@ void EchoJayProcessor::calibStore(const juce::String& uid, const echojay::CalibL
 }
 
 void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce::String& pluginName,
-                                  float bandLo, float bandHi, float openingDrive)
+                                  float bandLo, float bandHi, float openingDrive,
+                                  echojay::CalibLoop::Purpose purpose)
 {
     { juce::String whyNot;   // 21t-m item 3: the listen/drive overload, same door, same refusal
       if (calibTargetIsBus(uid, whyNot))
       { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return; } }
     auto loop = calibLoad(uid);
     // 21t-m item 6c: the listen overload stamps and tests the rack revision on the same terms as the drive one.
-    const int liveRev0 = [this, &uid]() -> int
-    { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid)) return h->getChainRevision();
-      return -1; }();
-    const bool rackMoved0 = loop.chainRev >= 0 && liveRev0 >= 0 && liveRev0 != loop.chainRev;
+    const juce::String liveIdent0 = [this, &uid, slot]() -> juce::String
+    { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid)) return h->slotIdentityKey(slot);
+      return {}; }();
+    const bool rackMoved0 = ! ChainHost::slotIdentityStillMatches (loop.slotIdent, liveIdent0);
     // A NEW TARGET ON A RUNNING LOOP RESTARTS IT FROM THE CURRENT DRIVE (ruled): the band changed, the drive the
     // loop has already found has not, and throwing it away would re-walk ground already covered.
     if (! rackMoved0 && loop.running() && loop.slot == slot && loop.plugin == pluginName)
@@ -6590,15 +6591,21 @@ void EchoJayProcessor::calibStart(const juce::String& uid, int slot, const juce:
     }
     else
     {
-        loop.begin(pluginName, slot, bandLo, bandHi, openingDrive);
-        loop.chainRev = liveRev0;
+        loop.begin(pluginName, slot, bandLo, bandHi, openingDrive, purpose);
+        if (auto* hd = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+            loop.dynamicsSlot = hd->slotIsDynamics(slot);   // (l), same as the cfg door
+        loop.slotIdent = liveIdent0;
         EchoJay_NSLog(("EJThreshold: \"" + pluginName + "\" slot " + juce::String(slot + 1) + " listening, band "
                        + juce::String(bandLo, 1) + "-" + juce::String(bandHi, 1) + " dB, opening drive "
-                       + juce::String(openingDrive, 1) + " dB").toRawUTF8());
+                       + juce::String(openingDrive, 1) + " dB, "
+                       + (purpose == echojay::CalibLoop::Purpose::buildHold
+                              ? juce::String("a BUILD: hold the level once and close")
+                              : juce::String("an ASK: one rung"))).toRawUTF8());
         // The opening drive is written the same way every later step is: IN up a rung, the LIVE OUT down by the
         // same (21t-m - it used to mirror into the compare-only trim, which is not in the path).
         if (auto* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
             if (slot >= 0 && slot < host->getNumSlots())
+            if (! (purpose == echojay::CalibLoop::Purpose::buildHold && loop.dynamicsSlot))
             { host->setSlotPreTrimDb(slot, openingDrive); host->setSlotOutGainDb(slot, -openingDrive); }
     }
     calibStore(uid, loop);
@@ -6629,8 +6636,9 @@ bool EchoJayProcessor::calibTargetIsBus(const juce::String& uid, juce::String& w
     return false;   // not in the registry: not known to be a bus, and a channel is the safe reading
 }
 
-void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg)
+void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfgIn)
 {
+    auto cfg = cfgIn;      // 30 Sep: the staging substitution below writes to it
     { juce::String whyNot;
       if (calibTargetIsBus(uid, whyNot))
       { EchoJay_NSLog(("EJThreshold: NOT STARTED - " + whyNot).toRawUTF8()); return; } }
@@ -6642,14 +6650,14 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     // 21t-m item 6c: ...and only while the RACK has not been restructured under it. Without this clause a
     // "harder" after a rebuild would re-target the stale loop, and the tick would then cancel it - the user's
     // ask would vanish. A stale loop falls through to begin(), which starts clean on the slot as it is now.
-    const int liveRev = [this, &uid]() -> int
-    { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid)) return h->getChainRevision();
-      return -1; }();
-    const bool rackMoved = loop.chainRev >= 0 && liveRev >= 0 && liveRev != loop.chainRev;
+    const juce::String liveIdent = [this, &uid, &cfgIn]() -> juce::String
+    { if (auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid)) return h->slotIdentityKey(cfgIn.slot);
+      return {}; }();
+    const bool rackMoved = ! ChainHost::slotIdentityStillMatches (loop.slotIdent, liveIdent);
     if (rackMoved && loop.running())
-        EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" starts CLEAN - the rack was rebuilt under the "
-                       "loop that was running (rev " + juce::String(loop.chainRev) + " -> "
-                       + juce::String(liveRev) + "), so nothing it measured still stands").toRawUTF8());
+        EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" starts CLEAN - slot " + juce::String(cfg.slot + 1)
+                       + " no longer holds the plugin the running loop was started on (" + loop.slotIdent
+                       + " -> " + liveIdent + "), so nothing it measured still stands").toRawUTF8());
     if (! rackMoved
         && loop.running() && loop.slot == cfg.slot && loop.plugin == cfg.plugin
         && loop.mode == cfg.mode && loop.actuator == cfg.actuator)
@@ -6679,8 +6687,29 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
         return;
     }
 
+    // 30 Sep 2026 ruling: A DRIVE BLOCK WITH NO start_db OPENS FROM THE STAGING ALREADY ON THE SLOT - and ABSENT
+    // behaves exactly as null, because configFromBlock yields NaN for both and NaN means "ask the host". Only the
+    // Link asked (LinkProcessor: "start_db was null on a drive block - opening from the staging already on the
+    // slot"); this side did not, so a block with no start_db wrote nan to IN and OUT and quoted nan back in its
+    // window line.
+    {
+        auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+        if (cfg.actuator == echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb)
+            && h != nullptr && cfg.slot >= 0 && cfg.slot < h->getNumSlots())
+        {
+            cfg.startDb = h->getSlotPreTrimDb(cfg.slot);
+            if (! std::isfinite(cfg.startDb)) cfg.startDb = 0.0f;
+            EchoJay_NSLog(("EJThreshold: start_db was absent or null on a drive block - opening from the staging "
+                           "already on the slot (" + juce::String(cfg.startDb, 2) + " dB)").toRawUTF8());
+        }
+    }
+    // (l) 30 Sep 2026: the loop is told whether its slot is a compressor, so the input-headroom ceiling can be
+    // off for one and on for everything else. The answer is ChainHost::slotIsDynamics - the plugin's own category
+    // OR the map's (item 6a) - and it is set HERE so every road in gets it without each caller remembering.
+    if (auto* hd = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
+        cfg.dynamicsSlot = hd->slotIsDynamics(cfg.slot);
     loop.begin(cfg);
-    loop.chainRev = liveRev;      // 21t-m item 6c: the rack this loop belongs to, checked on every tick
+    loop.slotIdent = liveIdent;   // (n): the slot+plugin this loop belongs to, checked on every tick
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
     EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
                    + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")
@@ -6704,7 +6733,9 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
                 if (cfg.startDb == cfg.startDb)   // not NaN: under 30 s heard, the server sends no start value
                     host->setSlotControlsToValue(cfg.slot, cfg.params, cfg.startDb);
             }
-            else
+            // (q) 30 Sep 2026: A COMPRESSOR BUILD WRITES NO IN - it is set as dialled, and the hold moves OUT
+            // and nothing else. Any other slot opens at its drive as before.
+            else if (! (cfg.purpose == echojay::CalibLoop::Purpose::buildHold && cfg.dynamicsSlot))
             {
                 host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
                 host->setSlotOutGainDb(cfg.slot, -cfg.startDb);   // 21t-m: the LIVE out, not the compare trim
@@ -6716,60 +6747,13 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     calibStore(uid, loop);
 }
 
-juce::String EchoJayProcessor::calibTick(const juce::String& uid)
+// (i) 30 Sep 2026: THE WINDOW BUILD AND THE WRITE-APPLY, ONE COPY EACH. Extracted verbatim out of calibTick so
+// a COMPANION hold - the second and later compressors of a build, per B's `calibrations` array - is measured and
+// written by exactly the same code as the primary. A second copy of this arithmetic would drift, and the residual
+// is the number the whole level behaviour rests on.
+void EchoJayProcessor::fillCalibWindow(ChainHost* host, echojay::CalibLoop& loop, echojay::CalibLoop::Window& w)
 {
-    auto loop = calibLoad(uid);
-    if (! loop.active()) return {};
-
-    // ONLY THE HOST THAT OWNS THE TALLIES ADVANCES IT. For a Link rack that is this instance only while the rack
-    // is leased here; after deselect the Link advances it from its own chain, and this instance renders the card
-    // from the state without touching it.
-    ChainHost* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
-    if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots())
-    {
-        // 21t-i: A LOOP THAT CANNOT BE ADVANCED SAYS SO, every 5 s, because the alternative is silence - and
-        // silence here is indistinguishable from a loop sitting quietly in band, which is precisely the confusion
-        // Sean hit at 14:44. Rate-limited so a 1 Hz tick cannot flood the log.
-        const double nowMs = juce::Time::getMillisecondCounterHiRes();
-        if (nowMs - calibStallLogMs_ > 5000.0)
-        {
-            calibStallLogMs_ = nowMs;
-            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" cannot be advanced - "
-                           + (host == nullptr
-                                  ? juce::String(uid.isEmpty() ? "no own chain host" : "this instance does not hold that rack")
-                                  : "slot " + juce::String(loop.slot + 1) + " is not in the rack ("
-                                    + juce::String(host->getNumSlots()) + " slot(s))")
-                           + " - no window can be judged here").toRawUTF8());
-        }
-        return loop.card();
-    }
-
-    // 21t-m item 6c (29 Sep 2026 ruling): A LOOP THE RACK MOVED UNDER IS CANCELLED, WITH ITS PENDING ASK.
-    // Sean's 21:53:21: a new build replaced the rack ("staleness guards passed rev=46 slots=0 base=0 ops=7",
-    // then "EJPanel: rebuild slots=1") while the old loop for Empirical Labs Mike-E Comp was still running. Its
-    // window 116 fired at 21:53:21.738 and it re-posted its opening line at .740 - "Empirical Labs Mike-E Comp
-    // is on - play it and I'll tell you what it's doing" - for a plugin that was no longer there. The existing
-    // guard only asked whether the slot INDEX was in the rack, and it was: slot 1 now held EchoJay EQ.
-    //
-    // The identity tested is the RACK REVISION the loop was started against, not the plugin's name. A name is
-    // the PLAN's label for a slot ("VComp (s)" for a slot the host calls "VComp") and comparing it cancels loops
-    // that are perfectly valid - which is what a first cut of this did: it killed every loop in
-    // level_loop_guard, four cases' worth, because the harness names its fake compressor "Fake Comp +6".
-    // chainRevision covers add, remove and move and nothing else, so it says "rebuild or slot removal" exactly.
-    if (loop.chainRev >= 0 && host->getChainRevision() != loop.chainRev)
-    {
-        calibLastLogLine_ = "CANCELLED - the rack was rebuilt under this loop (rev " + juce::String (loop.chainRev)
-                          + " -> " + juce::String (host->getChainRevision()) + "), so \"" + loop.plugin
-                          + "\" at slot " + juce::String (loop.slot + 1)
-                          + " is not the slot it was started on; its pending line is dropped with it";
-        EchoJay_NSLog (("EJThreshold: " + calibLastLogLine_).toRawUTF8());
-        loop = {};                 // no loop, no ask, no closing line
-        calibStore (uid, loop);
-        return {};
-    }
-
     const auto lv = host->getSlotLevels(loop.slot);
-    echojay::CalibLoop::Window w;
     // A WINDOW IS A MEASUREMENT ONLY IF THE HOST SAW A WHOLE ONE. `measured` is false while the slot is bypassed
     // or out of circuit, and while no full window has closed - neither is evidence, and neither may move a drive.
     w.measured = lv.measured && lv.in.known && lv.out.known;
@@ -6828,17 +6812,11 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
         }
     }
 
-    // 21t-m: the test clock when a harness set one, the real clock otherwise (see the header).
-    const double nowMs = calibClockMsForTest ? calibClockMsForTest() : juce::Time::getMillisecondCounterHiRes();
-    if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
-    const double sinceMs = nowMs - calibLastWindowMs_;
-    if (sinceMs < 3000.0) return loop.card();   // one decision per 3 s window, never per tick
-    calibLastWindowMs_ = nowMs;
+}
 
-    const auto step = loop.onWindow(w, sinceMs);
-    // KEPT AS WELL AS LOGGED (21t-i): one statement, two destinations, so what the log says and what a guard can
-    // read cannot drift apart.
-    if (step.logLine.isNotEmpty()) { calibLastLogLine_ = step.logLine; EchoJay_NSLog(step.logLine.toRawUTF8()); }
+void EchoJayProcessor::applyCalibStep(const juce::String& uid, ChainHost* host, echojay::CalibLoop& loop,
+                                      const echojay::CalibLoop::Step& step)
+{
     if (step.writeDrive)
     {
                 // 21t-m (29 Sep 2026 ruling): THE DRIVE RAISES IN BY A RUNG AND LOWERS THE LIVE OUT BY THE SAME.
@@ -6878,8 +6856,270 @@ host->setSlotPreTrimDb(loop.slot, step.newPre);
                        "write " + juce::String(loop.levelResidualDb, 2) + " dB; written total "
                        + juce::String(loop.levelTrimmedDb, 2) + " dB)").toRawUTF8());
     }
+}
+
+juce::String EchoJayProcessor::calibTick(const juce::String& uid)
+{
+    auto loop = calibLoad(uid);
+    if (! loop.active())
+    {
+        calibSweepCompanionsOnly(uid);
+        return {};
+    }
+
+
+    // ONLY THE HOST THAT OWNS THE TALLIES ADVANCES IT. For a Link rack that is this instance only while the rack
+    // is leased here; after deselect the Link advances it from its own chain, and this instance renders the card
+    // from the state without touching it.
+    ChainHost* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+    if (host == nullptr || loop.slot < 0 || loop.slot >= host->getNumSlots())
+    {
+        // 21t-i: A LOOP THAT CANNOT BE ADVANCED SAYS SO, every 5 s, because the alternative is silence - and
+        // silence here is indistinguishable from a loop sitting quietly in band, which is precisely the confusion
+        // Sean hit at 14:44. Rate-limited so a 1 Hz tick cannot flood the log.
+        const double nowMs = juce::Time::getMillisecondCounterHiRes();
+        if (nowMs - calibStallLogMs_ > 5000.0)
+        {
+            calibStallLogMs_ = nowMs;
+            EchoJay_NSLog(("EJThreshold: \"" + loop.plugin + "\" cannot be advanced - "
+                           + (host == nullptr
+                                  ? juce::String(uid.isEmpty() ? "no own chain host" : "this instance does not hold that rack")
+                                  : "slot " + juce::String(loop.slot + 1) + " is not in the rack ("
+                                    + juce::String(host->getNumSlots()) + " slot(s))")
+                           + " - no window can be judged here").toRawUTF8());
+        }
+        // (o): ...and the COMPANIONS are still swept. This branch returned here too, so a rack whose slots had
+        // gone left every companion unadvanced and unreported - the second half of Sean's silent-companion fault.
+        calibSweepCompanionsOnly(uid);
+        return loop.card();
+    }
+
+    // 21t-m item 6c, REPLACED 30 Sep 2026 by letter (n): A LOOP WHOSE SLOT NO LONGER HOLDS ITS PLUGIN IS
+    // CANCELLED, WITH ITS PENDING ASK - and NOTHING ELSE cancels it.
+    //
+    // The witness was the rack REVISION. Sean's 19:03:33: a deferred settle and two in-flight fallback map serves
+    // bumped it 9 -> 10 with no slot added, removed or moved, and the Tube-Tech loop cancelled at .499 reading
+    // "the rack was rebuilt under this loop". chainRevision moves on more than structure in practice, and a
+    // parameter or map write must never cancel a loop. The witness is now this slot's own identity - index plus the
+    // plugin's uid/fingerprint (ChainHost::slotIdentityKey) - so only a DIFFERENT PLUGIN AT THIS INDEX cancels,
+    // which is exactly what a rebuild or a reorder that moves the loop's plugin off its index produces.
+    if (loop.slotIdent.isNotEmpty())
+    {
+        const auto nowIdent = host->slotIdentityKey (loop.slot);
+        if (! ChainHost::slotIdentityStillMatches (loop.slotIdent, nowIdent))
+        {
+            calibLastLogLine_ = "CANCELLED - slot " + juce::String (loop.slot + 1) + " no longer holds \""
+                              + loop.plugin + "\" (" + loop.slotIdent + " -> " + nowIdent
+                              + "); its pending line is dropped with it";
+            EchoJay_NSLog (("EJThreshold: " + calibLastLogLine_).toRawUTF8());
+            loop = {};
+            calibStore (uid, loop);
+            // (o): the companions are NOT cancelled with it - they are holds on their own slots, and this slot's
+            // plugin changing says nothing about theirs. They carry on and each ends with its own line.
+            calibSweepCompanionsOnly(uid);
+            return {};
+        }
+    }
+
+    echojay::CalibLoop::Window w;
+    fillCalibWindow(host, loop, w);
+    // 21t-m: the test clock when a harness set one, the real clock otherwise (see the header).
+    const double nowMs = calibClockMsForTest ? calibClockMsForTest() : juce::Time::getMillisecondCounterHiRes();
+    if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
+    const double sinceMs = nowMs - calibLastWindowMs_;
+    if (sinceMs < 3000.0) return loop.card();   // one decision per 3 s window, never per tick
+    calibLastWindowMs_ = nowMs;
+
+    const auto step = loop.onWindow(w, sinceMs);
+    // KEPT AS WELL AS LOGGED (21t-i): one statement, two destinations, so what the log says and what a guard can
+    // read cannot drift apart.
+    if (step.logLine.isNotEmpty()) { calibLastLogLine_ = step.logLine; EchoJay_NSLog(step.logLine.toRawUTF8()); }
+    applyCalibStep(uid, host, loop, step);
     calibStore(uid, loop);
+    // (i) 30 Sep 2026, B's contract: EVERY COMPRESSOR'S HOLD RUNS ON THIS WINDOW. The companions are advanced
+    // inside the primary's window decision, not on a clock of their own - one 3 s window, every hold, so the
+    // build's figures all describe the same passage of audio and the one closing line can quote them together.
+    advanceCalibCompanions(uid, host, sinceMs);
     return step.card.isNotEmpty() ? step.card : loop.card();
+}
+
+/** (o) 30 Sep 2026: THE COMPANION SWEEP, ON ITS OWN. calibTick has four early returns - an inactive primary, a
+    primary whose slot is gone, a cancelled primary, and the rate limit - and the first three all returned before
+    the companions were advanced. A companion is a hold on ITS OWN slot; nothing about the primary's slot decides
+    whether it should run. This carries the 3 s window pacing so a companion-only tick is rate-limited exactly as a
+    primary's is. */
+void EchoJayProcessor::calibSweepCompanionsOnly(const juce::String& uid)
+{
+    const auto it = calibExtra_.find(uid);
+    if (it == calibExtra_.end() || it->second.empty()) return;
+    auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+    if (h == nullptr) return;
+    const double nowMs = calibClockMsForTest ? calibClockMsForTest()
+                                            : juce::Time::getMillisecondCounterHiRes();
+    if (calibLastWindowMs_ <= 0.0) calibLastWindowMs_ = nowMs;
+    const double sinceMs = nowMs - calibLastWindowMs_;
+    if (sinceMs < 3000.0) return;
+    calibLastWindowMs_ = nowMs;
+    advanceCalibCompanions(uid, h, sinceMs);
+}
+
+/** (i): the second and later compressors of a build. Each is an ordinary buildHold loop on its own slot, measured
+    and written by the SAME two helpers the primary uses, so there is one copy of the residual arithmetic. When the
+    last of them has finished, the build's single closing line is composed and handed to the primary's askOwed -
+    which is the door the chat already takes a build's line from. */
+void EchoJayProcessor::advanceCalibCompanions(const juce::String& uid, ChainHost* host, double sinceMs)
+{
+    const auto it = calibExtra_.find(uid);
+    if (it == calibExtra_.end() || it->second.empty() || host == nullptr) return;
+    auto& deadList = calibDead_[uid];    // (o): ACCUMULATED per build, not per sweep
+    for (auto& c : it->second)
+    {
+        if (! c.active()) continue;                       // finished: it said how it ended when it did
+        // (o) 30 Sep 2026 ruling: EVERY HOLD ENDS WITH EXACTLY ONE LINE SAYING HOW IT ENDED - wrote, landed, or
+        // cancelled with the reason. Sean's Mike-E companion logged its start and then nothing at all.
+        auto endedWith = [&c, &deadList] (const juce::String& how)
+        {
+            EchoJay_NSLog(("EJThreshold: companion hold \"" + c.plugin + "\" slot " + juce::String(c.slot + 1)
+                           + " ENDED - " + how).toRawUTF8());
+            deadList.addIfNotAlreadyThere (c.plugin + " (" + how.upToFirstOccurrenceOf (",", false, false) + ")");
+            c = {};
+        };
+        if (c.slot < 0 || c.slot >= host->getNumSlots())
+        {
+            endedWith("CANCELLED, slot " + juce::String(c.slot + 1) + " is not in the rack ("
+                      + juce::String(host->getNumSlots()) + " slot(s))");
+            continue;
+        }
+        // (n)'s witness applies to a companion too: only a different plugin at ITS index cancels it.
+        if (c.slotIdent.isNotEmpty())
+        {
+            const auto nowIdent = host->slotIdentityKey(c.slot);
+            if (! ChainHost::slotIdentityStillMatches (c.slotIdent, nowIdent))
+            { endedWith("CANCELLED, slot " + juce::String(c.slot + 1) + " no longer holds it ("
+                        + c.slotIdent + " -> " + nowIdent + ")"); continue; }
+        }
+        echojay::CalibLoop::Window cw;
+        fillCalibWindow(host, c, cw);
+        const auto cstep = c.onWindow(cw, sinceMs);
+        if (cstep.logLine.isNotEmpty()) EchoJay_NSLog(cstep.logLine.toRawUTF8());
+        applyCalibStep(uid, host, c, cstep);
+        if (! c.active())
+        {
+            const float held = c.slotGainDb;
+            endedWith(std::abs(c.levelTrimmedDb) > 0.05f
+                          ? ("wrote OUT " + juce::String(held, 1) + " dB ("
+                             + juce::String(c.measuredGrDb() == c.measuredGrDb()
+                                                ? juce::String(c.measuredGrDb(), 1) + " dB of gain reduction"
+                                                : juce::String("no gain-reduction reading")) + ")")
+                          : ("landed with nothing to hold ("
+                             + juce::String(c.measuredGrDb() == c.measuredGrDb()
+                                                ? juce::String(c.measuredGrDb(), 1) + " dB of gain reduction"
+                                                : juce::String("no gain-reduction reading")) + ")"));
+        }
+    }
+    // ONE LINE FOR THE WHOLE BUILD, once nothing is still measuring. The primary's own "Built. ..." is replaced by
+    // it, because two messages for one build is exactly what the build-has-no-loop ruling removed.
+    // (o): THE WATCHDOG'S INPUT, every window - loops still alive, and the dead ones by name.
+    {
+        auto primaryNow = calibLoad(uid);
+        int alive = primaryNow.active() ? 1 : 0;
+        for (const auto& c : it->second) if (c.active()) ++alive;
+        // NAMED BY HOW IT ACTUALLY ENDED (30 Sep, second ruling on (o)): "inactive and empty" was labelled
+        // "cancelled", which also caught a primary that had closed normally and said "Built.". A cancel wipes the
+        // loop, so it has no plugin name left; a normal close leaves the loop intact with its line already taken.
+        if (! primaryNow.active())
+        {
+            const bool wiped = primaryNow.plugin.isEmpty();
+            const juce::String label = wiped ? "the primary (cancelled - its slot changed)"
+                                             : primaryNow.plugin + " (closed)";
+            if (wiped || primaryNow.askOwed.isEmpty())
+                deadList.addIfNotAlreadyThere (label);
+        }
+        host->setLoopsAlive (alive, deadList.joinIntoString (", "));
+    }
+    auto primary = calibLoad(uid);
+    const bool primaryDone = ! primary.active() || primary.askOwed.isNotEmpty();
+    bool allDone = primaryDone;
+    for (const auto& c : it->second) if (c.active()) allDone = false;
+    if (! allDone) return;
+    // (o): a primary that was CANCELLED has no line of its own to carry the build's closing sentence. The
+    // companions still held real slots and still owe the user one line, so it is posted on its own.
+    const bool primaryCancelled = ! primary.active() && primary.askOwed.isEmpty() && primary.plugin.isEmpty();
+    juce::StringArray parts;
+    int n = 0;
+    // ONE LINE NAMING EACH (ruled): every compressor is named, whether its hold wrote or found nothing to write.
+    // Naming only the ones that wrote left a two-compressor build saying "Compressor 1 Output -12.0 dB." and
+    // nothing at all about the other, which reads as though there were only one.
+    auto namePart = [&parts, &n] (const echojay::CalibLoop& l)
+    {
+        ++n;
+        // (q): "set as dialled, level matched" PER COMPRESSOR.
+        if (std::abs (l.levelTrimmedDb) <= 0.05f)
+        { parts.add ("Compressor " + juce::String (n) + " set as dialled, level already matched"); return; }
+        parts.add ("Compressor " + juce::String (n) + " set as dialled, level matched, Output "
+                   + (l.slotGainDb >= 0.0f ? "+" : "") + juce::String (l.slotGainDb, 1) + " dB");
+    };
+    if (! primaryCancelled) namePart (primary); else ++n;   // the number still counts, its figure is gone
+    for (const auto& c : it->second) namePart (c);
+    const juce::String cancelNote = primaryCancelled
+        ? juce::String (" Compressor 1's hold was cancelled - its slot changed.") : juce::String();
+    if (parts.isEmpty())
+        primary.askOwed = "Built. Level already matched, nothing to hold." + cancelNote;
+    else
+        primary.askOwed = "Built. " + parts.joinIntoString ("; ") + "." + cancelNote;
+    calibStore (uid, primary);
+    calibExtra_.erase (uid);
+    EchoJay_NSLog (("EJThreshold: " + juce::String (n) + " hold(s) finished - one closing line: "
+                    + primary.askOwed).toRawUTF8());
+}
+
+int EchoJayProcessor::calibStartMany(const juce::String& uid, const std::vector<echojay::CalibLoop::Config>& cfgs)
+{
+    calibExtra_.erase(uid);
+    calibDead_.erase(uid);      // (o): a new build starts with nothing dead
+    if (cfgs.empty()) return 0;
+    calibStart(uid, cfgs.front());                       // the PRIMARY, exactly where the single block always went
+    if (! calibLoad(uid).active()) return 0;             // refused (a bus, say): the companions do not go round it
+    int started = 1;
+    auto* host = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+    std::vector<echojay::CalibLoop> extra;
+    for (size_t i = 1; i < cfgs.size(); ++i)
+    {
+        auto cfg = cfgs[i];
+        cfg.purpose = echojay::CalibLoop::Purpose::buildHold;   // a companion is only ever a build's hold
+        // 30 Sep: the same staging substitution the primary gets - absent and null both arrive here as NaN.
+        if (cfg.actuator == echojay::CalibLoop::Actuator::Drive && ! (cfg.startDb == cfg.startDb)
+            && host != nullptr && cfg.slot >= 0 && cfg.slot < host->getNumSlots())
+        {
+            cfg.startDb = host->getSlotPreTrimDb(cfg.slot);
+            if (! std::isfinite(cfg.startDb)) cfg.startDb = 0.0f;
+        }
+        if (host == nullptr || cfg.slot < 0 || cfg.slot >= host->getNumSlots())
+        {
+            EchoJay_NSLog(("EJThreshold: companion block names slot " + juce::String(cfg.slot + 1)
+                           + ", which is not in the rack - not started").toRawUTF8());
+            continue;
+        }
+        cfg.dynamicsSlot = host->slotIsDynamics(cfg.slot);   // (l)
+        echojay::CalibLoop c;
+        c.begin(cfg);
+        c.slotIdent = host->slotIdentityKey(cfg.slot);   // (n)
+        // (q) 30 Sep 2026: A COMPRESSOR BUILD WRITES NO IN. It is set as dialled; the hold moves OUT and nothing
+        // else. On any other slot the opening position is written as before - IN takes the drive, the live OUT
+        // takes it back, so a rung never leaks a dB into the chain.
+        if (! cfg.dynamicsSlot)
+        {
+            host->setSlotPreTrimDb(cfg.slot, cfg.startDb);
+            host->setSlotOutGainDb(cfg.slot, -cfg.startDb);
+            host->resetSlotShortTermStats(cfg.slot, "a companion hold set the actuator");
+        }
+        extra.push_back(c);
+        ++started;
+        EchoJay_NSLog(("EJThreshold: companion hold \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
+                       + " - a BUILD: one window, one write to its own OUT, then it ends").toRawUTF8());
+    }
+    if (! extra.empty()) calibExtra_[uid] = extra;
+    return started;
 }
 
 /** 21t-i: THE MEASURE-AND-ASK LINE, handed to the chat exactly once. The same shape as calibTakeClosing and for
@@ -6892,7 +7132,11 @@ juce::String EchoJayProcessor::calibTakeAsk(const juce::String& uid, bool* repla
     const auto msg = loop.askOwed;
     // 21t-j (a): a line posted while the settle has LANDED is the completion of the opening one, and the editor
     // rewrites that message rather than adding another.
-    if (replacesOpeningOut != nullptr) *replacesOpeningOut = loop.landed;
+    // 30 Sep 2026: ...and only where there IS an opening line to replace. begin() leaves askOwed empty for a
+    // buildHold, so a build has posted nothing of its own; reporting "replaces" there would have the editor
+    // rewrite a message this loop never wrote, instead of posting "Built. ..." as its own line.
+    if (replacesOpeningOut != nullptr)
+        *replacesOpeningOut = loop.landed && loop.purpose != echojay::CalibLoop::Purpose::buildHold;
     loop.askOwed.clear();
     calibStore(uid, loop);
     EchoJay_NSLog(("EJThreshold: asked the user: " + msg).toRawUTF8());
@@ -6917,7 +7161,10 @@ juce::String EchoJayProcessor::calibTakeClosing(const juce::String& uid)
     // EXACTLY ONCE: the flag is cleared before the message is handed back, so two ticks (or a tick and an editor
     // opening) cannot both post it.
     loop.closingOwed = false;
-    const auto msg = loop.closingMessage();
+    // 30 Sep 2026: the text captured AT the close, because the loop has ended and closingMessage() derives from
+    // a state that is now Idle. The live derivation stays as the fallback for a loop stored before this change.
+    const auto msg = loop.closingOwedText.isNotEmpty() ? loop.closingOwedText : loop.closingMessage();
+    loop.closingOwedText.clear();
     calibStore(uid, loop);
     EchoJay_NSLog(("EJThreshold: closing message handed to the chat: " + msg).toRawUTF8());
     return msg;

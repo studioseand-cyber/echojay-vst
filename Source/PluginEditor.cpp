@@ -2091,6 +2091,29 @@ EchoJayEditor::EchoJayEditor(EchoJayProcessor& p)
     };
     // 21m ruling 2: the per-slot "keep this plugin's level" flag (local rack only: there is no keep-level op over
     // the transport; on a borrowed or held remote rack the toggle does nothing, stated in the 21m report)
+    // Build 2 (30 Sep 2026 ruling): the slot card's IN and OUT. Both resolve to the host the VIEW is showing -
+    // the local rack, or a borrowed Link rack while the lease is here - so the numbers are the ones the loop and
+    // the hold are writing on that rack, never another's.
+    chainListPanel.onSlotGainGet = [this](int i, bool isIn) -> float {
+        const auto uid = chainViewUid();
+        auto* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
+        if (h == nullptr || i < 0 || i >= h->getNumSlots()) return 0.0f;
+        return isIn ? h->getSlotPreTrimDb(i) : h->getSlotOutGainDb(i);
+    };
+    chainListPanel.onSlotGainSet = [this](int i, bool isIn, float db) {
+        const auto uid = chainViewUid();
+        auto* h = uid.isEmpty() ? &processorRef.getChainHost() : processorRef.borrowHostIfActiveFor(uid);
+        if (h == nullptr || i < 0 || i >= h->getNumSlots()) return;
+        // THE SAME WRITE THE LOOP MAKES (ruled), through the same door - so the refusal of a non-finite value
+        // (Build 1) covers a typed value too, and the loop's next residual is measured from what is now on the
+        // slot rather than from what it last believed.
+        if (isIn) h->setSlotPreTrimDb(i, db); else h->setSlotOutGainDb(i, db);
+        // (n): the plugin's NAME on the line, so it reads without cross-referencing the rack.
+        EchoJay_NSLog(("EJSlotGain: slot " + juce::String(i + 1) + " (\"" + h->getSlotInfo(i).name + "\") "
+                       + (isIn ? "IN" : "OUT") + " set to " + juce::String(db, 2) + " dB by hand"
+                       + (uid.isEmpty() ? juce::String() : " (borrowed rack " + uid + ")")).toRawUTF8());
+        if (uid.isNotEmpty()) processorRef.republishBorrowedRackSidecar();
+    };
     chainListPanel.onSlotKeepLevel = [this](int i, bool keep) {
         if (chainEditGateRefuses()) return;
         if (chainViewUid().isNotEmpty()) return;
@@ -24688,17 +24711,35 @@ int EchoJayEditor::startCalibrationFromChain (const juce::String& uid, const juc
                    && (processorRef.getChannelType() == ChannelType::MasterBus
                        || processorRef.getChannelType() == ChannelType::FullMix);
     echojay::CalibLoop::Config cfg;
-    juce::String why;
     const int slotFromWire = co->hasProperty ("slot") ? ((int) co->getProperty ("slot")) - 1 : -1;
     const juce::String pluginName = (slotFromWire >= 0 && slotFromWire < host->getNumSlots())
                                       ? host->getSlotInfo (slotFromWire).name : juce::String();
-    if (! echojay::CalibLoop::configFromBlock (chain.getProperty ("calibration", juce::var()),
-                                               host->getNumSlots(), bus, pluginName, cfg, why))
+    // (i) 30 Sep 2026, B's contract ("Every compressor in a build gets its own hold"): EVERY block, not just the
+    // primary. `calibrations` is one block per compressor in chain order and `calibration` is byte-for-byte
+    // calibrations[0]; a chain with no compressor carries neither. The array parser falls back to the single block
+    // by itself, so there is one road in either way.
+    std::vector<echojay::CalibLoop::Config> cfgs;
+    juce::String whyAll;
+    const int found = echojay::CalibLoop::configsFromBlock (chain, host->getNumSlots(), bus,
+                                                           [host] (int sl) { return host->getSlotInfo (sl).name; },
+                                                           cfgs, whyAll);
+    if (whyAll.isNotEmpty()) EchoJay_NSLog (("EJThreshold: BLOCK(S) NOT AS CONTRACTED - " + whyAll).toRawUTF8());
+    if (found == 0)
     {
-        if (why.isNotEmpty()) EchoJay_NSLog (("EJThreshold: block not usable - " + why.trim()).toRawUTF8());
+        EchoJay_NSLog ("EJThreshold: no usable calibration block on this chain - nothing started");
         return 0;
     }
-    if (why.isNotEmpty()) EchoJay_NSLog (("EJThreshold: BLOCK NOT AS CONTRACTED - " + why.trim()).toRawUTF8());
+    if (found > 1)
+    {
+        for (auto& c : cfgs) c.purpose = purpose;
+        const int started = processorRef.calibStartMany (uid, cfgs);
+        EchoJay_NSLog (("EJThreshold: " + juce::String (found) + " compressor block(s) on this build -> "
+                        + juce::String (started) + " hold(s) started, one closing line").toRawUTF8());
+        return started;
+    }
+    // ONE compressor: the primary alone, down the road it has always taken. whyAll above already reported any
+    // violation the parser found, so `why` has nothing left to say and is gone with the single-block call.
+    cfg = cfgs.front();
     cfg.purpose = purpose;   // 21t-m item 2: a BUILD holds once and closes; an ASK moves one rung
     // 21t-m item 6b (29 Sep 2026 ruling): A SWITCH IS NOT A DRIVE. Sean's 21:23:41.538 read
     //   "EJParamApply:   Compress: manual  0.000  (unknown position \"-15\" (this control has Off | On))"
@@ -24765,10 +24806,16 @@ int EchoJayEditor::startCalibrationForEdit (const juce::String& uid, const juce:
     if (const int n = startCalibrationFromChain (uid, v, purpose)) return n;
     auto ops = v.getProperty ("ops", juce::var());
     if (! ops.isArray()) ops = v.getProperty ("edits", juce::var());
-    return ops.isArray() ? startCalibrationFromOps (uid, ops) : 0;
+    // 21t-m (30 Sep 2026): THE PURPOSE TRAVELS THIS ROAD TOO. A build through the "Build this chain" pill has
+    // `ops` on its calibration block, not a `chain`, so startCalibrationFromChain returns 0 and every build came
+    // down here - where the purpose used to be dropped on the floor and the loop kept the askRung default. Sean
+    // got "Doing about 0.0 dB of gain reduction ... Say 'ease off' or 'more'" where a build closes with
+    // "Built. Level held, Output -N dB."
+    return ops.isArray() ? startCalibrationFromOps (uid, ops, purpose) : 0;
 }
 
-int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce::var& ops)
+int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce::var& ops,
+                                            echojay::CalibLoop::Purpose purpose)
 {
     auto* arr = ops.getArray();
     if (arr == nullptr) return 0;
@@ -24802,7 +24849,7 @@ int EchoJayEditor::startCalibrationFromOps (const juce::String& uid, const juce:
             { lo = (float) (double) band->getUnchecked (0); hi = (float) (double) band->getUnchecked (1); }
         const float opening = o->hasProperty ("slot_pre_gain_db")
                                 ? (float) (double) o->getProperty ("slot_pre_gain_db") : 0.0f;
-        processorRef.calibStart (uid, slot, info.name, lo, hi, opening);
+        processorRef.calibStart (uid, slot, info.name, lo, hi, opening, purpose);
         ++started;
     }
     return started;

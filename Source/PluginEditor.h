@@ -1880,6 +1880,115 @@ private:
 
         // Compact rounded block in the bottom strip — name + B/X/</> controls.
         // Clicking anywhere else on the block selects it (shows editor above).
+        // ---- Build 2 (30 Sep 2026 ruling): IN AND OUT ON EVERY SLOT CARD -----------------------------------
+        // Two small readouts on the plugin's title line, top right: "IN +0.0" and "OUT -6.0", dB to one decimal,
+        // bound to the SAME per-slot pre-gain and output gain the loop and the hold write (the ones
+        // getSlotPreTrimDb / getSlotOutGainDb read), so they show what the loop has done the moment it does it.
+        //
+        // THEY ARE CONTROLS, NOT LABELS: drag up/down to move, double-click to type. A value set by hand is the
+        // SAME write the loop makes, so the loop's next residual is measured from it - the window reads the
+        // control, not a belief about it.
+        //
+        // WHY EACH ONE POLLS INSTEAD OF BEING FED BY A PANEL REBUILD: the panel's refresh is signature-gated
+        // precisely so a 20 Hz tick cannot tear down child components under a gesture (the ChainWetKnob defect,
+        // tools/wet_rebuild_guard). Putting IN/OUT in that signature would rebuild the panel on every write the
+        // loop makes - destroying this control mid-drag. So the value is read here, on this component's own
+        // timer, and no signature moves.
+        struct GainReadout : juce::Component, private juce::Timer
+        {
+            juce::String tag;                       // "IN" / "OUT"
+            std::function<float()>      get;
+            std::function<void(float)>  set;
+            static constexpr float kMinDb = -24.0f, kMaxDb = 12.0f;   // the trims' own range, both ends
+            float shown = 0.0f;
+            juce::TextEditor entry;
+
+            GainReadout()
+            {
+                setInterceptsMouseClicks (true, true);
+                entry.setVisible (false);
+                entry.setJustification (juce::Justification::centred);
+                entry.setFont (juce::Font (juce::FontOptions (8.0f)));
+                entry.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0b1220));
+                entry.setColour (juce::TextEditor::outlineColourId,    juce::Colour (0xff22d3ee));
+                entry.setColour (juce::TextEditor::textColourId,       juce::Colour (0xff22d3ee));
+                entry.onReturnKey = [this] { commitEntry(); };
+                entry.onEscapeKey = [this] { entry.setVisible (false); repaint(); };
+                entry.onFocusLost = [this] { if (entry.isVisible()) commitEntry(); };
+                addChildComponent (entry);
+                startTimerHz (20);
+            }
+            ~GainReadout() override { stopTimer(); }
+
+            void commitEntry()
+            {
+                const auto t = entry.getText().trim().removeCharacters ("dB ").trim();
+                if (t.isNotEmpty() && set)
+                    set (juce::jlimit (kMinDb, kMaxDb, t.getFloatValue()));
+                entry.setVisible (false);
+                refreshNow();
+            }
+            void refreshNow() { if (get) shown = get(); repaint(); }
+            void timerCallback() override
+            {
+                if (! get || entry.isVisible()) return;
+                const float v = get();
+                if (std::abs (v - shown) > 0.005f) { shown = v; repaint(); }
+            }
+            void resized() override { entry.setBounds (getLocalBounds()); }
+
+            juce::String valueText() const
+            { return (shown >= 0.0f ? "+" : "") + juce::String (shown, 1); }
+            /** The whole readout, for the guard: "IN +0.0" / "OUT -6.0". */
+            juce::String readoutText() const { return tag + " " + valueText(); }
+            bool isMoved() const { return std::abs (shown) > 0.05f; }
+
+            void paint (juce::Graphics& g) override
+            {
+                if (entry.isVisible()) return;
+                // Accent while the slot has been MOVED, dim at 0.0, so which slots the loop has touched is
+                // readable at a glance without reading the numbers.
+                g.setColour (isMoved() ? juce::Colour (0xff22d3ee)
+                                       : EchoJayLookAndFeel::ChainCard::nameOn.withAlpha (0.45f));
+                g.setFont (juce::Font (juce::FontOptions (7.0f, isMoved() ? juce::Font::bold : juce::Font::plain)));
+                g.drawText (readoutText(), 0, 0, getWidth(), getHeight(), juce::Justification::centredRight, false);
+            }
+
+            // ---- the gesture. A drag here never reaches the card, so it cannot select the slot or scroll the
+            // strip: a child component takes the mouse first, which is what keeps this off every existing one.
+            float dragFrom = 0.0f; int dragFromY = 0; bool dragged = false;
+            void mouseDown (const juce::MouseEvent& e) override
+            {
+                dragFrom = get ? get() : 0.0f; dragFromY = e.getPosition().y; dragged = false;
+            }
+            void mouseDrag (const juce::MouseEvent& e) override
+            {
+                if (! set) return;
+                dragged = true;
+                // 0.1 dB per pixel, up is louder. Fine drag with shift, the same idiom as the knobs.
+                const float perPx = e.mods.isShiftDown() ? 0.02f : 0.1f;
+                const float want = juce::jlimit (kMinDb, kMaxDb,
+                                                 dragFrom + (float) (dragFromY - e.getPosition().y) * perPx);
+                set (want);
+                refreshNow();
+            }
+            void mouseDoubleClick (const juce::MouseEvent&) override
+            {
+                if (! set) return;
+                entry.setText (juce::String (shown, 1), false);
+                entry.setVisible (true);
+                entry.selectAll();
+                entry.grabKeyboardFocus();
+                repaint();
+            }
+            void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& w) override
+            {
+                if (! set) return;
+                set (juce::jlimit (kMinDb, kMaxDb, shown + (w.deltaY > 0 ? 0.1f : -0.1f)));
+                refreshNow();
+            }
+        };
+
         struct Block : juce::Component
         {
             juce::String name;
@@ -1896,6 +2005,10 @@ private:
             static constexpr const char* kKeepNote = "available on this rack only for now";
             struct KeepMenu { bool enabled; juce::String note; };
             KeepMenu keepMenu() const { return { keepAvailable, keepAvailable ? juce::String() : juce::String(kKeepNote) }; }
+
+            // Build 2: IN and OUT, top right of the title line. Bound by the panel's rebuild to this slot's
+            // pre-gain and output gain on whichever host the view is showing.
+            GainReadout inReadout, outReadout;
 
             juce::TextButton bypassBtn { "B" };
             juce::TextButton removeBtn { "X" };
@@ -1965,8 +2078,10 @@ private:
 
                 g.setColour(bypassed ? Card::nameBypassed : Card::nameOn);
                 g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-                g.drawText(name, 6, 3, getWidth() - 12, 18,
-                           juce::Justification::centred, true);
+                // Build 2: the title line yields its right-hand 46px to the IN/OUT readouts, and 12px on the left
+                // to the pop-out glyph that used to sit where they now are.
+                g.drawText(name, 16, 3, getWidth() - 16 - 48, 18,
+                           juce::Justification::centredLeft, true);
                 if (bypassed)
                 {
                     g.setColour(Card::bypAccent);
@@ -1981,7 +2096,7 @@ private:
                     g.setColour(juce::Colour(0xff22d3ee).withAlpha(0.85f));
                     g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
                     g.drawText(juce::String::fromUTF8("\xe2\x86\x97"),
-                               getWidth() - 15, 2, 12, 11, juce::Justification::centred);
+                               2, 2, 12, 11, juce::Justification::centred);   // Build 2: moved left
                 }
                 if (trimText.isNotEmpty() && ! bypassed)
                 {   // 21m ruling 2: the unity trim under the knob, the SAME text the card line shows
@@ -2000,6 +2115,10 @@ private:
 
             void resized() override
             {
+                // Build 2: two 9px rows in the top-right corner, clear of the wet knob (y 17..39), the button row
+                // and the pop-out glyph (now top-left). 46px wide fits "OUT -24.0" at 7pt.
+                inReadout .setBounds (getWidth() - 48, 2,  46, 9);
+                outReadout.setBounds (getWidth() - 48, 11, 46, 9);
                 int bw = 18, bh = 14, m = 3;   // 21m: one row shorter so the trim text fits between knob and buttons
                 int by = getHeight() - bh - m;
                 bypassBtn.setBounds(m, by, bw, bh);
@@ -2061,6 +2180,10 @@ private:
         // the transport, but nothing in this panel reaches it directly any more.
         ChainWetKnob     masterKnob;   // whole-chain wet/dry, fixed right of strip
         PreGainKnob      preGainKnob;  // pre-chain headroom gain, HEAD of strip (local + remote)
+        // Build 2: the panel asks the editor for this slot's live IN/OUT and hands back a write. `isIn` picks
+        // the pre-gain (true) or the output gain (false) - one pair of hooks rather than four.
+        std::function<float(int slot, bool isIn)>              onSlotGainGet;
+        std::function<void(int slot, bool isIn, float db)>     onSlotGainSet;
         std::vector<std::unique_ptr<Block>> blocks;
         std::vector<ChainHost::SlotInfo>    slotInfos;
         int selectedIdx = -1;
@@ -2918,6 +3041,28 @@ private:
                 bl->onRemove = [this, ci] { if (onRemoveSlot) onRemoveSlot(ci); };
                 bl->onMove   = [this, ci](int dir) { if (onMoveSlot) onMoveSlot(ci, dir); };
                 bl->wetKnob.setValue(slotInfos[(size_t)i].wet);
+                // Build 2: IN and OUT, bound to THIS slot on whichever host the panel is showing. The getters
+                // read the live control every tick (see GainReadout), so a write by the loop, the hold, the chat
+                // or the user's own drag all show the same way - there is one value, not a copy of one.
+                bl->inReadout.tag  = "IN";
+                bl->outReadout.tag = "OUT";
+                bl->inReadout.shown  = slotInfos[(size_t)i].preTrimDb;
+                bl->outReadout.shown = slotInfos[(size_t)i].outGainDb;
+                if (onSlotGainGet)
+                {
+                    bl->inReadout.get  = [this, ci] { return onSlotGainGet (ci, true);  };
+                    bl->outReadout.get = [this, ci] { return onSlotGainGet (ci, false); };
+                }
+                // A HAND-SET VALUE IS THE SAME WRITE THE LOOP MAKES (ruled), so the loop's next residual is
+                // measured from it. On a remote rack there is no op for these yet, so they read and do not write.
+                if (onSlotGainSet && ! remote)
+                {
+                    bl->inReadout.set  = [this, ci] (float v) { onSlotGainSet (ci, true,  v); };
+                    bl->outReadout.set = [this, ci] (float v) { onSlotGainSet (ci, false, v); };
+                }
+                else { bl->inReadout.set = nullptr; bl->outReadout.set = nullptr; }
+                bl->addAndMakeVisible (bl->inReadout);
+                bl->addAndMakeVisible (bl->outReadout);
                 bl->trimText    = slotInfos[(size_t)i].trimText;    // 21m ruling 2
                 bl->pictureText = slotInfos[(size_t)i].pictureText; // 21p item 2
                 bl->keepLevel = slotInfos[(size_t)i].keepLevel;
@@ -3793,7 +3938,8 @@ public:
 private:
     // ---- 21t-d: the calibration loop's trigger and its surface ----
     /** Start the loop for any dynamics-role slot an applied build/edit left in the rack. uid empty = own rack. */
-    int startCalibrationFromOps (const juce::String& uid, const juce::var& ops);
+    int startCalibrationFromOps (const juce::String& uid, const juce::var& ops,
+                                 echojay::CalibLoop::Purpose purpose);
     // 21t-g item 2: the response's chain-level calibration block (mode, actuator, param(s), sense, range).
     /** 21t-m item 3: false when the target chain is a BUS - a bus dials nothing, holds nothing and has no
         slot written to it; its level is its last stage's, and the Level slot's after Go. */

@@ -2,6 +2,8 @@
 
 #include <JuceHeader.h>
 #include <cmath>
+#include <functional>   // (i): configsFromBlock takes the caller's slot-name lookup
+#include <vector>
 
 // EJCalibLoop.h — compressor calibration by pre-gain (21t-d, 25 Sep 2026).
 //
@@ -84,11 +86,14 @@ struct CalibLoop
     float  minDb       = -60.0f;       // the profile's range for the threshold control
     float  maxDb       = 12.0f;
     int    slot        = -1;
-    // 21t-m item 6c (29 Sep 2026 ruling): THE RACK REVISION THE LOOP WAS STARTED AGAINST. ChainHost's
-    // chainRevision covers STRUCTURE only - add, remove, move - which is exactly "rebuild or slot removal".
-    // A loop whose rack has been restructured underneath it is stale: its slot INDEX no longer means what it
-    // meant, whoever now occupies it. -1 is "not captured", which never cancels.
-    int    chainRev    = -1;
+    // 21t-m item 6c, REPLACED 30 Sep 2026 by letter (n): THE SLOT'S OWN IDENTITY, not the rack revision.
+    // chainRevision was the wrong witness. It moves on add, remove AND move - but Sean's 19:03:33 log shows a
+    // deferred settle and two in-flight fallback serves bumping it 9 -> 10 with no slot added, removed or moved,
+    // and the Tube-Tech loop cancelled at .499 saying "the rack was rebuilt under this loop". A parameter or map
+    // write must never cancel a loop. What actually matters is whether THIS slot still holds THIS plugin, so the
+    // witness is ChainHost::slotIdentityKey(slot) - index plus the plugin's uid/fingerprint. Empty is "not
+    // captured", which never cancels.
+    juce::String slotIdent;
     float  lo          = 2.0f;         // the band, from the op's gr_target_db
     float  hi          = 3.0f;
     float  preDb       = 0.0f;         // the drive as it stands
@@ -100,7 +105,22 @@ struct CalibLoop
     double noSignalMs  = 0.0;
     bool   awaitFresh  = false;        // a move or a handover just happened: the next window is not judged
     State  state       = State::Idle;
+    // (g) 30 Sep 2026, with a correction of its own: the holding tail is deleted, so a loop that has finished goes
+    // Idle - and with it went the one record of HOW it finished. Adjusted (it reached the band) and Clamped (it ran
+    // out of range or headroom) are different facts, and the closing sentence is prose. endHere() copies the state
+    // here before clearing it, so the ending stays readable to a caller and to a guard.
+    State  endedAs     = State::Idle;
     bool   closingOwed = false;        // the loop ended and nobody has posted the message yet
+    // 30 Sep 2026 ruling: THE MESSAGE SURVIVES THE ENDING. closingMessage() is derived from `state`, and the chat
+    // takes it LATER (calibTakeClosing reads the stored loop), so a loop that ends at its close - which is now
+    // every loop - would have nothing left to say. The text is captured at the close and this is what is posted.
+    juce::String closingOwedText;
+    // Letter (l), 30 Sep 2026 ruling: IS THIS A COMPRESSOR SLOT? A compressor's input is MEANT to go over its
+    // threshold, so the -3 dBTP no-stage-above ceiling (21p item 3) does not belong on it - that ceiling belongs on
+    // the OUT, which the hold owns. On a compressor slot the loop's IN is bounded by the slot range (+/-12) only.
+    // Sean's 18:25:43-58: a track peaking at -5.0 dBTP allowed the drive exactly 2 dB and then said "band not
+    // reached - drive limited by headroom at +2.0 dB", on a compressor that had not begun to work.
+    bool   dynamicsSlot = false;
     bool   headroomStopped = false;    // it stopped because the INPUT ran out of headroom, not the step budget
     float  headroomLimit = kDriveLimit; // the drive at which the slot input would reach -3 dBTP, last computed
     // ---- MEASURE AND ASK (21t-i, 27 Sep 2026 ruling) ---------------------------------------------------------
@@ -144,6 +164,11 @@ struct CalibLoop
     // the whole budget: 3 steps x 2 fresh windows x 3 s is 18 s of heard audio before the third step is judged.
     // A cap shorter than the machine's own cadence is not a budget, it is a stop.
     static constexpr int   kSettleMaxSteps  = 3;      // ruled
+    // Letter (m), 30 Sep 2026 ruling: THE BUILD SEEKS THE BAND. "On a build the loop moves EchoJay's IN, passive,
+    // window by window, until the gain reduction is inside the band or the slot range is exhausted; only then does
+    // the hold set OUT once." This is the cap on that seek, in WINDOWS. (e)'s one-shot is superseded for the seek;
+    // what survives of it is that the HOLD still runs once and the loop still ends at its close.
+    static constexpr int   kBuildMaxWindows = 12;     // ruled
     static constexpr float kSettleMaxHeardS = 45.0f;  // ruled, in HEARD seconds - the backstop, not the budget
     // The output/makeup control the block named, IF it named one. 21t-m (29 Sep 2026 ruling): the HOLD never
     // writes it - these are kept because the block's parse carries them and the card/log report what the build
@@ -286,6 +311,7 @@ struct CalibLoop
         // IS the step" rule then read every nudge-only block as already-moved and bought nothing: "ease off" did
         // nothing at all. This flag is the wire's own answer and the only thing that rule may consult.
         bool   startFromBlock = false;
+        bool   dynamicsSlot = false;      // (l): set by the caller from ChainHost::slotIsDynamics - see the member
         float  minDb = -60.0f, maxDb = 12.0f;
         float  stepDb = kStepDb;          // the block's "step"; 1 dB unless it says otherwise
         // 21t-i re-cut (27 Sep 2026 ruling): WHAT THE SENTENCE QUOTES COMES FROM THE BLOCK.
@@ -335,6 +361,61 @@ struct CalibLoop
         Every rejection is written into `whyOut` so the caller can log it: a block quietly reinterpreted is a
         block nobody can debug.
         Returns false when there is no usable block at all (no object, or a slot this rack does not have). */
+    /** (i) 30 Sep 2026, B's contract (CONTRACT_GROUPS, "Every compressor in a build gets its own hold"):
+        EVERY COMPRESSOR'S BLOCK, from the chain object. `calibrations` is an array with one block per compressor
+        in chain order, each with the same fields as `calibration`; `calibration` is byte-for-byte
+        `calibrations[0]` and stays the primary, so a reader that knows only it keeps working. A chain with no
+        compressor carries NEITHER field - never an empty array - and this returns nothing for it.
+
+        In the shared header because the single-block parser is (21t-g item 6b): V2 and the Link must not read the
+        same wire differently. `nameForSlot` is the caller's local knowledge - which host, and what that slot is
+        called - because the parser has no rack.
+
+        A block that is not usable is SKIPPED with its reason, and the others still run: one compressor's bad
+        block is not a reason to leave the rest of a build unheld. */
+    static int configsFromBlock (const juce::var& chain, int numSlots, bool busBand,
+                                 const std::function<juce::String(int)>& nameForSlot,
+                                 std::vector<Config>& out, juce::String& whyOut)
+    {
+        out.clear();
+        const auto arr = chain.getProperty ("calibrations", juce::var());
+        const auto single = chain.getProperty ("calibration", juce::var());
+        auto readOne = [&] (const juce::var& blk) -> bool
+        {
+            auto* o = blk.getDynamicObject();
+            if (o == nullptr) return false;
+            const int wireSlot = o->hasProperty ("slot") ? ((int) o->getProperty ("slot")) - 1 : -1;
+            const juce::String nm = (nameForSlot && wireSlot >= 0 && wireSlot < numSlots) ? nameForSlot (wireSlot)
+                                                                                         : juce::String();
+            Config c; juce::String why;
+            if (! configFromBlock (blk, numSlots, busBand, nm, c, why))
+            {
+                if (why.isNotEmpty())
+                    whyOut << (whyOut.isEmpty() ? "" : "; ") << "slot " << juce::String (wireSlot + 1) << ": "
+                           << why.trim();
+                return false;
+            }
+            if (why.isNotEmpty())
+                whyOut << (whyOut.isEmpty() ? "" : "; ") << "slot " << juce::String (wireSlot + 1) << ": "
+                       << why.trim();
+            out.push_back (c);
+            return true;
+        };
+        if (auto* a = arr.getArray())
+        {
+            for (const auto& blk : *a) readOne (blk);
+            // THE PRIMARY IS calibrations[0] AND IS THE FIRST COMPRESSOR IN CHAIN ORDER. The contract says the two
+            // fields are byte-for-byte equal, so nothing is read from `calibration` when the array is there - a
+            // disagreement between them is the server's to fix, and silently preferring one would hide it.
+            if (! out.empty()) return (int) out.size();
+            // An array that yielded nothing usable still must not fall through to a block it duplicates.
+            if (! a->isEmpty()) return 0;
+        }
+        // FALLBACK: the single block, for a server that has not shipped the array yet.
+        readOne (single);
+        return (int) out.size();
+    }
+
     static bool configFromBlock (const juce::var& block, int numSlots, bool busBand,
                                  const juce::String& pluginName, Config& out, juce::String& whyOut)
     {
@@ -456,7 +537,10 @@ struct CalibLoop
             const auto mx = o->getProperty ("max_db");
             if (o->hasProperty ("max_db"))
                 out.maxDb = mx.isVoid() ? 0.0f : (float) (double) mx;
-            if (mn.isVoid() && o->hasProperty ("min_db"))
+            // 30 Sep 2026: SAID ONLY WHERE IT GOVERNS SOMETHING. min_db/max_db bound the THRESHOLD actuator's
+            // control; the loop now moves EchoJay's own IN and nothing else, and the server sends every block as
+            // drive with param null - so this note fired on every block while describing a range nothing reads.
+            if (mn.isVoid() && o->hasProperty ("min_db") && out.actuator == Actuator::Threshold)
                 whyOut << "min_db null (the low end prints \"-inf\") - taking " << juce::String (kPracticalFloorDb, 0)
                        << " dB as the practical floor. ";
         }
@@ -577,6 +661,7 @@ struct CalibLoop
         levelHoldClamped = false; levelHoldLimitDb = 0.0f;
         blockHeardS = c.heardS; fromWorking = c.working;
         purpose = c.purpose;
+        dynamicsSlot = c.dynamicsSlot;   // (l)
         // 21t-m item 2 (29 Sep 2026 ruling): A BUILD HAS NO LOOP. It applies the working position, matches the
         // level ONCE through OUT, and closes. So a build opens with its settle budget ALREADY SPENT: the first
         // judged window lands, the hold runs once, and the line closes. It never hunts and never steps a rung.
@@ -584,8 +669,11 @@ struct CalibLoop
         // (The 28 Sep "the build opens the settle" rule is superseded by this: Sean's 21:53 compressor walked
         // three rungs over eighteen windows for a build he never asked to have dialled.)
         settling = true; landed = false; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
-        settleSteps = (c.purpose == Purpose::buildHold) ? kSettleMaxSteps        // spent: land at once, hold, close
-                                                        : kSettleMaxSteps - 1;   // one rung, then land
+        // (m) 30 Sep 2026: A BUILD OPENS WITH ITS SEEK AHEAD OF IT. (e) opened it already spent, which is why a
+        // passive build reading gr=0.0 against a 2-3 dB band landed on its first judged window instead of moving
+        // IN - the step condition failed on its budget term whatever the reading said. A build's bound is now the
+        // 12-window cap and the slot range; an ask keeps one rung.
+        settleSteps = (c.purpose == Purpose::buildHold) ? 0 : kSettleMaxSteps - 1;
         senseLogsOwed = senseParams.isEmpty() ? 0 : kSenseLogWindows;   // 21t-j: the cross-check, five windows
         // 21t-m item 2: a BUILD says nothing on the way in - it has nothing to promise, because it is not going
         // to hunt. Its one line is the closing one.
@@ -601,8 +689,14 @@ struct CalibLoop
         state = State::Listening;
     }
 
-    /** The pre-21t-g entry point: a LISTEN pass on the drive, which is what every existing caller meant. */
-    void begin (const juce::String& pluginName, int slotIndex, float bandLo, float bandHi, float openingDrive)
+    /** The pre-21t-g entry point: a LISTEN pass on the drive, which is what every existing caller meant.
+        21t-m (30 Sep 2026): IT TAKES A PURPOSE, like begin(Config). It never set one, so every loop started
+        through it kept the member default askRung and closed with the ASK line - "Doing about 0.0 dB of gain
+        reduction ... Say 'ease off' or 'more'" - on a build. That is the road the "Build this chain" pill takes:
+        the reply's calibration block carries `ops`, so startCalibrationFromChain returns 0 and
+        startCalibrationForEdit falls through to startCalibrationFromOps, which reaches this overload. */
+    void begin (const juce::String& pluginName, int slotIndex, float bandLo, float bandHi, float openingDrive,
+                Purpose p)
     {
         plugin = pluginName; slot = slotIndex;
         lo = juce::jmin (bandLo, bandHi); hi = juce::jmax (bandLo, bandHi);
@@ -616,9 +710,15 @@ struct CalibLoop
         stepDb = kStepDb; judged = 0; asked = false; noSignalSaid = false;
         pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0; askOwed.clear();
         freshWanted = 0; lastHeardS = -1.0f;
-        settling = false; landed = false; settleSteps = 0; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        // The SAME three things begin(Config) derives from the purpose, and derived here for the same reasons -
+        // a build opens with its settle budget already spent and promises nothing on the way in.
+        purpose = p;
+        settling = true; landed = false;
+        settleSteps = (p == Purpose::buildHold) ? kSettleMaxSteps : kSettleMaxSteps - 1;
+        settleHeardS = 0.0f; settleStartHeardS = -1.0f;
         senseLogsOwed = 0;
         blockHeardS = std::numeric_limits<float>::quiet_NaN(); fromWorking = false;
+        askOwed = (p == Purpose::buildHold) ? juce::String() : openingLine();
         state = State::Listening;
     }
 
@@ -707,6 +807,16 @@ struct CalibLoop
     }
 
     bool running() const { return state == State::Listening || state == State::Waiting; }
+    /** 30 Sep 2026 ruling: THE HOLDING TAIL IS DELETED FOR EVERY PURPOSE. A loop that has said its one line is
+        over - no settling, no holding, no stale windows, no re-post, ever. The pending text is kept (the chat
+        takes it on a later call, out of the stored loop) and the state goes Idle so nothing judges another
+        window: active() is what calibTick gates on, and Adjusted/Clamped were active. */
+    void endHere()
+    {
+        if (closingOwed && closingOwedText.isEmpty()) closingOwedText = closingMessage();
+        endedAs = state;
+        state = State::Idle;
+    }
     /** 21t-j (28 Sep 2026 ruling): THE PENDING BUILD IS CANCELLED by any user or chat edit to that slot, or by the
         plugin being removed or replaced. The line closes with the setting AS IT STANDS - it does not vanish, and it
         does not keep promising to land something that nobody is landing any more. */
@@ -837,6 +947,7 @@ struct CalibLoop
                 state = State::Adjusted; closingOwed = true;
                 s.finished = true; s.closing = closingMessage();
                 s.card = card(); s.logLine = log ("adjusted");
+                endHere();                          // 30 Sep 2026 ruling: Listen reports, and then it is over
                 return s;
             }
             s.card = card(); s.logLine = log ("listening");
@@ -859,6 +970,7 @@ struct CalibLoop
                 state = State::Clamped; closingOwed = true;
                 s.finished = true; s.closing = closingMessage();
                 s.card = card(); s.logLine = log ("clamped");
+                endHere();
                 return s;
             }
             value = wantP; ++steps; awaitFresh = true;
@@ -870,7 +982,11 @@ struct CalibLoop
         // THE HEADROOM LIMIT (21t-d): the drive at which the slot's input true peak would reach -3 dBTP. The
         // input TP was measured AT THE CURRENT DRIVE, so the headroom left is (-3 - inTP) dB and the limit is
         // this drive plus that. It binds only upward - driving DOWN never costs headroom.
-        headroomLimit = (w.inTruePeakDb > -190.0f) ? preDb + (kCeilingDbTp - w.inTruePeakDb) : kDriveLimit;
+        // (l) 30 Sep 2026 ruling: ON A COMPRESSOR SLOT THE INPUT HEADROOM DOES NOT BIND THE DRIVE. The ceiling
+        // is the OUT's business and the hold owns it; the IN's only bound is the slot range. On any other slot the
+        // 21p item 3 ceiling stands unchanged, which is why this reads the flag rather than deleting the arithmetic.
+        headroomLimit = (! dynamicsSlot && w.inTruePeakDb > -190.0f)
+                            ? preDb + (kCeilingDbTp - w.inTruePeakDb) : kDriveLimit;
         const bool up = want > preDb;
         const float upperLimit = up ? juce::jmin (kDriveLimit, headroomLimit) : kDriveLimit;
         if (up && want > upperLimit + 1.0e-4f && headroomLimit < kDriveLimit - 1.0e-4f)
@@ -880,6 +996,7 @@ struct CalibLoop
             state = State::Clamped; closingOwed = true; headroomStopped = true;
             s.finished = true; s.closing = closingMessage();
             s.card = card(); s.logLine = log ("clamped");
+            endHere();
             return s;
         }
         if (steps >= kMaxSteps || std::abs (want) > kDriveLimit + 1.0e-4f || (up && want > upperLimit + 1.0e-4f))
@@ -887,6 +1004,7 @@ struct CalibLoop
             state = State::Clamped; closingOwed = true;
             s.finished = true; s.closing = closingMessage();
             s.card = card(); s.logLine = log ("clamped");
+            endHere();
             return s;
         }
         preDb = want; ++steps; awaitFresh = true;
@@ -970,7 +1088,16 @@ struct CalibLoop
         {
             const float gr = measuredGrDb();
             const bool inBand = (gr == gr) && gr >= lo - 0.05f && gr <= hi + 0.05f;
-            const bool budget = settleSteps < kSettleMaxSteps && settleHeardS <= kSettleMaxHeardS;
+            // (q) 30 Sep 2026 ruling, NARROWING (m): ON A BUILD A COMPRESSOR SLOT GETS NO DRIVE SEEK AT ALL.
+            // Compressor calibration is being redesigned around measured profiles, so the loop stops guessing at
+            // a drive: IN stays where the dial left it, the hold matches the level on OUT once, and the line says
+            // so. The seek code stays for a NON-compressor slot, which is what (m) built it for.
+            const bool noSeek = (purpose == Purpose::buildHold && dynamicsSlot);
+            const bool budget = noSeek
+                                    ? false
+                                    : (purpose == Purpose::buildHold
+                                           ? (window <= kBuildMaxWindows)
+                                           : (settleSteps < kSettleMaxSteps && settleHeardS <= kSettleMaxHeardS));
             if (! inBand && budget && gr == gr)
             {
                 // ONE STEP TOWARD THE BAND. This is the only automatic movement the product makes, it belongs to
@@ -996,7 +1123,13 @@ struct CalibLoop
                         s.writeDrive = true; s.newPre = preDb; s.newPost = -preDb;
                     }
                 }
-                if (s.writeParams || s.writeDrive) { freshWanted = kFreshAfterWrite; }
+                // (m) 30 Sep 2026: A BUILD MOVES WINDOW BY WINDOW, as ruled. The three-fresh-window wait after a
+                // write belongs to an ASK, whose one figure has to describe the setting the question is about; a
+                // build is seeking, and waiting three windows per dB spent the whole 12-window cap on three dB.
+                // ONE fresh window still separates the move from the reading, so the GR quoted is never measured
+                // across the change itself.
+                if (s.writeParams || s.writeDrive)
+                    freshWanted = (purpose == Purpose::buildHold) ? 0 : kFreshAfterWrite;
                 awaitFresh = true;
                 s.card = card();
                 s.logLine = log (s.writeParams || s.writeDrive ? "settling" : "settle-at-the-limit");
@@ -1018,13 +1151,19 @@ struct CalibLoop
                 // written since this window was measured and this window IS at the landed drive: making it wait
                 // two more would be nine seconds of silence bought for nothing, on the ORDINARY case. Caught by
                 // loudness_loop_guard 21t-g (6b), which asks for the line after three in-band windows.
-                freshWanted = settleSteps > 0 ? kFreshAfterWrite : 0;
+                // 30 Sep 2026 ruling: A BUILD IS A ONE-SHOT - one measurement window, one write, one line. It
+                // never waits for a fresh window here: Sean's 10:45 build spent FIVE windows getting to the hold
+                // (landed at window 1, held at window 6) for a level match it could have made on the first.
+                freshWanted = (purpose == Purpose::buildHold) ? 0 : (settleSteps > 0 ? kFreshAfterWrite : 0);
                 if (freshWanted == 0)
                     return holdStep (s);   // nothing moved: judge this window and close the line now
                 s.card = card();
-                s.logLine = log (inBand ? "landed-holding" : (settleSteps >= kSettleMaxSteps
-                                                                  ? "landed-step-budget-holding"
-                                                                  : "landed-heard-budget-holding"));
+                s.logLine = log (inBand ? "landed-holding"
+                                        : (purpose == Purpose::buildHold
+                                               ? (window > kBuildMaxWindows ? "landed-window-cap-holding"
+                                                                            : "landed-slot-range-holding")
+                                               : (settleSteps >= kSettleMaxSteps ? "landed-step-budget-holding"
+                                                                                : "landed-heard-budget-holding")));
                 return s;
             }
             asked = true;
@@ -1080,11 +1219,18 @@ struct CalibLoop
                 // closed. Nothing else clamps any more, so this cannot be reported for any other reason.
                 levelHoldClamped = std::abs ((wasGain - excess) - wantGain) > 0.05f;
                 levelHoldLimitDb = slotGainDb;
-                freshWanted = kFreshAfterWrite;
-                judged = 0;
                 s.writeSlotGain = true; s.slotGainValue = slotGainDb;
-                s.card = card(); s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
-                return s;
+                // 30 Sep 2026 ruling: a BUILD does not come back to refine. It sets OUT once so the level
+                // matches, and closes on the same step - so the sentence states the write it just made.
+                if (purpose != Purpose::buildHold)
+                {
+                    freshWanted = kFreshAfterWrite;
+                    judged = 0;
+                    s.card = card();
+                    s.logLine = log (holdWrites == 1 ? "level-hold-slot" : "level-hold-slot-refine");
+                    return s;
+                }
+                s.logLine = log ("level-hold-slot");
             }
             levelHoldClamped = true; levelHoldLimitDb = slotGainDb;  // the control is already at its end
         }
@@ -1093,10 +1239,23 @@ struct CalibLoop
         holdDone = true; holdOpen = false; asked = true;
         askOwed = completedLine();
         s.ask = askOwed;
-        s.askReplacesOpening = true;
+        // A build posted no opening line (begin() left askOwed empty for it), so there is nothing of its own to
+        // rewrite; an ask did, and its completion still replaces it.
+        s.askReplacesOpening = purpose != Purpose::buildHold;
         s.card = card();
-        s.logLine = log (holdWrites == 0 ? "landed-level-already-held"
-                                         : (holdWrites == 1 ? "landed-held-one-write" : "landed-held-two-writes"));
+        const auto word = log (holdWrites == 0 ? "landed-level-already-held"
+                                              : (holdWrites == 1 ? "landed-held-one-write"
+                                                                 : "landed-held-two-writes"));
+        s.logLine = word;
+        // 30 Sep 2026 ruling: THE HOLDING TAIL IS DELETED FOR A BUILD. It has applied the working position,
+        // measured once, set OUT once and said so. It is over: no settling, no holding windows, no re-post,
+        // ever. Sean's 10:45 build logged 88 more windows at state=holding after its close. The band result is
+        // in the line above and goes no further - a build reports what it did, not what it is still watching.
+        // askOwed stays set: calibTakeAsk reads the STORED loop, so the line is still delivered after this.
+        // ...and the same for an ASK (30 Sep 2026): the rung has said what it moved and what it measured, and
+        // that is the whole of it. Before this, state stayed Listening and every later window logged
+        // state=holding - for as long as the transport ran.
+        endHere();
         return s;
     }
 
@@ -1147,15 +1306,46 @@ struct CalibLoop
         // A BUILD: "Built. Level held, Output -N dB." - what it did, in one line, with no promise to keep.
         if (purpose == Purpose::buildHold)
         {
+            // (m) 30 Sep 2026 ruling: the build's one line carries THE THREE NUMBERS - the IN it moved, the gain
+            // reduction it read, the OUT it set - and says so in the same line when the band was not reached.
+            // Before this it said only what the hold wrote, so a build that never moved the drive read "Level
+            // already matched, nothing to hold." and told Sean nothing about the compressor at all.
             juce::String b = "Built.";
+            // (q): A COMPRESSOR IS SET AS DIALLED. It was not driven, so there is no drive figure to report and no
+            // band to have reached or missed - only what the hold did about the level.
+            if (dynamicsSlot)
+            {
+                b << " Set as dialled, level ";
+                if (std::abs (levelTrimmedDb) > 0.05f)
+                    b << "matched, Output " << signed1 (slotGainDb) << " dB.";
+                else if (std::abs (levelResidualDb) > 1.0f)
+                    b << "NOT matched - the slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
+                      << (levelResidualDb > 0.0f ? "louder" : "quieter")
+                      << " out than in and my output trim has no more to give.";
+                else
+                    b << "already matched.";
+                return b;
+            }
+            const float gr = measuredGrDb();
+            if (std::abs (preDb) > 0.05f)
+                b << " Drive " << signed1 (preDb) << " dB,";
+            if (gr == gr)
+                b << " " << juce::String (gr, 1) << " dB of gain reduction";
+            else
+                b << " no gain-reduction reading";
+            if (! landedInBand)
+                b << " - the " << juce::String (lo, 0) << "-" << juce::String (hi, 0) << " dB band was not reached"
+                  << (std::abs (std::abs (preDb) - kDriveLimit) < 0.05f
+                          ? juce::String (" and the drive is at its limit")
+                          : juce::String());
             if (std::abs (levelTrimmedDb) > 0.05f)
-                b << " Level held, Output " << signed1 (slotGainDb) << " dB.";
+                b << ". Level held, Output " << signed1 (slotGainDb) << " dB.";
             else if (std::abs (levelResidualDb) > 1.0f)
-                b << " The slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
+                b << ". The slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
                   << (levelResidualDb > 0.0f ? "louder" : "quieter")
                   << " out than in and my output trim has no more to give.";
             else
-                b << " Level already matched, nothing to hold.";
+                b << ". Level already matched, nothing to hold.";
             return b;
         }
         // AN ASK: what it moved, and what the meters read for it.
@@ -1297,7 +1487,14 @@ struct CalibLoop
     {
         auto* o = new juce::DynamicObject();
         o->setProperty ("plugin", plugin);      o->setProperty ("slot", slot);
-        o->setProperty ("chainRev", chainRev);
+        o->setProperty ("slotIdent", slotIdent);
+        o->setProperty ("endedAs", (int) endedAs);
+        // 30 Sep 2026: THE PURPOSE RIDES THE SIDECAR. It was in neither direction, and for an OWN rack that never
+        // showed - calibStore holds a live CalibLoop there. On a LINK rack every tick round-trips through this,
+        // so a build was a build for one tick and an askRung from the second, which is what put the measure-and-ask
+        // line on Sean's 10:45 build ("... Doing about 0.1 dB of gain reduction").
+        o->setProperty ("purpose", (int) purpose);
+        o->setProperty ("dynamicsSlot", dynamicsSlot);   // (l): a handover must not put the ceiling back
         o->setProperty ("lo", (double) lo);     o->setProperty ("hi", (double) hi);
         o->setProperty ("preDb", (double) preDb);
         o->setProperty ("steps", steps);        o->setProperty ("window", window);
@@ -1307,6 +1504,7 @@ struct CalibLoop
         o->setProperty ("awaitFresh", awaitFresh);
         o->setProperty ("state", (int) state);
         o->setProperty ("closingOwed", closingOwed);
+        o->setProperty ("closingOwedText", closingOwedText);
         o->setProperty ("headroomStopped", headroomStopped);
         // 21t-g: the mode and the actuator ride too, or a handover would turn a passive threshold pass into a
         // listen drive pass halfway through - which is a different loop, on a different knob, talking to the user.
@@ -1361,7 +1559,12 @@ struct CalibLoop
         auto* o = v.getDynamicObject();
         if (o == nullptr) return c;
         c.plugin = o->getProperty ("plugin").toString();
-        c.chainRev = o->hasProperty ("chainRev") ? (int) o->getProperty ("chainRev") : -1;
+        c.slotIdent = o->getProperty ("slotIdent").toString();
+        if (o->hasProperty ("endedAs")) c.endedAs = (State) (int) o->getProperty ("endedAs");
+        c.dynamicsSlot = (bool) o->getProperty ("dynamicsSlot");
+        if (o->hasProperty ("purpose"))
+            c.purpose = ((int) o->getProperty ("purpose") == (int) Purpose::buildHold) ? Purpose::buildHold
+                                                                                      : Purpose::askRung;
         c.slot   = (int) o->getProperty ("slot");
         c.lo = (float) (double) o->getProperty ("lo");  c.hi = (float) (double) o->getProperty ("hi");
         c.preDb = (float) (double) o->getProperty ("preDb");
@@ -1373,6 +1576,7 @@ struct CalibLoop
         c.awaitFresh = (bool) o->getProperty ("awaitFresh");
         c.state = (State) (int) o->getProperty ("state");
         c.closingOwed = (bool) o->getProperty ("closingOwed");
+        c.closingOwedText = o->getProperty ("closingOwedText").toString();
         c.headroomStopped = (bool) o->getProperty ("headroomStopped");
         // 21t-g. An OLDER sidecar has none of these: mode falls back to LISTEN, not passive, because that is what
         // a loop written by an older binary was - inferring "passive" from a missing field would silence a pass

@@ -60,6 +60,9 @@ public:
         juce::String format;    // "AudioUnit" / "VST3" — popout-only is per-format
         float wet = 1.0f;       // per-slot wet/dry (0..1, 1 = fully wet)
         float preTrimDb = 0.0f; // 21p item 3: the trim on the plugin's INPUT (no stage hit above -3 dBTP)
+        // Build 2 (30 Sep 2026): EchoJay's own per-slot OUT, the one the HOLD writes, so the slot card can show
+        // IN and OUT side by side and follow the loop as it moves them. Same source as getSlotOutGainDb.
+        float outGainDb = 0.0f;
         float trimDb = 0.0f;    // 21m ruling 2: the unity trim (dB) applied inside the blend node
         bool  keepLevel = false;   // 21m ruling 2: "keep this plugin's level" (the trim measure skips it)
         juce::String trimText;  // "-2.3 dB match" / "level kept" / "" (ChainHost::slotTrimText)
@@ -686,12 +689,26 @@ public:
         reports loops started against THIS, because "N of M dynamics slots" is the sentence that makes a
         build that landed nothing visible without reading rows. */
     int dynamicsSlotCount() const;
+    /** (n): the slot's identity as NAMED FIELDS ("uid=..;fp=..;name=.."), for the loop's cancel test. Empty for a
+        slot out of range. Compare with slotIdentityStillMatches, never with ==: an absent field must not look like
+        a different one. */
+    juce::String slotIdentityKey (int slotIndex) const;
+    /** (n): true while these two describe the same plugin, judged only on fields BOTH carry. Pure, so the guard
+        drives the decision itself. */
+    static bool slotIdentityStillMatches (const juce::String& stamped, const juce::String& now);
+    /** (o): the watchdog headline, composed once and logged from the same string a caller can read. */
+    juce::String loopsWatchdogLine() const;
     /** 21t-m item 6a: a slot is dynamics if its OWN category says so, or the map the plan dialled it from does.
         "loops started 1 of 0 dynamics slots" was a loop running against a count that read only the first.
         Takes an INDEX, not the slot: ChainSlot is private and forward-declared far below this line. */
     bool slotIsDynamics (int slotIndex) const;
     /** Set by the editor after a build or an edit, for the headline above. */
     void setLoopsStarted (int n) { loopsStarted_ = n; }
+    /** (o) 30 Sep 2026 ruling: the watchdog counts only loops still ALIVE and NAMES the dead ones. Set by whoever
+        owns the loops (the processor) whenever one ends, so the headline cannot say "1 of 1" about a loop that
+        died in silence. `dead` is a comma list of "<plugin> (<why>)". */
+    void setLoopsAlive (int alive, const juce::String& dead)
+    { loopsAlive_ = alive; loopsDead_ = dead; }
     static constexpr int kMapFetchBoundMs = 4000;
     // True while an exact-map fetch OR a fallback lookup for fp is unanswered.
     bool mapFetchInFlight (const juce::String& fp) const
@@ -838,6 +855,10 @@ public:
     void reportDialWhenSettled (const juce::String& reason, int attemptsLeft = 8);
     // True when no slot is DialStatus::pending (bubble may compose).
     bool dialStateSettled() const;
+    /** (n), second ruling: how many DEFERRED settle jobs are queued. dialStateSettled() is false while any is, and
+        this is how a guard can see the term rather than infer it. A job exists only when a write mismatched on the
+        immediate read - a hosted plugin whose display is one write behind - so a built-in never queues one. */
+    int pendingSettleJobs() const { return (int) settleJobs_.size(); }
     // Recommendable display names whose local map passes the dial-signals
     // threshold (>=2 usable CORE semantics); shares
     // echojay::mapIsDialableForSignals. Its two consumers are the P16
@@ -2460,7 +2481,9 @@ private:
     double              tallySr_ = 0.0;   // rate the tallies were prepared at
     juce::String hostTrackName_;
     echojay::ChainRole chainRole_;        // 21t-m item 5: the role and WHICH of its three sources decided it
-    int          loopsStarted_ = -1;      // 21t-m item 1: -1 = nothing has reported yet
+    int          loopsStarted_ = -1;   // 21t-m item 1: -1 = nothing has reported yet
+    int          loopsAlive_ = -1;     // (o): loops still running; -1 = nothing has reported
+    juce::String loopsDead_;           // (o): "<plugin> (<why>)", comma separated
     juce::String hostPluginFormat_;   // see setHostPluginFormat
     juce::String restoredLevelsTrack_;   // the track a restored tally was measured on, until the host names this one
     // Pending per-slot level restore, keyed by saved slot number (1-based,

@@ -504,14 +504,23 @@ void guardMain()
             const bool landed = runPurpose (echojay::CalibLoop::Purpose::buildHold, 14, rungs, holds, closing);
             std::printf ("    (2e) build: %d rung(s), %d hold write(s), landed %s\n    (2e) build says: %s\n",
                          rungs, holds, landed ? "yes" : "no", closing.isEmpty() ? "(nothing)" : closing.toRawUTF8());
-            check (rungs == 0,
-                   "(2e) A BUILD MOVES NO RUNG AT ALL  (RED as it stood: three rungs and eighteen windows, "
-                   "hunting a band nobody asked for)", juce::String (rungs) + " rung(s)");
+            // SUPERSEDED 30 Sep 2026 (letter (m)): the 29 Sep rule was "a build moves no rung at all", and this
+            // leg asserted rungs == 0. Sean's 18:22 log showed what that cost: a passive build read gr=0.0 against
+            // a 2-3 dB band and landed on it, so the compressor was never driven and the hold found nothing to
+            // hold. A build now SEEKS the band, window by window, bounded by the 12-window cap and the slot range.
+            // What survives of the old rule is everything below it: one hold, one "Built." line, no promise on the
+            // way in, and the loop ends at its close.
+            check (rungs <= echojay::CalibLoop::kBuildMaxWindows,
+                   "(2e) a build's seek is BOUNDED - it never exceeds the 12-window cap  (was: \"a build moves no "
+                   "rung at all\", superseded by letter (m): that rule left the compressor undriven)",
+                   juce::String (rungs) + " rung(s), cap "
+                       + juce::String (echojay::CalibLoop::kBuildMaxWindows));
             check (holds >= 1 && holds <= 2, "(2e) ...it matches the level once through OUT",
                    juce::String (holds) + " hold write(s)");
             check (closing.startsWith ("Built."),
                    "(2e) ...and closes with ONE line that says what it did", closing);
-            check (closing.contains ("Level held") || closing.contains ("already matched"),
+            check (closing.contains ("Level held") || closing.contains ("already matched")
+                       || closing.contains ("no more to give"),
                    "(2e) ...naming the level it held", closing);
             check (! closing.contains ("landing it as it plays"),
                    "(2e) ...and it never promises to land anything, because it is not going to hunt", closing);
@@ -1072,10 +1081,13 @@ void guardMain()
         feed (r.proc, r.prog, 6.0);
         const juce::String uid;
         const int revAtStart = r.h.getChainRevision();
+        const auto identAtStart = r.h.slotIdentityKey (0);
         r.proc.calibStart (uid, passiveDriveCfg ("Fake Comp +6"));
-        check (r.proc.calibLoad (uid).chainRev == revAtStart,
-               "(6c) the loop is stamped with the rack revision it was started against",
-               juce::String (r.proc.calibLoad (uid).chainRev) + " == " + juce::String (revAtStart));
+        // 30 Sep (letter (n)): the witness is the SLOT'S IDENTITY, not the rack revision - a deferred settle or a
+        // map serve moved the revision under a loop that had just started and cancelled it.
+        check (r.proc.calibLoad (uid).slotIdent == identAtStart && identAtStart.isNotEmpty(),
+               "(6c) the loop is stamped with the identity of the slot it was started on",
+               "\"" + r.proc.calibLoad (uid).slotIdent + "\"");
         // Judged windows first, on runLoop's pacing, so what follows cancels a loop that was demonstrably WORKING.
         for (int k = 0; k < 4; ++k)
         { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
@@ -1083,34 +1095,956 @@ void guardMain()
                "(6c) precondition: it judges windows normally while the rack is untouched - the cancel must not "
                "be a loop that never ran",
                "window " + juce::String (r.proc.calibLoad (uid).window));
-        // THE REBUILD: a structural change to the rack, which is what Sean's ops=7 edit was.
+        // 30 Sep 2026, letter (n): AN ADD AT THE END IS NOT A REASON TO CANCEL. Sean's 19:03:33 log: a deferred
+        // settle and two in-flight fallback map serves bumped the rack revision 9 -> 10 with no slot added,
+        // removed or moved, and the Tube-Tech loop cancelled reading "the rack was rebuilt under this loop". The
+        // witness is now slot identity, so this half of (6c) asserts SURVIVAL where it used to assert a cancel.
         const auto* g2 = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
         if (g2 != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*g2));
         pumpMs (200);
         check (r.h.getChainRevision() != revAtStart,
-               "(6c) precondition: the rebuild moved the rack revision",
+               "(6c) precondition: the add moved the rack revision",
                juce::String (revAtStart) + " -> " + juce::String (r.h.getChainRevision()));
+        check (r.h.slotIdentityKey (0) == identAtStart,
+               "(6c) ...while slot 1's own identity is untouched by it",
+               "\"" + r.h.slotIdentityKey (0) + "\"");
         feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0;
         const auto said = r.proc.calibTick (uid);
         const auto after = r.proc.calibLoad (uid);
-        check (! after.running(),
-               "(6c) the next tick CANCELS it - no loop survives a rebuild  (RED as it stood: the loop judged "
-               "window after window against whatever now held its slot)",
-               after.running() ? ("still running for \"" + after.plugin + "\"") : juce::String ("cancelled"));
-        check (said.isEmpty(),
-               "(6c) ...and it asks NOTHING - Sean's re-posted \"Mike-E Comp is on - play it\" was for a slot that "
-               "was gone",
-               said.isEmpty() ? juce::String ("(nothing said)") : said.substring (0, 60));
-        check (r.proc.calibLastLogLine().contains ("CANCELLED")
-                   && r.proc.calibLastLogLine().contains ("rebuilt"),
-               "(6c) ...and it says so in the log, so a cancellation does not read as a silence",
-               r.proc.calibLastLogLine().substring (0, 90));
-        // ...and the user's next ask starts CLEAN rather than re-targeting the cancelled loop.
+        check (after.running(),
+               "(6c) the loop SURVIVES it  (RED as it stood: the rack revision was the witness, so a settle or a "
+               "map serve cancelled a loop that nothing had touched)",
+               after.running() ? ("still running for \"" + after.plugin + "\"") : juce::String ("CANCELLED"));
+        juce::ignoreUnused (said);
+        check (! r.proc.calibLastLogLine().contains ("CANCELLED"),
+               "(6c) ...and says nothing about being cancelled",
+               r.proc.calibLastLogLine().substring (0, 80));
+    }
+
+    // ---- (13) A REORDER THAT MOVES THE LOOP'S PLUGIN OFF ITS INDEX STILL CANCELS (letter (n)) ------------
+    {
+        std::printf ("\n-- (13) the cancel that must still happen: a different plugin at the loop's index --\n");
+        // The other half of letter (n). What 21t-m item 6c was for is still enforced - Sean's 21:53:21 rebuild
+        // left a loop for Empirical Labs Mike-E Comp running while slot 1 held EchoJay EQ - but the test is now
+        // "does this index still hold this plugin", which is the question that was always meant.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        if (lim != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+        pumpMs (200);
+        check (r.h.getNumSlots() == 2 && r.h.slotIdentityKey (0) != r.h.slotIdentityKey (1),
+               "(13) precondition: two slots with different identities",
+               "\"" + r.h.slotIdentityKey (0) + "\" vs \"" + r.h.slotIdentityKey (1) + "\"");
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
         r.proc.calibStart (uid, passiveDriveCfg ("Fake Comp +6"));
-        const auto fresh = r.proc.calibLoad (uid);
-        check (fresh.running() && fresh.window == 0 && fresh.chainRev == r.h.getChainRevision(),
-               "(6c) ...and the next ask starts a CLEAN loop on the rack as it now is, so the ask is not swallowed",
-               "window " + juce::String (fresh.window) + " rev " + juce::String (fresh.chainRev));
+        for (int k = 0; k < 4; ++k) { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
+        check (r.proc.calibLoad (uid).running(),
+               "(13) precondition: the loop is running on slot 1",
+               "window " + juce::String (r.proc.calibLoad (uid).window));
+        const auto identBefore = r.proc.calibLoad (uid).slotIdent;
+        // THE REORDER: the loop's plugin is no longer at index 0.
+        r.h.moveSlot (0, +1);   // direction, not a target index
+        pumpMs (200);
+        check (r.h.slotIdentityKey (0) != identBefore,
+               "(13) precondition: slot 1 now holds a different plugin",
+               "\"" + identBefore + "\" -> \"" + r.h.slotIdentityKey (0) + "\"");
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0;
+        const auto saidAfter = r.proc.calibTick (uid);
+        check (! r.proc.calibLoad (uid).running(),
+               "(13) the loop is CANCELLED, because its index no longer holds its plugin",
+               r.proc.calibLoad (uid).running() ? juce::String ("still running") : juce::String ("cancelled"));
+        check (saidAfter.isEmpty(),
+               "(13) ...and it asks nothing",
+               saidAfter.isEmpty() ? juce::String ("(nothing said)") : saidAfter.substring (0, 50));
+        check (r.proc.calibLastLogLine().contains ("CANCELLED")
+                   && r.proc.calibLastLogLine().contains ("no longer holds"),
+               "(13) ...and the log names the slot and the plugin rather than a revision number",
+               r.proc.calibLastLogLine().substring (0, 100));
+    }
+
+    // ---- (7) A BUILD IS A ONE-SHOT (30 Sep 2026 ruling, Sean's log on pair (d)) --------------------------
+    {
+        std::printf ("\n-- (7) a buildHold loop: one window, one write, one line, then it is over --\n");
+        // Sean's 10:45 log on (d):
+        //   window 1   settle=3/3                       the settle opens already spent, correct
+        //   window 6   state=landed-level-already-held  FIVE windows spent getting to the hold
+        //   then       "EchoJay Saturation on, set from the working position. Doing about 0.1 dB..."  <- the ASK line
+        //   then       88 more windows, state=holding
+        // Ruled: a build applies the working position, takes ONE measurement window, sets EchoJay's own OUT once,
+        // posts exactly "Built. ..." and ENDS. The band result goes to the log only. Never the ask line, never a
+        // settle line, no windows after the close.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        auto cfg = passiveDriveCfg ("EchoJay Saturation");
+        cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+        cfg.working = true;                       // "set from the working position", as Sean's build was
+        r.proc.calibStart (uid, cfg);
+        check (r.proc.calibLoad (uid).purpose == echojay::CalibLoop::Purpose::buildHold,
+               "(7) precondition: the loop is a build");
+        // Ticked until it speaks, and the WINDOWS are counted rather than the ticks: the very first tick only
+        // arms the 3 s window clock (calibLastWindowMs_ starts at 0), so it judges nothing by design.
+        juce::StringArray windowLines;
+        juce::String said; bool replaces = false; int windowsBeforeClose = 0;
+        for (int k = 0; k < 24 && said.isEmpty(); ++k)     // (m): the seek runs before the hold closes
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0;
+            r.proc.calibTick (uid);
+            const auto lg = r.proc.calibLastLogLine();
+            if (lg.isNotEmpty() && ! windowLines.contains (lg)) windowLines.add (lg);
+            said = r.proc.calibTakeAsk (uid, &replaces);
+        }
+        windowsBeforeClose = windowLines.size();
+        check (said.startsWith ("Built."),
+               "(7) it closes with \"Built. ...\"  (RED as it stood: the measure-and-ask line \"... Doing about "
+               "N dB of gain reduction. Say 'ease off' or 'more'\")",
+               said.isEmpty() ? juce::String ("(nothing said)") : said);
+        check (! said.contains ("Doing about") && ! said.contains ("ease off"),
+               "(7) ...and it is NEVER the ask line", said);
+        // SUPERSEDED 30 Sep 2026 (letter (m)): this asserted ONE measurement window. A build now seeks the band
+        // first, so it takes as many windows as the seek needs, bounded by the cap. What is still true - and is
+        // what (7) was really for - is that the HOLD runs once and the loop ends at its close.
+        check (windowsBeforeClose <= echojay::CalibLoop::kBuildMaxWindows + 2,
+               "(7) ...inside the seek's own bound (was: exactly ONE window, superseded by letter (m))",
+               juce::String (windowsBeforeClose) + " window(s), cap "
+                   + juce::String (echojay::CalibLoop::kBuildMaxWindows));
+        check (! r.proc.calibLoad (uid).running() && ! r.proc.calibLoad (uid).active(),
+               "(7) ...and the loop has ENDED - the holding tail is deleted",
+               r.proc.calibLoad (uid).running() ? juce::String ("still running")
+                                                : (r.proc.calibLoad (uid).active() ? juce::String ("not running, still active")
+                                                                                   : juce::String ("ended")));
+        check (! replaces,
+               "(7) ...and it does not claim to replace an opening line, because a build posted none");
+        // ...and nothing happens afterwards, however long the transport runs.
+        const auto lastLine = r.proc.calibLastLogLine();
+        int laterWindows = 0, laterAsks = 0;
+        for (int k = 0; k < 6; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0;
+            r.proc.calibTick (uid);
+            if (r.proc.calibLastLogLine() != lastLine) ++laterWindows;
+            if (r.proc.calibTakeAsk (uid, &replaces).isNotEmpty()) ++laterAsks;
+        }
+        check (laterWindows == 0 && laterAsks == 0,
+               "(7) ...no window is judged and nothing is said after the close  (RED as it stood: 88 more windows, "
+               "state=holding)",
+               juce::String (laterWindows) + " window(s), " + juce::String (laterAsks) + " ask(s)");
+    }
+
+    // ---- (7b) THE PURPOSE SURVIVES THE SIDECAR (30 Sep 2026) ---------------------------------------------
+    {
+        std::printf ("\n-- (7b) a loop on a LINK rack keeps its purpose across the store/load round trip --\n");
+        // This is why Sean saw the ASK line at all. For the OWN rack calibStore holds a live CalibLoop, so the
+        // purpose survives; for a LINK rack every tick round-trips it through toVar/fromVar, and `purpose` was in
+        // neither. So a build on a borrowed Link rack was a build for exactly one tick and an askRung from the
+        // second one onward - which is the purpose the member default carries.
+        echojay::CalibLoop l;
+        auto cfg = passiveDriveCfg ("VComp (s)");
+        cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+        l.begin (cfg);
+        check (l.purpose == echojay::CalibLoop::Purpose::buildHold, "(7b) precondition: begin() set it");
+        const auto round = echojay::CalibLoop::fromVar (l.toVar());
+        check (round.purpose == echojay::CalibLoop::Purpose::buildHold,
+               "(7b) a build is STILL a build after toVar/fromVar  (RED as it stood: purpose was in neither, so "
+               "every Link-rack tick reset it to the askRung default)",
+               round.purpose == echojay::CalibLoop::Purpose::buildHold ? juce::String ("buildHold")
+                                                                      : juce::String ("askRung"));
+        echojay::CalibLoop la;
+        auto ca = passiveDriveCfg ("VComp (s)");
+        ca.purpose = echojay::CalibLoop::Purpose::askRung;
+        la.begin (ca);
+        check (echojay::CalibLoop::fromVar (la.toVar()).purpose == echojay::CalibLoop::Purpose::askRung,
+               "(7b) ...and an ask is still an ask, so the field is carried and not hard-coded");
+    }
+
+    // ---- (8) AN ASK IS A ONE-SHOT TOO (30 Sep 2026 ruling) ----------------------------------------------
+    {
+        std::printf ("\n-- (8) askRung: one rung, one line, then the loop ends --\n");
+        // Ruled with (7): the holding tail is deleted for EVERY purpose. The rung closes with its one line -
+        // "Drive +4 -> +5, 3.1 dB on the loud phrases, level held." - and the loop is over. No settling, no
+        // holding windows, no re-post.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        auto cfg = passiveDriveCfg ("Fake Comp +6");
+        cfg.purpose = echojay::CalibLoop::Purpose::askRung;
+        r.proc.calibStart (uid, cfg);
+        // THE COMPARATIVE: the same block again, carrying the user's nudge. That is what buys the one rung.
+        auto again = cfg; again.nudge = 1; again.haveBand = true;
+        r.proc.calibStart (uid, again);
+        check (r.proc.calibLoad (uid).purpose == echojay::CalibLoop::Purpose::askRung
+                   && r.proc.calibLoad (uid).pendingStep != 0,
+               "(8) precondition: an ask with one rung owed",
+               "pendingStep " + juce::String (r.proc.calibLoad (uid).pendingStep));
+        juce::String said; bool replaces = false; int ticks = 0;
+        for (int k = 0; k < 20 && said.isEmpty(); ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); ++ticks;
+            const auto a = r.proc.calibTakeAsk (uid, &replaces);
+            if (a.isNotEmpty() && ! a.endsWith ("landing it as it plays...")) said = a;
+        }
+        check (said.isNotEmpty() && said.contains (juce::String::fromUTF8 ("\xe2\x86\x92")),
+               "(8) it closes with the rung's own line, naming what it moved from and to",
+               said.isEmpty() ? juce::String ("(nothing said)") : said);
+        check (! r.proc.calibLoad (uid).running() && ! r.proc.calibLoad (uid).active(),
+               "(8) ...and the loop has ENDED  (RED as it stood: state stayed Listening and every later window "
+               "logged state=holding, for ever)",
+               r.proc.calibLoad (uid).active() ? juce::String ("still active") : juce::String ("ended"));
+        const auto lastLine = r.proc.calibLastLogLine();
+        int laterWindows = 0, laterAsks = 0;
+        for (int k = 0; k < 6; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+            if (r.proc.calibLastLogLine() != lastLine) ++laterWindows;
+            if (r.proc.calibTakeAsk (uid, &replaces).isNotEmpty()) ++laterAsks;
+            if (r.proc.calibTakeClosing (uid).isNotEmpty()) ++laterAsks;
+        }
+        check (laterWindows == 0 && laterAsks == 0,
+               "(8) ...and nothing is judged or said afterwards, and nothing is re-posted",
+               juce::String (laterWindows) + " window(s), " + juce::String (laterAsks) + " message(s)");
+    }
+
+    // ---- (8b) LISTEN REPORTS AND ENDS (30 Sep 2026 ruling) ----------------------------------------------
+    {
+        std::printf ("\n-- (8b) Listen: it reports, and then it is over --\n");
+        // Listen's closes set state to Adjusted or Clamped, which running() already excludes - but active() does
+        // not, so calibTick went on judging windows and the loop went on stepping. The closing MESSAGE is taken
+        // later by calibTakeClosing, out of the stored loop, so the text has to survive the ending.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        // Listen on the drive, with a band the fake compressor's fixed 6 dB can never reach, so it clamps on the
+        // step budget rather than hanging on "in band twice running" - a deterministic close either way.
+        r.proc.calibStart (uid, 0, "Fake Comp +6", 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
+        check (r.proc.calibLoad (uid).mode == echojay::CalibLoop::Mode::Listen,
+               "(8b) precondition: the loop is a LISTEN pass");
+        juce::String closing; int ticks = 0;
+        for (int k = 0; k < 40 && closing.isEmpty(); ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); ++ticks;
+            closing = r.proc.calibTakeClosing (uid);
+        }
+        check (closing.isNotEmpty(),
+               "(8b) it posts its closing message", closing.isEmpty() ? juce::String ("(none)") : closing);
+        check (! r.proc.calibLoad (uid).active(),
+               "(8b) ...and the loop has ENDED  (RED as it stood: Adjusted/Clamped are not running() but they ARE "
+               "active(), so the tick kept judging windows after the report)",
+               r.proc.calibLoad (uid).active() ? juce::String ("still active") : juce::String ("ended"));
+        const auto lastLine = r.proc.calibLastLogLine();
+        int laterWindows = 0, laterMsgs = 0;
+        for (int k = 0; k < 6; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+            if (r.proc.calibLastLogLine() != lastLine) ++laterWindows;
+            if (r.proc.calibTakeClosing (uid).isNotEmpty()) ++laterMsgs;
+        }
+        check (laterWindows == 0 && laterMsgs == 0,
+               "(8b) ...and nothing is judged or re-posted afterwards",
+               juce::String (laterWindows) + " window(s), " + juce::String (laterMsgs) + " message(s)");
+    }
+
+    // ---- (9) ONE HOLD PER COMPRESSOR (30 Sep 2026, B's contract) ----------------------------------------
+    {
+        std::printf ("\n-- (9) two compressors in one build: each holds its own OUT, one line names both --\n");
+        // CONTRACT_GROUPS, "Every compressor in a build gets its own hold": a build carried ONE block and which
+        // compressor it named was whichever the pass wrote last. Sean's log: the block went to the SECOND
+        // compressor, which measured 0.0 dB of gain reduction, while the FIRST did the work with no hold on it.
+        // `calibrations` is one block per compressor in chain order; `calibration` is byte-for-byte calibrations[0]
+        // and stays the primary.
+        Rig r (ChannelType::LeadVocal, 6.0f);                  // slot 1: +6 dB
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        check (gn != nullptr, "(9) precondition: EchoJay Gain is registered");
+        if (gn != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*gn));
+        pumpMs (200);
+        check (r.h.getNumSlots() == 2, "(9) precondition: a two-compressor rig",
+               juce::String (r.h.getNumSlots()) + " slot(s)");
+        {   // slot 2 at +3 dB, so the two holds owe DIFFERENT figures and a single shared write cannot pass
+            auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", 3.0);
+            auto* wv = new juce::DynamicObject(); wv->setProperty ("params", juce::var (pp));
+            r.h.setSlotStructuredSettings (1, juce::var (wv));
+            pumpMs (250);
+        }
+        feed (r.proc, r.prog, 6.0);
+        // THE CHAIN OBJECT AS B SENDS IT: calibrations[] with one block per compressor, calibration == [0].
+        auto mkBlock = [] (int wireSlot) -> juce::var
+        {
+            auto* b = new juce::DynamicObject();
+            b->setProperty ("mode", "passive"); b->setProperty ("actuator", "drive");
+            b->setProperty ("slot", wireSlot);              // 1-based on the wire
+            b->setProperty ("source", "working_position");
+            juce::Array<juce::var> band; band.add (2.0); band.add (3.0);
+            b->setProperty ("gr_target_db", band);
+            return juce::var (b);
+        };
+        auto* chainObj = new juce::DynamicObject();
+        juce::Array<juce::var> calibs; calibs.add (mkBlock (1)); calibs.add (mkBlock (2));
+        chainObj->setProperty ("calibration", calibs.getReference (0));   // byte-for-byte calibrations[0]
+        chainObj->setProperty ("calibrations", calibs);
+        const juce::var chainVar (chainObj);
+        std::vector<echojay::CalibLoop::Config> cfgs;
+        juce::String whyAll;
+        const int found = echojay::CalibLoop::configsFromBlock (chainVar, r.h.getNumSlots(), false,
+                                                               [&r] (int sl) { return r.h.getSlotInfo (sl).name; },
+                                                               cfgs, whyAll);
+        check (found == 2 && cfgs.size() == 2 && cfgs[0].slot == 0 && cfgs[1].slot == 1,
+               "(9) the parser reads BOTH blocks, in chain order, from `calibrations`  (RED as it stood: there was "
+               "no array parser - only `calibration`, one compressor, whichever the pass wrote last)",
+               juce::String (found) + " block(s), slots " + (cfgs.size() == 2 ? juce::String (cfgs[0].slot + 1) + "+"
+                                                                               + juce::String (cfgs[1].slot + 1)
+                                                                             : juce::String ("-")));
+        const juce::String uid;
+        for (auto& c : cfgs) c.purpose = echojay::CalibLoop::Purpose::buildHold;
+        const int started = r.proc.calibStartMany (uid, cfgs);
+        check (started == 2, "(9) ...and starts a hold for each", juce::String (started) + " hold(s)");
+        juce::String said; bool replaces = false;
+        for (int k = 0; k < 40 && said.isEmpty(); ++k)     // (m): each hold seeks the band before it closes
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+            said = r.proc.calibTakeAsk (uid, &replaces);
+        }
+        const float out1 = r.h.getSlotOutGainDb (0), out2 = r.h.getSlotOutGainDb (1);
+        const float in1  = r.h.getSlotPreTrimDb (0), in2 = r.h.getSlotPreTrimDb (1);
+        // 30 Sep (letter (m)): the figures are no longer -6.0 / -3.0. A build now DRIVES each slot's IN as it
+        // seeks, and OUT carries the drive back plus that slot's own residual - so what matters, and what Sean's
+        // defect was about, is that each slot is held SEPARATELY to ITS OWN figure rather than one slot being held
+        // and the other left alone.
+        check (std::abs (out1) > 0.05f,
+               "(9) compressor 1 holds its OWN out", f1 (out1) + " dB (IN " + f1 (in1) + ")");
+        check (std::abs (out2) > 0.05f,
+               "(9) ...and compressor 2 holds ITS own  (RED as it stood: only one slot was ever held, and Sean's "
+               "log held the one doing no work)", f1 (out2) + " dB (IN " + f1 (in2) + ")");
+        check (std::abs (out1 - out2) > 0.05f,
+               "(9) ...to a DIFFERENT figure, because they are different compressors",
+               f1 (out1) + " vs " + f1 (out2) + " dB");
+        check (said.startsWith ("Built.") && said.contains ("Compressor 1") && said.contains ("Compressor 2"),
+               "(9) ...and ONE line names each of them  ((q) changed the wording to \"set as dialled, level "
+               "matched\" per compressor; what this leg is for is that BOTH are named)",
+               said.isEmpty() ? juce::String ("(nothing said)") : said);
+        check (! r.proc.calibLoad (uid).active() && r.proc.calibExtraFor (uid).empty(),
+               "(9) ...and every loop has ended - a build is a one-shot however many compressors it holds",
+               r.proc.calibLoad (uid).active() ? juce::String ("primary still active")
+                                              : juce::String (r.proc.calibExtraFor (uid).size()) + " companion(s) left");
+        int laterAsks = 0;
+        for (int k = 0; k < 4; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+            if (r.proc.calibTakeAsk (uid, &replaces).isNotEmpty()) ++laterAsks;
+        }
+        check (laterAsks == 0, "(9) ...and nothing is said afterwards", juce::String (laterAsks) + " ask(s)");
+    }
+
+    // ---- (9c) THE DEFECT ITSELF, on the road that had it ------------------------------------------------
+    {
+        std::printf ("\n-- (9c) the single-block road holds ONE slot, which is the fault --\n");
+        // The RED for (9) cannot be a compile against the pre-change tree: configsFromBlock and calibStartMany did
+        // not exist, so no leg that calls them builds there. This is the next best thing and it is a real one - the
+        // OLD road, calibStart with one block, on the SAME two-compressor rig. It holds the block's slot and leaves
+        // the other exactly where the build put it, which is Sean's log: the block went to the second compressor,
+        // which measured 0.0 dB of gain reduction, while the first did the work with no hold on it at all.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        const auto* gn = BuiltinDeviceRegistry::instance().findByName ("EchoJay Gain");
+        if (gn != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*gn));
+        pumpMs (200);
+        {   auto* pp = new juce::DynamicObject(); pp->setProperty ("level_db", 3.0);
+            auto* wv = new juce::DynamicObject(); wv->setProperty ("params", juce::var (pp));
+            r.h.setSlotStructuredSettings (1, juce::var (wv)); pumpMs (250); }
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        auto one = passiveDriveCfg ("Compressor 2");
+        one.slot = 1;                                   // the block names the SECOND compressor, as Sean's did
+        one.purpose = echojay::CalibLoop::Purpose::buildHold;
+        r.proc.calibStart (uid, one);
+        juce::String said; bool replaces = false;
+        for (int k = 0; k < 40 && said.isEmpty(); ++k)     // (m): the seek runs first
+        { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); said = r.proc.calibTakeAsk (uid, &replaces); }
+        check (std::abs (r.h.getSlotOutGainDb (1)) > 0.05f,
+               "(9c) the named slot IS held", f1 (r.h.getSlotOutGainDb (1)) + " dB");
+        check (std::abs (r.h.getSlotOutGainDb (0)) < 0.05f,
+               "(9c) ...and the OTHER compressor is left untouched - one block, one hold, which is the defect "
+               "`calibrations` exists to fix",
+               f1 (r.h.getSlotOutGainDb (0)) + " dB on the unheld slot");
+        check (said.startsWith ("Built.") && ! said.contains ("Compressor 2"),
+               "(9c) ...and its line can only speak for the one it held", said);
+    }
+
+    // ---- (9b) THE FALLBACK: ONE BLOCK, AS BEFORE -------------------------------------------------------
+    {
+        std::printf ("\n-- (9b) a chain with only the single `calibration` still works --\n");
+        // B's array is being added; a server that has not shipped it yet sends `calibration` alone, and the
+        // contract says a chain with NO compressor carries neither field - never an empty array.
+        auto* b = new juce::DynamicObject();
+        b->setProperty ("mode", "passive"); b->setProperty ("actuator", "drive"); b->setProperty ("slot", 1);
+        auto* only = new juce::DynamicObject(); only->setProperty ("calibration", juce::var (b));
+        std::vector<echojay::CalibLoop::Config> cfgs; juce::String why;
+        check (echojay::CalibLoop::configsFromBlock (juce::var (only), 2, false, nullptr, cfgs, why) == 1
+                   && cfgs.size() == 1 && cfgs[0].slot == 0,
+               "(9b) the single block is read when the array is absent",
+               juce::String ((int) cfgs.size()) + " config(s)");
+        auto* none = new juce::DynamicObject(); none->setProperty ("chain", juce::var());
+        std::vector<echojay::CalibLoop::Config> c2; juce::String w2;
+        check (echojay::CalibLoop::configsFromBlock (juce::var (none), 2, false, nullptr, c2, w2) == 0 && c2.empty(),
+               "(9b) ...and a chain with NEITHER field starts nothing",
+               juce::String ((int) c2.size()) + " config(s)");
+    }
+
+    // ---- (10) A NaN NEVER REACHES A WRITE (30 Sep 2026 ruling) -------------------------------------------
+    {
+        std::printf ("\n-- (10) start_db ABSENT opens from the staging, and no non-finite value is ever written --\n");
+        // My own guard run at 13:52:33 printed, and PASSED anyway:
+        //   "EchoJay Gain" slot 1 PASSIVE, ... dialling the drive from nan dB
+        //   slot 1 output gain set to nan dB
+        //   window 1 ... pre=nan post=nan
+        // It passed because the hold then wrote -6.0 over the top of it. The block in that leg carried NO start_db
+        // at all; configFromBlock yields NaN for absent exactly as it does for null, meaning "ask the host what is
+        // on the slot" - and the V2's caller never asked. LinkProcessor does ("start_db was null on a drive block -
+        // opening from the staging already on the slot"), which is why only this side showed it.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        // THE STAGING ALREADY ON THE SLOT, as a build leaves it.
+        r.h.setSlotPreTrimDb (0, 2.5f);
+        pumpMs (50);
+        check (std::abs (r.h.getSlotPreTrimDb (0) - 2.5f) < 0.01f,
+               "(10) precondition: the slot carries +2.5 dB of staging", f1 (r.h.getSlotPreTrimDb (0)) + " dB");
+        // A DRIVE BLOCK WITH start_db ABSENT - not null, absent.
+        auto* b = new juce::DynamicObject();
+        b->setProperty ("mode", "passive"); b->setProperty ("actuator", "drive"); b->setProperty ("slot", 1);
+        { juce::Array<juce::var> band; band.add (2.0); band.add (3.0); b->setProperty ("gr_target_db", band); }
+        auto* chainObj = new juce::DynamicObject(); chainObj->setProperty ("calibration", juce::var (b));
+        std::vector<echojay::CalibLoop::Config> cfgs; juce::String why;
+        echojay::CalibLoop::configsFromBlock (juce::var (chainObj), r.h.getNumSlots(), false, nullptr, cfgs, why);
+        check (cfgs.size() == 1 && ! (cfgs[0].startDb == cfgs[0].startDb),
+               "(10) precondition: the parser yields NaN for an ABSENT start_db, as it does for null",
+               cfgs.empty() ? juce::String ("no config") : juce::String (cfgs[0].startDb));
+        const juce::String uid;
+        for (auto& c : cfgs) c.purpose = echojay::CalibLoop::Purpose::buildHold;
+        r.proc.calibStartMany (uid, cfgs);
+        const float inAfter = r.h.getSlotPreTrimDb (0), outAfter = r.h.getSlotOutGainDb (0);
+        check (inAfter == inAfter && outAfter == outAfter,
+               "(10) neither IN nor OUT is left non-finite by the start  (RED as it stood: \"slot 1 output gain set "
+               "to nan dB\", and pre=nan post=nan in the window line)",
+               "IN " + f1 (inAfter) + " OUT " + f1 (outAfter));
+        check (std::abs (inAfter - 2.5f) < 0.01f,
+               "(10) ...and an ABSENT start_db opens from the STAGING, exactly as null does",
+               f1 (inAfter) + " dB, staging was 2.5");
+        const auto started = r.proc.calibLoad (uid);
+        check (started.value == started.value && started.preDb == started.preDb,
+               "(10) ...and the loop's own position is a number, so its first window cannot quote nan",
+               "value " + f1 (started.value) + " preDb " + f1 (started.preDb));
+        // THE WRITE PATH ITSELF REFUSES A NON-FINITE VALUE, whoever calls it and for whatever reason.
+        const float inWas = r.h.getSlotPreTrimDb (0), outWas = r.h.getSlotOutGainDb (0);
+        const float nan = std::numeric_limits<float>::quiet_NaN();
+        const float inf = std::numeric_limits<float>::infinity();
+        r.h.setSlotPreTrimDb (0, nan);   r.h.setSlotOutGainDb (0, nan);
+        r.h.setSlotPreTrimDb (0, inf);   r.h.setSlotOutGainDb (0, -inf);
+        pumpMs (50);
+        check (std::abs (r.h.getSlotPreTrimDb (0) - inWas) < 0.01f
+                   && std::abs (r.h.getSlotOutGainDb (0) - outWas) < 0.01f,
+               "(10) a NaN or an infinity handed to slot IN or OUT is REFUSED and the value is left alone  (RED as "
+               "it stood: it was written, and the window line quoted it back)",
+               "IN " + f1 (r.h.getSlotPreTrimDb (0)) + " (was " + f1 (inWas) + "), OUT "
+                   + f1 (r.h.getSlotOutGainDb (0)) + " (was " + f1 (outWas) + ")");
+        check (r.h.setSlotControlsToValue (0, juce::StringArray { "level_db" }, nan) == 0,
+               "(10) ...and so is a non-finite value handed to the actuator write");
+    }
+
+    // ---- (11) A COMPRESSOR'S INPUT IS NOT CEILINGED (letter (l), 30 Sep 2026 ruling) ---------------------
+    {
+        std::printf ("\n-- (11) the drive on a compressor slot is bounded by the slot range, not by input headroom --\n");
+        // Sean's 18:25:43-58: pre +1.0, then +2.0, then state=clamped, "band not reached - drive limited by
+        // headroom at +2.0 dB, working 0.0 dB". That is the -3 dBTP no-stage-above ceiling (21p item 3) applied at
+        // the COMPRESSOR'S INPUT: the track peaks at -5.0, so the loop allowed itself 2 dB and stopped on a
+        // compressor that had not begun to work. A compressor's input is meant to go over its threshold; the
+        // ceiling belongs on the OUT, which the hold owns.
+        //
+        // Driven on the loop directly, so the numbers are exact: a track peaking at -5.0 dBTP, gr far below a
+        // 2-3 dB band, opening at +2.0 so the 6-step budget (kMaxSteps) can reach +8.0.
+        auto runTo = [] (bool dynamics, float opening) -> echojay::CalibLoop
+        {
+            echojay::CalibLoop l;
+            l.begin ("NEOLD V76U73", 0, 2.0f, 3.0f, opening, echojay::CalibLoop::Purpose::askRung);
+            l.dynamicsSlot = dynamics;
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false;
+            w.grDb = 0.0f;                 // nothing like the band, so every window wants another dB
+            w.levelChangeDb = 0.0f;
+            // THE INPUT TRUE PEAK IS MEASURED AT THE CURRENT DRIVE, so it RISES with it - a fixture that holds it
+            // still is unphysical, and the first cut of this leg did exactly that: headroomLimit is
+            // preDb + (-3 - inTP), so a frozen inTP let the limit climb with the drive and nothing ever clamped.
+            // Sean's track peaks at -5.0 dBTP at the drive it was measured at, which makes the ceiling
+            // -3 - (-5) = +2.0 dB of drive, wherever the drive currently sits.
+            const float trackPeakAtUnityDrive = -5.0f;   // Sean's track, measured at unity drive
+            float heard = 0.0f;
+            for (int k = 0; k < 20; ++k)
+            {
+                w.heardSeconds = (heard += 4.0f);
+                w.inTruePeakDb = trackPeakAtUnityDrive + l.preDb;
+                l.onWindow (w, 3000.0);
+                if (l.state == echojay::CalibLoop::State::Clamped
+                    || l.state == echojay::CalibLoop::State::Adjusted) break;
+            }
+            return l;
+        };
+        // Opening at +2.0 so the 6-step budget can carry it to +8.0 - Sean's "gets +8, not +2".
+        const auto onComp = runTo (true, 2.0f);
+        check (std::abs (onComp.preDb - 8.0f) < 0.01f,
+               "(11) on a COMPRESSOR slot the drive reaches +8.0 dB on a track peaking at -5 dBTP  (RED as it "
+               "stood: headroomLimit = preDb + (-3 - inTP) stopped it, and Sean's log read \"drive limited by "
+               "headroom at +2.0 dB\")",
+               f1 (onComp.preDb) + " dB reached");
+        check (! onComp.headroomStopped,
+               "(11) ...and it never reports being stopped by headroom",
+               onComp.headroomStopped ? juce::String ("headroomStopped") : juce::String ("not headroom"));
+        check (std::abs (onComp.headroomLimit - echojay::CalibLoop::kDriveLimit) < 0.01f,
+               "(11) ...because its only bound is the slot range, +12 dB",
+               f1 (onComp.headroomLimit));
+        // THE OTHER DIRECTION, from the same code and the same window: a slot that is NOT dynamics keeps the 21p
+        // item 3 ceiling, so this is a gated change and not a deletion.
+        const auto onOther = runTo (false, 2.0f);
+        check (onOther.headroomStopped && onOther.preDb < 8.0f - 0.01f,
+               "(11) ...while a NON-dynamics slot still stops at the -3 dBTP ceiling, so the ceiling is gated and "
+               "not deleted",
+               f1 (onOther.preDb) + " dB, " + (onOther.headroomStopped ? "headroom" : "budget"));
+        check (std::abs (onOther.preDb - 2.0f) < 0.01f,
+               "(11) ...at +2.0 dB of drive, where the INPUT reaches -3.0 dBTP on a track peaking -5.0 at unity: "
+               "-3 - (-5) = +2, the 21p item 3 arithmetic untouched, and the figure Sean's 18:25:58 log printed "
+               "verbatim (\"drive limited by headroom at +2.0 dB\")",
+               f1 (onOther.preDb) + " dB, input now " + f1 (-5.0f + onOther.preDb) + " dBTP");
+        // ...and from Sean's own opening, 0.0, the same ceiling and the same number.
+        const auto seanOther = runTo (false, 0.0f);
+        check (seanOther.headroomStopped && std::abs (seanOther.preDb - 2.0f) < 0.01f,
+               "(11) ...and the ceiling is where the INPUT is, not where the drive started: opening at 0.0 stops at "
+               "+2.0 too",
+               f1 (seanOther.preDb) + " dB");
+        const auto seanComp = runTo (true, 0.0f);
+        check (std::abs (seanComp.preDb - 6.0f) < 0.01f && ! seanComp.headroomStopped,
+               "(11) ...while the SAME opening on a compressor slot spends its whole 6-step budget instead, and "
+               "stops on the budget rather than on a ceiling",
+               f1 (seanComp.preDb) + " dB");
+    }
+
+    // ---- (12) A BUILD SEEKS THE BAND (letter (m), 30 Sep 2026 ruling) ------------------------------------
+    {
+        std::printf ("\n-- (12) a passive build with gr=0.0 moves IN, and lands when GR enters the band --\n");
+        // Sean's 18:22:56-18:23:02: window 1 gr=-- waiting, window 2 gr=-- waiting, window 3 gr=0.0 pre=+0.0
+        // post=+0.0 band 2.0-3.0 state=landed-level-already-held, then "Built. Level already matched, nothing to
+        // hold." A reading of 0.0 against a 2-3 dB band is a compressor doing nothing, and the loop landed on it:
+        // (e)'s one-shot opened the settle ALREADY SPENT, so the step condition failed on its budget term whatever
+        // the reading said. Ruled: the build moves IN window by window until GR is in the band or the slot range is
+        // exhausted, capped at 12 windows, and only then does the hold set OUT once.
+        //
+        // A COMPRESSOR MODELLED HONESTLY: gr rises with the drive (1 dB of GR for every 2 dB of drive over a
+        // threshold the drive is pushing into), so the band is reachable and the seek has somewhere to go.
+        auto seek = [] (float grPerDb, float* grOut, int* windowsOut) -> echojay::CalibLoop
+        {
+            echojay::CalibLoop::Config cfg;
+            cfg.plugin = "NEOLD V76U73"; cfg.slot = 0; cfg.lo = 2.0f; cfg.hi = 3.0f;
+            cfg.mode = echojay::CalibLoop::Mode::Passive;
+            cfg.actuator = echojay::CalibLoop::Actuator::Drive;
+            cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+            // (q) 30 Sep 2026: the SEEK is the non-compressor case now. A compressor build takes no drive at all
+            // and is proved by (16) below.
+            cfg.startDb = 0.0f; cfg.working = true; cfg.dynamicsSlot = false;
+            echojay::CalibLoop l; l.begin (cfg);
+            echojay::CalibLoop::Window w;
+            w.measured = true; w.silent = false; w.inTruePeakDb = -20.0f;
+            float heard = 0.0f; int windows = 0;
+            for (int k = 0; k < 40; ++k)
+            {
+                w.grDb = juce::jmax (0.0f, l.preDb * grPerDb);
+                w.levelChangeDb = 0.0f;
+                w.slotOutGainDb = l.slotGainDb; w.slotPreTrimDb = l.preDb;
+                w.heardSeconds = (heard += 4.0f);
+                ++windows;
+                const auto st = l.onWindow (w, 3000.0);
+                if (st.ask.isNotEmpty() || ! l.active()) break;
+            }
+            if (grOut != nullptr) *grOut = w.grDb;
+            if (windowsOut != nullptr) *windowsOut = windows;
+            return l;
+        };
+        float grAt = 0.0f; int windows = 0;
+        const auto reached = seek (0.5f, &grAt, &windows);   // 0.5 dB of GR per dB of drive -> in band by +4..+6
+        check (std::abs (reached.preDb) > 0.05f,
+               "(12) the build MOVED the drive instead of landing on gr=0.0  (RED as it stood: the settle opened "
+               "already spent and window 3 read state=landed-level-already-held at pre=+0.0)",
+               "drive " + f1 (reached.preDb) + " dB after " + juce::String (windows) + " window(s)");
+        check (reached.landedInBand,
+               "(12) ...and it landed when the gain reduction entered the 2-3 dB band",
+               "gr " + f1 (grAt) + " dB, band 2.0-3.0, landedInBand="
+                   + (reached.landedInBand ? "y" : "n"));
+        check (grAt >= 2.0f - 0.05f && grAt <= 3.0f + 0.05f,
+               "(12) ...with the reading actually inside it", f1 (grAt) + " dB");
+        check (windows <= echojay::CalibLoop::kBuildMaxWindows + 2,
+               "(12) ...inside the 12-window cap", juce::String (windows) + " window(s)");
+        check (reached.askOwed.startsWith ("Built."),
+               "(12) ...and it closes with one \"Built.\" line", reached.askOwed);
+        check (reached.askOwed.contains ("Drive") && reached.askOwed.contains ("gain reduction")
+                   && reached.askOwed.contains ("Output"),
+               "(12) ...carrying the three numbers: the IN it moved, the GR it read, the OUT it set",
+               reached.askOwed);
+        check (! reached.active(),
+               "(12) ...and the loop has still ENDED at its close, as (g) ruled",
+               reached.active() ? juce::String ("still active") : juce::String ("ended"));
+
+        // A COMPRESSOR THAT CANNOT REACH THE BAND: the drive runs out of slot range and the line SAYS SO, with
+        // the numbers, in the same sentence.
+        float grFlat = 0.0f; int windowsFlat = 0;
+        const auto notReached = seek (0.0f, &grFlat, &windowsFlat);   // no GR however hard it is driven
+        check (! notReached.landedInBand,
+               "(12) a compressor that cannot reach the band does not claim to have",
+               "gr " + f1 (grFlat) + " dB");
+        check (std::abs (notReached.preDb - echojay::CalibLoop::kDriveLimit) < 0.05f
+                   || windowsFlat >= echojay::CalibLoop::kBuildMaxWindows,
+               "(12) ...it spends the slot range or the window cap first",
+               "drive " + f1 (notReached.preDb) + " dB, " + juce::String (windowsFlat) + " window(s)");
+        check (notReached.askOwed.contains ("band was not reached"),
+               "(12) ...and says so in the same line  (RED as it stood: \"Level already matched, nothing to hold.\", "
+               "which says nothing about the compressor at all)",
+               notReached.askOwed);
+        check (notReached.askOwed.contains ("Drive") && notReached.askOwed.contains ("0.0 dB of gain reduction"),
+               "(12) ...with the numbers beside it", notReached.askOwed);
+    }
+
+    // ---- (12b) THE min_db NOTE ONLY WHERE IT GOVERNS SOMETHING -------------------------------------------
+    {
+        std::printf ("\n-- (12b) min_db null on a DRIVE block is not a contract violation --\n");
+        // It was firing on every block: the server sends every block as drive with param null and min_db null, and
+        // min_db bounds the THRESHOLD actuator's control - which the loop no longer writes at all.
+        auto blk = [] (const char* actuator) {
+            auto* b = new juce::DynamicObject();
+            b->setProperty ("mode", "passive"); b->setProperty ("actuator", actuator);
+            b->setProperty ("slot", 1); b->setProperty ("min_db", juce::var());
+            if (juce::String (actuator) == "threshold")
+            { b->setProperty ("param", "Threshold"); b->setProperty ("sense", "lower_is_harder"); }
+            return juce::var (b);
+        };
+        echojay::CalibLoop::Config c1; juce::String why1;
+        echojay::CalibLoop::configFromBlock (blk ("drive"), 2, false, "NEOLD V76U73", c1, why1);
+        check (! why1.contains ("min_db null"),
+               "(12b) a DRIVE block with min_db null is NOT reported as a contract violation  (RED as it stood: the "
+               "line fired on every block)",
+               why1.isEmpty() ? juce::String ("(nothing said)") : why1);
+        echojay::CalibLoop::Config c2; juce::String why2;
+        echojay::CalibLoop::configFromBlock (blk ("threshold"), 2, false, "NEOLD V76U73", c2, why2);
+        check (why2.contains ("min_db null"),
+               "(12b) ...while a THRESHOLD block still is, because there the range governs the write", why2);
+    }
+
+    // ---- (14) NO HOLD ENDS IN SILENCE (letter (o), 30 Sep 2026 ruling) -----------------------------------
+    {
+        std::printf ("\n-- (14) a companion hold outlives its primary, and every hold says how it ended --\n");
+        // Sean's 19:02 session: "The Mike-E companion hold logged its start and then nothing: no window, no OUT
+        // write, no end line." The cause was structural - calibTick returned at `if (! loop.active()) return {}`,
+        // and the PRIMARY goes inactive at its own close, so from that tick on no companion was ever advanced
+        // again. Ruled: every hold ends with exactly one line saying how it ended; if a primary cancels, its
+        // companion carries on or logs its own cancel; and the watchdog counts only loops still alive.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        // TWO DIFFERENT plugins: a reorder of two identical ones leaves both identities unchanged, so under (n)
+        // nothing cancels - correctly. The first cut of this leg used two EchoJay Gains and asserted a cancel that
+        // must not happen.
+        const auto* lim2 = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        if (lim2 != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*lim2));
+        pumpMs (200);
+        check (r.h.getNumSlots() == 2 && r.h.slotIdentityKey (0) != r.h.slotIdentityKey (1),
+               "(14) precondition: two slots, different plugins",
+               juce::String (r.h.getNumSlots()) + " slot(s)");
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        std::vector<echojay::CalibLoop::Config> cfgs;
+        for (int sl = 0; sl < 2; ++sl)
+        { auto c = passiveDriveCfg (sl == 0 ? "Compressor 1" : "Compressor 2");
+          c.slot = sl; c.purpose = echojay::CalibLoop::Purpose::buildHold; cfgs.push_back (c); }
+        check (r.proc.calibStartMany (uid, cfgs) == 2, "(14) precondition: two holds started");
+        // THE PRIMARY IS CANCELLED under it - its slot changes identity - while the companion is still working.
+        for (int k = 0; k < 2; ++k) { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
+        r.h.moveSlot (0, +1);
+        pumpMs (200);
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+        check (! r.proc.calibLoad (uid).running(),
+               "(14) the primary is cancelled by the reorder, as (n) requires",
+               r.proc.calibLoad (uid).running() ? juce::String ("still running") : juce::String ("cancelled"));
+        // ...and the COMPANION carries on: it is still advanced, window by window, and it finishes.
+        int companionWindows = 0;
+        for (int k = 0; k < 30; ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+            ++companionWindows;
+            if (r.proc.calibExtraFor (uid).empty()) break;
+            bool anyAlive = false;
+            for (const auto& c : r.proc.calibExtraFor (uid)) if (c.active()) anyAlive = true;
+            if (! anyAlive) break;
+        }
+        bool stillAlive = false;
+        for (const auto& c : r.proc.calibExtraFor (uid)) if (c.active()) stillAlive = true;
+        check (! stillAlive,
+               "(14) the companion CARRIES ON after its primary is cancelled and finishes  (RED as it stood: "
+               "calibTick returned early on an inactive primary, so the companion was never advanced again - no "
+               "window, no OUT write, no end line)",
+               stillAlive ? juce::String ("still running after " + juce::String (companionWindows) + " window(s)")
+                          : juce::String ("finished in " + juce::String (companionWindows) + " window(s)"));
+        check (std::abs (r.h.getSlotOutGainDb (0)) > 0.05f || std::abs (r.h.getSlotOutGainDb (1)) > 0.05f,
+               "(14) ...and it wrote its own slot's OUT",
+               "OUT1 " + f1 (r.h.getSlotOutGainDb (0)) + " OUT2 " + f1 (r.h.getSlotOutGainDb (1)));
+        bool replaces = false;
+        const auto said = r.proc.calibTakeAsk (uid, &replaces);
+        check (said.isNotEmpty() && said.startsWith ("Built."),
+               "(14) ...and the build still posts ONE closing line even though the primary died",
+               said.isEmpty() ? juce::String ("(nothing said)") : said);
+        check (said.contains ("cancelled"),
+               "(14) ...which says the primary's hold was cancelled rather than quietly omitting it", said);
+    }
+
+    // ---- (14b) THE WATCHDOG COUNTS LIVE LOOPS AND NAMES THE DEAD (letter (o)) -----------------------------
+    {
+        std::printf ("\n-- (14b) \"loops alive N of M\", and the dead ones by name --\n");
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        if (lim != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+        pumpMs (200);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        std::vector<echojay::CalibLoop::Config> cfgs;
+        for (int sl = 0; sl < 2; ++sl)
+        { auto c = passiveDriveCfg (sl == 0 ? "Compressor 1" : "Compressor 2");
+          c.slot = sl; c.purpose = echojay::CalibLoop::Purpose::buildHold; cfgs.push_back (c); }
+        r.proc.calibStartMany (uid, cfgs);
+        // One window, so the companion sweep has reported at least once.
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+        r.h.setLoopsStarted (2);
+        const auto before = r.h.loopsWatchdogLine();
+        check (before.contains ("loops alive"),
+               "(14b) the headline reports loops ALIVE, not loops started  (RED as it stood: \"loops started 1 of "
+               "1\" was true of a loop that had died in silence)",
+               before.fromFirstOccurrenceOf ("loops", true, false).substring (0, 60));
+        // Kill them both by taking their slots away, then sweep once more.
+        while (r.h.getNumSlots() > 0) r.h.removeSlot (0);
+        pumpMs (200);
+        feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid);
+        const auto after = r.h.loopsWatchdogLine();
+        check (after.contains ("ended:"),
+               "(14b) ...and NAMES the dead ones once they have ended",
+               after.fromFirstOccurrenceOf ("loops", true, false).substring (0, 110));
+    }
+
+    // ---- (15) THE FOUR CORRECTIONS TO (n) AND (o) (30 Sep 2026, second ruling) ---------------------------
+    {
+        std::printf ("\n-- (15a) an ABSENT fingerprint is not a DIFFERENT one --\n");
+        // "slotIdentityKey is fp|uid and fp can be empty. A loop stamped before the fp is known, then compared
+        // after it fills in, sees \"|uid\" -> \"fp|uid\" and false-cancels, the same fault through a different door."
+        // The comparison is now field by field, and only on fields BOTH sides carry.
+        auto key = [] (const char* uid, const char* fp, const char* name)
+        { return "uid=" + juce::String (uid) + ";fp=" + juce::String (fp) + ";name=" + juce::String (name); };
+        check (ChainHost::slotIdentityStillMatches (key ("8c09913c", "", "NEOLD V76U73"),
+                                                   key ("8c09913c", "75e4aa", "NEOLD V76U73")),
+               "(15a) a fingerprint FILLING IN does not cancel the loop  (RED as it stood: \"|uid\" != \"fp|uid\" by "
+               "string compare, so the loop cancelled itself the moment the map arrived)");
+        check (ChainHost::slotIdentityStillMatches (key ("8c09913c", "75e4aa", "NEOLD V76U73"),
+                                                   key ("8c09913c", "", "NEOLD V76U73")),
+               "(15a) ...nor one going away again");
+        check (! ChainHost::slotIdentityStillMatches (key ("8c09913c", "75e4aa", "NEOLD V76U73"),
+                                                     key ("934518", "19c8bb", "Looptrotter SA2RATE2")),
+               "(15a) ...while a DIFFERENT plugin still cancels: the uid decides whenever both carry one");
+        check (! ChainHost::slotIdentityStillMatches (key ("8c09913c", "75e4aa", "X"),
+                                                     key ("8c09913c", "OTHERFP", "X")),
+               "(15a) ...and the same uid with two DIFFERENT non-empty fingerprints is a different binary");
+        check (! ChainHost::slotIdentityStillMatches (key ("", "", "EchoJay Gain"),
+                                                     key ("", "", "EchoJay Limiter")),
+               "(15a) ...and two built-ins, which carry neither uid nor fp, are told apart by name");
+        check (ChainHost::slotIdentityStillMatches ({}, key ("8c09913c", "75e4aa", "X"))
+                   && ChainHost::slotIdentityStillMatches (key ("8c09913c", "75e4aa", "X"), {}),
+               "(15a) ...and nothing comparable is never a cancel - a cancel must not be a guess");
+    }
+    {
+        std::printf ("\n-- (15b) a pending SETTLE JOB holds the build-settled gate --\n");
+        // "dialStateSettled waits for in-flight map fetches but not for pending settle jobs (settleJobs_), and the
+        // brief asked for both. The 19:03:33 settle that landed after the gate was a deferred settle, and the
+        // settle job itself bumps the rev."
+        //
+        // MEASURED while writing this leg: a settle job is queued ONLY when a write mismatched on the IMMEDIATE
+        // read - a hosted plugin whose display is one write behind (the WaveShell case kSettleBoundMs exists for).
+        // A built-in's write is exact and immediate, so this rig's own slots can never queue one. The leg therefore
+        // drives a REAL plugin (Apple's AUDelay) and, if no job ever appears, says so instead of passing quietly.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        check (r.h.dialStateSettled() && r.h.pendingSettleJobs() == 0,
+               "(15b) precondition: a clean rack is settled with no settle job queued",
+               juce::String (r.h.pendingSettleJobs()) + " job(s)");
+        juce::PluginDescription dly;
+        dly.name = "AUDelay"; dly.pluginFormatName = "AudioUnit";
+        dly.fileOrIdentifier = "AudioUnit:Effects/aufx,dely,appl";
+        dly.uniqueId = dly.deprecatedUid = (int) (juce::int64) juce::String ("64607a6d").getHexValue64();
+        r.h.onNeedParamMaps = [] (const juce::StringArray&) {};
+        r.h.loadPluginAsync (dly, ChainHost::LoadOrigin::User, [] (const juce::String&) {});
+        for (int k = 0; k < 40 && r.h.getNumSlots() < 2; ++k) pumpMs (100);
+        int sawJobs = 0; bool gateHeldWhilePending = true;
+        for (int attempt = 0; attempt < 6 && sawJobs == 0; ++attempt)
+        {
+            auto* pp = new juce::DynamicObject();
+            pp->setProperty ("delay time", 0.10 + 0.05 * attempt);
+            pp->setProperty ("dry/wet mix", 40.0 + attempt);
+            auto* wv = new juce::DynamicObject(); wv->setProperty ("params", juce::var (pp));
+            r.h.setSlotStructuredSettings (1, juce::var (wv));
+            for (int k = 0; k < 10; ++k)
+            {
+                if (r.h.pendingSettleJobs() > 0)
+                {
+                    ++sawJobs;
+                    if (r.h.dialStateSettled()) gateHeldWhilePending = false;   // the fault this leg is for
+                    break;
+                }
+                pumpMs (10);
+            }
+            for (int k = 0; k < 40 && r.h.pendingSettleJobs() > 0; ++k) pumpMs (50);
+        }
+        if (sawJobs > 0)
+        {
+            check (gateHeldWhilePending,
+                   "(15b) a slot with a PENDING SETTLE holds \"dial settled\" until it lands  (RED as it stood: the "
+                   "gate read per-slot dial status and in-flight fetches only, so a deferred settle landed after it "
+                   "and bumped the rack revision under a loop that had just started)",
+                   gateHeldWhilePending ? juce::String ("held") : juce::String ("OPENED while a settle was pending"));
+            check (r.h.pendingSettleJobs() == 0 && r.h.dialStateSettled(),
+                   "(15b) ...and opens once the settle has landed, so the gate is a wait and not a block",
+                   juce::String (r.h.pendingSettleJobs()) + " job(s) left");
+        }
+        else
+        {
+            // NOT a silent skip: the term is asserted where it CAN be, and the gap is printed.
+            check (! r.h.dialStateSettled() || r.h.pendingSettleJobs() == 0,
+                   "(15b) the gate and the settle-job count agree: it is never settled while a job is queued "
+                   "(no deferred settle could be provoked on this machine - AUDelay's writes read back immediately, "
+                   "so the WaveShell case this term exists for is not reproducible here; the term itself is pinned "
+                   "by the arithmetic above)",
+                   juce::String (r.h.pendingSettleJobs()) + " job(s), settled="
+                       + (r.h.dialStateSettled() ? "y" : "n"));
+        }
+    }
+    {
+        std::printf ("\n-- (15c) the dead list keeps its names, and a normal close is not a cancel --\n");
+        // "The dead list is local to each sweep and setLoopsAlive overwrites it every window, so a hold that ended
+        // earlier loses its name the next window." And: "check that a primary that closed normally is not labelled
+        // 'the primary (cancelled)'."
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        if (lim != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+        pumpMs (200);
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        std::vector<echojay::CalibLoop::Config> cfgs;
+        for (int sl = 0; sl < 2; ++sl)
+        { auto c = passiveDriveCfg (sl == 0 ? "Compressor 1" : "Compressor 2");
+          c.slot = sl; c.purpose = echojay::CalibLoop::Purpose::buildHold; cfgs.push_back (c); }
+        r.proc.calibStartMany (uid, cfgs);
+        // Run to the end of both holds, then keep ticking well past it.
+        for (int k = 0; k < 40; ++k) { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
+        const auto lineJustAfter = r.h.loopsWatchdogLine();
+        for (int k = 0; k < 6; ++k) { feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); }
+        const auto lineMuchLater = r.h.loopsWatchdogLine();
+        check (lineJustAfter.contains ("ended:"),
+               "(15c) the headline names what ended", lineJustAfter.fromFirstOccurrenceOf ("loops", true, false));
+        check (lineMuchLater.contains ("ended:"),
+               "(15c) ...and STILL names it six windows later  (RED as it stood: the dead list was local to each "
+               "sweep, so setLoopsAlive overwrote it with an empty one on the next window)",
+               lineMuchLater.fromFirstOccurrenceOf ("loops", true, false));
+        check (! lineMuchLater.contains ("cancelled"),
+               "(15c) ...and a hold that CLOSED normally is not called cancelled",
+               lineMuchLater.fromFirstOccurrenceOf ("ended:", true, false));
+    }
+
+    // ---- (16) A COMPRESSOR BUILD IS SET AS DIALLED (letter (q), 30 Sep 2026 ruling) -----------------------
+    {
+        std::printf ("\n-- (16) on a build, a compressor slot gets NO drive seek --\n");
+        // Ruled while compressor calibration is redesigned around measured profiles: "on a build, a compressor slot
+        // gets NO drive seek. IN stays 0, the hold matches level on OUT once, and the closing line says 'set as
+        // dialled, level matched' per compressor. Keep the loop code for non-compressor slots."
+        // THE SLOT HAS TO READ AS DYNAMICS for the rule to apply, and an EchoJay Gain does not - the first cut of
+        // this leg used one, so `dynamicsSlot` was false and the build seeked exactly as (m) says a non-compressor
+        // should. The limiter's category carries "limit", which is one of the words slotIsDynamics reads.
+        Rig r (ChannelType::LeadVocal, 6.0f);
+        const auto* lim = BuiltinDeviceRegistry::instance().findByName ("EchoJay Limiter");
+        check (lim != nullptr, "(16) precondition: a dynamics built-in is registered");
+        if (lim != nullptr) EchoJayBorrowHostTestAccess::loadBuiltin (r.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+        pumpMs (200);
+        check (r.h.slotIsDynamics (1), "(16) precondition: slot 2 reads as dynamics");
+        feed (r.proc, r.prog, 6.0);
+        const juce::String uid;
+        auto cfg = passiveDriveCfg ("EchoJay Limiter");
+        cfg.slot = 1;
+        cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+        cfg.working = true;
+        cfg.startDb = 0.0f;
+        const int started = r.proc.calibStartMany (uid, { cfg });
+        check (started == 1, "(16) precondition: the hold started", juce::String (started));
+        check (r.proc.calibLoad (uid).dynamicsSlot,
+               "(16) precondition: the slot reads as dynamics, so the no-seek rule applies to it");
+        juce::String said; bool replaces = false; int windows = 0;
+        for (int k = 0; k < 20 && said.isEmpty(); ++k)
+        {
+            feed (r.proc, r.prog, 3.0); r.virtualMs += 3050.0; r.proc.calibTick (uid); ++windows;
+            said = r.proc.calibTakeAsk (uid, &replaces);
+        }
+        const auto done = r.proc.calibLoad (uid);
+        check (std::abs (r.h.getSlotPreTrimDb (1)) < 0.05f,
+               "(16) IN STAYS 0 - no drive is written at all  (RED as it stood after (m): the build seeked the band "
+               "and drove IN up to the slot range)",
+               f1 (r.h.getSlotPreTrimDb (1)) + " dB on IN");
+        check (done.steps == 0 && done.settleSteps == 0,
+               "(16) ...and it took no rung",
+               juce::String (done.steps) + " step(s), settle " + juce::String (done.settleSteps));
+        // The hold writes AT MOST ONCE and the figure is whatever this slot's own residual is - the limiter at its
+        // defaults may owe nothing, and "level already matched" is then the honest line.
+        check (done.holdWrites <= 1,
+               "(16) ...while the HOLD runs at most once on OUT",
+               juce::String (done.holdWrites) + " write(s), OUT " + f1 (r.h.getSlotOutGainDb (1)) + " dB");
+        check (said.containsIgnoreCase ("set as dialled")
+                   && (said.contains ("level matched") || said.contains ("level already matched")),
+               "(16) ...and the closing line says \"set as dialled\" with what it did about the level",
+               said.isEmpty() ? juce::String ("(nothing said)") : said);
+        check (! said.contains ("Drive ") && ! said.contains ("band was not reached"),
+               "(16) ...with no drive figure and no band claim, because it was not driven", said);
+        check (! done.active(),
+               "(16) ...and the loop ends at its close",
+               done.active() ? juce::String ("still active") : juce::String ("ended"));
+        // TWO COMPRESSORS: the phrase is per compressor.
+        Rig r2 (ChannelType::LeadVocal, 6.0f);
+        if (lim != nullptr)
+        {   // two dynamics slots, so the no-seek rule applies to both
+            EchoJayBorrowHostTestAccess::loadBuiltin (r2.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+            EchoJayBorrowHostTestAccess::loadBuiltin (r2.h, BuiltinDeviceRegistry::descriptionFor (*lim));
+        }
+        pumpMs (300);
+        // ...and a dynamics slot that OWES something, so the hold's write is proved and not merely permitted:
+        // the limiter's input_db makes it genuinely louder out than in.
+        {
+            auto* pp = new juce::DynamicObject(); pp->setProperty ("input_db", 6.0);
+            auto* wv = new juce::DynamicObject(); wv->setProperty ("params", juce::var (pp));
+            r2.h.setSlotStructuredSettings (1, juce::var (wv)); pumpMs (300);
+        }
+        check (r2.h.getNumSlots() == 3 && r2.h.slotIsDynamics (1) && r2.h.slotIsDynamics (2),
+               "(16) precondition: two dynamics slots for the per-compressor line",
+               juce::String (r2.h.getNumSlots()) + " slot(s)");
+        feed (r2.proc, r2.prog, 6.0);
+        std::vector<echojay::CalibLoop::Config> two;
+        for (int sl = 1; sl <= 2; ++sl)
+        { auto c = passiveDriveCfg (sl == 1 ? "Comp A" : "Comp B");
+          c.slot = sl; c.purpose = echojay::CalibLoop::Purpose::buildHold; c.startDb = 0.0f; two.push_back (c); }
+        r2.proc.calibStartMany (uid, two);
+        juce::String said2;
+        for (int k = 0; k < 20 && said2.isEmpty(); ++k)
+        { feed (r2.proc, r2.prog, 3.0); r2.virtualMs += 3050.0; r2.proc.calibTick (uid);
+          said2 = r2.proc.calibTakeAsk (uid, &replaces); }
+        check (said2.contains ("Compressor 1 set as dialled") && said2.contains ("Compressor 2 set as dialled"),
+               "(16) the phrase is PER COMPRESSOR in a two-compressor build", said2);
+        check (std::abs (r2.h.getSlotPreTrimDb (1)) < 0.05f && std::abs (r2.h.getSlotPreTrimDb (2)) < 0.05f,
+               "(16) ...and neither IN was written",
+               "IN1 " + f1 (r2.h.getSlotPreTrimDb (1)) + " IN2 " + f1 (r2.h.getSlotPreTrimDb (2)));
+        // THE HOLD DOES WRITE when there is something to match - the slot driven +6 dB by its own input gain gets
+        // its OUT pulled down, with IN still untouched. Without this the rule would only be shown as "permitted".
+        check (r2.h.getSlotOutGainDb (1) < -1.0f,
+               "(16) ...while the slot that IS louder out than in has its OUT pulled down by the hold",
+               "OUT1 " + f1 (r2.h.getSlotOutGainDb (1)) + " dB with IN at "
+                   + f1 (r2.h.getSlotPreTrimDb (1)));
+        check (said2.containsIgnoreCase ("level matched"),
+               "(16) ...and its line says the level was matched, not that it already was", said2);
     }
 
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",

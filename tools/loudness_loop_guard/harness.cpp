@@ -899,7 +899,7 @@ static int guardMain()
         {   // (1) it drives to the band and ENDS there - the RED is a drive that never moves and a card that
             //     never leaves "Listening".
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             check (loop.card() == "Listening... play the loudest part",
                    "21t-d (1). it opens on \"Listening... play the loudest part\"", loop.card());
             juce::StringArray logs; bool done = false; float drive = 0.0f; juce::String closing;
@@ -915,7 +915,7 @@ static int guardMain()
             check (drive > 0.5f,
                    "21t-d (1). ...by moving the drive, 1 dB at a time  (RED as it stood: nothing moved it)",
                    juce::String (drive, 1) + " dB");
-            check (loop.state == echojay::CalibLoop::State::Adjusted,
+            check (loop.endedAs == echojay::CalibLoop::State::Adjusted,
                    "21t-d (1). ...and it ends ADJUSTED, in the band", juce::String ((int) loop.state));
             check (loop.lastGr >= 2.0f && loop.lastGr <= 3.0f,
                    "21t-d (1). ...with the last measured GR inside 2-3 dB", juce::String (loop.lastGr, 2));
@@ -938,7 +938,7 @@ static int guardMain()
         {   // (2) no audio: it pauses at 30 s and resumes, and nothing is written while it waits
             std::printf ("\n== 21t-d (2): silence pauses the loop at 30 s, and it resumes ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             bool wrote = false;
             for (int w = 0; w < 9; ++w)   // 9 x 3 s = 27 s: not yet
             {
@@ -972,7 +972,7 @@ static int guardMain()
         {   // (3) the clamp: the band cannot be reached by drive alone, and the line says so honestly
             std::printf ("\n== 21t-d (3): the drive limit ends it with the figure it measured ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 11.0f);   // one step from the +12 limit
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 11.0f, echojay::CalibLoop::Purpose::askRung);   // one step from the +12 limit
             juce::String closing; bool done = false;
             for (int w = 0; w < 20 && ! done; ++w)
             {
@@ -980,7 +980,7 @@ static int guardMain()
                 const auto st = loop.onWindow (win, 3000.0);
                 if (st.finished) { done = true; closing = st.closing; }
             }
-            check (done && loop.state == echojay::CalibLoop::State::Clamped,
+            check (done && loop.endedAs == echojay::CalibLoop::State::Clamped,
                    "21t-d (3). it ends CLAMPED rather than driving past +/-12", juce::String (loop.preDb, 1) + " dB");
             check (std::abs (loop.preDb) <= 12.0f + 1.0e-4f,
                    "21t-d (3). ...and the drive never left the limit", juce::String (loop.preDb, 1));
@@ -997,7 +997,7 @@ static int guardMain()
                    "21t-e. a loop that was never begun is not running", juce::String ((int) none.state));
             // ...and one that IS begun for a compressor is - so the difference is the chain, not the code path.
             echojay::CalibLoop comp;
-            comp.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            comp.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             check (comp.running() && comp.plugin == "EJ Test Compressor",
                    "21t-e. ...while a compressor's loop is", comp.plugin);
             // The retirement itself is a V2-side fact (no compose-time pre-gain), asserted where it lives: the
@@ -1007,7 +1007,7 @@ static int guardMain()
         {   // (5) HEADROOM: the drive limit is min(+12, the drive that brings the input to -3 dBTP)
             std::printf ("\n== 21t-d (5): the drive stops where the INPUT runs out of headroom ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             // The fixture's slot input sits at -9 dBTP at 0 dB of drive, and it RISES WITH THE DRIVE, because a
             // pre-gain is what the drive is. -3 is the ceiling, so +6 dB is the last drive that does not clip it.
             float drive = 0.0f; juce::String closing; bool done = false;
@@ -1027,11 +1027,11 @@ static int guardMain()
                    juce::String (drive, 1) + " dB");
             check (closing.contains ("band not reached - drive limited by headroom at +6.0 dB, working 0.5 dB"),
                    "21t-d (5). ...and says so in the ruled words", closing);
-            check (loop.state == echojay::CalibLoop::State::Clamped && loop.headroomStopped,
+            check (loop.endedAs == echojay::CalibLoop::State::Clamped && loop.headroomStopped,
                    "21t-d (5). ...as a HEADROOM stop, not a step-budget one");
             // With headroom to spare the limit is the ordinary +12 again.
             echojay::CalibLoop loop2;
-            loop2.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            loop2.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             float drive2 = 0.0f; bool done2 = false;
             for (int w = 0; w < 30 && ! done2; ++w)
             {
@@ -1050,7 +1050,7 @@ static int guardMain()
         {   // (4) the handover: the step count survives the move to the other host
             std::printf ("\n== 21t-d (4): a handover continues the loop, it does not restart it ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             for (int w = 0; w < 4; ++w)
             {
                 echojay::CalibLoop::Window win; win.measured = true; win.silent = false; win.grDb = 0.3f;
@@ -1082,7 +1082,7 @@ static int guardMain()
         {   // a dropped window is not a measurement
             std::printf ("\n== 21t-d: a window with dropped frames is not a measurement ==\n");
             echojay::CalibLoop loop;
-            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f);
+            loop.begin ("EJ Test Compressor", 0, 2.0f, 3.0f, 0.0f, echojay::CalibLoop::Purpose::askRung);
             echojay::CalibLoop::Window bad; bad.measured = false; bad.silent = false; bad.grDb = 0.0f;
             const auto st = loop.onWindow (bad, 3000.0);
             check (! st.writeDrive && loop.steps == 0 && loop.noSignalMs == 0.0,

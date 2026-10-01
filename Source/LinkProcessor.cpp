@@ -418,7 +418,7 @@ void LinkProcessor::calibTickOwnRack()
             // 21t-m item 6c: THE HOST THAT TAKES OVER STAMPS ITS OWN REVISION. chainRevision is per-ChainHost,
             // so the number V2 stamped means nothing here; comparing against it would cancel every loop the
             // moment the lease came back, which is the opposite of what case (4) requires.
-            calibLoop_.chainRev = chainHost.getChainRevision();
+            calibLoop_.slotIdent = chainHost.slotIdentityKey (calibLoop_.slot);   // (n): re-stamped on handover
         }
     }
     if (! calibLoop_.active()) return;
@@ -427,13 +427,13 @@ void LinkProcessor::calibTickOwnRack()
     // 21t-m item 6c (29 Sep 2026 ruling): A LOOP THE RACK MOVED UNDER IS CANCELLED HERE TOO. Sean's log is the
     // V2's, but a loop handed to the Link runs on the Link's own chain, and a rebuild there leaves exactly the
     // same stale loop re-posting a line for a plugin that has gone. Same test, same counter, same cancellation.
-    if (calibLoop_.chainRev >= 0 && chainHost.getChainRevision() != calibLoop_.chainRev)
+    // (n) 30 Sep 2026: SLOT IDENTITY, not the rack revision - see PluginProcessor::calibTick for why.
+    const auto nowIdent = chainHost.slotIdentityKey (calibLoop_.slot);
+    if (! ChainHost::slotIdentityStillMatches (calibLoop_.slotIdent, nowIdent))
     {
-        EchoJay_NSLog (("EJThreshold: CANCELLED - the rack was rebuilt under this loop (rev "
-                        + juce::String (calibLoop_.chainRev) + " -> "
-                        + juce::String (chainHost.getChainRevision()) + "), so \"" + calibLoop_.plugin
-                        + "\" at slot " + juce::String (calibLoop_.slot + 1)
-                        + " is not the slot it was started on; its pending line is dropped with it").toRawUTF8());
+        EchoJay_NSLog (("EJThreshold: CANCELLED - slot " + juce::String (calibLoop_.slot + 1)
+                        + " no longer holds \"" + calibLoop_.plugin + "\" (" + calibLoop_.slotIdent
+                        + " -> " + nowIdent + "); its pending line is dropped with it").toRawUTF8());
         calibLoop_ = {};
         {   // the same direct write the judged-window path below uses: V2 renders the card from this
             auto rc = LinkShm::readRackSidecar (resolvedDir, instanceUid_);
@@ -2376,7 +2376,7 @@ ChainHost::PlanResult LinkProcessor::applyStructurePlanAndSync(
         for (int i = 0; i < chainHost.getNumSlots(); ++i)
         {
             if (! chainHost.getSlotInfo(i).bypassed)
-                EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i)
+                EchoJay_NSLog(("EJLease: INVARIANT BROKEN - slot " + juce::String(i + 1)
                                + " (\"" + chainHost.getSlotInfo(i).name
                                + "\") attached LIVE under the lease; bypassing it now").toRawUTF8());
             chainHost.setLeaseBypass(i, true);
@@ -3157,7 +3157,18 @@ void LinkProcessor::startCalibFromBlock(const juce::var& block)
     // "no opening value" is NaN out of the parser (a threshold block the server set nothing for).
     const bool haveStart = cfg.startDb == cfg.startDb;
 
+    // (f) 30 Sep 2026 ruling: A BLOCK THAT ARRIVES HERE ARRIVES WITH A BUILD, so it is a buildHold - one window,
+    // one write, "Built. ...", ended - exactly as on V2. startCalibFromBlock has ONE caller: the chain-cmd apply
+    // path, gated on `failures == 0`, because "a slot index in the block means nothing until the build that
+    // created it has applied". So every block reaching this side follows a chain that has just landed; there is no
+    // bare-comparative road into the Link's own loop, because a comparative arrives at the V2 that holds the lease.
+    // configFromBlock sets no purpose at all, so this was the Config default askRung: the Link opened a promise
+    // ("landing it as it plays...") and hunted a rung on a build nobody asked to have dialled - Sean's 10:45 V2
+    // fault, on the other side of the transport.
+    cfg.purpose = echojay::CalibLoop::Purpose::buildHold;
+    cfg.dynamicsSlot = chainHost.slotIsDynamics(slot);   // (l): the input-headroom ceiling is off on a compressor
     calibLoop_.begin(cfg);
+    calibLoop_.slotIdent = chainHost.slotIdentityKey(slot);   // (n)
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
     EchoJay_NSLog(("EJThreshold(Link): \"" + cfg.plugin + "\" slot " + juce::String(slot + 1)
                    + (cfg.mode == echojay::CalibLoop::Mode::Passive ? " PASSIVE" : " LISTEN")

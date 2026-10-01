@@ -124,6 +124,25 @@ int main (int argc, char** argv)
             check (started.card().isEmpty(),
                    "link side (21t-g). ...and it draws no card, because passive asks the user for nothing",
                    started.card().isEmpty() ? juce::String ("(silent)") : started.card());
+            // ---- (f) A BLOCK ARRIVING AT A LINK ARRIVES WITH A BUILD (30 Sep 2026 ruling) ----------------
+            // startCalibFromBlock has exactly ONE caller: the chain-cmd apply path, gated on `failures == 0` -
+            // "a slot index in the block means nothing until the build that created it has applied". So every
+            // block that reaches this side follows a chain that has just landed, and is a BUILD. configFromBlock
+            // sets no purpose at all, so cfg.purpose was the Config default askRung: the Link opened a promise
+            // ("landing it as it plays...") and hunted a rung on a build nobody asked to have dialled - the same
+            // fault as Sean's 10:45 V2 log, on the other side of the transport.
+            check (started.purpose == echojay::CalibLoop::Purpose::buildHold,
+                   "(f) the block starts a BUILD on the Link, exactly as on V2  (RED as it stood: configFromBlock "
+                   "carries no purpose, so it was the askRung default)",
+                   started.purpose == echojay::CalibLoop::Purpose::buildHold ? juce::String ("buildHold")
+                                                                            : juce::String ("askRung"));
+            check (started.askOwed.isEmpty(),
+                   "(f) ...so it promises NOTHING on the way in - a build's only line is its closing one",
+                   started.askOwed.isEmpty() ? juce::String ("(nothing owed)") : started.askOwed);
+            check (started.settleSteps >= echojay::CalibLoop::kSettleMaxSteps,
+                   "(f) ...and its settle budget opens already SPENT, so it lands on the first judged window",
+                   juce::String (started.settleSteps) + " of "
+                       + juce::String (echojay::CalibLoop::kSettleMaxSteps));
             // THE FIXTURE'S COMPRESSOR IS A BUILT-IN, and a built-in has no fingerprint and no param map: the
             // loop's named controls are profiled THIRD-PARTY ones. So the opening write is refused by name here
             // rather than dialled - which is the honest outcome, and it must not be a crash (it was: the hosted
@@ -143,7 +162,10 @@ int main (int argc, char** argv)
         // THE STATE V2 LEFT: a loop two steps in, at +2 dB of drive, band 2-3 dB.
         int err = 0; const auto dir = LinkShm::resolveDir (err);
         echojay::CalibLoop left;
-        left.begin ("EchoJay Compressor", 0, 2.0f, 3.0f, 2.0f);
+        // askRung: this fixture IS a rung two steps in, which is what V2 hands over mid-hunt. (The Purpose
+        // argument is required as of 30 Sep - the overload never set one, so every loop started through it kept
+        // the askRung member default, which is what put the ask line on a build.)
+        left.begin ("EchoJay Compressor", 0, 2.0f, 3.0f, 2.0f, echojay::CalibLoop::Purpose::askRung);
         left.steps = 2; left.window = 5; left.lastGr = 0.4f; left.awaitFresh = false;
         auto rcSide = LinkShm::readRackSidecar (dir, uid);
         if (! rcSide.valid) { rcSide.uid = uid; rcSide.valid = true; rcSide.revision = 1; }

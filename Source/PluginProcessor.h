@@ -671,6 +671,23 @@ public:
     std::map<juce::String, std::vector<BorrowPendingPush>> borrowParkedPushes_;
     // 21t-d: the loop for THIS instance's own rack (the mix bus case); a Link rack's loop lives on its sidecar.
     echojay::CalibLoop ownCalib_;
+    // (i) 30 Sep 2026, B's contract: EVERY COMPRESSOR IN A BUILD GETS ITS OWN HOLD. `calibrations` carries one
+    // block per compressor; calibrations[0] is the PRIMARY and lives in ownCalib_ exactly as the single block
+    // always did, so every existing path (the card, a comparative, a handover) is unchanged. The rest live here.
+    // Each is an ordinary buildHold loop on its own slot - one window, one write to ITS OWN OUT, then it ends -
+    // so the arithmetic is the loop's, not a second copy of it.
+    //
+    // KEYED BY THE TARGET, and held in this process: the Link sidecar carries exactly ONE `calib`, so a companion
+    // cannot ride a handover. That is why the multi-hold is a V2-hosted thing today - the V2's own rack, and a
+    // borrowed Link rack while the lease is here. A Link that takes a rack back mid-build keeps the primary and
+    // loses the companions; making the sidecar carry an array is a LINK change and is not in this build.
+    std::map<juce::String, std::vector<echojay::CalibLoop>> calibExtra_;
+    // The one line the whole build closes with, composed once every hold has finished.
+    std::map<juce::String, juce::String> calibHeldNames_;
+    // (o), second ruling: THE DEAD LIST ACCUMULATES PER BUILD. It was local to each sweep, so setLoopsAlive
+    // overwrote it every window and a hold that ended earlier lost its name on the next one. Reset when a build
+    // starts (calibStartMany), added to as each hold ends, and never cleared by a window that killed nothing.
+    std::map<juce::String, juce::StringArray> calibDead_;
     juce::String calibLastLogLine_;   // 21t-i: the last EJThreshold window line, for the guard and for diagnostics
     double calibLastWindowMs_ = 0.0;
     bool  borrowPushInFlight_ = false;
@@ -690,11 +707,19 @@ public:
     // and the state crosses on the sidecar.
     /** Start (or re-target) the loop on a dynamics slot. uid empty = this instance's own rack. */
     void calibStart(const juce::String& uid, int slot, const juce::String& pluginName,
-                    float bandLo, float bandHi, float openingDrive);
+                    float bandLo, float bandHi, float openingDrive,
+                    echojay::CalibLoop::Purpose purpose);
     /** 21t-g item 2: start from the response's calibration block, which says the MODE (passive unless it says
         otherwise), the ACTUATOR and, for a threshold, the control name(s), the sense and the range. The old
         overload above is the listen/drive case and stays for the callers that mean exactly that. */
     void calibStart(const juce::String& uid, const echojay::CalibLoop::Config& cfg);
+    /** (i) 30 Sep 2026: ONE HOLD PER COMPRESSOR. cfgs[0] is the primary and goes where the single block always
+        went; the rest become companion buildHold loops on their own slots. Returns how many holds are running.
+        A single-element list behaves exactly as calibStart does, so the fallback path is not a second code path. */
+    int  calibStartMany(const juce::String& uid, const std::vector<echojay::CalibLoop::Config>& cfgs);
+    /** The companions, for the guard and for the closing line. */
+    std::vector<echojay::CalibLoop> calibExtraFor(const juce::String& uid) const
+    { const auto it = calibExtra_.find(uid); return it == calibExtra_.end() ? std::vector<echojay::CalibLoop>{} : it->second; }
     /** One tick: advance the loop by any 3 s windows the owning host has measured. Returns the card text. */
     /** 21t-m item 3: true when the target chain is a BUS, with the reason. A bus dials nothing, holds nothing
         and has no slot written to it. Gated HERE rather than in the editor, because calibStart is the only door
@@ -733,6 +758,11 @@ public:
     bool resetLevelRecord(const juce::String& uid);
     juce::var levelRecordsToVar() const;                     // for getStateInformation
     void levelRecordsFromVar(const juce::var& v);            // for setStateInformation
+    void fillCalibWindow(ChainHost* host, echojay::CalibLoop& loop, echojay::CalibLoop::Window& w);
+    void applyCalibStep(const juce::String& uid, ChainHost* host, echojay::CalibLoop& loop,
+                        const echojay::CalibLoop::Step& step);
+    void advanceCalibCompanions(const juce::String& uid, ChainHost* host, double sinceMs);
+    void calibSweepCompanionsOnly(const juce::String& uid);   // (o): companions run whatever the primary is doing
     echojay::CalibLoop calibLoad(const juce::String& uid) const;
     void               calibStore(const juce::String& uid, const echojay::CalibLoop& loop);
     double             calibStallLogMs_ = 0.0;   // 21t-i: rate limit for the "cannot be advanced" line

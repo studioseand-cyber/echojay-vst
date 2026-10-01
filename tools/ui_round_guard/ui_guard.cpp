@@ -226,7 +226,9 @@ struct EchoJayTabStripTestAccess
     static juce::String editDataOf (EchoJayEditor& e, int i)
     { return i >= 0 && i < (int) e.chatMessages.size() ? e.chatMessages[(size_t) i].editData : juce::String(); }
     // ---- 21t-d wiring ----
-    static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops); }
+    // 30 Sep 2026: startCalibrationFromOps now carries the PURPOSE - the ops road was where a build lost it and
+    // ran as an ask. This accessor keeps the ask meaning it always had.
+    static int  calibFromOps (EchoJayEditor& e, const juce::String& uid, const juce::var& ops) { return e.startCalibrationFromOps (uid, ops, echojay::CalibLoop::Purpose::askRung); }
     static void calibTick (EchoJayEditor& e, const juce::String& uid) { e.calibTickAndPost (uid); }
     // 21t-i: THE EDITOR'S OWN TICK. The old legs called calibTickAndPost directly, which is exactly why none of
     // them could see that nothing in the product called it.
@@ -1244,9 +1246,13 @@ int main()
                 check (std::abs (loop.preDb - 4.0f) < 0.01f,
                        "21t-d w. ...and slot_pre_gain_db as the opening drive", juce::String (loop.preDb, 1));
                 const auto si = own.getSlotInfo (1);
-                check (std::abs (si.preTrimDb - 4.0f) < 0.05f && std::abs (si.trimDb + 4.0f) < 0.05f,
-                       "21t-d w. ...written to the slot with the post-trim MIRRORED",
-                       juce::String (si.preTrimDb, 1) + " / " + juce::String (si.trimDb, 1));
+                // 30 Sep 2026: the mirror lands on the LIVE OUT, not on the compare-only trim. 21t-m item 1
+                // deleted that third gain - the drive used to mirror into it, which is only in circuit during an
+                // A/B, so every rung raised the chain by a dB and nothing took it back. This leg asserted the
+                // deleted behaviour and read "4.0 / 0.0"; outGainDb is the same reading getSlotOutGainDb gives.
+                check (std::abs (si.preTrimDb - 4.0f) < 0.05f && std::abs (si.outGainDb + 4.0f) < 0.05f,
+                       "21t-d w. ...written to the slot with the post-trim MIRRORED onto the LIVE out",
+                       juce::String (si.preTrimDb, 1) + " / " + juce::String (si.outGainDb, 1));
                 // A later op with a NEW band restarts from the drive already found, not from zero.
                 juce::Array<juce::var> band2; band2.add (1.0); band2.add (2.0);
                 juce::Array<juce::var> ops2; ops2.add (op (2, juce::var (band2), 0.0));
@@ -1272,7 +1278,8 @@ int main()
             // A stand-in "Link": the sidecar is written from outside this instance, exactly as the Link writes it
             // after deselect. V2 owns no tallies for this rack, so it must render and not advance.
             echojay::CalibLoop remote;
-            remote.begin ("Tube-Tech CL 1B", 0, 2.0f, 3.0f, 3.0f);
+            // askRung: this fixture is a loop mid-hunt, which is what V2 renders after a deselect.
+            remote.begin ("Tube-Tech CL 1B", 0, 2.0f, 3.0f, 3.0f, echojay::CalibLoop::Purpose::askRung);
             remote.lastGr = 2.4f;
             // revision >= 0 is what makes a sidecar VALID on read (LinkShm), so the fixture writes a real one -
             // a rack with no revision is not a rack anyone has described.
@@ -1296,8 +1303,16 @@ int main()
                    juce::String (still.window) + " window(s)");
 
             std::printf ("\n== 21t-d wiring: a loop that ended while the editor was closed posts on next open ==\n");
+            // 30 Sep 2026: AN ENDED LOOP IS WHAT endHere() LEAVES. (g) deleted the holding tail for every
+            // purpose, so a loop that has finished is Idle with its closing TEXT captured - closingMessage() reads
+            // `state`, and the chat takes the text later, so the text has to survive the ending. And its opening
+            // line was posted before the editor closed, so it owes no ask: without clearing askOwed this fixture
+            // posted TWO messages (the opening line from (d)'s begin(), then the closing) and read "4 -> 6".
             remote.state = echojay::CalibLoop::State::Adjusted;
             remote.closingOwed = true;
+            remote.closingOwedText = remote.closingMessage();
+            remote.state = echojay::CalibLoop::State::Idle;
+            remote.askOwed.clear();
             rc.calib = remote.toVar(); LinkShm::writeRackSidecar (dir, rc);
             const int before = (int) A::msgs (*ed).size();
             A::calibTick (*ed, luid);   // the first tick after the editor opens
@@ -2849,6 +2864,85 @@ int main()
             check (live.getChainHost().getNumSlots() == 1,
                    "21t-f (b). ...while a LIVE processor still restores its rack (the token is not a mute button)",
                    juce::String ((int) live.getChainHost().getNumSlots()) + " slot(s) restored");
+        }
+    }
+
+    std::printf ("== BUILD 2 (30 Sep 2026 ruling): IN and OUT on every slot card ==\n");
+    {
+        // "Two small readouts, IN +0.0 and OUT -6.0, dB with one decimal, bound to the same slot pre-gain and slot
+        // output gain the loop and the hold write (the ones getSlotOutGainDb reads), so they show what the loop has
+        // done the moment it does it. They are controls, not labels."
+        EchoJayProcessor proc; proc.prepareToPlay (48000.0, 512);
+        std::unique_ptr<juce::AudioProcessorEditor> edBase (proc.createEditor());
+        auto* ed = dynamic_cast<EchoJayEditor*> (edBase.get()); if (! ed) return 2;
+        ed->setSize (2000, 1100); pumpMs (60);
+        A::build (*ed, "{\"chain\":[{\"name\":\"EchoJay EQ\",\"role\":\"eq\",\"settings\":\"\"}]}");
+        for (int k = 0; k < 40 && proc.getChainHost().getNumSlots() < 1; ++k) pumpMs (100);
+        check (proc.getChainHost().getNumSlots() == 1, "Build 2. precondition: one slot in the rack",
+               juce::String (proc.getChainHost().getNumSlots()) + " slot(s)");
+        auto& panel = A::panel (*ed);
+        check (! panel.blocks.empty(), "Build 2. precondition: the panel has a card for it",
+               juce::String ((int) panel.blocks.size()) + " card(s)");
+        if (proc.getChainHost().getNumSlots() == 1 && ! panel.blocks.empty())
+        {
+            // ---- THE HOLD'S WRITE SHOWS. -6.0 dB on the slot's OUT, exactly as the hold writes it.
+            proc.getChainHost().setSlotOutGainDb (0, -6.0f);
+            pumpMs (150);                                   // the readout polls at 20 Hz; no panel rebuild is owed
+            auto& blk = *panel.blocks.front();
+            check (blk.outReadout.readoutText() == "OUT -6.0",
+                   "Build 2. after a hold that wrote -6.0 the OUT readout on that slot reads -6.0  (RED as it "
+                   "stood: there was no readout on the card at all)",
+                   "\"" + blk.outReadout.readoutText() + "\"");
+            check (blk.inReadout.readoutText() == "IN +0.0",
+                   "Build 2. ...and IN still reads +0.0, one decimal, signed",
+                   "\"" + blk.inReadout.readoutText() + "\"");
+            check (blk.outReadout.isMoved() && ! blk.inReadout.isMoved(),
+                   "Build 2. ...and only the one that MOVED is in the accent colour");
+            // ---- IT IS A CONTROL: a real drag of +3.0 dB on IN.
+            const float inBefore = proc.getChainHost().getSlotPreTrimDb (0);
+            {
+                auto& ro = blk.inReadout;
+                ro.setSize (46, 9);
+                auto src = juce::Desktop::getInstance().getMainMouseSource();
+                const juce::Point<int> from { 23, 8 };
+                const juce::Point<int> to   { 23, 8 - 30 };       // 30 px up at 0.1 dB/px = +3.0 dB
+                const juce::MouseEvent down (src, from.toFloat(), juce::ModifierKeys::leftButtonModifier,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &ro, &ro, juce::Time::getCurrentTime(),
+                    from.toFloat(), juce::Time::getCurrentTime(), 1, false);
+                ro.mouseDown (down);
+                const juce::MouseEvent drag (src, to.toFloat(), juce::ModifierKeys::leftButtonModifier,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &ro, &ro, juce::Time::getCurrentTime(),
+                    from.toFloat(), juce::Time::getCurrentTime(), 1, true);
+                ro.mouseDrag (drag);
+            }
+            pumpMs (120);
+            const float inAfter = proc.getChainHost().getSlotPreTrimDb (0);
+            check (std::abs ((inAfter - inBefore) - 3.0f) < 0.15f,
+                   "Build 2. dragging IN by +3.0 moves the SLOT PRE-GAIN by +3.0 - the same write the loop makes",
+                   juce::String (inBefore, 1) + " -> " + juce::String (inAfter, 1) + " dB");
+            check (blk.inReadout.readoutText() == "IN +3.0",
+                   "Build 2. ...and the readout follows it", "\"" + blk.inReadout.readoutText() + "\"");
+            check (blk.inReadout.isMoved(),
+                   "Build 2. ...and it is now in the accent colour too");
+            // ---- AND THE DRAG DOES NOT COLLIDE: the readout is a child, so the card never saw the gesture.
+            check (blk.inReadout.getParentComponent() == &blk,
+                   "Build 2. the readout is a CHILD of the card, so its drag cannot reach the card's own "
+                   "click-to-select or the strip's scroll");
+            check (! blk.inReadout.getBounds().intersects (blk.wetKnob.getBounds()),
+                   "Build 2. ...and its bounds do not overlap the wet knob",
+                   blk.inReadout.getBounds().toString() + " vs " + blk.wetKnob.getBounds().toString());
+            check (! blk.inReadout.getBounds().intersects (blk.outReadout.getBounds())
+                       && ! blk.outReadout.getBounds().intersects (blk.bypassBtn.getBounds()),
+                   "Build 2. ...nor each other, nor the button row");
+            // ---- TYPED VALUES: the same write, clamped to the trims' range.
+            blk.outReadout.set (99.0f);   pumpMs (60);
+            check (std::abs (proc.getChainHost().getSlotOutGainDb (0) - 12.0f) < 0.01f,
+                   "Build 2. a typed value is clamped to the trims' own range (+12 dB)",
+                   juce::String (proc.getChainHost().getSlotOutGainDb (0), 1) + " dB");
+            blk.outReadout.set (-99.0f);  pumpMs (60);
+            check (std::abs (proc.getChainHost().getSlotOutGainDb (0) - -24.0f) < 0.01f,
+                   "Build 2. ...and at the bottom too (-24 dB)",
+                   juce::String (proc.getChainHost().getSlotOutGainDb (0), 1) + " dB");
         }
     }
 
