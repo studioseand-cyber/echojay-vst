@@ -1,1 +1,3928 @@
-{"identity": "AudioUnit|624a5973|1.1.1", "product": "AMEK Mastering Compressor", "format": "AudioUnit", "uid": "624a5973", "version": "1.1.1", "sampledAt": "2026-09-30", "certified": false, "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.", "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958", "listParamsRc": 0, "textAtRc": 0, "controls": [{"index": 0, "name": "Power", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 1, "name": "Bank", "unit": null, "displayAt": {"0.000": "A", "0.500": "C", "1.000": "D"}, "numSteps": 4, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "A", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 2, "name": "Monitoring", "unit": null, "displayAt": {"0.000": "Stereo", "0.500": "Mid", "1.000": "Side"}, "numSteps": 3, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Stereo", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 3, "name": "Master In Gain", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 4, "name": "Master Out Gain", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 5, "name": "Param Link", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 6, "name": "Mid Side", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Off", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 7, "name": "Mono Maker In", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 8, "name": "Mono Maker Freq", "unit": "Hz", "displayAt": {"0.000": "20 Hz", "0.500": "200 Hz", "1.000": "2.0 kHz"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 2.0, "max": 20.0, "at0": 20.0, "at0_5": 200.0, "at1": 2.0, "inverted": true, "linear": false}, "direction": "descending", "defaultOnInstantiate": {"normalised": 0.0, "display": "20 Hz", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 9, "name": "Stereo Width", "unit": "%", "displayAt": {"0.000": "0 %", "0.500": "100 %", "1.000": "400 %"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 400.0, "at0": 0.0, "at0_5": 100.0, "at1": 400.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "100 %", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 10, "name": "Stereo Width In", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 11, "name": "Sidechain Link Mode", "unit": null, "displayAt": {"0.000": "Max", "0.500": "Max", "1.000": "Avg"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Max", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 12, "name": "Sidechain Link Amount", "unit": "%", "displayAt": {"0.000": "0 %", "0.500": "50 %", "1.000": "100 %"}, "numSteps": 81, "discrete": true, "range": {"min": 0.0, "max": 100.0, "at0": 0.0, "at0_5": 50.0, "at1": 100.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 1.0, "display": "100 %", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 13, "name": "Stereo Mode", "unit": null, "displayAt": {"0.000": "Analog", "0.500": "Analog", "1.000": "Digital"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Analog", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 14, "name": "TMT Channel", "unit": null, "displayAt": {"0.000": "0", "0.500": "0", "1.000": "0"}, "numSteps": 20, "discrete": true, "range": {"min": 0.0, "max": 0.0, "at0": 0.0, "at0_5": 0.0, "at1": 0.0, "inverted": false, "linear": true}, "direction": "flat", "defaultOnInstantiate": {"normalised": 0.0, "display": "0", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 15, "name": "VCA Clip", "unit": "dB", "displayAt": {"0.000": "-6.0 dB", "0.500": "0.0 dB", "1.000": "6.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -6.0, "max": 6.0, "at0": -6.0, "at0_5": 0.0, "at1": 6.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 16, "name": "VCA Clip In", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 17, "name": "Sidechain Listen", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Off", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 18, "name": "Ambience", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Off", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 19, "name": "Channel ON 1", "unit": null, "displayAt": {"0.000": "Out", "0.500": "Out", "1.000": "In"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "In", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 20, "name": "Threshold 1", "unit": "dB", "displayAt": {"0.000": "0.0 dB", "0.500": "10.0 dB", "1.000": "20.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 20.0, "at0": 0.0, "at0_5": 10.0, "at1": 20.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0 dB", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 21, "name": "Timing 1", "unit": "ms", "displayAt": {"0.000": "1.0 ms", "0.500": "1.9 ms", "1.000": "7.0 ms"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 1.0, "max": 7.0, "at0": 1.0, "at0_5": 1.9, "at1": 7.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "1.9 ms", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 22, "name": "Release Hysteresis 1", "unit": "ms", "displayAt": {"0.000": "70.0 ms", "0.500": "11.0 ms", "1.000": "1.2 ms"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 1.2, "max": 70.0, "at0": 70.0, "at0_5": 11.0, "at1": 1.2, "inverted": true, "linear": false}, "direction": "descending", "defaultOnInstantiate": {"normalised": 0.0, "display": "70.0 ms", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 23, "name": "Fast 1", "unit": "dB", "displayAt": {"0.000": "0.0 dB", "0.500": "10.0 dB", "1.000": "20.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 20.0, "at0": 0.0, "at0_5": 10.0, "at1": 20.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0 dB", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 24, "name": "Peak 1", "unit": "dB", "displayAt": {"0.000": "0.0 dB", "0.500": "10.0 dB", "1.000": "20.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 20.0, "at0": 0.0, "at0_5": 10.0, "at1": 20.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0 dB", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 25, "name": "Ratio 1", "unit": null, "displayAt": {"0.000": "1.1", "0.500": "2.0", "1.000": "40.0"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 1.1, "max": 40.0, "at0": 1.1, "at0_5": 2.0, "at1": 40.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "2.0", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 26, "name": "Output 1", "unit": "dB", "displayAt": {"0.000": "-6.0 dB", "0.500": "+4.0 dB", "1.000": "+14.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -6.0, "max": 14.0, "at0": -6.0, "at0_5": 4.0, "at1": 14.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.3, "display": "0.0 dB", "declaredDefault": 0.3, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 27, "name": "Parallel Mix 1", "unit": "%", "displayAt": {"0.000": "0 %", "0.500": "50 %", "1.000": "100 %"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 100.0, "at0": 0.0, "at0_5": 50.0, "at1": 100.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 1.0, "display": "100 %", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 28, "name": "External SC 1", "unit": null, "displayAt": {"0.000": "Internal", "0.500": "Internal", "1.000": "External"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Internal", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 29, "name": "Headroom 1", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 30, "name": "SC Filter On 1", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 31, "name": "SC HPF Freq. 1", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "Off"}, "numSteps": 2147483647, "discrete": false, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Off", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 32, "name": "SC Low Gain 1", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 33, "name": "SC Low Freq 1", "unit": "Hz", "displayAt": {"0.000": "50 Hz", "0.500": "300 Hz", "1.000": "1000 Hz"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 50.0, "max": 1000.0, "at0": 50.0, "at0_5": 300.0, "at1": 1000.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "300 Hz", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 34, "name": "SC Low Type 1", "unit": null, "displayAt": {"0.000": "Peak", "0.500": "Peak", "1.000": "Shelf"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "Shelf", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 35, "name": "SC High Gain 1", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 36, "name": "SC High Freq 1", "unit": "Hz", "displayAt": {"0.000": "200 Hz", "0.500": "3.0k Hz", "1.000": "12.0k Hz"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 12.0, "max": 200.0, "at0": 200.0, "at0_5": 3.0, "at1": 12.0, "inverted": true, "linear": false}, "direction": "descending", "defaultOnInstantiate": {"normalised": 0.5, "display": "3.0k Hz", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 37, "name": "SC High Type 1", "unit": null, "displayAt": {"0.000": "Peak", "0.500": "Peak", "1.000": "Shelf"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "Shelf", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 38, "name": "Channel ON 2", "unit": null, "displayAt": {"0.000": "Out", "0.500": "Out", "1.000": "In"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "In", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 39, "name": "Threshold 2", "unit": "dB", "displayAt": {"0.000": "0.0 dB", "0.500": "10.0 dB", "1.000": "20.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 20.0, "at0": 0.0, "at0_5": 10.0, "at1": 20.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0 dB", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 40, "name": "Timing 2", "unit": "ms", "displayAt": {"0.000": "1.0 ms", "0.500": "1.9 ms", "1.000": "7.0 ms"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 1.0, "max": 7.0, "at0": 1.0, "at0_5": 1.9, "at1": 7.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "1.9 ms", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 41, "name": "Release Hysteresis 2", "unit": "ms", "displayAt": {"0.000": "70.0 ms", "0.500": "11.0 ms", "1.000": "1.2 ms"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 1.2, "max": 70.0, "at0": 70.0, "at0_5": 11.0, "at1": 1.2, "inverted": true, "linear": false}, "direction": "descending", "defaultOnInstantiate": {"normalised": 0.0, "display": "70.0 ms", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 42, "name": "Fast 2", "unit": "dB", "displayAt": {"0.000": "0.0 dB", "0.500": "10.0 dB", "1.000": "20.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 20.0, "at0": 0.0, "at0_5": 10.0, "at1": 20.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0 dB", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 43, "name": "Peak 2", "unit": "dB", "displayAt": {"0.000": "0.0 dB", "0.500": "10.0 dB", "1.000": "20.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 20.0, "at0": 0.0, "at0_5": 10.0, "at1": 20.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0 dB", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 44, "name": "Ratio 2", "unit": null, "displayAt": {"0.000": "1.1", "0.500": "2.0", "1.000": "40.0"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 1.1, "max": 40.0, "at0": 1.1, "at0_5": 2.0, "at1": 40.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "2.0", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 45, "name": "Output 2", "unit": "dB", "displayAt": {"0.000": "-6.0 dB", "0.500": "+4.0 dB", "1.000": "+14.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -6.0, "max": 14.0, "at0": -6.0, "at0_5": 4.0, "at1": 14.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.3, "display": "0.0 dB", "declaredDefault": 0.3, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 46, "name": "Parallel Mix 2", "unit": "%", "displayAt": {"0.000": "0 %", "0.500": "50 %", "1.000": "100 %"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 100.0, "at0": 0.0, "at0_5": 50.0, "at1": 100.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 1.0, "display": "100 %", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 47, "name": "External SC 2", "unit": null, "displayAt": {"0.000": "Internal", "0.500": "Internal", "1.000": "External"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Internal", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 48, "name": "Headroom 2", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 49, "name": "SC Filter On 2", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "On", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 50, "name": "SC HPF Freq. 2", "unit": null, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "Off"}, "numSteps": 2147483647, "discrete": false, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 0.0, "display": "Off", "declaredDefault": 0.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 51, "name": "SC Low Gain 2", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 52, "name": "SC Low Freq 2", "unit": "Hz", "displayAt": {"0.000": "50 Hz", "0.500": "300 Hz", "1.000": "1000 Hz"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 50.0, "max": 1000.0, "at0": 50.0, "at0_5": 300.0, "at1": 1000.0, "inverted": false, "linear": false}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "300 Hz", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 53, "name": "SC Low Type 2", "unit": null, "displayAt": {"0.000": "Peak", "0.500": "Peak", "1.000": "Shelf"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "Shelf", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 54, "name": "SC High Gain 2", "unit": "dB", "displayAt": {"0.000": "-15.0 dB", "0.500": "0.0 dB", "1.000": "+15.0 dB"}, "numSteps": 2147483647, "discrete": false, "range": {"min": -15.0, "max": 15.0, "at0": -15.0, "at0_5": 0.0, "at1": 15.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0 dB", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 55, "name": "SC High Freq 2", "unit": "Hz", "displayAt": {"0.000": "200 Hz", "0.500": "3.0k Hz", "1.000": "12.0k Hz"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 12.0, "max": 200.0, "at0": 200.0, "at0_5": 3.0, "at1": 12.0, "inverted": true, "linear": false}, "direction": "descending", "defaultOnInstantiate": {"normalised": 0.5, "display": "3.0k Hz", "declaredDefault": 0.5, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 56, "name": "SC High Type 2", "unit": null, "displayAt": {"0.000": "Peak", "0.500": "Peak", "1.000": "Shelf"}, "numSteps": 2, "discrete": true, "range": {"status": "text is not numeric"}, "direction": "named positions", "defaultOnInstantiate": {"normalised": 1.0, "display": "Shelf", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 57, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 58, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 59, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 60, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 61, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 62, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 63, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 64, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 65, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 66, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 67, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 68, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 69, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 70, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 71, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 72, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 73, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5125, "display": "+0.51250", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 74, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5125, "display": "+0.51250", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 75, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "+0.50000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 76, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "+0.50000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 77, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "+0.50000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 78, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "+0.50000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 79, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "+0.50000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 80, "name": "M", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.5, "display": "+0.50000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 81, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 82, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 83, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 84, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 85, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 86, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 87, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 88, "name": "S", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 89, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 90, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 91, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 92, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 93, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 94, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 95, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 96, "name": "F", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 97, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 98, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 99, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 100, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 101, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 102, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 103, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 104, "name": "P", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 105, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 106, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 107, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 108, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 109, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 110, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 111, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 112, "name": "R", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 113, "name": "", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.645448, "display": "+0.64545", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 114, "name": "", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.75, "display": "+0.75000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}, {"index": 115, "name": "", "unit": null, "displayAt": {"0.000": "0.00000", "0.500": "+0.50000", "1.000": "+1.00000"}, "numSteps": 2147483647, "discrete": false, "range": {"min": 0.0, "max": 1.0, "at0": 0.0, "at0_5": 0.5, "at1": 1.0, "inverted": false, "linear": true}, "direction": "ascending", "defaultOnInstantiate": {"normalised": 0.0, "display": "0.00000", "declaredDefault": 1.0, "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"}}], "defaultsSampledAt": "2026-09-30", "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958", "readoutCheck": {"method": "instantiate_twice", "instances": 2}, "schema": "ej_cert_compressor/1", "param_count": 116, "map_fp": "8cefcf01528cdc897d1ae13fbc35154d4d77468e5dfc4bb0c230d9f2ed3234d3", "thresholdReview": {"class": "bands_or_stages", "candidates": 2, "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result", "curves": 2, "flats": 0, "responding": [{"index": 20, "name": "Threshold 1"}, {"index": 39, "name": "Threshold 2"}], "passThroughAtDefaults": {"count": 0, "candidates": []}, "verdicts": [{"index": 20, "name": "Threshold 1", "result": "certified"}, {"index": 39, "name": "Threshold 2", "result": "certified"}]}, "thresholdCandidates": [{"index": 20, "name": "Threshold 1", "flags": [], "thresholdSweep": {"measuredAt": "20260930T181449.264+0100", "host": "EJ Map 0.1.0 / arm64 / 48k", "bridged": false, "tone": {"hz": 997.0, "levels_dbfs": [-24.0, -12.0, -6.0]}, "level_convention": "peak", "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)", "ratioDuring": {"position": "", "value": null, "assumed": false}, "autoMakeupDisabled": false, "preconditions": [], "positions": 16, "positionNorms": [0.0, 0.066667, 0.133333, 0.2, 0.266667, 0.333333, 0.4, 0.466667, 0.533333, 0.6, 0.666667, 0.733333, 0.8, 0.866667, 0.933333, 1.0], "positionTexts": ["0.0 dB", "1.3 dB", "2.7 dB", "4.0 dB", "5.3 dB", "6.7 dB", "8.0 dB", "9.3 dB", "10.7 dB", "12.0 dB", "13.3 dB", "14.7 dB", "16.0 dB", "17.3 dB", "18.7 dB", "20.0 dB"], "hold_s": 1.5, "win_s": 0.25, "linearReference": {"mode": "per_position_quiet", "levels_dbfs": [-54, -48], "tolerance_db": 0.1, "check_db": [-0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, 0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0], "gain_db": [-0.2, 1.38, 2.85, 4.25, 5.59, 6.95, 8.23, 9.47, 10.69, 11.88, 13.13, 14.33, 15.53, 16.74, 17.51, 17.51], "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 9.16 dB across the levels, 126.7% of the 7.23 dB response (bar 8.3%)"}, "defaultGain_db": {"-12": -0.2, "-24": -0.2, "-48": -0.21, "-54": -0.2, "-6": -2.13}, "positionLandedBy": ["instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack"], "writeLanding": {"instack": 16}, "reduction_db": {"-24": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.2, 2.45, 3.66, 4.85, 6.11, 7.31, 8.51, 9.71, 10.48, 10.48], "-12": [0.0, 0.46, 1.93, 3.33, 4.66, 6.02, 7.3, 8.55, 9.76, 10.95, 12.2, 13.41, 14.61, 15.81, 16.58, 16.58], "-6": [1.93, 3.52, 4.99, 6.39, 7.72, 9.08, 10.36, 11.61, 12.82, 14.01, 15.26, 16.47, 17.67, 18.87, 19.64, 19.64]}, "sense": "higher_is_harder", "engage": {"-24": 6, "-12": 2, "-6": 0}, "thresholdDbEquivalent": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null], "thresholdEffective1dB": [-8.9, -10.9, -17.8, -20.4, -21.4, -22.0, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}], "levelDependence": {"predicted_dg_dl": null, "dg_dl_per_position": [0.107, 0.195, 0.277, 0.355, 0.429, 0.504, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509], "median_dg_dl": 0.51, "implied_ratio": 2.04, "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"}, "result": "certified", "passThroughAtDefaults": false, "notToneReadings": [], "flatSpan_db": 17.72, "reason": "ratio unknown (no ratio control): no dB-equivalent map", "displayOffsetDb": null, "displayEngage": {"-12": -10.62, "-24": -16.73, "-6": -7.17, "drift_db": 9.56, "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"}}, "reading": "responds at 997 Hz: a curve to read"}, {"index": 39, "name": "Threshold 2", "flags": [], "thresholdSweep": {"measuredAt": "20260930T181449.264+0100", "host": "EJ Map 0.1.0 / arm64 / 48k", "bridged": false, "tone": {"hz": 997.0, "levels_dbfs": [-24.0, -12.0, -6.0]}, "level_convention": "peak", "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)", "ratioDuring": {"position": "", "value": null, "assumed": false}, "autoMakeupDisabled": false, "preconditions": [], "positions": 16, "positionNorms": [0.0, 0.066667, 0.133333, 0.2, 0.266667, 0.333333, 0.4, 0.466667, 0.533333, 0.6, 0.666667, 0.733333, 0.8, 0.866667, 0.933333, 1.0], "positionTexts": ["0.0 dB", "1.3 dB", "2.7 dB", "4.0 dB", "5.3 dB", "6.7 dB", "8.0 dB", "9.3 dB", "10.7 dB", "12.0 dB", "13.3 dB", "14.7 dB", "16.0 dB", "17.3 dB", "18.7 dB", "20.0 dB"], "hold_s": 1.5, "win_s": 0.25, "linearReference": {"mode": "per_position_quiet", "levels_dbfs": [-54, -48], "tolerance_db": 0.1, "check_db": [-0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0, 0.0, -0.0, -0.0, -0.0, -0.0, -0.0, -0.0], "gain_db": [-0.2, 1.38, 2.85, 4.25, 5.59, 6.95, 8.23, 9.47, 10.69, 11.88, 13.13, 14.33, 15.53, 16.74, 17.51, 17.51], "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 9.16 dB across the levels, 126.7% of the 7.23 dB response (bar 8.3%)"}, "defaultGain_db": {"-12": -0.2, "-24": -0.2, "-48": -0.21, "-54": -0.2, "-6": -2.13}, "positionLandedBy": ["instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack", "instack"], "writeLanding": {"instack": 16}, "reduction_db": {"-24": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.2, 2.45, 3.66, 4.85, 6.11, 7.31, 8.51, 9.71, 10.48, 10.48], "-12": [0.0, 0.46, 1.93, 3.33, 4.66, 6.02, 7.3, 8.55, 9.76, 10.95, 12.2, 13.41, 14.61, 15.81, 16.58, 16.58], "-6": [1.93, 3.52, 4.99, 6.39, 7.72, 9.08, 10.36, 11.61, 12.82, 14.01, 15.26, 16.47, 17.67, 18.87, 19.64, 19.64]}, "sense": "higher_is_harder", "engage": {"-24": 6, "-12": 2, "-6": 0}, "thresholdDbEquivalent": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null], "thresholdEffective1dB": [-8.9, -10.9, -17.8, -20.4, -21.4, -22.0, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}, {"below": -24.0}], "levelDependence": {"predicted_dg_dl": null, "dg_dl_per_position": [0.107, 0.195, 0.277, 0.355, 0.429, 0.504, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509, 0.509], "median_dg_dl": 0.51, "implied_ratio": 2.04, "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"}, "result": "certified", "passThroughAtDefaults": false, "notToneReadings": [], "flatSpan_db": 17.72, "reason": "ratio unknown (no ratio control): no dB-equivalent map", "displayOffsetDb": null, "displayEngage": {"-12": -10.62, "-24": -16.73, "-6": -7.17, "drift_db": 9.56, "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"}}, "reading": "responds at 997 Hz: a curve to read"}], "manufacturer": "Plugin Alliance"}
+{
+  "identity": "AudioUnit|624a5973|1.1.1",
+  "product": "AMEK Mastering Compressor",
+  "format": "AudioUnit",
+  "uid": "624a5973",
+  "version": "1.1.1",
+  "sampledAt": "2026-09-30",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Power",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Bank",
+      "unit": null,
+      "displayAt": {
+        "0.000": "A",
+        "0.500": "C",
+        "1.000": "D"
+      },
+      "numSteps": 4,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "A",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Monitoring",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Stereo",
+        "0.500": "Mid",
+        "1.000": "Side"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Stereo",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Master In Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Master Out Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Param Link",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Mid Side",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Mono Maker In",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Mono Maker Freq",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "20 Hz",
+        "0.500": "200 Hz",
+        "1.000": "2.0 kHz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 2.0,
+        "max": 20.0,
+        "at0": 20.0,
+        "at0_5": 200.0,
+        "at1": 2.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "20 Hz",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Stereo Width",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0 %",
+        "0.500": "100 %",
+        "1.000": "400 %"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 400.0,
+        "at0": 0.0,
+        "at0_5": 100.0,
+        "at1": 400.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "100 %",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Stereo Width In",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Sidechain Link Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Max",
+        "0.500": "Max",
+        "1.000": "Avg"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Max",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Sidechain Link Amount",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0 %",
+        "0.500": "50 %",
+        "1.000": "100 %"
+      },
+      "numSteps": 81,
+      "discrete": true,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100 %",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Stereo Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Analog",
+        "0.500": "Analog",
+        "1.000": "Digital"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Analog",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "TMT Channel",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "0",
+        "1.000": "0"
+      },
+      "numSteps": 20,
+      "discrete": true,
+      "range": {
+        "min": 0.0,
+        "max": 0.0,
+        "at0": 0.0,
+        "at0_5": 0.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "VCA Clip",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-6.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "6.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -6.0,
+        "max": 6.0,
+        "at0": -6.0,
+        "at0_5": 0.0,
+        "at1": 6.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "VCA Clip In",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Sidechain Listen",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "Ambience",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 19,
+      "name": "Channel ON 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 20,
+      "name": "Threshold 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 21,
+      "name": "Timing 1",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "1.0 ms",
+        "0.500": "1.9 ms",
+        "1.000": "7.0 ms"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.0,
+        "max": 7.0,
+        "at0": 1.0,
+        "at0_5": 1.9,
+        "at1": 7.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "1.9 ms",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 22,
+      "name": "Release Hysteresis 1",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "70.0 ms",
+        "0.500": "11.0 ms",
+        "1.000": "1.2 ms"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.2,
+        "max": 70.0,
+        "at0": 70.0,
+        "at0_5": 11.0,
+        "at1": 1.2,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "70.0 ms",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 23,
+      "name": "Fast 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 24,
+      "name": "Peak 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 25,
+      "name": "Ratio 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1.1",
+        "0.500": "2.0",
+        "1.000": "40.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.1,
+        "max": 40.0,
+        "at0": 1.1,
+        "at0_5": 2.0,
+        "at1": 40.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "2.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 26,
+      "name": "Output 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-6.0 dB",
+        "0.500": "+4.0 dB",
+        "1.000": "+14.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -6.0,
+        "max": 14.0,
+        "at0": -6.0,
+        "at0_5": 4.0,
+        "at1": 14.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.3,
+        "display": "0.0 dB",
+        "declaredDefault": 0.3,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 27,
+      "name": "Parallel Mix 1",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0 %",
+        "0.500": "50 %",
+        "1.000": "100 %"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100 %",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 28,
+      "name": "External SC 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Internal",
+        "0.500": "Internal",
+        "1.000": "External"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Internal",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 29,
+      "name": "Headroom 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 30,
+      "name": "SC Filter On 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 31,
+      "name": "SC HPF Freq. 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Off"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 32,
+      "name": "SC Low Gain 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 33,
+      "name": "SC Low Freq 1",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "50 Hz",
+        "0.500": "300 Hz",
+        "1.000": "1000 Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 50.0,
+        "max": 1000.0,
+        "at0": 50.0,
+        "at0_5": 300.0,
+        "at1": 1000.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "300 Hz",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 34,
+      "name": "SC Low Type 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Peak",
+        "0.500": "Peak",
+        "1.000": "Shelf"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Shelf",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 35,
+      "name": "SC High Gain 1",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 36,
+      "name": "SC High Freq 1",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "200 Hz",
+        "0.500": "3.0k Hz",
+        "1.000": "12.0k Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 12.0,
+        "max": 200.0,
+        "at0": 200.0,
+        "at0_5": 3.0,
+        "at1": 12.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "3.0k Hz",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 37,
+      "name": "SC High Type 1",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Peak",
+        "0.500": "Peak",
+        "1.000": "Shelf"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Shelf",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 38,
+      "name": "Channel ON 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Out",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 39,
+      "name": "Threshold 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 40,
+      "name": "Timing 2",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "1.0 ms",
+        "0.500": "1.9 ms",
+        "1.000": "7.0 ms"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.0,
+        "max": 7.0,
+        "at0": 1.0,
+        "at0_5": 1.9,
+        "at1": 7.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "1.9 ms",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 41,
+      "name": "Release Hysteresis 2",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "70.0 ms",
+        "0.500": "11.0 ms",
+        "1.000": "1.2 ms"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.2,
+        "max": 70.0,
+        "at0": 70.0,
+        "at0_5": 11.0,
+        "at1": 1.2,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "70.0 ms",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 42,
+      "name": "Fast 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 43,
+      "name": "Peak 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 10.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 44,
+      "name": "Ratio 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1.1",
+        "0.500": "2.0",
+        "1.000": "40.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 1.1,
+        "max": 40.0,
+        "at0": 1.1,
+        "at0_5": 2.0,
+        "at1": 40.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "2.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 45,
+      "name": "Output 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-6.0 dB",
+        "0.500": "+4.0 dB",
+        "1.000": "+14.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -6.0,
+        "max": 14.0,
+        "at0": -6.0,
+        "at0_5": 4.0,
+        "at1": 14.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.3,
+        "display": "0.0 dB",
+        "declaredDefault": 0.3,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 46,
+      "name": "Parallel Mix 2",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0 %",
+        "0.500": "50 %",
+        "1.000": "100 %"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100 %",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 47,
+      "name": "External SC 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Internal",
+        "0.500": "Internal",
+        "1.000": "External"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Internal",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 48,
+      "name": "Headroom 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 49,
+      "name": "SC Filter On 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 50,
+      "name": "SC HPF Freq. 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "Off"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 51,
+      "name": "SC Low Gain 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 52,
+      "name": "SC Low Freq 2",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "50 Hz",
+        "0.500": "300 Hz",
+        "1.000": "1000 Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 50.0,
+        "max": 1000.0,
+        "at0": 50.0,
+        "at0_5": 300.0,
+        "at1": 1000.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "300 Hz",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 53,
+      "name": "SC Low Type 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Peak",
+        "0.500": "Peak",
+        "1.000": "Shelf"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Shelf",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 54,
+      "name": "SC High Gain 2",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-15.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "+15.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -15.0,
+        "max": 15.0,
+        "at0": -15.0,
+        "at0_5": 0.0,
+        "at1": 15.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 55,
+      "name": "SC High Freq 2",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "200 Hz",
+        "0.500": "3.0k Hz",
+        "1.000": "12.0k Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 12.0,
+        "max": 200.0,
+        "at0": 200.0,
+        "at0_5": 3.0,
+        "at1": 12.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "3.0k Hz",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 56,
+      "name": "SC High Type 2",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Peak",
+        "0.500": "Peak",
+        "1.000": "Shelf"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Shelf",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 57,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 58,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 59,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 60,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 61,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 62,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 63,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 64,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 65,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 66,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 67,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 68,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 69,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 70,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 71,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 72,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 73,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5125,
+        "display": "+0.51250",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 74,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5125,
+        "display": "+0.51250",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 75,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "+0.50000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 76,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "+0.50000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 77,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "+0.50000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 78,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "+0.50000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 79,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "+0.50000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 80,
+      "name": "M",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "+0.50000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 81,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 82,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 83,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 84,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 85,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 86,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 87,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 88,
+      "name": "S",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 89,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 90,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 91,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 92,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 93,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 94,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 95,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 96,
+      "name": "F",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 97,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 98,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 99,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 100,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 101,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 102,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 103,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 104,
+      "name": "P",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 105,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 106,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 107,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 108,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 109,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 110,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 111,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 112,
+      "name": "R",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 113,
+      "name": "",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.645448,
+        "display": "+0.64545",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 114,
+      "name": "",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.75,
+        "display": "+0.75000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 115,
+      "name": "",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00000",
+        "0.500": "+0.50000",
+        "1.000": "+1.00000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 0.5,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00000",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-30",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  },
+  "schema": "ej_cert_compressor/1",
+  "param_count": 116,
+  "map_fp": "8cefcf01528cdc897d1ae13fbc35154d4d77468e5dfc4bb0c230d9f2ed3234d3",
+  "manufacturer": "Plugin Alliance",
+  "thresholdReview": {
+    "class": "bands_or_stages",
+    "candidates": 2,
+    "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
+    "curves": 2,
+    "flats": 0,
+    "responding": [
+      {
+        "index": 20,
+        "name": "Threshold 1"
+      },
+      {
+        "index": 39,
+        "name": "Threshold 2"
+      }
+    ],
+    "passThroughAtDefaults": {
+      "count": 0,
+      "candidates": []
+    },
+    "verdicts": [
+      {
+        "index": 20,
+        "name": "Threshold 1",
+        "result": "certified"
+      },
+      {
+        "index": 39,
+        "name": "Threshold 2",
+        "result": "certified"
+      }
+    ]
+  },
+  "thresholdCandidates": [
+    {
+      "index": 20,
+      "name": "Threshold 1",
+      "flags": [],
+      "thresholdSweep": {
+        "measuredAt": "20260930T181449.264+0100",
+        "host": "EJ Map 0.1.0 / arm64 / 48k",
+        "bridged": false,
+        "tone": {
+          "hz": 997.0,
+          "levels_dbfs": [
+            -24.0,
+            -12.0,
+            -6.0
+          ]
+        },
+        "level_convention": "peak",
+        "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)",
+        "ratioDuring": {
+          "position": "",
+          "value": null,
+          "assumed": false
+        },
+        "autoMakeupDisabled": false,
+        "preconditions": [],
+        "positions": 16,
+        "positionNorms": [
+          0.0,
+          0.066667,
+          0.133333,
+          0.2,
+          0.266667,
+          0.333333,
+          0.4,
+          0.466667,
+          0.533333,
+          0.6,
+          0.666667,
+          0.733333,
+          0.8,
+          0.866667,
+          0.933333,
+          1.0
+        ],
+        "positionTexts": [
+          "0.0 dB",
+          "1.3 dB",
+          "2.7 dB",
+          "4.0 dB",
+          "5.3 dB",
+          "6.7 dB",
+          "8.0 dB",
+          "9.3 dB",
+          "10.7 dB",
+          "12.0 dB",
+          "13.3 dB",
+          "14.7 dB",
+          "16.0 dB",
+          "17.3 dB",
+          "18.7 dB",
+          "20.0 dB"
+        ],
+        "hold_s": 1.5,
+        "win_s": 0.25,
+        "linearReference": {
+          "mode": "per_position_quiet",
+          "levels_dbfs": [
+            -54,
+            -48
+          ],
+          "tolerance_db": 0.1,
+          "check_db": [
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0
+          ],
+          "gain_db": [
+            -0.2,
+            1.38,
+            2.85,
+            4.25,
+            5.59,
+            6.95,
+            8.23,
+            9.470000000000001,
+            10.69,
+            11.880000000000001,
+            13.130000000000001,
+            14.33,
+            15.529999999999999,
+            16.739999999999998,
+            17.510000000000002,
+            17.510000000000002
+          ],
+          "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 9.16 dB across the levels, 126.7% of the 7.23 dB response (bar 8.3%)"
+        },
+        "defaultGain_db": {
+          "-12": -0.2,
+          "-24": -0.2,
+          "-48": -0.21,
+          "-54": -0.2,
+          "-6": -2.13
+        },
+        "positionLandedBy": [
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack"
+        ],
+        "writeLanding": {
+          "instack": 16
+        },
+        "reduction_db": {
+          "-24": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.2,
+            2.45,
+            3.66,
+            4.85,
+            6.11,
+            7.31,
+            8.51,
+            9.710000000000001,
+            10.48,
+            10.48
+          ],
+          "-12": [
+            0.0,
+            0.46,
+            1.93,
+            3.33,
+            4.66,
+            6.02,
+            7.3,
+            8.550000000000001,
+            9.76,
+            10.949999999999999,
+            12.199999999999999,
+            13.41,
+            14.609999999999999,
+            15.81,
+            16.579999999999998,
+            16.579999999999998
+          ],
+          "-6": [
+            1.93,
+            3.52,
+            4.99,
+            6.39,
+            7.72,
+            9.08,
+            10.359999999999999,
+            11.609999999999999,
+            12.82,
+            14.01,
+            15.26,
+            16.469999999999999,
+            17.670000000000002,
+            18.870000000000001,
+            19.640000000000001,
+            19.640000000000001
+          ]
+        },
+        "sense": "higher_is_harder",
+        "engage": {
+          "-24": 6,
+          "-12": 2,
+          "-6": 0
+        },
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "thresholdEffective1dB": [
+          -8.9,
+          -10.9,
+          -17.800000000000001,
+          -20.399999999999999,
+          -21.399999999999999,
+          -22.0,
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
+        "inAtGr": [
+          {
+            "1": -8.9,
+            "2": "not_reached",
+            "3": "not_reached"
+          },
+          {
+            "1": -10.9,
+            "2": -9.0,
+            "3": -7.0
+          },
+          {
+            "1": -17.800000000000001,
+            "2": -11.9,
+            "3": -9.9
+          },
+          {
+            "1": -20.399999999999999,
+            "2": -16.800000000000001,
+            "3": -13.199999999999999
+          },
+          {
+            "1": -21.399999999999999,
+            "2": -18.899999999999999,
+            "3": -16.300000000000001
+          },
+          {
+            "1": -22.0,
+            "2": -20.0,
+            "3": -18.0
+          },
+          {
+            "1": "below_range",
+            "2": -22.399999999999999,
+            "3": -20.5
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": -22.899999999999999
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          }
+        ],
+        "inAtGrQuality": {
+          "nonMonotonicStraddles": 0,
+          "widestGap_db": 12.0,
+          "rule": "linear interpolation between the two steps that straddle 1, 2 and 3 dB, only where GR rises across the straddle; never extrapolated; not_reached and below_range kept apart"
+        },
+        "levelDependence": {
+          "predicted_dg_dl": null,
+          "dg_dl_per_position": [
+            0.107,
+            0.195,
+            0.277,
+            0.355,
+            0.429,
+            0.504,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509
+          ],
+          "median_dg_dl": 0.51,
+          "implied_ratio": 2.04,
+          "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+        },
+        "result": "certified",
+        "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 17.719999999999999,
+        "reason": "ratio unknown (no ratio control): no dB-equivalent map",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": -10.619999999999999,
+          "-24": -16.73,
+          "-6": -7.17,
+          "drift_db": 9.56,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
+      },
+      "reading": "responds at 997 Hz: a curve to read"
+    },
+    {
+      "index": 39,
+      "name": "Threshold 2",
+      "flags": [],
+      "thresholdSweep": {
+        "measuredAt": "20260930T181449.264+0100",
+        "host": "EJ Map 0.1.0 / arm64 / 48k",
+        "bridged": false,
+        "tone": {
+          "hz": 997.0,
+          "levels_dbfs": [
+            -24.0,
+            -12.0,
+            -6.0
+          ]
+        },
+        "level_convention": "peak",
+        "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)",
+        "ratioDuring": {
+          "position": "",
+          "value": null,
+          "assumed": false
+        },
+        "autoMakeupDisabled": false,
+        "preconditions": [],
+        "positions": 16,
+        "positionNorms": [
+          0.0,
+          0.066667,
+          0.133333,
+          0.2,
+          0.266667,
+          0.333333,
+          0.4,
+          0.466667,
+          0.533333,
+          0.6,
+          0.666667,
+          0.733333,
+          0.8,
+          0.866667,
+          0.933333,
+          1.0
+        ],
+        "positionTexts": [
+          "0.0 dB",
+          "1.3 dB",
+          "2.7 dB",
+          "4.0 dB",
+          "5.3 dB",
+          "6.7 dB",
+          "8.0 dB",
+          "9.3 dB",
+          "10.7 dB",
+          "12.0 dB",
+          "13.3 dB",
+          "14.7 dB",
+          "16.0 dB",
+          "17.3 dB",
+          "18.7 dB",
+          "20.0 dB"
+        ],
+        "hold_s": 1.5,
+        "win_s": 0.25,
+        "linearReference": {
+          "mode": "per_position_quiet",
+          "levels_dbfs": [
+            -54,
+            -48
+          ],
+          "tolerance_db": 0.1,
+          "check_db": [
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0,
+            -0.0
+          ],
+          "gain_db": [
+            -0.2,
+            1.38,
+            2.85,
+            4.25,
+            5.59,
+            6.95,
+            8.23,
+            9.470000000000001,
+            10.69,
+            11.880000000000001,
+            13.130000000000001,
+            14.33,
+            15.529999999999999,
+            16.739999999999998,
+            17.510000000000002,
+            17.510000000000002
+          ],
+          "fallback": "quiet-level reference used because the soft end had no linear anchor: the soft end is not linear: its gain spans 9.16 dB across the levels, 126.7% of the 7.23 dB response (bar 8.3%)"
+        },
+        "defaultGain_db": {
+          "-12": -0.2,
+          "-24": -0.2,
+          "-48": -0.21,
+          "-54": -0.2,
+          "-6": -2.13
+        },
+        "positionLandedBy": [
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack",
+          "instack"
+        ],
+        "writeLanding": {
+          "instack": 16
+        },
+        "reduction_db": {
+          "-24": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.2,
+            2.45,
+            3.66,
+            4.85,
+            6.11,
+            7.31,
+            8.51,
+            9.710000000000001,
+            10.48,
+            10.48
+          ],
+          "-12": [
+            0.0,
+            0.46,
+            1.93,
+            3.33,
+            4.66,
+            6.02,
+            7.3,
+            8.550000000000001,
+            9.76,
+            10.949999999999999,
+            12.199999999999999,
+            13.41,
+            14.609999999999999,
+            15.81,
+            16.579999999999998,
+            16.579999999999998
+          ],
+          "-6": [
+            1.93,
+            3.52,
+            4.99,
+            6.39,
+            7.72,
+            9.08,
+            10.359999999999999,
+            11.609999999999999,
+            12.82,
+            14.01,
+            15.26,
+            16.469999999999999,
+            17.670000000000002,
+            18.870000000000001,
+            19.640000000000001,
+            19.640000000000001
+          ]
+        },
+        "sense": "higher_is_harder",
+        "engage": {
+          "-24": 6,
+          "-12": 2,
+          "-6": 0
+        },
+        "thresholdDbEquivalent": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "thresholdEffective1dB": [
+          -8.9,
+          -10.9,
+          -17.800000000000001,
+          -20.399999999999999,
+          -21.399999999999999,
+          -22.0,
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
+        "inAtGr": [
+          {
+            "1": -8.9,
+            "2": "not_reached",
+            "3": "not_reached"
+          },
+          {
+            "1": -10.9,
+            "2": -9.0,
+            "3": -7.0
+          },
+          {
+            "1": -17.800000000000001,
+            "2": -11.9,
+            "3": -9.9
+          },
+          {
+            "1": -20.399999999999999,
+            "2": -16.800000000000001,
+            "3": -13.199999999999999
+          },
+          {
+            "1": -21.399999999999999,
+            "2": -18.899999999999999,
+            "3": -16.300000000000001
+          },
+          {
+            "1": -22.0,
+            "2": -20.0,
+            "3": -18.0
+          },
+          {
+            "1": "below_range",
+            "2": -22.399999999999999,
+            "3": -20.5
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": -22.899999999999999
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          },
+          {
+            "1": "below_range",
+            "2": "below_range",
+            "3": "below_range"
+          }
+        ],
+        "inAtGrQuality": {
+          "nonMonotonicStraddles": 0,
+          "widestGap_db": 12.0,
+          "rule": "linear interpolation between the two steps that straddle 1, 2 and 3 dB, only where GR rises across the straddle; never extrapolated; not_reached and below_range kept apart"
+        },
+        "levelDependence": {
+          "predicted_dg_dl": null,
+          "dg_dl_per_position": [
+            0.107,
+            0.195,
+            0.277,
+            0.355,
+            0.429,
+            0.504,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509,
+            0.509
+          ],
+          "median_dg_dl": 0.51,
+          "implied_ratio": 2.04,
+          "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+        },
+        "result": "certified",
+        "passThroughAtDefaults": false,
+        "notToneReadings": [],
+        "flatSpan_db": 17.719999999999999,
+        "reason": "ratio unknown (no ratio control): no dB-equivalent map",
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": -10.619999999999999,
+          "-24": -16.73,
+          "-6": -7.17,
+          "drift_db": 9.56,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
+      },
+      "reading": "responds at 997 Hz: a curve to read"
+    }
+  ]
+}

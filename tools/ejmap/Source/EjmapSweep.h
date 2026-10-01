@@ -606,6 +606,13 @@ struct Derived
     double holdS = 0.0, winS = 0.0;                 // hold and read window the probe ran, from its spec line
     std::vector<std::optional<double>> quietGainDb; // per position, the -48 dBFS linear gain the quiet reference used (input_drive level coupling)
     inline static constexpr double kEffectiveGrDb = 1.0;
+    // in_at_gr_dbfs (COMP_PROFILE_SPEC v1.2, built 1 Oct): per position, the input level where GR reaches exactly 1, 2 and 3 dB,
+    // by linear interpolation between the two steps that straddle each target - and ONLY when GR rises across the straddle.
+    // Kept apart in OUR record: a number | "not_reached" (never by the loudest level) | "below_range" (already past at the
+    // quietest) | null (no readable rising straddle: a gap or a fall). The export turns the two words into null, as his spec
+    // says. Never extrapolated.
+    struct InAtGr { std::map<int, juce::var> at; int nonMonotonicStraddles = 0; double widestGapDb = 0.0; };
+    std::vector<InAtGr> inAtGr;
     std::optional<double> ratio;
     juce::String ratioText, ratioInstantiated;      // ratioText is what the sweep RAN at (read back when it was written)
     juce::Array<int> holdDoubled, stillMoving, skipped;
@@ -1053,22 +1060,47 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     {
         const auto& lv = d.levels;
         auto gAt = [&] (size_t k) { return d.reduction[levelKey (lv[k])][(size_t) i]; };
-        juce::var out;
-        if (auto g0 = gAt (0); g0 && *g0 >= Derived::kEffectiveGrDb) { auto* o = new juce::DynamicObject(); o->setProperty ("below", lv.front()); out = juce::var (o); }
-        else if (auto gl = gAt (lv.size() - 1); gl && *gl < Derived::kEffectiveGrDb) { auto* o = new juce::DynamicObject(); o->setProperty ("above", lv.back()); out = juce::var (o); }
-        else
-            for (size_t k = 0; k + 1 < lv.size(); ++k)
+        Derived::InAtGr rec;
+        for (int target : { 1, 2, 3 })
+        {
+            const double T = (double) target;
+            juce::var out;
+            if (auto g0 = gAt (0); g0 && *g0 >= T) out = "below_range";
+            else
             {
-                const auto a = gAt (k), b = gAt (k + 1);
-                if (! a || ! b) continue;
-                if (*a < Derived::kEffectiveGrDb && *b >= Derived::kEffectiveGrDb)
+                bool reached = false;
+                for (size_t k = 0; k + 1 < lv.size() && ! reached; ++k)
                 {
-                    const double t = (Derived::kEffectiveGrDb - *a) / (*b - *a);
-                    out = std::round ((lv[k] + t * (lv[k + 1] - lv[k])) * 10.0) / 10.0;
-                    break;
+                    const auto a = gAt (k), b = gAt (k + 1);
+                    if (! a || ! b) continue;
+                    if (*a < T && *b >= T)                                   // the straddle, and GR rises across it by construction
+                    {
+                        reached = true;
+                        const double t = (T - *a) / (*b - *a);
+                        out = std::round ((lv[k] + t * (lv[k + 1] - lv[k])) * 10.0) / 10.0;
+                        rec.widestGapDb = juce::jmax (rec.widestGapDb, lv[k + 1] - lv[k]);
+                        // quality: a fall in the readings on either side of the straddle marks it non-monotonic
+                        const bool fallBefore = k > 0 && gAt (k - 1) && *gAt (k - 1) > *a + kMonotonicTol;
+                        const bool fallAfter  = k + 2 < lv.size() && gAt (k + 2) && *gAt (k + 2) < *b - kMonotonicTol;
+                        if (fallBefore || fallAfter) ++rec.nonMonotonicStraddles;
+                    }
+                }
+                if (! reached)
+                {
+                    bool everAbove = false; for (size_t k = 0; k < lv.size(); ++k) if (auto g = gAt (k); g && *g >= T) everAbove = true;
+                    if (! everAbove) out = "not_reached";                     // GR never got there by the loudest level
+                    /* else: it got there, but across a gap or a fall - no readable rising straddle: null */
                 }
             }
-        d.tEffective1dB.push_back (out);
+            rec.at[target] = out;
+        }
+        d.inAtGr.push_back (rec);
+        // eff_threshold == in_at_gr["1"] BY CONSTRUCTION (his v1.2 rule), in the record's older shape for its readers.
+        const auto one = rec.at[1];
+        if (one.isDouble() || one.isInt()) d.tEffective1dB.push_back (one);
+        else if (one.toString() == "below_range") { auto* o = new juce::DynamicObject(); o->setProperty ("below", lv.front()); d.tEffective1dB.push_back (juce::var (o)); }
+        else if (one.toString() == "not_reached") { auto* o = new juce::DynamicObject(); o->setProperty ("above", lv.back()); d.tEffective1dB.push_back (juce::var (o)); }
+        else d.tEffective1dB.push_back ({});
     }
 
     // THE dB-EQUIVALENT MAP: T = L - g R/(R-1), median over the levels that put g inside the readable band.
@@ -1372,6 +1404,20 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     // Sean's ratio-free curve beside ours (spec section 3 `eff_threshold_dbfs`): the level where GR reaches 1.0 dB, in
     // THIS fixture's level convention (peak dBFS; his is sine RMS, 3.01 dB apart for a sine).
     { juce::Array<juce::var> te; for (const auto& t : d.tEffective1dB) te.add (t); s->setProperty ("thresholdEffective1dB", te); }
+    // in_at_gr (v1.2) per position: {"1": .., "2": .., "3": ..} with the words kept apart, and the quality figure beside.
+    {
+        juce::Array<juce::var> arr; int nm = 0; double gap = 0.0;
+        for (const auto& r : d.inAtGr)
+        {
+            auto* o = new juce::DynamicObject();
+            for (const auto& [t, v] : r.at) o->setProperty (juce::String (t), v);
+            arr.add (juce::var (o)); nm += r.nonMonotonicStraddles; gap = juce::jmax (gap, r.widestGapDb);
+        }
+        s->setProperty ("inAtGr", arr);
+        auto* q = new juce::DynamicObject(); q->setProperty ("nonMonotonicStraddles", nm); q->setProperty ("widestGap_db", gap);
+        q->setProperty ("rule", "linear interpolation between the two steps that straddle 1, 2 and 3 dB, only where GR rises across the straddle; never extrapolated; not_reached and below_range kept apart");
+        s->setProperty ("inAtGrQuality", juce::var (q));
+    }
     auto ints = [] (const juce::Array<int>& a) { juce::Array<juce::var> o; for (int i : a) o.add (i); return o; };
     if (! d.holdDoubled.isEmpty()) s->setProperty ("holdDoubled", ints (d.holdDoubled));
     if (! d.stillMoving.isEmpty()) s->setProperty ("stillMovingAfterDoubling", ints (d.stillMoving));

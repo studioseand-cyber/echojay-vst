@@ -4197,6 +4197,35 @@ void testSweepDerivation()
                          && rv.getProperty ("thresholdDbEquivalent", {}).isArray(),
                        "sweep R5: the fixture carries thresholdEffective1dB BESIDE thresholdDbEquivalent, both per position");
             }
+            // in_at_gr (v1.2): 1, 2 and 3 dB from the same straddle rule; the words kept apart; nothing extrapolated.
+            if (sized)
+            {
+                const auto& g4 = tx.inAtGr[4].at;   // position 4: 0.75 / 1.5 / 2.25 at -24 / -12 / -6
+                check (g4.at (1).isDouble() && std::abs ((double) g4.at (1) - (-20.0)) < 0.05 && g4.at (2).isDouble() && std::abs ((double) g4.at (2) - (-8.0)) < 0.05
+                         && g4.at (3).toString() == "not_reached",
+                       "sweep G1 (in_at_gr): position 4 reaches 1 dB at -20.0, 2 dB at -8.0, and never 3 dB by 0 -> not_reached (" + juce::JSON::toString (g4.at (2), true) + ")");
+                check (tx.inAtGr[0].at.at (1).toString() == "below_range" && tx.inAtGr[0].at.at (3).toString() == "below_range",
+                       "sweep G2: a position already past 3 dB at the quietest level is below_range, kept apart from not_reached");
+                check (tx.tEffective1dB[4].isDouble() && (double) tx.tEffective1dB[4] == (double) g4.at (1),
+                       "sweep G3: eff_threshold IS in_at_gr[1], written identically (" + juce::String ((double) tx.tEffective1dB[4], 1) + ")");
+                check (tx.inAtGr[4].widestGapDb == 12.0 && tx.inAtGr[4].nonMonotonicStraddles == 0, "sweep G4: the quality figure records the straddle width (12 dB on a 3-level sweep) and no non-monotonic straddle");
+            }
+            {
+                std::vector<std::array<std::optional<double>, 3>> fall (6);                      // position 2: GR 0.3 at -24, 1.5 at -12, 0.8 at -6: a rising 1 dB straddle FOLLOWED by a fall
+                for (int k = 0; k < 6; ++k) { const double r = (5 - k) * 1.5; fall[(size_t) k] = { 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.5 }; }
+                fall[2] = { 2.0 - 0.3, 2.0 - 1.5, 2.0 - 0.8 };
+                const auto fx = derive (fromGains (fall), kLevels, -1);
+                if (fx.inAtGr.size() == 6)
+                    check (fx.inAtGr[2].at.at (1).isDouble() && fx.inAtGr[2].nonMonotonicStraddles >= 1,
+                           "sweep G5: a rising straddle followed by a fall is interpolated AND counted as a non-monotonic straddle (" + juce::String (fx.inAtGr[2].nonMonotonicStraddles) + ")");
+                std::vector<std::array<std::optional<double>, 3>> gapped (6);                    // position 2: 0.3 at -24, MISSING at -12, 1.5 at -6: 1 dB was reached, but no readable straddle
+                for (int k = 0; k < 6; ++k) { const double r = (5 - k) * 1.5; gapped[(size_t) k] = { 2.0 - r * 0.5, 2.0 - r, 2.0 - r * 1.5 }; }
+                gapped[2] = { 2.0 - 0.3, std::nullopt, 2.0 - 1.5 };
+                const auto ox = derive (fromGains (gapped), kLevels, -1);
+                if (ox.inAtGr.size() == 6)
+                    check (ox.inAtGr[2].at.at (1).isVoid() && ox.inAtGr[2].at.at (3).toString() == "not_reached",
+                           "sweep G6: a crossing with no readable straddle is null (never bridged), while 3 dB is honestly not_reached (" + juce::JSON::toString (ox.inAtGr[2].at.at (1), true) + ")");
+            }
             auto gap = cl; gap[4][1] = std::nullopt;   // position 4's -12 reading missing: the crossing has no bracket
             const auto gx = derive (fromGains (gap), kLevels, -1);
             check (gx.tEffective1dB.size() == 6 && gx.tEffective1dB[4].isVoid(),
