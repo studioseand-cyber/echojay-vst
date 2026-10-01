@@ -19,9 +19,9 @@ git clone https://github.com/studioseand-cyber/echojay-vst.git "$REPO"
 cd "$REPO" && git checkout feat/ejmap-cert && git log --oneline -1
 ```
 
-The commit this runbook was written against: **`9a01b170`** ("Fold v1.3 and v1.4 into the armed
-profile run…") or later on the same branch. `git pull` is fine; nothing here depends on a
-specific later commit.
+The commit this runbook needs: **`ed0ac2da`** (1 Oct, "Sean's Mac runbook … the --candidate
+pick …") or later on the same branch — the `--candidate` pick in step g landed in that commit.
+`git pull` is fine.
 
 JUCE **8.0.12** must sit beside the checkout as `$HOME/JUCE` (the root `CMakeLists.txt` reads
 `JUCE_PATH = ${CMAKE_SOURCE_DIR}/../JUCE`; override with `-DJUCE_PATH=/path/to/JUCE`). The AAX SDK
