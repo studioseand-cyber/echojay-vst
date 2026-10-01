@@ -3124,6 +3124,12 @@ void ChainHost::setSlotOutGainDb (int slotIndex, float db)
     if (auto* b = dynamic_cast<SlotWetBlend*> (s.blendNode->getProcessor()))
     {
         b->setOutGainDb (juce::jlimit (-24.0f, 12.0f, db));
+        // 1 Oct 2026: ...AND IT IS A VALUE WRITE, like the three it sits beside. setSlotPreTrimDb, setSlotWet and
+        // setMasterWet all bump this counter and this one did not - it was the compare-only trim that used to, and
+        // when 21t-m item 1 deleted that trim the slot's OUT took its place everywhere EXCEPT here. The slot's
+        // output gain is the control the HOLD writes, so a counter whose job is "a value changed" has to move for
+        // it. Caught by level_slot_guard R2g, which read 2 -> 5 for four writes.
+        bumpChainValue();   // ruling 2 (21s-b): a VALUE write, not a structural edit
         EchoJay_NSLog (("EJThreshold: slot " + juce::String (slotIndex + 1) + " output gain set to "
                         + juce::String (b->outGainDb(), 2) + " dB (EchoJay's own, the plugin named no output "
                         "control)").toRawUTF8());

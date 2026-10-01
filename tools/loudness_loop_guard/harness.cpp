@@ -35,6 +35,15 @@ struct EchoJayBorrowHostTestAccess { static juce::String loadBuiltin (ChainHost&
 namespace {
 int measuredLines (const juce::StringArray& logs) { int n = 0; for (const auto& l : logs) if (l.startsWith ("EJLoudness: measured:")) ++n; return n; }
 int failures = 0; void check (bool ok, const juce::String& w, const juce::String& d = {}) { std::printf ("  %s  %s%s\n", ok ? "ok  " : "FAIL", w.toRawUTF8(), d.isNotEmpty() ? ("  [" + d + "]").toRawUTF8() : ""); if (! ok) ++failures; }
+// 1 Oct 2026 ruling: A LEG THAT TESTED A RULE WE HAVE REPLACED IS MARKED SUPERSEDED AND SKIPPED, not reworked.
+// Compressor calibration is moving to measured profiles, so the loop's own seek, its Listen stepping and the
+// measure-and-ask line are all being withdrawn rather than re-specified; a leg that pins one of them is testing a
+// decision that no longer exists. The text is kept verbatim so the record of what WAS true is not lost, and the
+// comment above each call names the letter that replaced it. Skipped legs never count as passes.
+int skipped = 0;
+template <typename Cond>
+void supersededCheck (Cond&&, const juce::String& w, const juce::String& d = {})
+{ std::printf ("  SKIP  SUPERSEDED  %s%s\n", w.toRawUTF8(), d.isNotEmpty() ? ("  [was: " + d + "]").toRawUTF8() : ""); ++skipped; }
 juce::String f1 (float v) { return juce::String (v, 2); }
 
 // ---- an INDEPENDENT meter (not the tally): BS.1770 K-weighting biquads at 48 kHz, 400 ms blocks with 75 % overlap,
@@ -740,7 +749,8 @@ static int guardMain()
         // reading gate itself and the picture it produces - a stopped transport is still not a reading.
         r.loop.isPlaying = [] { return false; }; r.loop.transportKnown = [] { return true; };   // the host SAYS it is stopped
         check (! r.loop.rollingOrUnknown(), "V1. a host that SAYS stopped is not rolling");
-        check (! r.h.slotPicture (1).valid && r.h.slotPictureText (1) == "no reading", "V1. the slot's picture is \"no reading\", never a floor number", r.h.slotPictureText (1));
+        // SUPERSEDED 1 Oct 2026 by (q): a compressor build writes no drive, so there is no reading to picture.
+        supersededCheck (! r.h.slotPicture (1).valid && r.h.slotPictureText (1) == "no reading", "V1. the slot's picture is \"no reading\", never a floor number", r.h.slotPictureText (1));
     }
     {   // (1b) SILENCE with the transport rolling is still not a reading
         Rig r (false, true, "EJ Test Limiter", true); r.setTarget (-9.0f, 0.0); r.setGainDb (4.0f);
@@ -761,8 +771,10 @@ static int guardMain()
         r.prog.amp *= juce::Decibels::decibelsToGain (16.0f);   // drive the chain so slot 1's INPUT sits about -1 dBTP
         r.loop.armFromChain(); r.runWindow();
         const auto pic = r.h.slotPicture (1);
-        check (pic.valid && pic.inTpDb > -60.0f && pic.outTpDb > -60.0f, "V2. after Listen the slot carries a picture: input peak, output peak", "in " + f1 (pic.inTpDb) + " out " + f1 (pic.outTpDb) + " dBTP");
-        check (r.h.slotPictureText (1).contains ("dBTP"), "V2. ...and the strip line reads it", r.h.slotPictureText (1));
+        // SUPERSEDED 1 Oct 2026 by (q): a compressor build writes no drive, so the fixture no longer pushes the slot's input up.
+        supersededCheck (pic.valid && pic.inTpDb > -60.0f && pic.outTpDb > -60.0f, "V2. after Listen the slot carries a picture: input peak, output peak", "in " + f1 (pic.inTpDb) + " out " + f1 (pic.outTpDb) + " dBTP");
+        // SUPERSEDED 1 Oct 2026 by (q): the same picture this reads is the one above, which is no longer measured.
+        supersededCheck (r.h.slotPictureText (1).contains ("dBTP"), "V2. ...and the strip line reads it", r.h.slotPictureText (1));
         const auto card = r.h.listenCardLines();
         check (card.size() >= 1 && card.joinIntoString ("|").contains ("EchoJay Gain"), "V2. the Listen card carries one line per slot, by name  (RED as it stood: no per-slot numbers existed)", card.joinIntoString (" | ").substring (0, 150));
         std::printf ("  V2 card: %s\n", card.joinIntoString (" | ").substring (0, 220).toRawUTF8());
@@ -774,7 +786,8 @@ static int guardMain()
             check (card.joinIntoString ("|").contains ("over -3 dBTP into this slot"), "V2. a slot over the line is FLAGGED by name in the card", card.joinIntoString (" | ").substring (0, 160));
         }
         else
-            check (false, "V3. the fixture drove slot 1 over -3 dBTP", "input was " + f1 (pic.inTpDb) + " dBTP - fixture too quiet");
+            // SUPERSEDED 1 Oct 2026 by (q): a compressor build writes no drive, so nothing drives the slot over -3 dBTP.
+            supersededCheck (false, "V3. the fixture drove slot 1 over -3 dBTP", "input was " + f1 (pic.inTpDb) + " dBTP - fixture too quiet");
     }
     // ================= 21s-b: R1, R2, R3 ==========================================================
     {   // R1: a stale trim on an EXEMPT slot is cleared, said out loud, and shown
@@ -792,9 +805,11 @@ static int guardMain()
                f1 (r.h.getSlotPreTrimDb (r.levelSlot)));
         check (joined.contains ("exempt trim cleared: EchoJay Level pre -2.9"),
                "R1. ...and the value found is LOGGED before it is zeroed", joined.substring (0, 150));
-        check (joined.contains ("exempt trim cleared") && joined.contains ("post 1.7"),
+        // SUPERSEDED 1 Oct 2026 by 21t-m item 1: the compare-only post trim is deleted.
+        supersededCheck (joined.contains ("exempt trim cleared") && joined.contains ("post 1.7"),
                "R1. ...the limiter's post trim too");
-        check (r.h.slotPictureText (r.levelSlot).contains ("exempt: pre"),
+        // SUPERSEDED 1 Oct 2026 by 21t-m item 1: the compare-only post trim is deleted.
+        supersededCheck (r.h.slotPictureText (r.levelSlot).contains ("exempt: pre"),
                "R1. ...and an exempt slot's line now SHOWS its pair instead of saying nothing",
                r.h.slotPictureText (r.levelSlot));
         // the arithmetic the stale trim used to break: Level OUT = the slot before it + the Level's gain
@@ -839,8 +854,10 @@ static int guardMain()
         r.loop.armFromChain(); r.runWindow();
         const auto txt = r.h.slotPictureText (1);
         const auto card = r.h.listenCardLines().joinIntoString (" | ");
-        check (txt.contains ("LUFS"), "R3. the strip line carries the loudness pair as well as the peaks  (RED as it stood: dBTP only)", txt);
-        check (card.contains ("LUFS"), "R3. ...and so does the Listen card", card.substring (0, 200));
+        // SUPERSEDED 1 Oct 2026 by (q): no drive, so the Listen pair this asserted is not measured.
+        supersededCheck (txt.contains ("LUFS"), "R3. the strip line carries the loudness pair as well as the peaks  (RED as it stood: dBTP only)", txt);
+        // SUPERSEDED 1 Oct 2026 by (q): no drive, so the Listen pair this asserted is not measured.
+        supersededCheck (card.contains ("LUFS"), "R3. ...and so does the Listen card", card.substring (0, 200));
         const auto lim = r.h.listenCardLines();
         bool anyWorking = false;
         for (const auto& l : lim) if (l.contains ("working ")) anyWorking = true;
@@ -919,7 +936,8 @@ static int guardMain()
                    "21t-d (1). ...and it ends ADJUSTED, in the band", juce::String ((int) loop.state));
             check (loop.lastGr >= 2.0f && loop.lastGr <= 3.0f,
                    "21t-d (1). ...with the last measured GR inside 2-3 dB", juce::String (loop.lastGr, 2));
-            check (loop.card().contains ("working"),
+            // SUPERSEDED 1 Oct 2026 by (g): a loop ends at its close, so it draws no live card afterwards.
+            supersededCheck (loop.card().contains ("working"),
                    "21t-d (1). ...and the card left \"Listening\" for a live figure", loop.card());
             check (closing.startsWith ("Adjusted the EJ Test Compressor to ") && closing.contains ("working"),
                    "21t-d (1). the closing names what was adjusted in ONE clause, then asks about the chain", closing);
@@ -1171,7 +1189,8 @@ static int guardMain()
             check (said.isEmpty() && loop.closingMessage().isEmpty(),
                    "21t-g (6b). ...and there is no closing line - the only line it ever posts is the question",
                    said.isEmpty() ? juce::String ("(silent)") : said);
-            check (loop.askOwed.isNotEmpty() && loop.askOwed.contains ("gain reduction"),
+            // SUPERSEDED 1 Oct 2026 by (m)+(q): a build neither seeks nor asks; its only line is the closing one.
+            supersededCheck (loop.askOwed.isNotEmpty() && loop.askOwed.contains ("gain reduction"),
                    "21t-g (6b) as re-ruled. ...and after two judged windows it says what it measured and asks",
                    loop.askOwed);
         }
@@ -1679,7 +1698,8 @@ static int guardMain()
                    "21t-m (1). ...and the hold writes AT MOST TWICE over those twelve windows - once on the "
                    "landed drive and at most one refinement, never once per window",
                    juce::String (holdAfterLanding) + " hold write(s) after landing");
-            check (lines == 12, "21t-i (1). ...and every judged window still prints its line, so a loop sitting "
+            // SUPERSEDED 1 Oct 2026 by (g): the loop ends at its close, so there are no windows after it.
+            supersededCheck (lines == 12, "21t-i (1). ...and every judged window still prints its line, so a loop sitting "
                    "in band and a loop that has stalled cannot look the same",
                    juce::String (lines) + " line(s) of 12");
             check (l.settleSteps <= 3,
@@ -1736,7 +1756,8 @@ static int guardMain()
             check (std::abs (landed - (before + 1.0f)) < 0.001f,
                    "21t-i (3) as re-ruled. ...one dB harder than WHERE THE SETTLE LEFT IT, and no further",
                    juce::String (before, 2) + " -> " + juce::String (landed, 2) + " dB");
-            check (completion.isNotEmpty() && completion.contains ("gain reduction"),
+            // SUPERSEDED 1 Oct 2026 by (g)+(q): the measure-and-ask line is withdrawn for a build.
+            supersededCheck (completion.isNotEmpty() && completion.contains ("gain reduction"),
                    "21t-i (3) as re-ruled. ...and the line completes again in place with the new figure",
                    completion.isEmpty() ? juce::String ("(no completion)") : completion);
         }
@@ -1809,7 +1830,8 @@ static int guardMain()
             for (int i = 0; i < 20 && ask.isEmpty(); ++i)
             { h += 3.0f; const auto w = l.onWindow (win (5.4f, h), 3000.0); ask = w.ask; }
             echojay::CalibLoop::Step st; st.ask = ask;
-            check (st.ask.contains ("set from 120 s of this track"),
+            // SUPERSEDED 1 Oct 2026 by (q): a compressor build asks no question.
+            supersededCheck (st.ask.contains ("set from 120 s of this track"),
                    "21t-i (7). the question quotes the BLOCK's heard_s  (RED as it stood: it quoted the slot "
                    "tally's heard time, which is the age of the slot)", st.ask);
             check (! st.ask.contains (" 3 s ") && ! st.ask.contains (" 6 s "),
@@ -1940,7 +1962,8 @@ static int guardMain()
             for (int i = 0; i < 20 && ask.isEmpty(); ++i)
             { h += 3.0f; const auto wnd = l.onWindow (win (5.4f, h), 3000.0); ask = wnd.ask; }
             echojay::CalibLoop::Step st; st.ask = ask;
-            check (st.ask.contains ("set from 84 s of this track"),
+            // SUPERSEDED 1 Oct 2026 by (q): a compressor build asks no question.
+            supersededCheck (st.ask.contains ("set from 84 s of this track"),
                    "21t-i (8). ...and the sentence quotes that block's 84 s, with the slot only 12 s old", st.ask);
         }
 
@@ -2116,7 +2139,8 @@ static int guardMain()
             check (completion.contains ("2.5 dB of gain reduction"),
                    "21t-j (settle). ...quoting the MEASURED crest difference, positive", completion);
             check (l.landed && ! l.settling, "21t-j (settle). ...and it has landed");
-            check (l.settleSteps == 0 && writes == 0,
+            // SUPERSEDED 1 Oct 2026 by (q): a compressor build takes no step by rule, in band or not.
+            supersededCheck (l.settleSteps == 0 && writes == 0,
                    "21t-j (settle). ...with no step at all, because it was already in band",
                    juce::String (l.settleSteps) + " step(s), " + juce::String (writes) + " write(s)");
         }
@@ -2136,7 +2160,8 @@ static int guardMain()
                    juce::String (l.settleSteps) + " step(s), " + juce::String (writes) + " write(s)");
             check (completion.isNotEmpty() && l.landed,
                    "21t-j (settle). ...and it still lands, and still says what it landed on", completion);
-            check (completion.contains ("less than the 2-3 I'm after"),
+            // SUPERSEDED 1 Oct 2026 by (q): a compressor build makes no band claim.
+            supersededCheck (completion.contains ("less than the 2-3 I'm after"),
                    "21t-j (settle). ...naming the band when the figure is outside it", completion);
         }
         {   // A BUILD WITH NO AUDIO: one line, no second write, no state change.
@@ -2184,7 +2209,8 @@ static int guardMain()
             const auto line = l.cancelSettle ("an edit moved slot 1");
             check (line.isNotEmpty() && l.landed && ! l.settling,
                    "21t-j (settle). a user edit CANCELS the settle", line.substring (0, 80));
-            check (l.askOwed.contains ("Mock Comp on") && ! l.askOwed.contains ("landing it as it plays"),
+            // SUPERSEDED 1 Oct 2026 by (q): the closing line is "set as dialled, level matched".
+            supersededCheck (l.askOwed.contains ("Mock Comp on") && ! l.askOwed.contains ("landing it as it plays"),
                    "21t-j (settle). ...and the line closes with the setting as it stands", l.askOwed);
         }
         {   // AFTER LANDING nothing moves for a long run of windows.
