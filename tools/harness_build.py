@@ -8,6 +8,50 @@ ROOT = "/Users/SeanD/echojay-vst"
 CC   = os.path.join(ROOT, "build-release/compile_commands.json")
 LIB  = os.environ.get("EJ_LIB") or os.path.join(ROOT, "build-release/EchoJay_artefacts/Release/libEchoJay V2_SharedCode.a")   # EJ_LIB: a before/after lib for RED/GREEN runs
 SRC  = os.path.abspath(sys.argv[1])
+# 2 Oct 2026: THE V2 ARCHIVE AND THE HEADERS MUST BE THE SAME TREE. This is the MIRROR of the Link-side refusal
+# in tools/merge_gate_tests/compile_link_harness.sh (21t-m, dbc0e91), and it is here because that one's premise
+# was wrong: it reads "ctest -L fast rebuilds build-guards, which is the V2 archive". build-guards is a DIFFERENT
+# TREE from build-release, and the archive every V2-side harness links is the build-release one, below. Nothing in
+# the gate rebuilds it.
+#
+# What that cost: the 1 Oct Part 1 gate built `--target EchoJayLink EchoJayProbe`, which is exactly what it was
+# asked to build and does not include the V2 archive. libEchoJay V2_SharedCode.a therefore stayed as ANOTHER
+# BRANCH had left it, and lease_id_guard, level_match_guard and role_snapshot_guard all compiled this branch's
+# headers against it. The layouts disagreed, LinkSlotInfo.uid was read at the wrong offset and came out a garbage
+# character pointer, and all three died with SIGSEGV in the V2 side before printing an assertion. That reads
+# exactly like a product crash: it was attributed to three different causes over several hours, and the two
+# guards that are in fact GREEN were reported as reds. A mismatch is a REFUSAL with its reason, not a segfault.
+#
+# EJ_LIB / EJ_SRC_ROOT deliberately skip the check, for the same reason the Link side skips it: pairing a
+# PRE-ROUND archive with PRE-ROUND headers is how a RED run is taken, and that pairing is consistent.
+def _refuse_stale_archive(lib):
+    if os.environ.get("EJ_LIB") or os.environ.get("EJ_SRC_ROOT"):
+        return
+    if not os.path.isfile(lib):
+        sys.exit("  FAIL  the V2 archive does not exist at %s - build it first:\n"
+                 "        cmake --build build-release -j 4 --target EchoJay" % lib)
+    lib_mtime = os.path.getmtime(lib)
+    newer = []
+    for root, _dirs, files in os.walk(os.path.join(ROOT, "Source")):
+        for f in files:
+            if f.endswith((".h", ".cpp")):
+                fp = os.path.join(root, f)
+                try:
+                    if os.path.getmtime(fp) > lib_mtime:
+                        newer.append(os.path.relpath(fp, ROOT))
+                except OSError:
+                    pass
+    if newer:
+        newer.sort()
+        import time as _t
+        sys.exit("  FAIL  the V2 archive is OLDER than the headers this would compile against, so the two would\n"
+                 "        disagree about every object's layout. That is a segfault in the V2 side, not a result.\n"
+                 "        archive: %s\n"
+                 "        newer sources (%d; first 5):\n%s\n"
+                 "        rebuild it:  cmake --build build-release -j 4 --target EchoJay"
+                 % (_t.strftime('%b %d %H:%M:%S', _t.localtime(lib_mtime)), len(newer),
+                    "\n".join("          " + n for n in newer[:5])))
+_refuse_stale_archive(LIB)
 # 28 Sep 2026: THE OUTPUT PATH CARRIES THE GUARD'S NAME, and the scratch directory is not baked in.
 # It used to be <one fixed scratchpad>/<source basename>_bin, and FIVE guards have a file called v2_side.cpp
 # (alias_mirror, lease_id, level_match, link_state, role_snapshot) - so all five compiled to ONE path. Four of
