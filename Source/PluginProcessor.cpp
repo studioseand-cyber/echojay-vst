@@ -6709,6 +6709,7 @@ void EchoJayProcessor::calibStart(const juce::String& uid, const echojay::CalibL
     if (auto* hd = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid))
         cfg.dynamicsSlot = hd->slotIsDynamics(cfg.slot);
     loop.begin(cfg);
+    stampCompProfileOnLoop(uid, loop);   // COMP_PROFILE_SPEC_v1 items 3/4, behind the flag
     loop.slotIdent = liveIdent;   // (n): the slot+plugin this loop belongs to, checked on every tick
     const bool threshold = cfg.actuator == echojay::CalibLoop::Actuator::Threshold;
     EchoJay_NSLog(("EJThreshold: \"" + cfg.plugin + "\" slot " + juce::String(cfg.slot + 1)
@@ -6841,6 +6842,21 @@ host->setSlotPreTrimDb(loop.slot, step.newPre);
     // 21t-m (29 Sep 2026 ruling): the hold's write to a PLUGIN'S output control is gone - it writes EchoJay's
     // own per-slot OUT and nothing else, so there is no step.writeOutput to handle here any more.
     // THE HOLD, through EchoJay's own per-slot output gain - the only control it ever writes.
+    // COMP_PROFILE_SPEC_v1 item 3: THE ONE CORRECTION - the profile's own amount control, moved once toward less
+    // gain reduction, through the same map-keyed apply a dialled setting takes.
+    if (step.writeAmount && step.amountControl.isNotEmpty())
+    {
+        const int wrote = host->setSlotControlsToValue(loop.slot, juce::StringArray(step.amountControl),
+                                                      step.amountNorm);
+        EchoJay_NSLog(("EJCompProfile: slot " + juce::String(loop.slot + 1) + " eased \"" + step.amountControl
+                       + "\" to norm " + juce::String(step.amountNorm, 3) + " ("
+                       + juce::String(loop.profileCorrectionDb, 1) + " dB less asked for; observed "
+                       + juce::String(loop.profileObservedDropDb, 1) + " dB against an expected "
+                       + juce::String(loop.profileExpectedGrDb, 1) + ") - "
+                       + (wrote > 0 ? juce::String("written") : juce::String("REFUSED by the apply path"))
+                       + "; no second move").toRawUTF8());
+        host->resetSlotShortTermStats(loop.slot, "the profile check eased the amount");
+    }
     if (step.writeSlotGain)
     {
         host->setSlotOutGainDb(loop.slot, step.slotGainValue);
@@ -6941,6 +6957,40 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
     // build's figures all describe the same passage of audio and the one closing line can quote them together.
     advanceCalibCompanions(uid, host, sinceMs);
     return step.card.isNotEmpty() ? step.card : loop.card();
+}
+
+// COMP_PROFILE_SPEC_v1 items 3 and 4: COPY THE PROFILE'S NUMBERS ONTO THE LOOP, so the loop needs no ChainHost to
+// run its one check or compose its line. Behind the flag: with it off hasProfile stays false and the loop behaves
+// exactly as letter (q) - set as dialled, hold once, and a line that says so.
+void EchoJayProcessor::stampCompProfileOnLoop(const juce::String& uid, echojay::CalibLoop& loop)
+{
+    if (! ChainHost::compProfilesEnabled()) return;
+    auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
+    if (h == nullptr || loop.slot < 0 || loop.slot >= h->getNumSlots()) return;
+    const auto prof = h->slotCompProfile(loop.slot);
+    const float expGr = h->slotExpectedGrDb(loop.slot);
+    if (! prof.isObject() || ! (expGr == expGr)) return;   // no profile, or nothing to check against
+    const auto info = ChainHost::readCompProfile(prof);
+    loop.hasProfile = true;
+    loop.profileVar = prof;
+    loop.profileExpectedGrDb = expGr;
+    loop.profileExpectedLevelDb = h->slotExpectedLevelDb(loop.slot);
+    loop.profileStaticGainDb = echojay::CompCheck::staticGainOf(prof);
+    loop.profileAmountControl = echojay::CompCheck::amountControl(prof);
+    // WHERE THE AMOUNT IS NOW, read off the plugin while the dial's writes are fresh rather than believed.
+    float currentNorm = 0.5f;
+    {
+        float raw = 0.0f, parsed = 0.0f; juce::String text; bool okParse = false;
+        if (loop.profileAmountControl.isNotEmpty()
+            && h->readControlRaw(loop.slot, loop.profileAmountControl, raw, text, okParse, parsed))
+            currentNorm = juce::jlimit(0.0f, 1.0f, raw);
+    }
+    loop.profileCurrentNorm = currentNorm;
+    loop.profileAmountNormAfter = currentNorm;
+    EchoJay_NSLog(("EJCompProfile: slot " + juce::String(loop.slot + 1) + " (\"" + info.plugin
+                   + "\") has a usable profile, map_fp=" + info.mapFp + ", topology=" + info.topology
+                   + ", amount=\"" + loop.profileAmountControl + "\" at norm " + juce::String(currentNorm, 3)
+                   + "; expecting " + juce::String(expGr, 1) + " dB of gain reduction").toRawUTF8());
 }
 
 /** (o) 30 Sep 2026: THE COMPANION SWEEP, ON ITS OWN. calibTick has four early returns - an inactive primary, a
@@ -7103,6 +7153,7 @@ int EchoJayProcessor::calibStartMany(const juce::String& uid, const std::vector<
         cfg.dynamicsSlot = host->slotIsDynamics(cfg.slot);   // (l)
         echojay::CalibLoop c;
         c.begin(cfg);
+        stampCompProfileOnLoop(uid, c);                  // COMP_PROFILE_SPEC_v1: a companion is checked too
         c.slotIdent = host->slotIdentityKey(cfg.slot);   // (n)
         // (q) 30 Sep 2026: A COMPRESSOR BUILD WRITES NO IN. It is set as dialled; the hold moves OUT and nothing
         // else. On any other slot the opening position is written as before - IN takes the drive, the live OUT

@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include <cmath>
 #include <functional>   // (i): configsFromBlock takes the caller's slot-name lookup
+#include "EJCompCheck.h"   // COMP_PROFILE_SPEC_v1 section 7: the one check
 #include <vector>
 
 // EJCalibLoop.h — compressor calibration by pre-gain (21t-d, 25 Sep 2026).
@@ -121,6 +122,22 @@ struct CalibLoop
     // Sean's 18:25:43-58: a track peaking at -5.0 dBTP allowed the drive exactly 2 dB and then said "band not
     // reached - drive limited by headroom at +2.0 dB", on a compressor that had not begun to work.
     bool   dynamicsSlot = false;
+    // COMP_PROFILE_SPEC_v1 items 3 and 4: what the one check found, for the closing line and the log. All
+    // false/NaN means there was no profile, and the line then says "set as dialled, no profile yet".
+    bool   hasProfile = false;
+    bool   profileChecked = false;
+    bool   profileCorrected = false;
+    bool   profileNotEngaging = false;
+    float  profileCorrectionDb = 0.0f;
+    float  profileObservedDropDb = std::numeric_limits<float>::quiet_NaN();
+    // The profile's own numbers, copied onto the loop by the host at begin() so the loop needs no ChainHost.
+    float  profileExpectedGrDb    = std::numeric_limits<float>::quiet_NaN();
+    float  profileExpectedLevelDb = std::numeric_limits<float>::quiet_NaN();
+    float  profileStaticGainDb    = 0.0f;
+    juce::String profileAmountControl;
+    float  profileAmountNormAfter = 0.0f;   // where the amount goes if the check eases it
+    float  profileCurrentNorm = 0.0f;       // where it is NOW, read off the plugin when the loop started
+    juce::var profileVar;                   // the profile itself, for the curve the ease reads
     bool   headroomStopped = false;    // it stopped because the INPUT ran out of headroom, not the step budget
     float  headroomLimit = kDriveLimit; // the drive at which the slot input would reach -3 dBTP, last computed
     // ---- MEASURE AND ASK (21t-i, 27 Sep 2026 ruling) ---------------------------------------------------------
@@ -289,6 +306,11 @@ struct CalibLoop
         // field for one. A plugin's output control is left exactly where the build put it.
         // 21t-j: the hold through EchoJay's own per-slot output gain, for a plugin that publishes no output control.
         bool  writeSlotGain = false;
+        // COMP_PROFILE_SPEC_v1 item 3: the ONE correction the check may make - the profile's own amount control,
+        // moved once toward less gain reduction. The host writes it exactly as it writes a named-param step.
+        bool writeAmount = false;
+        juce::String amountControl;
+        float amountNorm = 0.0f;
         float slotGainValue = 0.0f;
     };
 
@@ -1180,6 +1202,46 @@ struct CalibLoop
         // At most TWO writes for the whole settle: one absolute correction, then one refinement if the
         // re-measurement is still more than kHoldRefineDb out. After that the output is not touched again until
         // the user asks. Nothing here runs between drive steps - that is the design fault this replaces.
+        // COMP_PROFILE_SPEC_v1 section 7: THE ONE CHECK, BEFORE THE HOLD. It runs once per build on a compressor
+        // slot that has a profile and an expected figure; whatever it decides, the hold then matches the level on
+        // OUT once, as now. The decision itself is echojay::CompCheck, so it is the same on both hosts and a guard
+        // drives all three outcomes with figures of its own.
+        if (landed && holdOpen && ! holdDone && hasProfile && ! profileChecked)
+        {
+            CompCheck::Reading cr;
+            cr.dialSettled = true;                       // landed: the dial settled before the settle landed
+            cr.loudHeardSeconds = slotHeardS;
+            cr.levelChangeDb = levelChangeDb;
+            cr.expectedGrDb = profileExpectedGrDb;
+            cr.expectedLevelDb = profileExpectedLevelDb;
+            cr.staticGainDb = profileStaticGainDb;
+            const auto cd = CompCheck::decide (cr);
+            if (cd.outcome == CompCheck::Outcome::notYet)
+            {   // not yet: say so once per window and let the next one try. The hold waits with it.
+                s.card = card();
+                s.logLine = log ("profile-check-waiting");
+                return s;
+            }
+            profileChecked = true;
+            profileObservedDropDb = cd.observedDropDb;
+            if (cd.outcome == CompCheck::Outcome::tooMuch)
+            {
+                profileCorrected = true;
+                profileCorrectionDb = cd.correctionDb;
+                // THE TARGET POSITION, off the profile's own curve, from where the control actually is.
+                profileAmountNormAfter = CompCheck::amountNormForLessGr (profileVar, profileCurrentNorm,
+                                                                        cd.correctionDb);
+                s.writeAmount = true;
+                s.amountControl = profileAmountControl;
+                s.amountNorm = profileAmountNormAfter;
+                s.card = card();
+                s.logLine = log ("profile-eased");
+                return s;                                 // one move, then the next window holds
+            }
+            if (cd.outcome == CompCheck::Outcome::notEngaging)
+                profileNotEngaging = true;
+            // inRange, notEngaging and noCheck all fall through to the hold, which is section 7's last line.
+        }
         if (landed && holdOpen && ! holdDone)
             return holdStep (s);
 
@@ -1315,16 +1377,31 @@ struct CalibLoop
             // band to have reached or missed - only what the hold did about the level.
             if (dynamicsSlot)
             {
-                b << " Set as dialled, level ";
-                if (std::abs (levelTrimmedDb) > 0.05f)
-                    b << "matched, Output " << signed1 (slotGainDb) << " dB.";
+                // COMP_PROFILE_SPEC_v1 item 4 / section 7: THE LINE SAYS WHERE THE SETTING CAME FROM, and names
+                // the plugin, because on a two-compressor build the user needs to know which one it is about.
+                //   with a profile: "EMO-D5: about 2 dB on the loud phrases, from its profile. Output -1.5 dB."
+                //   without one:    "NEOLD U2A: set as dialled, no profile yet."
+                if (hasProfile)
+                {
+                    juce::String p = plugin + ":";
+                    const float gr = measuredGrDb();
+                    if (gr == gr) p << " about " << juce::String (juce::roundToInt (gr)) << " dB on the loud phrases,";
+                    else          p << " no gain-reduction reading yet,";
+                    p << " from its profile.";
+                    if (profileNotEngaging)
+                        p << " It is not compressing at all - the profile looks wrong and I have reported it.";
+                    else if (profileCorrected)
+                        p << " I eased it back " << juce::String (profileCorrectionDb, 1) << " dB.";
+                    if (std::abs (levelTrimmedDb) > 0.05f) p << " Output " << signed1 (slotGainDb) << " dB.";
+                    return p;
+                }
+                juce::String p = plugin + ": set as dialled, no profile yet.";
+                if (std::abs (levelTrimmedDb) > 0.05f) p << " Output " << signed1 (slotGainDb) << " dB.";
                 else if (std::abs (levelResidualDb) > 1.0f)
-                    b << "NOT matched - the slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
+                    p << " The slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
                       << (levelResidualDb > 0.0f ? "louder" : "quieter")
                       << " out than in and my output trim has no more to give.";
-                else
-                    b << "already matched.";
-                return b;
+                return p;
             }
             const float gr = measuredGrDb();
             if (std::abs (preDb) > 0.05f)

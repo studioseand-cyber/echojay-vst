@@ -13,6 +13,7 @@
 #include "ChainHost.h"
 #include "EedDeviceRegistry.h"
 #include "EedGainProcessor.h"
+#include "EJCompCheck.h"
 #include <cstdio>
 #include <cmath>
 
@@ -167,6 +168,99 @@ void guardMain()
                    "(2d) it carries no fingerprint, so it has no profile and takes today's road - EchoJay's own "
                    "devices are not what profiles are for",
                    "fp=\"" + h.getSlotIdentity (1).fp + "\"");
+        }
+    }
+
+    std::printf ("\n-- (3) THE ONE CHECK: all three outcomes, spec section 7 --\n");
+    {
+        using CC = echojay::CompCheck;
+        const auto prof = profileVar ("abc123");
+        auto reading = [] (float expectedGr, float levelChange, float loudHeard = 20.0f,
+                           bool settled = true, float staticGain = 0.0f, float expLevel = std::numeric_limits<float>::quiet_NaN())
+        {
+            CC::Reading r;
+            r.dialSettled = settled; r.loudHeardSeconds = loudHeard;
+            r.levelChangeDb = levelChange; r.expectedGrDb = expectedGr;
+            r.staticGainDb = staticGain; r.expectedLevelDb = expLevel;
+            return r;
+        };
+        // ---- OUTCOME 1: in range. The reading agrees with the profile, so nothing moves.
+        {
+            const auto res = CC::decide (reading (2.0f, -2.3f));
+            check (res.outcome == CC::Outcome::inRange && std::abs (res.observedDropDb - 2.3f) < 0.01f
+                       && res.correctionDb == 0.0f,
+                   "(3) a slot dropping 2.3 dB against an expected 2.0 is IN RANGE: nothing moves",
+                   res.why);
+        }
+        // ---- OUTCOME 2: too much. One move, by the difference, toward less.
+        {
+            const auto res = CC::decide (reading (2.0f, -6.5f));
+            check (res.outcome == CC::Outcome::tooMuch && std::abs (res.correctionDb - 4.5f) < 0.01f,
+                   "(3) 6.5 dB against an expected 2.0 is more than expected + 3, so the amount moves ONCE by the "
+                   "difference  (RED as it stood: nothing checked, and a profile that over-compressed stayed where "
+                   "the server put it)",
+                   res.why);
+            // ...and exactly at the boundary it does NOT move: "more than expected + 3".
+            const auto edge = CC::decide (reading (2.0f, -5.0f));
+            check (edge.outcome == CC::Outcome::inRange,
+                   "(3) ...and exactly expected + 3 does not move - the spec says MORE than", edge.why);
+            // THE MOVE ITSELF, through the profile's own curve: less GR is a HIGHER effective threshold.
+            const float from = 0.5f;                       // eff -29.8 on this curve
+            const float to = CC::amountNormForLessGr (prof, from, res.correctionDb);
+            const auto c = CC::curveOf (prof);
+            check (to > from,
+                   "(3) the amount norm moves UP the curve, because less gain reduction is a higher threshold",
+                   juce::String (from, 3) + " -> " + juce::String (to, 3));
+            check (std::abs ((CC::effForNorm (c, to) - CC::effForNorm (c, from)) - res.correctionDb) < 0.1f,
+                   "(3) ...by exactly the dB the check asked for, read off amount.curve and not guessed",
+                   juce::String (CC::effForNorm (c, from), 1) + " -> " + juce::String (CC::effForNorm (c, to), 1)
+                       + " dBFS, wanted +" + juce::String (res.correctionDb, 1));
+            check (CC::amountControl (prof) == "Comp Thresh",
+                   "(3) ...on the control the PROFILE names, not one this client chose",
+                   CC::amountControl (prof));
+        }
+        // ---- OUTCOME 3: not engaging. Change nothing, report it.
+        {
+            const auto r = reading (2.0f, -0.2f);
+            const auto res = CC::decide (r);
+            check (res.outcome == CC::Outcome::notEngaging,
+                   "(3) 0.2 dB against an expected 2.0 is NOT ENGAGING: the profile is wrong, so nothing is moved",
+                   res.why);
+            const auto line = CC::notEngagingLine ("EMO-D5 (s)", "32b7e1d9a0c3", r, res);
+            check (line.startsWith ("PROFILE_NOT_ENGAGING") && line.contains ("plugin=\"EMO-D5 (s)\"")
+                       && line.contains ("map_fp=32b7e1d9a0c3") && line.contains ("expected_gr_db=2.0")
+                       && line.contains ("observed_drop_db=0.20"),
+                   "(3) ...and the line names the plugin, the map_fp and the readings, as the spec says",
+                   line);
+            // ...but 0.2 dB against an expected 0.5 is NOT a report: the spec floors it at 1 dB expected.
+            check (CC::decide (reading (0.5f, -0.2f)).outcome == CC::Outcome::inRange,
+                   "(3) ...while an expected figure under 1 dB never reports NOT_ENGAGING, because 0.2 of an "
+                   "expected 0.5 is not evidence of anything");
+        }
+        // ---- THE GATES: it does not check early, and it does not check what it cannot.
+        {
+            check (CC::decide (reading (2.0f, -6.5f, 20.0f, false)).outcome == CC::Outcome::notYet,
+                   "(3) it does not check before the dial has settled");
+            check (CC::decide (reading (2.0f, -6.5f, 4.0f, true)).outcome == CC::Outcome::notYet,
+                   "(3) ...nor before 10 s of loud material, however wrong the reading looks");
+            check (CC::decide (reading (std::numeric_limits<float>::quiet_NaN(), -6.5f)).outcome == CC::Outcome::noCheck,
+                   "(3) ...and a block with no expected figure is NOT checked at all - that is today's behaviour");
+        }
+        // ---- THE SUBTRACTIONS, which are what make the drop mean compression.
+        {
+            // static_gain_db +2: the slot is 2 dB LOUDER for free, so a measured -4.5 dB change is 6.5 of
+            // compression. (This leg passed before the sign was fixed by passing -2.0 while its comment said +2 -
+            // the assertion and the implementation were wrong together, which is the one way a leg can lie.)
+            const auto res = CC::decide (reading (2.0f, -4.5f, 20.0f, true, 2.0f));
+            check (std::abs (res.observedDropDb - 6.5f) < 0.01f,
+                   "(3) static_gain_db is subtracted, so the drop means COMPRESSION and not a fixed output trim",
+                   juce::String (res.observedDropDb, 2) + " dB of drop from a 4.5 dB level change");
+            // expected_level_db: an input_drive unit's amount control moves the level itself.
+            const auto r2 = CC::decide (reading (2.0f, -6.5f, 20.0f, true, 0.0f, -4.0f));
+            check (std::abs (r2.observedDropDb - 2.5f) < 0.01f && r2.outcome == CC::Outcome::inRange,
+                   "(3) ...and so is the expected level change, so an input_drive unit is not accused of "
+                   "compressing by its own input knob",
+                   juce::String (r2.observedDropDb, 2) + " dB of drop from a 6.5 dB level change");
         }
     }
 

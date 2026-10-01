@@ -763,6 +763,7 @@ public:
                         const echojay::CalibLoop::Step& step);
     void advanceCalibCompanions(const juce::String& uid, ChainHost* host, double sinceMs);
     void calibSweepCompanionsOnly(const juce::String& uid);   // (o): companions run whatever the primary is doing
+    void stampCompProfileOnLoop(const juce::String& uid, echojay::CalibLoop& loop);   // spec items 3/4, flagged
     echojay::CalibLoop calibLoad(const juce::String& uid) const;
     void               calibStore(const juce::String& uid, const echojay::CalibLoop& loop);
     double             calibStallLogMs_ = 0.0;   // 21t-i: rate limit for the "cannot be advanced" line

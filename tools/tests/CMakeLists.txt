@@ -220,6 +220,9 @@ ej_add_guard(track_level_guard        SOURCE tools/track_level_guard/harness.cpp
 # COMP_PROFILE_SPEC_v1 items 2 and 3: the profile on the slot, and the one check. Hosts a REAL plugin, because a
 # profile joins by map fingerprint and a built-in has none.
 ej_add_guard(comp_profile_guard       SOURCE tools/comp_profile_guard/harness.cpp             LABEL fast SCRIBBLE)
+# COMP_PROFILE_SPEC_v1 section 8: the acceptance check. A TOOL, not a test - it loads a real AU and renders audio
+# through it, so it is built and run by hand (or by EJ Maps) and carries the label "none" so no gate runs it.
+ej_add_guard(comp_render_check        SOURCE tools/comp_render_check/main.cpp                 LABEL none SCRIBBLE)
 # ...and its PRE-FIX reproducer, registered so it BUILDS with the tree (a RED that does not compile is not a RED)
 # but with NO label, so no gate runs it: it is the same rig cut down to what exists before this round's fix, and
 # it is run by hand against a stashed Source/ to show the wind-up happening. Its output is quoted in MERGE.
