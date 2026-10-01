@@ -156,3 +156,50 @@ identity (`AudioUnit|uid|version`); `map_fp` joins once item 2's change lands.
 - Fixture `controls` shorter than the probe's parameter list on 5 of 92 (item 2).
 - 1.78 dB appears identically on four Melda candidates across three products — a shared code
   path or fixed step, not four measurements.
+
+## v1.1 (1 Oct, evening): map_fp verified, the exporter, and your section 6 on real data
+
+**map_fp, full 64 hex.** Every record now carries `param_count` and the full `map_fp`. Checked
+against reality two ways: 96 of 96 records that have a local EJ Map map reproduce the map's `fp`,
+and **91 of 91 records that EchoJay itself has loaded on this Mac carry the fp EchoJay computed**
+(its persisted identity→fp index at `~/Library/EchoJay/chain_fp_scan.json`, the source of
+EJDialSummary's `fp=`). We are computing your key. `plugin_id` + `version` stays the fallback for
+any record from before the field existed.
+
+**Exporter.** One function, `EjmapProfileExport.h`, from a certification record to
+`ej_comp_profile/1` (v1.1 fields: 64-hex `map_fp`, `measured.reference_ratio` = the READ-BACK
+ratio, `stepped` on stepped amount controls). Every dBFS value is converted from our peak
+convention by −3.0103 dB — pinned against the constant and measured from a committed trace
+(the probe prints −27.0103 dB RMS beside a −24 dBFS peak hold). A record that cannot fill a field
+honestly is refused with the reason; nothing is padded. First real files: after the profile
+sweep below (today's 3-level sweeps have no two-quiet-level reference and too few 1 dB crossings
+for your 9-point rule, so the exporter refuses all 103 — correctly).
+
+**Your section 6, run on measured curves** (CL 1B, MCompressor, EMO-D5 (s) Comp Thresh; L = −18 dBFS
+RMS, g = 2, R = the read-back ratio; GR at L read off the measured curve):
+
+| product | R | your T | position picked (both rules) | eff at it | measured GR at L | readings at that position (peak −24/−12/−6) |
+|---|---|---|---|---|---|---|
+| Tube-Tech CL 1B | 6.0 | −20.4 | 3 ('0.2') | −22.4 | **1.48 dB** | 0.50 / 1.80 / 3.52 |
+| MCompressor (Hard knee) | 1.8 | −22.5 | 5 ('−18.7 dB') | −22.2 | **1.89 dB** | 0.00 / 2.52 / 5.58 |
+| EMO-D5 (s) Comp Thresh (Normal knee) | 3.0 | −21.0 | 10 ('−16.0') | −22.4 | **1.95 dB** | 0.01 / 2.59 / 6.44 |
+
+Three things the numbers say:
+
+1. **Your rule lands near the target (1.5–2.0 dB for g = 2), not at g + 1 = 3.** The algebra
+   ("eff is where GR *reaches* 1 dB, T is where it *starts*, so matching them over-shoots by 1 dB")
+   assumes GR climbs at (1 − 1/R) above the crossing. It does not: CL 1B climbs **0.11 dB per dB**
+   over the 4.4 dB above its 1 dB crossing (textbook 0.83); the others likewise. Soft knees, exactly
+   the signature in the ratio-free vs R-based disagreement (88 of 117 positions). So the +1
+   correction (K = eff − 1/(1 − 1/R)) is smaller than the knee error it would correct, and on
+   these three it changes nothing.
+2. **The 16-position grid cannot discriminate the two rules**: eff values sit 3–6 dB apart, so the
+   corrected K and your T pick the same position every time. The 2 dB-step profile sweep is what
+   separates them. Numbers above are interpolated on a 3-level sweep and are the reading, not a
+   verdict.
+3. **Recommendation, from the data rather than the algebra:** pick the amount position by the
+   **measured GR at L on the curve itself** — the profile carries GR at every level for every
+   position — not by threshold arithmetic. `eff_threshold_dbfs` stays as the summary number;
+   the position choice should read the curve. Your `+knee_db/4` term did not enter here (CL 1B has
+   no knee control; MCompressor 'Hard'; EMO-D5 'Normal' prints no dB) — which is itself the finding:
+   the knee the curves show is not a control value we can read.
