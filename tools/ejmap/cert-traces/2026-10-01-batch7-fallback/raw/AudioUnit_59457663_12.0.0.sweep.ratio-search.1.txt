@@ -1,0 +1,74 @@
+probe: "SSLGChannel (m)" | AudioUnit:Effects/aufx,SCGM,ksWV | uid=59457663 | arch=arm64 | format=AudioUnit
+
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+textat	proto	1	index	2	name	CompRatio	points	65	instantiated	0.000000	1.0
+at	0.000000	landed	getValue	0.000000	confirm_ms	40.3	landed_by	instack	text	1.0
+at	0.015625	landed	getValue	0.015625	confirm_ms	61.3	landed_by	pump	text	1.1
+at	0.031250	landed	getValue	0.031250	confirm_ms	59.3	landed_by	pump	text	1.2
+at	0.046875	landed	getValue	0.046875	confirm_ms	56.5	landed_by	pump	text	1.2
+at	0.062500	landed	getValue	0.062500	confirm_ms	183.2	landed_by	pump	text	1.3
+at	0.078125	landed	getValue	0.078125	confirm_ms	52.1	landed_by	pump	text	1.4
+at	0.093750	landed	getValue	0.093750	confirm_ms	61.4	landed_by	pump	text	1.5
+at	0.109375	landed	getValue	0.109375	confirm_ms	68.0	landed_by	pump	text	1.5
+at	0.125000	landed	getValue	0.125000	confirm_ms	62.3	landed_by	pump	text	1.6
+at	0.140625	landed	getValue	0.140625	confirm_ms	64.3	landed_by	pump	text	1.7
+at	0.156250	landed	getValue	0.156250	confirm_ms	68.2	landed_by	pump	text	1.8
+at	0.171875	landed	getValue	0.171875	confirm_ms	57.5	landed_by	pump	text	1.9
+at	0.187500	landed	getValue	0.187500	confirm_ms	63.6	landed_by	pump	text	1.9
+at	0.203125	landed	getValue	0.203125	confirm_ms	61.5	landed_by	pump	text	2.0
+at	0.218750	landed	getValue	0.218750	confirm_ms	64.0	landed_by	pump	text	2.1
+at	0.234375	landed	getValue	0.234375	confirm_ms	49.9	landed_by	pump	text	2.2
+at	0.250000	landed	getValue	0.250000	confirm_ms	54.0	landed_by	pump	text	2.3
+at	0.265625	landed	getValue	0.265625	confirm_ms	65.2	landed_by	pump	text	2.4
+at	0.281250	landed	getValue	0.281250	confirm_ms	55.0	landed_by	pump	text	2.5
+at	0.296875	landed	getValue	0.296875	confirm_ms	63.6	landed_by	pump	text	2.6
+at	0.312500	landed	getValue	0.312500	confirm_ms	62.4	landed_by	pump	text	2.8
+at	0.328125	landed	getValue	0.328125	confirm_ms	53.3	landed_by	pump	text	2.9
+at	0.343750	landed	getValue	0.343750	confirm_ms	54.9	landed_by	pump	text	3.0
+at	0.359375	landed	getValue	0.359375	confirm_ms	55.8	landed_by	pump	text	3.1
+at	0.375000	landed	getValue	0.375000	confirm_ms	63.1	landed_by	pump	text	3.3
+at	0.390625	landed	getValue	0.390625	confirm_ms	56.3	landed_by	pump	text	3.5
+at	0.406250	landed	getValue	0.406250	confirm_ms	59.6	landed_by	pump	text	3.8
+at	0.421875	landed	getValue	0.421875	confirm_ms	64.3	landed_by	pump	text	4.0
+at	0.437500	landed	getValue	0.437500	confirm_ms	66.4	landed_by	pump	text	4.2
+at	0.453125	landed	getValue	0.453125	confirm_ms	58.6	landed_by	pump	text	4.4
+at	0.468750	landed	getValue	0.468750	confirm_ms	58.5	landed_by	pump	text	4.6
+at	0.484375	landed	getValue	0.484375	confirm_ms	60.3	landed_by	pump	text	4.8
+at	0.500000	landed	getValue	0.500000	confirm_ms	64.6	landed_by	pump	text	5.0
+at	0.515625	landed	getValue	0.515625	confirm_ms	62.6	landed_by	pump	text	5.3
+at	0.531250	landed	getValue	0.531250	confirm_ms	61.5	landed_by	pump	text	5.6
+at	0.546875	landed	getValue	0.546875	confirm_ms	61.8	landed_by	pump	text	5.9
+at	0.562500	landed	getValue	0.562500	confirm_ms	66.8	landed_by	pump	text	6.3
+at	0.578125	landed	getValue	0.578125	confirm_ms	37.3	landed_by	pump	text	6.6
+at	0.593750	landed	getValue	0.593750	confirm_ms	34.7	landed_by	pump	text	6.9
+at	0.609375	landed	getValue	0.609375	confirm_ms	60.6	landed_by	pump	text	7.2
+at	0.625000	landed	getValue	0.625000	confirm_ms	67.6	landed_by	pump	text	7.5
+at	0.640625	landed	getValue	0.640625	confirm_ms	60.4	landed_by	pump	text	7.8
+at	0.656250	landed	getValue	0.656250	confirm_ms	64.2	landed_by	pump	text	8.5
+at	0.671875	landed	getValue	0.671875	confirm_ms	58.3	landed_by	pump	text	9.8
+at	0.687500	landed	getValue	0.687500	confirm_ms	58.1	landed_by	pump	text	11.0
+at	0.703125	landed	getValue	0.703125	confirm_ms	65.1	landed_by	pump	text	12.3
+at	0.718750	landed	getValue	0.718750	confirm_ms	62.4	landed_by	pump	text	13.5
+at	0.734375	landed	getValue	0.734375	confirm_ms	64.3	landed_by	pump	text	14.8
+at	0.750000	landed	getValue	0.750000	confirm_ms	64.9	landed_by	pump	text	16.0
+at	0.765625	landed	getValue	0.765625	confirm_ms	59.3	landed_by	pump	text	17.3
+at	0.781250	landed	getValue	0.781250	confirm_ms	66.8	landed_by	pump	text	18.5
+at	0.796875	landed	getValue	0.796875	confirm_ms	36.9	landed_by	pump	text	19.8
+at	0.812500	landed	getValue	0.812500	confirm_ms	34.5	landed_by	pump	text	25.0
+at	0.828125	landed	getValue	0.828125	confirm_ms	61.7	landed_by	pump	text	31.3
+at	0.843750	landed	getValue	0.843750	confirm_ms	66.1	landed_by	pump	text	37.5
+at	0.859375	landed	getValue	0.859375	confirm_ms	60.8	landed_by	pump	text	43.8
+at	0.875000	landed	getValue	0.875000	confirm_ms	56.8	landed_by	pump	text	50.0
+at	0.890625	landed	getValue	0.890625	confirm_ms	62.2	landed_by	pump	text	56.3
+at	0.906250	landed	getValue	0.906250	confirm_ms	60.1	landed_by	pump	text	62.5
+at	0.921875	landed	getValue	0.921875	confirm_ms	58.8	landed_by	pump	text	68.8
+at	0.937500	landed	getValue	0.937500	confirm_ms	62.9	landed_by	pump	text	75.0
+at	0.953125	landed	getValue	0.953125	confirm_ms	53.4	landed_by	pump	text	81.3
+at	0.968750	landed	getValue	0.968750	confirm_ms	59.9	landed_by	pump	text	87.5
+at	0.984375	landed	getValue	0.984375	confirm_ms	62.0	landed_by	pump	text	93.8
+at	1.000000	landed	getValue	1.000000	confirm_ms	61.4	landed_by	pump	text	+Inf
+stage	done

@@ -1,0 +1,2 @@
+probe: "Auto-Tune EFX" | AudioUnit:Effects/aufx,APan,VST  | uid=76765336 | arch=arm64 | format=AudioUnit
+refused An OS error occurred during initialisation of the plug-in (4097)

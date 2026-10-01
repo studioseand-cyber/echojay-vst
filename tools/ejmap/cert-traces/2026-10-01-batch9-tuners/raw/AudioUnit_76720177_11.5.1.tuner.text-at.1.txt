@@ -1,0 +1,462 @@
+probe: "Auto-Tune Pro" | AudioUnit:Effects/aumf,AT81,VST  | uid=76720177 | arch=arm64 | format=AudioUnit
+
+param	1	Scale	unit	
+def	0.071429	Chromatic	default	0.071429
+at	0.000	Major
+at	0.500	Barnes
+at	1.000	Harmonic
+param	2	Key	unit	
+def	0.000000	C	default	0.000000
+at	0.000	C
+at	0.500	F#
+at	1.000	B
+param	3	Detune	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-100
+at	0.500	0
+at	1.000	100
+param	4	Retune Speed	unit	
+def	0.685552	20	default	0.685552
+at	0.000	400
+at	0.500	50
+at	1.000	0
+param	5	Vibrato Shape	unit	
+def	0.000000	(No Vibrato)	default	0.000000
+at	0.000	(No Vibrato)
+at	0.500	Square
+at	1.000	Sawtooth
+param	6	Vibrato Pitch	unit	
+def	0.180000	18	default	0.180000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	7	Vibrato Rate	unit	
+def	0.545455	5.5	default	0.545455
+at	0.000	0.1
+at	0.500	5.0
+at	1.000	10.0
+param	10	Input Type	unit	
+def	0.250000	Alto-Tenor	default	0.250000
+at	0.000	Soprano
+at	0.500	Low Male
+at	1.000	Bass Inst.
+param	36	Learn Scale from MIDI	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	37	Target Notes via MIDI	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	44	Ignore Vibrato	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	46	V.Onset Delay	unit	
+def	0.333333	500	default	0.333333
+at	0.000	0
+at	0.500	750
+at	1.000	1500
+param	47	Vibrato Amplitude	unit	
+def	0.333333	10	default	0.333333
+at	0.000	0
+at	0.500	15
+at	1.000	30
+param	48	Vibrato Formant	unit	
+def	0.700000	70	default	0.700000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	49	Vibrato Variation	unit	
+def	0.200000	20	default	0.200000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	50	V.Onset Rate	unit	
+def	0.333333	500	default	0.333333
+at	0.000	0
+at	0.500	750
+at	1.000	1500
+param	58	MIDI Octaves	unit	
+def	0.000000	As Played	default	0.000000
+at	0.000	As Played
+at	0.500	All
+at	1.000	All
+param	61	Humanize	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	62	Natural Vibrato	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	70	Formant Correction	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	71	Throat Length	unit	
+def	0.500000	100	default	0.500000
+at	0.000	50
+at	0.500	100
+at	1.000	180
+param	74	Transpose	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-12
+at	0.500	0
+at	1.000	12
+param	89	Flex-Tune	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	91	Wet-Dry Mix	unit	
+def	1.000000	100%	default	1.000000
+at	0.000	0%
+at	0.500	50%
+at	1.000	100%
+param	114	Master Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	115	HP Voice 1 Fixed Interval	unit	
+def	0.500000	U	default	0.500000
+at	0.000	24
+at	0.500	U
+at	1.000	-24
+param	116	HP Voice 2 Fixed Interval	unit	
+def	0.500000	U	default	0.500000
+at	0.000	24
+at	0.500	U
+at	1.000	-24
+param	117	HP Voice 3 Fixed Interval	unit	
+def	0.500000	U	default	0.500000
+at	0.000	24
+at	0.500	U
+at	1.000	-24
+param	118	HP Voice 4 Fixed Interval	unit	
+def	0.500000	U	default	0.500000
+at	0.000	24
+at	0.500	U
+at	1.000	-24
+param	119	HP Voice 1 Scale Interval	unit	
+def	0.250000	8va	default	0.250000
+at	0.000	16va
+at	0.500	U
+at	1.000	16vb
+param	120	HP Voice 2 Scale Interval	unit	
+def	0.357143	+5th	default	0.357143
+at	0.000	16va
+at	0.500	U
+at	1.000	16vb
+param	121	HP Voice 3 Scale Interval	unit	
+def	0.428571	+3rd	default	0.428571
+at	0.000	16va
+at	0.500	U
+at	1.000	16vb
+param	122	HP Voice 4 Scale Interval	unit	
+def	0.750000	8vb	default	0.750000
+at	0.000	16va
+at	0.500	U
+at	1.000	16vb
+param	123	HP Voice 1 Latch	unit	
+def	0.000000	Momentary	default	0.000000
+at	0.000	Momentary
+at	0.500	Latched
+at	1.000	Latched
+param	124	HP Voice 2 Latch	unit	
+def	0.000000	Momentary	default	0.000000
+at	0.000	Momentary
+at	0.500	Latched
+at	1.000	Latched
+param	125	HP Voice 3 Latch	unit	
+def	0.000000	Momentary	default	0.000000
+at	0.000	Momentary
+at	0.500	Latched
+at	1.000	Latched
+param	126	HP Voice 4 Latch	unit	
+def	0.000000	Momentary	default	0.000000
+at	0.000	Momentary
+at	0.500	Latched
+at	1.000	Latched
+param	127	HP All Voices Latch	unit	
+def	0.000000	Momentary	default	0.000000
+at	0.000	Momentary
+at	0.500	Latched
+at	1.000	Latched
+param	128	HP Voice 1 Level	unit	
+def	0.625000	-6	default	0.625000
+at	0.000	-Inf
+at	0.500	-12
+at	1.000	12
+param	129	HP Voice 2 Level	unit	
+def	0.625000	-6	default	0.625000
+at	0.000	-Inf
+at	0.500	-12
+at	1.000	12
+param	130	HP Voice 3 Level	unit	
+def	0.625000	-6	default	0.625000
+at	0.000	-Inf
+at	0.500	-12
+at	1.000	12
+param	131	HP Voice 4 Level	unit	
+def	0.625000	-6	default	0.625000
+at	0.000	-Inf
+at	0.500	-12
+at	1.000	12
+param	132	HP Voice 1 Pan	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-100
+at	0.500	0
+at	1.000	100
+param	133	HP Voice 2 Pan	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-100
+at	0.500	0
+at	1.000	100
+param	134	HP Voice 3 Pan	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-100
+at	0.500	0
+at	1.000	100
+param	135	HP Voice 4 Pan	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-100
+at	0.500	0
+at	1.000	100
+param	136	HP Voice 1 Width	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	137	HP Voice 2 Width	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	138	HP Voice 3 Width	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	139	HP Voice 4 Width	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	140	HP Voice 1 Formant	unit	
+def	0.500000	100	default	0.500000
+at	0.000	75
+at	0.500	100
+at	1.000	150
+param	141	HP Voice 2 Formant	unit	
+def	0.500000	100	default	0.500000
+at	0.000	75
+at	0.500	100
+at	1.000	150
+param	142	HP Voice 3 Formant	unit	
+def	0.500000	100	default	0.500000
+at	0.000	75
+at	0.500	100
+at	1.000	150
+param	143	HP Voice 4 Formant	unit	
+def	0.500000	100	default	0.500000
+at	0.000	75
+at	0.500	100
+at	1.000	150
+param	144	HP Voice 1 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	145	HP Voice 2 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	146	HP Voice 3 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	147	HP Voice 4 Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	148	HP Voice 1 Trigger	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	149	HP Voice 2 Trigger	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	150	HP Voice 3 Trigger	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	151	HP Voice 4 Trigger	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	152	HP All Voices Trigger	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	153	HP Interval Type	unit	
+def	1.000000	Fixed	default	1.000000
+at	0.000	Scale
+at	0.500	Fixed
+at	1.000	Fixed
+param	154	HP Pan / Width	unit	
+def	0.000000	Pan	default	0.000000
+at	0.000	Pan
+at	0.500	Width
+at	1.000	Width
+param	155	HP Bypass Harmony Player	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	156	HP Mute Input	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	157	HP Solo Input	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	158	HP Naturalize	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	159	HP Pitch Variation	unit	
+def	0.300000	30	default	0.300000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	160	HP Timing Variation	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	161	HP Transition Time	unit	
+def	0.545665	125	default	0.545665
+at	0.000	0
+at	0.500	100
+at	1.000	1000
+param	162	Modern Scale	unit	
+def	0.000000	Chromatic	default	0.000000
+at	0.000	Chromatic
+at	0.500	Lydian
+at	1.000	Diminished
+param	163	HP Attack	unit	
+def	0.000000	0.5	default	0.000000
+at	0.000	0.5
+at	0.500	1500.5
+at	1.000	3000.0
+param	164	HP Release	unit	
+def	0.000000	5	default	0.000000
+at	0.000	5
+at	0.500	1503
+at	1.000	3000
+param	165	HP Equalizer Type	unit	
+def	0.000000	High Pass	default	0.000000
+at	0.000	High Pass
+at	0.500	Band Pass
+at	1.000	Low Pass
+param	166	HP LPF Frequency	unit	
+def	0.985814	20000	default	0.985814
+at	0.000	18
+at	0.500	2097
+at	1.000	20974.7
+param	167	HP LPF dB / Octave	unit	
+def	0.333333	12	default	0.333333
+at	0.000	6
+at	0.500	18
+at	1.000	24
+param	168	HP BPF Frequency	unit	
+def	0.399242	1000	default	0.399242
+at	0.000	18
+at	0.500	2097
+at	1.000	20974.7
+param	169	HP BPF Q	unit	
+def	0.015152	1.0	default	0.015152
+at	0.000	0.4
+at	0.500	20.2
+at	1.000	40.0
+param	170	HP BPF Level	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	171	HP HPF Frequency	unit	
+def	0.000000	18	default	0.000000
+at	0.000	18
+at	0.500	2097
+at	1.000	20974.7
+param	172	HP HPF dB / Octave	unit	
+def	0.333333	12	default	0.333333
+at	0.000	6
+at	0.500	18
+at	1.000	24
+param	173	HP Gate Side Chain Source	unit	
+def	0.000000	Internal	default	0.000000
+at	0.000	Internal
+at	0.500	External
+at	1.000	External
+param	174	HP Gate Threshold	unit	
+def	0.240741	-70	default	0.240741
+at	0.000	-96
+at	0.500	-42
+at	1.000	12
+param	175	HP Stereo Width	unit	
+def	0.500000	100	default	0.500000
+at	0.000	50
+at	0.500	100
+at	1.000	130
+param	176	HP Bypass Gate	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	177	HP Bypass Envelope	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	178	HP Bypass Equalizer	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	179	Transpose In Scale	unit	
+def	0.000000	Ignoring Scale	default	0.000000
+at	0.000	Ignoring Scale
+at	0.500	In Scale
+at	1.000	In Scale
+param	180	HP Mixer Show / Hide	unit	
+def	1.000000	1	default	1.000000
+at	0.000	0
+at	0.500	1
+at	1.000	1
+param	181	Scale Transpose	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-7
+at	0.500	0
+at	1.000	7

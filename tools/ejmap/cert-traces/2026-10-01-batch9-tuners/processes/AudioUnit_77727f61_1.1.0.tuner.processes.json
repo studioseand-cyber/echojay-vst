@@ -1,0 +1,34 @@
+[
+  {
+    "tag": "list-params",
+    "attempt": 1,
+    "file": "AudioUnit_77727f61_1.1.0.tuner.list-params.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "ms": 993.49399995803833
+  },
+  {
+    "tag": "text-at",
+    "attempt": 1,
+    "file": "AudioUnit_77727f61_1.1.0.tuner.text-at.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "ms": 4411.379166722297668
+  },
+  {
+    "tag": "c12.static",
+    "attempt": 1,
+    "file": "AudioUnit_77727f61_1.1.0.tuner.c12.static.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "ms": 3252.662333369255066
+  },
+  {
+    "tag": "c12.vibrato",
+    "attempt": 1,
+    "file": "AudioUnit_77727f61_1.1.0.tuner.c12.vibrato.1.txt",
+    "outcome": "exit 0",
+    "clean": true,
+    "ms": 4514.191374897956848
+  }
+]

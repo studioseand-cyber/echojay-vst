@@ -1,0 +1,377 @@
+probe: "Auto-Tune EFX+" | AudioUnit:Effects/aufx,Vefx,Antr | uid=767e7472 | arch=arm64 | format=AudioUnit
+
+param	0	Dry / Wet Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	1	Output Gain dB	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	4	Global Effect Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	6	Auto-Tune Key	unit	
+def	0.000000	C	default	0.000000
+at	0.000	C
+at	0.500	F#
+at	1.000	B
+param	7	Auto-Tune Scale	unit	
+def	1.000000	Chromatic	default	1.000000
+at	0.000	Major
+at	0.500	Minor
+at	1.000	Chromatic
+param	8	Auto-Tune Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	9	Formant	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	12	Retune Speed	unit	
+def	0.685552	20	default	0.685552
+at	0.000	400
+at	0.500	50
+at	1.000	0
+param	13	Humanize	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	14	Breath Mix	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	15	Breath HPF	unit	
+def	0.500000	4000	default	0.500000
+at	0.000	500
+at	0.500	4000
+at	1.000	8000
+param	16	Breath Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	18	Duet Detune	unit	
+def	0.200000	20	default	0.200000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	19	Duet Timing	unit	
+def	0.300000	30	default	0.300000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	20	Duet Enable	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	22	P&T Shift	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-12
+at	0.500	0
+at	1.000	12
+param	23	P&T Length	unit	
+def	0.500000	100	default	0.500000
+at	0.000	50
+at	0.500	100
+at	1.000	180
+param	24	P&T Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	26	Motion Pattern	unit	
+def	0.000000	Trill	default	0.000000
+at	0.000	Trill
+at	0.500	SyncoJump 2
+at	1.000	SolFaMi
+param	27	Motion Trigger	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	29	Motion Glide	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	5
+at	1.000	25
+param	30	Motion Sync	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	31	Motion BPM	unit	
+def	0.416667	120	default	0.416667
+at	0.000	20
+at	0.500	140
+at	1.000	260
+param	32	Motion Clock Divider	unit	
+def	0.500000	1/8	default	0.500000
+at	0.000	4/4
+at	0.500	1/8
+at	1.000	1/32T
+param	33	Note C	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	34	Note C#/Db	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	35	Note D	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	36	Note D#/Eb	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	37	Note E	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	38	Note F	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	39	Note F#/Gb	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	40	Note G	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	41	Note G#/Ab	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	42	Note A	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	43	Note A#/Bb	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	44	Note B	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	49	Chorus Rate	unit	
+def	0.166667	0.25	default	0.166667
+at	0.000	0.10
+at	0.500	0.55
+at	1.000	1.00
+param	50	Chorus Depth	unit	
+def	0.100000	10	default	0.100000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	51	Chorus Mix	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	52	Chorus Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	54	Compress Reduction	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	55	Compress Gain	unit	
+def	0.533333	6	default	0.533333
+at	0.000	-10
+at	0.500	5
+at	1.000	20
+param	56	Compress Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	57	Compress Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	59	Echo Time	unit	
+def	0.285714	1/4	default	0.285714
+at	0.000	4/4
+at	0.500	1/8
+at	1.000	1/32T
+param	60	Echo Feedback	unit	
+def	0.300000	30	default	0.300000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	61	Echo Mix	unit	
+def	0.300000	30	default	0.300000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	62	Echo Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	64	EQ Frequency	unit	
+def	0.465216	1000	default	0.465216
+at	0.000	18
+at	0.500	1240
+at	1.000	10000
+param	65	EQ Gain	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0
+param	66	EQ Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	68	HP Frequency	unit	
+def	0.432426	1000	default	0.432426
+at	0.000	80
+at	0.500	1310
+at	1.000	5000
+param	69	HP Resonance	unit	
+def	0.032283	1.0	default	0.031519
+at	0.000	0.7
+at	0.500	5.3
+at	1.000	10.0
+param	70	HP Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	72	LP Frequency	unit	
+def	0.684167	1000	default	0.684167
+at	0.000	120
+at	0.500	590
+at	1.000	2000
+param	73	LP Resonance	unit	
+def	0.032283	1.0	default	0.031519
+at	0.000	0.7
+at	0.500	5.3
+at	1.000	10.0
+param	74	LP Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	76	Mutate Alienize	unit	
+def	0.000000	4/4	default	0.000000
+at	0.000	4/4
+at	0.500	1/8
+at	1.000	1/32T
+param	77	Mutate Modulation	unit	
+def	0.166667	4	default	0.166667
+at	0.000	0
+at	0.500	12
+at	1.000	24
+param	78	Mutate Mix	unit	
+def	0.300000	30	default	0.300000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	79	Mutate Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	81	Reverb Size	unit	
+def	0.600000	60	default	0.600000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	82	Reverb Damping	unit	
+def	0.450000	45	default	0.450000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	83	Reverb Mix	unit	
+def	0.300000	30	default	0.300000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	84	Reverb Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	86	Tube Compression	unit	
+def	0.150000	15	default	0.150000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	87	Tube Drive	unit	
+def	0.250000	6.0	default	0.250000
+at	0.000	0.0
+at	0.500	12.0
+at	1.000	24.0
+param	88	Tube Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	89	Tube Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	91	Vocode Transpose	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-12
+at	0.500	0
+at	1.000	12
+param	92	Vocode Formant	unit	
+def	0.384615	0	default	0.384615
+at	0.000	-5
+at	0.500	2
+at	1.000	8
+param	93	Vocode Mix	unit	
+def	0.750000	75	default	0.750000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	94	Vocode Enable	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	96	Master Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	97	Receiving Clock	unit	
+def	0.000000	0.0000000	default	0.000000
+at	0.000	0.0000000
+at	0.500	0.5000000
+at	1.000	1.0000000

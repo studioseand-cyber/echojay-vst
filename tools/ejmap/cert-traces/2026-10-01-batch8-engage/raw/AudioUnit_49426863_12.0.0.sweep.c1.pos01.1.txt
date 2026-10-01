@@ -1,0 +1,63 @@
+probe: "EMO-D5 (m)" | AudioUnit:Effects/aufx,CDYM,ksWV | uid=49426863 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	1	name	Gate Thresh	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	in	1	Side-Chain Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+sidechain	1	Side-Chain Input Bus	1	enabled	silent
+stage	prepare
+config	main_in	1	main_out	1	latency	0
+param	0	0.000000	Gate On	Off
+param	1	0.000000	Gate Thresh	-Inf
+param	2	0.000000	GateExp	Gate
+param	3	0.333333	Gate Attack	1.00
+param	4	0.666667	Gate Rel	100.0
+param	5	0.000000	Gate Hold	0
+param	6	1.000000	Gate Close	0.0
+param	7	0.000000	Gate Floor	-Inf
+param	8	0.000000	Gate Int Ext	Int
+param	9	0.000000	Gate Monitor	Off
+param	10	0.000000	Gate HPF On	Off
+param	11	0.190867	Gate HPF Freq	60
+param	12	0.000000	Gate Filter Link	Off
+param	13	0.000000	Gate LPF On	Off
+param	14	0.974136	Gate LPF Freq	15000
+param	15	0.000000	Comp On	Off
+param	16	1.000000	Comp Thresh	0.0
+param	17	0.366726	Comp Ratio	3.00
+param	18	0.500000	Comp Knee	Normal
+param	19	0.412551	Comp Attack	7.00
+param	20	0.000000	Comp Auto Manual	Manual
+param	21	0.673667	Comp Rel	220.0
+param	22	0.000000	Comp Int Ext	Int
+param	23	0.000000	Comp Monitor	Off
+param	24	0.000000	Comp HPF On	Off
+param	25	0.190867	Comp HPF Freq	60
+param	26	0.000000	Comp Filter Link	Off
+param	27	0.974136	Comp LPF Freq	15000
+param	28	1.000000	Comp Mix	100.0
+param	29	0.000000	Leveller On	Off
+param	30	1.000000	Leveller Thresh	0.0
+param	31	0.125000	Leveller Range	6.0
+param	32	0.000000	DeEsser On	Off
+param	33	1.000000	DeEsser Thresh	0.0
+param	34	0.000000	DeEsser Monitor	Off
+param	35	0.000000	DeEsser Type	Shelf
+param	36	0.784005	DeEsser Freq	4490
+param	37	0.500000	DeEsser Range	-6.0
+param	38	0.000000	Limiter On	Off
+param	39	1.000000	Limiter Thresh	0.0
+param	40	0.750000	Limiter Rel	100.0
+param	41	0.500000	Makeup	0.0
+param	42	0.000000	Comp LPF On	Off
+stage	position
+pos	0	norm	0.066667	confirm_ms	54.46	slices	5	instack_match	0	getValue	0.066667	landed_by	pump	render_blocks	0	text_ms	23.5	reads	2	text	-134.4
+hold	0	-24.00	level_db	-27.0102	in_rms_db	-27.0103	tone_frac	1.0000	ch	-27.0102	doubled	0	last_move_db	0.0007	final_move_db	0.0007	win	-27.0107,-27.0099,-27.0107,-27.0099,-27.0107,-27.0099	nonfinite	0
+hold	0	-12.00	level_db	-15.0100	in_rms_db	-15.0103	tone_frac	1.0000	ch	-15.0100	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-15.0111,-15.0095,-15.0111,-15.0095,-15.0111,-15.0095	nonfinite	0
+hold	0	-6.00	level_db	-9.0099	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.0099	doubled	0	last_move_db	0.0023	final_move_db	0.0023	win	-9.0115,-9.0091,-9.0115,-9.0091,-9.0115,-9.0091	nonfinite	0
+reread	0	steady
+timing	wall_ms	112.5	audio_s	4.500
+stage	done

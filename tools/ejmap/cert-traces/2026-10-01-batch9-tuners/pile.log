@@ -1,0 +1,36 @@
+TUNERS START 15:39:32
+=== [1] Auto-Tune Access   15:39:33   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: Auto-Tune Access 10.5.0: 1 strength candidate(s), key/scale [3] as instantiated 'C'
+  [1] Retune Speed: strength measured at 2 position(s), speed at 0
+TUNER: Auto-Tune Access -> AudioUnit_614f7369_10.5.0.json
+--- exit=0   15:39:56   ilok=[0x00130000 / 1]
+=== [2] Auto-Tune EFX+   15:39:56   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: Auto-Tune EFX+ 10.5.0: 1 strength candidate(s), key/scale [6] as instantiated 'C'
+  [12] Retune Speed: strength measured at 8 position(s), speed at 6
+TUNER: Auto-Tune EFX+ -> AudioUnit_767e7472_10.5.0.json
+--- exit=0   15:40:27   ilok=[0x00130000 / 1]
+=== [3] Auto-Tune Artist   15:40:27   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: Auto-Tune Artist 9.5.0: 1 strength candidate(s), key/scale [1] as instantiated 'C'
+  [6] Retune Speed: strength measured at 8 position(s), speed at 0
+TUNER: Auto-Tune Artist -> AudioUnit_7672410a_9.5.0.json
+--- exit=0   15:40:44   ilok=[0x00130000 / 1]
+=== [4] Auto-Tune Pro   15:40:45   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: Auto-Tune Pro 11.5.1: 1 strength candidate(s), key/scale [1] as instantiated 'Chromatic'
+  [4] Retune Speed: strength measured at 8 position(s), speed at 6
+TUNER: Auto-Tune Pro -> AudioUnit_76720177_11.5.1.json
+--- exit=0   15:41:19   ilok=[0x00130000 / 1]
+=== [5] Auto-Tune EFX   15:41:19   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: Auto-Tune EFX - defaults --list-params exit 3
+--- exit=1   15:41:21   ilok=[0x00130000 / 1]
+=== [6] MetaTune   15:41:21   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: MetaTune - defaults --list-params SHOWED A WINDOW (PACEEdenExperience [pid 64188]) after 16.5 s; killed by the driver
+--- exit=1   15:41:37   ilok=[0x00130000 / 1]
+=== [7] bx_crispytuner   15:41:38   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: bx_crispytuner 1.1.0: 1 strength candidate(s), key/scale [3] as instantiated 'None'
+  [12] Amount: strength measured at 8 position(s), speed at 8
+TUNER: bx_crispytuner -> AudioUnit_77727f61_1.1.0.json
+--- exit=0   15:41:51   ilok=[0x00130000 / 1]
+=== [8] Melodyne   15:41:51   ilok=[0x00130000 / 1]   power='AC Power'
+TUNER: Melodyne is an ARA/offline tool with no real-time pitch path: uncertifiable by any harness, refused before any process
+--- exit=4   15:41:52   ilok=[0x00130000 / 1]
+TUNERS DONE 15:41:52

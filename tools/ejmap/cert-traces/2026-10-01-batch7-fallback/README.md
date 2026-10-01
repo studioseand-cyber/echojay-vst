@@ -30,3 +30,5 @@ might not. BOTH RECOVERED. So the mechanism is broader than "other stages": a si
 compressor whose SOFT END still compresses at -24..-6 dBFS (its threshold range does not reach
 a linear setting at the test levels) contaminates its own reference the same way, and the quiet
 reference repairs it the same way. The 8-19% band was two causes with one cure.
+
+**SSLGChannel (m/s), run 15:4x after the tuner batch with their records stripped from the store copy: BOTH RECOVERED, 16 of 16 quiet checks.** Final tally: 26 candidates on 20 products recovered, 0 quiet-check failures, 3 still refused.

@@ -1,0 +1,30 @@
+probe: "MaxxVolume (m)" | AudioUnit:Effects/aufx,IVLM,ksWV | uid=43507d63 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	4	name	High Level Thresh	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	1	Mono	enabled
+bus	render	out	0	Main Output Bus	1	Mono	enabled
+stage	prepare
+config	main_in	1	main_out	1	latency	64
+param	0	0.000000	Low Level Thresh	-96.0
+param	1	0.500000	Low Level Gain	15.0
+param	2	0.000000	Gate	-96.0
+param	3	0.322000	Leveler	-25.0
+param	4	1.000000	High Level Thresh	0.0
+param	5	1.000000	High Level Gain	0.0
+param	6	0.000000	Leveler On	Off
+param	7	0.000000	Gate On	Off
+param	8	0.000000	High Level Thresh On	Off
+param	9	0.000000	Low Level Thresh On	Off
+param	10	0.000000	ARC Type	Soft
+set	8	1.000000	confirm_ms	48.2	getValue	1.000000	landed_by	pump	render_blocks	0	text	On
+stage	position
+pos	0	norm	0.866667	confirm_ms	38.59	slices	2	instack_match	0	getValue	0.866667	landed_by	pump	render_blocks	0	text_ms	22.9	reads	2	text	-1.6
+hold	0	-24.00	level_db	-25.5220	in_rms_db	-27.0103	tone_frac	0.9998	ch	-25.5220	doubled	0	last_move_db	-0.0050	final_move_db	-0.0050	win	-25.5433,-25.5237,-25.5187,-25.5237,-25.5187,-25.5237	nonfinite	0
+hold	0	-12.00	level_db	-13.8423	in_rms_db	-15.0103	tone_frac	0.9998	ch	-13.8423	doubled	0	last_move_db	-0.0053	final_move_db	-0.0053	win	-13.8621,-13.8441,-13.8388,-13.8441,-13.8388,-13.8441	nonfinite	0
+hold	0	-6.00	level_db	-8.2523	in_rms_db	-9.0103	tone_frac	0.9998	ch	-8.2523	doubled	0	last_move_db	-0.0055	final_move_db	-0.0055	win	-8.2670,-8.2541,-8.2486,-8.2541,-8.2486,-8.2541	nonfinite	0
+reread	0	steady
+timing	wall_ms	75.9	audio_s	4.500
+stage	done

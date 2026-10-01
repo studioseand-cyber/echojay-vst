@@ -1,0 +1,117 @@
+probe: "Auto-Tune Artist" | AudioUnit:Effects/aumf,ATxL,VST  | uid=7672410a | arch=arm64 | format=AudioUnit
+
+param	0	Input Type	unit	
+def	0.000000	Soprano	default	0.000000
+at	0.000	Soprano
+at	0.500	Low Male
+at	1.000	Bass Inst.
+param	1	Key	unit	
+def	0.000000	C	default	0.000000
+at	0.000	C
+at	0.500	F#
+at	1.000	B
+param	2	Scale	unit	
+def	0.071429	Chromatic	default	0.071429
+at	0.000	Major
+at	0.500	Barnes
+at	1.000	Harmonic
+param	3	Detune	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-100
+at	0.500	0
+at	1.000	100
+param	4	Throat Length	unit	
+def	0.500000	100	default	0.500000
+at	0.000	50
+at	0.500	100
+at	1.000	180
+param	5	Formant Correction	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	6	Retune Speed	unit	
+def	0.685552	20	default	0.685552
+at	0.000	400
+at	0.500	50
+at	1.000	0
+param	7	Humanize	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	8	Natural Vibrato	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	9	Ignore Vibrato	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	10	Target Notes via MIDI	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	11	MIDI Octaves	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	12	Vibrato Shape	unit	
+def	0.000000	(No Vibrato)	default	0.000000
+at	0.000	(No Vibrato)
+at	0.500	Square
+at	1.000	Sawtooth
+param	13	Vibrato Rate	unit	
+def	0.545455	5.5	default	0.545455
+at	0.000	0.1
+at	0.500	5.0
+at	1.000	10.0
+param	14	Vibrato Variation	unit	
+def	0.200000	20	default	0.200000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	15	V.Onset Delay	unit	
+def	0.333333	500	default	0.333333
+at	0.000	0
+at	0.500	750
+at	1.000	1500
+param	16	V.Onset Rate	unit	
+def	0.333333	500	default	0.333333
+at	0.000	0
+at	0.500	750
+at	1.000	1500
+param	17	Vibrato Pitch	unit	
+def	0.180000	18	default	0.180000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	18	Vibrato Amplitude	unit	
+def	0.333333	10	default	0.333333
+at	0.000	0
+at	0.500	15
+at	1.000	30
+param	19	Vibrato Formant	unit	
+def	0.700000	70	default	0.700000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	23	Learn Scale from MIDI	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	27	Flex-Tune	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	34	Transpose	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-12
+at	0.500	0
+at	1.000	12

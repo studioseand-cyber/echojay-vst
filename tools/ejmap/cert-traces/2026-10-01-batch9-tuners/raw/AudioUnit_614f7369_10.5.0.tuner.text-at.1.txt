@@ -1,0 +1,87 @@
+probe: "Auto-Tune Access" | AudioUnit:Effects/aufx,ATac,Antr | uid=614f7369 | arch=arm64 | format=AudioUnit
+
+param	0	Master Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	On
+param	1	Retune Speed	unit	
+def	1.000000	Fast	default	1.000000
+at	0.000	Slow
+at	0.500	Medium
+at	1.000	Fast
+param	2	Humanize	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Min
+at	1.000	Max
+param	3	Key	unit	
+def	0.000000	C	default	0.000000
+at	0.000	C
+at	0.500	F#
+at	1.000	B
+param	4	Scale	unit	
+def	0.000000	Major	default	0.000000
+at	0.000	Major
+at	0.500	Minor
+at	1.000	Chromatic
+param	6	C	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	7	C#	unit	
+def	0.000000	Removed	default	0.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	8	D	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	9	D#	unit	
+def	0.000000	Removed	default	0.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	10	E	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	11	F	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	12	F#	unit	
+def	0.000000	Removed	default	0.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	13	G	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	14	G#	unit	
+def	0.000000	Removed	default	0.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	15	A	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	16	A#	unit	
+def	0.000000	Removed	default	0.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled
+param	17	B	unit	
+def	1.000000	Enabled	default	1.000000
+at	0.000	Removed
+at	0.500	Enabled
+at	1.000	Enabled

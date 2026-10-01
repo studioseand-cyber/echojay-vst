@@ -4,10 +4,10 @@
   "format": "AudioUnit",
   "uid": "697c7f2c",
   "version": "3.12.3",
-  "sampledAt": "2026-09-30",
+  "sampledAt": "2026-10-01",
   "certified": false,
   "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
-  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "listParamsRc": 0,
   "textAtRc": 0,
   "controls": [
@@ -3227,8 +3227,8 @@
       }
     }
   ],
-  "defaultsSampledAt": "2026-09-30",
-  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "readoutCheck": {
     "method": "instantiate_twice",
     "instances": 2
@@ -3389,7 +3389,7 @@
       "name": "C HMF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -3474,6 +3474,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -3487,7 +3494,7 @@
       "name": "LR MF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -3572,6 +3579,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -3585,7 +3599,7 @@
       "name": "S HF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -3670,6 +3684,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -3683,7 +3704,7 @@
       "name": "C LF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -3768,6 +3789,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -3781,7 +3809,7 @@
       "name": "C MF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -3866,6 +3894,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -3879,7 +3914,7 @@
       "name": "S HMF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -3964,6 +3999,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -3977,7 +4019,7 @@
       "name": "S LF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4062,6 +4104,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4075,7 +4124,7 @@
       "name": "S MF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4160,6 +4209,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4173,7 +4229,7 @@
       "name": "C LMF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4258,6 +4314,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4271,7 +4334,7 @@
       "name": "LR HMF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4356,6 +4419,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4369,7 +4439,7 @@
       "name": "S LMF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4454,6 +4524,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4467,7 +4544,7 @@
       "name": "LR HF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4552,6 +4629,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4565,7 +4649,7 @@
       "name": "C HF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4650,6 +4734,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4663,7 +4754,7 @@
       "name": "LR LMF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4748,6 +4839,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -4761,7 +4859,7 @@
       "name": "LR LF Threshold",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T094612.317+0100",
+        "measuredAt": "20261001T153924.509+0100",
         "host": "EJ Map 0.1.0 / arm64 / 48k",
         "bridged": false,
         "tone": {
@@ -4846,6 +4944,13 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,

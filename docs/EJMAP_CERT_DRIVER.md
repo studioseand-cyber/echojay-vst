@@ -1115,7 +1115,11 @@ Not built: combinations (two switches needed at once). If no single candidate sh
 product stays pass-through; the tried list says so. One defect found by the pin: `JSON::parse(...).
 getArray()` on a temporary dangles - the set read freed memory and E9 caught it.
 
-Live run on the six pass-through products: queued behind the fallback batch, mains permitting.
+**Live, 1 Oct 14:3x-15:39:** 4 of the 6 products became measurable - MaxxVolume (m/s) Low/High Level
+Thresh with their "...Thresh On" switches, EMO-D5 (m/s) Gate/Comp/Limiter Thresh with their "...On"
+switches (Leveller: switch verified, sweep unreadable; DeEsser: not found after 14 - a de-esser
+band does not cover 997 Hz). dbx-160 (s) (2 tried) and DynOne3 (1 tried per threshold) stay
+pass-through with the tried list recorded: nothing switch-shaped engages them. Batch-8 README.
 
 ## 14. The ratio-free amount curve, beside ours (1 Oct)
 
@@ -1181,6 +1185,12 @@ ratio: the note is A3 (220 Hz), in every major scale and chromatic, so its insta
 recorded and nothing is written. `--cert-tuner --product NAME` writes `<out>/tuners/<identity>.json`
 with `pitchCandidates[]` + `pitchReview`; the defaults pass runs first, as for any unseen version.
 
-**Not yet run on a plugin** (battery all day): the live check is the next thing. Decision for Kathy
-recorded in the handover: whether tuner records join the compressor store (and `sweepRecorded`)
-or stay a separate `tuners/` directory as built.
+**Live, 1 Oct 15:39-15:42 (batch-9 README has the table):** Auto-Tune Pro and EFX+ give a clean
+monotonic retune-speed curve - 565 / 416 / 256 / 139 / 85 / 48 ms at displays 226 / 126 / 69 / 36 /
+17 / 6, a bound under 21 ms at 0, and an honest refusal at 400 (not settled within the 1 s half
+period); strength 1.0 at every position. bx_crispytuner's Amount gives a strength CURVE (0 to
+1.07 - over-correction past the note at 86-100) and ~140 ms transitions. Two leads: Auto-Tune
+Artist 9.5.0 refuses speed at every position where Pro/EFX+ measure (same displays); Auto-Tune
+Access's Slow/Medium/Fast control reports continuous and 6 of 8 writes did not land - the norms
+list needs the text-step scan. Melodyne refused by name; MetaTune showed PACE's window; EFX 9.0.1's
+list-params was refused. Decision for Kathy in the handover: where tuner records live.

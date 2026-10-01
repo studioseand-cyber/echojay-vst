@@ -1,0 +1,22 @@
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_614f7369_10.5.0.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 1476.721874952316284}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_614f7369_10.5.0.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 5230.325625061988831}
+{"tag": "c1.static", "attempt": 1, "file": "AudioUnit_614f7369_10.5.0.tuner.c1.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 8116.951416730880737}
+{"tag": "c1.vibrato", "attempt": 1, "file": "AudioUnit_614f7369_10.5.0.tuner.c1.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 8443.517333269119263}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_767e7472_10.5.0.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 1385.599583268165588}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_767e7472_10.5.0.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 18612.545333385467529}
+{"tag": "c12.static", "attempt": 1, "file": "AudioUnit_767e7472_10.5.0.tuner.c12.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 4421.128708362579346}
+{"tag": "c12.vibrato", "attempt": 1, "file": "AudioUnit_767e7472_10.5.0.tuner.c12.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 5845.438416719436646}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_7672410a_9.5.0.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 1391.01716673374176}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_7672410a_9.5.0.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 6700.930124998092651}
+{"tag": "c6.static", "attempt": 1, "file": "AudioUnit_7672410a_9.5.0.tuner.c6.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 3876.80733335018158}
+{"tag": "c6.vibrato", "attempt": 1, "file": "AudioUnit_7672410a_9.5.0.tuner.c6.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 5089.031708359718323}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 1426.572083353996277}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 22793.789583325386047}
+{"tag": "c4.static", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.c4.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 4347.479375004768372}
+{"tag": "c4.vibrato", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.c4.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 5631.392291665077209}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_76765336_9.0.1.tuner.list-params.1.txt", "outcome": "exit 3", "clean": false, "ms": 940.445791721343994}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_7f7c564b_1.1.8.tuner.list-params.1.txt", "outcome": "SHOWED A WINDOW (PACEEdenExperience [pid 64188]) after 16.5 s; killed by the driver", "clean": false, "ms": 16510.357583284378052}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 993.49399995803833}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 4411.379166722297668}
+{"tag": "c12.static", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.c12.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 3252.662333369255066}
+{"tag": "c12.vibrato", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.c12.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 4514.191374897956848}

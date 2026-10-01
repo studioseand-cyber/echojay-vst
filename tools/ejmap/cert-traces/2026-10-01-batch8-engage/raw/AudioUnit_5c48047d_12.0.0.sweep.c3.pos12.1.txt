@@ -1,0 +1,35 @@
+probe: "dbx-160 (s)" | AudioUnit:Effects/aufx,VN5S,ksWV | uid=5c48047d | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Threshold R/S	positions	1	levels	3
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Main Input Bus	2	Stereo	enabled
+bus	render	in	1	Side-Chain Input Bus	2	Stereo	enabled
+bus	render	out	0	Main Output Bus	2	Stereo	enabled
+sidechain	1	Side-Chain Input Bus	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	85
+param	0	0.500000	Input L/M	0.0
+param	1	0.500000	Input R/S	0.0
+param	2	0.810000	Threshold L/M	1.000
+param	3	0.810000	Threshold R/S	1.000
+param	4	0.500000	Compression L/M	4.00
+param	5	0.500000	Compression R/S	4.00
+param	6	0.500000	Output L	0.0
+param	7	0.500000	Output R	0.0
+param	8	1.000000	Mix L/M	100.0%
+param	9	1.000000	Mix R/S	100.0%
+param	10	0.000000	SC-HP L	Off
+param	11	0.000000	SC-HP R	Off
+param	12	0.000000	Noise	Off
+param	13	0.000000	Comp Mode	STEREO
+param	14	0.666667	Monitor	STEREO
+stage	position
+pos	0	norm	0.800000	confirm_ms	42.34	slices	2	instack_match	0	getValue	0.800000	landed_by	pump	render_blocks	0	text_ms	20.6	reads	2	text	0.967
+hold	0	-24.00	level_db	-26.6971	in_rms_db	-27.0103	tone_frac	0.9999	ch	-26.6971,-26.6971	doubled	0	last_move_db	-0.0017	final_move_db	-0.0017	win	-26.7274,-26.6977,-26.6959,-26.6977,-26.6959,-26.6977	nonfinite	0
+hold	0	-12.00	level_db	-14.6981	in_rms_db	-15.0103	tone_frac	0.9999	ch	-14.6981,-14.6981	doubled	0	last_move_db	-0.0025	final_move_db	-0.0025	win	-14.7264,-14.6990,-14.6965,-14.6990,-14.6965,-14.6990	nonfinite	0
+hold	0	-6.00	level_db	-8.6984	in_rms_db	-9.0103	tone_frac	0.9999	ch	-8.6984,-8.6984	doubled	0	last_move_db	-0.0032	final_move_db	-0.0032	win	-8.7205,-8.6995,-8.6963,-8.6995,-8.6963,-8.6995	nonfinite	0
+reread	0	steady
+timing	wall_ms	294.2	audio_s	4.500
+stage	done

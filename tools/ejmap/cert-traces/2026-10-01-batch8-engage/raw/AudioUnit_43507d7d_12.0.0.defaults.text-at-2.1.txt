@@ -1,0 +1,57 @@
+probe: "MaxxVolume (s)" | AudioUnit:Effects/aufx,IVLS,ksWV | uid=43507d7d | arch=arm64 | format=AudioUnit
+
+param	0	Low Level Thresh	unit	dB
+def	0.000000	-96.0	default	0.000000
+at	0.000	-96.0
+at	0.500	-30.0
+at	1.000	0.0
+param	1	Low Level Gain	unit	dB
+def	0.500000	15.0	default	0.500000
+at	0.000	0.0
+at	0.500	15.0
+at	1.000	48.0
+param	2	Gate	unit	dB
+def	0.000000	-96.0	default	0.000000
+at	0.000	-96.0
+at	0.500	-30.0
+at	1.000	0.0
+param	3	Leveler	unit	dB
+def	0.322000	-25.0	default	0.322000
+at	0.000	-48.0
+at	0.500	-15.0
+at	1.000	0.0
+param	4	High Level Thresh	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-15.0
+at	1.000	0.0
+param	5	High Level Gain	unit	dB
+def	1.000000	0.0	default	1.000000
+at	0.000	-48.0
+at	0.500	-15.0
+at	1.000	0.0
+param	6	Leveler On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Gate On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	High Level Thresh On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Low Level Thresh On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	10	ARC Type	unit	
+def	0.000000	Soft	default	0.000000
+at	0.000	Soft
+at	0.500	Soft
+at	1.000	Loud

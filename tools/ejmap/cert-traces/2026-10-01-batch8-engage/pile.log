@@ -1,0 +1,1526 @@
+ENGAGE START 14:31:30
+=== [1] dbx-160 (s)   14:31:30   ilok=[0x00130000 / 1]   power='AC Power'
+  sweeping dbx-160 (s) candidate [2] Threshold L/M (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 2 engage candidate(s)
+  sweeping dbx-160 (s) candidate [2] Threshold L/M (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    SC-HP L -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading
+  sweeping dbx-160 (s) candidate [2] Threshold L/M (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    SC-HP R -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading
+  sweeping dbx-160 (s) candidate [3] Threshold R/S (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 2 engage candidate(s)
+  sweeping dbx-160 (s) candidate [3] Threshold R/S (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    SC-HP L -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading
+  sweeping dbx-160 (s) candidate [3] Threshold R/S (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    SC-HP R -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading
+CANDIDATE [2] Threshold L/M (flags ) - dbx-160 (s) (class bands_or_stages, 2 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [2] Threshold L/M unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('1.000', spec 4.7 check only):  -24.00 out-in 0.31  -12.00 out-in 0.31  -6.00 out-in 0.31  (default gain is information only)
+linear reference (soft end): none
+writes landed by: pump 16
+processes: 53 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 0 of 16, pump slices total 82, longest confirm 67.3 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.010             --       --       --          --          
+  1  0.0667    0.017             --       --       --          --          
+  2  0.1333    0.023             --       --       --          --          
+  3  0.2000    0.030             --       --       --          --          
+  4  0.2667    0.051             --       --       --          --          
+  5  0.3333    0.072             --       --       --          --          
+  6  0.4000    0.094             --       --       --          --          
+  7  0.4667    0.158             --       --       --          --          
+  8  0.5333    0.233             --       --       --          --          
+  9  0.6000    0.300             --       --       --          --          
+ 10  0.6667    0.522             --       --       --          --          
+ 11  0.7333    0.744             --       --       --          --          
+ 12  0.8000    0.967             --       --       --          --          
+ 13  0.8667    1.596             --       --       --          --          
+ 14  0.9333    2.298             --       --       --          --          
+ 15  1.0000    3.000             --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_5c48047d_12.0.0.json
+
+CANDIDATE [3] Threshold R/S (flags ) - dbx-160 (s) (class bands_or_stages, 2 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [3] Threshold R/S unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('1.000', spec 4.7 check only):  -24.00 out-in 0.31  -12.00 out-in 0.31  -6.00 out-in 0.31  (default gain is information only)
+linear reference (soft end): none
+writes landed by: pump 16
+processes: 53 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 0 of 16, pump slices total 83, longest confirm 66.3 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.010             --       --       --          --          
+  1  0.0667    0.017             --       --       --          --          
+  2  0.1333    0.023             --       --       --          --          
+  3  0.2000    0.030             --       --       --          --          
+  4  0.2667    0.051             --       --       --          --          
+  5  0.3333    0.072             --       --       --          --          
+  6  0.4000    0.094             --       --       --          --          
+  7  0.4667    0.158             --       --       --          --          
+  8  0.5333    0.233             --       --       --          --          
+  9  0.6000    0.300             --       --       --          --          
+ 10  0.6667    0.522             --       --       --          --          
+ 11  0.7333    0.744             --       --       --          --          
+ 12  0.8000    0.967             --       --       --          --          
+ 13  0.8667    1.596             --       --       --          --          
+ 14  0.9333    2.298             --       --       --          --          
+ 15  1.0000    3.000             --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_5c48047d_12.0.0.json
+
+--- exit=0   14:35:31   ilok=[0x00130000 / 1]
+=== [2] MaxxVolume (m)   14:35:32   ilok=[0x00130000 / 1]   power='AC Power'
+  sweeping MaxxVolume (m) candidate [0] Low Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 5 engage candidate(s)
+  sweeping MaxxVolume (m) candidate [0] Low Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Low Level Thresh On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Low Level Thresh On -> 1; full sweep with the write
+  sweeping MaxxVolume (m) candidate [0] Low Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping MaxxVolume (m) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 5 engage candidate(s)
+  sweeping MaxxVolume (m) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    High Level Thresh On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: High Level Thresh On -> 1; full sweep with the write
+  sweeping MaxxVolume (m) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  soft end has no linear anchor (the soft end is not linear: its gain spans 17.54 dB across the levels, 74.6% of the 23.50 dB response (bar 8.3%)): re-sweeping with the quiet-level reference
+  sweeping MaxxVolume (m) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping MaxxVolume (m) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 2 position processes
+  pass-through at defaults: trying 4 engage candidate(s)
+  sweeping MaxxVolume (m) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveler On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping MaxxVolume (m) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (m) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Low Level Thresh On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (m) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    ARC Type -> 1.0 (from 'Soft'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (m) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 2 position processes
+  pass-through at defaults: trying 4 engage candidate(s)
+  sweeping MaxxVolume (m) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveler On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping MaxxVolume (m) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (m) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    High Level Thresh On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (m) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    ARC Type -> 1.0 (from 'Soft'): flat - passthrough: output equals input within 0.01 dB at every reading
+CANDIDATE [0] Low Level Thresh (flags ) - MaxxVolume (m) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [0] Low Level Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('-96.0', spec 4.7 check only):  -24.00 out-in 0.01  -12.00 out-in 0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end, position 15):  -24.00 15.00  -12.00 15.00  -6.00 15.00  | spread 0.00 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 78, longest confirm 64.0 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -96.0          14.99    15.00    15.00          --          
+  1  0.0667    -85.5          14.97    14.99    15.00          --          
+  2  0.1333    -75.5          14.89    14.97    14.99          --          
+  3  0.2000    -66.0          14.69    14.92    14.96          --          
+  4  0.2667    -57.0          14.16    14.78    14.89          --          
+  5  0.3333    -48.6          13.01    14.43    14.71          --          
+  6  0.4000    -40.7          10.95    13.67    14.30          --          
+  7  0.4667    -33.4           8.19    12.27    13.47          --          
+  8  0.5333    -26.7           5.43    10.15    12.03          --          
+  9  0.6000    -20.6           3.25     7.60     9.95          --          
+ 10  0.6667    -15.2           1.83     5.15     7.52          --          
+ 11  0.7333    -10.4           0.96     3.12     5.06          --          
+ 12  0.8000    -6.4            0.47     1.69     2.98          --          
+ 13  0.8667    -3.3            0.20     0.78     1.46          --          
+ 14  0.9333    -1.0            0.05     0.21     0.42          --          
+ 15  1.0000    0.0             0.00     0.00     0.00          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense lower_is_harder | engage -24.00:11 -12.00:13 -6.00:13
+2 engage drift:    11.49  -12.00:9.64  -24.00:16.15  -6.00:4.66   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d63_12.0.0.json
+
+CANDIDATE [4] High Level Thresh (flags ) - MaxxVolume (m) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [4] High Level Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within 0.1): -2.49 -1.68 -1.08 -0.67 -0.41 -0.25 -0.16 -0.10 -0.06 -0.04 -0.02 -0.01 -0.01 -0.00 -0.00 -0.00
+writes landed by: instack 1 pump 15
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 66, longest confirm 61.9 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0             --       --       --          --          
+  1  0.0667    -42.8             --       --       --          --          
+  2  0.1333    -37.8             --       --       --          --          
+  3  0.2000    -33.0             --       --       --          --          
+  4  0.2667    -28.5             --       --       --          --          
+  5  0.3333    -24.3             --       --       --          --          
+  6  0.4000    -20.4             --       --       --          --          
+  7  0.4667    -16.7           2.53     7.64    11.68          --          
+  8  0.5333    -13.4           1.69     5.56     8.95          --          
+  9  0.6000    -10.3           1.09     3.84     6.53          --          
+ 10  0.6667    -7.6            0.69     2.57     4.57          --          
+ 11  0.7333    -5.2            0.41     1.60     2.96          --          
+ 12  0.8000    -3.2            0.23     0.91     1.74          --          
+ 13  0.8667    -1.6            0.10     0.42     0.83          --          
+ 14  0.9333    -0.5            0.03     0.13     0.25          --          
+ 15  1.0000    0.0            -0.00    -0.00    -0.00          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense lower_is_harder | engage -24.00:10 -12.00:12 -6.00:13
+2 engage drift:    12.67  -12.00:9.98  -24.00:17.66  -6.00:4.99   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d63_12.0.0.json
+
+CANDIDATE [8] High Level Thresh On (flags ) - MaxxVolume (m) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [8] High Level Thresh On unit '' (class bands_or_stages) | positions 2 (every step), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -24.00 out-in -0.00  -12.00 out-in 0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 1
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 2 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 2, pump slices total 2, longest confirm 40.3 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off               --       --       --          --          
+  1  1.0000    On                --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d63_12.0.0.json
+
+CANDIDATE [9] Low Level Thresh On (flags ) - MaxxVolume (m) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [9] Low Level Thresh On unit '' (class bands_or_stages) | positions 2 (every step), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -24.00 out-in -0.00  -12.00 out-in 0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 1
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 2 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 2, pump slices total 4, longest confirm 44.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off               --       --       --          --          
+  1  1.0000    On                --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d63_12.0.0.json
+
+--- exit=0   14:44:43   ilok=[0x00130000 / 1]
+=== [3] MaxxVolume (s)   14:44:43   ilok=[0x00130000 / 1]   power='AC Power'
+  sweeping MaxxVolume (s) candidate [0] Low Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 5 engage candidate(s)
+  sweeping MaxxVolume (s) candidate [0] Low Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Low Level Thresh On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Low Level Thresh On -> 1; full sweep with the write
+  sweeping MaxxVolume (s) candidate [0] Low Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping MaxxVolume (s) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 5 engage candidate(s)
+  sweeping MaxxVolume (s) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    High Level Thresh On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: High Level Thresh On -> 1; full sweep with the write
+  sweeping MaxxVolume (s) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  soft end has no linear anchor (the soft end is not linear: its gain spans 17.54 dB across the levels, 74.6% of the 23.50 dB response (bar 8.3%)): re-sweeping with the quiet-level reference
+  sweeping MaxxVolume (s) candidate [4] High Level Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping MaxxVolume (s) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 2 position processes
+  pass-through at defaults: trying 4 engage candidate(s)
+  sweeping MaxxVolume (s) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveler On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping MaxxVolume (s) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (s) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Low Level Thresh On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (s) candidate [8] High Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    ARC Type -> 1.0 (from 'Soft'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (s) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 2 position processes
+  pass-through at defaults: trying 4 engage candidate(s)
+  sweeping MaxxVolume (s) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveler On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping MaxxVolume (s) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (s) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    High Level Thresh On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping MaxxVolume (s) candidate [9] Low Level Thresh On (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    ARC Type -> 1.0 (from 'Soft'): flat - passthrough: output equals input within 0.01 dB at every reading
+CANDIDATE [0] Low Level Thresh (flags ) - MaxxVolume (s) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [0] Low Level Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('-96.0', spec 4.7 check only):  -24.00 out-in 0.01  -12.00 out-in 0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end, position 15):  -24.00 15.00  -12.00 15.00  -6.00 15.00  | spread 0.00 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 72, longest confirm 60.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -96.0          14.99    15.00    15.00          --          
+  1  0.0667    -85.5          14.97    14.99    15.00          --          
+  2  0.1333    -75.5          14.89    14.97    14.99          --          
+  3  0.2000    -66.0          14.69    14.92    14.96          --          
+  4  0.2667    -57.0          14.16    14.78    14.89          --          
+  5  0.3333    -48.6          13.01    14.43    14.71          --          
+  6  0.4000    -40.7          10.95    13.67    14.30          --          
+  7  0.4667    -33.4           8.19    12.27    13.47          --          
+  8  0.5333    -26.7           5.43    10.15    12.03          --          
+  9  0.6000    -20.6           3.25     7.60     9.95          --          
+ 10  0.6667    -15.2           1.83     5.15     7.52          --          
+ 11  0.7333    -10.4           0.96     3.12     5.06          --          
+ 12  0.8000    -6.4            0.47     1.69     2.98          --          
+ 13  0.8667    -3.3            0.20     0.78     1.46          --          
+ 14  0.9333    -1.0            0.05     0.21     0.42          --          
+ 15  1.0000    0.0             0.00     0.00     0.00          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense lower_is_harder | engage -24.00:11 -12.00:13 -6.00:13
+2 engage drift:    11.49  -12.00:9.64  -24.00:16.15  -6.00:4.66   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d7d_12.0.0.json
+
+CANDIDATE [4] High Level Thresh (flags ) - MaxxVolume (s) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [4] High Level Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within 0.1): -2.49 -1.68 -1.08 -0.67 -0.41 -0.25 -0.16 -0.10 -0.06 -0.04 -0.02 -0.01 -0.01 -0.00 -0.00 -0.00
+writes landed by: instack 1 pump 15
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 88, longest confirm 61.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0             --       --       --          --          
+  1  0.0667    -42.8             --       --       --          --          
+  2  0.1333    -37.8             --       --       --          --          
+  3  0.2000    -33.0             --       --       --          --          
+  4  0.2667    -28.5             --       --       --          --          
+  5  0.3333    -24.3             --       --       --          --          
+  6  0.4000    -20.4             --       --       --          --          
+  7  0.4667    -16.7           2.53     7.64    11.68          --          
+  8  0.5333    -13.4           1.69     5.56     8.95          --          
+  9  0.6000    -10.3           1.09     3.84     6.53          --          
+ 10  0.6667    -7.6            0.69     2.57     4.57          --          
+ 11  0.7333    -5.2            0.41     1.60     2.96          --          
+ 12  0.8000    -3.2            0.23     0.91     1.74          --          
+ 13  0.8667    -1.6            0.10     0.42     0.83          --          
+ 14  0.9333    -0.5            0.03     0.13     0.25          --          
+ 15  1.0000    0.0            -0.00    -0.00    -0.00          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense lower_is_harder | engage -24.00:10 -12.00:12 -6.00:13
+2 engage drift:    12.67  -12.00:9.98  -24.00:17.66  -6.00:4.99   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d7d_12.0.0.json
+
+CANDIDATE [8] High Level Thresh On (flags ) - MaxxVolume (s) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [8] High Level Thresh On unit '' (class bands_or_stages) | positions 2 (every step), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -24.00 out-in -0.00  -12.00 out-in 0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 1
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 2 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 2, pump slices total 6, longest confirm 50.5 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off               --       --       --          --          
+  1  1.0000    On                --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d7d_12.0.0.json
+
+CANDIDATE [9] Low Level Thresh On (flags ) - MaxxVolume (s) (class bands_or_stages, 4 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [9] Low Level Thresh On unit '' (class bands_or_stages) | positions 2 (every step), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -24.00 out-in -0.00  -12.00 out-in 0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 1
+processes: 134 run, 0 retried, 0 position(s) failed
+write verify: 2 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 2, pump slices total 3, longest confirm 41.4 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off               --       --       --          --          
+  1  1.0000    On                --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_43507d7d_12.0.0.json
+
+--- exit=0   14:53:54   ilok=[0x00130000 / 1]
+=== [4] EMO-D5 (m)   14:53:55   ilok=[0x00130000 / 1]   power='AC Power'
+  sweeping EMO-D5 (m) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (m) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Gate On -> 1; full sweep with the write
+  sweeping EMO-D5 (m) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (m) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (m) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Comp On -> 1; full sweep with the write
+  sweeping EMO-D5 (m) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (m) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (m) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveller On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Leveller On -> 1; full sweep with the write
+  sweeping EMO-D5 (m) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    DeEsser On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveller On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Limiter On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    GateExp -> 1.0 (from 'Gate'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate Int Ext -> 1.0 (from 'Int'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp Auto Manual -> 1.0 (from 'Manual'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (m) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (m) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Limiter On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Limiter On -> 1; full sweep with the write
+  sweeping EMO-D5 (m) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+CANDIDATE [1] Gate Thresh (flags ) - EMO-D5 (m) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [1] Gate Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('-Inf', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.00  (default gain is information only)
+linear reference (soft end, position 0):  -24.00 0.00  -12.00 0.00  -6.00 0.00  | spread 0.00 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 73, longest confirm 62.6 ms, re-rendered 0
+hold doubled at positions: 13,14,15
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -Inf            0.00     0.00     0.00   {"above": -6.0}          
+  1  0.0667    -134.4          0.00     0.00     0.00   {"above": -6.0}          
+  2  0.1333    -124.8          0.00     0.00     0.00   {"above": -6.0}          
+  3  0.2000    -115.2          0.00     0.00     0.00   {"above": -6.0}          
+  4  0.2667    -105.6          0.00     0.00     0.00   {"above": -6.0}          
+  5  0.3333    -96.0           0.00     0.00     0.00   {"above": -6.0}          
+  6  0.4000    -86.4           0.00     0.00     0.00   {"above": -6.0}          
+  7  0.4667    -76.8           0.00     0.00     0.00   {"above": -6.0}          
+  8  0.5333    -67.2           0.00     0.00     0.00   {"above": -6.0}          
+  9  0.6000    -57.6           0.00     0.00     0.00   {"above": -6.0}          
+ 10  0.6667    -48.0           0.00     0.00     0.00   {"above": -6.0}          
+ 11  0.7333    -38.4           0.00     0.00     0.00   {"above": -6.0}          
+ 12  0.8000    -28.8           0.00     0.00     0.00   {"above": -6.0}          
+ 13  0.8667    -19.2         144.00    -0.00    -0.00   {"above": -6.0}          
+ 14  0.9333    -9.6          144.00   144.00    -0.00   {"above": -6.0}          
+ 15  1.0000    0.0           144.00   144.00   144.00   {"below": -24.0}          
+
+1 MAP:             certified | sense higher_is_harder | engage -24.00:13 -12.00:14 -6.00:15
+2 engage drift:    37.20  -12.00:-31.17  -24.00:-52.77  -6.00:-15.57   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_49426863_12.0.0.json
+
+CANDIDATE [16] Comp Thresh (flags ) - EMO-D5 (m) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [16] Comp Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in -0.03  (default gain is information only)
+linear reference (soft end, position 15):  -24.00 0.00  -12.00 -0.00  -6.00 -0.03  | spread 0.03 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 82, longest confirm 57.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          15.80    23.80    27.77   {"below": -24.0}          
+  1  0.0667    -44.8          13.67    21.66    25.63   {"below": -24.0}          
+  2  0.1333    -41.6          11.53    19.53    23.50       -41.3      0.30
+  3  0.2000    -38.4           9.40    17.40    21.37       -38.1      0.30
+  4  0.2667    -35.2           7.27    15.26    19.23       -34.9      0.30
+  5  0.3333    -32.0           5.15    13.13    17.10       -31.7      0.30
+  6  0.4000    -28.8           3.08    11.00    14.97       -28.6      0.20
+  7  0.4667    -25.6           1.31     8.86    12.83       -25.6      0.00
+  8  0.5333    -22.4           0.33     6.73    10.70       -22.1      0.30
+  9  0.6000    -19.2           0.06     4.62     8.57       -18.9      0.30
+ 10  0.6667    -16.0           0.01     2.59     6.44       -15.8      0.20
+ 11  0.7333    -12.8           0.00     0.97     4.33       -13.0     -0.20
+ 12  0.8000    -9.6            0.00     0.22     2.33        -9.5      0.10
+ 13  0.8667    -6.4            0.00     0.04     0.80        -7.2     -0.80
+ 14  0.9333    -3.2            0.00     0.01     0.15   {"above": -6.0}          
+ 15  1.0000    0.0             0.00     0.00     0.00   {"above": -6.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -24.00:7 -12.00:11 -6.00:13
+2 engage drift:    0.37  -12.00:0.14  -24.00:-0.14  -6.00:0.23   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.23 dB over 12 positions (min -0.80, max 0.30)
+3 displayOffsetDb: 0.25  (inside spec 7's 2 dB bar)
+fixture: AudioUnit_49426863_12.0.0.json
+
+CANDIDATE [30] Leveller Thresh (flags ) - EMO-D5 (m) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [30] Leveller Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 76, longest confirm 63.3 ms, re-rendered 0
+hold doubled at positions: 4,5,6,8,9,10,11,12
+still moving AFTER doubling (reading not used): 5,9,11
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0             --       --       --          --          
+  1  0.0667    -44.8             --       --       --          --          
+  2  0.1333    -41.6             --       --       --          --          
+  3  0.2000    -38.4             --       --       --          --          
+  4  0.2667    -35.2             --       --       --          --          
+  5  0.3333    -32.0             --       --       --          --          
+  6  0.4000    -28.8             --       --       --          --          
+  7  0.4667    -25.6             --       --       --          --          
+  8  0.5333    -22.4             --       --       --          --          
+  9  0.6000    -19.2             --       --       --          --          
+ 10  0.6667    -16.0             --       --       --          --          
+ 11  0.7333    -12.8             --       --       --          --          
+ 12  0.8000    -9.6              --       --       --          --          
+ 13  0.8667    -6.4              --       --       --          --          
+ 14  0.9333    -3.2              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             unreadable (3 positions still moving after the doubling (more than 2): the holds did not reach a steady state) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_49426863_12.0.0.json
+
+CANDIDATE [33] DeEsser Thresh (flags ) - EMO-D5 (m) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [33] DeEsser Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 85, longest confirm 70.5 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0             --       --       --          --          
+  1  0.0667    -44.8             --       --       --          --          
+  2  0.1333    -41.6             --       --       --          --          
+  3  0.2000    -38.4             --       --       --          --          
+  4  0.2667    -35.2             --       --       --          --          
+  5  0.3333    -32.0             --       --       --          --          
+  6  0.4000    -28.8             --       --       --          --          
+  7  0.4667    -25.6             --       --       --          --          
+  8  0.5333    -22.4             --       --       --          --          
+  9  0.6000    -19.2             --       --       --          --          
+ 10  0.6667    -16.0             --       --       --          --          
+ 11  0.7333    -12.8             --       --       --          --          
+ 12  0.8000    -9.6              --       --       --          --          
+ 13  0.8667    -6.4              --       --       --          --          
+ 14  0.9333    -3.2              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_49426863_12.0.0.json
+
+CANDIDATE [39] Limiter Thresh (flags ) - EMO-D5 (m) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [39] Limiter Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.03  (default gain is information only)
+linear reference (soft end, position 15):  -24.00 0.00  -12.00 -0.00  -6.00 -0.03  | spread 0.03 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 76, longest confirm 60.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          23.68    35.81    41.83   {"below": -24.0}          
+  1  0.0667    -44.8          20.52    32.61    38.63   {"below": -24.0}          
+  2  0.1333    -41.6          17.36    29.41    35.43   {"below": -24.0}          
+  3  0.2000    -38.4          14.20    26.22    32.23   {"below": -24.0}          
+  4  0.2667    -35.2          11.03    23.02    29.03       -40.5     -5.30
+  5  0.3333    -32.0           7.86    19.82    25.83       -35.8     -3.80
+  6  0.4000    -28.8           4.77    16.62    22.63       -31.2     -2.40
+  7  0.4667    -25.6           2.07    13.42    19.43       -27.1     -1.50
+  8  0.5333    -22.4           0.51    10.24    16.23       -26.1     -3.70
+  9  0.6000    -19.2           0.07     7.08    13.03       -22.6     -3.40
+ 10  0.6667    -16.0           0.01     4.04     9.84       -19.4     -3.40
+ 11  0.7333    -12.8           0.00     1.55     6.67       -15.2     -2.40
+ 12  0.8000    -9.6            0.00     0.32     3.65       -11.5     -1.90
+ 13  0.8667    -6.4            0.00     0.04     1.29        -7.9     -1.50
+ 14  0.9333    -3.2            0.00     0.00     0.23   {"above": -6.0}          
+ 15  1.0000    0.0             0.00     0.00     0.00   {"above": -6.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -24.00:8 -12.00:11 -6.00:13
+2 engage drift:    1.07  -12.00:0.55  -24.00:1.62  -6.00:0.67   (primary; displayLinear unset until the population decides)
+   offset IQR:      1.60 dB over 10 positions (min -5.30, max -1.50)
+3 displayOffsetDb: -2.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_49426863_12.0.0.json
+
+--- exit=0   15:09:54   ilok=[0x00130000 / 1]
+=== [5] EMO-D5 (s)   15:09:54   ilok=[0x00130000 / 1]   power='AC Power'
+  sweeping EMO-D5 (s) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Gate On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (s) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Comp On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (s) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveller On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Leveller On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    DeEsser On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveller On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Limiter On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    GateExp -> 1.0 (from 'Gate'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate Int Ext -> 1.0 (from 'Int'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp Auto Manual -> 1.0 (from 'Manual'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Limiter On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Limiter On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+CANDIDATE [1] Gate Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [1] Gate Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('-Inf', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.00  (default gain is information only)
+linear reference (soft end, position 0):  -24.00 0.00  -12.00 0.00  -6.00 0.00  | spread 0.00 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 96, longest confirm 67.6 ms, re-rendered 0
+hold doubled at positions: 13,14,15
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -Inf            0.00     0.00     0.00   {"above": -6.0}          
+  1  0.0667    -134.4          0.00     0.00     0.00   {"above": -6.0}          
+  2  0.1333    -124.8          0.00     0.00     0.00   {"above": -6.0}          
+  3  0.2000    -115.2          0.00     0.00     0.00   {"above": -6.0}          
+  4  0.2667    -105.6          0.00     0.00     0.00   {"above": -6.0}          
+  5  0.3333    -96.0           0.00     0.00     0.00   {"above": -6.0}          
+  6  0.4000    -86.4           0.00     0.00     0.00   {"above": -6.0}          
+  7  0.4667    -76.8           0.00     0.00     0.00   {"above": -6.0}          
+  8  0.5333    -67.2           0.00     0.00     0.00   {"above": -6.0}          
+  9  0.6000    -57.6           0.00     0.00     0.00   {"above": -6.0}          
+ 10  0.6667    -48.0           0.00     0.00     0.00   {"above": -6.0}          
+ 11  0.7333    -38.4           0.00     0.00     0.00   {"above": -6.0}          
+ 12  0.8000    -28.8           0.00     0.00     0.00   {"above": -6.0}          
+ 13  0.8667    -19.2         144.00    -0.00    -0.00   {"above": -6.0}          
+ 14  0.9333    -9.6          144.00   144.00    -0.00   {"above": -6.0}          
+ 15  1.0000    0.0           144.00   144.00   144.00   {"below": -24.0}          
+
+1 MAP:             certified | sense higher_is_harder | engage -24.00:13 -12.00:14 -6.00:15
+2 engage drift:    37.20  -12.00:-31.17  -24.00:-52.77  -6.00:-15.57   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [16] Comp Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [16] Comp Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in -0.03  (default gain is information only)
+linear reference (soft end, position 15):  -24.00 0.00  -12.00 -0.00  -6.00 -0.03  | spread 0.03 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 67, longest confirm 60.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          15.80    23.80    27.77   {"below": -24.0}          
+  1  0.0667    -44.8          13.67    21.66    25.63   {"below": -24.0}          
+  2  0.1333    -41.6          11.53    19.53    23.50       -41.3      0.30
+  3  0.2000    -38.4           9.40    17.40    21.37       -38.1      0.30
+  4  0.2667    -35.2           7.27    15.26    19.23       -34.9      0.30
+  5  0.3333    -32.0           5.15    13.13    17.10       -31.7      0.30
+  6  0.4000    -28.8           3.08    11.00    14.97       -28.6      0.20
+  7  0.4667    -25.6           1.31     8.86    12.83       -25.6      0.00
+  8  0.5333    -22.4           0.33     6.73    10.70       -22.1      0.30
+  9  0.6000    -19.2           0.06     4.62     8.57       -18.9      0.30
+ 10  0.6667    -16.0           0.01     2.59     6.44       -15.8      0.20
+ 11  0.7333    -12.8           0.00     0.97     4.33       -13.0     -0.20
+ 12  0.8000    -9.6            0.00     0.22     2.33        -9.5      0.10
+ 13  0.8667    -6.4            0.00     0.04     0.80        -7.2     -0.80
+ 14  0.9333    -3.2            0.00     0.01     0.15   {"above": -6.0}          
+ 15  1.0000    0.0             0.00     0.00     0.00   {"above": -6.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -24.00:7 -12.00:11 -6.00:13
+2 engage drift:    0.37  -12.00:0.14  -24.00:-0.14  -6.00:0.23   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.23 dB over 12 positions (min -0.80, max 0.30)
+3 displayOffsetDb: 0.25  (inside spec 7's 2 dB bar)
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [30] Leveller Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [30] Leveller Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 105, longest confirm 60.5 ms, re-rendered 0
+hold doubled at positions: 4,5,6,8,9,10,11,12
+still moving AFTER doubling (reading not used): 5,9,11
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0             --       --       --          --          
+  1  0.0667    -44.8             --       --       --          --          
+  2  0.1333    -41.6             --       --       --          --          
+  3  0.2000    -38.4             --       --       --          --          
+  4  0.2667    -35.2             --       --       --          --          
+  5  0.3333    -32.0             --       --       --          --          
+  6  0.4000    -28.8             --       --       --          --          
+  7  0.4667    -25.6             --       --       --          --          
+  8  0.5333    -22.4             --       --       --          --          
+  9  0.6000    -19.2             --       --       --          --          
+ 10  0.6667    -16.0             --       --       --          --          
+ 11  0.7333    -12.8             --       --       --          --          
+ 12  0.8000    -9.6              --       --       --          --          
+ 13  0.8667    -6.4              --       --       --          --          
+ 14  0.9333    -3.2              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             unreadable (3 positions still moving after the doubling (more than 2): the holds did not reach a steady state) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [33] DeEsser Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [33] DeEsser Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 70, longest confirm 67.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0             --       --       --          --          
+  1  0.0667    -44.8             --       --       --          --          
+  2  0.1333    -41.6             --       --       --          --          
+  3  0.2000    -38.4             --       --       --          --          
+  4  0.2667    -35.2             --       --       --          --          
+  5  0.3333    -32.0             --       --       --          --          
+  6  0.4000    -28.8             --       --       --          --          
+  7  0.4667    -25.6             --       --       --          --          
+  8  0.5333    -22.4             --       --       --          --          
+  9  0.6000    -19.2             --       --       --          --          
+ 10  0.6667    -16.0             --       --       --          --          
+ 11  0.7333    -12.8             --       --       --          --          
+ 12  0.8000    -9.6              --       --       --          --          
+ 13  0.8667    -6.4              --       --       --          --          
+ 14  0.9333    -3.2              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [39] Limiter Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [39] Limiter Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in 0.00  -6.00 out-in -0.03  (default gain is information only)
+linear reference (soft end, position 15):  -24.00 0.00  -12.00 -0.00  -6.00 -0.03  | spread 0.03 dB (unusable beyond 2.0)
+writes landed by: instack 1 pump 15
+processes: 228 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 96, longest confirm 65.7 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          23.68    35.81    41.83   {"below": -24.0}          
+  1  0.0667    -44.8          20.52    32.61    38.63   {"below": -24.0}          
+  2  0.1333    -41.6          17.36    29.41    35.43   {"below": -24.0}          
+  3  0.2000    -38.4          14.20    26.22    32.23   {"below": -24.0}          
+  4  0.2667    -35.2          11.03    23.02    29.03       -40.5     -5.30
+  5  0.3333    -32.0           7.86    19.82    25.83       -35.8     -3.80
+  6  0.4000    -28.8           4.77    16.62    22.63       -31.2     -2.40
+  7  0.4667    -25.6           2.07    13.42    19.43       -27.1     -1.50
+  8  0.5333    -22.4           0.51    10.24    16.23       -26.1     -3.70
+  9  0.6000    -19.2           0.07     7.08    13.03       -22.6     -3.40
+ 10  0.6667    -16.0           0.01     4.04     9.84       -19.4     -3.40
+ 11  0.7333    -12.8           0.00     1.55     6.67       -15.2     -2.40
+ 12  0.8000    -9.6            0.00     0.32     3.65       -11.5     -1.90
+ 13  0.8667    -6.4            0.00     0.04     1.29        -7.9     -1.50
+ 14  0.9333    -3.2            0.00     0.00     0.23   {"above": -6.0}          
+ 15  1.0000    0.0             0.00     0.00     0.00   {"above": -6.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -24.00:8 -12.00:11 -6.00:13
+2 engage drift:    1.07  -12.00:0.55  -24.00:1.62  -6.00:0.67   (primary; displayLinear unset until the population decides)
+   offset IQR:      1.60 dB over 10 positions (min -5.30, max -1.50)
+3 displayOffsetDb: -2.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_4942687d_12.0.0.json
+
+--- exit=0   15:25:51   ilok=[0x00130000 / 1]
+=== [6] DynOne3   15:25:52   ilok=[0x00130000 / 1]   power='AC Power'
+  sweeping DynOne3 candidate [0] C HMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [0] C HMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [3] LR MF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [3] LR MF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [20] S HF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [20] S HF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [21] C LF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [21] C LF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [26] C MF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [26] C MF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [30] S HMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [30] S HMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [47] S LF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [47] S LF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [50] S MF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [50] S MF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [55] C LMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [55] C LMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [56] LR HMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [56] LR HMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [78] S LMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [78] S LMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [81] LR HF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [81] LR HF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [103] C HF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [103] C HF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [107] LR LMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [107] LR LMF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping DynOne3 candidate [111] LR LF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping DynOne3 candidate [111] LR LF Threshold (unseen version 3.12.3: defaults sampled first) - 1 reference + 3 position processes
+    In Gain -> 0.0 (from '0.0'): flat - passthrough: output equals input within 0.01 dB at every reading
+CANDIDATE [0] C HMF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [0] C HMF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [3] LR MF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] LR MF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [20] S HF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [20] S HF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [21] C LF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [21] C LF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [26] C MF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [26] C MF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [30] S HMF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [30] S HMF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [47] S LF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [47] S LF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [50] S MF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [50] S MF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [55] C LMF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [55] C LMF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [56] LR HMF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [56] LR HMF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [78] S LMF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [78] S LMF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [81] LR HF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [81] LR HF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [103] C HF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [103] C HF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [107] LR LMF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [107] LR LMF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+CANDIDATE [111] LR LF Threshold (flags ) - DynOne3 (class bands_or_stages, 15 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [111] LR LF Threshold unit '' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [2] Channel Link = '0'
+ratio: 15 controls hold the ratio role | auto make-up disabled: no
+default-threshold reference ('-40.0', spec 4.7 check only):  -24.00 out-in 0.00  -12.00 out-in -0.00  -6.00 out-in 0.00  (default gain is information only)
+linear reference (soft end): none
+writes landed by: instack 16
+processes: 318 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -60.0             --       --       --          --          
+  1  0.0667    -56.0             --       --       --          --          
+  2  0.1333    -52.0             --       --       --          --          
+  3  0.2000    -48.0             --       --       --          --          
+  4  0.2667    -44.0             --       --       --          --          
+  5  0.3333    -40.0             --       --       --          --          
+  6  0.4000    -36.0             --       --       --          --          
+  7  0.4667    -32.0             --       --       --          --          
+  8  0.5333    -28.0             --       --       --          --          
+  9  0.6000    -24.0             --       --       --          --          
+ 10  0.6667    -20.0             --       --       --          --          
+ 11  0.7333    -16.0             --       --       --          --          
+ 12  0.8000    -12.0             --       --       --          --          
+ 13  0.8667    -8.0              --       --       --          --          
+ 14  0.9333    -4.0              --       --       --          --          
+ 15  1.0000    0.0               --       --       --          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -24.00:none -12.00:none -6.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_697c7f2c_3.12.3.json
+
+--- exit=0   15:39:24   ilok=[0x00130000 / 1]
+ENGAGE DONE 15:39:24

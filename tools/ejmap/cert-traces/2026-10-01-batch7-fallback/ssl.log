@@ -1,0 +1,86 @@
+SSL START 15:41:57
+=== [ssl] SSLGChannel (m)   15:41:58   ilok=[0x00130000 / 1]   power='AC Power'
+  ratio raise: [2] '1.0' -> norm 0.421875 (grid read '4.0')
+  sweeping SSLGChannel (m) - 1 reference + 16 position processes
+  soft end has no linear anchor (the soft end is not linear: its gain spans 3.11 dB across the levels, 31.6% of the 9.86 dB response (bar 8.3%)): re-sweeping with the quiet-level reference
+  sweeping SSLGChannel (m) candidate [1] CompThresh - 1 reference + 16 position processes
+EJ Map threshold sweep - SSLGChannel (m) -> AudioUnit_59457663_12.0.0.json
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [1] CompThresh unit 'dB' (class comp_over_expander, flags comp_over_expander) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [2] ran at '4.0' -> 4 (RAISED from '1.0', value READ BACK after the write) | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 1.35  -12.00 out-in -3.00  -6.00 out-in -6.30  (default gain is information only)
+linear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within 0.1): 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00
+writes landed by: instack 1 pump 15
+processes: 35 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 74, longest confirm 61.8 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    10.0           -0.00     0.81     3.11       -11.6    -21.60
+  1  0.0667    8.0            -0.00     1.38     3.96       -12.6    -20.60
+  2  0.1333    6.0            -0.00     2.05     4.86       -13.6    -19.60
+  3  0.2000    4.0            -0.00     2.80     5.80       -14.7    -18.70
+  4  0.2667    2.0             0.01     3.62     6.78       -15.9    -17.90
+  5  0.3333    0.0             0.14     4.50     7.80       -17.2    -17.20
+  6  0.4000    -2.0            0.46     5.42     8.84       -18.5    -16.50
+  7  0.4667    -4.0            0.92     6.39     9.91       -20.5    -16.50
+  8  0.5333    -6.0            1.51     7.39    11.00       -21.9    -15.90
+  9  0.6000    -8.0            2.20     8.43    12.11       -25.1    -17.10
+ 10  0.6667    -10.0           2.97     9.49    13.24       -26.3    -16.30
+ 11  0.7333    -12.0           3.80    10.57    14.38       -27.6    -15.60
+ 12  0.8000    -14.0           4.69    11.67    15.53       -28.9    -14.90
+ 13  0.8667    -16.0           5.63    12.79    16.70       -31.5    -15.50
+ 14  0.9333    -18.0           6.60    13.93    17.88       -32.8    -14.80
+ 15  1.0000    -20.0           7.62    15.08    19.07       -34.2    -14.20
+
+1 MAP:             certified | sense higher_is_harder | engage -24.00:7 -12.00:0 -6.00:0
+2 engage drift:    1.67  -12.00:23.10  -24.00:21.43  -6.00:22.18   (primary; displayLinear unset until the population decides)
+   offset IQR:      2.52 dB over 16 positions (min -21.60, max -14.20)
+3 displayOffsetDb: -16.50  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_59457663_12.0.0.json
+--- exit=0   15:44:33   ilok=[0x00130000 / 1]
+=== [ssl] SSLGChannel (s)   15:44:33   ilok=[0x00130000 / 1]   power='AC Power'
+  ratio raise: [2] '1.0' -> norm 0.421875 (grid read '4.0')
+  sweeping SSLGChannel (s) - 1 reference + 16 position processes
+  soft end has no linear anchor (the soft end is not linear: its gain spans 3.11 dB across the levels, 31.6% of the 9.86 dB response (bar 8.3%)): re-sweeping with the quiet-level reference
+  sweeping SSLGChannel (s) candidate [1] CompThresh - 1 reference + 16 position processes
+EJ Map threshold sweep - SSLGChannel (s) -> AudioUnit_5945767d_12.0.0.json
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [1] CompThresh unit 'dB' (class comp_over_expander, flags comp_over_expander) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [2] ran at '4.0' -> 4 (RAISED from '1.0', value READ BACK after the write) | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -24.00 out-in 1.35  -12.00 out-in -3.00  -6.00 out-in -6.30  (default gain is information only)
+linear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within 0.1): 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00
+writes landed by: instack 1 pump 15
+processes: 35 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 65, longest confirm 61.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    10.0           -0.00     0.81     3.11       -11.6    -21.60
+  1  0.0667    8.0            -0.00     1.38     3.96       -12.6    -20.60
+  2  0.1333    6.0            -0.00     2.05     4.86       -13.6    -19.60
+  3  0.2000    4.0            -0.00     2.80     5.80       -14.7    -18.70
+  4  0.2667    2.0             0.01     3.62     6.78       -15.9    -17.90
+  5  0.3333    0.0             0.14     4.50     7.80       -17.2    -17.20
+  6  0.4000    -2.0            0.46     5.42     8.84       -18.5    -16.50
+  7  0.4667    -4.0            0.92     6.39     9.91       -20.5    -16.50
+  8  0.5333    -6.0            1.51     7.39    11.00       -21.9    -15.90
+  9  0.6000    -8.0            2.20     8.43    12.11       -25.1    -17.10
+ 10  0.6667    -10.0           2.97     9.49    13.24       -26.3    -16.30
+ 11  0.7333    -12.0           3.80    10.57    14.38       -27.6    -15.60
+ 12  0.8000    -14.0           4.69    11.67    15.53       -28.9    -14.90
+ 13  0.8667    -16.0           5.63    12.79    16.70       -31.5    -15.50
+ 14  0.9333    -18.0           6.60    13.93    17.88       -32.8    -14.80
+ 15  1.0000    -20.0           7.62    15.08    19.07       -34.2    -14.20
+
+1 MAP:             certified | sense higher_is_harder | engage -24.00:7 -12.00:0 -6.00:0
+2 engage drift:    1.67  -12.00:23.10  -24.00:21.43  -6.00:22.18   (primary; displayLinear unset until the population decides)
+   offset IQR:      2.52 dB over 16 positions (min -21.60, max -14.20)
+3 displayOffsetDb: -16.50  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_5945767d_12.0.0.json
+--- exit=0   15:47:07   ilok=[0x00130000 / 1]
+SSL DONE 15:47:07

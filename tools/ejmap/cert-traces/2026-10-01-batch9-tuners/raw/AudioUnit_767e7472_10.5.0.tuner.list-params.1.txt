@@ -1,0 +1,100 @@
+probe: "Auto-Tune EFX+" | AudioUnit:Effects/aufx,Vefx,Antr | uid=767e7472 | arch=arm64 | format=AudioUnit
+
+0	Dry / Wet Mix		2147483647	0	1	0
+1	Output Gain dB		2147483647	0	1	0
+2	Input Type		2147483647	0	0	0
+3	Vocode Preset		2147483647	0	0	0
+4	Global Effect Enable		2147483647	0	1	0
+5	Selected Effect		2147483647	0	0	0
+6	Auto-Tune Key		2147483647	0	1	0
+7	Auto-Tune Scale		2147483647	0	1	0
+8	Auto-Tune Bypass		2147483647	0	1	0
+9	Formant		2147483647	0	1	0
+10	Low Latency		2147483647	0	0	0
+11	Tracking		2147483647	0	0	0
+12	Retune Speed		2147483647	0	1	0
+13	Humanize		2147483647	0	1	0
+14	Breath Mix		2147483647	0	1	0
+15	Breath HPF		2147483647	0	1	0
+16	Breath Enable		2147483647	0	1	0
+17	Breath Solo		2147483647	0	0	0
+18	Duet Detune		2147483647	0	1	0
+19	Duet Timing		2147483647	0	1	0
+20	Duet Enable		2147483647	0	1	0
+21	Duet Solo		2147483647	0	0	0
+22	P&T Shift		2147483647	0	1	0
+23	P&T Length		2147483647	0	1	0
+24	P&T Enable		2147483647	0	1	0
+25	P&T Solo		2147483647	0	0	0
+26	Motion Pattern		2147483647	0	1	0
+27	Motion Trigger		2147483647	0	1	0
+28	Motion Trigger Mode		2147483647	0	0	0
+29	Motion Glide		2147483647	0	1	0
+30	Motion Sync		2147483647	0	1	0
+31	Motion BPM		2147483647	0	1	0
+32	Motion Clock Divider		2147483647	0	1	0
+33	Note C		2147483647	0	1	0
+34	Note C#/Db		2147483647	0	1	0
+35	Note D		2147483647	0	1	0
+36	Note D#/Eb		2147483647	0	1	0
+37	Note E		2147483647	0	1	0
+38	Note F		2147483647	0	1	0
+39	Note F#/Gb		2147483647	0	1	0
+40	Note G		2147483647	0	1	0
+41	Note G#/Ab		2147483647	0	1	0
+42	Note A		2147483647	0	1	0
+43	Note A#/Bb		2147483647	0	1	0
+44	Note B		2147483647	0	1	0
+45	FX1		2147483647	0	0	0
+46	FX2		2147483647	0	0	0
+47	FX3		2147483647	0	0	0
+48	FX4		2147483647	0	0	0
+49	Chorus Rate		2147483647	0	1	0
+50	Chorus Depth		2147483647	0	1	0
+51	Chorus Mix		2147483647	0	1	0
+52	Chorus Enable		2147483647	0	1	0
+53	Chorus Solo		2147483647	0	0	0
+54	Compress Reduction		2147483647	0	1	0
+55	Compress Gain		2147483647	0	1	0
+56	Compress Mix		2147483647	0	1	0
+57	Compress Enable		2147483647	0	1	0
+58	Compress Solo		2147483647	0	0	0
+59	Echo Time		2147483647	0	1	0
+60	Echo Feedback		2147483647	0	1	0
+61	Echo Mix		2147483647	0	1	0
+62	Echo Enable		2147483647	0	1	0
+63	Echo Solo		2147483647	0	0	0
+64	EQ Frequency		2147483647	0	1	0
+65	EQ Gain		2147483647	0	1	0
+66	EQ Enable		2147483647	0	1	0
+67	EQ Solo		2147483647	0	0	0
+68	HP Frequency		2147483647	0	1	0
+69	HP Resonance		2147483647	0	1	0
+70	HP Enable		2147483647	0	1	0
+71	HP Solo		2147483647	0	0	0
+72	LP Frequency		2147483647	0	1	0
+73	LP Resonance		2147483647	0	1	0
+74	LP Enable		2147483647	0	1	0
+75	LP Solo		2147483647	0	0	0
+76	Mutate Alienize		2147483647	0	1	0
+77	Mutate Modulation		2147483647	0	1	0
+78	Mutate Mix		2147483647	0	1	0
+79	Mutate Enable		2147483647	0	1	0
+80	Mutate Solo		2147483647	0	0	0
+81	Reverb Size		2147483647	0	1	0
+82	Reverb Damping		2147483647	0	1	0
+83	Reverb Mix		2147483647	0	1	0
+84	Reverb Enable		2147483647	0	1	0
+85	Reverb Solo		2147483647	0	0	0
+86	Tube Compression		2147483647	0	1	0
+87	Tube Drive		2147483647	0	1	0
+88	Tube Mix		2147483647	0	1	0
+89	Tube Enable		2147483647	0	1	0
+90	Tube Solo		2147483647	0	0	0
+91	Vocode Transpose		2147483647	0	1	0
+92	Vocode Formant		2147483647	0	1	0
+93	Vocode Mix		2147483647	0	1	0
+94	Vocode Enable		2147483647	0	1	0
+95	Vocode Solo		2147483647	0	0	0
+96	Master Bypass		2147483647	0	1	0
+97	Receiving Clock		2147483647	0	1	0

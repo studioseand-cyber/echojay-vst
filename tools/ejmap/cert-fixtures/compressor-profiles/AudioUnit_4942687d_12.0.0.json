@@ -4,10 +4,10 @@
   "format": "AudioUnit",
   "uid": "4942687d",
   "version": "12.0.0",
-  "sampledAt": "2026-09-30",
+  "sampledAt": "2026-10-01",
   "certified": false,
   "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
-  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "listParamsRc": 0,
   "textAtRc": 0,
   "controls": [
@@ -1102,8 +1102,8 @@
       }
     }
   ],
-  "defaultsSampledAt": "2026-09-30",
-  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "readoutCheck": {
     "method": "instantiate_twice",
     "instances": 2
@@ -1112,31 +1112,28 @@
     "class": "bands_or_stages",
     "candidates": 5,
     "note": "several controls hold the threshold role; each was swept with the others at their instantiate defaults. On a multiband, the band containing the 997 Hz test tone can certify and the rest are uncertified for want of an in-band tone. There is no thresholdSweep and no dB-equivalent map until a human picks from the curves; the map comes after the pick, when that band's own ratio can be read. `responding` names the candidate(s) that respond; `passThroughAtDefaults` names those where the product did nothing as instantiated (not band evidence); `verdicts` holds every candidate's result",
-    "curves": 0,
+    "curves": 3,
     "flats": 0,
-    "responding": [],
+    "responding": [
+      {
+        "index": 1,
+        "name": "Gate Thresh"
+      },
+      {
+        "index": 16,
+        "name": "Comp Thresh"
+      },
+      {
+        "index": 39,
+        "name": "Limiter Thresh"
+      }
+    ],
     "passThroughAtDefaults": {
-      "count": 5,
+      "count": 1,
       "candidates": [
-        {
-          "index": 1,
-          "name": "Gate Thresh"
-        },
-        {
-          "index": 16,
-          "name": "Comp Thresh"
-        },
-        {
-          "index": 30,
-          "name": "Leveller Thresh"
-        },
         {
           "index": 33,
           "name": "DeEsser Thresh"
-        },
-        {
-          "index": 39,
-          "name": "Limiter Thresh"
         }
       ]
     },
@@ -1144,17 +1141,17 @@
       {
         "index": 1,
         "name": "Gate Thresh",
-        "result": "pass_through_at_defaults"
+        "result": "certified"
       },
       {
         "index": 16,
         "name": "Comp Thresh",
-        "result": "pass_through_at_defaults"
+        "result": "certified"
       },
       {
         "index": 30,
         "name": "Leveller Thresh",
-        "result": "pass_through_at_defaults"
+        "result": "unreadable"
       },
       {
         "index": 33,
@@ -1164,7 +1161,7 @@
       {
         "index": 39,
         "name": "Limiter Thresh",
-        "result": "pass_through_at_defaults"
+        "result": "certified"
       }
     ]
   },
@@ -1174,7 +1171,7 @@
       "name": "Gate Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T095943.229+0100",
+        "measuredAt": "20261001T152551.891+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1188,8 +1185,8 @@
         "level_convention": "peak",
         "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
         "ratioDuring": {
-          "position": "",
-          "value": null,
+          "position": "3.00",
+          "value": 3.0,
           "assumed": false
         },
         "autoMakeupDisabled": false,
@@ -1212,6 +1209,20 @@
           0.933333,
           1.0
         ],
+        "linearReference": {
+          "mode": "soft_end",
+          "position": 0,
+          "gain_db": {
+            "-24": 0.0,
+            "-12": 0.0,
+            "-6": 0.0
+          },
+          "spread_db": 0.0,
+          "response_db": 144.0,
+          "error_db": 0.0,
+          "error_fraction": 0.0,
+          "bar_fraction": 0.083
+        },
         "defaultGain_db": {
           "-12": 0.0,
           "-24": 0.0,
@@ -1240,40 +1251,233 @@
           "pump": 15
         },
         "reduction_db": {
-          "-24": [],
-          "-12": [],
-          "-6": []
+          "-24": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            144.0,
+            144.0,
+            144.0
+          ],
+          "-12": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -0.0,
+            144.0,
+            144.0
+          ],
+          "-6": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -0.0,
+            -0.0,
+            144.0
+          ]
         },
+        "sense": "higher_is_harder",
         "engage": {
-          "-24": null,
-          "-12": null,
-          "-6": null
+          "-24": 13,
+          "-12": 14,
+          "-6": 15
         },
-        "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
+        "thresholdDbEquivalent": [
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
+        "thresholdEffective1dB": [
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          }
+        ],
+        "holdDoubled": [
+          13,
+          14,
+          15
+        ],
         "levelDependence": {
-          "predicted_dg_dl": null,
-          "dg_dl_per_position": [],
+          "predicted_dg_dl": 0.667,
+          "dg_dl_per_position": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            -8.0,
+            -8.0,
+            0.0
+          ],
           "median_dg_dl": null,
           "implied_ratio": null,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "flat",
-        "passThroughAtDefaults": true,
-        "passThroughOffset_db": 0.0,
+        "result": "certified",
+        "passThroughAtDefaults": false,
+        "engageWrites": {
+          "writes": [
+            {
+              "index": 0,
+              "control": "Gate On",
+              "norm": 1.0,
+              "from": "Off",
+              "verified": true,
+              "verifiedBy": "two sweeps: gain reduction with this write, pass-through at the instantiate defaults without it"
+            }
+          ],
+          "tried": [
+            "Gate On -> 1.0 (from 'Off'): GAIN REDUCTION"
+          ],
+          "found": true
+        },
         "notToneReadings": [],
-        "flatSpan_db": 0.0,
-        "reason": "passthrough: output equals input within 0.01 dB at every reading",
-        "displayOffsetDb": null
+        "flatSpan_db": 144.0,
+        "displayOffsetDb": null,
+        "displayEngage": {
+          "-12": -31.170000000000002,
+          "-24": -52.770000000000003,
+          "-6": -15.57,
+          "drift_db": 37.200000000000003,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
       },
-      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
+      "reading": "responds at 997 Hz: a curve to read"
     },
     {
       "index": 16,
       "name": "Comp Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T095943.229+0100",
+        "measuredAt": "20261001T152551.891+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1287,8 +1491,8 @@
         "level_convention": "peak",
         "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
         "ratioDuring": {
-          "position": "",
-          "value": null,
+          "position": "3.00",
+          "value": 3.0,
           "assumed": false
         },
         "autoMakeupDisabled": false,
@@ -1311,10 +1515,24 @@
           0.933333,
           1.0
         ],
+        "linearReference": {
+          "mode": "soft_end",
+          "position": 15,
+          "gain_db": {
+            "-24": 0.0,
+            "-12": -0.0,
+            "-6": -0.03
+          },
+          "spread_db": 0.03,
+          "response_db": 27.77,
+          "error_db": 0.03,
+          "error_fraction": 0.001,
+          "bar_fraction": 0.083
+        },
         "defaultGain_db": {
-          "-12": 0.0,
+          "-12": -0.0,
           "-24": 0.0,
-          "-6": -0.0
+          "-6": -0.03
         },
         "positionLandedBy": [
           "pump",
@@ -1339,40 +1557,201 @@
           "pump": 15
         },
         "reduction_db": {
-          "-24": [],
-          "-12": [],
-          "-6": []
+          "-24": [
+            15.800000000000001,
+            13.67,
+            11.529999999999999,
+            9.4,
+            7.27,
+            5.15,
+            3.08,
+            1.31,
+            0.33,
+            0.06,
+            0.01,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "-12": [
+            23.800000000000001,
+            21.66,
+            19.530000000000001,
+            17.399999999999999,
+            15.26,
+            13.130000000000001,
+            11.0,
+            8.859999999999999,
+            6.73,
+            4.62,
+            2.59,
+            0.97,
+            0.22,
+            0.04,
+            0.01,
+            0.0
+          ],
+          "-6": [
+            27.77,
+            25.629999999999999,
+            23.5,
+            21.370000000000001,
+            19.23,
+            17.100000000000001,
+            14.970000000000001,
+            12.83,
+            10.699999999999999,
+            8.57,
+            6.44,
+            4.33,
+            2.33,
+            0.8,
+            0.15,
+            0.0
+          ]
         },
+        "sense": "lower_is_harder",
         "engage": {
-          "-24": null,
-          "-12": null,
-          "-6": null
+          "-24": 7,
+          "-12": 11,
+          "-6": 13
         },
-        "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
+        "thresholdDbEquivalent": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -41.299999999999997,
+          -38.100000000000001,
+          -34.899999999999999,
+          -31.699999999999999,
+          -28.600000000000001,
+          -25.600000000000001,
+          -22.100000000000001,
+          -18.899999999999999,
+          -15.800000000000001,
+          -13.0,
+          -9.5,
+          -7.2,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
+        "thresholdEffective1dB": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -22.699999999999999,
+          -21.5,
+          -19.399999999999999,
+          -12.0,
+          -9.800000000000001,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
         "levelDependence": {
-          "predicted_dg_dl": null,
-          "dg_dl_per_position": [],
-          "median_dg_dl": null,
-          "implied_ratio": null,
+          "predicted_dg_dl": 0.667,
+          "dg_dl_per_position": [
+            0.665,
+            0.665,
+            0.665,
+            0.665,
+            0.665,
+            0.664,
+            0.66,
+            0.64,
+            0.576,
+            0.473,
+            0.357,
+            0.24,
+            0.129,
+            0.044,
+            0.008,
+            0.0
+          ],
+          "median_dg_dl": 0.65,
+          "implied_ratio": 2.86,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "flat",
-        "passThroughAtDefaults": true,
-        "passThroughOffset_db": 0.0,
+        "result": "certified",
+        "passThroughAtDefaults": false,
+        "engageWrites": {
+          "writes": [
+            {
+              "index": 15,
+              "control": "Comp On",
+              "norm": 1.0,
+              "from": "Off",
+              "verified": true,
+              "verifiedBy": "two sweeps: gain reduction with this write, pass-through at the instantiate defaults without it"
+            }
+          ],
+          "tried": [
+            "Comp On -> 1.0 (from 'Off'): GAIN REDUCTION"
+          ],
+          "found": true
+        },
         "notToneReadings": [],
-        "flatSpan_db": 0.0,
-        "reason": "passthrough: output equals input within 0.01 dB at every reading",
-        "displayOffsetDb": null
+        "flatSpan_db": 27.77,
+        "displayOffsetDb": 0.25,
+        "displayOffsetSpread": {
+          "positions": 12,
+          "iqr_db": 0.23,
+          "min_db": -0.8,
+          "max_db": 0.3,
+          "convention": "peak"
+        },
+        "displayEngage": {
+          "-12": 0.14,
+          "-24": -0.14,
+          "-6": 0.23,
+          "drift_db": 0.37,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
       },
-      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
+      "reading": "responds at 997 Hz: a curve to read"
     },
     {
       "index": 30,
       "name": "Leveller Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T095943.229+0100",
+        "measuredAt": "20261001T152551.891+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1449,6 +1828,21 @@
         },
         "thresholdDbEquivalent": [],
         "thresholdEffective1dB": [],
+        "holdDoubled": [
+          4,
+          5,
+          6,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "stillMovingAfterDoubling": [
+          5,
+          9,
+          11
+        ],
         "levelDependence": {
           "predicted_dg_dl": null,
           "dg_dl_per_position": [],
@@ -1456,22 +1850,35 @@
           "implied_ratio": null,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "flat",
-        "passThroughAtDefaults": true,
-        "passThroughOffset_db": 0.0,
+        "result": "unreadable",
+        "passThroughAtDefaults": false,
+        "engageWrites": {
+          "writes": [
+            {
+              "index": 29,
+              "control": "Leveller On",
+              "norm": 1.0,
+              "from": "Off",
+              "verified": true,
+              "verifiedBy": "two sweeps: gain reduction with this write, pass-through at the instantiate defaults without it"
+            }
+          ],
+          "tried": [
+            "Leveller On -> 1.0 (from 'Off'): GAIN REDUCTION"
+          ],
+          "found": true
+        },
         "notToneReadings": [],
-        "flatSpan_db": 0.0,
-        "reason": "passthrough: output equals input within 0.01 dB at every reading",
+        "reason": "3 positions still moving after the doubling (more than 2): the holds did not reach a steady state",
         "displayOffsetDb": null
-      },
-      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
+      }
     },
     {
       "index": 33,
       "name": "DeEsser Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T095943.229+0100",
+        "measuredAt": "20261001T152551.891+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1557,6 +1964,26 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "DeEsser On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Gate HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Gate LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Comp On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level",
+            "Comp HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Leveller On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Limiter On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level",
+            "Comp LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "GateExp -> 1.0 (from 'Gate'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Gate Int Ext -> 1.0 (from 'Int'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Gate Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Comp Auto Manual -> 1.0 (from 'Manual'): flat - passthrough: output equals input within 0.01 dB at every reading",
+            "Comp Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.0,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -1570,7 +1997,7 @@
       "name": "Limiter Thresh",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T095943.229+0100",
+        "measuredAt": "20261001T152551.891+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -1584,8 +2011,8 @@
         "level_convention": "peak",
         "procedure": "one process per position, levels quiet to loud; reference = the soft end's linear gain",
         "ratioDuring": {
-          "position": "",
-          "value": null,
+          "position": "3.00",
+          "value": 3.0,
           "assumed": false
         },
         "autoMakeupDisabled": false,
@@ -1608,10 +2035,24 @@
           0.933333,
           1.0
         ],
+        "linearReference": {
+          "mode": "soft_end",
+          "position": 15,
+          "gain_db": {
+            "-24": 0.0,
+            "-12": -0.0,
+            "-6": -0.03
+          },
+          "spread_db": 0.03,
+          "response_db": 41.829999999999998,
+          "error_db": 0.03,
+          "error_fraction": 0.001,
+          "bar_fraction": 0.083
+        },
         "defaultGain_db": {
           "-12": 0.0,
           "-24": 0.0,
-          "-6": -0.0
+          "-6": -0.03
         },
         "positionLandedBy": [
           "pump",
@@ -1636,33 +2077,196 @@
           "pump": 15
         },
         "reduction_db": {
-          "-24": [],
-          "-12": [],
-          "-6": []
+          "-24": [
+            23.68,
+            20.52,
+            17.359999999999999,
+            14.199999999999999,
+            11.029999999999999,
+            7.86,
+            4.77,
+            2.07,
+            0.51,
+            0.07,
+            0.01,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "-12": [
+            35.810000000000002,
+            32.609999999999999,
+            29.41,
+            26.219999999999999,
+            23.02,
+            19.82,
+            16.620000000000001,
+            13.42,
+            10.24,
+            7.08,
+            4.04,
+            1.55,
+            0.32,
+            0.04,
+            0.0,
+            0.0
+          ],
+          "-6": [
+            41.829999999999998,
+            38.630000000000003,
+            35.43,
+            32.229999999999997,
+            29.030000000000001,
+            25.829999999999998,
+            22.629999999999999,
+            19.43,
+            16.23,
+            13.029999999999999,
+            9.84,
+            6.67,
+            3.65,
+            1.29,
+            0.23,
+            0.0
+          ]
         },
+        "sense": "lower_is_harder",
         "engage": {
-          "-24": null,
-          "-12": null,
-          "-6": null
+          "-24": 8,
+          "-12": 11,
+          "-6": 13
         },
-        "thresholdDbEquivalent": [],
-        "thresholdEffective1dB": [],
+        "thresholdDbEquivalent": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -40.5,
+          -35.799999999999997,
+          -31.199999999999999,
+          -27.100000000000001,
+          -26.100000000000001,
+          -22.600000000000001,
+          -19.399999999999999,
+          -15.199999999999999,
+          -11.5,
+          -7.9,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
+        "thresholdEffective1dB": [
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          {
+            "below": -24.0
+          },
+          -23.399999999999999,
+          -22.399999999999999,
+          -21.0,
+          -16.300000000000001,
+          -10.800000000000001,
+          -7.4,
+          {
+            "above": -6.0
+          },
+          {
+            "above": -6.0
+          }
+        ],
         "levelDependence": {
-          "predicted_dg_dl": null,
-          "dg_dl_per_position": [],
-          "median_dg_dl": null,
-          "implied_ratio": null,
+          "predicted_dg_dl": 0.667,
+          "dg_dl_per_position": [
+            1.009,
+            1.006,
+            1.004,
+            1.002,
+            1.0,
+            0.998,
+            0.992,
+            0.964,
+            0.873,
+            0.72,
+            0.546,
+            0.37,
+            0.203,
+            0.072,
+            0.013,
+            0.0
+          ],
+          "median_dg_dl": 0.854,
+          "implied_ratio": 6.83,
           "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
         },
-        "result": "flat",
-        "passThroughAtDefaults": true,
-        "passThroughOffset_db": 0.0,
+        "result": "certified",
+        "passThroughAtDefaults": false,
+        "engageWrites": {
+          "writes": [
+            {
+              "index": 38,
+              "control": "Limiter On",
+              "norm": 1.0,
+              "from": "Off",
+              "verified": true,
+              "verifiedBy": "two sweeps: gain reduction with this write, pass-through at the instantiate defaults without it"
+            }
+          ],
+          "tried": [
+            "Limiter On -> 1.0 (from 'Off'): GAIN REDUCTION"
+          ],
+          "found": true
+        },
         "notToneReadings": [],
-        "flatSpan_db": 0.0,
-        "reason": "passthrough: output equals input within 0.01 dB at every reading",
-        "displayOffsetDb": null
+        "flatSpan_db": 41.829999999999998,
+        "displayOffsetDb": -2.9,
+        "displayOffsetSpread": {
+          "positions": 10,
+          "iqr_db": 1.6,
+          "min_db": -5.3,
+          "max_db": -1.5,
+          "convention": "peak"
+        },
+        "displayEngage": {
+          "-12": 0.55,
+          "-24": 1.62,
+          "-6": 0.67,
+          "drift_db": 1.07,
+          "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+        }
       },
-      "reading": "pass_through_at_defaults: output equals input at every reading, so the product does nothing at its instantiate defaults; not evidence about band coverage or this control (a precondition gap, not a band gap)"
+      "reading": "responds at 997 Hz: a curve to read"
     }
   ]
 }

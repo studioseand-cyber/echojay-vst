@@ -4,10 +4,10 @@
   "format": "AudioUnit",
   "uid": "5c48047d",
   "version": "12.0.0",
-  "sampledAt": "2026-09-30",
+  "sampledAt": "2026-10-01",
   "certified": false,
   "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
-  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "listParamsRc": 0,
   "textAtRc": 0,
   "controls": [
@@ -417,8 +417,8 @@
       }
     }
   ],
-  "defaultsSampledAt": "2026-09-30",
-  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 06b9a8eb323f17699292139ef27f6206075e8958",
+  "defaultsSampledAt": "2026-10-01",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash 7b4d5551560419225f50677353c7e6577542be67",
   "readoutCheck": {
     "method": "instantiate_twice",
     "instances": 2
@@ -462,7 +462,7 @@
       "name": "Threshold L/M",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T092909.061+0100",
+        "measuredAt": "20261001T143531.855+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -547,6 +547,14 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "SC-HP L -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading",
+            "SC-HP R -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.31,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
@@ -560,7 +568,7 @@
       "name": "Threshold R/S",
       "flags": [],
       "thresholdSweep": {
-        "measuredAt": "20260930T092909.061+0100",
+        "measuredAt": "20261001T143531.855+0100",
         "host": "EJ Map 0.1.0 / x86_64 / 48k",
         "bridged": true,
         "tone": {
@@ -645,6 +653,14 @@
         },
         "result": "flat",
         "passThroughAtDefaults": true,
+        "engageWrites": {
+          "writes": [],
+          "tried": [
+            "SC-HP L -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading",
+            "SC-HP R -> 1.0 (from 'Off'): flat - passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading"
+          ],
+          "found": false
+        },
         "passThroughOffset_db": 0.31,
         "notToneReadings": [],
         "flatSpan_db": 0.0,
