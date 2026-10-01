@@ -93,7 +93,59 @@ That worktree is at `scratchpad/p1gate` and can be removed with `git worktree re
 
 ## PART 2 — the plugin side of measured compressor profiles
 
-`docs/COMP_PROFILE_SPEC_v1.md` is the spec, copied verbatim from `~/Desktop/COMP_PROFILE_SPEC_v1.md`.
+`docs/COMP_PROFILE_SPEC_v1.md` is the spec, copied verbatim from `~/Desktop/COMP_PROFILE_SPEC_v1.md`. **It is now
+v1.2** (the file's own status line reads `DRAFT v1.2`; v1.1 brought the full 64-hex `map_fp`,
+`measured.reference_ratio` and `controls_norm`, and v1.2 is Kathy's review — measured GR points replacing the
+threshold formula, 997 Hz, the RMS convention pinned, stepped controls, `detector`, tighter acceptance).
+
+### What v1.1 / v1.2 changed on this side — all four done, RED first
+
+| # | change | where |
+|---|---|---|
+| 1 | a full-scale **997 Hz** sine must read `loud_rms_dbfs` **−3.01** (plain RMS, not AES17) | `EJTrackLevel.h` |
+| 2 | **`controls_norm`** entries are written as raw 0..1 norms | `EchoJayParamApply.h` |
+| 3 | the profile lookup compares the **full 64-hex** `map_fp`, not the 12-char log form | `ChainHost.cpp` |
+| 4 | on a **stepped** amount control the correction moves to the adjacent listed **detent** | `EJCompCheck.h` |
+
+**1 — the convention.** It was already plain RMS, but it reported the histogram **bin's lower edge**, 0.25 dB wide,
+which answers `-3.00` where the spec's test says `-3.01`. The p95 bin now carries the **mean of the dB values that
+fell in it** (one `double` per bin, no extra work on the audio thread), so the figure is the real level; and the
+wire carries **two decimals**, because one cannot express `-3.01`. Verified on a full-scale 997 Hz sine:
+`-3.010 dBFS` RMS and `0.00 dBFS` peak, so the pair differ by exactly the sine's 3.01.
+
+**2 — `controls_norm`.** A sibling map on the block, deliberately **not** routed through `applyOne`: that resolves a
+value against a map entry's positions and units, and the amount position the server picks off `amount.curve` is a
+norm with no display text to resolve against — the whole point of the curve is that it was measured at norms. So
+these are written straight to the parameter, clamped to 0..1, and **counted as applied** in the report with the norm
+they wrote. A non-number writes nothing and says so; a control the plugin does not have is named. The settle
+verifies the **norm** (`|value − normalized| ≤ 0.02`, which is exactly the right test), and it needed `index` and
+the *pre-write* `settlePrevNorm` to do that — without them a correct write would have been reverted as "parameter
+vanished".
+
+**3 — the full fingerprint.** A profile whose `map_fp` is not this slot's full 64-hex fingerprint is refused and
+treated as no profile, because it was measured on another binary. Compared in full, logged short — and when the
+claimed value is a *prefix* of the slot's, the log says so outright: "that looks like the 12-char LOG form, which is
+not the key".
+
+**4 — stepped detents.** `amount.stepped: true` → the correction moves to the **adjacent listed detent** in the
+direction of less gain reduction, never an interpolated norm, because a norm between two detents lands on whichever
+one the plugin rounds to — a position nobody chose. Adjacent rather than nearest-to-ideal, so one correction stays
+one move even when the ideal lies past the next detent; at the last detent it stays put. A continuous control still
+interpolates exactly.
+
+`track_level_guard` 20 assertions GREEN · `comp_profile_guard` 44 assertions GREEN.
+
+### Still owed from v1.2, NOT done
+
+- **§8's tone check**: "a 997 Hz tone at L through the same settings lands within 0.5 dB of g". `comp_render_check`
+  measures a vocal-shaped signal only; it needs a `--tone <dBFS>` mode to render a 997 Hz sine at L and report the
+  GR on it. That is the check that "catches calculation errors the 1 dB vocal tolerance would hide", so it matters.
+- **§6's new computation is server-side** (measured `in_at_gr_dbfs` points replacing the threshold formula). Nothing
+  owed here beyond what is already sent, but note the plugin now sends `loud_peak_dbfs` to two decimals, which is
+  what `detector: "peak"` needs (`loud_peak_dbfs - 3.01`).
+- **§11 version matching**: profiles key to the plugin version they were swept on. Waves on the EJ Maps Mac is V12;
+  this machine runs 15.0.70, so a V12 profile will not match. Nothing to build — it is a sweeping instruction — but
+  it is the likeliest reason a first real profile fails to join.
 
 ### The flag
 

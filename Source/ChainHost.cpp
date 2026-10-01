@@ -4848,6 +4848,27 @@ juce::var ChainHost::slotCompProfile (int slotIndex) const
     if (it == paramMaps_.end()) return {};
     const auto prof = it->second.getProperty ("comp_profile", juce::var());
     if (! prof.isObject()) return {};
+    // ITEM 3 (COMP_PROFILE_SPEC_v1 v1.1, section 3 field rules): THE JOIN KEY IS THE FULL 64-HEX FINGERPRINT.
+    // "The `fp=` in EJDialSummary logs is only its first 12 characters and will not match." A profile carrying a
+    // map_fp that is not this slot's full fingerprint is a profile for another binary, and using it would dial a
+    // threshold measured on something else. Compared in FULL, and logged short - the comparison and the log form
+    // are deliberately different things.
+    {
+        const auto claimed = readCompProfile (prof).mapFp.trim();
+        if (claimed.isNotEmpty() && claimed != s.fp)
+        {
+            EchoJay_NSLog(("EJCompProfile: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
+                           + "\") REFUSED a profile whose map_fp is not this slot's fingerprint - profile says "
+                           + claimed.substring(0, 12) + "... (" + juce::String(claimed.length())
+                           + " chars), slot is " + s.fp.substring(0, 12) + "... ("
+                           + juce::String(s.fp.length()) + " chars)"
+                           + (s.fp.startsWith(claimed) && claimed.length() < s.fp.length()
+                                  ? juce::String(" - that looks like the 12-char LOG form, which is not the key")
+                                  : juce::String())
+                           + "; treating it as no profile").toRawUTF8());
+            return {};
+        }
+    }
     // A profile that is not usable is reported ABSENT, so every caller takes the no-profile road rather than each
     // having to re-decide. The reason is logged once here, where the decision is made.
     const auto info = readCompProfile (prof);

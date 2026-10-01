@@ -27,6 +27,11 @@ namespace echojay
     the V2 and the Link - the same reason configFromBlock lives in a shared header. */
 struct CompCheck
 {
+    /** One measured position of the amount control: its norm and the input level at which it reaches 1 dB of
+        gain reduction. Declared FIRST because member function SIGNATURES are parsed where they appear, and an
+        unqualified `Point` before this line resolves to juce::Point. */
+    struct Point { float norm, eff; };
+
     static constexpr float kTooMuchMarginDb = 3.0f;   // "more than expected + 3 dB"
     static constexpr float kNotEngagingDb   = 0.5f;   // "under 0.5 dB"
     static constexpr float kExpectedFloorDb = 1.0f;   // "...when expected is 1 dB or more"
@@ -135,7 +140,40 @@ struct CompCheck
         if (curve.size() < 2) return currentNorm;
         const float currentEff = effForNorm (curve, currentNorm);
         if (! (currentEff == currentEff)) return currentNorm;
-        return normForEff (curve, currentEff + lessGrDb);
+        const float wanted = normForEff (curve, currentEff + lessGrDb);
+        // ITEM 4 (COMP_PROFILE_SPEC_v1 v1.2, amount.stepped): A STEPPED CONTROL HAS NO IN-BETWEEN. "The curve then
+        // lists every detent, and the server only ever picks a listed point, never an interpolated norm" - and the
+        // same holds for this correction, because a norm between two detents lands on whichever one the plugin
+        // rounds to, which is a position nobody chose. It moves to the ADJACENT listed detent in the direction of
+        // less gain reduction: adjacent, not nearest-to-the-ideal, so one correction is one step and the move is
+        // always in the direction the check asked for even when the ideal lies past the next detent.
+        if (isStepped (profile))
+            return adjacentDetentForLessGr (curve, currentNorm);
+        return wanted;
+    }
+
+    static bool isStepped (const juce::var& profile)
+    {
+        if (auto* a = profile.getProperty ("amount", juce::var()).getDynamicObject())
+            return (bool) a->getProperty ("stepped");
+        return false;
+    }
+
+    /** The next listed detent toward LESS gain reduction - a higher effective threshold - from wherever the
+        control is now. The curve is sorted by norm; "less" follows the curve's own direction rather than assuming
+        it rises, because an input_drive unit's amount can run either way. Already at the last one: stay there. */
+    static float adjacentDetentForLessGr (const std::vector<Point>& c, float currentNorm)
+    {
+        if (c.empty()) return currentNorm;
+        // Which listed detent are we at (or nearest to)?
+        size_t at = 0;
+        float best = std::abs (c[0].norm - currentNorm);
+        for (size_t i = 1; i < c.size(); ++i)
+        { const float d = std::abs (c[i].norm - currentNorm); if (d < best) { best = d; at = i; } }
+        const bool effRisesWithNorm = c.back().eff >= c.front().eff;
+        if (effRisesWithNorm)
+            return (at + 1 < c.size()) ? c[at + 1].norm : c[at].norm;
+        return (at > 0) ? c[at - 1].norm : c[at].norm;
     }
 
     /** The control's name, so the caller writes the one the profile measured and not a guess. */
@@ -152,8 +190,6 @@ struct CompCheck
             if (o->hasProperty ("static_gain_db")) return (float) (double) o->getProperty ("static_gain_db");
         return 0.0f;
     }
-
-    struct Point { float norm, eff; };
 
     static std::vector<Point> curveOf (const juce::var& profile)
     {

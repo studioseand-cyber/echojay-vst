@@ -264,6 +264,131 @@ void guardMain()
         }
     }
 
+    std::printf ("\n-- (v2) controls_norm, the full map_fp, and a stepped detent (spec v1.1/v1.2) --\n");
+    {
+        using CC = echojay::CompCheck;
+        // ---- ITEM 2: controls_norm lands a RAW NORM and counts as applied.
+        // Driven through applyStructuredSettings, which is the function the DIAL calls with a chain block's
+        // settings_structured - the block's own road. (setSlotStructuredSettings only STORES them for that pass,
+        // and in this rig the pass does not run, so asserting through it would assert the rig and not the code.)
+        // AUDelay's "Delay time" is continuous with a wide range, so a norm is unambiguous and nothing resolves it
+        // through a map - which is the whole reason the amount position travels as a norm.
+        if (h.getNumSlots() >= 1)
+        {
+            auto normBlock = [] (const juce::var& value)
+            {
+                auto* pp = new juce::DynamicObject(); pp->setProperty ("Delay time", value);
+                auto* w = new juce::DynamicObject(); w->setProperty ("controls_norm", juce::var (pp));
+                return juce::var (w);
+            };
+            const auto report = h.applyStructuredSettings (0, normBlock (0.674), juce::var());
+            pumpMs (300);
+            float raw = 0.0f, parsed = 0.0f; juce::String text; bool okParse = false;
+            const bool read = h.readControlRaw (0, "Delay time", raw, text, okParse, parsed);
+            check (read && std::abs (raw - 0.674f) < 0.01f,
+                   "(v2) a controls_norm entry lands the RAW NORM 0.674 on the control  (RED as it stood: "
+                   "controls_norm was not read at all, so the amount position the server picks off amount.curve "
+                   "was never written)",
+                   read ? ("norm " + juce::String (raw, 4) + ", reads \"" + text + "\"")
+                        : juce::String ("could not read the control back"));
+            bool counted = false;
+            for (const auto& rr : report)
+                if (rr.semantic.containsIgnoreCase ("Delay time") && rr.applied
+                    && std::abs (rr.normalized - 0.674f) < 0.01f) counted = true;
+            check (counted,
+                   "(v2) ...and the apply REPORT counts it as applied, with the norm it wrote, so the dial summary "
+                   "names it rather than the write being silent",
+                   juce::String ((int) report.size()) + " result(s)");
+            // A value that is not a number writes NOTHING and is an honesty entry, never a silent skip.
+            const auto badReport = h.applyStructuredSettings (0, normBlock ("loud"), juce::var());
+            pumpMs (200);
+            float raw2 = 0.0f, p2 = 0.0f; juce::String t2; bool ok2 = false;
+            h.readControlRaw (0, "Delay time", raw2, t2, ok2, p2);
+            check (std::abs (raw2 - 0.674f) < 0.01f,
+                   "(v2) ...while a controls_norm value that is not a number writes nothing and leaves the control "
+                   "where it was",
+                   "norm still " + juce::String (raw2, 4));
+            bool said = false;
+            for (const auto& rr : badReport) if (! rr.applied && rr.note.contains ("not a number")) said = true;
+            check (said,
+                   "(v2) ...and says so in its report, rather than skipping it quietly",
+                   juce::String ((int) badReport.size()) + " result(s)");
+            // ...and a control the plugin does not have is reported too.
+            auto* ghost = new juce::DynamicObject(); ghost->setProperty ("No Such Knob", 0.5);
+            auto* gw = new juce::DynamicObject(); gw->setProperty ("controls_norm", juce::var (ghost));
+            const auto ghostReport = h.applyStructuredSettings (0, juce::var (gw), juce::var());
+            bool named = false;
+            for (const auto& rr : ghostReport)
+                if (! rr.applied && rr.note.contains ("does not have")) named = true;
+            check (named, "(v2) ...and so is a controls_norm entry naming a control that does not exist");
+        }
+
+        // ---- ITEM 3: the join key is the FULL 64-hex fingerprint, not the 12-char log form.
+        const auto slotFp = h.getSlotIdentity (0).fp;
+        check (slotFp.length() == 64,
+               "(v2) precondition: the slot's fingerprint is the full 64 hex",
+               juce::String (slotFp.length()) + " chars");
+        publishProfile (h, slotFp, profileVar (slotFp.substring (0, 12)));   // the LOG form, as a profile might carry
+        check (h.slotCompProfile (0).isVoid(),
+               "(v2) a profile whose map_fp is the 12-CHAR LOG FORM is refused  (the spec says the fp= in "
+               "EJDialSummary is only the first 12 characters and will not match; a 12-char prefix must not pass "
+               "as the key, or a profile measured on another binary could dial this one)",
+               h.slotCompProfile (0).isVoid() ? juce::String ("refused") : juce::String ("ACCEPTED"));
+        publishProfile (h, slotFp, profileVar (juce::String ("f").paddedRight ('f', 64)));
+        check (h.slotCompProfile (0).isVoid(),
+               "(v2) ...and so is a full-length fingerprint that is simply a different one");
+        publishProfile (h, slotFp, profileVar (slotFp));
+        check (h.slotCompProfile (0).isObject(),
+               "(v2) ...while the slot's OWN full fingerprint is accepted",
+               h.slotCompProfile (0).isObject() ? juce::String ("accepted") : juce::String ("refused"));
+
+        // ---- ITEM 4: on a stepped amount control the correction moves to the ADJACENT LISTED DETENT.
+        {
+            auto stepped = [] (bool isStepped)
+            {
+                auto* amount = new juce::DynamicObject();
+                amount->setProperty ("control", "Comp Thresh");
+                amount->setProperty ("stepped", isStepped);
+                juce::Array<juce::var> curve;
+                // detents at 0.0, 0.25, 0.50, 0.75, 1.00 with 10 dB between them
+                for (int i = 0; i < 5; ++i)
+                { auto* pt = new juce::DynamicObject();
+                  pt->setProperty ("norm", 0.25 * i);
+                  pt->setProperty ("eff_threshold_dbfs", -40.0 + 10.0 * i);
+                  curve.add (juce::var (pt)); }
+                amount->setProperty ("curve", curve);
+                auto* o = new juce::DynamicObject();
+                o->setProperty ("schema", "ej_comp_profile/1");
+                o->setProperty ("topology", "threshold");
+                o->setProperty ("amount", juce::var (amount));
+                auto* fit = new juce::DynamicObject(); fit->setProperty ("max_error_db", 0.4);
+                o->setProperty ("fit", juce::var (fit));
+                return juce::var (o);
+            };
+            // Asking for 4 dB less from the detent at 0.50 (eff -20): the ideal is eff -16, which lies BETWEEN the
+            // detents at 0.50 (-20) and 0.75 (-10).
+            const float contin = CC::amountNormForLessGr (stepped (false), 0.5f, 4.0f);
+            check (contin > 0.5f && contin < 0.75f,
+                   "(v2) a CONTINUOUS amount interpolates to the exact position the check asked for",
+                   juce::String (contin, 4));
+            const float detent = CC::amountNormForLessGr (stepped (true), 0.5f, 4.0f);
+            check (std::abs (detent - 0.75f) < 0.0001f,
+                   "(v2) ...while a STEPPED one moves to the ADJACENT LISTED DETENT, 0.75, never the in-between "
+                   "0.60  (RED as it stood: it interpolated, and a norm between two detents lands on whichever one "
+                   "the plugin rounds to - a position nobody chose)",
+                   juce::String (detent, 4));
+            // ...one step only, even when the ideal lies well past the next detent.
+            const float far = CC::amountNormForLessGr (stepped (true), 0.5f, 25.0f);
+            check (std::abs (far - 0.75f) < 0.0001f,
+                   "(v2) ...and it is ONE step even when the ideal is past it, because one correction is one move",
+                   juce::String (far, 4));
+            // ...and at the last detent it stays there rather than running off the end.
+            const float end = CC::amountNormForLessGr (stepped (true), 1.0f, 4.0f);
+            check (std::abs (end - 1.0f) < 0.0001f,
+                   "(v2) ...and at the last detent it stays put", juce::String (end, 4));
+        }
+    }
+
     std::printf ("\n==== comp_profile_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

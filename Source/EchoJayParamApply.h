@@ -1699,6 +1699,76 @@ inline juce::Array<ApplyResult> applySettings (juce::AudioPluginInstance& plugin
         results.add (r);
     }
 
+    // ---- controls_norm (COMP_PROFILE_SPEC_v1 v1.1, section 6.5) ---------------------------------------------
+    // A compressor's AMOUNT setting arrives as a raw 0..1 norm in a SIBLING map, not in `controls`. It has to:
+    // `controls` values are display text or numbers resolved through the parameter map's own positions and units,
+    // and the amount position the server picks off `amount.curve` is a norm with no display text to resolve
+    // against - the whole point of the curve is that it was measured at norms. So these are written straight to
+    // the parameter, clamped to 0..1, and reported as applied with the text the plugin reads back afterwards.
+    //
+    // Deliberately NOT routed through applyOne: that resolves a value against a map entry, and a norm needs no
+    // resolving. A control named here that the plugin does not have is an honesty entry, never a silent skip.
+    {
+        auto normsReq = settings.getProperty ("controls_norm", juce::var());
+        if (auto* no = normsReq.getDynamicObject())
+        {
+            auto& params = plugin.getParameters();
+            for (auto& kv : no->getProperties())
+            {
+                const juce::String name = kv.name.toString().trim();
+                ApplyResult r; r.semantic = name;
+                if (! (kv.value.isDouble() || kv.value.isInt() || kv.value.isInt64()))
+                {
+                    r.note = "controls_norm \"" + name + "\" is not a number (" + kv.value.toString()
+                           + "); nothing written";
+                    results.add (r);
+                    continue;
+                }
+                const float want = juce::jlimit (0.0f, 1.0f, (float) (double) kv.value);
+                juce::AudioProcessorParameter* target = nullptr;
+                int targetIndex = -1;
+                for (int pi = 0; pi < params.size(); ++pi)
+                    if (params[pi] != nullptr
+                        && normalizeControlName (params[pi]->getName (kParamNameQueryLen)).equalsIgnoreCase (
+                               normalizeControlName (name)))
+                    { target = params[pi]; targetIndex = pi; break; }
+                if (target == nullptr)
+                {
+                    r.note = "controls_norm names \"" + name + "\", which this plugin does not have";
+                    results.add (r);
+                    continue;
+                }
+                // THE SETTLE NEEDS THE INDEX AND THE PREVIOUS VALUE, or it cannot do its job: it looks the
+                // parameter up by `index` (a -1 reads as "parameter vanished" and fails a correct write) and
+                // restores `settlePrevNorm` when the settled read still disagrees - so that has to be where the
+                // control WAS, not where it was just put. Its default check is |value - normalized| <= 0.02,
+                // which is exactly the right test for a norm write, so no settleOk is needed.
+                const auto before = target->getCurrentValueAsText().trim();
+                const float prevNorm = target->getValue();
+                target->beginChangeGesture();
+                target->setValueNotifyingHost (want);
+                target->endChangeGesture();
+                r.index = targetIndex;
+                r.applied = true;
+                r.normalized = want;
+                r.requestedValue = want;
+                r.beforeText = before;
+                r.landedText = target->getCurrentValueAsText().trim();
+                r.immediateText = r.landedText;
+                r.pendingSettle = true;          // a display can be one write behind; the settle verifies the NORM
+                r.settlePrevNorm = prevNorm;
+                r.note = "norm " + juce::String (want, 4) + " written directly (controls_norm)";
+                results.add (r);
+            }
+        }
+        else if (! normsReq.isVoid())
+        {
+            ApplyResult r; r.semantic = "controls_norm";
+            r.note = "controls_norm must be an object of name -> 0..1 number";
+            results.add (r);
+        }
+    }
+
     // ---- deltas (21t, 25 Sep 2026): a MOVE from where the control already is --------------------------------
     // The server sends a delta when it was never told the control's current value, so an absolute number would be
     // a guess. Three shapes: { db: N } adds dB, { factor: F } multiplies (ms and other times), { positions: N }

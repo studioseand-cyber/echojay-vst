@@ -172,6 +172,41 @@ void guardMain()
                juce::String (r.windows) + " window(s)");
     }
 
+    std::printf ("\n-- (7) THE CONVENTION, pinned by a test (spec v1.2 section 5) --\n");
+    {
+        // "as plain RMS: 20*log10(rms of the samples), where a full-scale sine reads -3.01 dBFS. NOT the AES17
+        // convention (full-scale sine = 0 dBFS) ... A 3 dB slip here is larger than the whole GR target, so both
+        // sides carry a test: a full-scale 997 Hz sine must read -3.01."
+        echojay::TrackLevel tl; tl.prepare (kSr);
+        // A FULL-SCALE 997 Hz SINE: amplitude 1.0, so its RMS is 1/sqrt(2) and 20*log10 of that is -3.0103.
+        std::vector<float> buf ((size_t) 512);
+        double phase = 0.0;
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 997.0 / kSr;
+        const int total = (int) std::lround (40.0 * kSr);
+        for (int done = 0; done < total; )
+        {
+            const int n = juce::jmin (512, total - done);
+            for (int i = 0; i < n; ++i) { buf[(size_t) i] = (float) std::sin (phase); phase += inc; }
+            tl.push (buf.data(), nullptr, n);
+            done += n;
+        }
+        const auto r = tl.read();
+        check (r.valid, "(7) precondition: 40 s of tone gives a reading", "heard " + f1 (r.heardSeconds) + " s");
+        check (std::abs (r.loudRmsDbfs - -3.01f) <= 0.05f,
+               "(7) a FULL-SCALE 997 Hz sine reads -3.01 dBFS - plain RMS, not AES17  (RED as it stood: the "
+               "percentile reported its histogram BIN's lower edge, 0.25 dB wide, which answered -3.00; a 3 dB "
+               "slip here would be larger than the whole gain-reduction target)",
+               juce::String (r.loudRmsDbfs, 3) + " dBFS, wanted -3.010");
+        check (std::abs (r.loudPeakDbfs - 0.0f) <= 0.1f,
+               "(7) ...and its PEAK reads 0.0 dBFS, so the pair differ by exactly the sine's 3.01",
+               juce::String (r.loudPeakDbfs, 2) + " dBFS peak");
+        const auto v = tl.toVar();
+        check (v.isObject()
+                   && std::abs ((float) (double) v.getProperty ("loud_rms_dbfs", juce::var()) - -3.01f) <= 0.05f,
+               "(7) ...and the WIRE carries it to two decimals, because one cannot express -3.01",
+               juce::JSON::toString (v.getProperty ("loud_rms_dbfs", juce::var())));
+    }
+
     std::printf ("\n==== track_level_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

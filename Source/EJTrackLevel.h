@@ -64,6 +64,7 @@ public:
     void reset() noexcept
     {
         bins_.fill (0);
+        binSumDb_.fill (0.0);
         total_ = 0;
         sumSq_ = 0.0;
         inWindow_ = 0;
@@ -109,7 +110,9 @@ public:
             seen += bins_[(size_t) b];
             if (seen >= wanted) { bin = b; break; }
         }
-        r.loudRmsDbfs  = dbForBin (bin);
+        r.loudRmsDbfs  = bins_[(size_t) bin] > 0
+                             ? (float) (binSumDb_[(size_t) bin] / (double) bins_[(size_t) bin])
+                             : dbForBin (bin);
         r.loudPeakDbfs = loudPeak_ > 0.0f ? juce::Decibels::gainToDecibels (loudPeak_, kLoDb) : kLoDb;
         r.valid = true;
         return r;
@@ -121,8 +124,9 @@ public:
         const auto r = read();
         if (! r.valid) return {};
         auto* o = new juce::DynamicObject();
-        o->setProperty ("loud_rms_dbfs",  juce::String (r.loudRmsDbfs, 1).getDoubleValue());
-        o->setProperty ("loud_peak_dbfs", juce::String (r.loudPeakDbfs, 1).getDoubleValue());
+        // TWO DECIMALS, because the convention test in section 5 is "-3.01" and one decimal cannot express it.
+        o->setProperty ("loud_rms_dbfs",  juce::String (r.loudRmsDbfs, 2).getDoubleValue());
+        o->setProperty ("loud_peak_dbfs", juce::String (r.loudPeakDbfs, 2).getDoubleValue());
         o->setProperty ("window", "400ms_rms_p95");
         o->setProperty ("heard_s", (int) std::lround (r.heardSeconds));
         return juce::var (o);
@@ -138,6 +142,11 @@ private:
         heardSamples_ += (juce::int64) windowSamples_;
         const int bin = binForDb (db);
         ++bins_[(size_t) bin];
+        // ...AND THE MEAN dB OF THE WINDOWS IN THAT BIN. The bin's own lower edge is only accurate to 0.25 dB, and
+        // COMP_PROFILE_SPEC_v1 section 5 (v1.2) pins the convention by a test - "a full-scale 997 Hz sine must read
+        // -3.01" - which a quarter-dB bin edge would answer as -3.00. Keeping the sum costs one float per bin and
+        // makes the reported figure the real level rather than the bin it fell in.
+        binSumDb_[(size_t) bin] += (double) db;
         ++total_;
         // THE LOUD-PHRASE PEAK is the peak of the windows that ARE the loud phrases, not the peak of the whole
         // take: a single click in a quiet bar is not a loud phrase. Tracked against a rising floor so it needs no
@@ -157,6 +166,7 @@ private:
     double sr_ = 48000.0;
     int    windowSamples_ = 19200;
     std::array<int, (size_t) kBins> bins_ {};
+    std::array<double, (size_t) kBins> binSumDb_ {};   // the sum of the dB values in each bin: see closeWindow
     int    total_ = 0;
     double sumSq_ = 0.0;
     int    inWindow_ = 0;
