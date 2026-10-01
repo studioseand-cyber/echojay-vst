@@ -119,6 +119,7 @@ struct Plan
     // every fresh per-position process (loud-to-quiet contaminates through release - arm B), 2.5 s hold, last 300 ms read,
     // and the per-position quiet reference on EVERY product (-54 and -48 are steps of the grid). Nothing else changes.
     bool profile = false;
+    int repeats = 1;                          // v1.4: a profile sweep measures every position again with the HOLD DOUBLED (5 s): a point that moves had not settled
     double holdS = 1.5, discardS = 0.75, winS = 0.25;
     std::vector<double> testLevels() const   // the levels the derivation reads reduction at
     {
@@ -130,7 +131,9 @@ struct Plan
         if (profile) return testLevels();                                    // -54 and -48 are in the grid: the quiet reference reads them
         return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 };
     }
-    void makeProfile() { profile = true; holdS = 2.5; discardS = 2.2; winS = 0.3; quietReference = true; if (referenceFallbackNote.isEmpty()) referenceFallbackNote = "profile sweep: the quiet-level reference on every product by design"; }
+    // v1.4: the repeat with the HOLD DOUBLED - the same read window at the end of a hold twice as long.
+    Plan holdDoubled() const { Plan slow = *this; slow.holdS = holdS * 2.0; slow.discardS = slow.holdS - winS; return slow; }
+    void makeProfile() { profile = true; repeats = 2; holdS = 2.5; discardS = 2.2; winS = 0.3; quietReference = true; if (referenceFallbackNote.isEmpty()) referenceFallbackNote = "profile sweep: the quiet-level reference on every product by design"; }
     // SEVERAL THRESHOLDS AND NO PICK (ruled 30 Sep): every candidate is swept and labelled, the others held at their
     // instantiate defaults, and a human reads curves instead of guessing from names. thr stays -1; the driver loops.
     struct Candidate { int index; juce::String name; juce::StringArray flags; bool quietReference; };
@@ -1514,6 +1517,74 @@ inline juce::var composeFixture (const juce::var& base, const juce::var& thresho
     if (auto* o = f.getDynamicObject()) o->setProperty ("thresholdSweep", stripPrivate (thresholdSweep));
     stampSchema (f, kSchemaCompressor);
     return f;
+}
+
+// v1.4 QUALITY (built 1 Oct, folded into the armed profile run): the trust gate is the worst disagreement on any in_at_gr
+// point between the normal sweep (2.5 s hold) and a repeat with the hold DOUBLED (5 s) - a point that moves when the hold
+// doubles had not settled (slow opto, auto-release); an identical rerun is not a test, DSP is deterministic. Over 0.5 dB
+// the server treats it as no profile. The monotonic check: within a position 1 < 2 < 3 STRICTLY; across positions one
+// direction, nulls skipped, equal neighbours allowed (positions past the sweep range must not fail it). Nothing is
+// averaged - the normal sweep is the record's curve, the doubled-hold one is kept beside it, the disagreement is the number.
+struct RepeatQuality
+{
+    int repeats = 1, pointsCompared = 0, shapeDisagreements = 0;   // shape: one repeat numeric, the other not
+    juce::String method = "hold 2.5 s vs 5 s";
+    std::optional<double> pointErrorDb;
+    bool withinMonotonic = true, acrossMonotonic = true;
+    juce::StringArray violations;
+};
+inline RepeatQuality repeatQuality (const Derived& d1, const Derived* d2)
+{
+    RepeatQuality q;
+    auto num = [] (const juce::var& v) { return v.isDouble() || v.isInt(); };
+    if (d2 != nullptr && d2->inAtGr.size() == d1.inAtGr.size())
+    {
+        q.repeats = 2; double worst = 0.0;
+        for (size_t i = 0; i < d1.inAtGr.size(); ++i)
+            for (int t : { 1, 2, 3 })
+            {
+                const auto a = d1.inAtGr[i].at.count (t) ? d1.inAtGr[i].at.at (t) : juce::var(), b = d2->inAtGr[i].at.count (t) ? d2->inAtGr[i].at.at (t) : juce::var();
+                if (num (a) && num (b)) { ++q.pointsCompared; worst = juce::jmax (worst, std::abs ((double) a - (double) b)); }
+                else if (num (a) != num (b)) ++q.shapeDisagreements;
+            }
+        if (q.pointsCompared > 0) q.pointErrorDb = std::round (worst * 100.0) / 100.0;
+    }
+    // within a position: 1 < 2 < 3 where numeric
+    for (size_t i = 0; i < d1.inAtGr.size(); ++i)
+    {
+        const auto& m = d1.inAtGr[i].at;
+        for (int t : { 1, 2 })
+            if (m.count (t) && m.count (t + 1) && num (m.at (t)) && num (m.at (t + 1)) && (double) m.at (t + 1) <= (double) m.at (t))   // STRICTLY rising within a position
+            { q.withinMonotonic = false; q.violations.add ("position " + juce::String ((int) i) + ": " + juce::String (t + 1) + " dB at " + juce::String ((double) m.at (t + 1), 1) + " below " + juce::String (t) + " dB at " + juce::String ((double) m.at (t), 1)); }
+    }
+    // across positions: the 1 dB values must move in one direction (ascending norm order), ignoring non-numeric positions
+    std::vector<double> ones; for (const auto& r : d1.inAtGr) if (r.at.count (1) && num (r.at.at (1))) ones.push_back ((double) r.at.at (1));
+    if (ones.size() >= 3)
+    {
+        int up = 0, down = 0;                                                      // nulls already skipped; equal neighbours count as neither
+        for (size_t k = 1; k < ones.size(); ++k) { if (ones[k] > ones[k - 1]) ++up; if (ones[k] < ones[k - 1]) ++down; }
+        if (up > 0 && down > 0) { q.acrossMonotonic = false; q.violations.add ("across positions the 1 dB values rise " + juce::String (up) + " time(s) and fall " + juce::String (down) + " time(s)"); }
+    }
+    return q;
+}
+inline void attachRepeatQuality (juce::var& sweepVar, const Derived& d1, const Derived* d2)
+{
+    const auto q = repeatQuality (d1, d2);
+    auto* o = sweepVar.getDynamicObject(); if (o == nullptr) return;
+    if (d2 != nullptr)
+    {
+        juce::Array<juce::var> arr;
+        for (const auto& r : d2->inAtGr) { auto* x = new juce::DynamicObject(); for (const auto& [t, v] : r.at) x->setProperty (juce::String (t), v); arr.add (juce::var (x)); }
+        o->setProperty ("inAtGrRepeat", arr);
+    }
+    auto* qq = new juce::DynamicObject();
+    qq->setProperty ("repeats", q.repeats);
+    qq->setProperty ("method", q.repeats > 1 ? q.method : juce::String ("none"));
+    qq->setProperty ("point_error_db", q.pointErrorDb ? juce::var (*q.pointErrorDb) : juce::var());
+    qq->setProperty ("pointsCompared", q.pointsCompared); qq->setProperty ("shapeDisagreements", q.shapeDisagreements);
+    qq->setProperty ("withinPositionsMonotonic", q.withinMonotonic); qq->setProperty ("acrossPositionsMonotonic", q.acrossMonotonic);
+    juce::Array<juce::var> vs; for (const auto& v : q.violations) vs.add (v); qq->setProperty ("violations", vs);
+    o->setProperty ("quality", juce::var (qq));
 }
 
 } // namespace ejmap::sweep

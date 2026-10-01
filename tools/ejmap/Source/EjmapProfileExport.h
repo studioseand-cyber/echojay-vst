@@ -1,5 +1,16 @@
 /*
-  EjmapProfileExport.h - EXPORT a certification record to Sean's ej_comp_profile/1 (COMP_PROFILE_SPEC v1.2), 1 Oct 2026.
+  EjmapProfileExport.h - EXPORT a certification record to Sean's ej_comp_profile/1 (COMP_PROFILE_SPEC v1.4), 1 Oct 2026.
+
+  v1.4: detector_f REQUIRED (no profile without it - guessing 0 on a peak-sensitive unit picks a threshold ~9 dB too
+  low); quality.point_error_db from the HOLD-DOUBLED repeat (2.5 s vs 5 s), quality.method says so; monotonic within a
+  position STRICTLY, across positions one direction with nulls skipped and equal neighbours allowed; notes list the
+  guards that passed.
+
+  v1.3: `quality {point_error_db, repeats}` is the trust gate (the worst disagreement between repeated measurements of
+  the same in_at_gr point; the server treats over 0.5 dB as no profile, and rejects non-monotonic points) - exported
+  from the record's repeat pass, with the monotonic check beside it; `detector_f` (0..1) replaces the detector label;
+  `eff_threshold_dbfs` is informational (identical to in_at_gr["1"], the server never reads it). A record with no repeat
+  pass has no point_error_db and says so: null, never a guess.
 
   v1.2: `in_at_gr_dbfs` {1, 2, 3} on every curve point (required; the server matches on it, the v1 threshold formula is
   withdrawn); `eff_threshold_dbfs` == `in_at_gr_dbfs["1"]`, written identically; `stepped` is a BOOLEAN and a stepped
@@ -294,8 +305,39 @@ inline Export exportCompProfile (const juce::var& f)
     {
         const auto det = sweepVar.getProperty ("detector", {});
         std::optional<double> f; if (det.isObject() && (det.getProperty ("fraction", {}).isDouble() || det.getProperty ("fraction", {}).isInt())) f = (double) det.getProperty ("fraction", {});
-        P->setProperty ("detector", detectorWord (f));
-        if (f) P->setProperty ("detector_fraction", r2 (*f));           // the proposal: 0 = rms, 1 = peak, measured
+        if (! f) return refuse ("detector_f not measured (v1.4 requires it): run --cert-detector on the record first");
+        P->setProperty ("detector_f", r2 (juce::jlimit (0.0, 1.0, *f)));
+        if (f) P->setProperty ("detector_f_raw", r2 (*f));                                                 // unclamped, so an out-of-range measurement is visible
+    }
+    {
+        // v1.3 quality: the record's repeat pass. No repeat = null point_error_db, repeats 1, and the server will refuse: said, not padded.
+        const auto q = sweepVar.getProperty ("quality", {});
+        auto* qq = new juce::DynamicObject();
+        if (! (q.getProperty ("point_error_db", {}).isDouble() || q.getProperty ("point_error_db", {}).isInt()))
+            return refuse ("quality.point_error_db not measured (v1.4 requires the hold-doubled repeat): this record has no repeat pass");
+        qq->setProperty ("point_error_db", q.getProperty ("point_error_db", juce::var()));
+        qq->setProperty ("method", q.getProperty ("method", "none"));
+        qq->setProperty ("points_compared", q.getProperty ("pointsCompared", 0));
+        qq->setProperty ("shape_disagreements", q.getProperty ("shapeDisagreements", 0));
+        // The monotonic check is computed HERE from the exported points (not read from the record): within a position
+        // 1 < 2 < 3, across positions the 1 dB values move one way. His server rejects a violation; we say it first.
+        bool within = true, across = true; juce::Array<juce::var> viol;
+        std::vector<double> ones;
+        for (int i = 0; i < curve.size(); ++i)
+        {
+            const auto g = curve[i].getProperty ("in_at_gr_dbfs", {});
+            auto at = [&] (const char* k) -> std::optional<double> { const auto v = g.getProperty (k, {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
+            const auto a = at ("1"), b = at ("2"), c = at ("3");
+            if (a && b && *b <= *a) { within = false; viol.add ("point " + juce::String (i) + ": 2 dB not strictly above 1 dB"); }      // STRICTLY within
+            if (b && c && *c <= *b) { within = false; viol.add ("point " + juce::String (i) + ": 3 dB not strictly above 2 dB"); }
+            if (a) ones.push_back (*a);                                                                                                  // nulls skipped
+        }
+        if (ones.size() >= 3) { int up = 0, down = 0; for (size_t k = 1; k < ones.size(); ++k) { if (ones[k] > ones[k - 1]) ++up; if (ones[k] < ones[k - 1]) ++down; }   // equal neighbours allowed
+                                if (up > 0 && down > 0) { across = false; viol.add ("1 dB values rise " + juce::String (up) + " and fall " + juce::String (down) + " times across positions"); } }
+        qq->setProperty ("monotonic_within_positions", within);
+        qq->setProperty ("monotonic_across_positions", across);
+        qq->setProperty ("violations", viol);
+        P->setProperty ("quality", juce::var (qq));
     }
     if (P->getProperty ("topology") == "input_drive")
     {
@@ -324,6 +366,14 @@ inline Export exportCompProfile (const juce::var& f)
         P->setProperty ("fit", juce::var (ft));
     }
     juce::String notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; ";
+    {
+        // v1.4: the guards that passed, by name, from the record. Each is a rule the derivation applied; a sweep that failed one
+        // never certified, so a certified record passed them all - said here so the server can read it.
+        const auto nt = sweepVar.getProperty ("notToneReadings", {});
+        notes << "guards passed: tone_frac (" << (nt.isArray() ? juce::String (nt.size()) : juce::String ("0")) << " readings refused as not the tone), "
+              << "level dependence (not a gain law), quiet-reference 6 dB self-check (" << juce::String ((int) quietGains.size()) << " of " << juce::String (norms.size()) << " positions), "
+              << "ascending-only levels in each fresh process, still-moving rule; ";
+    }
     notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position; ";
     if (fit.maxErrorDb > 1.5) notes << "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points); ";
     if (! sweepVar.getProperty ("engageWrites", {}).isObject()) notes << "compressed as instantiated, no engage write needed; ";

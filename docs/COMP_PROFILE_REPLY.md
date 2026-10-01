@@ -203,3 +203,28 @@ Three things the numbers say:
    the position choice should read the curve. Your `+knee_db/4` term did not enter here (CL 1B has
    no knee control; MCompressor 'Hard'; EMO-D5 'Normal' prints no dB) — which is itself the finding:
    the knee the curves show is not a control value we can read.
+
+## v1.3 → v1.4 (1 Oct, night): built to v1.4, the contract as of 18:51
+
+`docs/COMP_PROFILE_SPEC_v1_4.md` is what the exporter is built to. Folded in, pinned both ways:
+
+- **`detector_f` required** — a record without the two-tone measurement is not exported.
+- **`quality.point_error_db` from the hold-doubled repeat** (2.5 s vs 5 s, `quality.method` says so);
+  the identical rerun is dropped. A record without the repeat is not exported.
+- **Monotonic self-check, exactly your rule, before export:** within a position 1 < 2 < 3 strictly;
+  across positions one direction, nulls skipped, equal neighbours allowed. Pinned: equal
+  neighbours pass, a dip fails, an equal 2 dB point fails. The export says the result in
+  `quality.monotonic_*` and names violations — you reject, we say first.
+- **`notes` lists the guards that passed:** tone_frac (with the count of readings refused as not
+  the tone), level dependence, the quiet-reference 6 dB self-check (positions passed / total),
+  ascending-only levels per fresh process, the still-moving rule.
+
+Two things you should know from the measurement side:
+
+- The ratio **norm** is not in the profile — only the control name and the read-back value. The
+  tone check here takes it from our record's preconditions. If the server is to write the ratio,
+  the profile needs the norm (or the display text to write). Suggest `ratio.norm` beside `value`.
+- **EMO-D5 is dropped from this Mac's run** until Waves 15 replaces 12: the V12 fingerprint
+  (62995254f7dd…) will never match your 15.0.70 map (32b7e1d9a0c3…), and V12 here runs bridged
+  where V15 is probably native — a V12 sweep does not rehearse V15. CL 1B goes ahead: our
+  `map_fp` ab70ea5337fe… is the fp your session logged on 30 Sep.

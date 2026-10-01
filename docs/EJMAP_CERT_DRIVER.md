@@ -1277,3 +1277,28 @@ showed from the other side: the curves climb slower than the formula assumes).
 - Open: the level sweep itself (section 18) has not run - battery since 18:0x. CL 1B and EMO-D5 (s)
   are armed behind the mains watcher; the section-6 pick and his section-8 tone check (0.5 dB) run
   on this Mac after that, then the Desktop folder.
+
+## 20. v1.3 / v1.4 (1 Oct, night), folded into the armed run
+
+v1.3 and v1.4 arrived while the CL 1B profile run waited on mains, so they went into the binary
+the run starts with. Record: `inAtGrRepeat` (the hold-doubled pass, 5 s hold, same 300 ms read)
+and `quality {repeats, method "hold 2.5 s vs 5 s", point_error_db, pointsCompared,
+shapeDisagreements, withinPositionsMonotonic, acrossPositionsMonotonic, violations}`; nothing is
+averaged - the 2.5 s sweep is the curve, the 5 s one sits beside it, the worst disagreement on any
+in_at_gr point is the number. Export (v1.4): `detector_f` and `quality.point_error_db` REQUIRED
+(a record without either is refused), `quality.method`, the monotonic self-check computed from
+the exported points (strict within, one direction across with nulls skipped and equal neighbours
+allowed), `notes` naming the guards that passed. Pins N2b, X16, X19-X21, D3-D5, M1-M3, Q1-Q6;
+eight mutants red. Live traces of the repeat are tagged `r2.` + the run's prefix; re-derivation
+loads them (`loadRepeatPositions`).
+
+**Run order now:** CL 1B only on this Mac (EMO-D5 waits for Waves 15 - a V12 profile will never
+match a 15.0.70 map and V12 runs bridged where V15 is probably native). After the sweep:
+export -> tone check (L = -18 dBFS RMS, g = 2, pass within 0.5 dB) -> detector_f -> re-export, then
+the Desktop folder. **When Waves 15 lands (Sean replaces, not stacks):** quit EJ Map, `killall
+AudioComponentRegistrar`, reopen, Scan (the scan cache is from 4 Aug); census; confirm EMO-D5 (s)
+at 15.0.70 with map_fp 32b7e1d9a0c3...; note native vs bridged (write landing differs); every
+Waves record in the store is V12, so the whole Waves set becomes new identities - cost it from the
+census before running beyond EMO-D5; any V15 product the census cannot see is unmapped and needs
+the runbook's section 3 sweep first; then EMO-D5 (s): engage detection, the v1.4 profile run, tone
+check, export.

@@ -1506,9 +1506,11 @@ inline juce::File writeRefusalRecord (const juce::File& fixturesDir, const juce:
 // Returns whether a thresholdSweep was written; false is the licence-suspect case (silent, non-finite or off-tone at
 // default), which the caller records as a refusal.
 inline bool composeAndReport (const juce::var& base, const sweep::Plan& plan, const sweep::Measured& m, const sweep::Provenance& pv,
-                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info, juce::String* whyNot = nullptr)
+                              const juce::File& fixtureOut, const juce::File& reportOut, const SweepRunInfo& info, juce::String* whyNot = nullptr,
+                              const sweep::Derived* repeat = nullptr)
 {
-    const auto one = deriveOne (plan, m, pv, info, fixtureOut.getFileName());
+    auto one = deriveOne (plan, m, pv, info, fixtureOut.getFileName());
+    if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, repeat);
     if (one.written)
         fixtureOut.replaceWithText (juce::JSON::toString (sweep::composeFixture (base, one.sweepVar)) + "\n", false, false, "\n");
     else if (whyNot != nullptr)
@@ -1790,6 +1792,7 @@ inline int runCertSweep (const SweepOptions& opt)
     for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
     // ONE SWEEP of one threshold control: a reference process, then one process per position. Called once for a single
     // threshold, once per candidate when several hold the role (tags prefixed "c<index>." so the traces stay apart).
+    std::map<juce::String, std::vector<sweep::ProcessOut>> repeatRuns;   // v1.3: the second measurement of every position, by prefix
     auto sweepFor = [&] (const sweep::Plan& q, const juce::String& tagPrefix, sweep::ProcessOut& refOut, std::vector<sweep::ProcessOut>& posOut)
     {
         juce::StringArray levelList;
@@ -1816,6 +1819,28 @@ inline int runCertSweep (const SweepOptions& opt)
             const auto tag = tagPrefix + "pos" + juce::String ((int) k).paddedLeft ('0', 2);
             const auto r = runProbe (stem, tag, sweepArgs (juce::String (q.norms[k], 6), "0"), q.norms[k]);
             posOut.push_back ({ r.out, r.cleanExit(), r.describe(), q.norms[k] });
+        }
+        // v1.4 THE HOLD-DOUBLED REPEAT: every position measured again in a fresh process with the hold at 5 s (same 300 ms
+        // read at its end), tagged "r2." + prefix; the disagreement on any in_at_gr point is quality.point_error_db, the
+        // trust gate - a point that moves had not settled. Only the profile sweep (repeats = 2) does this.
+        if (q.repeats > 1)
+        {
+            std::vector<sweep::ProcessOut> again;
+            const sweep::Plan slow = q.holdDoubled();
+            auto slowArgs = [&] (const juce::String& norms) {
+                juce::StringArray a { "--sweep", "thr=" + juce::String (slow.thr), "norms=" + norms, "levels=" + levelList.joinIntoString (","), "hz=997",
+                                      "hold=" + juce::String (slow.holdS, 2), "discard=" + juce::String (slow.discardS, 2), "win=" + juce::String (slow.winS, 2), "ref=0", "moving_db=0.1",
+                                      juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
+                juce::StringArray all = sets; for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
+                if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
+                return a; };
+            for (size_t k = 0; k < q.norms.size() && ! windowSeen && ! overBudget(); ++k)
+            {
+                const auto tag = "r2." + tagPrefix + "pos" + juce::String ((int) k).paddedLeft ('0', 2);
+                const auto r = runProbe (stem, tag, slowArgs (juce::String (q.norms[k], 6)), q.norms[k]);
+                again.push_back ({ r.out, r.cleanExit(), r.describe(), q.norms[k] });
+            }
+            repeatRuns[tagPrefix] = again;
         }
     };
     sweep::ProcessOut refOut;
@@ -1956,10 +1981,15 @@ inline int runCertSweep (const SweepOptions& opt)
         if (sl > 1000.0) { ++info.sleptProcesses; info.sleptMs += sl; }   // over a second: a sleep, not clock jitter
     }
     info.newIdentity = newIdentity;
+    // v1.3: the repeat's derivation, when the sweep ran twice (quality lives on the sweep var at composition).
+    auto repeatFor = [&] (const sweep::Plan& q, const juce::String& prefix) -> std::optional<sweep::Derived> {
+        auto it = repeatRuns.find (prefix); if (it == repeatRuns.end() || it->second.empty()) return std::nullopt;
+        return sweep::derive (sweep::mergeProcesses (refOut.out.isEmpty() ? sweep::ProcessOut { juce::String(), true, "none", -1.0f } : refOut, it->second), q.testLevels(), q.ratioIndex, q.quietReference); };
     if (plan.candidates.empty())
     {
         juce::String whyNot;
-        if (composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info, &whyNot))
+        const auto rpt = repeatFor (plan, plan.quietReference && ! plan.referenceFallbackNote.isEmpty() && repeatRuns.count ("q.") ? "q." : "");
+        if (composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info, &whyNot, rpt ? &*rpt : nullptr))
             return 0;
         return refuse (1, "reference", whyNot);
     }
@@ -1969,7 +1999,17 @@ inline int runCertSweep (const SweepOptions& opt)
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " (flags " + q.thrFlags.joinIntoString (",") + ") - " + s.product
                       + " (class " + plan.cls + ", " + juce::String ((int) plan.candidates.size()) + " candidates; the others at their instantiate defaults)";
-        cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (run.first, run.second), pv, ci, outName) });
+        auto one = deriveOne (q, sweep::mergeProcesses (run.first, run.second), pv, ci, outName);
+        juce::String pre = "c" + juce::String (q.thr) + ".";
+        if (! q.engage.empty()) pre = "e" + juce::String (q.engage.front().index) + "." + pre;
+        if (q.quietReference && ! q.referenceFallbackNote.isEmpty() && repeatRuns.count ("q." + pre)) pre = "q." + pre;
+        if (auto it = repeatRuns.find (pre); it != repeatRuns.end() && one.written)
+        {
+            const auto d2 = sweep::derive (sweep::mergeProcesses (run.first, it->second), q.testLevels(), q.ratioIndex, q.quietReference);
+            sweep::attachRepeatQuality (one.sweepVar, one.d, &d2);
+        }
+        else if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, nullptr);
+        cands.push_back ({ q, one });
     }
     resolveLicenceAtProductLevel (cands, pv);
     composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"));
@@ -1983,6 +2023,21 @@ inline int runCertSweep (const SweepOptions& opt)
 // prefix), a quiet-level fallback ("q." + ...), or both. The latest in that order is the run the fixture was composed
 // from, and the plan is restored to match: engage writes from the fixture's own `engage` record.
 struct TraceRun { juce::String prefix; bool quiet = false; int engageIndex = -1; };
+// The repeat pass has positions only (no reference of its own): load them by tag prefix.
+inline bool loadRepeatPositions (const juce::File& processesJson, const juce::File& rawDir, const juce::String& prefix, std::vector<sweep::ProcessOut>& positions)
+{
+    const auto list = juce::JSON::parse (processesJson.loadFileAsString());
+    const auto* a = list.getArray(); if (a == nullptr) return false;
+    std::map<juce::String, juce::var> last;
+    for (const auto& p : *a) last[p.getProperty ("tag", "").toString()] = p;
+    positions.clear();
+    for (const auto& [tag, p] : last)
+        if (tag.startsWith (prefix + "pos"))
+            positions.push_back ({ rawDir.getChildFile (p.getProperty ("file", "").toString()).loadFileAsString(), (bool) p.getProperty ("clean", false),
+                                   p.getProperty ("outcome", "").toString(), (float) (double) p.getProperty ("norm", -1.0) });
+    return ! positions.empty();
+}
+
 inline TraceRun resolveTraceRun (const juce::File& processesJson, const juce::String& prefix)
 {
     std::set<juce::String> tags;
@@ -2048,7 +2103,10 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         if (run.quiet) { plan.quietReference = true; plan.referenceFallbackNote = fallbackNote (old); }
         if (run.engageIndex >= 0) restoreEngage (plan, old);
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
-        composeAndReport (base, plan, sweep::mergeProcesses (ref, pos), pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info);
+        sweep::ProcessOut ref2; std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
+        if (sweep::loadProcesses (processesJson, rawDir, ref2, pos2, "r2." + run.prefix) || (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2)))
+            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2), plan.testLevels(), plan.ratioIndex, plan.quietReference);
+        composeAndReport (base, plan, sweep::mergeProcesses (ref, pos), pv, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"), info, nullptr, rpt ? &*rpt : nullptr);
         return 0;
     }
     std::vector<std::pair<sweep::Plan, Derivation>> cands;
@@ -2063,9 +2121,14 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         if (run.quiet) { q.quietReference = true; q.referenceFallbackNote = fallbackNote (oldC); }
         if (run.engageIndex >= 0 || oldC.hasProperty ("engageWrites")) restoreEngage (q, oldC);
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
+        std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
+        if (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2))
+            rpt = sweep::derive (sweep::mergeProcesses (ref, pos2), q.testLevels(), q.ratioIndex, q.quietReference);
         SweepRunInfo ci = info;
         ci.headline = "CANDIDATE [" + juce::String (q.thr) + "] " + q.thrName + " - re-derived";
-        cands.push_back ({ q, deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName()) });
+        auto one = deriveOne (q, sweep::mergeProcesses (ref, pos), pv, ci, fixtureOut.getFileName());
+        if (one.written) sweep::attachRepeatQuality (one.sweepVar, one.d, rpt ? &*rpt : nullptr);
+        cands.push_back ({ q, one });
     }
     resolveLicenceAtProductLevel (cands, pv);
     composeCandidatesAndReport (base, plan, cands, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"));

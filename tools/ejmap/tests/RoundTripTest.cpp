@@ -4226,6 +4226,27 @@ void testSweepDerivation()
                     check (ox.inAtGr[2].at.at (1).isVoid() && ox.inAtGr[2].at.at (3).toString() == "not_reached",
                            "sweep G6: a crossing with no readable straddle is null (never bridged), while 3 dB is honestly not_reached (" + juce::JSON::toString (ox.inAtGr[2].at.at (1), true) + ")");
             }
+            {
+                // v1.3 REPEAT QUALITY: a second derivation whose readings sit 0.3 dB louder at every position moves every crossing by
+                // the same amount; the worst disagreement is the number; nothing is averaged.
+                auto louder = cl; for (auto& g : louder) for (auto& x : g) if (x) *x -= 0.0;   // identical first
+                const auto same = repeatQuality (tx, &tx);
+                check (same.repeats == 2 && same.pointErrorDb && *same.pointErrorDb == 0.0 && same.pointsCompared > 0,
+                       "quality Q1: an identical repeat gives point_error_db 0 over " + juce::String (same.pointsCompared) + " compared points");
+                Derived ty = tx;                                                              // the same derivation with every numeric crossing 0.3 dB louder
+                for (auto& r : ty.inAtGr) for (auto& [t, v] : r.at) if (v.isDouble()) v = (double) v + 0.3;
+                const auto diff = repeatQuality (tx, &ty);
+                check (diff.repeats == 2 && diff.pointErrorDb && std::abs (*diff.pointErrorDb - 0.3) < 0.01,
+                       "quality Q2: a repeat whose crossings sit 0.3 dB louder gives point_error_db 0.30 (" + juce::String (diff.pointErrorDb.value_or (-1), 2) + ")");
+                check (repeatQuality (tx, nullptr).repeats == 1 && ! repeatQuality (tx, nullptr).pointErrorDb, "quality Q3: without a repeat there is no point_error_db");
+                check (repeatQuality (tx, nullptr).withinMonotonic && repeatQuality (tx, nullptr).acrossMonotonic, "quality Q4: a textbook curve is monotonic within and across positions");
+                Derived bent = tx; bent.inAtGr[4].at[2] = (double) bent.inAtGr[4].at[1] - 1.0;   // 2 dB point below the 1 dB point: within-position violation
+                const auto bq = repeatQuality (bent, nullptr);
+                check (! bq.withinMonotonic && ! bq.violations.isEmpty(), "quality Q5: a 2 dB point below the 1 dB point is a within-position violation, named (" + bq.violations.joinIntoString ("; ") + ")");
+                Derived zig = tx; zig.inAtGr.clear();                                           // four positions whose 1 dB values go -30, -20, -25, -15: up, down, up
+                for (double v : { -30.0, -20.0, -25.0, -15.0 }) { Derived::InAtGr r; r.at[1] = v; r.at[2] = v + 1.0; r.at[3] = v + 2.0; zig.inAtGr.push_back (r); }
+                check (! repeatQuality (zig, nullptr).acrossMonotonic, "quality Q6: 1 dB values that rise and fall across positions are an across-position violation");
+            }
             auto gap = cl; gap[4][1] = std::nullopt;   // position 4's -12 reading missing: the crossing has no bracket
             const auto gx = derive (fromGains (gap), kLevels, -1);
             check (gx.tEffective1dB.size() == 6 && gx.tEffective1dB[4].isVoid(),
@@ -5130,6 +5151,8 @@ void testProfileExport()
         }
         s->setProperty ("inAtGr", inAt);
         auto* q = new juce::DynamicObject(); q->setProperty ("nonMonotonicStraddles", 0); q->setProperty ("widestGap_db", 2.0); s->setProperty ("inAtGrQuality", juce::var (q));
+        auto* dq = new juce::DynamicObject(); dq->setProperty ("fraction", 0.2); s->setProperty ("detector", juce::var (dq));                                    // v1.4: required
+        auto* rq = new juce::DynamicObject(); rq->setProperty ("point_error_db", 0.12); rq->setProperty ("repeats", 2); rq->setProperty ("method", "hold 2.5 s vs 5 s"); s->setProperty ("quality", juce::var (rq));
         auto* lr = new juce::DynamicObject(); lr->setProperty ("mode", "per_position_quiet");
         juce::Array<juce::var> chk, g; for (int i = 0; i < positions; ++i) { chk.add (quietOk ? 0.02 : 0.9); g.add (0.5); }
         lr->setProperty ("check_db", chk); lr->setProperty ("gain_db", g); s->setProperty ("linearReference", juce::var (lr));
@@ -5167,8 +5190,15 @@ void testProfileExport()
                "export X14 (v1.2): in_at_gr_dbfs {1,2,3} on every curve point and eff_threshold_dbfs == in_at_gr_dbfs[1], written identically");
         check (lastThreeNull, "export X15: not_reached in the record is null in the export, as his spec says");
         check (P.getProperty ("amount", {}).getProperty ("stepped", true).isBool() && ! (bool) P.getProperty ("amount", {}).getProperty ("stepped", true)
-                 && P.getProperty ("detector", "") == "unknown",
-               "export X16: stepped is a boolean (false for a continuous control), detector is unknown until measured");
+                 && std::abs ((double) P.getProperty ("detector_f", 9.0) - 0.2) < 1e-6,
+               "export X16 (v1.4): stepped is a boolean (false for a continuous control); detector_f is the measured number");
+        const auto Q = P.getProperty ("quality", {});
+        check (Q.isObject() && std::abs ((double) Q.getProperty ("point_error_db", 9.0) - 0.12) < 1e-6 && Q.getProperty ("method", "") == "hold 2.5 s vs 5 s"
+                 && (bool) Q.getProperty ("monotonic_within_positions", false) && (bool) Q.getProperty ("monotonic_across_positions", false),
+               "export X19 (v1.4): quality carries point_error_db from the hold-doubled repeat, its method, and the monotonic flags");
+        check (P.getProperty ("notes", "").toString().contains ("guards passed: tone_frac") && P.getProperty ("notes", "").toString().contains ("quiet-reference 6 dB")
+                 && P.getProperty ("notes", "").toString().contains ("ascending-only"),
+               "export X20 (v1.4): notes list the guards that passed - tone_frac, level dependence, quiet-reference 6 dB check, ascending-only");
         check (P.getProperty ("fit", {}).getProperty ("measured_point_quality", {}).isObject()
                  && (int) P.getProperty ("fit", {}).getProperty ("measured_point_quality", {}).getProperty ("points_with_1db", 0) == 16,
                "export X17: a measured-point quality figure sits beside the fit");
@@ -5230,10 +5260,33 @@ void testProfileExport()
         auto withDet = record (16, true, false, "", "certified");
         auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", 0.97); withDet.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (dd));
         const auto xd = exportCompProfile (withDet);
-        check (xd.ok && xd.profile.getProperty ("detector", "") == "peak" && std::abs ((double) xd.profile.getProperty ("detector_fraction", 0.0) - 0.97) < 1e-6,
-               "detector D3: a measured fraction exports as the word AND the number; unmeasured exports unknown with no number ("
-                 + e.profile.getProperty ("detector", "").toString() + (e.profile.hasProperty ("detector_fraction") ? ", has fraction" : ", no fraction") + ")");
-        check (e.profile.getProperty ("detector", "") == "unknown" && ! e.profile.hasProperty ("detector_fraction"), "detector D4: unmeasured is unknown and carries no fraction");
+        check (xd.ok && std::abs ((double) xd.profile.getProperty ("detector_f", 0.0) - 0.97) < 1e-6,
+               "detector D3 (v1.3): a measured fraction exports as detector_f, the number");
+        auto noDet = record (16, true, false, "", "certified"); noDet.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("detector");
+        check (! exportCompProfile (noDet).ok && exportCompProfile (noDet).refused.contains ("detector_f"), "detector D4 (v1.4): a record without a measured detector_f is NOT exported - required");
+        auto noRep = record (16, true, false, "", "certified"); noRep.getProperty ("thresholdSweep", {}).getDynamicObject()->removeProperty ("quality");
+        check (! exportCompProfile (noRep).ok && exportCompProfile (noRep).refused.contains ("point_error_db"), "quality X21 (v1.4): a record without the hold-doubled repeat is NOT exported - required");
+        // the monotonic self-check, both ways: equal neighbours across positions pass; a dip fails; equal within a position fails (strict).
+        auto flat2 = record (16, true, false, "", "certified");
+        { auto arr = flat2.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); arr[5].getDynamicObject()->setProperty ("1", arr[4].getProperty ("1", {})); arr[5].getDynamicObject()->setProperty ("2", arr[4].getProperty ("2", {})); arr[5].getDynamicObject()->setProperty ("3", arr[4].getProperty ("3", {})); }
+        const auto fx2 = exportCompProfile (flat2);
+        check (fx2.ok && (bool) fx2.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", false),
+               "monotonic M1 (v1.4): equal neighbouring positions are allowed across positions");
+        auto dip = record (16, true, false, "", "certified");
+        { auto arr = dip.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); arr[5].getDynamicObject()->setProperty ("1", (double) arr[3].getProperty ("1", {}) - 1.0); }
+        const auto dx = exportCompProfile (dip);
+        check (dx.ok && ! (bool) dx.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", true),
+               "monotonic M2 (v1.4): a dip across positions fails the across check (and is said in the export, the server will reject)");
+        auto eq = record (16, true, false, "", "certified");
+        { auto arr = eq.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); arr[4].getDynamicObject()->setProperty ("2", arr[4].getProperty ("1", {})); }
+        const auto ex = exportCompProfile (eq);
+        check (ex.ok && ! (bool) ex.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", true),
+               "monotonic M3 (v1.4): within a position 1 < 2 < 3 is STRICT - an equal 2 dB point fails");
+        auto over = record (16, true, false, "", "certified");
+        auto* d2 = new juce::DynamicObject(); d2->setProperty ("fraction", 1.3); over.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (d2));
+        const auto xo = exportCompProfile (over);
+        check (xo.ok && (double) xo.profile.getProperty ("detector_f", 0.0) == 1.0 && std::abs ((double) xo.profile.getProperty ("detector_f_raw", 0.0) - 1.3) < 1e-6,
+               "detector D5: a measured fraction outside 0..1 is clamped for the server and kept raw beside it");
     }
     auto bad = record (16, true, false, "", "certified");
     bad.getProperty ("thresholdSweep", {}).getProperty ("engageWrites", {}).getProperty ("writes", {})[0].getDynamicObject()->setProperty ("control", "Bypass");
@@ -5254,6 +5307,9 @@ void testProfileSweepPlan()
              && p.probeLevels() == lv,
            "profile N1: 31 levels -60..0 in 2 dB steps, ascending as the probe renders them, -54 and -48 on the grid for the quiet reference");
     check (p.quietReference && p.holdS == 2.5 && p.winS == 0.3 && p.discardS == 2.2, "profile N2: quiet reference on by design, 2.5 s hold, last 300 ms read");
+    const auto slow = p.holdDoubled();
+    check (p.repeats == 2 && slow.holdS == 5.0 && std::abs (slow.discardS - 4.7) < 1e-9 && slow.winS == 0.3 && slow.testLevels() == p.testLevels(),
+           "profile N2b (v1.4): the repeat is the same sweep with the hold DOUBLED to 5 s and the same 300 ms read at its end");
     check (p.forCandidate (p.candidates[0]).quietReference && p.forCandidate (p.candidates[0]).profile,
            "profile N3: a candidate of a profile plan keeps the quiet reference and the grid (a candidate's own flag would have reset it)");
     Plan q; check (q.testLevels().size() == 3 && ! q.quietReference && q.holdS == 1.5, "profile N4: a certification plan is unchanged: three levels, 1.5 s");
