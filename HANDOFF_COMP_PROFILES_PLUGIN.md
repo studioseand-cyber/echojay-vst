@@ -3,6 +3,316 @@
 1 Oct 2026, unattended day session. Branch `feat/comp-profiles` off the Part 1 commit. Nothing pushed, nothing
 installed, nothing signed. `~/echojay-saas` untouched.
 
+
+---
+
+## Overnight, 1-2 Oct 2026 — the gate, the real server output, and the preview switch
+
+Read this first; it supersedes nothing below it, it only adds.
+
+### DECISIONS taken without Sean (he was asleep and said to take the most reasonable reading)
+
+1. **The `window` label was OUR bug, not B's.** The plugin sent `"400ms_rms_p95"`; the contract
+   (`docs/COMP_PROFILE_SPEC_v1.md` v1.4, section 5, line 124) prints `"400ms_p95"`, and B's generated request
+   sends exactly that. The v1 label named the window after the RMS figure; that stopped being true at v1.3, when
+   `loud_peak_dbfs` was defined over **the same** windows. Fixed plugin-side.
+   **This was found by a guard that had already looked at it and let it pass** — see decision 2.
+
+2. **A `check (true, ...)` is not a check, and this one cost a day.** The contract guard's window comparison
+   printed a *note* saying "MISMATCH for B, not a plugin fault", argued from a premise ("the spec prints exactly
+   that") the spec contradicted, and on agreement called `check (true, ...)`, which cannot fail. So the guard
+   turned a plugin bug into a complaint about the server. It now asserts the plugin's label against the spec
+   string, the server's label against the same string, and the two against each other — whichever side drifts is
+   named, and neither gets the benefit of the doubt. (Same rule as the verifier one: a guard must be able to fail.)
+
+3. **No plugin-side `detector_f` rule, deliberately.** Spec v1.4 makes `detector_f` required and says a profile
+   without it is not used — but that is the *server's* gate: section 6 makes `f` the server's own threshold input
+   (`L = loud_rms + f x (loud_peak - loud_rms - 3.01)`), and the plugin never reads it. Re-checking it here would
+   be the second copy of one rule, which is what the 1 Oct ruling removed. Sean's ruling kept the `map_fp` join
+   because that is *identity* ("is this profile for this slot"), not quality — `detector_f` is neither.
+   A leg now pins the live trap instead: **B's real EMO-D5 profile has `detector_f: 0`**, and 0 is pure-RMS
+   detection, not a missing field. Anyone adding that rule as a truthiness test would reject every pure-RMS
+   compressor in the catalogue while looking entirely reasonable in review.
+
+4. **The gate's own two faults were fixed before the gate was believed** (commit `9d47209`, on
+   `merge/kathy-2026-09-06`, because they are gate infrastructure and both files were byte-identical on the two
+   branches). `level_loop_guard` case (5) asserted that a second tick was "inside the 3 s window" — true only if
+   the machine feeds 3 s of audio in under 3 s of wall clock, which it did not under 42 guards with malloc
+   hardening. It now **measures** that interval and prints NOT TESTED with the number rather than failing, because
+   a leg whose premise the machine can take away is not a test of the product. And `run_guard.sh` printed a 40-line
+   tail on a scribble failure — forty lines of `ok`, which proved only that *something* failed; it now greps every
+   FAIL line first.
+
+### Item 2 — the contract test against B's real output
+
+B wrote `~/Desktop/ej_contract/` at 21:32 (`map_payload_emo.json`, `build_request.json`, `build_reply.json`,
+`README.md`), generated from the real server code path at `beaa5dc7` on `feat/comp-profiles`.
+
+`tools/comp_contract_guard` feeds **those exact files** through the plugin's real functions — `readCompProfile`,
+`CompCheck::curveOf`, `configsFromBlock`, `applyStructuredSettings`, `TrackLevel`, `completedLine()` — not
+through a fixture written to match.
+
+**Checked and correct, no change needed:**
+
+- `in_at_gr_dbfs` is `null` at every GR for `norm: 1.0` (the sweep tops out at -3.01 RMS). `curveOf` type-checks
+  before reading and skips those, leaving 10 usable anchors. A `(float)` cast would have read them as 0 dBFS and
+  bent the top of the curve.
+- The calibration block carries **explicit JSON `null`** for `param`, `start_db`, `sense`, `min_db`, `max_db`,
+  `heard_s` and `measure`. Every one of those reads goes through an `isVoid()` + type check, so null is "unset",
+  never zero — the 21t-g ruling, holding on real data.
+- Slot numbering: B sends 1-based (`slot: 2` is the EMO, chain index 1). Both parse sites convert correctly.
+- `mapFps` carries the **full 64-hex** fingerprint, and `paramMaps_` is keyed the same way, so the join matches.
+  (`buildMapFpsJson` never truncates; the 12-char form is only ever a log form.)
+- The unprofiled NEOLD U2A slot carries no `controls_norm`, no `expected_gr_db` and no `from_profile`, and the
+  plugin invents none of them — its closing line says "no profile yet".
+
+**Nothing was found that is the server's fault.** `~/echojay-saas` was not touched.
+
+5. **The stale label was in FOUR places, not one.** Fixing the wire value alone would have left the repo
+   teaching the old string. Swept and fixed: `Source/EJTrackLevel.h` (the wire value **and** the doc example),
+   `tools/track_level_guard/harness.cpp` (its header example **and** its assertion), and
+   `tools/comp_render_check/main.cpp:379`, which **emits** `window` into the section 8 acceptance JSON — a real
+   output, not a comment. An acceptance tool reporting a non-conforming label would have been the next day's
+   confusion.
+
+6. **`track_level_guard` agreed with the bug.** Its leg asserted `"400ms_rms_p95"` — the same stale string the
+   product used, because leg and code were written from one misreading. It could never have caught this; the only
+   thing that disagreed was the server's own generated output. That is the argument for item 2's whole approach:
+   a test fed by the other side's real bytes finds what a test written beside the code cannot.
+
+7. **Red 1 of the gate was NOT fixed tonight, deliberately.** It is root-caused and the fix is specified, but it
+   changes a shared header (`EJCalibLoop.h`), which by this repo's own rule means rebuilding every guard and
+   re-running the suite — about an hour. The push is blocked by reds 3-5 regardless of red 1, so that hour buys
+   nothing tonight and was spent on items 2-4, which were asked for. First thing for the morning.
+
+8. **`build-guards` was still generated from the OTHER branch**, and this nearly produced a false green. After
+   checking out `feat/comp-profiles` the first guard run reported `BUILD=2 errors=0` and `CTEST=0` — which looks
+   like a pass if you read the exit code. In fact the comp guards did not exist as targets (`No rule to make
+   target 'track_level_guard'`) and ctest matched nothing (`No tests were found!!!`). A CMake tree carries the
+   branch it was configured from; after any checkout it must be regenerated (`cmake -S . -B build-guards`) before
+   its results mean anything. Same family as the archive-staleness ordering in item 1.
+
+9. **A third memory-shaped finding, and a hypothesis I am NOT yet asserting.** Three independent failures tonight
+   all have the shape of a `juce::String`/`var` standing on memory it does not own:
+
+   | Where | What it does |
+   |---|---|
+   | `v2_side.cpp:67` (reds 3-5) | `EXC_BAD_ACCESS at 0x800` comparing `li.uid` - a `LinkSlotInfo.uid` with a dangling character pointer, inside `linkSlotInfos` |
+   | `level_loop_guard` (6a), scribble only | Apple's AUDelay counts as a **dynamics** slot when its own category is a delay - a `paramMaps_`/category read |
+   | `comp_profile_guard` (2a), scribble only | with **no** profile published, `slotCompProfile(0)` returns non-void - a `paramMaps_` lookup finding something that was never stored |
+
+   Both scribble failures are `paramMaps_` lookups keyed by fingerprint, and both only appear when freed memory is
+   poisoned, which is what MallocScribble does. That is suggestive of the map store retaining something it does not
+   own - the same class as the 18 Sep Pro Tools crash and the rule this repo already has about it. **It is a
+   hypothesis, not a finding**: I have not traced either one to a specific owner, and three failures sharing a
+   smell is not the same as three failures sharing a cause. Worth one focused session with ASan rather than more
+   guessing. The ASan run already owed for the latency-rebuild use-after-free may well answer all three at once.
+
+   Neither scribble failure can be caused by tonight's commits: `comp_profile_guard` and the map paths were not
+   touched, and the only product change is a string literal in `EJTrackLevel.h`.
+
+### Item 1 — the Part 1 gate: NOT PUSHED, and exactly why
+
+Run in the **main tree** (not a worktree) at `9d47209` on `merge/kathy-2026-09-06`, with the release Link+Probe
+archive rebuilt **after** the checkout — the ordering that caused five bogus staleness refusals last night.
+
+```
+GUARDBUILD=0  errors=0
+FAST=8        91% tests passed, 5 tests failed out of 53     (22:24 -> 23:08)
+```
+
+**Per Sean's rule the branch was NOT pushed:** the reds are not all proven pre-existing. Two are ours and one is
+still unexplained. The 88 commits stay local.
+
+| # | Red | Whose | Status |
+|---|---|---|---|
+| 1 | `calib_link_guard` (f) settle budget | **OURS** | root-caused, fix specified below |
+| 2 | `level_loop_guard` scribble leg (6a) | **OURS** (leg added by (l)-(q)) | reproduces serially, unexplained |
+| 3 | `lease_id_guard` | unattributed | V2 side crashes; see below |
+| 4 | `level_match_guard` | unattributed | same crash |
+| 5 | `role_snapshot_guard` | unattributed | same crash |
+
+All five reproduce with `-j 1`, so none of them is a concurrency flake. I checked that first and was wrong about
+it; stating it plainly because "it's just load" would have been the convenient answer.
+
+#### Red 1 — `calib_link_guard`: one rule, written twice, updated once
+
+`FAIL (f) ...and its settle budget opens already SPENT, so it lands on the first judged window [0 of 3]`
+
+`EJCalibLoop.h` derives the purpose's settle budget in **two** places:
+
+- line 676, `begin(Config)`: `settleSteps = (purpose == buildHold) ? 0 : kSettleMaxSteps - 1`
+- line 717, the 6-arg `begin(...)`: `settleSteps = (p == buildHold) ? kSettleMaxSteps : kSettleMaxSteps - 1`
+
+Letter **(m)** changed the rule — a build now opens with its seek *ahead* of it, superseding (e)'s "already
+spent" — and updated only `begin(Config)`. Line 717 still carries (e)'s value, and its comment claims it derives
+"the SAME three things begin(Config) derives", which is no longer true. `PluginProcessor.cpp:6594` reaches that
+overload with a caller-supplied purpose — the road the "Build this chain" pill takes — so **the same build gets
+opposite settle budgets depending on which entry point it took.**
+
+The assertion that caught it is *also* stale: it asserts (e)'s withdrawn rule. So this red needs both halves
+fixed, and the fix is the one Sean has already applied twice to this file: the purpose-derived fields get derived
+**once**, in one place, and the leg asserts that one rule.
+
+#### Reds 3-5 — the V2 side segfaults ~100 ms into construction
+
+Not a readiness timeout, which is what the surface output says. `link_ready.json` was written at 23:22:09 and the
+V2 side started at 23:22:09.568, so the file was already there. The `the link side never became ready` line comes
+from `harness_build.py`'s own dry run *before* the runner starts the Link side, and the `Segmentation fault: 11`
+on the next line is the real V2 process. I misread that pairing at first.
+
+Reproduced deterministically outside ctest, with no Link side and nothing installed, by pointing the existing
+binary at an isolated home that still holds a `link_ready.json`:
+
+```
+HOME=$ISO ECHOJAY_STATE_HOME=$ISO EJ_STATE_TEST_HOME=$ISO EJ_LMG_HOME=$ISO/lmg \
+  lldb -b -o run -o "bt 25" -- <scratch>/level_match_guard_v2_side_bin
+```
+
+```
+EXC_BAD_ACCESS (code=1, address=0x8)   KERN_INVALID_ADDRESS
+frame #0: main + 4028
+->  ldr  x0, [x28, #0x8]        x28 = 0x0      x19 = 0x600000c50040
+    cmp  x0, x19
+    b.ne <back to +3996>
+```
+
+It walks a chain through the field at offset 8, comparing each link against `x19`, and never finds it: `x28`
+reaches null and the next load faults. An unbounded walk with no null terminator check. Everything is inlined
+into `main` in the release build, so the frame is not nameable from this binary.
+
+**Last known-good run of these guards was 28 Sep**, whose `v2.log` continues past this point to
+`EJScan: AU registry read, 1515 entr(ies)` and on to a GREEN verdict. Tonight's logs stop at
+`EJScan: enabledState watch active`, six lines in. The regression window therefore includes `(l)`-`(q)`, which
+touched `PluginProcessor.cpp` (+415) and `PluginEditor.cpp/.h` (+65/+154) — so these are **plausibly ours and
+must not be assumed pre-existing**. I withdrew exactly this class of claim once before on these same four guards.
+
+**Why it matters beyond the gate:** the crash is in constructing V2's processor and editor against a state root
+with no entries cache — which is what a **first launch on a fresh machine** looks like. If that is what it is, it
+is a user-facing first-run crash, not a harness artefact. That is the reason to chase it rather than exclude it.
+
+#### A correction worth recording
+
+While chasing this I concluded these guards were triggering a forbidden full AU scan, and said so. That was wrong
+and I withdrew it: the `EJScan` path here reads AU **registry plist metadata** and VST3 folder listings and
+writes a cache (28 Sep: 1515 AU + 912 VST3, complete in 0 s). It does **not instantiate plugins**, so it cannot
+raise an iLok/PACE prompt. The operation Sean banned is `comp_render_check --list`, which really does load them.
+No scan of that kind was run tonight, and nothing was installed.
+
+**Named precisely, with a `-g -O0` rebuild of that one harness** (`EJ_CXXFLAGS="-g -O0" python3
+tools/harness_build.py tools/level_match_guard/v2_side.cpp`):
+
+```
+EXC_BAD_ACCESS (code=1, address=0x800)
+frame #0  juce::CharacterFunctions::compare<CharPointer_UTF8, CharPointer_UTF8>
+frame #1  juce::operator== (juce::String const&, juce::String const&)
+frame #2  main at v2_side.cpp:67:107        <- li.uid == m.uid
+```
+
+`mem.size()` is 3 and intact, so the corrupt `juce::String` is **inside `linkSlotInfos`**: a `LinkSlotInfo.uid`
+whose character data pointer is garbage. Those are built at `PluginProcessor.cpp:6033-6056` from a registry
+snapshot (`info.uid = snap.instanceUid`) and published by `linkSlotInfos = std::move(newInfos)`.
+
+**What is left to do, and it is one sitting's work:** name what `snap.instanceUid`'s string data points into and
+why it dies. The shape is the one this repo has a rule about already - a `juce::String` standing on memory it does
+not own (the 18 Sep Pro Tools crash). Two concrete things to settle:
+  1. whether it reproduces with a POPULATED state root as well as a fresh one (my repro used a fresh isolated
+     home with a stale registry, which on its own could explain a dead Link's strings - but the gate run that
+     failed had three LIVE Links, so the mechanism cannot only be staleness);
+  2. whether `git stash`-ing `(l)`-`(q)`'s `PluginProcessor.cpp` changes makes it go away, which is the
+     attribution answer Sean asked for and the thing I could not get tonight.
+
+Until (2) is answered **these three reds are not attributed**, and the branch stays unpushed on their account
+alone, never mind red 1.
+
+### Item 3 — pointing the plugin at a preview server
+
+An override already existed and was **useless for testing**: `~/.echojay/dev.json` (`baseUrl` +
+`protectionBypass`) sits behind `ECHOJAY_DEV_TRANSPORT`, which is defined only for Debug or when the CMake option
+is ON. Every build placed for Sean is Release with the option OFF — which is exactly why his logs read
+`devTransport=off`. The switch could not be flipped in the binary he installs, so for his purposes it did not exist.
+
+A file-based override is now compiled into **every** build, default off, read once per process:
+
+```
+# ON  — point at a preview deployment
+echo "https://my-preview.vercel.app" > ~/Library/EchoJay/dev_base_url.txt
+
+# ON  — only if that preview has Vercel deployment protection
+echo "<bypass secret>" > ~/Library/EchoJay/dev_bypass.txt
+
+# OFF — the default; the plugin talks to production exactly as before
+rm ~/Library/EchoJay/dev_base_url.txt ~/Library/EchoJay/dev_bypass.txt
+```
+
+The path is `~/Library/EchoJay/` (JUCE's `userApplicationDataDirectory` is `~/Library` on macOS, not
+`~/Library/Application Support` — verified against the flag files already living there).
+
+- Read **once per process**, like `dev.json`, so set the file *before* launching the host.
+- Absent, empty, commented out (`#`), or not `http(s)` => **no override at all**. A non-URL value is logged and
+  ignored rather than used: `EJNet: dev_base_url.txt says "…", which is not an http(s) URL - IGNORED, talking to
+  production`.
+- The bypass **value is never logged** — only whether one was loaded.
+- The startup line prints the whole base URL and where it came from:
+  `EJNet: … base=https://… source=dev_base_url.txt` (or `source=built-in` on production).
+
+### Item 4 — the build to install
+
+**ONE build from `feat/comp-profiles` at `0482617`. Unsigned, NOT installed, nothing in `/Library`.**
+
+```
+/Users/SeanD/echojay-vst/ship_2026-10-02a/
+  EchoJay V2.component     67M   LC_UUID 785D9918-99F4-3734-A637-158700FA7182
+  EchoJay Link.component   49M   LC_UUID 625CD984-8CF9-3792-AF78-DFC69F2A6073
+```
+
+Both LC_UUIDs were read back from the placed bundles and match the build tree exactly — that is the install
+proof, not the file dates, and not a `strings` grep (LTO folds literals and can false-negative).
+
+The Link is in this build because the profile work lives in shared headers that both binaries compile. It
+therefore also carries **(g)'s loop ending**, which Sean deferred to "the next Link build" — this is that build.
+The Link has NOT been through the gate on this branch; only the three comp guards were run.
+
+### Morning checklist
+
+1. **Install** (V2 + Link, user plug-ins only — never `/Library`):
+   ```
+   PLACED=<path from item 4>
+   rsync -a --delete "$PLACED/EchoJay V2.component"  ~/Library/Audio/Plug-Ins/Components/
+   rsync -a --delete "$PLACED/EchoJay Link.component" ~/Library/Audio/Plug-Ins/Components/
+   killall -9 AUHostingService 2>/dev/null; true
+   ```
+   The `AUHostingService` kill matters: without it the host keeps serving the previous binary and the log will
+   describe code you are not running. Verify by the `LC_UUID` in item 4, not by the file dates.
+
+2. **Turn the profiles flag on** (default OFF — with it off, everything below is dormant and behaviour is
+   byte-for-byte what it is today):
+   ```
+   touch ~/Library/EchoJay/comp_profiles_on.txt     # on
+   rm    ~/Library/EchoJay/comp_profiles_on.txt     # off
+   ```
+   Read fresh at each use, so it can go off mid-session the moment it misbehaves.
+
+3. **Point at the preview** only if B has one up — see item 3 above. Set it before launching Logic.
+
+4. **The log lines that show it working**, in the order they should appear:
+
+   | Line | What it proves |
+   |---|---|
+   | `EJNet: … base=… source=dev_base_url.txt` | which server answered at all |
+   | `EJCompProfile: slot N ("…") using the profile the server attached: schema=… topology=…` | the profile joined this slot by its full fingerprint |
+   | `EJCompProfile: slot N … REFUSED a profile whose map_fp is not this slot's fingerprint` | the join check doing its job — if you see this, the profile is for another binary |
+   | the `controls_norm` write lines for that slot | the amount control was set as a raw norm (it has no display text) |
+   | the one-check outcome: in range / `PROFILE_NOT_ENGAGING` / one correction | section 7 ran on a real reading |
+   | the closing line, e.g. `EMO-D5 (s): about 2 dB on the loud phrases, from its profile. Output -1.5 dB.` | what the user is told |
+
+   With the flag OFF you should see **none** of the `EJCompProfile:` lines. That is the control case: if they
+   appear with the flag off, stop and say so.
+
+---
+
+## EARLIER — the day session of 1 Oct (unchanged below this line)
+
 ---
 
 ## PART 1 — last night's gate: NOT GREEN, so NOT PUSHED
