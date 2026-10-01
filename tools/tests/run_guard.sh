@@ -103,7 +103,14 @@ if [ $SCRIBBLE -eq 1 ]; then
   SLOG="$ISO/scribble.out"
   MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 run_guard "$@" > "$SLOG" 2>&1; SRC=$?
   # On a failing scribble leg the reason has to be READABLE - a bare exit code is not evidence.
-  if [ $SRC -ne 0 ]; then echo "---- scribble leg output (tail) ----"; tail -40 "$SLOG"; echo "---- end scribble leg output ----"; fi
+  # THE TAIL IS NOT THE REASON (1 Oct 2026). level_loop_guard failed a scribble leg with "RED (1 assertion(s)
+  # failed)" and the 40-line tail was forty `ok` lines, because the failure was earlier in the run - so the log
+  # proved only that SOMETHING failed. Every FAIL line is printed first, by name, and the tail after it for context.
+  if [ $SRC -ne 0 ]; then
+    echo "---- scribble leg FAILURES ----"
+    grep -E "^[[:space:]]*FAIL" "$SLOG" || echo "(no FAIL line: the leg died without reporting one - see the tail)"
+    echo "---- scribble leg output (tail) ----"; tail -40 "$SLOG"; echo "---- end scribble leg output ----"
+  fi
   echo "scribble leg exit code: $SRC  (0 == GREEN, nonzero == RED)"
   if [ $RC -eq 0 ] && [ $SRC -eq 0 ]; then echo "BOTH LEGS: GREEN"; else echo "BOTH LEGS: RED (plain $RC, scribble $SRC)"; fi
   [ $RC -eq 0 ] && [ $SRC -eq 0 ] || RC=1
