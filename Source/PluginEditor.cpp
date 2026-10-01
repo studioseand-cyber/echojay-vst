@@ -6404,6 +6404,7 @@ void EchoJayEditor::runAICompareWith(const CompareSlotState& slotA,
     const juce::String cmpChatId = currentChatId;   // persist target captured at compose time
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
+    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -29555,6 +29556,7 @@ void EchoJayEditor::sendChatMessage(const juce::String& msg,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
+    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -30247,6 +30249,7 @@ void EchoJayEditor::fireChatMainCall(const juce::String& sysPrompt,
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
+    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -30309,6 +30312,7 @@ void EchoJayEditor::rerouteChatTurn(const juce::String& sysPrompt, const juce::S
     auto safeThis = juce::Component::SafePointer<EchoJayEditor>(this);
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
+    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group
@@ -34245,7 +34249,11 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
     // Collect names+settings from chain JSON, filtering to only those in recommendable
     // wetPct: the model's slot-level "wet_pct" (0..100) or -1 when absent,
     // which means "leave the knob alone" (a fresh slot starts at 1.0).
-    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; float wetPct = -1.0f; };
+    // COMP_PROFILE_SPEC_v1 item 2: expected_gr_db and expected_level_db ride the slot object (spec section 6.6),
+    // so the plugin can check what the server computed from the profile. NaN = the block said nothing.
+    struct SlotSpec { juce::String name; juce::String settings; juce::var structured; float wetPct = -1.0f;
+                      float expectedGrDb = std::numeric_limits<float>::quiet_NaN();
+                      float expectedLevelDb = std::numeric_limits<float>::quiet_NaN(); };
     std::vector<SlotSpec> slots;
     juce::StringArray droppedDisabled;
     juce::StringArray droppedUnknown;
@@ -34274,6 +34282,20 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                 EchoJay_NSLog(("EJChain: wet_pct on \"" + name + "\" is not a number ("
                                + wv.toString() + "); ignored").toRawUTF8());
         }
+        // COMP_PROFILE_SPEC_v1 item 2: what the server expects of this slot, read the same way wet_pct is -
+        // a number or nothing, and anything else is logged and ignored rather than guessed at.
+        auto numberOrNan = [entryObj, &name] (const char* key) -> float
+        {
+            if (! entryObj->hasProperty (key)) return std::numeric_limits<float>::quiet_NaN();
+            const auto v = entryObj->getProperty (key);
+            if (v.isDouble() || v.isInt() || v.isInt64()) return (float) (double) v;
+            if (! v.isVoid())
+                EchoJay_NSLog (("EJCompProfile: " + juce::String (key) + " on \"" + name + "\" is not a number ("
+                                + v.toString() + "); ignored").toRawUTF8());
+            return std::numeric_limits<float>::quiet_NaN();
+        };
+        const float expGr    = numberOrNan ("expected_gr_db");
+        const float expLevel = numberOrNan ("expected_level_db");
         bool found = false;
         for (auto& r : recommNames)
             if (ChainHost::namesMatchLoose(name, r)) { found = true; break; }
@@ -34296,7 +34318,7 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                 else          found = true;
             }
         }
-        if (found) slots.push_back({ name, settings, structured, wetPct });
+        if (found) slots.push_back({ name, settings, structured, wetPct, expGr, expLevel });
         else if (!droppedDisabled.contains(name))
         {
             // A name neither list resolves was previously a DBG line and
@@ -34517,6 +34539,8 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
             juce::String settings = slots[i].settings;
             juce::var structured  = slots[i].structured;
             const float wetPct    = slots[i].wetPct;
+            const float expGrDb    = slots[i].expectedGrDb;      // COMP_PROFILE_SPEC_v1 item 2
+            const float expLevelDb = slots[i].expectedLevelDb;
             // Status first, load on the NEXT runloop turn: instantiation
             // blocks the message thread, so the paint must get through
             // before the stall or the progress label never shows.
@@ -34524,13 +34548,13 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                 + juce::String(i + 1) + " of " + juce::String((int)slots.size()) + ")...";
             safeThis->setStageStatus(safeThis->chainListPanel.statusText);   // 1d shimmer
             safeThis->chainListPanel.repaint();
-            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr]() mutable
+            juce::Timer::callAfterDelay(30, [safeThis, name, settings, structured, wetPct, expGrDb, expLevelDb, skipped, loadNextPtr]() mutable
             {
                 if (safeThis == nullptr) return;
                 // ASSISTANT: the AI build loop placing a chain EchoJay designed.
                 safeThis->processorRef.getChainHost().loadByRecommendedName(name,
                     ChainHost::LoadOrigin::Assistant,
-                    [safeThis, name, settings, structured, wetPct, skipped, loadNextPtr](const juce::String& err) mutable
+                    [safeThis, name, settings, structured, wetPct, expGrDb, expLevelDb, skipped, loadNextPtr](const juce::String& err) mutable
                     {
                         if (safeThis == nullptr) return;
                         if (err.isNotEmpty())
@@ -34573,6 +34597,9 @@ void EchoJayEditor::loadChainFromJson(const juce::String& chainJson, bool replac
                                                       return k.joinIntoString(", "); }()
                                                + "]").toRawUTF8());
                                 ch4.setSlotStructuredSettings(ch4.getNumSlots() - 1, structured);
+                                // COMP_PROFILE_SPEC_v1 item 2: ...and what the server expects of it, stored on
+                                // the slot so section 7's check reads the rack and not a copy of the block.
+                                ch4.setSlotExpectations(ch4.getNumSlots() - 1, expGrDb, expLevelDb);
                             }
                             else
                             {
@@ -35615,6 +35642,7 @@ void EchoJayEditor::requestAIFeedback(const CaptureSnapshot& snap,
     juce::String captureChatId = chatId;
     api.setChannelWidth(chatTargetChannelWidth());                    // 21m item 2 / 21n 1b: channelWidth on every turn, per TARGET
     api.setChainRoleVar(chatTargetChainRole().toVar());               // 21t-m items 5 and 3: channelRole on every turn, and it is the TARGET's
+    api.setTrackLevelVar(processorRef.getChainHost().trackLevelVar());   // spec section 5: the track's loud level
     api.setUnityChain(viewRackHasTrims());                            // 21m ruling: unityChain while the rack's trims are active
     api.setGroupsContext(processorRef.linksBodyVar(), processorRef.groupsBodyVar());
     api.setSelectedGroupId(processorRef.chatTargetGroupId);   // 21r item 5: the Working-on selector's group

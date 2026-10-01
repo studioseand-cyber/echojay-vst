@@ -6,6 +6,7 @@
 #include "EchoJayParamApply.h"   // 21 Sep 2026: the settle job keeps echojay::ApplyResult between message-loop ticks
 #include "EedDeviceRegistry.h"
 #include "EchoJayLevelTally.h"
+#include "EJTrackLevel.h"   // COMP_PROFILE_SPEC_v1 section 5: the level a build sends
 #include <limits>   // 21t-k item 4: the headroom op's absent-not-zero figures
 #include "EchoJayParamMaps.h"   // echojay::IdentityRef for recommendableIdentityRefs
 #include <atomic>
@@ -1355,6 +1356,34 @@ public:
     // audio has been heard. Message thread.
     struct SlotLevels { echojay::LevelTally::Snapshot in, out; bool measured = false; };
     echojay::LevelTally::Snapshot getChainInLevels() const  { return chainInTally_.snapshot(); }
+    /** COMP_PROFILE_SPEC_v1 section 5: the track's loud-phrase level, measured PRE-CHAIN on the same tap as
+        getChainInLevels. Void under 20 s heard (the spec's null). Fed from the audio thread, read from the
+        message thread; the accumulator is lock-free and allocation-free. */
+    /** COMP_PROFILE_SPEC_v1 item 2: what the server said to expect of a slot, from its chain block. NaN clears.
+        Stored on the slot so the check in section 7 reads it from the rack rather than from a copy of the block. */
+    void setSlotExpectations (int slotIndex, float expectedGrDb, float expectedLevelDb);
+    float slotExpectedGrDb    (int slotIndex) const;
+    float slotExpectedLevelDb (int slotIndex) const;
+    /** ...and the PROFILE for that slot, read live out of the parameter-map payload under its fingerprint
+        (spec section 2: "published next to that plugin's parameter map, keyed by the same map fingerprint"). A
+        void var means no profile, which is section 2.5: today's behaviour and "no profile yet" in the line.
+        A profile whose fit.max_error_db is over 1.5 is NOT TRUSTED and is reported as absent (spec section 3,
+        field rules) - a bad fit must not quietly become a dialled threshold. */
+    juce::var slotCompProfile (int slotIndex) const;
+    /** The profile's own view of itself, for the log and the line: name, map_fp, topology and whether it is
+        usable. Cheap enough to call per build. */
+    struct CompProfileInfo
+    {
+        bool usable = false;          // present, schema matches, topology handled, fit trusted
+        juce::String plugin, mapFp, topology, whyNot;
+        float maxErrorDb = 0.0f;
+    };
+    static CompProfileInfo readCompProfile (const juce::var& profile);
+    /** COMP_PROFILE_SPEC_v1: the whole profile path is behind this, default OFF. With it off, behaviour is
+        exactly letter (q). Static and read from disk at each call: ~/Library/EchoJay/comp_profiles_on.txt */
+    static bool compProfilesEnabled();
+    juce::var trackLevelVar() const { return trackLevel_.toVar(); }
+    echojay::TrackLevel::Reading trackLevelReading() const { return trackLevel_.read(); }
     echojay::LevelTally::Snapshot getChainOutLevels() const { return chainOutTally_.snapshot(); }
     // 18 Sep 2026 (loudness loop): reset ONLY the chain-output tally and set its counting floor.
     void resetChainOutLevels() { chainOutTally_.reset(); }
@@ -2077,6 +2106,11 @@ private:
     struct ChainSlot {
         juce::AudioProcessorGraph::Node::Ptr node;
         juce::PluginDescription              desc;
+        // COMP_PROFILE_SPEC_v1 item 2: WHAT THE SERVER EXPECTS OF THIS SLOT. expected_gr_db and
+        // expected_level_db arrive with the chain block (spec section 6.6) and are what the one check in section 7
+        // is measured against. NaN is "the block said nothing", which means today's behaviour for this slot.
+        float expectedGrDb    = std::numeric_limits<float>::quiet_NaN();
+        float expectedLevelDb = std::numeric_limits<float>::quiet_NaN();
         bool                                 bypassed = false;
         bool                                 intendedBypassed = false;   // v9: what the user/plan asked; `bypassed` is the effective state (lease overlays it)
         juce::String                         settings;   // AI-suggested dial-in guidance
@@ -2474,6 +2508,7 @@ private:
     void bumpChainValue() noexcept    { chainValueRev_.fetch_add(1, std::memory_order_relaxed);
                                         noteHostedChange(); }
 
+    echojay::TrackLevel trackLevel_;   // spec section 5, pre-chain
     // Running level at the chain input and output (see getChainInLevels):
     // K-weighted (LUFS), the perceived level C7 matches
     echojay::LevelTally chainInTally_  { echojay::LevelTally::Weighting::K };

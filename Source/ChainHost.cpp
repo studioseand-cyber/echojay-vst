@@ -203,6 +203,15 @@ static juce::String sessionLoadKey(const juce::String& name, const juce::String&
 // matching, the feed reverts to full by deleting one file.
 static juce::File feedSplitFlagFile() { return appSupportDir().getChildFile("feed_split_on.txt"); }
 
+// ---- COMP_PROFILE_SPEC_v1: THE FLAG, DEFAULT OFF ------------------------------------------------------------
+// Measured compressor profiles replace the drive seek (spec section 1), and the whole of it is behind this file.
+// ABSENT (the default) => behaviour is exactly letter (q): a compressor build writes no IN, the hold matches the
+// level on OUT once, and the line says "set as dialled". PRESENT (touch ~/Library/EchoJay/comp_profiles_on.txt)
+// => the profile path runs. Read fresh at each use, like the other switches here, so turning it on needs no
+// relaunch - and so a day's testing can turn it off again the moment it misbehaves.
+static juce::File compProfilesFlagFile() { return appSupportDir().getChildFile("comp_profiles_on.txt"); }
+bool ChainHost::compProfilesEnabled() { return compProfilesFlagFile().existsAsFile(); }
+
 // EXPERIMENT (16 Sep 2026): the NO-REUSE kill switch for the rack-switch AU crash.
 // ABSENT (default) => normal instance reuse via the borrow/park pools. PRESENT
 // (touch ~/Library/EchoJay/no_reuse) => every plan/borrow attach instantiates a
@@ -1057,6 +1066,7 @@ void ChainHost::prepare(double sampleRate, int blockSize)
     {
         tallySr_ = sampleRate;
         chainInTally_.prepare(sampleRate);
+        trackLevel_.prepare(sampleRate);   // spec section 5: the same tap, a different statistic
         chainOutTally_.prepare(sampleRate);
     }
 
@@ -1090,6 +1100,9 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
             chainInTally_.push(buffer.getReadPointer(0),
                                buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                                buffer.getNumSamples());
+            trackLevel_.push(buffer.getReadPointer(0),
+                             buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                             buffer.getNumSamples());
             chainOutTally_.push(buffer.getReadPointer(0),
                                 buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                                 buffer.getNumSamples());
@@ -1104,9 +1117,17 @@ void ChainHost::process(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi
     // Running level at the chain INPUT, before anything, including on an
     // empty rack: a build on an empty rack still needs to know the level.
     if (buffer.getNumChannels() >= 1)
+    {
         chainInTally_.push(buffer.getReadPointer(0),
                            buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
                            buffer.getNumSamples());
+        // COMP_PROFILE_SPEC_v1 section 5: PRE-CHAIN, on the raw input, before the pre-chain gain - the level the
+        // server subtracts from a profile's eff_threshold_dbfs has to be the level the compressor will actually
+        // see at its input with the chain as built, and that is this tap.
+        trackLevel_.push(buffer.getReadPointer(0),
+                         buffer.getNumChannels() >= 2 ? buffer.getReadPointer(1) : nullptr,
+                         buffer.getNumSamples());
+    }
 
     // PRE-CHAIN GAIN, after the raw-input tally and before anything else, so
     // chainInTally_ is the raw input and everything downstream (slot 1's input
@@ -2889,6 +2910,7 @@ ChainHost::SlotLevels ChainHost::getSlotLevels(int i) const
 void ChainHost::resetAllLevels()
 {
     chainInTally_.reset();
+    trackLevel_.reset();
     chainOutTally_.reset();
     for (auto& s : slots_)
     {
@@ -4786,6 +4808,85 @@ void ChainHost::logDialSummary(const juce::String& reason) const
     // started count, which is all it can honestly say.
     if (dyn > 0 || loopsStarted_ >= 0 || loopsAlive_ >= 0)
         EchoJay_NSLog(loopsWatchdogLine().toRawUTF8());
+}
+
+// ---- COMP_PROFILE_SPEC_v1 item 2: THE SERVER'S EXPECTATIONS, AND THE PROFILE ------------------------------
+void ChainHost::setSlotExpectations (int slotIndex, float expectedGrDb, float expectedLevelDb)
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return;
+    auto& s = slots_[(size_t) slotIndex];
+    s.expectedGrDb = expectedGrDb;
+    s.expectedLevelDb = expectedLevelDb;
+    EchoJay_NSLog(("EJCompProfile: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name + "\") expects "
+                   + (expectedGrDb == expectedGrDb ? juce::String(expectedGrDb, 1) + " dB of gain reduction"
+                                                   : juce::String("no gain reduction figure"))
+                   + (expectedLevelDb == expectedLevelDb
+                          ? ", level change " + juce::String(expectedLevelDb, 1) + " dB"
+                          : juce::String())).toRawUTF8());
+}
+
+float ChainHost::slotExpectedGrDb (int slotIndex) const
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size()))
+        return std::numeric_limits<float>::quiet_NaN();
+    return slots_[(size_t) slotIndex].expectedGrDb;
+}
+
+float ChainHost::slotExpectedLevelDb (int slotIndex) const
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size()))
+        return std::numeric_limits<float>::quiet_NaN();
+    return slots_[(size_t) slotIndex].expectedLevelDb;
+}
+
+juce::var ChainHost::slotCompProfile (int slotIndex) const
+{
+    if (! juce::isPositiveAndBelow (slotIndex, (int) slots_.size())) return {};
+    const auto& s = slots_[(size_t) slotIndex];
+    if (s.fp.isEmpty()) return {};                       // a built-in carries no fingerprint, so no profile
+    const auto it = paramMaps_.find (s.fp);
+    if (it == paramMaps_.end()) return {};
+    const auto prof = it->second.getProperty ("comp_profile", juce::var());
+    if (! prof.isObject()) return {};
+    // A profile that is not usable is reported ABSENT, so every caller takes the no-profile road rather than each
+    // having to re-decide. The reason is logged once here, where the decision is made.
+    const auto info = readCompProfile (prof);
+    if (! info.usable)
+    {
+        EchoJay_NSLog(("EJCompProfile: slot " + juce::String(slotIndex + 1) + " (\"" + s.desc.name
+                       + "\") has a profile that CANNOT be used - " + info.whyNot
+                       + "; treating it as no profile").toRawUTF8());
+        return {};
+    }
+    return prof;
+}
+
+ChainHost::CompProfileInfo ChainHost::readCompProfile (const juce::var& profile)
+{
+    CompProfileInfo i;
+    auto* o = profile.getDynamicObject();
+    if (o == nullptr) { i.whyNot = "not an object"; return i; }
+    const auto schema = o->getProperty ("schema").toString();
+    if (schema != "ej_comp_profile/1")
+    { i.whyNot = "schema is \"" + schema + "\", not ej_comp_profile/1"; return i; }
+    if (auto* pl = o->getProperty ("plugin").getDynamicObject())
+    { i.plugin = pl->getProperty ("name").toString(); i.mapFp = pl->getProperty ("map_fp").toString(); }
+    i.topology = o->getProperty ("topology").toString();
+    // "other: anything else. The server does not auto-set it; it is treated as no profile." (spec section 3)
+    if (i.topology != "threshold" && i.topology != "input_drive")
+    { i.whyNot = "topology \"" + i.topology + "\" is not one this client handles"; return i; }
+    // "fit.max_error_db: over 1.5 dB means the profile is not trusted and the server treats it as no profile."
+    if (auto* fit = o->getProperty ("fit").getDynamicObject())
+    {
+        i.maxErrorDb = (float) (double) fit->getProperty ("max_error_db");
+        if (i.maxErrorDb > 1.5f)
+        { i.whyNot = "fit.max_error_db is " + juce::String (i.maxErrorDb, 2) + " dB, over the 1.5 dB it may be";
+          return i; }
+    }
+    if (! o->getProperty ("amount").isObject())
+    { i.whyNot = "no amount control"; return i; }
+    i.usable = true;
+    return i;
 }
 
 // (n) 30 Sep 2026 ruling: THE SLOT'S IDENTITY, for the calibration loop's cancel test. Index plus the plugin's

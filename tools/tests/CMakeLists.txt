@@ -214,6 +214,12 @@ ej_add_guard(level_slot_guard         SOURCE tools/level_slot_guard/harness.cpp 
 # generated audio - the hold had been fixed six times from Pro Tools logs, one symptom a round, and this is where
 # its RED lives from now on. Sits beside level_slot_guard because they share the rig's shape.
 ej_add_guard(level_loop_guard         SOURCE tools/level_loop_guard/harness.cpp               LABEL fast SCRIBBLE)
+# COMP_PROFILE_SPEC_v1 section 5: the level the plugin sends with a build. Pure arithmetic on a synthetic signal,
+# so it needs no product sources beyond the header under test.
+ej_add_guard(track_level_guard        SOURCE tools/track_level_guard/harness.cpp              LABEL fast SCRIBBLE)
+# COMP_PROFILE_SPEC_v1 items 2 and 3: the profile on the slot, and the one check. Hosts a REAL plugin, because a
+# profile joins by map fingerprint and a built-in has none.
+ej_add_guard(comp_profile_guard       SOURCE tools/comp_profile_guard/harness.cpp             LABEL fast SCRIBBLE)
 # ...and its PRE-FIX reproducer, registered so it BUILDS with the tree (a RED that does not compile is not a RED)
 # but with NO label, so no gate runs it: it is the same rig cut down to what exists before this round's fix, and
 # it is run by hand against a stashed Source/ to show the wind-up happening. Its output is quoted in MERGE.

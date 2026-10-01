@@ -1381,6 +1381,10 @@ juce::String EchoJayAPI::buildChatRequestBody(const juce::StringArray& roles,
     // staged payload, so a turn that forgot to set it would be a turn whose role silently reverted.
     if (chainRoleVar_.isObject())
         body += ",\"channelRole\":" + juce::JSON::toString (chainRoleVar_);
+    // COMP_PROFILE_SPEC_v1 section 5: track_level, or nothing at all. The spec says null under 20 s heard, and an
+    // ABSENT field is how this body expresses that - a 0 would be read as a level.
+    if (trackLevelVar_.isObject())
+        body += ",\"track_level\":" + juce::JSON::toString (trackLevelVar_);
     // mapFps: which binary each plugin name is (per-fp exact controls
     // exposure). Already a JSON object from ChainHost::buildMapFpsJson;
     // consumed and cleared per send like the meters blob.

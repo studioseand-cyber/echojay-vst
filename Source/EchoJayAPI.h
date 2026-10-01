@@ -382,8 +382,12 @@ public:
     // {"kind":"bus"|"channel","from":"prompt"|"placement"|"name","name":"<track name>"}. Set per send beside
     // channelWidth and NOT consumed: it describes the chain, not a staged payload.
     void setChainRoleVar(const juce::var& v) { chainRoleVar_ = v; }
+    /** COMP_PROFILE_SPEC_v1 section 5: the track's loud-phrase level, on the build request. A VOID var is the
+        spec's null (under 20 s heard) and the field is then omitted entirely rather than sent as 0. */
+    void setTrackLevelVar(const juce::var& v) { trackLevelVar_ = v; }
     juce::var chainRoleVar() const { return chainRoleVar_; }
     juce::var chainRoleVar_;
+    juce::var trackLevelVar_;   // spec section 5
     // 21m ruling (22 Sep 2026, CONTRACT_GROUPS "Capabilities"): "unityChain": true rides EVERY chat and chat-stream body
     // (both build through buildChatRequestBody) whenever the per-slot trim is active on the rack the turn is about;
     // ABSENT otherwise (an empty rack, no trims). The server then stops the Level slot compensating for make-up that
