@@ -5201,6 +5201,25 @@ void testProfileExport()
     const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
     check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
            "export X12: input-as-threshold is input_drive with level_coupling from the per-position quiet gain");
+    {
+        // HIS SECTION 6 PICK on the exported profile: in_at_gr at g, nearest L, interpolated between positions for a continuous
+        // control, the nearest detent for a stepped one, never a position whose 1 dB point is more than 8 dB below L.
+        const auto prof = e.profile;                                          // positions: in_at_gr[2] = T + 2.667, T = -40 + 2i (peak) -> RMS -3.01
+        const auto pk = pickPosition (prof, -18.0, 2.0);
+        // T + 2.667 - 3.01 = -18 -> T = -17.66 -> between i = 11 (T -18) and i = 12 (T -16): norm between 11/15 and 12/15
+        check (pk.ok && pk.i1 >= 0 && pk.norm > 11.0 / 15.0 && pk.norm < 12.0 / 15.0 && std::abs (pk.inAtG0 - (-18.34)) < 0.05,
+               "pick P1: for L = -18 RMS, g = 2 the pick interpolates between the two positions whose 2 dB points bracket L (norm " + juce::String (pk.norm, 4) + ", " + juce::String (pk.inAtG0, 2) + " / " + juce::String (pk.inAtG1, 2) + ")");
+        const auto pk15 = pickPosition (prof, -18.0, 1.5);
+        check (pk15.ok && std::abs (pk15.inAtG0 - pk.inAtG0) > 0.1, "pick P2: a fractional g interpolates between the 1 and 2 dB points, so the pick moves (" + juce::String (pk15.inAtG0, 2) + ")");
+        auto stepped = juce::JSON::parse (juce::JSON::toString (prof));           // a deep copy
+        stepped.getProperty ("amount", {}).getDynamicObject()->setProperty ("stepped", true);
+        const auto ps = pickPosition (stepped, -18.0, 2.0);
+        check (ps.ok && ps.i1 < 0 && (std::abs (ps.norm - 11.0 / 15.0) < 1e-6 || std::abs (ps.norm - 12.0 / 15.0) < 1e-6),
+               "pick P3: a stepped control gets the nearest listed detent, never an interpolated norm (" + juce::String (ps.norm, 4) + ")");
+        const auto pkc = pickPosition (prof, -50.0, 2.0);                     // every 1 dB point sits more than 8 dB above... no: L = -50 is far BELOW all points
+        const auto pkd = pickPosition (prof, 10.0, 2.0);                      // L = +10: every 1 dB point is more than 8 dB below L -> clamped out
+        check (pkc.ok && ! pkd.ok, "pick P4: the clamp refuses every position whose 1 dB point is more than 8 dB below L (" + pkd.refused + ")");
+    }
     auto bad = record (16, true, false, "", "certified");
     bad.getProperty ("thresholdSweep", {}).getProperty ("engageWrites", {}).getProperty ("writes", {})[0].getDynamicObject()->setProperty ("control", "Bypass");
     check (! exportCompProfile (bad).ok && exportCompProfile (bad).refused.contains ("never_touch"), "export X13: an engage write naming a never_touch control refuses the export");

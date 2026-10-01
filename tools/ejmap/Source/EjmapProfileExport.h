@@ -315,4 +315,55 @@ inline Export exportCompProfile (const juce::var& f)
     return e;
 }
 
+//==============================================================================
+// HIS SECTION 6 (v1.2), as a pure function on an exported profile: for each amount position read in_at_gr_dbfs[g]
+// (interpolating between the 1, 2 and 3 dB points for a fractional g); pick the position whose value is nearest L,
+// interpolating between positions for a continuous control, the nearest listed detent for a stepped one; never a
+// position whose in_at_gr_dbfs["1"] is more than 8 dB below L. Returns the norm to write and what it expects.
+struct Pick { bool ok = false; juce::String refused; double norm = 0.0; double expectedGrDb = 0.0; int i0 = -1, i1 = -1; double inAtG0 = 0, inAtG1 = 0; bool stepped = false; };
+inline std::optional<double> inAtGr (const juce::var& point, double g)
+{
+    const auto m = point.getProperty ("in_at_gr_dbfs", {});
+    auto at = [&] (int k) -> std::optional<double> { const auto v = m.getProperty (juce::String (k), {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
+    if (g <= 1.0) return at (1);
+    if (g >= 3.0) return at (3);
+    const int lo = (int) std::floor (g), hi = lo + 1;
+    const auto a = at (lo), b = at (hi);
+    if (! a || ! b) return std::nullopt;
+    return *a + (*b - *a) * (g - lo);
+}
+inline Pick pickPosition (const juce::var& profile, double L, double g)
+{
+    Pick p;
+    const auto amount = profile.getProperty ("amount", {});
+    const auto curve = amount.getProperty ("curve", {});
+    p.stepped = (bool) amount.getProperty ("stepped", false);
+    struct Pt { int i; double norm, inAt, one; };
+    std::vector<Pt> pts;
+    for (int i = 0; i < curve.size(); ++i)
+    {
+        const auto v = inAtGr (curve[i], g);
+        const auto one = curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", {});
+        if (! v || ! (one.isDouble() || one.isInt())) continue;
+        if ((double) one < L - 8.0) continue;                               // the clamp: never a position whose 1 dB point is more than 8 dB below L
+        pts.push_back ({ i, (double) curve[i].getProperty ("norm", 0.0), *v, (double) one });
+    }
+    if (pts.empty()) { p.refused = "no position has a measured point at g within the clamp"; return p; }
+    std::sort (pts.begin(), pts.end(), [] (const Pt& a, const Pt& b) { return a.inAt < b.inAt; });
+    // nearest, and for a continuous control the interpolation between the two that bracket L
+    size_t best = 0; for (size_t k = 1; k < pts.size(); ++k) if (std::abs (pts[k].inAt - L) < std::abs (pts[best].inAt - L)) best = k;
+    p.i0 = pts[best].i; p.inAtG0 = pts[best].inAt; p.norm = pts[best].norm; p.expectedGrDb = g;
+    if (! p.stepped)
+        for (size_t k = 0; k + 1 < pts.size(); ++k)
+            if ((pts[k].inAt <= L && L <= pts[k + 1].inAt) || (pts[k + 1].inAt <= L && L <= pts[k].inAt))
+            {
+                const double t = pts[k + 1].inAt == pts[k].inAt ? 0.0 : (L - pts[k].inAt) / (pts[k + 1].inAt - pts[k].inAt);
+                p.norm = pts[k].norm + t * (pts[k + 1].norm - pts[k].norm);
+                p.i0 = pts[k].i; p.i1 = pts[k + 1].i; p.inAtG0 = pts[k].inAt; p.inAtG1 = pts[k + 1].inAt;
+                break;
+            }
+    p.ok = true;
+    return p;
+}
+
 } // namespace ejmap::profile

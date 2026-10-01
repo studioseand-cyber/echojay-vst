@@ -2261,6 +2261,80 @@ inline int runExportProfiles (const juce::File& in, const juce::File& out, bool 
 }
 
 //==============================================================================
+// HIS SECTION 8 TONE CHECK (v1.2), run here (--cert-tone-check): L = -18 dBFS RMS, g = 2. Pick the position exactly as
+// his section 6 says from the EXPORTED profile, write it plus engage + neutral + the reference ratio, render 997 Hz at L
+// through the signed probe in one fresh process (with -54/-48 for the position's own quiet reference), measure GR. Pass
+// is within 0.5 dB of g. The ratio NORM is not in his profile (only the control name and the value), so it comes from
+// our record's preconditions - said in the result, because it is a gap in the contract.
+inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {});
+    if (! id.ok) { say ("TONE: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    const auto profile = juce::JSON::parse (profileFile.loadFileAsString());
+    const auto record  = juce::JSON::parse (recordFile.loadFileAsString());
+    if (! profile.isObject() || ! record.isObject()) { say ("TONE: cannot read the profile or the record"); return 2; }
+    const auto product = profile.getProperty ("plugin", {}).getProperty ("name", "").toString();
+    std::vector<InstalledRecord> hits;
+    for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    if (hits.size() != 1) { say ("TONE: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    const auto pick = profile::pickPosition (profile, Lrms, g);
+    if (! pick.ok) { say ("TONE: " + product + " - section 6 picks nothing: " + pick.refused); return 4; }
+    // The writes: engage + neutral by control NAME from the profile, resolved to indices through the record's controls.
+    auto indexOf = [&] (const juce::String& name) { if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "") == name) return (int) c.getProperty ("index", -1); return -1; };
+    juce::StringArray sets; juce::Array<juce::var> writes;
+    auto addWrite = [&] (const juce::String& name, int idx, double norm, const juce::String& why) {
+        sets.add (juce::String (idx) + ":" + juce::String (norm, 6));
+        auto* o = new juce::DynamicObject(); o->setProperty ("control", name); o->setProperty ("index", idx); o->setProperty ("norm", norm); o->setProperty ("why", why); writes.add (juce::var (o)); };
+    for (const auto& e : *profile.getProperty ("engage", {}).getArray())   { const auto n = e.getProperty ("control", "").toString(); const int i = indexOf (n); if (i < 0) { say ("TONE: engage control '" + n + "' not in the record"); return 2; } addWrite (n, i, (double) e.getProperty ("norm", 0.0), "engage"); }
+    for (const auto& e : *profile.getProperty ("neutral", {}).getArray())  { const auto n = e.getProperty ("control", "").toString(); const int i = indexOf (n); if (i < 0) { say ("TONE: neutral control '" + n + "' not in the record"); return 2; } addWrite (n, i, (double) e.getProperty ("norm", 0.0), "neutral"); }
+    juce::String ratioNote = "no ratio precondition in the record (ratio as instantiated)";
+    if (const auto* pre = record.getProperty ("thresholdSweep", {}).getProperty ("preconditions", {}).getArray())
+        for (const auto& x : *pre)
+            if (x.getProperty ("role", "").toString() == "ratio_raise")
+            { addWrite ("ratio", (int) x.getProperty ("index", -1), (double) x.getProperty ("norm", 0.0), "reference ratio - NORM from our record; his profile carries only the value"); ratioNote = "ratio norm taken from the record's preconditions"; }
+    const auto plan = sweep::planFromFixture (record);
+    if (! plan.ok) { say ("TONE: the record has no plan: " + plan.why); return 4; }
+    const double Lpeak = Lrms + profile::kPeakToSineRmsDb;
+    juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
+                             "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (pick.norm, 6),
+                             "levels=-54,-48," + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+    if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+    say ("TONE: " + product + " - L " + juce::String (Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (g, 1)
+         + "; section 6 picks norm " + juce::String (pick.norm, 4) + (pick.i1 >= 0 ? " between points " + juce::String (pick.i0) + " and " + juce::String (pick.i1) : " at point " + juce::String (pick.i0))
+         + " (in_at_gr at g: " + juce::String (pick.inAtG0, 2) + (pick.i1 >= 0 ? " / " + juce::String (pick.inAtG1, 2) : juce::String()) + "); " + ratioNote);
+    const auto r = runChild (args, opt.timeoutMs);
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+    const auto rawFile = raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.1.txt");
+    rawFile.replaceWithText (r.out, false, false, "\n");
+    if (! r.cleanExit()) { say ("TONE: the probe " + r.describe()); return 1; }
+    sweep::ProcessOut po { r.out, true, r.describe(), (float) pick.norm };
+    const auto m = sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po });
+    const auto d = sweep::derive (m, { Lpeak }, plan.ratioIndex, true);
+    const auto key = sweep::levelKey (Lpeak);
+    std::optional<double> gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+    const bool quietOk = ! d.quietCheckDb.empty() && d.quietCheckDb[0] && std::abs (*d.quietCheckDb[0]) <= sweep::kQuietTolDb;
+    const bool pass = gr && quietOk && std::abs (*gr - g) <= 0.5;
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("product", product); o->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", ""));
+    o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("L_peak_dbfs", Lpeak); o->setProperty ("g_db", g);
+    auto* pk = new juce::DynamicObject(); pk->setProperty ("norm", pick.norm); pk->setProperty ("point", pick.i0); if (pick.i1 >= 0) pk->setProperty ("point_next", pick.i1);
+    pk->setProperty ("in_at_g", pick.inAtG0); pk->setProperty ("stepped", pick.stepped); o->setProperty ("pick", juce::var (pk));
+    o->setProperty ("writes", writes);
+    o->setProperty ("quiet_check_ok", quietOk);
+    o->setProperty ("gr_measured_db", gr ? juce::var (std::round (*gr * 100.0) / 100.0) : juce::var());
+    o->setProperty ("pass_within_0_5_db", pass);
+    o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
+    o->setProperty ("ratio_norm_source", ratioNote);
+    const auto out = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
+    out.replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("TONE: " + product + " - GR " + (gr ? juce::String (*gr, 2) : juce::String ("unreadable")) + " dB at L (target " + juce::String (g, 1) + ", quiet check "
+         + (quietOk ? "ok" : "FAILED") + ") -> " + (pass ? "PASS" : "FAIL") + " (within 0.5 dB) -> " + out.getFileName());
+    return pass ? 0 : 1;
+}
+
+//==============================================================================
 // THE SWEEP CENSUS (--cert-sweep-census): which fixtures a sweep can run on HERE, read-only, nothing
 // instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
 // measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
