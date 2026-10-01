@@ -207,6 +207,61 @@ void guardMain()
                juce::JSON::toString (v.getProperty ("loud_rms_dbfs", juce::var())));
     }
 
+    std::printf ("\n-- (8) loud_peak_dbfs, DEFINED (spec v1.3 section 5) --\n");
+    {
+        // "over the same 400 ms windows, the maximum absolute sample value in each window (no oversampling), then
+        // the 95th percentile of those across what was heard."
+        //
+        // THE OLD AND NEW DEFINITIONS GIVE DIFFERENT ANSWERS, and this leg is built on that difference. A take of
+        // ordinary phrases at a known peak, plus ONE window carrying a single full-scale sample - a click. The old
+        // reading was the largest peak among the loud windows, so the click set it and it read 0.0 dBFS. A
+        // percentile discards the top 5% of windows, so one click cannot set it: the answer is the ordinary
+        // phrases' peak. That is the whole point of defining it as a percentile.
+        echojay::TrackLevel tl; tl.prepare (kSr);
+        const float phraseRms = -12.0f;                    // a sine, so its peak is 3.01 dB above this
+        const float wantPeak = phraseRms + 3.01f;
+        // 60 one-second phrases at a known level...
+        std::vector<float> buf ((size_t) 512);
+        double phase = 0.0;
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 1000.0 / kSr;
+        const float amp = juce::Decibels::decibelsToGain (phraseRms) * std::sqrt (2.0f);
+        const int oneSec = (int) std::lround (kSr);
+        for (int sec = 0; sec < 60; ++sec)
+        {
+            for (int done = 0; done < oneSec; )
+            {
+                const int n = juce::jmin (512, oneSec - done);
+                for (int i = 0; i < n; ++i) { buf[(size_t) i] = amp * (float) std::sin (phase); phase += inc; }
+                // ...and in ONE second, a single full-scale sample: a click, in one 400 ms window of 150.
+                if (sec == 30 && done == 0) buf[0] = 1.0f;
+                tl.push (buf.data(), nullptr, n);
+                done += n;
+            }
+        }
+        const auto r = tl.read();
+        check (r.valid && r.windows >= 140,
+               "(8) precondition: 60 s is ~150 windows, one of which carries a full-scale click",
+               juce::String (r.windows) + " window(s)");
+        check (std::abs (r.loudPeakDbfs - wantPeak) <= 0.2f,
+               "(8) loud_peak_dbfs is the 95th percentile of the PER-WINDOW peaks, so a single click in one window "
+               "cannot set it  (RED as it stood: it was the largest peak among the loud windows, so the click set "
+               "it and it read 0.0 dBFS)",
+               juce::String (r.loudPeakDbfs, 2) + " dBFS, wanted " + juce::String (wantPeak, 2));
+        check (r.loudPeakDbfs < -5.0f,
+               "(8) ...and it is nowhere near the click's 0.0 dBFS", juce::String (r.loudPeakDbfs, 2) + " dBFS");
+        check (std::abs ((r.loudPeakDbfs - r.loudRmsDbfs) - 3.01f) <= 0.25f,
+               "(8) ...while on a sine the pair still differ by the sine's 3.01, because both are percentiles over "
+               "the SAME windows",
+               juce::String (r.loudPeakDbfs - r.loudRmsDbfs, 2) + " dB apart");
+        // ...and with NO click the two definitions agree, so the change is about the outlier and nothing else.
+        echojay::TrackLevel clean; clean.prepare (kSr);
+        feed (clean, take (60.0, phraseRms, phraseRms, 1.0));
+        const auto rc = clean.read();
+        check (std::abs (rc.loudPeakDbfs - wantPeak) <= 0.2f,
+               "(8) ...and on a take with no outlier it is simply the peak of the material",
+               juce::String (rc.loudPeakDbfs, 2) + " dBFS, wanted " + juce::String (wantPeak, 2));
+    }
+
     std::printf ("\n==== track_level_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

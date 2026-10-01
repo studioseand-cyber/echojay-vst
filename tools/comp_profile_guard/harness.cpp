@@ -389,6 +389,81 @@ void guardMain()
         }
     }
 
+    std::printf ("\n-- (v3) the curve's threshold field is in_at_gr_dbfs[\"1\"] (spec v1.3) --\n");
+    {
+        using CC = echojay::CompCheck;
+        // v1.3: "eff_threshold_dbfs (optional, informational): identical to in_at_gr_dbfs[\"1\"] by definition. The
+        // server never reads it; in_at_gr_dbfs is the only threshold field it uses." The v1.3 example omits
+        // eff_threshold_dbfs from every point, so a curve built only from that field is EMPTY and the one
+        // correction silently does nothing - which is worse than a wrong move, because nothing says it failed.
+        auto curve = [] (bool withEff, bool withGr)
+        {
+            auto* amount = new juce::DynamicObject();
+            amount->setProperty ("control", "Comp Thresh");
+            juce::Array<juce::var> pts;
+            for (int i = 0; i < 3; ++i)
+            {
+                auto* pt = new juce::DynamicObject();
+                pt->setProperty ("norm", 0.5 * i);
+                const double eff = -40.0 + 10.0 * i;
+                if (withEff) pt->setProperty ("eff_threshold_dbfs", eff);
+                if (withGr)
+                {
+                    auto* g = new juce::DynamicObject();
+                    g->setProperty ("1", eff); g->setProperty ("2", eff + 1.3); g->setProperty ("3", eff + 2.6);
+                    pt->setProperty ("in_at_gr_dbfs", juce::var (g));
+                }
+                pts.add (juce::var (pt));
+            }
+            amount->setProperty ("curve", pts);
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("schema", "ej_comp_profile/1");
+            o->setProperty ("topology", "threshold");
+            o->setProperty ("amount", juce::var (amount));
+            return juce::var (o);
+        };
+        // A v1.3 profile: in_at_gr_dbfs only, no eff_threshold_dbfs anywhere.
+        const auto v13 = curve (false, true);
+        check ((int) CC::curveOf (v13).size() == 3,
+               "(v3) a v1.3 curve with NO eff_threshold_dbfs is read from in_at_gr_dbfs[\"1\"]  (RED as it stood: "
+               "the curve came out EMPTY and amountNormForLessGr returned the current norm, so the one correction "
+               "did nothing at all and said nothing about it)",
+               juce::String ((int) CC::curveOf (v13).size()) + " point(s)");
+        const float moved = CC::amountNormForLessGr (v13, 0.5f, 4.0f);
+        check (moved > 0.5f,
+               "(v3) ...so the correction actually moves on a v1.3 profile",
+               juce::String (moved, 4));
+        // A v1.2 profile still works: eff_threshold_dbfs only.
+        const auto v12 = curve (true, false);
+        check ((int) CC::curveOf (v12).size() == 3 && CC::amountNormForLessGr (v12, 0.5f, 4.0f) > 0.5f,
+               "(v3) ...and a v1.2 profile with only eff_threshold_dbfs still reads, so the fallback is real",
+               juce::String ((int) CC::curveOf (v12).size()) + " point(s)");
+        // Both present: in_at_gr_dbfs wins, because the spec says that is the field the threshold comes from.
+        const auto both = curve (true, true);
+        check ((int) CC::curveOf (both).size() == 3,
+               "(v3) ...and with both present it reads, taking in_at_gr_dbfs as the spec directs");
+        // A point whose sweep never reached 1 dB (null) cannot anchor the curve.
+        {
+            auto* amount = new juce::DynamicObject();
+            amount->setProperty ("control", "Comp Thresh");
+            juce::Array<juce::var> pts;
+            for (int i = 0; i < 2; ++i)
+            {
+                auto* pt = new juce::DynamicObject(); pt->setProperty ("norm", 0.5 * i);
+                auto* g = new juce::DynamicObject();
+                if (i == 0) g->setProperty ("1", -40.0); else g->setProperty ("1", juce::var());
+                pt->setProperty ("in_at_gr_dbfs", juce::var (g));
+                pts.add (juce::var (pt));
+            }
+            amount->setProperty ("curve", pts);
+            auto* o = new juce::DynamicObject(); o->setProperty ("amount", juce::var (amount));
+            check ((int) CC::curveOf (juce::var (o)).size() == 1,
+                   "(v3) ...while a point whose in_at_gr_dbfs[\"1\"] is null is left out - the sweep never reached "
+                   "1 dB there, so it cannot anchor anything",
+                   juce::String ((int) CC::curveOf (juce::var (o)).size()) + " point(s) of 2");
+        }
+    }
+
     std::printf ("\n==== comp_profile_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }

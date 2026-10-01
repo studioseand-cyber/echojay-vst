@@ -70,8 +70,8 @@ public:
         inWindow_ = 0;
         windowPeak_ = 0.0f;
         heardSamples_ = 0;
-        loudPeak_ = 0.0f;
-        loudPeakFloorDb_ = kLoDb;
+        peakBins_.fill (0);
+        peakSumDb_.fill (0.0);
     }
 
     /** One block, mono or stereo, from the PRE-CHAIN tap. Audio thread: no allocation, no locks. */
@@ -102,18 +102,11 @@ public:
         r.heardSeconds = heardSeconds();
         r.windows = total_;
         if (r.heardSeconds < kMinHeardS || total_ <= 0) return r;   // valid stays false => null on the wire
-        // The percentile by counting up from the quiet end: the first bin at or past 95% of the windows.
+        // The percentile by counting up from the quiet end: the first bin at or past 95% of the windows. Both
+        // figures are read the same way, from their own distribution over the same windows.
         const int wanted = juce::jmax (1, (int) std::lround ((double) total_ * (double) kPercentile));
-        int seen = 0, bin = kBins - 1;
-        for (int b = 0; b < kBins; ++b)
-        {
-            seen += bins_[(size_t) b];
-            if (seen >= wanted) { bin = b; break; }
-        }
-        r.loudRmsDbfs  = bins_[(size_t) bin] > 0
-                             ? (float) (binSumDb_[(size_t) bin] / (double) bins_[(size_t) bin])
-                             : dbForBin (bin);
-        r.loudPeakDbfs = loudPeak_ > 0.0f ? juce::Decibels::gainToDecibels (loudPeak_, kLoDb) : kLoDb;
+        r.loudRmsDbfs  = percentileOf (bins_, binSumDb_, wanted);
+        r.loudPeakDbfs = percentileOf (peakBins_, peakSumDb_, wanted);
         r.valid = true;
         return r;
     }
@@ -148,14 +141,31 @@ private:
         // makes the reported figure the real level rather than the bin it fell in.
         binSumDb_[(size_t) bin] += (double) db;
         ++total_;
-        // THE LOUD-PHRASE PEAK is the peak of the windows that ARE the loud phrases, not the peak of the whole
-        // take: a single click in a quiet bar is not a loud phrase. Tracked against a rising floor so it needs no
-        // second pass - a window at or above the loudest seen so far contributes its peak.
-        if (db >= loudPeakFloorDb_ - 1.0f)
+        // loud_peak_dbfs, DEFINED (spec v1.3 section 5): "over the same 400 ms windows, the maximum absolute
+        // sample value in each window (no oversampling), then the 95th percentile of those across what was heard."
+        // So it is its OWN percentile over its OWN distribution - one max-|sample| figure per window, the same
+        // windows the RMS percentile uses - and not, as v1.2 left it to the reader, the largest peak among the loud
+        // windows. The two answers differ: a percentile discards the top 5% of windows, so a single transient in one
+        // window cannot set it, which is the point of defining it this way.
+        const float pkDb = windowPeak_ > 0.0f ? juce::Decibels::gainToDecibels (windowPeak_, kLoDb) : kLoDb;
+        const int pkBin = binForDb (pkDb);
+        ++peakBins_[(size_t) pkBin];
+        peakSumDb_[(size_t) pkBin] += (double) pkDb;
+    }
+
+    /** The dB at the `wanted`-th window counting up from the quiet end, reported as the MEAN of the values that
+        fell in that bin rather than the bin's 0.25 dB edge - section 5's convention test is to two decimals. */
+    static float percentileOf (const std::array<int, (size_t) kBins>& bins,
+                               const std::array<double, (size_t) kBins>& sums, int wanted) noexcept
+    {
+        int seen = 0, bin = kBins - 1;
+        for (int b = 0; b < kBins; ++b)
         {
-            if (db > loudPeakFloorDb_) loudPeakFloorDb_ = db;
-            loudPeak_ = juce::jmax (loudPeak_, windowPeak_);
+            seen += bins[(size_t) b];
+            if (seen >= wanted) { bin = b; break; }
         }
+        return bins[(size_t) bin] > 0 ? (float) (sums[(size_t) bin] / (double) bins[(size_t) bin])
+                                      : dbForBin (bin);
     }
 
     static int   binForDb (float db) noexcept
@@ -172,8 +182,9 @@ private:
     int    inWindow_ = 0;
     float  windowPeak_ = 0.0f;
     juce::int64 heardSamples_ = 0;
-    float  loudPeak_ = 0.0f;
-    float  loudPeakFloorDb_ = kLoDb;
+    // loud_peak_dbfs (v1.3): its own distribution, one max-|sample| per window, over the same windows.
+    std::array<int, (size_t) kBins> peakBins_ {};
+    std::array<double, (size_t) kBins> peakSumDb_ {};
 };
 
 } // namespace echojay

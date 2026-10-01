@@ -1,6 +1,6 @@
 # EchoJay compressor profiles: spec v1
 
-Status: DRAFT v1.2, 1 Oct 2026. v1.1: full 64-hex map_fp, measured.reference_ratio, controls_norm. v1.2 (from Kathy's review): measured GR points replace the threshold formula, 997 Hz, RMS convention pinned, stepped controls, detector, tighter acceptance.
+Status: DRAFT v1.3, 1 Oct 2026. v1.3 (Kathy's second review): measured point quality replaces the model-fit gate, detector_f replaces the detector label, loud_peak_dbfs defined, sweep ceiling -3.01 RMS, in_at_gr_dbfs is the only threshold field read. v1.1: full 64-hex map_fp, measured.reference_ratio, controls_norm. v1.2 (from Kathy's review): measured GR points replace the threshold formula, 997 Hz, RMS convention pinned, stepped controls, detector, tighter acceptance.
 This file is the contract between the three. If a side needs to change it, change this file first, bump the minor version, and say so.
 
 ## 1. Why
@@ -36,7 +36,7 @@ New approach: measure each compressor once, offline, with test tones (EJ Maps). 
     "sample_rate": 48000,
     "signal": "sine 997 Hz, stepped",
     "level_ref": "sine_rms_dbfs",
-    "steps_dbfs": [-60, 0, 2],
+    "steps_dbfs": [-63.01, -3.01, 2],
     "hold_ms": 2500,
     "read_window_ms": 300,
     "reference_ratio": 4.0,
@@ -55,9 +55,10 @@ New approach: measure each compressor once, offline, with test tones (EJ Maps). 
   "amount": {
     "control": "Comp Thresh",
     "curve": [
-      { "norm": 0.00, "display": "-60.0", "eff_threshold_dbfs": -59.6, "in_at_gr_dbfs": { "1": -59.6, "2": -58.3, "3": -57.0 } },
-      { "norm": 0.50, "display": "-30.0", "eff_threshold_dbfs": -29.8, "in_at_gr_dbfs": { "1": -29.8, "2": -28.5, "3": -27.2 } },
-      { "norm": 1.00, "display": "0.0",   "eff_threshold_dbfs": 0.2,   "in_at_gr_dbfs": { "1": 0.2, "2": 1.5, "3": null } }
+      { "norm": 0.00, "display": "-60.0", "in_at_gr_dbfs": { "1": -59.6, "2": -58.3, "3": -57.0 } },
+      { "norm": 0.50, "display": "-30.0", "in_at_gr_dbfs": { "1": -29.8, "2": -28.5, "3": -27.2 } },
+      { "norm": 0.90, "display": "-6.0",  "in_at_gr_dbfs": { "1": -5.8, "2": -4.5, "3": -3.2 } },
+      { "norm": 1.00, "display": "0.0",   "in_at_gr_dbfs": { "1": null, "2": null, "3": null } }
     ],
     "stepped": false
   },
@@ -72,8 +73,9 @@ New approach: measure each compressor once, offline, with test tones (EJ Maps). 
   "static_gain_db": 0.0,
   "level_coupling": null,
   "time": { "attack_ms": 9.8, "release_ms": 80.0, "program_dependent": false },
-  "detector": "rms",
+  "detector_f": 0.0,
   "fit": { "max_error_db": 0.4, "points": 341 },
+  "quality": { "point_error_db": 0.2, "repeats": 2 },
   "notes": ""
 }
 ```
@@ -90,15 +92,17 @@ New approach: measure each compressor once, offline, with test tones (EJ Maps). 
 - `engage`: every write needed for the unit to compress. `verified: true` means the sweep showed GR with these writes and none without them. Engage must never write a control named in `never_touch`.
 - `never_touch`: controls EchoJay must not write (power, standby, plugin bypass). It must still list them, so the consumer knows they exist.
 - `neutral`: the settings the sweep was measured at. The server writes them too, so the measurement holds: mix 100% wet, makeup 0 or off, drive or saturation at its cleanest, sidechain filter off where possible.
-- `amount.curve`: one point per measured position, at least 9, sorted by norm. `eff_threshold_dbfs` is the input level (in `measured.level_ref` units) where gain reduction reaches 1.0 dB with ratio at the profile's reference ratio. For `input_drive`, it is the input level at which GR reaches 1.0 dB with the amount control at that position.
-- `amount.curve[].in_at_gr_dbfs` (v1.2, required): for that position, at the reference ratio, the measured input level where GR reaches exactly 1, 2 and 3 dB, read from the raw sweep by interpolation, not from a fitted model. `null` where the sweep never reached it. This is what the server matches on (section 6), so knee and ratio need no modelling.
+- `amount.curve`: one point per measured position, at least 9, sorted by norm. For `input_drive` units the position is the input or peak-reduction setting.
+- `eff_threshold_dbfs` (v1.3: optional, informational): identical to `in_at_gr_dbfs["1"]` by definition. The server never reads it; `in_at_gr_dbfs` is the only threshold field it uses.
+- `amount.curve[].in_at_gr_dbfs` (v1.2, required): for that position, at the reference ratio, the measured input level where GR reaches exactly 1, 2 and 3 dB, read from the raw sweep by interpolation, not from a fitted model. `null` where the sweep never reached it. The sweep tops out at a 0 dBFS peak sine, which is -3.01 dBFS RMS, so no value above -3.01 can exist. This is what the server matches on (section 6), so knee and ratio need no modelling.
 - `amount.stepped` (v1.2): true when the amount control has detents. The curve then lists every detent, and the server only ever picks a listed point, never an interpolated norm.
-- `detector` (v1.2, optional): `rms`, `peak` or `unknown`, if EJ Maps can tell (for example by comparing a sine with a high-crest test signal at equal RMS). A peak detector reacts to vocal peaks that a sine doesn't have, so the server uses `loud_peak_dbfs - 3.01` instead of `loud_rms_dbfs` for it.
+- `detector_f` (v1.3, optional, 0..1): how much the unit's detector responds to peaks above RMS. Measured with a two-tone test at the same RMS as the sine: 0 = pure RMS response, 1 = full peak response. Because the two-tone passes through the unit's real attack, f already reflects how much of the peaks it actually reacts to. Missing or null is treated as 0 (RMS), which errs toward less compression.
 - `ratio`: a curve if the ratio is adjustable, else `fixed` with one measured ratio and knee. For program-dependent units (opto), give the ratio measured at 2-4 dB GR.
 - `static_gain_db`: output minus input well below threshold, with `neutral` applied.
 - `level_coupling` (`input_drive` only): `{ "control": "Input", "gain_db_per_point": [{ "norm": 0.3, "gain_db": -6.0 }, ...] }`: how much the amount control itself changes level below threshold, so the hold can predict OUT.
 - `time`: measured when possible, else omit. `program_dependent: true` for opto and auto-release units.
-- `fit.max_error_db`: worst error between the model (threshold + ratio + knee) and the measured points. Over 1.5 dB means the profile is not trusted and the server treats it as no profile.
+- `fit.max_error_db` (v1.3: informational only, not a gate): worst error against a threshold + ratio + knee model. Soft-knee and opto units legitimately miss that model, so it must not reject them.
+- `quality.point_error_db` (v1.3, required): worst disagreement between repeated measurements of the same `in_at_gr_dbfs` point. This is the trust gate: over 0.5 dB, the server treats the profile as no profile. The server also rejects a profile whose points are not monotonic: within a position, `in_at_gr_dbfs` must rise from 1 to 2 to 3 dB, and across positions the values must move in one direction.
 
 ## 4. Measurement method (recommended)
 
@@ -117,17 +121,22 @@ Per build, on the existing build request, for the track (pre-chain):
 "track_level": {
   "loud_rms_dbfs": -18.4,
   "loud_peak_dbfs": -6.2,
-  "window": "400ms_rms_p95",
+  "window": "400ms_p95",
   "heard_s": 90
 }
 ```
 
 - `loud_rms_dbfs`: the 95th percentile of 400 ms RMS over what was heard, as plain RMS: 20*log10(rms of the samples), where a full-scale sine reads -3.01 dBFS. NOT the AES17 convention (full-scale sine = 0 dBFS). EJ Maps exports sine RMS on the same convention (its peak reading minus 3.01). A 3 dB slip here is larger than the whole GR target, so both sides carry a test: a full-scale 997 Hz sine must read -3.01.
+- `loud_peak_dbfs` (v1.3): over the same 400 ms windows, the maximum absolute sample value in each window (no oversampling), then the 95th percentile of those across what was heard.
 - Under 20 s heard: send `null`. The server then does not compute a threshold and falls back to today's behaviour.
 
 ## 6. Server computation (v1.2)
 
-Inputs: profile, L = `track_level.loud_rms_dbfs` (or `loud_peak_dbfs - 3.01` when `detector` is `peak`), target GR g (default 2.0 dB; never above 3.0).
+Inputs: profile, target GR g (default 2.0 dB; never above 3.0), and L, the vocal level in the profile's sine-RMS terms:
+
+L = loud_rms + f x (loud_peak - loud_rms - 3.01), where f = `detector_f` (0 when missing).
+
+At f = 0 this is the RMS level; at f = 1 it is the peak level expressed as an equivalent sine RMS.
 
 1. Ratio: keep the profile's `measured.reference_ratio` (or the unit's fixed ratio), so the measured points apply as they are. Write it through `ratio`. A different requested ratio is a later version; for now the reference ratio wins.
 2. For each amount position, read `in_at_gr_dbfs[g]` (interpolating between the 1, 2 and 3 dB points for a fractional g). That is the vocal level at which this position gives exactly g.

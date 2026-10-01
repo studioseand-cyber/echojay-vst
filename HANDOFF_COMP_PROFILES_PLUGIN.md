@@ -94,7 +94,7 @@ That worktree is at `scratchpad/p1gate` and can be removed with `git worktree re
 ## PART 2 — the plugin side of measured compressor profiles
 
 `docs/COMP_PROFILE_SPEC_v1.md` is the spec, copied verbatim from `~/Desktop/COMP_PROFILE_SPEC_v1.md`. **It is now
-v1.2** (the file's own status line reads `DRAFT v1.2`; v1.1 brought the full 64-hex `map_fp`,
+v1.3** (the file's own status line reads `DRAFT v1.2`; v1.1 brought the full 64-hex `map_fp`,
 `measured.reference_ratio` and `controls_norm`, and v1.2 is Kathy's review — measured GR points replacing the
 threshold formula, 997 Hz, the RMS convention pinned, stepped controls, `detector`, tighter acceptance).
 
@@ -133,9 +133,30 @@ one the plugin rounds to — a position nobody chose. Adjacent rather than neare
 one move even when the ideal lies past the next detent; at the last detent it stays put. A continuous control still
 interpolates exactly.
 
-`track_level_guard` 20 assertions GREEN · `comp_profile_guard` 44 assertions GREEN.
+`track_level_guard` 25 assertions GREEN · `comp_profile_guard` 49 assertions GREEN.
 
-### Still owed from v1.2, NOT done
+### v1.3 (Kathy's second review) — two changes landed
+
+**`loud_peak_dbfs` is now defined** (§5): "over the same 400 ms windows, the maximum absolute sample value in each
+window (no oversampling), then the 95th percentile of those across what was heard." It is its **own percentile over
+its own distribution** — one max-|sample| figure per window, over the same windows the RMS percentile uses — and not,
+as v1.2 left to the reader, the largest peak among the loud windows.
+
+**The two definitions give different answers, and that is the point.** 60 s of −12 dBFS sine phrases with **one
+full-scale sample** in one window of 150: the old reading was the largest peak among the loud windows, so the click
+set it and it read **0.0 dBFS**; the percentile discards the top 5% of windows, so it now reads **−8.99 dBFS** — the
+material. With no outlier the two agree, so the change is about the outlier and nothing else.
+
+**`eff_threshold_dbfs` became optional and informational** — "The server never reads it; `in_at_gr_dbfs` is the only
+threshold field it uses" — and the v1.3 example omits it from **every** curve point. **You did not ask me to touch
+this, and I did**, because `CompCheck::curveOf` read only that field: on a v1.3 profile the curve would come out
+**empty**, `amountNormForLessGr` would return the current norm, and yesterday's one correction would have **silently
+done nothing** while reporting success. That is worse than a wrong move. The curve now reads
+`in_at_gr_dbfs["1"]` first and falls back to `eff_threshold_dbfs`, so v1.2 and v1.3 profiles both work; a point
+whose `in_at_gr_dbfs["1"]` is `null` is left out, because the sweep never reached 1 dB there and it cannot anchor
+anything. Five assertions, including the empty-curve RED.
+
+### Still owed from v1.2 and v1.3, NOT done
 
 - **§8's tone check**: "a 997 Hz tone at L through the same settings lands within 0.5 dB of g". `comp_render_check`
   measures a vocal-shaped signal only; it needs a `--tone <dBFS>` mode to render a 997 Hz sine at L and report the
@@ -143,6 +164,12 @@ interpolates exactly.
 - **§6's new computation is server-side** (measured `in_at_gr_dbfs` points replacing the threshold formula). Nothing
   owed here beyond what is already sent, but note the plugin now sends `loud_peak_dbfs` to two decimals, which is
   what `detector: "peak"` needs (`loud_peak_dbfs - 3.01`).
+- **v1.3's `quality` block replaces the model-fit gate.** The profile now carries
+  `quality: { point_error_db, repeats }` where v1.2 had `fit.max_error_db`. My trust check still reads
+  `fit.max_error_db > 1.5` and refuses on it. That is **safe but incomplete**: a v1.3 profile has no `fit` block, so
+  the field reads 0 and the profile passes — nothing is wrongly refused, but the new quality gate is not honoured.
+  Whoever picks this up needs the thresholds Sean/Kathy want on `point_error_db` and `repeats` before it can be
+  written; I did not invent them.
 - **§11 version matching**: profiles key to the plugin version they were swept on. Waves on the EJ Maps Mac is V12;
   this machine runs 15.0.70, so a V12 profile will not match. Nothing to build — it is a sweeping instruction — but
   it is the likeliest reason a first real profile fails to join.

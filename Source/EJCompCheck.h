@@ -196,12 +196,27 @@ struct CompCheck
         std::vector<Point> out;
         auto* a = profile.getProperty ("amount", juce::var()).getDynamicObject();
         if (a == nullptr) return out;
+        // v1.3: `in_at_gr_dbfs["1"]` IS THE THRESHOLD FIELD. `eff_threshold_dbfs` is now "optional,
+        // informational ... The server never reads it", and the v1.3 example omits it from every point - so a curve
+        // built only from that field is EMPTY on a v1.3 profile, and the one correction then silently does nothing.
+        // Read in_at_gr_dbfs["1"] first and fall back to eff_threshold_dbfs, so v1.2 and v1.3 profiles both work.
         if (auto* arr = a->getProperty ("curve").getArray())
             for (const auto& pv : *arr)
                 if (auto* p = pv.getDynamicObject())
-                    if (p->hasProperty ("norm") && p->hasProperty ("eff_threshold_dbfs"))
-                        out.push_back ({ (float) (double) p->getProperty ("norm"),
-                                         (float) (double) p->getProperty ("eff_threshold_dbfs") });
+                {
+                    if (! p->hasProperty ("norm")) continue;
+                    float eff = std::numeric_limits<float>::quiet_NaN();
+                    if (auto* g = p->getProperty ("in_at_gr_dbfs").getDynamicObject())
+                    {
+                        const auto one = g->getProperty ("1");
+                        if (one.isDouble() || one.isInt() || one.isInt64()) eff = (float) (double) one;
+                        // null means "the sweep never reached 1 dB here" - that point cannot anchor the curve.
+                    }
+                    if (! (eff == eff) && p->hasProperty ("eff_threshold_dbfs"))
+                        eff = (float) (double) p->getProperty ("eff_threshold_dbfs");
+                    if (eff == eff)
+                        out.push_back ({ (float) (double) p->getProperty ("norm"), eff });
+                }
         std::sort (out.begin(), out.end(), [] (const Point& l, const Point& r) { return l.norm < r.norm; });
         return out;
     }
