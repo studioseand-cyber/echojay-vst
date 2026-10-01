@@ -35,11 +35,10 @@ constexpr double kWindowMs = 400.0;
 
 struct Opt
 {
-    juce::String name, wav, jsonOut, file;
+    juce::String name, wav, jsonOut, id;
     juce::StringArray sets;
     double sr = 48000.0;
     double seconds = 20.0;
-    bool list = false;
 };
 
 Opt parseArgs (int argc, char** argv)
@@ -55,8 +54,7 @@ Opt parseArgs (int argc, char** argv)
         else if (a == "--json")    o.jsonOut = next();
         else if (a == "--sr")      o.sr = next().getDoubleValue();
         else if (a == "--seconds") o.seconds = next().getDoubleValue();
-        else if (a == "--file")    o.file = next();
-        else if (a == "--list")    o.list = true;
+        else if (a == "--id")      o.id = next();
     }
     return o;
 }
@@ -235,43 +233,43 @@ int run (const Opt& o)
 {
     // juce_audio_processors_headless DELETES addDefaultFormats(); this repo's own helper is what the other
     // real-plugin guards use (stepped_position_guard does the same).
+    // ---- NEVER A FULL SCAN (1 Oct 2026 ruling, after this tool caused real harm) --------------------------
+    // The first version of this tool walked every AU on the machine to resolve a name. On Sean's Mac that drove
+    // iLok/PACE authorisation prompts and crashes, and the process was killed twice (exit 144) - because resolving
+    // a name means asking each component what it contains, and for licence-bound plugins that means loading them.
+    // So there is no scan and no --list any more: the component is named outright with --id, exactly one
+    // AudioComponent is asked about itself, and nothing else on the machine is touched.
+    //
+    //   --id "AudioUnit:Effects/aufx,dcmp,appl"
+    //
+    // AND IT REFUSES A LICENCE-BOUND PLUGIN ON THIS MACHINE. Waves (ksWV), UAD and the rest sit behind PACE; an
+    // unsigned binary cannot load them, the attempt prompts for an iLok that is on another Mac, and the prompt
+    // takes the host down with it. EJ Maps has to solve the same wall (spec section 4), so that is where those
+    // plugins belong - not here.
     juce::AudioPluginFormatManager fm;
     juce::addDefaultFormatsToManager (fm);
+    if (o.id.isEmpty())
+    { std::printf ("{ \"error\": \"--id is required: this tool never scans\" }\n"); return 2; }
+    {
+        static const char* const kLicenceBound[] = { "ksWV", "uadx", "UAD", "Wave", "iLok", "PACE", "Slte", "SSLB" };
+        for (auto* code : kLicenceBound)
+            if (o.id.contains (code))
+            { std::printf ("{ \"error\": \"refusing a licence-bound plugin on this machine\", \"id\": \"%s\","
+                           " \"why\": \"PACE/iLok: an unsigned binary cannot load it, and the authorisation"
+                           " prompt crashes the host. EJ Maps owns these (spec section 4).\" }\n",
+                           o.id.toRawUTF8()); return 5; }
+    }
     juce::OwnedArray<juce::PluginDescription> found;
     for (auto* f : fm.getFormats())
     {
         if (f == nullptr || ! f->getName().containsIgnoreCase ("AudioUnit")) continue;
-        // The identifier is "AudioUnit:Effects/aufx,xxxx,yyyy" and carries no plugin NAME, so filtering on it
-        // finds nothing: every file is scanned and the DESCRIPTIONS are filtered by name below.
-        // --file NARROWS THE SCAN TO ONE COMPONENT, and it matters: scanning every AU on this machine walks
-        // UAD's and PACE's component registration, which killed this tool outright the first time it ran. A Waves
-        // plugin lives inside WaveShell, so `--file WaveShell` reaches EMO-D5 without loading anything else.
-        const auto ids = f->searchPathsForPlugins (f->getDefaultLocationsToSearch(), true, false);
-        for (const auto& id : ids)
-        {
-            if (o.file.isNotEmpty() && ! id.containsIgnoreCase (o.file)) continue;
-            f->findAllTypesForFile (found, id);
-        }
-    }
-    if (o.name.isNotEmpty())
-        for (int i = found.size(); --i >= 0;)
-            if (! found[i]->name.containsIgnoreCase (o.name)) found.remove (i);
-    if (o.list)
-    {
-        std::printf ("{\n  \"matches\": [\n");
-        for (int i = 0; i < found.size(); ++i)
-            std::printf ("    %s{ \"name\": \"%s\", \"manufacturer\": \"%s\", \"id\": \"%s\" }\n",
-                         i ? "," : "", found[i]->name.toRawUTF8(), found[i]->manufacturerName.toRawUTF8(),
-                         found[i]->fileOrIdentifier.toRawUTF8());
-        std::printf ("  ]\n}\n");
-        return 0;
+        f->findAllTypesForFile (found, o.id);      // ONE component, the one named. No search path is walked.
     }
     if (found.isEmpty())
-    { std::printf ("{ \"error\": \"no AU matched --name\", \"name\": \"%s\" }\n", o.name.toRawUTF8()); return 2; }
-
-    // Prefer an exact name match over a substring one, so "EMO-D5 (s)" is not shadowed by "EMO-D5 (m)".
+    { std::printf ("{ \"error\": \"nothing at --id\", \"id\": \"%s\" }\n", o.id.toRawUTF8()); return 2; }
     const juce::PluginDescription* pick = found[0];
-    for (auto* d : found) if (d->name.equalsIgnoreCase (o.name)) { pick = d; break; }
+    if (o.name.isNotEmpty())
+        for (auto* d : found) if (d->name.equalsIgnoreCase (o.name)) { pick = d; break; }
 
     juce::String err;
     std::unique_ptr<juce::AudioPluginInstance> plug (fm.createPluginInstance (*pick, o.sr, 512, err));
@@ -364,13 +362,17 @@ int main (int argc, char** argv)
     std::setvbuf (stdout, nullptr, _IONBF, 0);
     juce::ScopedJuceInitialiser_GUI gui;
     const auto o = parseArgs (argc, argv);
-    if (o.name.isEmpty() && ! o.list)
+    if (o.id.isEmpty())
     {
         std::printf ("comp_render_check - COMP_PROFILE_SPEC_v1 section 8 acceptance check\n"
-                     "  --name \"EMO-D5 (s)\" --set \"Comp=On\" --set \"Comp Thresh=-20\" --set \"Comp Ratio=4\"\n"
-                     "  [--file WaveShell] [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json] [--list]\n"
-                     "  --file narrows the SCAN to one component: without it every AU on the machine is walked,\n"
-                     "  which on a machine with UAD or PACE plugins can kill the process.\n");
+                     "  --id \"AudioUnit:Effects/aufx,dcmp,appl\" --set \"Compression Threshold=-30\"\n"
+                     "  [--name \"...\"] [--wav in.wav] [--sr 48000] [--seconds 20] [--json out.json]\n"
+                     "\n"
+                     "  --id is REQUIRED and names ONE AudioComponent. This tool never scans: resolving a name by\n"
+                     "  scanning asks every component on the machine what it contains, which for licence-bound\n"
+                     "  plugins means loading them - on 1 Oct 2026 that drove iLok prompts and crashes on Sean's\n"
+                     "  Mac and the process was killed twice. Licence-bound ids (Waves/UAD/PACE) are REFUSED here;\n"
+                     "  EJ Maps owns those (spec section 4).\n");
         return 1;
     }
     return run (o);

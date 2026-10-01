@@ -180,9 +180,12 @@ reports GR on the loud phrases as JSON. **Not** a profiling sweep — that is EJ
 label `none`, so no gate runs it.
 
 ```
-./build-guards/guards/comp_render_check --file WaveShell --name "EMO-D5 (s)" \
-    --set "Comp=On" --set "Comp Thresh=-20" --set "Comp Ratio=4" --json /tmp/emo.json
+./build-guards/guards/comp_render_check --id "AudioUnit:Effects/aufx,dcmp,appl" \
+    --set "Compression Threshold=-30" --set "Headroom=2" --seconds 60 --json /tmp/out.json
 ```
+
+> **IT NEVER SCANS, AND IT REFUSES LICENCE-BOUND PLUGINS.** `--id` names one AudioComponent and is required;
+> `--list` is gone. See "THE HARM THIS TOOL DID" below — this is not a preference, it is the rule.
 
 - GR pairs 400 ms windows of the render against the **same** windows of the input and takes those at or above the
   input's 95th percentile — the same statistic the plugin sends as `track_level`.
@@ -190,9 +193,25 @@ label `none`, so no gate runs it.
   output-minus-input there is the fixed offset, and it is subtracted.
 - A control is matched against the parameter's own **panel text** first (so `On` and `4.00` land exactly), then by
   number, then as `norm:0.42`. Every landed text is reported, so a value that did not take is visible.
-- **`--file` narrows the scan to one component, and it matters:** scanning every AU on this machine walks UAD's and
-  PACE's component registration, which **killed the tool outright** the first time it ran. A Waves plugin lives
-  inside WaveShell, so `--file WaveShell` reaches EMO-D5 without loading anything else.
+### THE HARM THIS TOOL DID, and what now prevents it
+
+The first version resolved a plugin NAME by scanning. Resolving a name means asking every AudioComponent on the
+machine what it contains, and for licence-bound plugins that means **loading** them. On Sean's Mac that drove
+**iLok/PACE authorisation prompts and crashes**, with his iLok on another machine, and the process was killed twice
+(exit 144). That is real harm done to a working machine by a tool of mine, and no measurement was worth it.
+
+Ruled 1 Oct 2026, and now enforced in the code rather than remembered:
+
+- **There is no scan and no `--list`.** `--id` is **required** and names exactly one AudioComponent; `findAllTypesForFile`
+  is called on that id alone and no search path is ever walked. Without `--id` the tool prints usage and exits.
+- **Licence-bound ids are REFUSED before anything is loaded** — Waves (`ksWV`), UAD (`uadx`), and the other PACE/iLok
+  codes. Verified: `--id "AudioUnit:Effects/aufx,EMO5,ksWV"` and `--id "AudioUnit:Effects/aufx,1176,uadx"` both
+  return `{"error": "refusing a licence-bound plugin on this machine", ...}` and load nothing.
+- **Those plugins belong to EJ Maps**, which has to solve the same licence wall anyway (spec §4, "licence-bound
+  plugins fail out of process"). They are not to be loaded on this Mac.
+
+The Apple path still works through `--id`, re-verified after the change: `AudioUnit:Effects/aufx,dcmp,appl` gives
+the same 12.03 dB.
 
 **THE SIGNAL: generated, not a vocal clip.** The repo has **no** `.wav` assets at all (`refs/vocal_ref_01.wav` in
 §8 is still "to be chosen by Sean"), so the tool generates a speech-like signal: a ~160 Hz glottal pulse train
@@ -225,15 +244,11 @@ the plugin's exactly (§3), so that list is the useful half of the answer.
 **ONE THING TO KNOW ABOUT CLIP LENGTH:** the loud set is the top 5% of 400 ms windows, so a 12 s clip gives **2**
 windows and a 60 s clip gives **11**. Use 60 s or more for any number you intend to accept a profile on.
 
-**STUCK on EMO-D5 specifically, documented and moved on (the brief's rule).** I have not got a measured GR off
-EMO-D5. EMO-D5 is a
-Waves plugin behind WaveShell, which is **PACE-wrapped**, and an unsigned binary cannot load it — the known wall
-from the 21 Sep scan (12 PACE SIGKILLs; the probe needed
-`com.apple.security.cs.allow-unsigned-executable-memory`). Giving this tool that entitlement means codesigning it,
-which I was told not to do. **Two ways forward, both yours to pick:** sign `comp_render_check` with that
-entitlement, or run it against a non-PACE compressor first (Apple's `AUDynamicsProcessor`, or EchoJay's own
-compressor) to prove the measurement end to end, and treat Waves plugins as EJ Maps' problem since EJ Maps has to
-solve the same licence wall anyway (spec §4, "licence-bound plugins fail out of process").
+**EMO-D5 IS NOT, AND WILL NOT BE, MEASURED ON THIS MACHINE.** It is a Waves plugin behind WaveShell, which is
+PACE-wrapped. An unsigned binary cannot load it, the attempt prompts for an iLok that lives on another Mac, and the
+prompt takes the host down. The tool now refuses it outright. **It goes to EJ Maps**, which owns licence-bound
+plugins by the spec. If a measurement on this Mac is ever genuinely needed, it needs Sean's decision and a signed
+binary with `com.apple.security.cs.allow-unsigned-executable-memory` - not a workaround.
 
 ---
 
