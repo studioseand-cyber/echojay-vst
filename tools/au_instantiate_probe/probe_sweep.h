@@ -49,6 +49,10 @@ struct SweepSpec
     double hz = 997.0, holdS = 1.5, discardS = 0.75, winS = 0.25, refS = 2.0, movingDb = 0.1;
     bool resetPerHold = false;
     std::vector<std::pair<int, float>> sets;
+    // THE DETECTOR TEST (spec v1.2 `detector`, built 1 Oct): a two-tone signal, hz + hz2 at equal amplitude, at the SAME RMS as
+    // the sine would have at the level - its peak is 3.01 dB higher (crest 6.02 dB vs the sine's 3.01). An RMS detector
+    // reads it as the sine; a peak detector reaches the same GR 3.01 dB lower in level. `level` keeps meaning sine-peak dBFS.
+    double hz2 = 0.0;      // 0 = sine; > 0 = two-tone at hz and hz2
 };
 
 inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce::String& why)
@@ -62,6 +66,7 @@ inline bool parseSweepArgs (int argc, char** argv, int first, SweepSpec& s, juce
         else if (k == "norms") { s.norms.clear(); for (double d : doubles (v)) s.norms.push_back ((float) d); }
         else if (k == "levels") s.levels = doubles (v);
         else if (k == "hz") s.hz = v.getDoubleValue();
+        else if (k == "hz2") s.hz2 = v.getDoubleValue();
         else if (k == "hold") s.holdS = v.getDoubleValue();
         else if (k == "discard") s.discardS = v.getDoubleValue();
         else if (k == "win") s.winS = v.getDoubleValue();
@@ -87,11 +92,13 @@ struct SweepRenderer
     juce::AudioBuffer<float> io;
     juce::MidiBuffer midi;
     double sr, phase = 0.0, step;
+    double phase2 = 0.0, step2 = 0.0;     // the second tone of a two-tone signal (0 = sine only)
     int block, mainIn, mainOut;
 
-    SweepRenderer (juce::AudioPluginInstance& proc, double sampleRate, int blockSize, double hz)
+    SweepRenderer (juce::AudioPluginInstance& proc, double sampleRate, int blockSize, double hz, double hz2 = 0.0)
         : p (proc), io (juce::jmax (2, proc.getTotalNumInputChannels(), proc.getTotalNumOutputChannels()), blockSize),
-          sr (sampleRate), step (juce::MathConstants<double>::twoPi * hz / sampleRate), block (blockSize)
+          sr (sampleRate), step (juce::MathConstants<double>::twoPi * hz / sampleRate),
+          step2 (hz2 > 0.0 ? juce::MathConstants<double>::twoPi * hz2 / sampleRate : 0.0), block (blockSize)
     {
         mainIn = mainInputChannels (proc);
         mainOut = proc.getBusCount (false) > 0 && proc.getBus (false, 0) != nullptr && proc.getBus (false, 0)->isEnabled()
@@ -127,17 +134,20 @@ struct SweepRenderer
         std::vector<double> chanSs ((size_t) juce::jmax (1, mainOut), 0.0);
         double winSs = 0.0, inSs = 0.0, inPeak = 0.0; long long inWin = 0, measured = 0;
         // Goertzel at the tone over the measured span, per main output channel: is the output still the INPUT's tone?
-        const double gcoef = 2.0 * std::cos (step);
+        const double gcoef = 2.0 * std::cos (step), gcoef2 = step2 > 0.0 ? 2.0 * std::cos (step2) : 0.0;
         std::vector<double> gs1 ((size_t) juce::jmax (1, mainOut), 0.0), gs2 ((size_t) juce::jmax (1, mainOut), 0.0);
+        std::vector<double> hs1 ((size_t) juce::jmax (1, mainOut), 0.0), hs2 ((size_t) juce::jmax (1, mainOut), 0.0);   // the second tone's Goertzel
         for (long long done = 0; done < total; done += block)
         {
             io.clear();
             for (int n = 0; n < block; ++n)
             {
-                const float v = (float) (amp * std::sin (phase));
+                // Two-tone: each tone at amp / sqrt 2, so the RMS equals the sine's (amp^2/2) and the peak is 3.01 dB higher.
+                const float v = step2 > 0.0 ? (float) (amp * (std::sin (phase) + std::sin (phase2)) / std::sqrt (2.0)) : (float) (amp * std::sin (phase));
                 for (int ch = 0; ch < mainIn; ++ch) io.setSample (ch, n, v);
                 phase += step;
                 if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
+                if (step2 > 0.0) { phase2 += step2; if (phase2 > juce::MathConstants<double>::twoPi) phase2 -= juce::MathConstants<double>::twoPi; }
             }
             midi.clear();
             p.processBlock (io, midi);
@@ -156,12 +166,14 @@ struct SweepRenderer
                         const double s0 = (double) d + gcoef * gs1[(size_t) ch] - gs2[(size_t) ch];
                         gs2[(size_t) ch] = gs1[(size_t) ch];
                         gs1[(size_t) ch] = s0;
+                        if (step2 > 0.0) { const double h0 = (double) d + gcoef2 * hs1[(size_t) ch] - hs2[(size_t) ch]; hs2[(size_t) ch] = hs1[(size_t) ch]; hs1[(size_t) ch] = h0; }
                     }
                 }
                 if (mainOut > 0) ss /= mainOut;
                 winSs += ss;
                 if (t >= from) ++measured;
-                const double x = amp * std::sin (phase - step * (block - n));   // the input sample, for the input level
+                const double x = step2 > 0.0 ? amp * (std::sin (phase - step * (block - n)) + std::sin (phase2 - step2 * (block - n))) / std::sqrt (2.0)
+                                             : amp * std::sin (phase - step * (block - n));   // the input sample, for the input level (two-tone when set)
                 inSs += x * x; inPeak = juce::jmax (inPeak, std::abs (x));
                 if (++inWin == winN) { h.windowsDb.push_back (toDb (std::sqrt (winSs / winN))); winSs = 0.0; inWin = 0; }
             }
@@ -182,6 +194,8 @@ struct SweepRenderer
                 const double a = gs1[(size_t) ch], b = gs2[(size_t) ch];
                 const double mag2 = a * a + b * b - gcoef * a * b;
                 tone += measured > 0 ? 2.0 * mag2 / ((double) measured * (double) measured) : 0.0;
+                if (step2 > 0.0) { const double a2 = hs1[(size_t) ch], b2 = hs2[(size_t) ch]; const double m2 = a2 * a2 + b2 * b2 - gcoef2 * a2 * b2;
+                                   tone += measured > 0 ? 2.0 * m2 / ((double) measured * (double) measured) : 0.0; }   // both tones are "the input's tone"
             }
             const double total2 = measured > 0 ? all / (double) measured : 0.0;
             h.toneFrac = total2 > 0.0 ? juce::jlimit (0.0, 1.0, tone / total2) : 0.0;
@@ -248,10 +262,10 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
     { std::printf ("refused no parameter at index %d (%d parameters)\n", s.thr, ps.size()); return; }
     std::printf ("sweep\tproto\t1\tthr\t%d\tname\t%s\tpositions\t%d\tlevels\t%d\n", s.thr,
                  clean (ps[s.thr]->getName (128)).toRawUTF8(), (int) s.norms.size(), (int) s.levels.size());
-    std::printf ("spec\thz\t%.3f\thold_s\t%.3f\tdiscard_s\t%.3f\twin_s\t%.3f\tref_s\t%.3f\tmoving_db\t%.3f\tamplitude\tpeak_at_level\treset_per_hold\t%d\n",
-                 s.hz, s.holdS, s.discardS, s.winS, s.refS, s.movingDb, s.resetPerHold ? 1 : 0);
+    std::printf ("spec\thz\t%.3f\thold_s\t%.3f\tdiscard_s\t%.3f\twin_s\t%.3f\tref_s\t%.3f\tmoving_db\t%.3f\tamplitude\tpeak_at_level\treset_per_hold\t%d\tsignal\t%s\thz2\t%.3f\n",
+                 s.hz, s.holdS, s.discardS, s.winS, s.refS, s.movingDb, s.resetPerHold ? 1 : 0, s.hz2 > 0.0 ? "two_tone_same_rms" : "sine", s.hz2);
     configureAndPrepare (p, rs);
-    SweepRenderer r (p, rs.sampleRate, rs.block, s.hz);
+    SweepRenderer r (p, rs.sampleRate, rs.block, s.hz, s.hz2);
     std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\n", r.mainIn, r.mainOut, p.getLatencySamples());
     if (r.mainIn == 0 || r.mainOut == 0) { std::printf ("refused no main input or output bus\n"); return; }
 

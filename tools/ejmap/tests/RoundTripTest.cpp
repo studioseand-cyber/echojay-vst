@@ -5221,6 +5221,20 @@ void testProfileExport()
         const auto pkd = pickPosition (prof, 10.0, 2.0);                      // L = +10: every 1 dB point is more than 8 dB below L -> clamped out
         check (pkc.ok && ! pkd.ok, "pick P4: the clamp refuses every position whose 1 dB point is more than 8 dB below L (" + pkd.refused + ")");
     }
+    {
+        // THE DETECTOR FRACTION: same 2 dB level on both signals = rms (0); the two-tone 3.01 dB earlier = peak (1); the word only at an end.
+        check (std::abs (detectorFraction (-20.0, -20.0)) < 1e-9 && std::abs (detectorFraction (-20.0, -23.0103) - 1.0) < 1e-6 && std::abs (detectorFraction (-20.0, -21.5) - 0.498) < 0.01,
+               "detector D1: f = shift / 3.01 - 0 for equal levels, 1 for a 3.01 dB earlier two-tone, 0.5 halfway");
+        check (detectorWord (0.05) == "rms" && detectorWord (0.95) == "peak" && detectorWord (0.5) == "unknown" && detectorWord (std::nullopt) == "unknown",
+               "detector D2: the spec's word only at an end of the range; in between, and unmeasured, it is unknown");
+        auto withDet = record (16, true, false, "", "certified");
+        auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", 0.97); withDet.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (dd));
+        const auto xd = exportCompProfile (withDet);
+        check (xd.ok && xd.profile.getProperty ("detector", "") == "peak" && std::abs ((double) xd.profile.getProperty ("detector_fraction", 0.0) - 0.97) < 1e-6,
+               "detector D3: a measured fraction exports as the word AND the number; unmeasured exports unknown with no number ("
+                 + e.profile.getProperty ("detector", "").toString() + (e.profile.hasProperty ("detector_fraction") ? ", has fraction" : ", no fraction") + ")");
+        check (e.profile.getProperty ("detector", "") == "unknown" && ! e.profile.hasProperty ("detector_fraction"), "detector D4: unmeasured is unknown and carries no fraction");
+    }
     auto bad = record (16, true, false, "", "certified");
     bad.getProperty ("thresholdSweep", {}).getProperty ("engageWrites", {}).getProperty ("writes", {})[0].getDynamicObject()->setProperty ("control", "Bypass");
     check (! exportCompProfile (bad).ok && exportCompProfile (bad).refused.contains ("never_touch"), "export X13: an engage write naming a never_touch control refuses the export");

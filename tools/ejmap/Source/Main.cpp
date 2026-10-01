@@ -630,6 +630,14 @@ namespace
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return ejmap::cert::runToneCheck (o, cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), L, g);
             }
+            if (a == "--cert-detector" && i + 1 < argc)
+            {
+                ejmap::cert::SweepOptions o;
+                for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
+                    if (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v); else if (k == "--out" && j + 1 < argc) o.out = cwdFile (v); }
+                ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+                return ejmap::cert::runDetector (o, cwdFile (argAt (argc, argv, i + 1)));
+            }
             if (a == "--cert-tuner")
             {
                 ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION;

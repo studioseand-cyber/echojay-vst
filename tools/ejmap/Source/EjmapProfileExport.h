@@ -46,6 +46,19 @@ inline constexpr double kTargetGrDb = 2.0;                        // his default
 inline constexpr int    kMinCurvePoints = 9;
 
 inline double toSineRms (double peakDbfs) { return peakDbfs - kPeakToSineRmsDb; }
+
+// THE DETECTOR AS A MEASURED FRACTION (1 Oct, Kathy's proposal to Sean): at one compressing position, a two-tone signal
+// (997 + ~1200 Hz, equal amplitude, crest 6.02 dB) at the SAME RMS as the sine reaches 2 dB GR some level lower than
+// the sine does. shift = sine's 2 dB level - two-tone's; f = shift / 3.01. 0 = an RMS detector (same RMS, same GR),
+// 1 = a peak detector (3.01 dB more peak, 3.01 dB earlier). Recorded as the number; the spec's word only at an end.
+inline double detectorFraction (double sineIn2dB, double twoToneIn2dB) { return (sineIn2dB - twoToneIn2dB) / kPeakToSineRmsDb; }
+inline juce::String detectorWord (std::optional<double> f)
+{
+    if (! f) return "unknown";
+    if (*f <= 0.1) return "rms";
+    if (*f >= 0.9) return "peak";
+    return "unknown";          // in between: the fraction is the answer, the word is not
+}
 inline double r2 (double v) { return std::round (v * 100.0) / 100.0; }
 
 struct Export { bool ok = false; juce::String refused; juce::var profile; juce::StringArray notes; double fitMaxErrorDb = 0; int points = 0; };
@@ -278,7 +291,12 @@ inline Export exportCompProfile (const juce::var& f)
         P->setProperty ("ratio", juce::var (r));
     }
     P->setProperty ("static_gain_db", r2 (staticGain));
-    P->setProperty ("detector", "unknown");                              // until measured (the two-tone crest test)
+    {
+        const auto det = sweepVar.getProperty ("detector", {});
+        std::optional<double> f; if (det.isObject() && (det.getProperty ("fraction", {}).isDouble() || det.getProperty ("fraction", {}).isInt())) f = (double) det.getProperty ("fraction", {});
+        P->setProperty ("detector", detectorWord (f));
+        if (f) P->setProperty ("detector_fraction", r2 (*f));           // the proposal: 0 = rms, 1 = peak, measured
+    }
     if (P->getProperty ("topology") == "input_drive")
     {
         auto* lc = new juce::DynamicObject();

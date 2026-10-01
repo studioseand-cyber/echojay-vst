@@ -2335,6 +2335,67 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 }
 
 //==============================================================================
+// THE DETECTOR MEASUREMENT (--cert-detector <record> [--product]): one compressing position (the one whose 2 dB point is
+// nearest -18 dBFS RMS), two sweeps in fresh processes - the sine and the two-tone at the same RMS - over the profile grid
+// with the quiet reference; the level where each reaches 2 dB; f = shift / 3.01. Written INTO the record's thresholdSweep
+// as `detector {fraction, sine_in_at_2db, twotone_in_at_2db, hz2, position_norm}`; the exporter reads it.
+inline int runDetector (const SweepOptions& opt, const juce::File& recordFile)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {});
+    if (! id.ok) { say ("DETECTOR: ABORTED - " + id.why); return 3; }
+    auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    const auto sweepVar = record.getProperty ("thresholdSweep", {});
+    if (! sweepVar.isObject()) { say ("DETECTOR: the record has no thresholdSweep (candidates or refusal)"); return 2; }
+    const auto product = record.getProperty ("product", "").toString();
+    std::vector<InstalledRecord> hits;
+    for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    if (hits.size() != 1) { say ("DETECTOR: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
+    auto plan = sweep::planFromFixture (record);
+    if (! plan.ok) { say ("DETECTOR: no plan: " + plan.why); return 4; }
+    plan.makeProfile();
+    // the position: numeric 2 dB point nearest -18 dBFS RMS (= -14.99 peak)
+    const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto inAt = sweepVar.getProperty ("inAtGr", {});
+    int best = -1; double bestD = 1e9;
+    for (int i = 0; i < inAt.size(); ++i) { const auto v = inAt[i].getProperty ("2", {}); if (v.isDouble() || v.isInt()) { const double d = std::abs ((double) v - (-18.0 + profile::kPeakToSineRmsDb)); if (d < bestD) { bestD = d; best = i; } } }
+    if (best < 0) { say ("DETECTOR: no position has a measured 2 dB point"); return 4; }
+    const float norm = (float) (double) norms[best];
+    juce::StringArray sets; if (const auto* pre = sweepVar.getProperty ("preconditions", {}).getArray()) for (const auto& x : *pre) sets.add (x.getProperty ("index", -1).toString() + ":" + juce::String ((double) x.getProperty ("norm", 0.0), 6));
+    if (const auto* ws = sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", {}).getArray()) for (const auto& w : *ws) sets.add (w.getProperty ("index", -1).toString() + ":" + juce::String ((double) w.getProperty ("norm", 0.0), 6));
+    juce::StringArray levelList; for (double L : plan.probeLevels()) levelList.add (juce::String ((int) L));
+    auto run = [&] (bool twoTone) -> std::optional<double>
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), hits[0].desc.name, hits[0].desc.fileOrIdentifier, juce::String::toHexString (hits[0].desc.uniqueId),
+                                 "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (norm, 6), "levels=" + levelList.joinIntoString (","), "hz=997",
+                                 "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+        if (twoTone) args.add ("hz2=1201");
+        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        const auto r = runChild (args, opt.timeoutMs);
+        auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+        raw.getChildFile (recordFile.getFileNameWithoutExtension() + (twoTone ? ".detector.twotone.1.txt" : ".detector.sine.1.txt")).replaceWithText (r.out, false, false, "\n");
+        if (! r.cleanExit()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process " + r.describe()); return std::nullopt; }
+        sweep::ProcessOut po { r.out, true, r.describe(), norm };
+        const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), plan.testLevels(), plan.ratioIndex, true);
+        if (d.inAtGr.empty()) return std::nullopt;
+        const auto v = d.inAtGr[0].at.count (2) ? d.inAtGr[0].at.at (2) : juce::var();
+        say ("DETECTOR: " + juce::String (twoTone ? "two-tone" : "sine    ") + " at norm " + juce::String (norm, 4) + ": 2 dB reached at " + juce::JSON::toString (v, true) + " dBFS peak-equivalent (" + d.result + ")");
+        return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt;
+    };
+    const auto sine = run (false), two = run (true);
+    if (! sine || ! two) { say ("DETECTOR: " + product + " - a 2 dB point was not reached on one signal; nothing recorded"); return 1; }
+    const double f = profile::detectorFraction (*sine, *two);
+    auto* det = new juce::DynamicObject();
+    det->setProperty ("fraction", std::round (f * 100.0) / 100.0); det->setProperty ("sine_in_at_2db", *sine); det->setProperty ("twotone_in_at_2db", *two);
+    det->setProperty ("hz2", 1201.0); det->setProperty ("position_norm", norm); det->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
+    det->setProperty ("rule", "shift between the sine's and the equal-RMS two-tone's 2 dB levels, over 3.01 dB; 0 = rms detector, 1 = peak detector");
+    sweepVar.getDynamicObject()->setProperty ("detector", juce::var (det));
+    recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+    say ("DETECTOR: " + product + " - sine 2 dB at " + juce::String (*sine, 2) + ", two-tone at " + juce::String (*two, 2) + ": shift " + juce::String (*sine - *two, 2)
+         + " dB -> f = " + juce::String (f, 2) + " (" + profile::detectorWord (f) + ") -> written into " + recordFile.getFileName());
+    return 0;
+}
+
+//==============================================================================
 // THE SWEEP CENSUS (--cert-sweep-census): which fixtures a sweep can run on HERE, read-only, nothing
 // instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
 // measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
