@@ -958,11 +958,24 @@ void guardMain()
         r.proc.calibStart ({}, passiveDriveCfg ("Rate limit"));
         juce::String first, second;
         feed (r.proc, r.prog, 3.0); r.proc.calibTick ({}); first = r.proc.calibLastLogLine();
-        // ...and again immediately, well inside the 3 s window
+        // ...and again immediately, which is INSIDE the 3 s window only if this machine fed 3 s of audio in less
+        // than 3 s of wall clock. It normally takes a fifth of a second - but this leg failed once in a gate run
+        // with 53 guards and malloc hardening competing for the machine, and a leg whose premise the machine can
+        // take away is not a test of the product. So the elapsed clock is MEASURED, and when the premise is gone
+        // the leg says so with the number instead of failing: a timing is not evidence until its clock is stated.
+        const double beforeSecond = juce::Time::getMillisecondCounterHiRes();
         feed (r.proc, r.prog, 3.0); r.proc.calibTick ({}); second = r.proc.calibLastLogLine();
-        check (second == first,
-               "(5) a second tick INSIDE the 3 s window judges nothing - the line is unchanged",
-               second.isEmpty() ? juce::String ("(no line)") : second.fromLastOccurrenceOf ("window", true, false).substring (0, 40));
+        const double tookMs = juce::Time::getMillisecondCounterHiRes() - beforeSecond;
+        if (tookMs < 3000.0)
+            check (second == first,
+                   "(5) a second tick INSIDE the 3 s window judges nothing - the line is unchanged",
+                   second.isEmpty() ? juce::String ("(no line)")
+                                    : (second.fromLastOccurrenceOf ("window", true, false).substring (0, 40)
+                                       + "  after " + juce::String (tookMs, 0) + " ms"));
+        else
+            std::printf ("  note  (5) NOT TESTED: feeding 3 s of audio took %.0f ms of WALL CLOCK on this machine, "
+                         "so the second tick was outside the 3 s window and there was no 'inside' to test. The "
+                         "rate limit itself is still proved by the leg below.\n", tookMs);
         // ...and after the window has actually passed, it judges again
         const double waitUntil = juce::Time::getMillisecondCounterHiRes() + 3100.0;
         while (juce::Time::getMillisecondCounterHiRes() < waitUntil) pumpMs (50);
