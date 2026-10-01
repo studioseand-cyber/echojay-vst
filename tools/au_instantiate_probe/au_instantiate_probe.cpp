@@ -15,6 +15,7 @@
 #include "probe_render.h"                    // feat/ejmap-cert: --render-test (the whole mode lives there)
 #include "probe_write.h"                     // feat/ejmap-cert: --write-test (the whole mode lives there)
 #include "probe_sweep.h"                     // feat/ejmap-cert: --sweep, spec section 4 (the whole mode lives there)
+#include "probe_pitch.h"                     // feat/ejmap-cert: --sweep-pitch, spec section 5 (tuners), 1 Oct
 #include <set>
 #include <vector>
 #include <cstdio>
@@ -24,6 +25,7 @@
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
+    if (argc >= 2 && juce::String (argv[1]) == "--pitch-selftest") { const int rc = ejprobe::runPitchSelfTest(); std::fflush (stdout); std::_Exit (rc); }
     juce::AudioPluginFormatManager fm;
     juce::addDefaultFormatsToManager (fm);   // the HEADLESS module's registration (as ChainHost)
 
@@ -83,7 +85,8 @@ int main (int argc, char** argv)
     const bool writeTest  = argc >= 9 && juce::String (argv[4]) == "--write-test";   // <index> <from> <to> <arm>
     const bool sweep      = argc >= 5 && juce::String (argv[4]) == "--sweep";        // key=value arguments, probe_sweep.h
     const bool textAtNorms = argc >= 7 && juce::String (argv[4]) == "--text-at-norms"; // <index> <n0,n1,...>, probe_sweep.h
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms;
+    const bool sweepPitch = argc >= 5 && juce::String (argv[4]) == "--sweep-pitch";   // key=value arguments, probe_pitch.h
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -131,6 +134,13 @@ int main (int argc, char** argv)
             for (auto& t : juce::StringArray::fromTokens (juce::String::fromUTF8 (argv[6]), ",", "")) ns.push_back ((float) t.getDoubleValue());
             ejprobe::configureAndPrepare (*inst, {});
             ejprobe::runTextAtNorms (*inst, atoi (argv[5]), ns);
+            std::fflush (stdout); std::_Exit (0);
+        }
+        if (sweepPitch)
+        {
+            ejprobe::PitchSpec spec; juce::String why;
+            if (! ejprobe::parsePitchArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            ejprobe::runPitchSweep (*inst, spec);
             std::fflush (stdout); std::_Exit (0);
         }
         if (sweep)
