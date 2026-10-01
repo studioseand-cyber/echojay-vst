@@ -1253,3 +1253,27 @@ Logic Compressor exists outside Logic (Apple's AUDynamicsProcessor is the only A
 the four Waves units here are all **V12.0.0** (his example keys 15.0.70 - a V15 map_fp will not
 match a V12 record); UAD 1176 / LA-2A are hardware-conditional. His first ten reachable here:
 Tube-Tech CL 1B, EMO-D5 (s), NEOLD U2A, NEOLD V76U73, Mike-E Comp, CLA-76, CLA-2A, VComp (8).
+
+## 19. v1.2 (1 Oct, late): measured points replace the formula
+
+`docs/COMP_PROFILE_SPEC_v1_2.md` is the contract. Section 6 now picks the amount position on
+measured `in_at_gr_dbfs`; the v1 threshold formula is withdrawn (it matched a start-of-compression
+threshold against a 1 dB point and landed about 1 dB too much GR - what our section-6 numbers
+showed from the other side: the curves climb slower than the formula assumes).
+
+- `in_at_gr` {1, 2, 3} per position in the record (section 2 of the request): linear interpolation
+  between the two steps that straddle each target, only where GR rises across it; `not_reached`
+  (never by the loudest level) and `below_range` (already past at the quietest) kept APART in the
+  record; `null` where a readable rising straddle does not exist (a gap); never extrapolated.
+  `eff_threshold` IS `in_at_gr[1]`, the same value. A quality figure beside: non-monotonic
+  straddles (a fall on either side of the one interpolated) and the widest straddle. Pins G1-G6.
+- Exporter v1.2: `in_at_gr_dbfs` on every point (both words become null, as his spec says),
+  `eff_threshold_dbfs == in_at_gr_dbfs["1"]` written identically (X14), `stepped` boolean with
+  every detent or the export is refused, `steps_dbfs` [start, end, step] in level_ref units
+  (−63.01, −3.01, 2) and a refusal for a non-uniform grid, `detector` "unknown" until measured,
+  the full-scale 997 Hz sine exporting as −3.01 (X2b, his section 5 pin), and `fit` computed
+  exactly as the contract says but NEVER a gate (X18) - Kathy is asking Sean to redefine it - with
+  the measured-point quality beside it. Five mutants red.
+- Open: the level sweep itself (section 18) has not run - battery since 18:0x. CL 1B and EMO-D5 (s)
+  are armed behind the mains watcher; the section-6 pick and his section-8 tone check (0.5 dB) run
+  on this Mac after that, then the Desktop folder.

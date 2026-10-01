@@ -1,5 +1,11 @@
 /*
-  EjmapProfileExport.h - EXPORT a certification record to Sean's ej_comp_profile/1 (COMP_PROFILE_SPEC v1.1), 1 Oct 2026.
+  EjmapProfileExport.h - EXPORT a certification record to Sean's ej_comp_profile/1 (COMP_PROFILE_SPEC v1.2), 1 Oct 2026.
+
+  v1.2: `in_at_gr_dbfs` {1, 2, 3} on every curve point (required; the server matches on it, the v1 threshold formula is
+  withdrawn); `eff_threshold_dbfs` == `in_at_gr_dbfs["1"]`, written identically; `stepped` is a BOOLEAN and a stepped
+  curve lists every detent; `steps_dbfs` is [start, end, step] in level_ref units; `detector` "unknown" until measured;
+  `fit` computed exactly as specified but NEVER a gate here (section 6 no longer uses that model), with a measured-point
+  quality figure beside it. A full-scale 997 Hz sine (0 dBFS peak) exports as -3.01: his section 5 pin, ours too.
 
   ONE EXPORTER, ONE PLACE, PINNED. His spec is the contract; our record shape changes most days. Everything here is a
   pure function of one store record; nothing is measured, nothing is tuned, and a record that cannot honestly fill a
@@ -143,24 +149,30 @@ inline Export exportCompProfile (const juce::var& f)
                                                  : "no two-quiet-level reference on this sweep (soft-end reference): static_gain_db cannot be given, no profile - re-run as a profile sweep");
     const double staticGain = sweep::quantile (quietGains, 0.5);
 
-    // THE AMOUNT CURVE: one point per position with a 1 dB crossing, converted to sine RMS.
-    const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto eff = sweepVar.getProperty ("thresholdEffective1dB", {});
+    // THE AMOUNT CURVE (v1.2): one point per position; in_at_gr_dbfs {1, 2, 3} converted to sine RMS, the record's
+    // not_reached / below_range both null here as his spec says; eff_threshold_dbfs IS in_at_gr_dbfs["1"], the same value
+    // written twice. At least kMinCurvePoints points must have a 1 dB value.
+    const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto inAt = sweepVar.getProperty ("inAtGr", {});
+    if (! inAt.isArray() || inAt.size() != norms.size()) return refuse ("no in_at_gr on this record (re-derive it)");
     const auto texts = [&] { juce::StringArray t; const auto arr = sweepVar.getProperty ("positionTexts", {}); for (int i = 0; i < arr.size(); ++i) t.add (arr[i].toString()); return t; }();
-    juce::Array<juce::var> curve; std::vector<std::optional<double>> crossing;
+    juce::Array<juce::var> curve; std::vector<std::optional<double>> crossing; int withOne = 0;
     for (int i = 0; i < norms.size(); ++i)
     {
-        const auto c = i < eff.size() ? eff[i] : juce::var();
-        const bool num = c.isDouble() || c.isInt();
-        crossing.push_back (num ? std::optional<double> ((double) c) : std::nullopt);
-        if (! num) continue;
+        auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
+        const auto one = conv (inAt[i].getProperty ("1", {}));
+        crossing.push_back (one.isVoid() ? std::nullopt : std::optional<double> ((double) inAt[i].getProperty ("1", {})));
+        if (! one.isVoid()) ++withOne;
         auto* o = new juce::DynamicObject();
         o->setProperty ("norm", (double) norms[i]);
         o->setProperty ("display", i < texts.size() ? texts[i] : juce::String());
-        o->setProperty ("eff_threshold_dbfs", r2 (toSineRms ((double) c)));
+        o->setProperty ("eff_threshold_dbfs", one);
+        auto* g = new juce::DynamicObject();
+        g->setProperty ("1", one); g->setProperty ("2", conv (inAt[i].getProperty ("2", {}))); g->setProperty ("3", conv (inAt[i].getProperty ("3", {})));
+        o->setProperty ("in_at_gr_dbfs", juce::var (g));
         curve.add (juce::var (o));
     }
-    e.points = curve.size();
-    if (curve.size() < kMinCurvePoints) return refuse ("only " + juce::String (curve.size()) + " curve point(s) have a 1 dB crossing inside the measured levels (his rule: at least " + juce::String (kMinCurvePoints) + ")");
+    e.points = withOne;
+    if (withOne < kMinCurvePoints) return refuse ("only " + juce::String (withOne) + " curve point(s) reach 1 dB inside the measured levels (his rule: at least " + juce::String (kMinCurvePoints) + ")");
 
     // THE FIT, on the readable in-band readings.
     std::vector<double> levels; { const auto lv = sweepVar.getProperty ("tone", {}).getProperty ("levels_dbfs", {}); for (int k = 0; k < lv.size(); ++k) levels.push_back ((double) lv[k]); }
@@ -193,8 +205,13 @@ inline Export exportCompProfile (const juce::var& f)
         m->setProperty ("sample_rate", 48000);
         m->setProperty ("signal", "sine 997 Hz, stepped");
         m->setProperty ("level_ref", "sine_rms_dbfs");
-        juce::Array<juce::var> steps; for (double L : levels) steps.add (r2 (toSineRms (L)));
-        m->setProperty ("steps_dbfs", steps);                           // the levels actually used, converted; a list, not [start, end, step]
+        // [start, end, step] in level_ref units: a uniform grid only. A 3-level certification sweep has no single step and
+        // is refused above (fewer than 9 crossings) long before here; said again in case.
+        double step = levels.size() > 1 ? levels[1] - levels[0] : 0.0; bool uniform = levels.size() > 2;
+        for (size_t k = 1; k + 1 < levels.size(); ++k) uniform = uniform && std::abs ((levels[k + 1] - levels[k]) - step) < 1e-6;
+        if (! uniform) return refuse ("steps_dbfs needs a uniform level grid; this sweep's levels are not uniform (a certification sweep, not a profile sweep)");
+        juce::Array<juce::var> steps { r2 (toSineRms (levels.front())), r2 (toSineRms (levels.back())), step };
+        m->setProperty ("steps_dbfs", steps);
         const auto proc = sweepVar.getProperty ("procedure", "").toString();
         m->setProperty ("hold_ms", (int) std::round ((double) sweepVar.getProperty ("hold_s", 1.5) * 1000.0));
         m->setProperty ("read_window_ms", (int) std::round ((double) sweepVar.getProperty ("win_s", 0.25) * 1000.0));
@@ -243,7 +260,10 @@ inline Export exportCompProfile (const juce::var& f)
         a->setProperty ("control", plan.thrName);
         a->setProperty ("curve", curve);
         const auto ctl = sweep::findControl (f, plan.thr);
-        if (sweep::isSteppedControl (ctl)) a->setProperty ("stepped", (int) ctl.getProperty ("numSteps", 0));
+        const bool stepped = sweep::isSteppedControl (ctl);
+        if (stepped && curve.size() != (int) ctl.getProperty ("numSteps", 0))
+            return refuse ("a stepped amount control must list every detent: " + juce::String ((int) ctl.getProperty ("numSteps", 0)) + " detents, " + juce::String (curve.size()) + " points");
+        a->setProperty ("stepped", stepped);
         P->setProperty ("amount", juce::var (a));
     }
     {
@@ -258,6 +278,7 @@ inline Export exportCompProfile (const juce::var& f)
         P->setProperty ("ratio", juce::var (r));
     }
     P->setProperty ("static_gain_db", r2 (staticGain));
+    P->setProperty ("detector", "unknown");                              // until measured (the two-tone crest test)
     if (P->getProperty ("topology") == "input_drive")
     {
         auto* lc = new juce::DynamicObject();
@@ -274,11 +295,19 @@ inline Export exportCompProfile (const juce::var& f)
         ft->setProperty ("max_error_db", r2 (fit.maxErrorDb)); ft->setProperty ("points", fit.points);
         ft->setProperty ("model", "threshold per position from the 1 dB crossing; ratio " + juce::String (fit.R, 1) + ", knee " + juce::String (fit.W, 1) + " dB, grid-searched; nothing tuned");
         ft->setProperty ("error_vs_2db_target", r2 (fit.maxErrorDb / kTargetGrDb));
+        // v1.2: computed as the contract says, NOT a gate here - section 6 matches on measured points, and this model would
+        // reject the soft-knee / opto units v1.2 was changed for. The measured-point quality is what to read instead.
+        const auto q = sweepVar.getProperty ("inAtGrQuality", {});
+        auto* mq = new juce::DynamicObject();
+        mq->setProperty ("non_monotonic_straddles", q.getProperty ("nonMonotonicStraddles", 0));
+        mq->setProperty ("widest_gap_db", q.getProperty ("widestGap_db", 0.0));
+        mq->setProperty ("points_with_1db", withOne);
+        ft->setProperty ("measured_point_quality", juce::var (mq));
         P->setProperty ("fit", juce::var (ft));
     }
-    juce::String notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB; tone 997 Hz, not 1000; ";
-    notes << (levels.size() <= 3 ? "3-level certification sweep (-24/-12/-6 peak), not the 31-step profile sweep; " : "profile sweep; ");
-    if (fit.maxErrorDb > 1.5) notes << "fit.max_error_db over 1.5: his rule treats this as no profile; ";
+    juce::String notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; ";
+    notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position; ";
+    if (fit.maxErrorDb > 1.5) notes << "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points); ";
     if (! sweepVar.getProperty ("engageWrites", {}).isObject()) notes << "compressed as instantiated, no engage write needed; ";
     P->setProperty ("notes", notes.trim());
     e.profile = juce::var (P);

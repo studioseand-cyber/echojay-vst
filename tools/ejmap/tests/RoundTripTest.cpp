@@ -5120,6 +5120,16 @@ void testProfileExport()
         for (auto& [L, col] : cols) red->setProperty (juce::String (L), col);
         s->setProperty ("positions", positions); s->setProperty ("positionNorms", norms); s->setProperty ("positionTexts", texts);
         s->setProperty ("thresholdEffective1dB", eff); s->setProperty ("reduction_db", juce::var (red));
+        juce::Array<juce::var> inAt;
+        for (int i = 0; i < positions; ++i)
+        {
+            const double T = -40.0 + 2.0 * i; auto* g = new juce::DynamicObject();
+            auto at = [&] (double gr) { const double v = T + gr / 0.75; return v <= 0.0 ? juce::var (v) : juce::var ("not_reached"); };
+            g->setProperty ("1", at (1.0)); g->setProperty ("2", at (2.0)); g->setProperty ("3", i == positions - 1 ? juce::var ("not_reached") : at (3.0));   // the last position's 3 dB point: a not_reached to export as null
+            inAt.add (juce::var (g));
+        }
+        s->setProperty ("inAtGr", inAt);
+        auto* q = new juce::DynamicObject(); q->setProperty ("nonMonotonicStraddles", 0); q->setProperty ("widestGap_db", 2.0); s->setProperty ("inAtGrQuality", juce::var (q));
         auto* lr = new juce::DynamicObject(); lr->setProperty ("mode", "per_position_quiet");
         juce::Array<juce::var> chk, g; for (int i = 0; i < positions; ++i) { chk.add (quietOk ? 0.02 : 0.9); g.add (0.5); }
         lr->setProperty ("check_db", chk); lr->setProperty ("gain_db", g); s->setProperty ("linearReference", juce::var (lr));
@@ -5139,11 +5149,29 @@ void testProfileExport()
         const auto P = e.profile;
         const auto curve = P.getProperty ("amount", {}).getProperty ("curve", {});
         const double effPeak = (double) rec.getProperty ("thresholdSweep", {}).getProperty ("thresholdEffective1dB", {})[0];
+        const auto steps = P.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
         check (curve.size() == 16 && std::abs ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0) - (effPeak - 3.0103)) < 0.006
-                 && std::abs ((double) P.getProperty ("measured", {}).getProperty ("steps_dbfs", {})[0] - (-60.0 - 3.0103)) < 0.006
+                 && steps.size() == 3 && std::abs ((double) steps[0] - (-63.01)) < 0.006 && std::abs ((double) steps[1] - (-3.01)) < 0.006 && (double) steps[2] == 2.0
                  && P.getProperty ("measured", {}).getProperty ("level_ref", "") == "sine_rms_dbfs",
                "export X2 (LEVEL REFERENCE): every exported dBFS is our peak value minus 3.0103 - eff " + juce::String ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0), 2)
-                 + " from " + juce::String (effPeak, 2) + ", first step " + juce::String ((double) P.getProperty ("measured", {}).getProperty ("steps_dbfs", {})[0], 2));
+                 + " from " + juce::String (effPeak, 2) + ", steps_dbfs " + juce::JSON::toString (steps, true));
+        check (std::abs (toSineRms (0.0) - (-3.0103)) < 1e-6 && juce::String (r2 (toSineRms (0.0)), 2) == "-3.01",
+               "export X2b (his section 5 pin): a full-scale 997 Hz sine, 0 dBFS peak, exports as -3.01");
+        // v1.2: in_at_gr on every point, eff identical to "1", the words null, stepped a boolean, detector unknown, fit never a gate.
+        const auto g0 = curve[0].getProperty ("in_at_gr_dbfs", {});
+        bool identical = true, lastThreeNull = false;
+        for (int i = 0; i < curve.size(); ++i) identical = identical && curve[i].getProperty ("eff_threshold_dbfs", {}).toString() == curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", {}).toString();
+        lastThreeNull = curve[curve.size() - 1].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", {}).isVoid();
+        check (g0.isObject() && g0.hasProperty ("1") && g0.hasProperty ("2") && g0.hasProperty ("3") && identical
+                 && std::abs ((double) g0.getProperty ("2", 0.0) - ((double) g0.getProperty ("1", 0.0) + 1.0 / 0.75)) < 0.02,
+               "export X14 (v1.2): in_at_gr_dbfs {1,2,3} on every curve point and eff_threshold_dbfs == in_at_gr_dbfs[1], written identically");
+        check (lastThreeNull, "export X15: not_reached in the record is null in the export, as his spec says");
+        check (P.getProperty ("amount", {}).getProperty ("stepped", true).isBool() && ! (bool) P.getProperty ("amount", {}).getProperty ("stepped", true)
+                 && P.getProperty ("detector", "") == "unknown",
+               "export X16: stepped is a boolean (false for a continuous control), detector is unknown until measured");
+        check (P.getProperty ("fit", {}).getProperty ("measured_point_quality", {}).isObject()
+                 && (int) P.getProperty ("fit", {}).getProperty ("measured_point_quality", {}).getProperty ("points_with_1db", 0) == 16,
+               "export X17: a measured-point quality figure sits beside the fit");
         check (P.getProperty ("topology", "") == "threshold" && P.getProperty ("plugin", {}).getProperty ("map_fp", "").toString().length() == 64
                  && (double) P.getProperty ("measured", {}).getProperty ("reference_ratio", 0.0) == 4.0 && (int) P.getProperty ("measured", {}).getProperty ("hold_ms", 0) == 2500,
                "export X3: topology threshold, 64-hex map_fp, reference_ratio is the read-back ratio, hold 2500 ms");
@@ -5157,6 +5185,15 @@ void testProfileExport()
         check (! P.hasProperty ("time"), "export X7: time is omitted, not invented");
     }
     check (! exportCompProfile (record (16, false, false, "", "certified")).ok, "export X8: a quiet check failing at every position means NO PROFILE (static_gain_db cannot be given)");
+    {
+        // fit is NEVER a gate: distort the reduction readings so his model cannot fit them, and the export still happens.
+        auto soft = record (16, true, false, "", "certified");
+        auto* red = soft.getProperty ("thresholdSweep", {}).getProperty ("reduction_db", {}).getDynamicObject();
+        for (auto& prop : red->getProperties()) { auto col = prop.value; for (int i = 0; i < col.size(); ++i) col[i] = std::sqrt (juce::jmax (0.0, (double) col[i])) * 3.0; red->setProperty (prop.name, col); }
+        const auto sx = exportCompProfile (soft);
+        check (sx.ok && sx.fitMaxErrorDb > 1.5 && sx.profile.getProperty ("notes", "").toString().contains ("NOT a gate"),
+               "export X18 (v1.2): a record his v1 model cannot fit (max error " + juce::String (sx.fitMaxErrorDb, 2) + " dB) still exports - fit is reported, never a gate");
+    }
     check (! exportCompProfile (record (6, true, false, "", "certified")).ok, "export X9: fewer than 9 curve points refuses");
     check (! exportCompProfile (record (16, true, true, "", "certified")).ok && exportCompProfile (record (16, true, true, "", "certified")).refused.contains ("other"),
            "export X10: several candidates is topology other and no profile");
