@@ -5210,7 +5210,8 @@ void testProfileExport()
         check (pk.ok && pk.i1 >= 0 && pk.norm > 11.0 / 15.0 && pk.norm < 12.0 / 15.0 && std::abs (pk.inAtG0 - (-18.34)) < 0.05,
                "pick P1: for L = -18 RMS, g = 2 the pick interpolates between the two positions whose 2 dB points bracket L (norm " + juce::String (pk.norm, 4) + ", " + juce::String (pk.inAtG0, 2) + " / " + juce::String (pk.inAtG1, 2) + ")");
         const auto pk15 = pickPosition (prof, -18.0, 1.5);
-        check (pk15.ok && std::abs (pk15.inAtG0 - pk.inAtG0) > 0.1, "pick P2: a fractional g interpolates between the 1 and 2 dB points, so the pick moves (" + juce::String (pk15.inAtG0, 2) + ")");
+        // g = 1.5 reads T + 2.0 (midway between the 1 and 2 dB points, T + 1.33 and T + 2.67): the bracket below L is i = 11, value -18 + 2 - 3.01 = -19.01
+        check (pk15.ok && std::abs (pk15.inAtG0 - (-19.01)) < 0.05, "pick P2: a fractional g interpolates between the 1 and 2 dB points (" + juce::String (pk15.inAtG0, 2) + ", expected -19.01)");
         auto stepped = juce::JSON::parse (juce::JSON::toString (prof));           // a deep copy
         stepped.getProperty ("amount", {}).getDynamicObject()->setProperty ("stepped", true);
         const auto ps = pickPosition (stepped, -18.0, 2.0);
