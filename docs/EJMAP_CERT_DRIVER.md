@@ -737,7 +737,7 @@ while rendering.
 
 **The first real fixture, townhouse:** map certified, `displayLinear` false,
 `displayOffsetDb` −15.00. The file is
-`tools/ejmap/cert-fixtures/compressor-profiles/AudioUnit_417f6e76_1.8.1.json`. Its 17 raw
+`tools/ejmap/cert-fixtures/profiles/AudioUnit_417f6e76_1.8.1.json`. Its 17 raw
 traces are committed and re-derive it exactly (RoundTripTest V5).
 `--cert-sweep-rederive <fixture> <processes.json> <rawDir> <out>` applies a changed rule to
 any past sweep without measuring.
@@ -1194,3 +1194,16 @@ Artist 9.5.0 refuses speed at every position where Pro/EFX+ measure (same displa
 Access's Slow/Medium/Fast control reports continuous and 6 of 8 writes did not land - the norms
 list needs the text-step scan. Melodyne refused by name; MetaTune showed PACE's window; EFX 9.0.1's
 list-params was refused. Decision for Kathy in the handover: where tuner records live.
+
+## 16. One store (ruled 1 Oct)
+
+The store is where records live; the schema is what a record says. Compressor and tuner records
+share `cert-fixtures/profiles/` (and `~/Library/ejmap/cert/fixtures/` live), discriminated by
+`schema` (`ej_cert_compressor/1` / `ej_cert_tuner/1`, stamped on every record kind incl.
+refusals). `sweepRecorded` counts `pitchCandidates`; discovery offers category `pitch` as a
+candidate with the tuner certification; `--cert-sweep-all` dispatches by `Subject.category`;
+one census, one zip, one runbook loop. Tuner refusals (ARA-only: `ara_only`, permanent; window
+or defaults: transient) are records too. The deciding argument was the mapper: two stores is
+two loops, two censuses and a second chance at the "work never comes home" defect. Pins R1b,
+R1c, F2/F3 re-ruled; three mutants red. Store re-derived to stamp the schema: 0 verdicts changed.
+Sean's contract: untouched; told in the reply doc, section 5a.

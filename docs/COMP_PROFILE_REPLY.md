@@ -7,7 +7,7 @@ committed traces under `tools/ejmap/cert-traces/`. Where something is NOT measur
 ## 1. What EJ Maps outputs today
 
 One JSON fixture per plugin identity (`AudioUnit_<uid>_<version>.json`), in
-`tools/ejmap/cert-fixtures/compressor-profiles/` (98 today). The real one beside this file:
+`tools/ejmap/cert-fixtures/profiles/` (98 today). The real one beside this file:
 
 **`docs/COMP_PROFILE_REPLY.fixture.json` = Tube-Tech CL 1B 2.5.62**, one of your first ten.
 
@@ -98,6 +98,14 @@ Pressure (m/s), Low Control, **SSLComp (m/s) at +3.00 dB**, dbx-160 (m) +0.31. Y
 is right that this is the failure that keeps coming back. Item 3 of today's plan builds the
 two-sweep engage test (with candidate writes / without; GR only with them = `verified`); until
 it exists, engage is hand entry and this reply says so.
+
+## 5a. One store, two record kinds — nothing in your contract changes (ruled 1 Oct)
+
+Compressor and tuner certification records live in ONE directory and ride one zip; each record
+carries a `schema` field (`ej_cert_compressor/1`, `ej_cert_tuner/1`) and that field alone tells
+them apart. Your `ej_comp_profile/1` is the server-side projection built from the compressor
+records and is untouched by this; the tuner records are a second projection for section 5 of
+your spec when you want it. You never see a mixed file: a record is one kind.
 
 ## 5. Publishing: yes, the same path
 

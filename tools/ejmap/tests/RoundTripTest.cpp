@@ -4393,7 +4393,7 @@ void testSweepSplitVerdict()
 
     // THE COMMITTED FIXTURE RE-DERIVES FROM ITS TRACE (decision D2: re-compute, never re-measure).
     const auto fx = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT)
-                        .getChildFile ("tools/ejmap/cert-fixtures/compressor-profiles/AudioUnit_417f6e76_1.8.1.json").loadFileAsString());
+                        .getChildFile ("tools/ejmap/cert-fixtures/profiles/AudioUnit_417f6e76_1.8.1.json").loadFileAsString());
     const auto plan = planFromFixture (fx);
     Provenance pv; pv.measuredAt = "x"; pv.host = "x";
     const auto again = composeThresholdSweep (td, tdc, plan, pv);
@@ -4622,12 +4622,15 @@ void testDiscoveryFromMaps()
     juce::StringArray names;
     for (const auto& c : d.candidates) names.add (c.inst.desc.name);
     check (! d.candidates.empty(), "discovery F1 (THE FRESH SYSTEM): a ledger with maps and NO fixtures produces a non-empty worklist");
-    check (names.contains ("elysia mpressor") && names.contains ("Local Comp") && names.size() == 2,
+    check (names.contains ("elysia mpressor") && names.contains ("Local Comp") && names.size() == 3,
            "discovery F2: mapped by another machine (map state only, no local map) and mapped here (local map) are both candidates ("
              + names.joinIntoString (", ") + ")");
+    // ONE STORE (ruled 1 Oct): a pitch product is a CANDIDATE, for tuner certification, in the same worklist.
+    juce::String tunerCat;
+    for (const auto& c : d.candidates) if (c.inst.desc.name == "A Tuner") tunerCat = c.category;
     check (! names.contains ("Some EQ") && ! names.contains ("Other Build") && ! names.contains ("Unmapped Comp")
-             && d.tuners.contains ("A Tuner") && ! names.contains ("A Tuner"),
-           "discovery F3: another category, a map for a different build, and an unmapped compressor are not candidates; a pitch product is listed as a tuner, not swept");
+             && names.contains ("A Tuner") && tunerCat == "pitch" && d.tuners.contains ("A Tuner"),
+           "discovery F3: another category, a map for a different build, and an unmapped compressor are not candidates; a pitch product IS a candidate, category pitch (one store)");
     const auto withFixture = discoverCandidates (in, installed, { "49696d78|1.15.1" });
     bool still = false; for (const auto& c : withFixture.candidates) still = still || c.inst.desc.name == "elysia mpressor";
     const auto otherVersion = discoverCandidates (in, installed, { "49696d78|1.0.0" });
@@ -4655,15 +4658,19 @@ void testCertRecordAndDefaultPaths()
     store.getChildFile ("AudioUnit_aaaa0003_1.0.0.json").replaceWithText (fx ("aaaa0003", R"(, "thresholdRefusal": {"stage": "defaults"})"));
     store.getChildFile ("AudioUnit_aaaa0004_1.0.0.json").replaceWithText (fx ("aaaa0004", ""));
     store.getChildFile ("AudioUnit_aaaa0004_1.0.0.defaults.json").replaceWithText (fx ("aaaa0004", R"(, "controls": [])"));
+    store.getChildFile ("AudioUnit_aaaa0010_1.0.0.json").replaceWithText (fx ("aaaa0010", R"(, "schema": "ej_cert_tuner/1", "category": "pitch", "pitchCandidates": [{"index": 1}])"));
     const auto loaded = loadFixtures (store);
-    check (loaded.size() == 4, "record R1: the defaults SIDECAR is not a subject - 5 files, 4 subjects (" + juce::String ((int) loaded.size()) + ")");
+    check (loaded.size() == 5, "record R1: the defaults SIDECAR is not a subject - 6 files, 5 subjects (" + juce::String ((int) loaded.size()) + ")");
+    { int tun = 0; bool rec = false; for (const auto& x : loaded) if (x.uid == "aaaa0010") { tun += x.category == "pitch"; rec = sweepRecorded (x.pushed); }
+      check (tun == 1 && rec, "record R1b (ONE STORE): a tuner record in the same directory is category pitch and counts as recorded"); }
+    check (refusalIsPermanent ("ara_only"), "record R1c: an ARA-only refusal is permanent");
     auto names = [] (const std::vector<Subject>& v) { juce::StringArray a; for (const auto& s : v) a.add (s.uid); return a; };
     const auto part = partitionStore (loaded, false);
-    check (part.recorded == 3 && part.refused == 1 && names (part.toSweep) == juce::StringArray { "aaaa0004" },
+    check (part.recorded == 4 && part.refused == 1 && names (part.toSweep) == juce::StringArray { "aaaa0004" },
            "record R2: a sweep, a candidates fixture and a refusal are all RECORDS and leave the worklist; only the bare fixture stays ("
              + names (part.toSweep).joinIntoString (",") + ")");
     const auto retry = partitionStore (loaded, true);
-    check (retry.recorded == 2 && names (retry.toSweep).contains ("aaaa0003") && names (retry.toSweep).contains ("aaaa0004") && retry.toSweep.size() == 2,
+    check (retry.recorded == 3 && names (retry.toSweep).contains ("aaaa0003") && names (retry.toSweep).contains ("aaaa0004") && retry.toSweep.size() == 2,
            "record R3: --retry-refused puts the refusal back on the list and leaves the sweep and the candidates alone");
     // TRANSIENT vs PERMANENT: a refusal the product cannot outgrow is not re-run by --retry-refused.
     store.getChildFile ("AudioUnit_aaaa0005_1.0.0.json").replaceWithText (fx ("aaaa0005", R"(, "thresholdRefusal": {"stage": "plan"})"));
@@ -4715,7 +4722,7 @@ void testCertRecordAndDefaultPaths()
            "record R7 (THE DEFAULTS PHASE): a product stopped before its defaults sampled writes a fixture at its discovered identity, "
            "naming the stage and reason, with no thresholdSweep and nothing private");
     const auto again = partitionStore (loadFixtures (store), false);
-    check (again.recorded == 4 && again.refused == 2 && names (again.toSweep) == juce::StringArray { "aaaa0004" },
+    check (again.recorded == 5 && again.refused == 2 && names (again.toSweep) == juce::StringArray { "aaaa0004" },
            "record R8: the next run reads that refusal as a record - the product is not on the worklist again");
     auto keys = std::set<juce::String>();
     for (const auto& s : loadFixtures (store)) keys.insert (s.uid + "|" + s.version);

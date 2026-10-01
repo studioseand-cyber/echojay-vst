@@ -1390,10 +1390,17 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     return juce::var (s);
 }
 
+// ONE STORE (ruled 1 Oct): every record says what it is. Compressor and tuner records share a directory and are told
+// apart by this field alone; Sean's ej_comp_profile/1 is the server-side projection and is untouched.
+inline constexpr const char* kSchemaCompressor = "ej_cert_compressor/1";
+inline constexpr const char* kSchemaTuner      = "ej_cert_tuner/1";
+inline void stampSchema (juce::var& f, const char* schema) { if (auto* o = f.getDynamicObject()) if (! o->hasProperty ("schema")) o->setProperty ("schema", schema); }
+
 inline juce::var composeFixture (const juce::var& base, const juce::var& thresholdSweep)
 {
     auto f = stripPrivate (juce::JSON::parse (juce::JSON::toString (base)));   // a deep copy
     if (auto* o = f.getDynamicObject()) o->setProperty ("thresholdSweep", stripPrivate (thresholdSweep));
+    stampSchema (f, kSchemaCompressor);
     return f;
 }
 

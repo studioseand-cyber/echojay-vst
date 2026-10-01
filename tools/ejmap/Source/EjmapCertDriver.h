@@ -416,6 +416,7 @@ struct Subject
     juce::File fixtureFile;
     juce::var pushed;
     juce::String product, uid, version;
+    juce::String category = "compressor";   // "compressor" | "pitch": which certification the subject gets (ONE STORE, ruled 1 Oct)
     enum class Reach { reachable, reachableNoVersion, heldPace, requiresHardware, versionMismatch, notInstalled, ambiguous, unfixtured } reach
         = Reach::notInstalled;
     juce::String detail;                 // installed version(s), the ambiguity, ...
@@ -483,10 +484,16 @@ inline juce::String reachName (Subject::Reach r)
 // was stopped before a usable measurement and the fixture says at which stage and why. Before this rule only a
 // thresholdSweep counted, so a candidates fixture went straight back on the list, and a product stopped in the defaults
 // phase wrote nothing and was rediscovered on every batch, forever.
+// ONE STORE (ruled 1 Oct): compressor and tuner records live in the same directory, discriminated by the record's own
+// `schema` field - the store is where records live, the schema is what a record says. Sean's ej_comp_profile/1 is the
+// server-side projection and is unchanged by this; these are the certification records it is built from.
+using sweep::kSchemaCompressor;
+using sweep::kSchemaTuner;
 inline bool sweepRecorded (const juce::var& fixture)
 {
     return fixture.getProperty ("thresholdSweep", {}).isObject()
         || fixture.getProperty ("thresholdCandidates", {}).isArray()
+        || fixture.getProperty ("pitchCandidates", {}).isArray()
         || fixture.getProperty ("thresholdRefusal", {}).isObject();
 }
 inline bool refusalRecorded (const juce::var& fixture) { return fixture.getProperty ("thresholdRefusal", {}).isObject(); }
@@ -496,7 +503,7 @@ inline bool refusalRecorded (const juce::var& fixture) { return fixture.getPrope
 // a window (the iLok was out), the budget, a sleep, a silent reference - and a re-run after fixing it is the point.
 // --retry-refused re-runs the transient ones; retrying the permanent ones indiscriminately would re-run the
 // uncertifiable on every batch, the very jam the record exists to escape. --retry-refused-all overrides.
-inline bool refusalIsPermanent (const juce::String& stage) { return stage == "plan" || stage == "ratio_none"; }
+inline bool refusalIsPermanent (const juce::String& stage) { return stage == "plan" || stage == "ratio_none" || stage == "ara_only"; }
 
 // A RETRIED REFUSAL MAY HAVE NO CONTROLS (found 30 Sep on SSL G3's first --retry-refused): a record written in the
 // defaults phase is the discovered identity and nothing else. Planned from as a fixture, it reads "0 controls hold
@@ -529,6 +536,7 @@ inline std::vector<Subject> loadFixtures (const juce::File& dir)
         s.product = s.pushed.getProperty ("product", "").toString();
         s.uid     = s.pushed.getProperty ("uid", "").toString().toLowerCase();
         s.version = s.pushed.getProperty ("version", "").toString();
+        if (s.pushed.getProperty ("category", "").toString() == "pitch" || s.pushed.getProperty ("schema", "").toString() == kSchemaTuner) s.category = "pitch";
         out.push_back (s);
     }
     return out;
@@ -695,7 +703,18 @@ inline const char* kDefaultsNote = "the value the plugin instantiated with; decl
                                    "its default - they are not always the same";
 
 inline juce::var composeFixture (const Subject& s, const std::map<int, ListRow>& list, const std::vector<TextAtRow>& textAt,
+                                 int listRc, int textAtRc, const juce::String& probeLabel, const juce::String& date);
+inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListRow>& list, const std::vector<TextAtRow>& textAt,
+                                     int listRc, int textAtRc, const juce::String& probeLabel, const juce::String& date);
+inline juce::var composeFixture (const Subject& s, const std::map<int, ListRow>& list, const std::vector<TextAtRow>& textAt,
                                  int listRc, int textAtRc, const juce::String& probeLabel, const juce::String& date)
+{
+    auto f = composeFixtureImpl (s, list, textAt, listRc, textAtRc, probeLabel, date);
+    if (auto* o = f.getDynamicObject()) o->setProperty ("schema", s.category == "pitch" ? kSchemaTuner : kSchemaCompressor);
+    return f;
+}
+inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListRow>& list, const std::vector<TextAtRow>& textAt,
+                                     int listRc, int textAtRc, const juce::String& probeLabel, const juce::String& date)
 {
     // IDENTITY FROM THE RESOLVED COMPONENT, never copied from the fixture: copying
     // would make these fields match by construction and the comparison circular.
@@ -1179,8 +1198,9 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
         if (fixtureKeys.count (fxKey)) { ++d.excluded["fixture present at this version"]; continue; }
         if (auto disp = in.dispositionByUid.find (r.uidKey); disp != in.dispositionByUid.end())
         { ++d.excluded["disposition " + disp->second.upToFirstOccurrenceOf (" (", false, false) + " in categories.json"]; d.excludedByDisposition.add (r.desc.name + ": " + disp->second); continue; }
-        if (category == "pitch") { d.tuners.add (r.desc.name); continue; }
-        if (category != "compressor") { ++d.excluded[category.isEmpty() ? juce::String ("no category") : "category " + category]; continue; }
+        // TUNERS ARE CANDIDATES (ruled 1 Oct, one store): category pitch gets the tuner certification, in the same worklist.
+        if (category == "pitch") d.tuners.add (r.desc.name);
+        else if (category != "compressor") { ++d.excluded[category.isEmpty() ? juce::String ("no category") : "category " + category]; continue; }
         d.candidates.push_back ({ r, category, local != in.localMapCategory.end() ? juce::String ("local map")
                                                                                   : "server map state " + juce::String (st->second) });
     }
@@ -1241,7 +1261,9 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         o->setProperty ("product", s.product); o->setProperty ("uid", uid); o->setProperty ("version", s.version);
         o->setProperty ("format", "AudioUnit");
         o->setProperty ("discovered", "mapped (" + c.mappedBy + "), category " + c.category + ", no fixture: defaults are sampled first");
+        o->setProperty ("category", c.category);
         s.pushed = juce::var (o);
+        s.category = c.category == "pitch" ? "pitch" : "compressor";
         s.desc = c.inst.desc;
         s.reach = Subject::Reach::unfixtured;
         s.installedUnique = true;
@@ -1268,7 +1290,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
     report.add ("installed AUs not discovered: " + ex.joinIntoString (", "));
     if (! disc.excludedByDisposition.isEmpty())
         report.add ("left alone by categories.json disposition: " + disc.excludedByDisposition.joinIntoString ("; "));
-    if (! disc.tuners.isEmpty()) report.add ("pitch category, listed not swept (tuner certification is not built): " + disc.tuners.joinIntoString (", "));
+    if (! disc.tuners.isEmpty()) report.add ("pitch category, on the worklist for tuner certification: " + disc.tuners.joinIntoString (", "));
     return out;
 }
 
@@ -1464,6 +1486,7 @@ inline juce::File writeRefusalRecord (const juce::File& fixturesDir, const juce:
                                 "or it re-runs on its own at a new installed version");
         o->setProperty ("thresholdRefusal", juce::var (r));
     }
+    sweep::stampSchema (f, kSchemaCompressor);
     fixturesDir.createDirectory();
     auto out = fixturesDir.getChildFile (fixtureFileName (base));
     out.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
@@ -1570,6 +1593,7 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         o->setProperty ("thresholdReview", juce::var (rv));
         o->setProperty ("thresholdCandidates", arr);
     }
+    sweep::stampSchema (f, kSchemaCompressor);
     fixtureOut.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
     reportOut.replaceWithText (rep, false, false, "\n");
     std::cout << rep << std::flush;
@@ -1992,6 +2016,8 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
     return 0;
 }
 
+inline int runCertTuner (const SweepOptions& opt);   // defined below (tuner certification, one store)
+
 // EVERY RUNNABLE PRODUCT (--cert-sweep-all): the census's runnable list, minus what is named in --skip, one
 // runCertSweep each. A product's failure is reported and the batch goes on.
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
@@ -2008,12 +2034,13 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         // A DISCOVERED product has no controls until its defaults are sampled, so its plan is decided after sampling,
         // not predicted; a fixture's subject is predicted from the fixture's own controls, as before.
         const bool planLater = s.reach == Subject::Reach::unfixtured;
-        if (skip.contains (s.product) || ! measurable (s, opt.includePace) || (! planLater && ! sweep::planFromFixture (s.pushed).ok))
+        const bool tuner = s.category == "pitch";
+        if (skip.contains (s.product) || ! measurable (s, opt.includePace) || (! tuner && ! planLater && ! sweep::planFromFixture (s.pushed).ok))
             continue;
         ++n;
-        std::cout << "\n=== [" << n << "] " << s.product << std::endl;
+        std::cout << "\n=== [" << n << "] " << s.product << (tuner ? " (tuner)" : "") << std::endl;
         opt.product = s.product;
-        const int rc = runCertSweep (opt);
+        const int rc = tuner ? runCertTuner (opt) : runCertSweep (opt);
         (rc == 0 ? done : refused).add (s.product + (rc == 0 ? juce::String() : " (exit " + juce::String (rc) + ")"));
     }
     std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped\n";
@@ -2038,20 +2065,28 @@ inline int runCertTuner (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const SleepGuard sleepGuard ("EJ Map tuner certification");
-    auto outDir = opt.out.getChildFile ("tuners");
+    auto outDir = opt.out.getChildFile ("fixtures");                 // ONE STORE (ruled 1 Oct): tuner records beside the compressors'
     if (! outDir.createDirectory()) { say ("TUNER: cannot create " + outDir.getFullPathName()); return 2; }
     const auto id = checkProbe (opt.probe, {}, {});
     if (! id.ok) { say ("TUNER: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
     const juce::String probeLabel = "signed EchoJayProbe (feat/ejmap-cert), team " + id.team + ", cdhash " + id.cdhash;
-    if (araOnlyByName (opt.product))
-    { say ("TUNER: " + opt.product + " is an ARA/offline tool with no real-time pitch path: uncertifiable by any harness, refused before any process"); return 4; }
     // Resolve the installed component by product name.
     std::vector<InstalledRecord> hits;
     for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
     if (hits.empty()) { say ("TUNER: '" + opt.product + "' is not an installed AudioUnit"); return 2; }
     if (hits.size() > 1) { say ("TUNER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " components; refused"); return 2; }
     Subject s; s.desc = hits[0].desc; s.product = s.desc.name; s.uid = juce::String::toHexString (s.desc.uniqueId).toLowerCase(); s.version = s.desc.version;
-    s.reach = Subject::Reach::unfixtured; s.installedUnique = true;
+    s.reach = Subject::Reach::unfixtured; s.installedUnique = true; s.category = "pitch";
+    // A refusal is a record here too: the identity with no controls, so the worklist stops offering it.
+    auto identityOnly = [&] { auto* o = new juce::DynamicObject(); o->setProperty ("product", s.product); o->setProperty ("uid", s.uid);
+                              o->setProperty ("version", s.version); o->setProperty ("format", "AudioUnit"); o->setProperty ("category", "pitch");
+                              o->setProperty ("schema", kSchemaTuner); return juce::var (o); };
+    if (araOnlyByName (opt.product))
+    {
+        say ("TUNER: " + opt.product + " is an ARA/offline tool with no real-time pitch path: uncertifiable by any harness, refused before any process");
+        writeRefusalRecord (outDir, identityOnly(), "ara_only", "ARA/offline-only pitch tool: no real-time path, uncertifiable by any harness", 0, 0, probeLabel, "EJ Map " + opt.hostVersion);
+        return 4;
+    }
     const auto stem = "AudioUnit_" + s.uid + "_" + s.version + ".tuner";
     auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
     auto ledger = opt.out.getChildFile ("run.jsonl");
@@ -2074,12 +2109,17 @@ inline int runCertTuner (const SweepOptions& opt)
         auto r = a.r; if (a.sleptTwice) r.kind = ChildResult::Kind::sleptTwice; return r;
     };
     const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
+    auto refuseT = [&] (int rc, const juce::String& stage, const juce::String& reason) {
+        say ("TUNER: " + s.product + " - " + reason);
+        const auto rec = writeRefusalRecord (outDir, identityOnly(), stage, reason, processes.size(), 1, probeLabel, "EJ Map " + opt.hostVersion);
+        say ("TUNER: refusal recorded at stage '" + stage + "' -> " + rec.getFileName());
+        return rc; };
     auto lp = runProbe ("list-params", { "--list-params" });
-    if (! lp.cleanExit()) { say ("TUNER: " + s.product + " - defaults --list-params " + lp.describe()); return 1; }
+    if (! lp.cleanExit()) return refuseT (1, "defaults", (windowSeen ? "UNLICENSED ON HOST: " : "ERROR: ") + juce::String ("defaults --list-params ") + lp.describe());
     auto ta = runProbe ("text-at", { "--text-at", "all" });
-    if (! ta.cleanExit()) { say ("TUNER: " + s.product + " - defaults --text-at all " + ta.describe()); return 1; }
+    if (! ta.cleanExit()) return refuseT (1, "defaults", (windowSeen ? "UNLICENSED ON HOST: " : "ERROR: ") + juce::String ("defaults --text-at all ") + ta.describe());
     auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, probeLabel, date);
-    if (auto* o = base.getDynamicObject()) o->setProperty ("category", "pitch");
+    if (auto* o = base.getDynamicObject()) { o->setProperty ("category", "pitch"); o->setProperty ("schema", kSchemaTuner); }
 
     // ROLES with the tuner lexicon: strength candidates, the key/scale control.
     std::vector<roles::NamedControl> named;

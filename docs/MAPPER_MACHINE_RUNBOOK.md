@@ -86,8 +86,10 @@ Or leave it — the 90 s watchdog kills a hanger and quarantines it after 3 trie
 
 ## §3b — Certify compressors (after the mapping sweep)
 
-Runs the threshold sweep on every mapped compressor that has no certification
-record yet. Same shape as §3: resumable, skips what is done, leave it running.
+Runs the threshold sweep on every mapped compressor, and the pitch sweep on every
+mapped tuner, that has no certification record yet - ONE store, one loop, one
+census; each record says what it is in its `schema` field. Same shape as §3:
+resumable, skips what is done, leave it running.
 Nothing to type but the loop — the results land in `~/Library/ejmap/cert/` and
 ride the §4 zip with everything else.
 

@@ -1,0 +1,625 @@
+{
+  "identity": "AudioUnit|62485258|1.10.1",
+  "product": "Acme Opticom XLA-3",
+  "format": "AudioUnit",
+  "uid": "62485258",
+  "version": "1.10.1",
+  "sampledAt": "2026-09-25",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "installed signed EchoJay V2 21t-a probe",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "controls": [
+    {
+      "index": 0,
+      "name": "Power",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Meter Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Input",
+        "0.500": "Input",
+        "1.000": "Output"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Output",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Response",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Slow",
+        "0.500": "Normal",
+        "1.000": "Fast"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Normal",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Input Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "4.0",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Output Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "4.0",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Amp",
+        "0.500": "Out",
+        "1.000": "In"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "In",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Input Pad",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Stereo Link",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Level Trim",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-20.0 dB",
+        "0.500": "-10.0 dB",
+        "1.000": "0.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -20.0,
+        "max": 0.0,
+        "at0": -20.0,
+        "at0_5": -10.0,
+        "at1": 0.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "0.0 dB",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Dry/Wet Mix",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "0 %",
+        "0.500": "50 %",
+        "1.000": "100 %"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100 %",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Noise Level",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "-oo dB",
+        "0.500": "-90.0 dB",
+        "1.000": "-60.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -90.0,
+        "max": -60.0,
+        "at0": null,
+        "at0_5": -90.0,
+        "at1": -60.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "-90.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Bank",
+      "unit": null,
+      "displayAt": {
+        "0.000": "A",
+        "0.500": "C",
+        "1.000": "D"
+      },
+      "numSteps": 4,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "A",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "VU Meter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "",
+        "0.500": "",
+        "1.000": ""
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "GR Meter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "",
+        "0.500": "",
+        "1.000": ""
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.71409,
+        "display": "",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-09-25",
+  "defaultsProbe": "installed signed EchoJay V2 21t-d probe",
+  "thresholdSweep": {
+    "measuredAt": "20260929T192935.351+0100",
+    "host": "EJ Map 0.1.0 / arm64 / 48k",
+    "bridged": false,
+    "tone": {
+      "hz": 997.0,
+      "levels_dbfs": [
+        -24.0,
+        -12.0,
+        -6.0
+      ]
+    },
+    "level_convention": "peak",
+    "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)",
+    "ratioDuring": {
+      "position": "",
+      "value": null,
+      "assumed": false
+    },
+    "thresholdPick": {
+      "index": 3,
+      "name": "Input Gain",
+      "rule": "input_as_threshold: [3] is the only continuous candidate; [6] stepped, 2 steps - chosen by range and step count, not by name",
+      "links": [
+        "[7] Stereo Link = 'On'"
+      ]
+    },
+    "autoMakeupDisabled": false,
+    "positions": 16,
+    "positionNorms": [
+      0.0,
+      0.066667,
+      0.133333,
+      0.2,
+      0.266667,
+      0.333333,
+      0.4,
+      0.466667,
+      0.533333,
+      0.6,
+      0.666667,
+      0.733333,
+      0.8,
+      0.866667,
+      0.933333,
+      1.0
+    ],
+    "linearReference": {
+      "mode": "per_position_quiet",
+      "levels_dbfs": [
+        -54,
+        -48
+      ],
+      "tolerance_db": 0.1,
+      "check_db": [
+        null,
+        0.214,
+        0.048,
+        0.002,
+        -0.008,
+        -0.003,
+        -0.0,
+        -0.002,
+        -0.005,
+        -0.001,
+        0.0,
+        -0.0,
+        -0.004,
+        -0.506,
+        -0.968,
+        -0.985
+      ]
+    },
+    "defaultGain_db": {
+      "-12": -2.03,
+      "-24": 7.41,
+      "-48": 9.4,
+      "-54": 9.41,
+      "-6": -5.6
+    },
+    "positionLandedBy": [
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack"
+    ],
+    "writeLanding": {
+      "instack": 16
+    },
+    "reduction_db": {
+      "-24": [
+        null,
+        null,
+        0.01,
+        0.01,
+        0.02,
+        0.92,
+        2.0,
+        3.48,
+        7.47,
+        11.32,
+        13.470000000000001,
+        14.800000000000001,
+        15.609999999999999,
+        null,
+        null,
+        null
+      ],
+      "-12": [
+        null,
+        null,
+        0.12,
+        5.38,
+        8.369999999999999,
+        10.220000000000001,
+        11.44,
+        12.83,
+        15.359999999999999,
+        16.699999999999999,
+        17.25,
+        17.609999999999999,
+        17.870000000000001,
+        null,
+        null,
+        null
+      ],
+      "-6": [
+        null,
+        null,
+        4.01,
+        10.19,
+        12.890000000000001,
+        14.27,
+        15.01,
+        15.720000000000001,
+        16.91,
+        17.649999999999999,
+        18.02,
+        18.300000000000001,
+        18.579999999999998,
+        null,
+        null,
+        null
+      ]
+    },
+    "sense": "higher_is_harder",
+    "engage": {
+      "-24": 5,
+      "-12": 3,
+      "-6": 2
+    },
+    "thresholdDbEquivalent": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ],
+    "thresholdEffective1dB": [
+      null,
+      null,
+      -10.6,
+      -21.800000000000001,
+      -22.600000000000001,
+      -23.899999999999999,
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      {
+        "below": -24.0
+      },
+      null,
+      null,
+      null
+    ],
+    "skipped": [
+      {
+        "position": 0,
+        "reason": "quiet reference: -54 or -48 unreadable"
+      },
+      {
+        "position": 1,
+        "reason": "quiet reference: -48 minus -54 is 6.21 dB, not 6 (compressed or noise floor)"
+      },
+      {
+        "position": 13,
+        "reason": "quiet reference: -48 minus -54 is 5.49 dB, not 6 (compressed or noise floor)"
+      },
+      {
+        "position": 14,
+        "reason": "quiet reference: -48 minus -54 is 5.03 dB, not 6 (compressed or noise floor)"
+      },
+      {
+        "position": 15,
+        "reason": "quiet reference: -48 minus -54 is 5.01 dB, not 6 (compressed or noise floor)"
+      }
+    ],
+    "levelDependence": {
+      "predicted_dg_dl": null,
+      "dg_dl_per_position": [
+        null,
+        null,
+        0.222,
+        0.566,
+        0.715,
+        0.742,
+        0.723,
+        0.68,
+        0.525,
+        0.352,
+        0.253,
+        0.195,
+        0.165,
+        null,
+        null,
+        null
+      ],
+      "median_dg_dl": 0.787,
+      "implied_ratio": 4.7,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
+    "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 17.75,
+    "reason": "ratio unknown (no ratio control): no dB-equivalent map",
+    "displayOffsetDb": null
+  },
+  "schema": "ej_cert_compressor/1"
+}
