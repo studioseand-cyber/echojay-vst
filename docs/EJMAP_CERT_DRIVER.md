@@ -1207,3 +1207,28 @@ or defaults: transient) are records too. The deciding argument was the mapper: t
 two loops, two censuses and a second chance at the "work never comes home" defect. Pins R1b,
 R1c, F2/F3 re-ruled; three mutants red. Store re-derived to stamp the schema: 0 verdicts changed.
 Sean's contract: untouched; told in the reply doc, section 5a.
+
+## 17. The exporter to ej_comp_profile/1 (COMP_PROFILE_SPEC v1.1), 1 Oct
+
+One exporter, one place: `EjmapProfileExport.h`, `--export-profile <record> <out>` /
+`--export-profiles <store> <dir>`. A pure function of one store record; a record that cannot
+honestly fill a required field is refused with the reason, never padded. The level reference -
+ours peak, his sine RMS - is the likeliest silent error and is pinned twice: against the constant
+(3.0103 dB, X2; the subtraction's mutant is red) and MEASURED from MCompressor's committed
+Peak-arm trace, where the probe printed -27.0103 dB RMS beside the -24 dBFS peak hold (X0). Field
+rules as his section 3 (topology from the ROLE, never the reference mode - a pin caught that;
+engage only from the with/without test and never a never_touch name; neutral = the preconditions
+with their read-back; reference_ratio = the read-back ratio; static_gain_db from the two-quiet-level
+reference or NO PROFILE; level_coupling from the per-position quiet gain; fit = his model
+grid-fitted, max error and error against his 2 dB target, nothing tuned; stepped on stepped
+amounts; time omitted). X0-X13, five mutants red.
+
+**map_fp against reality:** EchoJay's own persisted identity->fp index
+(`~/Library/EchoJay/chain_fp_scan.json`, written at slot load, the source of EJDialSummary's
+`fp=` which prints only 12 characters) holds 91 of our records: 91 of 91 match (M2). So we ARE
+computing his map_fp; plugin_id + version is the fallback for records that predate the field.
+
+**Dry run on the store, 1 Oct:** 0 of 103 export - and every refusal is right: 42 are topology
+`other` (several candidates, no human pick), 25 have no two-quiet-level reference (soft-end
+sweeps), the rest are flat / too few 1 dB crossings inside a 3-level sweep. That is the case for
+the profile sweep (section 18): 31 levels, the quiet reference on every position.

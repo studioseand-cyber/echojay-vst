@@ -5029,6 +5029,115 @@ void testMapFpJoinKey()
     check (noField == 0, "mapfp M1a: every store record carries map_fp (" + juce::String (noField) + " without)");
     check (withMap >= 90 && match == withMap, "mapfp M1: every store record with a local map reproduces the map's fp - " + juce::String (match) + " of "
                                                 + juce::String (withMap) + (bad.isEmpty() ? juce::String() : "; wrong: " + bad.joinIntoString (", ")));
+    // REALITY: EchoJay's OWN persisted identity -> fp index (written at slot load; the source of fp= in EJDialSummary, which
+    // prints only its first 12 characters). Every store record it has loaded must carry the fp it computed.
+    const auto idxFile = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/EchoJay/chain_fp_scan.json");
+    if (! idxFile.existsAsFile()) { std::cout << "mapfp M2: no EchoJay identity index at " << idxFile.getFullPathName() << ", skipped" << std::endl; return; }
+    const auto idx = juce::JSON::parse (idxFile.loadFileAsString()).getProperty ("identityToFp", {});
+    int seen = 0, same = 0; juce::StringArray wrong;
+    if (auto* o = idx.getDynamicObject())
+        for (const auto& f : store.findChildFiles (juce::File::findFiles, false, "*.json"))
+        {
+            const auto j = juce::JSON::parse (f.loadFileAsString());
+            const auto key = j.getProperty ("identity", "").toString();
+            for (const auto& prop : o->getProperties())
+                if (prop.name.toString().equalsIgnoreCase (key))
+                { ++seen; if (prop.value.toString() == j.getProperty ("map_fp", "").toString()) ++same; else wrong.add (j.getProperty ("product", "").toString()); }
+        }
+    check (seen >= 80 && same == seen, "mapfp M2 (REALITY): EchoJay's own identity->fp index agrees on every store record it has loaded - " + juce::String (same) + " of " + juce::String (seen)
+                                       + (wrong.isEmpty() ? juce::String() : "; wrong: " + wrong.joinIntoString (", ")));
+}
+
+/** THE EXPORTER (ej_comp_profile/1, v1.1): one place, pinned. The level reference is the likeliest silent error, so it is
+    pinned twice - against the constant and against a committed trace that prints the RMS of a known peak tone. */
+void testProfileExport()
+{
+    using namespace ejmap::profile;
+    // X0: the constant, MEASURED from MCompressor's committed Peak-arm trace: the probe prints in_rms_db beside each hold.
+    const auto adir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/mcompressor-rms-peak");
+    ejmap::sweep::ProcessOut r; std::vector<ejmap::sweep::ProcessOut> ps;
+    const bool ok = ejmap::sweep::loadProcesses (adir.getChildFile ("processes.json"), adir.getChildFile ("raw"), r, ps);
+    double measuredOffset = 0.0; bool found = false;
+    if (ok) for (const auto& line : juce::StringArray::fromLines (ps[0].out))
+    {
+        const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        if (f.size() > 8 && f[0] == "hold" && f[2] == "-24.00") { measuredOffset = -24.0 - f[f.indexOf ("in_rms_db") + 1].getDoubleValue(); found = true; break; }
+    }
+    check (ok && found && std::abs (measuredOffset - kPeakToSineRmsDb) < 0.001,
+           "export X0 (LEVEL REFERENCE, measured): a -24 dBFS PEAK tone reads -27.01 dB RMS in the committed trace - the conversion is " + juce::String (measuredOffset, 4) + " dB, the constant 3.0103");
+
+    // A profile-grade record, built by hand: 31 levels, a quiet reference passing at every position, a textbook 4:1 curve.
+    auto record = [] (int positions, bool quietOk, bool candidates, const char* flags, const char* result) {
+        juce::DynamicObject* f = new juce::DynamicObject();
+        f->setProperty ("schema", "ej_cert_compressor/1"); f->setProperty ("product", "Synth Comp"); f->setProperty ("manufacturer", "Test");
+        f->setProperty ("format", "AudioUnit"); f->setProperty ("identity", "AudioUnit|1234abcd|1.0.0"); f->setProperty ("version", "1.0.0"); f->setProperty ("uid", "1234abcd");
+        f->setProperty ("map_fp", juce::String::repeatedString ("ab", 32));
+        juce::Array<juce::var> controls;
+        auto ctl = [] (int i, const char* n, int steps) { auto* c = new juce::DynamicObject(); c->setProperty ("index", i); c->setProperty ("name", n); c->setProperty ("unit", "dB"); c->setProperty ("numSteps", steps);
+                                                            auto* d = new juce::DynamicObject(); d->setProperty ("normalised", 0.5); d->setProperty ("display", "0"); c->setProperty ("defaultOnInstantiate", juce::var (d)); return juce::var (c); };
+        controls.add (ctl (0, "Threshold", 2147483647)); controls.add (ctl (1, "Ratio", 2147483647)); controls.add (ctl (2, "Power", 2)); controls.add (ctl (3, "Bypass", 2)); controls.add (ctl (4, "Comp On", 2));
+        f->setProperty ("controls", controls);
+        auto* s = new juce::DynamicObject();
+        s->setProperty ("measuredAt", "20261001T120000.000+0100"); s->setProperty ("level_convention", "peak"); s->setProperty ("result", result); s->setProperty ("hold_s", 2.5); s->setProperty ("win_s", 0.3);
+        auto* tone = new juce::DynamicObject(); juce::Array<juce::var> lv; for (int L = -60; L <= 0; L += 2) lv.add ((double) L); tone->setProperty ("levels_dbfs", lv); s->setProperty ("tone", juce::var (tone));
+        auto* rd = new juce::DynamicObject(); rd->setProperty ("value", 4.0); rd->setProperty ("position", "4.0:1"); s->setProperty ("ratioDuring", juce::var (rd));
+        juce::Array<juce::var> norms, texts, eff; auto* red = new juce::DynamicObject(); std::map<int, juce::Array<juce::var>> cols;
+        for (int i = 0; i < positions; ++i)
+        {
+            const double T = -40.0 + 2.0 * i;                               // hard-knee 4:1 threshold per position (peak dBFS)
+            norms.add ((double) i / (double) (positions - 1)); texts.add (juce::String (T, 1)); eff.add (T + 1.0 / 0.75);
+            for (int L = -60; L <= 0; L += 2) cols[L].add (L > T ? (L - T) * 0.75 : 0.0);
+        }
+        for (auto& [L, col] : cols) red->setProperty (juce::String (L), col);
+        s->setProperty ("positions", positions); s->setProperty ("positionNorms", norms); s->setProperty ("positionTexts", texts);
+        s->setProperty ("thresholdEffective1dB", eff); s->setProperty ("reduction_db", juce::var (red));
+        auto* lr = new juce::DynamicObject(); lr->setProperty ("mode", "per_position_quiet");
+        juce::Array<juce::var> chk, g; for (int i = 0; i < positions; ++i) { chk.add (quietOk ? 0.02 : 0.9); g.add (0.5); }
+        lr->setProperty ("check_db", chk); lr->setProperty ("gain_db", g); s->setProperty ("linearReference", juce::var (lr));
+        auto* ld = new juce::DynamicObject(); ld->setProperty ("implied_ratio", 4.0); s->setProperty ("levelDependence", juce::var (ld));
+        if (juce::String (flags).isNotEmpty()) s->setProperty ("roleFlag", flags);
+        auto* ew = new juce::DynamicObject(); ew->setProperty ("found", true); juce::Array<juce::var> ws; auto* w = new juce::DynamicObject();
+        w->setProperty ("index", 4); w->setProperty ("control", "Comp On"); w->setProperty ("norm", 1.0); w->setProperty ("set", "On"); w->setProperty ("verified", true); ws.add (juce::var (w));
+        ew->setProperty ("writes", ws); s->setProperty ("engageWrites", juce::var (ew));
+        f->setProperty ("thresholdSweep", juce::var (s));
+        if (candidates) { f->removeProperty ("thresholdSweep"); f->setProperty ("thresholdCandidates", juce::Array<juce::var>()); }
+        return juce::var (f); };
+    const auto rec = record (16, true, false, "", "certified");
+    const auto e = exportCompProfile (rec);
+    check (e.ok, "export X1: a profile-grade record exports (" + e.refused + ")");
+    if (e.ok)
+    {
+        const auto P = e.profile;
+        const auto curve = P.getProperty ("amount", {}).getProperty ("curve", {});
+        const double effPeak = (double) rec.getProperty ("thresholdSweep", {}).getProperty ("thresholdEffective1dB", {})[0];
+        check (curve.size() == 16 && std::abs ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0) - (effPeak - 3.0103)) < 0.006
+                 && std::abs ((double) P.getProperty ("measured", {}).getProperty ("steps_dbfs", {})[0] - (-60.0 - 3.0103)) < 0.006
+                 && P.getProperty ("measured", {}).getProperty ("level_ref", "") == "sine_rms_dbfs",
+               "export X2 (LEVEL REFERENCE): every exported dBFS is our peak value minus 3.0103 - eff " + juce::String ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0), 2)
+                 + " from " + juce::String (effPeak, 2) + ", first step " + juce::String ((double) P.getProperty ("measured", {}).getProperty ("steps_dbfs", {})[0], 2));
+        check (P.getProperty ("topology", "") == "threshold" && P.getProperty ("plugin", {}).getProperty ("map_fp", "").toString().length() == 64
+                 && (double) P.getProperty ("measured", {}).getProperty ("reference_ratio", 0.0) == 4.0 && (int) P.getProperty ("measured", {}).getProperty ("hold_ms", 0) == 2500,
+               "export X3: topology threshold, 64-hex map_fp, reference_ratio is the read-back ratio, hold 2500 ms");
+        check (P.getProperty ("engage", {}).size() == 1 && P.getProperty ("engage", {})[0].getProperty ("control", "") == "Comp On" && (bool) P.getProperty ("engage", {})[0].getProperty ("verified", false)
+                 && P.getProperty ("never_touch", {}).size() == 2 && P.getProperty ("never_touch", {}).indexOf ("Power") >= 0 && P.getProperty ("never_touch", {}).indexOf ("Bypass") >= 0,
+               "export X4: engage carries the verified write with its read-back; never_touch lists Power and Bypass");
+        check (std::abs ((double) P.getProperty ("static_gain_db", 9.0) - 0.5) < 0.01 && P.getProperty ("level_coupling", {}).isVoid(),
+               "export X5: static_gain_db is the median quiet-level gain; no level_coupling on a threshold topology");
+        check (e.fitMaxErrorDb < 0.05 && (double) P.getProperty ("fit", {}).getProperty ("error_vs_2db_target", 9.0) < 0.03,
+               "export X6: his model fits a textbook hard-knee 4:1 curve to within 0.05 dB (" + juce::String (e.fitMaxErrorDb, 3) + ")");
+        check (! P.hasProperty ("time"), "export X7: time is omitted, not invented");
+    }
+    check (! exportCompProfile (record (16, false, false, "", "certified")).ok, "export X8: a quiet check failing at every position means NO PROFILE (static_gain_db cannot be given)");
+    check (! exportCompProfile (record (6, true, false, "", "certified")).ok, "export X9: fewer than 9 curve points refuses");
+    check (! exportCompProfile (record (16, true, true, "", "certified")).ok && exportCompProfile (record (16, true, true, "", "certified")).refused.contains ("other"),
+           "export X10: several candidates is topology other and no profile");
+    check (! exportCompProfile (record (16, true, false, "", "flat")).ok, "export X11: a non-certified sweep refuses");
+    const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
+    check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
+           "export X12: input-as-threshold is input_drive with level_coupling from the per-position quiet gain");
+    auto bad = record (16, true, false, "", "certified");
+    bad.getProperty ("thresholdSweep", {}).getProperty ("engageWrites", {}).getProperty ("writes", {})[0].getDynamicObject()->setProperty ("control", "Bypass");
+    check (! exportCompProfile (bad).ok && exportCompProfile (bad).refused.contains ("never_touch"), "export X13: an engage write naming a never_touch control refuses the export");
 }
 
 /** A PROCESS THAT SLEPT IS RE-RUN ONCE, AND REFUSED IF IT SLEEPS AGAIN (ruled 29 Sep) - the SIGTERM rule's shape. */
@@ -5183,6 +5292,7 @@ int main (int, char**)
     testEngageDetection();
     testTunerDerivations();
     testMapFpJoinKey();
+    testProfileExport();
     testSleptProcessRetry();
     testLevelDependence();
 

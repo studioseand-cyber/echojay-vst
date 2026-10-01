@@ -612,6 +612,9 @@ namespace
             if (a == "--cert-sweep-rederive" && i + 4 < argc)
                 return ejmap::cert::runSweepRederive (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)),
                                                       cwdFile (argAt (argc, argv, i + 3)), cwdFile (argAt (argc, argv, i + 4)));
+            // EXPORT TO SEAN'S ej_comp_profile/1 (COMP_PROFILE_SPEC v1.1), one exporter in EjmapProfileExport.h.
+            if ((a == "--export-profile" && i + 2 < argc) || (a == "--export-profiles" && i + 2 < argc))
+                return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles");
             if (a == "--cert-tuner")
             {
                 ejmap::cert::SweepOptions o; o.hostVersion = EJMAP_VERSION;

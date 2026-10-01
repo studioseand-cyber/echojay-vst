@@ -101,6 +101,7 @@ struct Plan
     int ratioIndex = -1;                     // -1: none, or not one
     juce::String ratioNote;
     std::vector<std::pair<int, float>> sets; // preconditions written before the sweep
+    std::map<int, juce::String> setRoles;    // why each set was written: "ratio_raise", "auto_makeup_off", "mix_wet", "makeup_zero", "drive_cleanest"
     bool autoMakeupDisabled = false;
     bool ratioRaise = false;                 // the ratio instantiates at 1:1: search, then set (spec 4.2)
     juce::String ratioDefaultText;
@@ -351,6 +352,7 @@ inline Plan planFromFixture (const juce::var& fixture)
                 && (double) c.getProperty ("defaultOnInstantiate", {}).getProperty ("normalised", 0.0) >= 0.5)
             {
                 p.sets.push_back ({ (int) c.getProperty ("index", -1), 0.0f });
+                p.setRoles[(int) c.getProperty ("index", -1)] = "auto_makeup_off";
                 p.autoMakeupDisabled = true;
             }
         }
@@ -393,6 +395,7 @@ struct Measured
     std::vector<PositionReading> positions;
     double wallMs = 0.0, audioS = 0.0;
     std::map<int, juce::String> setTexts;        // precondition writes, the text READ BACK after each (probe "set" lines)
+    double holdS = 0.0, winS = 0.0;              // the probe's hold and read window, from its spec line
     juce::String setConflict;                    // processes that read a precondition back differently
 };
 
@@ -413,7 +416,8 @@ inline Measured parseSweep (const juce::String& out)
         if (f.isEmpty()) continue;
         const auto& t = f[0];
         if (t == "sweep") m.ok = true;
-        else if (t == "spec") { m.movingDb = kv (f, 1, "moving_db").getDoubleValue(); m.resetPerHold = kv (f, 1, "reset_per_hold") == "1"; }
+        else if (t == "spec") { m.movingDb = kv (f, 1, "moving_db").getDoubleValue(); m.resetPerHold = kv (f, 1, "reset_per_hold") == "1";
+                                m.holdS = kv (f, 1, "hold_s").getDoubleValue(); m.winS = kv (f, 1, "win_s").getDoubleValue(); }
         else if (t == "param" && f.size() >= 5) m.params[f[1].getIntValue()] = { f[3], f[4] };
         else if (t == "param" && f.size() == 4) m.params[f[1].getIntValue()] = { f[3], {} };
         else if (t == "refpos") m.refText = kv (f, 1, "text");
@@ -504,6 +508,7 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         m.wallMs += one.wallMs;
         m.audioS += one.audioS;
         if (m.arch.isEmpty()) m.arch = one.arch;
+        if (m.holdS <= 0.0) { m.holdS = one.holdS; m.winS = one.winS; }   // the reference may be absent (ref=0): take the spec from a position
     }
     return m;
 }
@@ -560,6 +565,9 @@ struct Derived
     // reduction reaches 1.0 dB at this position, interpolated between the two test levels that bracket it. Needs no
     // ratio, so it survives where T = L - gR/(R-1) has none or breaks. Textbook: it sits R/(R-1) dB above T.
     std::vector<juce::var> tEffective1dB;           // number | {"above": L} | {"below": L} | null
+    std::map<int, juce::String> setTexts;           // every precondition's read-back text (engage, ratio raise, neutral), from the traces
+    double holdS = 0.0, winS = 0.0;                 // hold and read window the probe ran, from its spec line
+    std::vector<std::optional<double>> quietGainDb; // per position, the -48 dBFS linear gain the quiet reference used (input_drive level coupling)
     inline static constexpr double kEffectiveGrDb = 1.0;
     std::optional<double> ratio;
     juce::String ratioText, ratioInstantiated;      // ratioText is what the sweep RAN at (read back when it was written)
@@ -608,6 +616,8 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     Derived d;
     d.levels = levelsIn;
     d.quietReference = quietReference;
+    d.setTexts = m.setTexts;
+    d.holdS = m.holdS; d.winS = m.winS;
     std::sort (d.levels.begin(), d.levels.end());
     if (! m.ok) { d.reason = m.refused.isNotEmpty() ? "probe refused: " + m.refused : "no sweep output"; return d; }
     if (m.setConflict.isNotEmpty()) { d.result = "unreadable"; d.reason = "a precondition " + m.setConflict; return d; }
@@ -734,6 +744,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             if (d.quietCheckDb[(size_t) i] && ! d.skipped.contains (i))
                 if (auto it = byNorm[(size_t) i]->holds.find (q48); it != byNorm[(size_t) i]->holds.end())
                     lin = it->second.levelDb - it->second.inRmsDb;
+            d.quietGainDb.push_back (lin);
             for (double L : d.levels)
             {
                 const auto g = d.gain[levelKey (L)][(size_t) i];
@@ -1236,10 +1247,26 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         s->setProperty ("thresholdPick", juce::var (pk));
     }
     s->setProperty ("autoMakeupDisabled", p.autoMakeupDisabled);
+    // EVERY PRECONDITION THE PLAN WROTE (ratio raise, auto make-up off, the neutral set), with the text it read back as:
+    // what the sweep actually ran at, never what was asked for.
+    {
+        juce::Array<juce::var> pre;
+        for (const auto& [idx, norm] : p.sets)
+        {
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("index", idx); o->setProperty ("norm", norm);
+            if (d.setTexts.count (idx)) o->setProperty ("set", d.setTexts.at (idx));
+            if (p.setRoles.count (idx)) o->setProperty ("role", p.setRoles.at (idx));
+            pre.add (juce::var (o));
+        }
+        s->setProperty ("preconditions", pre);
+    }
     s->setProperty ("positions", (int) d.norms.size());
     juce::Array<juce::var> norms;
     for (float x : d.norms) norms.add (std::round (x * 1e6) / 1e6);
     s->setProperty ("positionNorms", norms);
+    { juce::Array<juce::var> tx; for (const auto& t : d.texts) tx.add (t); s->setProperty ("positionTexts", tx); }   // the display at each position
+    if (d.holdS > 0.0) { s->setProperty ("hold_s", d.holdS); s->setProperty ("win_s", d.winS); }
     if (d.quietReference)
     {
         auto* ref = new juce::DynamicObject();
@@ -1249,6 +1276,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         juce::Array<juce::var> chk;
         for (auto q : d.quietCheckDb) chk.add (q ? juce::var (std::round (*q * 1000.0) / 1000.0) : juce::var());
         ref->setProperty ("check_db", chk);
+        { juce::Array<juce::var> g; for (auto q : d.quietGainDb) g.add (q ? juce::var (std::round (*q * 100.0) / 100.0) : juce::var()); ref->setProperty ("gain_db", g); }
         if (p.referenceFallbackNote.isNotEmpty()) ref->setProperty ("fallback", p.referenceFallbackNote);
         s->setProperty ("linearReference", juce::var (ref));
     }
@@ -1348,6 +1376,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
             auto* o = new juce::DynamicObject();
             o->setProperty ("index", w.index); o->setProperty ("control", w.name); o->setProperty ("norm", w.norm);
             o->setProperty ("from", w.fromDisplay);
+            if (d.setTexts.count (w.index)) o->setProperty ("set", d.setTexts.at (w.index));   // the display it READ BACK as
             o->setProperty ("verified", true);
             o->setProperty ("verifiedBy", "two sweeps: gain reduction with this write, pass-through at the instantiate defaults without it");
             ew.add (juce::var (o));

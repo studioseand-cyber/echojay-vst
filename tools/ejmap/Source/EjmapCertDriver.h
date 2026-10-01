@@ -47,6 +47,7 @@
 #include "EjmapCertOutcome.h"
 #include "EjmapSweep.h"
 #include "EjmapPitch.h"
+#include "EjmapProfileExport.h"
 #include "EchoJayParamMaps.h"   // fingerprintForDescription: the join key, one function for all three sides
 
 #include <CoreGraphics/CoreGraphics.h>
@@ -1737,7 +1738,7 @@ inline int runCertSweep (const SweepOptions& opt)
         juce::String chosenText;
         const auto norm = sweep::chooseRatioRaise (pts, chosenText);
         if (! norm) return refuse (4, "ratio_none", "ratio instantiates at '" + plan.ratioDefaultText + "' and no grid position reads 4:1 or more; not swept");
-        plan.sets.push_back ({ plan.ratioIndex, *norm });
+        plan.sets.push_back ({ plan.ratioIndex, *norm }); plan.setRoles[plan.ratioIndex] = "ratio_raise";
         std::cout << "  ratio raise: [" << plan.ratioIndex << "] '" << plan.ratioDefaultText << "' -> norm " << *norm << " (grid read '" << chosenText << "')" << std::endl;
     }
 
@@ -2182,6 +2183,34 @@ inline int runCertTuner (const SweepOptions& opt)
     outFile.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
     say ("TUNER: " + s.product + " -> " + outFile.getFileName() + (windowSeen ? "  (A WINDOW APPEARED: " + windows.joinIntoString (", ") + ")" : juce::String()));
     return windowSeen ? 5 : 0;
+}
+
+//==============================================================================
+// EXPORT (--export-profile <record> <out.json> | --export-profiles <store> <outDir>): every record through the one
+// exporter; a refusal is printed with its reason and nothing is written for it. The report is the per-product line Sean
+// asked for: profile emitted / emitted with fit over 1.5 / not possible and why.
+inline int runExportProfiles (const juce::File& in, const juce::File& out, bool whole)
+{
+    juce::Array<juce::File> files;
+    if (whole) files = in.findChildFiles (juce::File::findFiles, false, "*.json"); else files.add (in);
+    if (whole) out.createDirectory();
+    int emitted = 0, over = 0, refused = 0;
+    for (const auto& f : files)
+    {
+        if (f.getFileName().endsWith (".defaults.json")) continue;
+        const auto rec = juce::JSON::parse (f.loadFileAsString());
+        const auto e = profile::exportCompProfile (rec);
+        const auto name = rec.getProperty ("product", f.getFileNameWithoutExtension()).toString();
+        if (! e.ok) { ++refused; std::cout << "NOT POSSIBLE   " << name << ": " << e.refused << std::endl; continue; }
+        const auto dst = whole ? out.getChildFile (f.getFileName()) : out;
+        dst.replaceWithText (juce::JSON::toString (e.profile) + "\n", false, false, "\n");
+        const bool big = e.fitMaxErrorDb > 1.5;
+        if (big) ++over; else ++emitted;
+        std::cout << (big ? "EMITTED, FIT OVER 1.5  " : "EMITTED        ") << name << ": " << e.points << " curve points, fit max error "
+                  << juce::String (e.fitMaxErrorDb, 2) << " dB -> " << dst.getFileName() << std::endl;
+    }
+    std::cout << "EXPORT: " << emitted << " emitted, " << over << " emitted with fit over 1.5, " << refused << " not possible" << std::endl;
+    return 0;
 }
 
 //==============================================================================
