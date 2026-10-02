@@ -12,6 +12,7 @@
 // is the caller's job to time out and kill — this program never dismisses one.
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
 #include <JuceHeader.h>
+#include "EJPaceCheck.h"   // 2 Oct 2026: an unsigned probe refuses a PACE-wrapped bundle
 #include <set>
 #include <vector>
 #include "probe_points.h"   // 21t-j: the point set, in a header a guard can assert
@@ -98,6 +99,34 @@ int main (int argc, char** argv)
         else std::printf ("vst3 class: none found in the bundle\n");
         std::fflush (stdout);
     }
+    // ---- PACE: AN UNSIGNED PROBE NEVER LOADS ONE (2 Oct 2026 ruling) ---------------------------------------
+    // Sean's 11:35 build asked for the Tube-Tech CL 1B, whose bundle carries __Pace_Eden.bundle. This probe
+    // instantiated it, and because the placed build is UNSIGNED macOS put a "lower security settings" prompt on
+    // his desktop. Nothing we ship may ever do that. EJPaceCheck already said this was the rule - "the signed
+    // EchoJayProbe (Developer ID, hardened runtime, disable-library-validation) is the only harness process
+    // allowed to load them" - but the rule was written in a header the probe did not consult.
+    //
+    // WHAT THIS COSTS, said plainly: a PACE-wrapped plugin is no longer pre-flighted, so it loses the hang
+    // protection the probe exists to give. That is the right trade - a prompt is certain harm, a hang is a risk -
+    // and ChainHost already handles it correctly: a non-zero exit with no instantiation is PreflightState::error,
+    // whose note is "licence-bound plugins fail out of process - in-host create proceeds". It is NOT
+    // PreflightState::hang, so the slot is NOT substituted or dropped. The plugin still loads in the host.
+    //
+    // EJ_PROBE_ALLOW_PACE=1 restores probing, and is what the SIGNED runbook build sets. Signing is the other half
+    // of this fix and needs Sean's Developer ID, so it is not done here.
+    if (std::getenv ("EJ_PROBE_ALLOW_PACE") == nullptr)
+    {
+        if (const auto why = echojay::refuseIfPaceWrapped (d); why.isNotEmpty())
+        {
+            std::printf ("refused %s - an unsigned probe must not load a PACE-wrapped bundle (a security prompt is\n"
+                         "        never acceptable); set EJ_PROBE_ALLOW_PACE=1 on a SIGNED probe to pre-flight it.\n"
+                         "        The host treats this as 'not evidence' and creates the plugin in-process as usual.\n",
+                         why.toRawUTF8());
+            std::fflush (stdout);
+            return 3;   // not 0, and the marker is untouched: error, never hang
+        }
+    }
+
     std::unique_ptr<juce::AudioPluginInstance> inst;
     juce::String err;
     bool done = false;

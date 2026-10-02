@@ -741,6 +741,8 @@ endif()
 juce_add_console_app(EchoJayProbe PRODUCT_NAME "EchoJayProbe")
 target_sources(EchoJayProbe PRIVATE tools/au_instantiate_probe/au_instantiate_probe.cpp)
 juce_generate_juce_header(EchoJayProbe)
+# 2 Oct 2026: the probe consults EJPaceCheck.h so an UNSIGNED probe refuses a PACE-wrapped bundle.
+target_include_directories(EchoJayProbe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 target_compile_definitions(EchoJayProbe PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
