@@ -5284,6 +5284,49 @@ void testProfileExport()
     check (! exportCompProfile (record (16, true, true, "", "certified")).ok && exportCompProfile (record (16, true, true, "", "certified")).refused.contains ("other"),
            "export X10: several candidates is topology other and no profile");
     check (! exportCompProfile (record (16, true, false, "", "flat")).ok, "export X11: a non-certified sweep refuses");
+    {
+        // RATIO (2 Oct, ruled): an adjustable ratio never exports as fixed; its one curve point carries the norm the sweep
+        // ran at, the display, the value, and measured_ratio implied from level dependence; knee_db null everywhere.
+        const auto Pa = exportCompProfile (rec).profile.getProperty ("ratio", {});
+        check (Pa.getProperty ("fixed", {}).isVoid() && Pa.getProperty ("curve", {}).size() == 1 && Pa.getProperty ("knee_db", 0.0).isVoid()
+                 && std::abs ((double) Pa.getProperty ("curve", {})[0].getProperty ("norm", -1.0) - 0.5) < 1e-9 && Pa.getProperty ("curve", {})[0].getProperty ("set", "").toString() == "4.0:1"
+                 && std::abs ((double) Pa.getProperty ("curve", {})[0].getProperty ("measured_ratio", -1.0) - 4.0) < 1e-9 && Pa.getProperty ("curve", {})[0].getProperty ("source", "") == "instantiate",
+               "export X22: an adjustable ratio never exports as fixed - one curve point at the instantiate norm with display, value and the implied measured_ratio; knee_db null");
+        auto raised = juce::JSON::parse (juce::JSON::toString (rec));
+        { juce::Array<juce::var> pa; auto* x = new juce::DynamicObject(); x->setProperty ("index", 1); x->setProperty ("norm", 0.8); x->setProperty ("set", "8.0:1"); x->setProperty ("role", "ratio_raise"); pa.add (juce::var (x));
+          raised.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("preconditions", pa); }
+        const auto Pr = exportCompProfile (raised).profile.getProperty ("ratio", {});
+        check (std::abs ((double) Pr.getProperty ("curve", {})[0].getProperty ("norm", -1.0) - 0.8) < 1e-9 && Pr.getProperty ("curve", {})[0].getProperty ("source", "") == "precondition"
+                 && exportCompProfile (raised).profile.getProperty ("neutral", {}).size() == exportCompProfile (rec).profile.getProperty ("neutral", {}).size(),
+               "export X22b: a ratio_raise precondition is the ratio point's norm and never a neutral entry");
+        auto noRatio = juce::JSON::parse (juce::JSON::toString (rec));
+        { juce::Array<juce::var> cs; for (int i = 0; i < noRatio.getProperty ("controls", {}).size(); ++i) if (i != 1) cs.add (noRatio.getProperty ("controls", {})[i]); noRatio.getDynamicObject()->setProperty ("controls", cs); }
+        const auto en = exportCompProfile (noRatio);
+        check (en.ok && en.profile.getProperty ("ratio", {}).getProperty ("fixed", {}).isObject() && en.profile.getProperty ("ratio", {}).getProperty ("fixed", {}).getProperty ("knee_db", 0.0).isVoid()
+                 && std::abs ((double) en.profile.getProperty ("ratio", {}).getProperty ("fixed", {}).getProperty ("measured_ratio", -1.0) - 4.0) < 1e-9,
+               "export X22c: a device with no ratio control keeps fixed {measured_ratio}, knee_db null (" + en.refused + ")");
+    }
+    {
+        // NEUTRAL (2 Oct, ruled): every control except the amount, the ratio, readouts/meters, the engage writes and
+        // never_touch, at the value it was measured at, from a precondition where one was written, else the instantiate value.
+        auto full = juce::JSON::parse (juce::JSON::toString (rec));
+        auto ctl = [] (int i, const char* n, double norm, const char* disp, bool readout) { auto* c = new juce::DynamicObject(); c->setProperty ("index", i); c->setProperty ("name", n); c->setProperty ("numSteps", 2147483647);
+                                                                                             auto* d = new juce::DynamicObject(); d->setProperty ("normalised", norm); d->setProperty ("display", disp); c->setProperty ("defaultOnInstantiate", juce::var (d)); if (readout) c->setProperty ("readout", true); return juce::var (c); };
+        { auto cs = full.getProperty ("controls", {}); cs.append (ctl (5, "Attack", 0.5, "5.0", false)); cs.append (ctl (6, "Meter", 0.5, "Comp", false)); cs.append (ctl (7, "GR Readout", 0.1, "-3", true)); cs.append (ctl (8, "Mix", 0.7, "70 %", false)); cs.append (ctl (9, "Sidechain", 0.0, "Int", false));
+          full.getDynamicObject()->setProperty ("controls", cs);
+          juce::Array<juce::var> pa; auto* x = new juce::DynamicObject(); x->setProperty ("index", 8); x->setProperty ("norm", 1.0); x->setProperty ("set", "100 %"); x->setProperty ("role", "mix_wet"); pa.add (juce::var (x));
+          full.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("preconditions", pa); }
+        const auto ef = exportCompProfile (full);
+        const auto nn = ef.profile.getProperty ("neutral", {});
+        juce::StringArray names; for (int i = 0; i < nn.size(); ++i) names.add (nn[i].getProperty ("control", "").toString() + "=" + nn[i].getProperty ("set", "").toString() + "@" + juce::String ((double) nn[i].getProperty ("norm", -1.0), 2) + ":" + nn[i].getProperty ("source", "").toString());
+        // controls: 0 Threshold (amount) 1 Ratio 2 Power (never_touch) 3 Bypass (never_touch) 4 Comp On (engage) 5 Attack 6 Meter 7 GR Readout 8 Mix (precondition) 9 Sidechain
+        check (ef.ok && nn.size() == 3 && names.joinIntoString (" ") == "Attack=5.0@0.50:instantiate Mix=100 %@1.00:precondition Sidechain=Int@0.00:instantiate",
+               "export X23: neutral covers every non-amount, non-ratio, non-readout control (engage and never_touch excluded, meters and readouts excluded) at the measured value with set text and norm (" + names.joinIntoString (" ") + ")");
+        auto bare = juce::JSON::parse (juce::JSON::toString (full));
+        bare.getProperty ("controls", {})[5].getDynamicObject()->removeProperty ("defaultOnInstantiate");
+        const auto eb = exportCompProfile (bare);
+        check (! eb.ok && eb.refused.contains ("Attack"), "export X24: a neutral control with no instantiate value on the record refuses, naming it (" + eb.refused + ")");
+    }
     const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
     check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
            "export X12: input-as-threshold is input_drive with level_coupling from the per-position quiet gain");

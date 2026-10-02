@@ -98,6 +98,15 @@ inline juce::StringArray neverTouch (const juce::var& f)
     return out;
 }
 
+// A readout (the instantiate-twice check flagged it) or a meter by name: display, never a measurement condition.
+inline bool isReadoutOrMeter (const juce::var& c)
+{
+    if (c.getProperty ("readout", false).isBool() && (bool) c.getProperty ("readout", false)) return true;
+    const auto n = c.getProperty ("name", "").toString();
+    for (const char* t : { "meter", "vu", "readout", "display" }) if (nametokens::controlAnswersTerm (n, t)) return true;
+    return false;
+}
+
 inline juce::String controlName (const juce::var& f, int index)
 {
     return sweep::findControl (f, index).getProperty ("name", "").toString();
@@ -297,17 +306,45 @@ inline Export exportCompProfile (const juce::var& f)
         P->setProperty ("never_touch", ntv);
     }
     {
+        // NEUTRAL = THE MEASUREMENT CONDITIONS (2 Oct, ruled): every control except the amount control, the ratio, the
+        // readouts and meters, the engage writes (their own field) and never_touch (never written), at the value it was
+        // measured at - a precondition's set value where one was written, else the instantiate value from the defaults
+        // sample - with set text and norm. Until today only the preconditions were listed, so the profile held only on a
+        // fresh instance: Gain, Attack, Release, Select Attack Release and Sidechain were all measurement conditions on
+        // CL 1B and none was named. A control with no instantiate value in the record cannot be listed: refuse.
         juce::Array<juce::var> neutral;
-        if (const auto* pre = sweepVar.getProperty ("preconditions", {}).getArray())
-            for (const auto& x : *pre)
+        std::map<int, juce::var> pre;
+        if (const auto* pa = sweepVar.getProperty ("preconditions", {}).getArray())
+            for (const auto& x : *pa) pre[(int) x.getProperty ("index", -1)] = x;
+        std::set<int> engaged;
+        if (const auto* ws = sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", {}).getArray())
+            for (const auto& w : *ws) engaged.insert ((int) w.getProperty ("index", -1));
+        const auto nt = neverTouch (f);
+        if (const auto* cs = f.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
             {
-                const auto role = x.getProperty ("role", "").toString();
-                if (role == "ratio_raise") continue;                        // the ratio is its own field
-                if ((bool) sweepVar.getProperty ("engageWrites", {}).getProperty ("found", false)) {}
+                const int idx = (int) c.getProperty ("index", -1);
+                const auto name = c.getProperty ("name", "").toString();
+                if (idx == plan.thr || idx == plan.ratioIndex || engaged.count (idx) || nt.contains (name)) continue;
+                if (isReadoutOrMeter (c)) continue;
                 auto* o = new juce::DynamicObject();
-                o->setProperty ("control", controlName (f, (int) x.getProperty ("index", -1)));
-                o->setProperty ("set", x.getProperty ("set", "")); o->setProperty ("norm", x.getProperty ("norm", 0.0));
-                if (role.isNotEmpty()) o->setProperty ("role", role);
+                o->setProperty ("control", name);
+                if (auto it = pre.find (idx); it != pre.end())
+                {
+                    const auto role = it->second.getProperty ("role", "").toString();
+                    if (role == "ratio_raise") continue;                    // the ratio is its own field
+                    o->setProperty ("set", it->second.getProperty ("set", "")); o->setProperty ("norm", it->second.getProperty ("norm", 0.0));
+                    if (role.isNotEmpty()) o->setProperty ("role", role);
+                    o->setProperty ("source", "precondition");
+                }
+                else
+                {
+                    const auto doi = c.getProperty ("defaultOnInstantiate", {});
+                    if (! doi.isObject() || ! (doi.getProperty ("normalised", {}).isDouble() || doi.getProperty ("normalised", {}).isInt()))
+                        return refuse ("neutral needs every control's instantiate value and '" + name + "' has none in the record (no defaults sample)");
+                    o->setProperty ("set", doi.getProperty ("display", "")); o->setProperty ("norm", doi.getProperty ("normalised", 0.0));
+                    o->setProperty ("source", "instantiate");
+                }
                 neutral.add (juce::var (o));
             }
         P->setProperty ("neutral", neutral);
@@ -324,14 +361,44 @@ inline Export exportCompProfile (const juce::var& f)
         P->setProperty ("amount", juce::var (a));
     }
     {
+        // RATIO (2 Oct, ruled): an ADJUSTABLE ratio never exports as fixed - the server could not write 6:1 from a fixed
+        // block. Its curve holds the one point the sweep ran at: the norm (a ratio_raise precondition's, else the
+        // instantiate value), its display, the value read back, and measured_ratio = the value IMPLIED from level
+        // dependence (the GR-vs-level slope at that ratio), said so in notes. knee_db is null: no knee was measured, and
+        // 0 would claim a hard knee on an optical unit. A device with no ratio control keeps `fixed`, knee null too.
         auto* r = new juce::DynamicObject();
-        r->setProperty ("control", plan.ratioIndex >= 0 ? juce::var (controlName (f, plan.ratioIndex)) : juce::var());
-        r->setProperty ("curve", juce::Array<juce::var>());                 // the ratio curve needs a ratio sweep: after the first two profiles ship
         const auto ld = sweepVar.getProperty ("levelDependence", {});
-        auto* fx = new juce::DynamicObject();
-        fx->setProperty ("measured_ratio", ld.getProperty ("implied_ratio", juce::var()));   // implied R at the reference ratio, from dg/dL
-        fx->setProperty ("knee_db", fit.points > 0 ? juce::var (fit.W) : juce::var());        // the knee his model fitted best, not a measurement
-        r->setProperty ("fixed", juce::var (fx));
+        const auto implied = ld.getProperty ("implied_ratio", juce::var());
+        const auto rd = sweepVar.getProperty ("ratioDuring", {});
+        if (plan.ratioIndex >= 0)
+        {
+            r->setProperty ("control", controlName (f, plan.ratioIndex));
+            auto* pt = new juce::DynamicObject();
+            juce::var norm, set; juce::String source = "instantiate";
+            if (const auto* pa = sweepVar.getProperty ("preconditions", {}).getArray())
+                for (const auto& x : *pa)
+                    if ((int) x.getProperty ("index", -1) == plan.ratioIndex) { norm = x.getProperty ("norm", {}); set = x.getProperty ("set", {}); source = "precondition"; }
+            if (norm.isVoid())
+            {
+                const auto doi = sweep::findControl (f, plan.ratioIndex).getProperty ("defaultOnInstantiate", {});
+                norm = doi.getProperty ("normalised", {}); set = doi.getProperty ("display", {});
+            }
+            if (! (norm.isDouble() || norm.isInt())) return refuse ("the ratio's norm is not on the record (no precondition and no instantiate value): the server could not write it");
+            pt->setProperty ("norm", norm); pt->setProperty ("set", rd.getProperty ("position", set)); pt->setProperty ("value", rd.getProperty ("value", juce::var()));
+            pt->setProperty ("measured_ratio", implied); pt->setProperty ("source", source);
+            r->setProperty ("curve", juce::Array<juce::var> { juce::var (pt) });
+            r->setProperty ("fixed", juce::var());
+        }
+        else
+        {
+            r->setProperty ("control", juce::var());
+            r->setProperty ("curve", juce::Array<juce::var>());
+            auto* fx = new juce::DynamicObject();
+            fx->setProperty ("measured_ratio", implied);
+            fx->setProperty ("knee_db", juce::var());
+            r->setProperty ("fixed", juce::var (fx));
+        }
+        r->setProperty ("knee_db", juce::var());
         P->setProperty ("ratio", juce::var (r));
     }
     P->setProperty ("static_gain_db", r2 (staticGain));
@@ -407,6 +474,8 @@ inline Export exportCompProfile (const juce::var& f)
               << "level dependence (not a gain law), quiet-reference 6 dB self-check (" << juce::String ((int) quietGains.size()) << " of " << juce::String (norms.size()) << " positions), "
               << "ascending-only levels in each fresh process, still-moving rule; ";
     }
+    notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured; "
+          << "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate); ";
     notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position";
     { const int desc = (int) lr.getProperty ("descended", 0); if (desc > 0) notes << " (reference ladder: " << desc << " position(s) referenced below -54/-48)"; }
     notes << "; ";
