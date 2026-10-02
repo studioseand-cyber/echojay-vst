@@ -5634,8 +5634,8 @@ void testLoopOutcomes()
     Outcome bad; bad.state = "exported"; bad.reason = "";
     Outcome odd; odd.state = "done"; odd.reason = "x";
     check (rowViolation (noFile).contains ("without a profile") && rowViolation (makeRow ("i", "P", "c", bad, "", "p", "t", "now")).contains ("no reason")
-             && rowViolation (makeRow ("i", "P", "c", odd, "", "", "", "now")).contains ("not one of the five"),
-           "loop L10: the invariant refuses an export without its file, a state without a reason, and a state outside the five");
+             && rowViolation (makeRow ("i", "P", "c", odd, "", "", "", "now")).contains ("not one of the six"),
+           "loop L10: the invariant refuses an export without its file, a state without a reason, and a state outside the six");
     // merge by identity, count
     juce::var rows = juce::Array<juce::var>();
     rows = mergeRow (rows, makeRow ("A", "a", "compressor", outcomeHeld (true, false, "x"), "", "", "", "t1"));
@@ -5644,6 +5644,31 @@ void testLoopOutcomes()
     const auto c = count (rows);
     check (rows.size() == 2 && c.rows == 2 && c.exported == 1 && c.refused == 1 && c.held == 0 && findRow (rows, "A").getProperty ("at", "") == "t2",
            "loop L11: a later row for the same identity replaces the earlier (a resumed batch rewrites what it finished); counts follow");
+    {
+        // QUARANTINED AT SCAN (L12-L14): a bundle the scan quarantined becomes a row in its own state, with the product's
+        // category from categories.json by the registered AU's uid, else by name, else unknown; a VST3 says so.
+        juce::Array<juce::var> qa;
+        qa.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/Components/Acme.component" }, { "reason", "crash_on_load" }, { "stage", "scan" }, { "at", "t" } }));
+        qa.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/ANA2.vst3" }, { "reason", "hang_in_findAllTypesForFile" }, { "stage", "scan" }, { "at", "t" } }));
+        qa.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/Unseen.vst3" }, { "reason", "hang_in_findAllTypesForFile" }, { "stage", "scan" }, { "at", "t" } }));
+        juce::Array<juce::var> mk1 { "AudioUnit|62485258" };
+        auto* prods = new juce::DynamicObject();
+        prods->setProperty ("acme opticom xla-3|acme", obj ({ { "name", "Acme Opticom XLA-3" }, { "category", "compressor" }, { "mark_keys", mk1 } }));
+        prods->setProperty ("ana2|sonic academy", obj ({ { "name", "ANA2" }, { "category", "synth" }, { "mark_keys", juce::Array<juce::var>() } }));
+        const auto cats = obj ({ { "products", juce::var (prods) } });
+        std::map<juce::String, juce::StringArray> byBundle { { "/Library/Audio/Plug-Ins/Components/Acme.component", juce::StringArray { "Acme Opticom XLA-3" } } };
+        std::map<juce::String, juce::String> uidByName { { "Acme Opticom XLA-3", "62485258" } };
+        const auto qb = quarantinedAtScan (juce::var (qa), cats, byBundle, uidByName);
+        check (qb.size() == 3 && qb[0].category == "compressor" && qb[0].products.contains ("Acme Opticom XLA-3") && ! qb[0].vst3
+                 && qb[1].category == "synth" && qb[1].vst3 && qb[2].category == "unknown" && qb[2].products[0] == "Unseen",
+               "loop L12: a quarantined .component resolves to its AU and its category by uid; a VST3 by name; an unseen bundle is unknown, never dropped");
+        const auto row = quarantineRow (qb[0], "now");
+        check (rowViolation (row).isEmpty() && row.getProperty ("state", "") == "quarantined_at_scan" && row.getProperty ("category", "") == "compressor"
+                 && row.getProperty ("reason", "").toString().contains ("crash_on_load") && certificationCategory ("compressor") && certificationCategory ("pitch") && ! certificationCategory ("synth"),
+               "loop L13: the row is in the sixth state with the quarantine's reason and the category, and satisfies the invariant");
+        juce::var r2 = juce::Array<juce::var>(); r2 = mergeRow (r2, row); r2 = mergeRow (r2, quarantineRow (qb[1], "now"));
+        check (count (r2).quarantined == 2 && count (r2).rows == 2, "loop L14: the closing counts carry quarantined_at_scan");
+    }
 }
 
 void testLevelDependence()

@@ -4,6 +4,9 @@
   The certification batch (--cert-sweep-all) must leave every discovered compressor and tuner in EXACTLY ONE named
   state, with no silent drops and no hand steps, on a Mac nobody here controls. The states:
 
+    quarantined_at_scan  the scan quarantined the bundle (a stall or a crash) so it never reached the census; the row
+                  names the product(s), the category where known, and says if it is a VST3 (the AU is unaffected)
+
     exported      an ej_comp_profile/1 file was written, with its tone check embedded
     recorded      a tuner's pitch record was written (the tuner's pass state)
     refused       the measurement stopped at a named stage with a reason (the record says which)
@@ -23,7 +26,7 @@
 
 namespace ejmap::loop
 {
-inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review" };
+inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan" };
 inline bool isState (const juce::String& s) { for (auto* k : kStates) if (s == k) return true; return false; }
 
 struct Outcome
@@ -113,7 +116,7 @@ inline juce::var makeRow (const juce::String& identity, const juce::String& prod
 inline juce::String rowViolation (const juce::var& row)
 {
     const auto state = row.getProperty ("state", "").toString();
-    if (! isState (state)) return "state '" + state + "' is not one of the five";
+    if (! isState (state)) return "state '" + state + "' is not one of the six";
     if (row.getProperty ("reason", "").toString().isEmpty()) return "no reason";
     if (state == "exported" && row.getProperty ("profile", "").toString().isEmpty()) return "exported without a profile file";
     if (state == "exported" && row.getProperty ("tonecheck", "").toString().isEmpty()) return "exported without a tone check";
@@ -142,7 +145,54 @@ inline juce::var findRow (const juce::var& outcomes, const juce::String& identit
     return {};
 }
 
-struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, rows = 0; };
+// QUARANTINED AT SCAN (ruled 2 Oct): a bundle the scan quarantined (a stall, a crash) never reaches the census, so a
+// compressor or tuner inside it would drop out silently - the one thing the pass criteria forbid. Each quarantine entry
+// becomes a row in its own state, with the product's category from categories.json where the product was ever
+// categorised (by the bundle's registered AU uid, else by name), else "unknown". A VST3 bundle is named as such:
+// certification hosts AudioUnits, so the same product's AU, if it scanned, is unaffected.
+struct QuarantinedBundle { juce::String bundle, reason, stage, at; juce::StringArray products; juce::String category = "unknown"; bool vst3 = false; };
+inline std::vector<QuarantinedBundle> quarantinedAtScan (const juce::var& quarantine, const juce::var& categories,
+                                                         const std::map<juce::String, juce::StringArray>& auNamesByBundle,
+                                                         const std::map<juce::String, juce::String>& uidByAuName)
+{
+    std::map<juce::String, juce::String> catByUid, catByName;
+    if (const auto* prods = categories.getProperty ("products", {}).getDynamicObject())
+        for (const auto& kv : prods->getProperties())
+        {
+            const auto cat = kv.value.getProperty ("category", "").toString();
+            if (cat.isEmpty()) continue;
+            catByName[kv.value.getProperty ("name", "").toString().toLowerCase()] = cat;
+            if (const auto* mk = kv.value.getProperty ("mark_keys", {}).getArray()) for (const auto& k : *mk) catByUid[k.toString()] = cat;
+        }
+    std::vector<QuarantinedBundle> out;
+    if (const auto* a = quarantine.getArray())
+        for (const auto& q : *a)
+        {
+            QuarantinedBundle b;
+            b.bundle = q.getProperty ("plugin_id", "").toString(); b.reason = q.getProperty ("reason", "").toString();
+            b.stage = q.getProperty ("stage", "").toString(); b.at = q.getProperty ("at", "").toString();
+            b.vst3 = b.bundle.endsWithIgnoreCase (".vst3");
+            const auto stem = juce::File (b.bundle).getFileNameWithoutExtension();
+            if (auto it = auNamesByBundle.find (b.bundle); it != auNamesByBundle.end()) b.products = it->second;
+            if (b.products.isEmpty()) b.products.add (stem);
+            for (const auto& n : b.products)
+            {
+                if (auto u = uidByAuName.find (n); u != uidByAuName.end()) if (auto c = catByUid.find ("AudioUnit|" + u->second); c != catByUid.end()) { b.category = c->second; break; }
+                if (auto c = catByName.find (n.toLowerCase()); c != catByName.end()) { b.category = c->second; break; }
+            }
+            out.push_back (b);
+        }
+    return out;
+}
+inline bool certificationCategory (const juce::String& c) { return c == "compressor" || c == "pitch" || c == "tuner"; }
+inline juce::var quarantineRow (const QuarantinedBundle& b, const juce::String& when)
+{
+    Outcome o; o.state = "quarantined_at_scan";
+    o.reason = b.reason + " at stage " + b.stage + (b.vst3 ? " (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned)" : juce::String()) + "; category " + b.category;
+    return makeRow ("bundle|" + b.bundle, b.products.joinIntoString (", "), b.category, o, {}, {}, {}, when);
+}
+
+struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, rows = 0; };
 inline Counts count (const juce::var& outcomes)
 {
     Counts c;
@@ -152,7 +202,7 @@ inline Counts count (const juce::var& outcomes)
             ++c.rows;
             const auto s = r.getProperty ("state", "").toString();
             if (s == "exported") ++c.exported; else if (s == "recorded") ++c.recorded; else if (s == "refused") ++c.refused;
-            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview;
+            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined;
         }
     return c;
 }

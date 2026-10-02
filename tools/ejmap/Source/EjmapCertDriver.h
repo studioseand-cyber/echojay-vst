@@ -1191,6 +1191,24 @@ inline std::vector<InstalledRecord> installedAudioUnits()
     return out;
 }
 
+// QUARANTINED AT SCAN (ruled 2 Oct): the ledger's quarantine, each bundle resolved to the AudioUnits it registers and
+// their category (loop::quarantinedAtScan), so the census and the batch can name what never reached them.
+inline std::vector<loop::QuarantinedBundle> quarantinedBundles (const juce::File& ledgerRoot)
+{
+    const auto q = juce::JSON::parse (ledgerRoot.getChildFile ("quarantine.json").loadFileAsString());
+    const auto cats = juce::JSON::parse (ledgerRoot.getChildFile ("categories.json").loadFileAsString());
+    std::map<juce::String, juce::StringArray> auNamesByBundle; std::map<juce::String, juce::String> uidByName;
+    const auto bundles = componentBundles();
+    for (const auto& r : installedAudioUnits())
+    {
+        // "AudioUnit:Effects/aufx,clST,SfTb" -> "aufx,clST,SfTb" -> the bundle that registers it
+        const auto key = r.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false);
+        if (auto it = bundles.find (key); it != bundles.end()) auNamesByBundle[it->second.getFullPathName()].addIfNotAlreadyThere (r.desc.name);
+        uidByName[r.desc.name] = juce::String::toHexString (r.desc.uniqueId).toLowerCase();
+    }
+    return loop::quarantinedAtScan (q, cats, auNamesByBundle, uidByName);
+}
+
 // THE PURE CORE: which installed products are candidates, and why the rest are not. `fixtureKeys` holds "uid|version"
 // (lowercase uid) for every fixture in the store.
 struct Candidate { InstalledRecord inst; juce::String category, mappedBy; };
@@ -2365,6 +2383,8 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         if (rec.existsAsFile()) record (finishRecord (opt, rec, s.category));
         else { loop::Outcome o; o.state = "refused"; o.reason = "stage unknown: the run wrote no record (exit " + juce::String (rc) + ")"; record (loop::makeRow (identity, s.product, s.category, o, {}, {}, {}, nowStamp())); }
     }
+    // QUARANTINED AT SCAN: a row per bundle the scan quarantined, so nothing drops out silently (not limited by the slice).
+    for (const auto& b : quarantinedBundles (opt.ledger)) record (loop::quarantineRow (b, nowStamp()));
     // THE FINISH PASS: every record in the store without a row (resumed batch, or records from before the loop).
     int finished = 0;
     for (const auto& f : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
@@ -2383,7 +2403,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped, " << finished << " finished from the store\n";
     for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
     std::cout << "OUTCOMES (" << outcomesFile.getFullPathName() << "): " << c.rows << " rows - exported " << c.exported << ", recorded " << c.recorded
-              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << std::endl;
+              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << std::endl;
     int broken = 0; if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (loop::rowViolation (r).isNotEmpty()) ++broken;
     if (broken > 0) std::cout << "OUTCOME INVARIANT BROKEN on " << broken << " row(s)" << std::endl;
     std::cout << std::flush;
@@ -2742,6 +2762,13 @@ inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledg
               << rows.joinIntoString ("\n") << "\nNOT RUNNABLE, BY REASON\n";
     for (const auto& [why, names] : notRunnable)
         std::cout << "  " << why << " (" << names.size() << "): " << names.joinIntoString (", ") << "\n";
+    {
+        const auto qb = quarantinedBundles (ledgerRoot);
+        int certCats = 0; for (const auto& b : qb) if (loop::certificationCategory (b.category)) ++certCats;
+        std::cout << "QUARANTINED AT SCAN (never reach this census): " << (int) qb.size() << ", of which compressors or tuners: " << certCats << "\n";
+        for (const auto& b : qb)
+            std::cout << "  " << b.products.joinIntoString (", ") << "  [" << b.category << "]  " << b.reason << " at " << b.stage << (b.vst3 ? "  (VST3 bundle; the AudioUnit is unaffected if it scanned)" : "") << "\n";
+    }
     std::cout << std::flush;
     return 0;
 }
