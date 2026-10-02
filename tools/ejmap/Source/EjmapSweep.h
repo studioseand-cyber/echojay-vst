@@ -675,6 +675,18 @@ inline double median (std::vector<double> v)
 // QUIET-LEVEL reference built for input-as-threshold products is below threshold at every setting by construction, so
 // the driver re-sweeps such a candidate with it. One mechanism, reused; this is the decision.
 // A reading ABOVE the reference is the same disease from the other side: the soft end was not the floor.
+// THE ENGAGE SIGNATURE (widened 2 Oct, NEOLD U2A): the amount control did NOTHING - pass-through at the defaults, or a
+// flat sweep whose positions read identically (flatSpan within kEngageFlatSpanDb) even though the device is not
+// input-plus-a-constant (U2A: +0.18 dB everywhere, a touch of saturation above -10 dBFS, and the same at every Peak
+// Reduction position). A control with no effect is what the engage search exists for, saturation or not.
+inline constexpr double kEngageFlatSpanDb = 0.05;
+inline bool engageSignature (const Derived& d)
+{
+    if (d.result != "flat") return false;
+    if (d.passThroughAtDefaults) return true;
+    return d.flatSpanDb && *d.flatSpanDb <= kEngageFlatSpanDb;
+}
+
 inline bool needsQuietFallback (const Derived& d)
 {
     return d.result == "unreadable" && (d.reason.startsWith ("the soft end is not linear") || d.reason.contains ("above the linear reference"));

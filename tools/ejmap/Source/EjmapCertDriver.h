@@ -1884,9 +1884,11 @@ inline int runCertSweep (const SweepOptions& opt)
     auto sweepWithFallback = [&] (sweep::Plan q, const juce::String& prefix, sweep::ProcessOut& r, std::vector<sweep::ProcessOut>& ps) -> sweep::Plan
     {
         sweepFor (q, prefix, r, ps);
-        if (q.quietReference || windowSeen || overBudget()) return q;
+        if (windowSeen || overBudget()) return q;
         auto first = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
-        if (first.result == "flat" && first.passThroughAtDefaults && q.engage.empty())
+        // THE ENGAGE SEARCH RUNS IN PROFILE MODE TOO (2 Oct): until today the quiet-reference early return above this
+        // block skipped it for every profile sweep, so a product flat at its defaults got no search and no record of one.
+        if (sweep::engageSignature (first) && q.engage.empty())
         {
             q = engageSearch (q, prefix);
             if (q.engage.empty()) return q;                                      // stays pass-through; the tried list rides the fixture
@@ -1895,6 +1897,7 @@ inline int runCertSweep (const SweepOptions& opt)
             if (windowSeen || overBudget()) return q;
             first = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
         }
+        if (q.quietReference) return q;                                          // already on the quiet reference: no fallback to make
         if (! sweep::needsQuietFallback (first)) return q;
         std::cout << "  soft end has no linear anchor (" << first.reason << "): re-sweeping with the quiet-level reference" << std::endl;
         q.quietReference = true;

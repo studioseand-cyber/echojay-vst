@@ -4950,6 +4950,30 @@ void testEngageDetection()
     juce::StringArray names; for (const auto& c : cs) names.add (c.name + "->" + juce::String (c.norm, 1));
     check (! cs.empty() && cs[0].name == "Comp On" && cs[0].norm == 1.0f && cs[0].fromDisplay == "Off",
            "engage E1: the two-step switch sharing the threshold's stage word ranks first, written to the OTHER extreme (" + names.joinIntoString (", ") + ")");
+    {
+        // E11 (2 Oct, NEOLD U2A): the engage signature is a control with NO effect - pass-through, or a flat sweep whose
+        // positions read identically - even when the device saturates a little at the top (not input-plus-a-constant).
+        auto dev = [] (double perPositionDb) {
+            Measured m; m.ok = true; m.movingDb = 0.1;
+            for (int p = 0; p < 4; ++p)
+            {
+                PositionReading r; r.k = p; r.norm = (float) p / 3.0f; r.text = juce::String (p * 25) + " %";
+                for (double L : { -54.0, -48.0, -24.0, -12.0, -6.0 })
+                {
+                    HoldReading h; h.present = true; h.inRmsDb = L - 3.0103;
+                    h.levelDb = h.inRmsDb + 0.18 - (L > -10.0 ? (L + 10.0) * 0.02 : 0.0) - (L > -24.0 ? perPositionDb * p : 0.0);   // +0.18 dB, soft saturation above -10; a small level-dependent per-position effect when asked
+                    r.holds[levelKey (L)] = h;
+                }
+                m.positions.push_back (r);
+            }
+            return m; };
+        const auto same = derive (dev (0.0), sweeptest::kLevels, -1, true);
+        check (same.result == "flat" && ! same.passThroughAtDefaults && same.flatSpanDb && *same.flatSpanDb < 1e-9 && engageSignature (same),
+               "engage E11: a flat sweep whose positions read identically is the engage signature even with saturation at the top (not pass-through: " + juce::String (same.passThroughAtDefaults ? "yes" : "no") + ", flatSpan " + juce::String (same.flatSpanDb.value_or (-1), 3) + ")");
+        const auto drift = derive (dev (0.2), sweeptest::kLevels, -1, true);
+        check (drift.result == "flat" && ! engageSignature (drift),
+               "engage E11b: positions that differ by 0.6 dB are flat by the 1 dB rule but NOT the signature (the control did something) (flatSpan " + juce::String (drift.flatSpanDb.value_or (-1), 2) + ")");
+    }
     check (names.contains ("Gate On->1.0") && names.contains ("Auto Manual->0.0") && names.contains ("Sidechain In->1.0"),
            "engage E2: other two-step switches and name-matched controls are candidates; a two-step at 1 is written to 0");
     check (! names.joinIntoString (",").contains ("Monitor") && ! names.joinIntoString (",").contains ("Bypass") && ! names.joinIntoString (",").contains ("Power")
