@@ -730,6 +730,9 @@ inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListR
     o->setProperty ("identity", "AudioUnit|" + uid + "|" + version);
     o->setProperty ("product", s.desc.name);
     o->setProperty ("format", s.desc.pluginFormatName.isNotEmpty() ? s.desc.pluginFormatName : juce::String ("AudioUnit"));
+    // the vendor as the host registers it (the export's plugin.manufacturer): the 103 store records got it stamped on
+    // 1 Oct by hand; a record made since by discovery had none (CL 1B, 2 Oct)
+    if (s.desc.manufacturerName.isNotEmpty()) o->setProperty ("manufacturer", s.desc.manufacturerName);
     o->setProperty ("uid", uid);
     o->setProperty ("version", version);
     o->setProperty ("sampledAt", date);
@@ -1412,10 +1415,12 @@ inline Derivation deriveOne (const sweep::Plan& plan, const sweep::Measured& m, 
     if (! d.defaultGain.empty()) rep << "  (default gain is information only)";
     if (d.quietReference)
     {
-        rep << "\nlinear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within "
+        rep << "\nlinear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within "
             << juce::String (sweep::kQuietTolDb, 1) << "):";
         for (size_t i = 0; i < d.quietCheckDb.size(); ++i)
             rep << " " << (d.quietCheckDb[i] ? juce::String (*d.quietCheckDb[i], 2) : juce::String ("--"));
+        { int desc = 0; juce::StringArray at; for (size_t i = 0; i < d.quietRungDb.size(); ++i) if (d.quietRungDb[i] && d.quietRungDb[i]->first != sweep::kQuietLadder.front().first) { ++desc; at.add (juce::String ((int) i) + "@" + juce::String ((int) d.quietRungDb[i]->second)); }
+          rep << "\nreference ladder: " << desc << " position(s) below the first rung" << (desc > 0 ? " (" + at.joinIntoString (" ") + ")" : juce::String()); }
     }
     else
     {
@@ -2365,9 +2370,11 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     { for (const auto& c : plan.candidates) if (c.index == (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) plan = plan.forCandidate (c); plan.candidates.clear(); }
     if (plan.thr < 0) { say ("TONE: the record has several threshold candidates; pass --candidate NAME"); return 4; }
     const double Lpeak = Lrms + profile::kPeakToSineRmsDb;
+    // the whole reference ladder below L, quiet to loud, so the picked position gets the same reference rule as the sweep
+    juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
     juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
                              "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (pick.norm, 6),
-                             "levels=-54,-48," + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+                             "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
     if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
     say ("TONE: " + product + " - L " + juce::String (Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (g, 1)
          + "; section 6 picks norm " + juce::String (pick.norm, 4) + (pick.i1 >= 0 ? " between points " + juce::String (pick.i0) + " and " + juce::String (pick.i1) : " at point " + juce::String (pick.i0))
@@ -2455,7 +2462,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
         if (! r.cleanExit()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process " + r.describe()); return std::nullopt; }
         sweep::ProcessOut po { r.out, true, r.describe(), norm };
         const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), plan.testLevels(), plan.ratioIndex, true);
-        if (d.inAtGr.empty()) return std::nullopt;
+        if (d.inAtGr.empty()) { say ("DETECTOR: the " + juce::String (twoTone ? "two-tone" : "sine") + " process derived no curve: " + d.result + " - " + d.reason); return std::nullopt; }
         const auto v = d.inAtGr[0].at.count (2) ? d.inAtGr[0].at.at (2) : juce::var();
         say ("DETECTOR: " + juce::String (twoTone ? "two-tone" : "sine    ") + " at norm " + juce::String (norm, 4) + ": 2 dB reached at " + juce::JSON::toString (v, true) + " dBFS peak-equivalent (" + d.result + ")");
         return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt;

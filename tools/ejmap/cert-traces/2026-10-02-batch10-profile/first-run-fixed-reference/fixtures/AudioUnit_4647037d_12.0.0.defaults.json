@@ -1,0 +1,183 @@
+{
+  "identity": "AudioUnit|4647037d|12.0.0",
+  "product": "CLA-2A (s)",
+  "format": "AudioUnit",
+  "uid": "4647037d",
+  "version": "12.0.0",
+  "sampledAt": "2026-10-02",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 6,
+  "map_fp": "a4a6af75cedb32b1a070d6e960d8de988bb526ce5c0bdae6a97a46e0e2a04d8a",
+  "controls": [
+    {
+      "index": 0,
+      "name": "Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "38.72",
+        "1.000": "100.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 38.719999999999999,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.535,
+        "display": "40.00",
+        "declaredDefault": 0.535,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Peak Reduction",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "42.36",
+        "1.000": "100.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 42.359999999999999,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.598,
+        "display": "46.00",
+        "declaredDefault": 0.598,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Comp/Limiter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Comp",
+        "0.500": "Comp",
+        "1.000": "Limit"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Comp",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Hi Freq",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "50.0",
+        "1.000": "100.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "50.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Analog",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "50Hz",
+        "0.500": "60Hz",
+        "1.000": "Off"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "min": 50.0,
+        "max": 60.0,
+        "at0": 50.0,
+        "at0_5": 60.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Off",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "VU Display",
+      "unit": null,
+      "displayAt": {
+        "0.000": "In",
+        "0.500": "GR",
+        "1.000": "Out"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "GR",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-02",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "schema": "ej_cert_compressor/1",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

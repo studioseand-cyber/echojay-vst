@@ -1,0 +1,36 @@
+EJ Map threshold sweep - CLA-2A (s) -> AudioUnit_4647037d_12.0.0.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [1] Peak Reduction unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('46.00', spec 4.7 check only):  -60.00 out-in 8.45  -58.00 out-in 8.45  -56.00 out-in 8.45  -54.00 out-in 8.45  -52.00 out-in 8.45  -50.00 out-in 8.45  -48.00 out-in 8.45  -46.00 out-in 8.45  -44.00 out-in 8.45  -42.00 out-in 8.45  -40.00 out-in 8.45  -38.00 out-in 8.45  -36.00 out-in 8.46  -34.00 out-in 8.46  -32.00 out-in 8.46  -30.00 out-in 8.47  -28.00 out-in 8.47  -26.00 out-in 8.48  -24.00 out-in 8.48  -22.00 out-in 8.49  -20.00 out-in 8.50  -18.00 out-in 8.51  -16.00 out-in 8.47  -14.00 out-in 8.11  -12.00 out-in 7.20  -10.00 out-in 5.88  -8.00 out-in 4.45  -6.00 out-in 2.94  -4.00 out-in 1.44  -2.00 out-in -0.05  0.00 out-in -1.52  (default gain is information only)
+linear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within 0.1): 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 -0.01
+writes landed by: instack 1 pump 15
+processes: 36 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 67, longest confirm 53.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.00           -0.03    -0.09    -0.12          --          
+  1  0.0667    14.48          -0.03    -0.09    -0.12          --          
+  2  0.1333    24.20          -0.03    -0.09    -0.12          --          
+  3  0.2000    30.72          -0.03    -0.09    -0.12          --          
+  4  0.2667    35.12          -0.03    -0.09    -0.12          --          
+  5  0.3333    38.04          -0.03    -0.09    -0.12          --          
+  6  0.4000    40.00          -0.03    -0.09    -0.12          --          
+  7  0.4667    41.44          -0.03    -0.09     0.08          --          
+  8  0.5333    43.40          -0.03    -0.08     1.83          --          
+  9  0.6000    46.08          -0.03     1.36     5.63          --          
+ 10  0.6667    49.72          -0.02     6.47    10.95          --          
+ 11  0.7333    54.68           0.63     9.04    13.57          --          
+ 12  0.8000    61.40           3.21    12.18    16.64          --          
+ 13  0.8667    70.56           7.42    16.38    20.99          --          
+ 14  0.9333    83.04          11.40    20.48    24.92          --          
+ 15  1.0000    100.00         15.46    24.52    28.79          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:15 -42.00:15 -40.00:15 -38.00:14 -36.00:14 -34.00:13 -32.00:13 -30.00:13 -28.00:12 -26.00:12 -24.00:11 -22.00:11 -20.00:10 -18.00:10 -16.00:10 -14.00:10 -12.00:9 -10.00:9 -8.00:8 -6.00:8 -4.00:7 -2.00:7 0.00:6
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_4647037d_12.0.0.json

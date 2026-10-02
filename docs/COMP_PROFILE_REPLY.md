@@ -228,3 +228,41 @@ Two things you should know from the measurement side:
   (62995254f7dd…) will never match your 15.0.70 map (32b7e1d9a0c3…), and V12 here runs bridged
   where V15 is probably native — a V12 sweep does not rehearse V15. CL 1B goes ahead: our
   `map_fp` ab70ea5337fe… is the fp your session logged on 30 Sep.
+
+## 2 Oct, morning: CL 1B exported to v1.4 — and what the first live profile run taught
+
+`~/Desktop/ej_profiles/ej_comp_profile/Tube-Tech_CL_1B_2.5.62.json` (+ `.tonecheck.json`), also in
+`tools/ejmap/profiles-export/`. The numbers:
+
+| field | value |
+|---|---|
+| map_fp | ab70ea5337fe3b0637ccd409982989fb0815d65a8e0ec9bef2ef9c228dcb5561 |
+| reference_ratio | 6.0 (as instantiated) |
+| detector_f | 0.40 — sine 2 dB at −10.9, two-tone at −12.1 peak-equivalent; "unknown" by your rule |
+| in_at_gr["2"] numeric | 13 of 16 (the three quietest positions sit at or below the sweep's −60 peak floor: null) |
+| quality.point_error_db | 0.1 (hold 2.5 s vs 5 s, 36 points, 0 shape disagreements) |
+| monotonic self-check | pass, within and across |
+| fit.max_error_db | 2.68 (informational) |
+| tone check, L = −18 RMS, g = 2 | **1.33 dB at the rule's pick → FAIL** (bar 0.5) |
+
+**Three things from the measurement side, in order of what they cost you:**
+
+1. **Your section 6 clamp and your bracket cannot both hold on this device.** In sine RMS, position
+   3's 2 dB point is −13.9 (4.1 dB above L) and position 4's is −23.2; position 4's 1 dB point is
+   −29.9, 11.9 dB below L, so the 8 dB clamp removes it and position 3 is picked alone — nothing to
+   interpolate toward — and at L it gives 1.33 dB. On a 6:1 soft-knee opto the 1 → 2 dB span is
+   7 dB and the next position's 1 dB point is 9 dB lower. Measured beside the rule, not in it: the
+   clamp-free interpolation between 3 and 4 (norm 0.2077) gives 1.58 dB, the midpoint (0.2333)
+   2.37 dB. Suggest the clamp read the *2 dB* point (the g you are picking for), or widen to the
+   position spacing; either is your call, we report the rule's number.
+2. **The quiet reference needed a ladder.** CL 1B's threshold reaches −57 dBFS peak; at −48 it is
+   already compressing on 10 of 16 positions, so the fixed −54/−48 pair failed its own 6 dB check
+   there and the first export refused ("3 points reach 1 dB; needs 9"). The reference now descends
+   −54/−48 → −66/−60 → −78/−72 → −90/−84 until a position's pair differs by 6 dB; the record says
+   which rung each position used. Two runs 14 minutes apart agree on every rung and every point to
+   0.1 dB. Any device whose range goes below −45 dBFS peak will need it.
+3. **`notes` now says "reference ladder: N positions referenced below −54/−48"** so you can see it.
+
+Also fixed this morning, both older than the spec: a one-position process (your detector and
+tone check) derived nothing, so no live `detector_f` had ever been recorded; and
+`plugin.manufacturer` was empty on a record made by discovery. Neither changes a number above.

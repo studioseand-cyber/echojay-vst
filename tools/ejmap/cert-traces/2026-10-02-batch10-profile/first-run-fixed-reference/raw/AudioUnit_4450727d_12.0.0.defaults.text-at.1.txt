@@ -1,0 +1,62 @@
+probe: "VComp (s)" | AudioUnit:Effects/aufx,NVCS,ksWV | uid=4450727d | arch=arm64 | format=AudioUnit
+
+param	0	Input	unit	
+def	0.350000	-6.0 dB	default	0.350000
+at	0.000	-24.0 dB
+at	0.500	0.0 dB
+at	1.000	18.0 dB
+param	1	Output	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-18.0 dB
+at	0.500	0.0 dB
+at	1.000	18.0 dB
+param	2	Meter	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	In
+at	0.500	GR
+at	1.000	Out
+param	3	Analog	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	50%
+at	1.000	100%
+param	4	Limit	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	5	Limit Level	unit	
+def	1.000000	12.0	default	1.000000
+at	0.000	4.0
+at	0.500	8.0
+at	1.000	12.0
+param	6	Attack	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Fast
+at	1.000	Slow
+param	7	Release Limiter	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	100ms
+at	0.500	800ms
+at	1.000	AUTO
+param	8	Compress	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Ratio	unit	
+def	0.750000	4:1	default	0.750000
+at	0.000	1.5:1
+at	0.500	3:1
+at	1.000	6:1
+param	10	Release Compressor	unit	
+def	1.000000	AUTO	default	1.000000
+at	0.000	400ms
+at	0.500	1.5s
+at	1.000	AUTO
+param	11	DeEsser	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On

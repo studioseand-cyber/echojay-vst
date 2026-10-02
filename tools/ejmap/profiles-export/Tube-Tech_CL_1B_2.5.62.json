@@ -1,0 +1,230 @@
+{
+  "schema": "ej_comp_profile/1",
+  "plugin": {
+    "name": "Tube-Tech CL 1B",
+    "manufacturer": "Softube",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|517f614e|2.5.62",
+    "version": "2.5.62",
+    "map_fp": "ab70ea5337fe3b0637ccd409982989fb0815d65a8e0ec9bef2ef9c228dcb5561"
+  },
+  "measured": {
+    "tool": "EJ Maps 0.1.0 (feat/ejmap-cert)",
+    "date": "2026-10-02",
+    "sample_rate": 48000,
+    "signal": "sine 997 Hz, stepped",
+    "level_ref": "sine_rms_dbfs",
+    "steps_dbfs": [
+      -63.009999999999998,
+      -3.01,
+      2.0
+    ],
+    "hold_ms": 2500,
+    "read_window_ms": 300,
+    "host": "out_of_process",
+    "reference_ratio": 6.0
+  },
+  "topology": "threshold",
+  "engage": [],
+  "never_touch": [],
+  "neutral": [],
+  "amount": {
+    "control": "Threshold",
+    "curve": [
+      {
+        "norm": 0.0,
+        "display": "Off",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null
+        }
+      },
+      {
+        "norm": 0.066667,
+        "display": "1.4",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null
+        }
+      },
+      {
+        "norm": 0.133333,
+        "display": "0.8",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "0.2",
+        "eff_threshold_dbfs": -20.710000000000001,
+        "in_at_gr_dbfs": {
+          "1": -20.710000000000001,
+          "2": -13.91,
+          "3": -10.109999999999999
+        }
+      },
+      {
+        "norm": 0.266667,
+        "display": "-4.2",
+        "eff_threshold_dbfs": -29.91,
+        "in_at_gr_dbfs": {
+          "1": -29.91,
+          "2": -23.210000000000001,
+          "3": -19.710000000000001
+        }
+      },
+      {
+        "norm": 0.333333,
+        "display": "-10.2",
+        "eff_threshold_dbfs": -34.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -34.009999999999998,
+          "2": -27.710000000000001,
+          "3": -24.210000000000001
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "-13.5",
+        "eff_threshold_dbfs": -39.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -39.310000000000002,
+          "2": -32.609999999999999,
+          "3": -28.91
+        }
+      },
+      {
+        "norm": 0.466667,
+        "display": "-16.8",
+        "eff_threshold_dbfs": -42.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -42.409999999999997,
+          "2": -35.810000000000002,
+          "3": -32.210000000000001
+        }
+      },
+      {
+        "norm": 0.533333,
+        "display": "-20.3",
+        "eff_threshold_dbfs": -45.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -45.409999999999997,
+          "2": -39.009999999999998,
+          "3": -35.710000000000001
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "-25.4",
+        "eff_threshold_dbfs": -52.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -52.009999999999998,
+          "2": -45.310000000000002,
+          "3": -41.810000000000002
+        }
+      },
+      {
+        "norm": 0.666667,
+        "display": "-30.2",
+        "eff_threshold_dbfs": -56.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -56.310000000000002,
+          "2": -49.909999999999997,
+          "3": -46.310000000000002
+        }
+      },
+      {
+        "norm": 0.733333,
+        "display": "-32.7",
+        "eff_threshold_dbfs": -60.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -60.409999999999997,
+          "2": -53.609999999999999,
+          "3": -49.909999999999997
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "-35.2",
+        "eff_threshold_dbfs": -62.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -62.609999999999999,
+          "2": -55.909999999999997,
+          "3": -52.210000000000001
+        }
+      },
+      {
+        "norm": 0.866667,
+        "display": "-37.7",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": -57.509999999999998,
+          "3": -53.909999999999997
+        }
+      },
+      {
+        "norm": 0.933333,
+        "display": "-40.0",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": -58.509999999999998,
+          "3": -54.810000000000002
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "-41.0",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": -58.509999999999998,
+          "3": -54.810000000000002
+        }
+      }
+    ],
+    "stepped": false
+  },
+  "ratio": {
+    "control": "Ratio",
+    "curve": [],
+    "fixed": {
+      "measured_ratio": 1.87,
+      "knee_db": 0.0
+    }
+  },
+  "static_gain_db": -0.7,
+  "detector_f": 0.4,
+  "detector_f_raw": 0.4,
+  "quality": {
+    "point_error_db": 0.1,
+    "method": "hold 2.5 s vs 5 s",
+    "points_compared": 36,
+    "shape_disagreements": 0,
+    "monotonic_within_positions": true,
+    "monotonic_across_positions": true,
+    "violations": []
+  },
+  "level_coupling": null,
+  "fit": {
+    "max_error_db": 2.68,
+    "points": 146,
+    "model": "threshold per position from the 1 dB crossing; ratio 1.5, knee 0.0 dB, grid-searched; nothing tuned",
+    "error_vs_2db_target": 1.34,
+    "measured_point_quality": {
+      "non_monotonic_straddles": 0,
+      "widest_gap_db": 2.0,
+      "points_with_1db": 10
+    }
+  },
+  "notes": "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; guards passed: tone_frac (0 readings refused as not the tone), level dependence (not a gain law), quiet-reference 6 dB self-check (16 of 16 positions), ascending-only levels in each fresh process, still-moving rule; profile sweep, 31 levels ascending per fresh process, quiet reference per position (reference ladder: 10 position(s) referenced below -54/-48); fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points); compressed as instantiated, no engage write needed;"
+}

@@ -36,8 +36,8 @@
     amount     one point per position WITH a number: eff_threshold_dbfs = our 1 dB crossing - 3.0103; at least 9
     ratio      reference_ratio = the READ-BACK ratio; `fixed` = implied R from the level dependence (the ratio curve
                needs a ratio sweep at a fixed compressing position - AFTER the first two profiles ship)
-    static_gain_db  from the two-quiet-level reference (median of the per-position -48 dBFS gains that passed the
-               6 dB check); no quiet reference passing anywhere = NO PROFILE
+    static_gain_db  from the two-quiet-level reference (median of the per-position quiet-rung gains that passed the
+               6 dB check, -54/-48 or a ladder rung below it); no quiet reference passing anywhere = NO PROFILE
     level_coupling  input_drive only: per position, the quiet gain
     fit        HIS model (threshold + ratio + knee) fitted to our readable points; max error reported, and against
                his 2 dB target; nothing tuned to get under 1.5
@@ -202,7 +202,7 @@ inline Export exportCompProfile (const juce::var& f)
             if (pass) quietGains.push_back ((double) g[i]);
         }
     }
-    if (quietGains.empty()) return refuse (quiet ? "the two-quiet-level check (-48 minus -54 within 0.1 dB of 6) passed at no position: static_gain_db cannot be given, no profile"
+    if (quietGains.empty()) return refuse (quiet ? "the two-quiet-level check (the rung's pair within 0.1 dB of 6) passed at no position on any ladder rung: static_gain_db cannot be given, no profile"
                                                  : "no two-quiet-level reference on this sweep (soft-end reference): static_gain_db cannot be given, no profile - re-run as a profile sweep");
     const double staticGain = sweep::quantile (quietGains, 0.5);
 
@@ -407,7 +407,9 @@ inline Export exportCompProfile (const juce::var& f)
               << "level dependence (not a gain law), quiet-reference 6 dB self-check (" << juce::String ((int) quietGains.size()) << " of " << juce::String (norms.size()) << " positions), "
               << "ascending-only levels in each fresh process, still-moving rule; ";
     }
-    notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position; ";
+    notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position";
+    { const int desc = (int) lr.getProperty ("descended", 0); if (desc > 0) notes << " (reference ladder: " << desc << " position(s) referenced below -54/-48)"; }
+    notes << "; ";
     if (fit.maxErrorDb > 1.5) notes << "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points); ";
     if (! sweepVar.getProperty ("engageWrites", {}).isObject()) notes << "compressed as instantiated, no engage write needed; ";
     P->setProperty ("notes", notes.trim());

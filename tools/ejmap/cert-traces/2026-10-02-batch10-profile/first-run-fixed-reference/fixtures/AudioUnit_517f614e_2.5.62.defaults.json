@@ -1,0 +1,236 @@
+{
+  "identity": "AudioUnit|517f614e|2.5.62",
+  "product": "Tube-Tech CL 1B",
+  "format": "AudioUnit",
+  "uid": "517f614e",
+  "version": "2.5.62",
+  "sampledAt": "2026-10-02",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 8,
+  "map_fp": "ab70ea5337fe3b0637ccd409982989fb0815d65a8e0ec9bef2ef9c228dcb5561",
+  "controls": [
+    {
+      "index": 0,
+      "name": "Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "8.5",
+        "1.000": "31.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 8.5,
+        "max": 31.0,
+        "at0": null,
+        "at0_5": 8.5,
+        "at1": 31.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.33,
+        "display": "0.0",
+        "declaredDefault": 0.33,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Ratio",
+      "unit": ":1",
+      "displayAt": {
+        "0.000": "2:1",
+        "0.500": "6:1",
+        "1.000": "10:1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 2.0,
+        "max": 10.0,
+        "at0": 2.0,
+        "at0_5": 6.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "6:1",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "-18.5",
+        "1.000": "-41.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -41.0,
+        "max": -18.5,
+        "at0": null,
+        "at0_5": -18.5,
+        "at1": -41.0,
+        "inverted": true,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Meter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "In",
+        "0.500": "Comp",
+        "1.000": "Out"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "Comp",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Attack",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "5.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Release",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.0",
+        "0.500": "5.0",
+        "1.000": "10.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "5.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Select Attack Release",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Fix",
+        "0.500": "F/M",
+        "1.000": "Man"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "Man",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Sidechain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Int",
+        "0.500": "Ext",
+        "1.000": "Ext"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Int",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-02",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "schema": "ej_cert_compressor/1",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  }
+}

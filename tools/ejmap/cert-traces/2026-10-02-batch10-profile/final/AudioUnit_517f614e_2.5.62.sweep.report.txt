@@ -1,0 +1,37 @@
+EJ Map threshold sweep - Tube-Tech CL 1B -> AudioUnit_517f614e_2.5.62.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Threshold unit 'dB' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [1] ran at '6:1' -> 6 | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -60.00 out-in -0.64  -58.00 out-in -0.64  -56.00 out-in -0.64  -54.00 out-in -0.64  -52.00 out-in -0.64  -50.00 out-in -0.64  -48.00 out-in -0.64  -46.00 out-in -0.64  -44.00 out-in -0.64  -42.00 out-in -0.64  -40.00 out-in -0.64  -38.00 out-in -0.64  -36.00 out-in -0.64  -34.00 out-in -0.64  -32.00 out-in -0.64  -30.00 out-in -0.64  -28.00 out-in -0.64  -26.00 out-in -0.64  -24.00 out-in -0.64  -22.00 out-in -0.64  -20.00 out-in -0.64  -18.00 out-in -0.64  -16.00 out-in -0.64  -14.00 out-in -0.64  -12.00 out-in -0.64  -10.00 out-in -0.64  -8.00 out-in -0.64  -6.00 out-in -0.64  -4.00 out-in -0.64  -2.00 out-in -0.64  0.00 out-in -0.64  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.01 -0.05 -0.09 -0.03 -0.05 -0.08 -0.04 -0.07 -0.02 -0.03 -0.04 -0.05 -0.05
+reference ladder: 10 position(s) below the first rung (6@-60 7@-60 8@-60 9@-72 10@-72 11@-84 12@-84 13@-84 14@-84 15@-84)
+writes landed by: instack 16
+processes: 36 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off            -0.00    -0.00     0.00   {"above": 0.0}          
+  1  0.0667    1.4             0.00     0.01     0.05   {"above": 0.0}          
+  2  0.1333    0.8             0.01     0.06     0.14   {"above": 0.0}          
+  3  0.2000    0.2             0.48     1.79     3.51       -13.4    -13.60
+  4  0.2667    -4.2            1.36     5.47     9.19       -20.5    -16.30
+  5  0.3333    -10.2           2.13     8.33    12.51       -25.1    -14.90
+  6  0.4000    -13.5           3.98    11.48    15.99       -30.2    -16.70
+  7  0.4667    -16.8           5.80    13.91    18.62       -33.1    -16.30
+  8  0.5333    -20.3           7.87    16.54    21.46       -35.9    -15.60
+  9  0.6000    -25.4          11.99    21.44    26.61       -42.5    -17.10
+ 10  0.6667    -30.2          15.59    25.50    30.94       -47.2    -17.00
+ 11  0.7333    -32.7          18.24    28.51    34.12       -50.6    -17.90
+ 12  0.8000    -35.2          20.17    30.65    36.34       -52.3    -17.10
+ 13  0.8667    -37.7          21.57    32.28    38.00       -53.7    -16.00
+ 14  0.9333    -40.0          22.38    33.21    38.96       -54.4    -14.40
+ 15  1.0000    -41.0          22.40    33.23    38.98       -54.4    -13.40
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:11 -58.00:10 -56.00:10 -54.00:9 -52.00:9 -50.00:9 -48.00:9 -46.00:8 -44.00:7 -42.00:6 -40.00:6 -38.00:6 -36.00:5 -34.00:5 -32.00:4 -30.00:4 -28.00:4 -26.00:4 -24.00:4 -22.00:3 -20.00:3 -18.00:3 -16.00:3 -14.00:3 -12.00:3 -10.00:3 -8.00:3 -6.00:3 -4.00:3 -2.00:3 0.00:3
+2 engage drift:    29.41  -10.00:11.84  -12.00:13.74  -14.00:15.66  -16.00:17.65  -18.00:19.55  -2.00:5.82  -20.00:21.15  -22.00:22.67  -24.00:26.48  -26.00:27.33  -28.00:27.98  -30.00:28.33  -32.00:28.33  -34.00:24.79  -36.00:25.88  -38.00:27.64  -4.00:7.19  -40.00:28.31  -42.00:28.64  -44.00:28.14  -46.00:26.60  -48.00:27.07  -50.00:28.02  -52.00:28.79  -54.00:29.32  -56.00:27.05  -58.00:28.14  -6.00:8.53  -60.00:30.20  -8.00:9.95  0.00:0.78   (primary; displayLinear unset until the population decides)
+   offset IQR:      2.10 dB over 13 positions (min -17.90, max -13.40)
+3 displayOffsetDb: -16.30  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_517f614e_2.5.62.json

@@ -1,0 +1,82 @@
+probe: "NEOLD V76U73" | AudioUnit:Effects/aufx,NeV7,Neol | uid=61755f23 | arch=arm64 | format=AudioUnit
+
+param	0	Attack Time	unit	
+def	0.000000	Fast	default	0.000000
+at	0.000	Fast
+at	0.500	Fast
+at	1.000	Auto
+param	1	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	2	Mix	unit	%
+def	1.000000	100.0	default	1.000000
+at	0.000	0.0
+at	0.500	50.0
+at	1.000	100.0
+param	3	Gain	unit	dB
+def	0.454545	58	default	0.454545
+at	0.000	43
+at	0.500	61
+at	1.000	76
+param	4	Low Cut	unit	
+def	0.000000	Flat	default	0.000000
+at	0.000	Flat
+at	0.500	300 Hz
+at	1.000	300+80 Hz
+param	5	Detector	unit	
+def	1.000000	Stereo	default	1.000000
+at	0.000	Dual Mono
+at	0.500	Dual Mono
+at	1.000	Stereo
+param	6	Linear	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	High Cut	unit	
+def	0.000000	Flat	default	0.000000
+at	0.000	Flat
+at	0.500	Flat
+at	1.000	3 kHz
+param	8	Meter Mode	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	Output
+at	0.500	GR
+at	1.000	Input
+param	9	Makeup Gain	unit	dB
+def	0.000000	0.0	default	0.000000
+at	0.000	0.0
+at	0.500	12.0
+at	1.000	24.0
+param	10	Mode	unit	
+def	0.500000	Bypass	default	0.500000
+at	0.000	Compress
+at	0.500	Bypass
+at	1.000	Limit
+param	13	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	Release Time	unit	s
+def	0.400000	1.2	default	0.400000
+at	0.000	0.3
+at	0.500	2.5
+at	1.000	10
+param	15	SC Filter	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Send	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-24.0
+at	0.500	0.0
+at	1.000	24.0
+param	17	Trim	unit	dB
+def	0.500000	0.0	default	0.500000
+at	0.000	-18.0
+at	0.500	0.0
+at	1.000	18.0

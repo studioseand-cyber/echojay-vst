@@ -4338,6 +4338,57 @@ void testSweepQuietReference()
     const auto mc = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_73462d29_1.5.1.json").loadFileAsString()));
     check (mc.quietReference && mc.probeLevels().size() == 5 && mc.probeLevels().front() == -54.0,
            "quiet Q5: MC 77's plan renders -54 and -48 first, quiet to loud");
+
+    // THE REFERENCE LADDER (2 Oct, CL 1B): a device whose threshold reaches below -48 compresses the first rung's pair;
+    // the reference descends 12 dB a rung until a pair passes, loudest passing rung first, and refuses when none does.
+    // Here positions 0 and 1 sit at -40 dBFS peak and each further position 12 dB lower (p = 5: -88), 2:1, so -48 is
+    // compressed from p = 2, -60 from p = 3, -72 from p = 4 and -84 at p = 5: three positions descend, one has no rung.
+    {
+        auto ladder = [] (bool deepRungs, double bendAt48ForPos1) {
+            Measured m; m.ok = true; m.movingDb = 0.1;
+            for (int p = 0; p < 6; ++p)
+            {
+                const double T = -40.0 - 12.0 * juce::jmax (0, p - 1);
+                PositionReading r; r.k = p; r.norm = (float) p / 5.0f; r.text = juce::String (T, 1) + " dB";
+                std::vector<double> lv { -54.0, -48.0, -24.0, -12.0, -6.0 };
+                if (deepRungs) for (double L : { -66.0, -60.0, -78.0, -72.0, -90.0, -84.0 }) lv.push_back (L);
+                for (double L : lv)
+                {
+                    HoldReading h; h.present = true; h.inRmsDb = L - 3.0103;
+                    h.levelDb = h.inRmsDb + 1.0 - (L > T ? (L - T) * 0.5 : 0.0) + (p == 1 && L == -48.0 ? bendAt48ForPos1 : 0.0);   // +1 dB static gain
+                    r.holds[levelKey (L)] = h;
+                }
+                m.positions.push_back (r);
+            }
+            return m; };
+        const auto deep = derive (ladder (true, 0.0), sweeptest::kLevels, -1, true);
+        auto rungOf = [&] (const Derived& d, int i) { return d.quietRungDb[(size_t) i] ? juce::String ((int) d.quietRungDb[(size_t) i]->first) + "/" + juce::String ((int) d.quietRungDb[(size_t) i]->second) : juce::String ("none"); };
+        check (rungOf (deep, 0) == "-54/-48" && rungOf (deep, 1) == "-54/-48" && rungOf (deep, 2) == "-66/-60" && rungOf (deep, 3) == "-78/-72" && rungOf (deep, 4) == "-90/-84" && rungOf (deep, 5) == "none",
+               "ladder L1: each position's reference is the LOUDEST rung whose pair differs by 6 dB; one that passes nowhere has none ("
+                 + rungOf (deep, 0) + " " + rungOf (deep, 1) + " " + rungOf (deep, 2) + " " + rungOf (deep, 3) + " " + rungOf (deep, 4) + " " + rungOf (deep, 5) + ")");
+        check (deep.skipped.size() == 1 && deep.skipped.contains (5) && deep.skippedReasons[0].contains ("-84 minus -90") && deep.skippedReasons[0].contains ("every rung"),
+               "ladder L2: the position no rung reaches is refused, and the reason names the last rung walked ('" + (deep.skippedReasons.isEmpty() ? juce::String() : deep.skippedReasons[0]) + "')");
+        check (deep.quietGainDb[4] && std::abs (*deep.quietGainDb[4] - 1.0) < 1e-9 && deep.reduction.at (levelKey (-6))[4] && std::abs (*deep.reduction.at (levelKey (-6))[4] - 35.0) < 1e-9,
+               "ladder L3: the reference gain comes from the rung's upper level (+1 dB at -84 for position 4), so reduction at -6 is (-6 - -76)/2 = 35 dB");
+        check (! deep.skipped.contains (2) && deep.quietCheckDb[2] && std::abs (*deep.quietCheckDb[2]) < 1e-9 && deep.result == "certified",
+               "ladder L4: a position that descended is a reading like any other and the sweep still certifies (" + deep.result + ")");
+        // the same device read from a trace that holds only -54/-48 (every record before 2 Oct): positions 2-5 refused as before
+        const auto shallow = derive (ladder (false, 0.0), sweeptest::kLevels, -1, true);
+        check (shallow.skipped.size() == 4 && shallow.skippedReasons[0].contains ("-48 minus -54") && ! shallow.skippedReasons[0].contains ("every rung") && rungOf (shallow, 1) == "-54/-48",
+               "ladder L5: a trace with the first rung only is read exactly as before - no deeper rung is invented, the reason names -48 minus -54 (skipped "
+                 + juce::String (shallow.skipped.size()) + ": '" + (shallow.skippedReasons.isEmpty() ? juce::String() : shallow.skippedReasons[0]) + "')");
+        // the first rung passing wins even when a deeper one also passes (and a bent first rung hands position 1 to the second)
+        const auto bent = derive (ladder (true, -0.3), sweeptest::kLevels, -1, true);
+        check (rungOf (bent, 1) == "-66/-60" && ! bent.skipped.contains (1) && rungOf (bent, 0) == "-54/-48",
+               "ladder L6: a first rung that fails by 0.3 dB hands THAT position to the next rung; its neighbour keeps the first (" + rungOf (bent, 1) + ", " + rungOf (bent, 0) + ")");
+        // the record carries the rung per position and the count below the first
+        Plan lp; lp.thr = 0; lp.thrName = "Threshold"; lp.norms = { 0.f, 0.2f, 0.4f, 0.6f, 0.8f, 1.f }; lp.quietReference = true;
+        const auto rec = composeThresholdSweep (deep, displayCheck (deep, "dB"), lp, {});
+        const auto lr = rec.getProperty ("linearReference", {});
+        check ((int) lr.getProperty ("descended", -1) == 3 && lr.getProperty ("rung_dbfs", {}).size() == 6 && (int) lr.getProperty ("rung_dbfs", {})[3][1] == -72 && lr.getProperty ("rung_dbfs", {})[5].isVoid()
+                 && lr.getProperty ("ladder_dbfs", {}).size() == 4 && (int) lr.getProperty ("levels_dbfs", {})[1] == -48,
+               "ladder L7: the record says which rung each position used (null where none), how many descended, the whole ladder, and levels_dbfs still names the first rung");
+    }
 }
 
 //==============================================================================
@@ -5052,6 +5103,11 @@ void testMapFpJoinKey()
              && fx.getProperty ("map_fp", "").toString() == echojay::fingerprintForDescription (s.desc, 13)
              && fx.getProperty ("map_fp", "").toString() != echojay::fingerprintForDescription (s.desc, 11),
            "mapfp M0: param_count is the list's size, not controls.length, and map_fp hashes it through the shared function");
+    // M0b (2 Oct): the vendor rides on the record from the host's description (CL 1B's discovery record had none, and the
+    // export's plugin.manufacturer was empty)
+    Subject sv = s; sv.desc.manufacturerName = "NEOLD";
+    check (composeFixture (sv, list, text, 0, 0, "probe", "2026-10-02").getProperty ("manufacturer", "").toString() == "NEOLD" && ! fx.hasProperty ("manufacturer"),
+           "mapfp M0b: manufacturer is the host's manufacturerName on the record, and absent (never empty) when the host has none");
 
     // Against the corpus: every store record with a local map reproduces that map's fp. Skipped (said so) without the maps.
     auto mapsDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/maps");
@@ -5257,6 +5313,39 @@ void testProfileExport()
                "detector D1: f = shift / 3.01 - 0 for equal levels, 1 for a 3.01 dB earlier two-tone, 0.5 halfway");
         check (detectorWord (0.05) == "rms" && detectorWord (0.95) == "peak" && detectorWord (0.5) == "unknown" && detectorWord (std::nullopt) == "unknown",
                "detector D2: the spec's word only at an end of the range; in between, and unmeasured, it is unknown");
+        {
+            // D6 (2 Oct): the detector's and the tone check's processes hold ONE position. A one-position derive has no
+            // sense and no verdict, but the reduction against the position's own quiet rung and its in_at_gr are a
+            // measurement and must come back - until 2 Oct they did not, and the live detector had never recorded.
+            using namespace ejmap::sweep;
+            Measured one; one.ok = true; one.movingDb = 0.1;
+            PositionReading r; r.k = 0; r.norm = 0.3f; r.text = "-20 dB";
+            std::vector<double> lv { -54.0, -48.0 }; for (int L = -60; L <= 0; L += 2) lv.push_back ((double) L);
+            for (double L : lv)
+            {
+                HoldReading h; h.present = true; h.inRmsDb = L - 3.0103;
+                h.levelDb = h.inRmsDb - 0.5 - (L > -20.0 ? (L + 20.0) * 0.5 : 0.0);      // -0.5 dB static gain, 2:1 above -20 peak
+                r.holds[levelKey (L)] = h;
+            }
+            one.positions.push_back (r);
+            std::vector<double> grid; for (int L = -60; L <= 0; L += 2) grid.push_back ((double) L);
+            const auto d1 = derive (one, grid, -1, true);
+            const auto two = d1.inAtGr.size() == 1 && d1.inAtGr[0].at.count (2) ? d1.inAtGr[0].at.at (2) : juce::var();
+            check (d1.result == "unreadable" && d1.sense.isEmpty() && d1.inAtGr.size() == 1 && two.isDouble() && std::abs ((double) two - (-16.0)) < 1e-6
+                     && d1.reduction.count (levelKey (-6.0)) && d1.reduction.at (levelKey (-6.0))[0] && std::abs (*d1.reduction.at (levelKey (-6.0))[0] - 7.0) < 1e-9
+                     && d1.quietCheckDb.size() == 1 && d1.quietCheckDb[0] && std::abs (*d1.quietCheckDb[0]) < 1e-9,
+                   "detector D6: a one-position quiet-reference derive stays unreadable as a map but carries its reduction (7 dB at -6) and in_at_gr (2 dB at -16) for the detector and the tone check");
+            const auto d0 = derive (one, grid, -1, false);
+            check (d0.result == "unreadable" && d0.inAtGr.empty(), "detector D6b: without the quiet reference a single position has no reference and so no curve");
+            // D7: a merge with NO reference process (ref=0) is ok when its position's process was, and not when it was not
+            const juce::String posOut = "sweep\tproto\t1\tthr\t2\tname\tThreshold\tpositions\t1\tlevels\t1\n"
+                                        "pos\t0\tnorm\t0.300000\tconfirm_ms\t2.0\tslices\t1\tinstack_match\t1\tlanded_by\tinstack\ttext\t-20 dB\n"
+                                        "hold\t0\t-48.00\tlevel_db\t-51.5103\tin_rms_db\t-51.0103\ttone_frac\t1.0000\tfinal_move_db\t0.0\tnonfinite\t0\n";
+            const auto none = ProcessOut { juce::String(), true, "none", -1.0f };
+            const auto mOk = mergeProcesses (none, { ProcessOut { posOut, true, "clean", 0.3f } });
+            const auto mNo = mergeProcesses (none, { ProcessOut { juce::String(), false, "crashed", 0.3f } });
+            check (mOk.ok && mOk.positions.size() == 1 && ! mNo.ok, "detector D7: a reference-less merge (ref=0) is ok from its position's process alone (" + juce::String (mOk.ok ? "ok" : "not ok") + " / " + juce::String (mNo.ok ? "ok" : "not ok") + ")");
+        }
         auto withDet = record (16, true, false, "", "certified");
         auto* dd = new juce::DynamicObject(); dd->setProperty ("fraction", 0.97); withDet.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (dd));
         const auto xd = exportCompProfile (withDet);
@@ -5322,9 +5411,11 @@ void testProfileSweepPlan()
     p.makeProfile();
     const auto lv = p.testLevels();
     bool asc = true; for (size_t i = 1; i < lv.size(); ++i) asc = asc && lv[i] > lv[i - 1];
+    const auto pl = p.probeLevels();
+    bool pasc = true; for (size_t i = 1; i < pl.size(); ++i) pasc = pasc && pl[i] > pl[i - 1];
     check (lv.size() == 31 && lv.front() == -60.0 && lv.back() == 0.0 && asc && std::find (lv.begin(), lv.end(), -54.0) != lv.end() && std::find (lv.begin(), lv.end(), -48.0) != lv.end()
-             && p.probeLevels() == lv,
-           "profile N1: 31 levels -60..0 in 2 dB steps, ascending as the probe renders them, -54 and -48 on the grid for the quiet reference");
+             && pl.size() == 36 && pasc && pl.front() == -90.0 && std::equal (lv.begin(), lv.end(), pl.begin() + 5),
+           "profile N1: 31 levels -60..0 in 2 dB steps read, rendered ascending behind the ladder's five levels below the grid (-90..-66), -54 and -48 on the grid for the first rung");
     check (p.quietReference && p.holdS == 2.5 && p.winS == 0.3 && p.discardS == 2.2, "profile N2: quiet reference on by design, 2.5 s hold, last 300 ms read");
     const auto slow = p.holdDoubled();
     check (p.repeats == 2 && slow.holdS == 5.0 && std::abs (slow.discardS - 4.7) < 1e-9 && slow.winS == 0.3 && slow.testLevels() == p.testLevels(),

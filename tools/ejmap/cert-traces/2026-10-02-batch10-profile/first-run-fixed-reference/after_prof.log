@@ -1,0 +1,23 @@
+AFTER START 08:00:23  Now drawing from 'AC Power'
+=== export AudioUnit_3d30727d_12.0.0
+NOT POSSIBLE   CLA-76 (s): detector_f not measured (v1.4 requires it): run --cert-detector on the record first
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+=== export AudioUnit_4450727d_12.0.0
+NOT POSSIBLE   VComp (s): sweep result is flat: no two positions differ by more than 1 dB at any test level
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+=== export AudioUnit_4647037d_12.0.0
+NOT POSSIBLE   CLA-2A (s): detector_f not measured (v1.4 requires it): run --cert-detector on the record first
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+=== export AudioUnit_517f614e_2.5.62
+NOT POSSIBLE   Tube-Tech CL 1B: only 3 curve point(s) reach 1 dB inside the measured levels (his rule: at least 9)
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+=== export AudioUnit_54675c76_2.5.62
+NOT POSSIBLE   Empirical Labs Mike-E Comp: refused at stage plan
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+=== export AudioUnit_61755c26_1.1.0
+NOT POSSIBLE   NEOLD U2A: sweep result is flat: no two positions differ by more than 1 dB at any test level
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+=== export AudioUnit_61755f23_1.3.0
+NOT POSSIBLE   NEOLD V76U73: refused at stage plan
+EXPORT: 0 emitted, 0 emitted with fit over 1.5, 1 not possible
+AFTER DONE 08:00:23

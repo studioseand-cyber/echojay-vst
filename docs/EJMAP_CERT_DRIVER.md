@@ -1302,3 +1302,66 @@ Waves record in the store is V12, so the whole Waves set becomes new identities 
 census before running beyond EMO-D5; any V15 product the census cannot see is unmapped and needs
 the runbook's section 3 sweep first; then EMO-D5 (s): engage detection, the v1.4 profile run, tone
 check, export.
+
+## 21. The reference ladder, and three things the first live profile run exposed (2 Oct, morning)
+
+Mains came back at 07:46 and the CL 1B profile run went first. The sweep certified, the hold-doubled
+repeat agreed to 0.1 dB, and the export refused: "only 3 curve points reach 1 dB inside the measured
+levels (his rule: at least 9)". The record said why: the per-position quiet reference (-54 and -48,
+6 dB self-check) **failed on positions 6-15**. CL 1B's threshold runs to -41 on the display, about
+-57 dBFS peak, and with its soft knee the plugin is already compressing at -48 on ten of sixteen
+positions. The guard refused those positions rather than calibrate off a compressed reading - right -
+and the curve had three points.
+
+**The ladder.** `kQuietLadder` = (-54,-48), (-66,-60), (-78,-72), (-90,-84). A profile sweep renders
+the five levels below the grid (-90..-66) ahead of it, quiet to loud (`probeLevels()`, 36 levels; the
+derivation still reads the 31 of the grid). `derive` walks the rungs the trace holds, loudest first,
+and the first whose pair differs by 6 dB within 0.1 is that position's reference (loudest passing =
+farthest from the noise floor). A position that passes at no measured rung is refused, and the reason
+names the last rung walked. A trace that holds only -54/-48 - every record before today - walks one
+rung and reads exactly as before. The record carries `linearReference.rung_dbfs` per position, a
+`descended` count and the `ladder_dbfs`; `levels_dbfs` still names the first rung. The tone check
+renders the whole ladder below L so the picked position gets the same rule. Pins L1-L7 (loudest
+passing wins over a deeper pass; the reason; the gain read at the rung's upper level; the one-rung
+trace unchanged; the record fields), N1 updated; four mutants red (never descends: 6 pins; quietest
+passing: 3; gain read at -48 regardless: 1; rung unrecorded: 1).
+
+**Live, CL 1B 2.5.62, 08:17:** 16 of 16 positions referenced, **10 below the first rung** (positions
+6-8 at -66/-60, 9-10 at -78/-72, 11-15 at -90/-84), tone_frac 1.00 down to -90, every quiet pair
+within 0.02 dB of 6. Certified, higher_is_harder, T(peak) -13.4 .. -54.4, repeat agreement
+point_error_db 0.1 over 36 points. The second run (08:31, the shipped binary) is the record.
+
+**Two defects the chain then exposed, both older than today:**
+
+1. **A one-position derive returned nothing.** The detector's and the tone check's processes hold one
+   position; `derive` returned "fewer than two positions" before computing any reduction, so
+   `inAtGr` was empty, the detector returned `nullopt` silently and said "a 2 dB point was not reached
+   on one signal" - a message about the signal for a defect in the reader. The live detector had
+   never recorded a fraction. Now the quiet-reference reduction and the in_at_gr straddle are
+   lambdas shared by both paths, and a one-position quiet-reference derive stays `unreadable` as a
+   map but carries its reduction and in_at_gr (D6, D6b). The detector names the derive's result and
+   reason when it has no curve.
+2. **A merge with no reference process was never ok.** `Measured::ok` came only from the reference's
+   own `sweep` line, and the detector, the tone check and the repeat path's fallback merge with a
+   `{"", clean, "none"}` reference - every one derived as "no sweep output". A reference-less merge
+   is now ok when a position's process was (D7).
+
+Neither pin could have been written from the message: both said something true about the signal.
+The one that found them was the live chain, and only because the export refused first and the
+chain was run by hand.
+
+**Detector, live:** sine 2 dB at -10.9, two-tone (997 + 1201 Hz, same peak) at -12.1: shift 1.20 dB,
+**f = 0.40**, word "unknown" by his rule (neither end). Recorded raw and clamped.
+
+**Tone check, live (section 6 at L = -18 dBFS RMS, g = 2): FAIL by the rule's own pick.** The 8 dB
+clamp removed position 4 (1 dB point -29.9, more than 8 dB below L = -15 peak), leaving position 3
+alone (2 dB at -13.9) with nothing to interpolate toward, and the GR there at L is **1.33 dB**
+(target 2.0, bar 0.5). Measured beside it, not in the rule: the clamp-free interpolation between
+positions 3 and 4 (norm 0.2077) gives **1.58 dB**; the midpoint norm 0.2333 gives 2.37. On a 6:1
+soft-knee opto the 1 -> 2 dB span is 7 dB and the next position's 1 dB point is 9 dB lower, so the
+clamp and the bracket cannot both hold. This is his rule's number on his device; it is reported, not
+tuned.
+
+**A third defect:** the discovery path never stamped `manufacturer` (the 103 store records got it by
+hand on 1 Oct), so the export's `plugin.manufacturer` was empty. `composeFixtureImpl` now writes the
+host's `manufacturerName` (M0b).

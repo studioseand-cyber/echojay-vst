@@ -1,0 +1,36 @@
+EJ Map threshold sweep - Tube-Tech CL 1B -> AudioUnit_517f614e_2.5.62.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Threshold unit 'dB' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [1] ran at '6:1' -> 6 | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -60.00 out-in -0.64  -58.00 out-in -0.64  -56.00 out-in -0.64  -54.00 out-in -0.64  -52.00 out-in -0.64  -50.00 out-in -0.64  -48.00 out-in -0.64  -46.00 out-in -0.64  -44.00 out-in -0.64  -42.00 out-in -0.64  -40.00 out-in -0.64  -38.00 out-in -0.64  -36.00 out-in -0.64  -34.00 out-in -0.64  -32.00 out-in -0.64  -30.00 out-in -0.64  -28.00 out-in -0.64  -26.00 out-in -0.64  -24.00 out-in -0.64  -22.00 out-in -0.64  -20.00 out-in -0.64  -18.00 out-in -0.64  -16.00 out-in -0.64  -14.00 out-in -0.64  -12.00 out-in -0.64  -10.00 out-in -0.64  -8.00 out-in -0.64  -6.00 out-in -0.64  -4.00 out-in -0.64  -2.00 out-in -0.64  0.00 out-in -0.64  (default gain is information only)
+linear reference: each position's own gain at -48, checked against -54 (must differ by 6 dB within 0.1): 0.00 0.00 0.00 -0.01 -0.05 -0.09 -0.15 -0.22 -0.31 -0.56 -0.86 -1.12 -1.77 -2.37 -2.71 -2.72
+writes landed by: instack 16
+processes: 36 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off             0.00     0.00     0.00   {"above": 0.0}          
+  1  0.0667    1.4             0.01     0.02     0.05   {"above": 0.0}          
+  2  0.1333    0.8             0.01     0.06     0.14   {"above": 0.0}          
+  3  0.2000    0.2             0.49     1.79     3.51       -13.4    -13.60
+  4  0.2667    -4.2            1.36     5.47     9.19       -20.5    -16.30
+  5  0.3333    -10.2           2.14     8.33    12.51       -25.1    -14.90
+  6  0.4000    -13.5             --       --       --          --          
+  7  0.4667    -16.8             --       --       --          --          
+  8  0.5333    -20.3             --       --       --          --          
+  9  0.6000    -25.4             --       --       --          --          
+ 10  0.6667    -30.2             --       --       --          --          
+ 11  0.7333    -32.7             --       --       --          --          
+ 12  0.8000    -35.2             --       --       --          --          
+ 13  0.8667    -37.7             --       --       --          --          
+ 14  0.9333    -40.0             --       --       --          --          
+ 15  1.0000    -41.0             --       --       --          --          
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:5 -34.00:5 -32.00:4 -30.00:4 -28.00:4 -26.00:4 -24.00:4 -22.00:3 -20.00:3 -18.00:3 -16.00:3 -14.00:3 -12.00:3 -10.00:3 -8.00:3 -6.00:3 -4.00:3 -2.00:3 0.00:3
+2 engage drift:    27.61  -10.00:11.85  -12.00:13.74  -14.00:15.66  -16.00:17.65  -18.00:19.56  -2.00:5.83  -20.00:21.15  -22.00:22.68  -24.00:26.52  -26.00:27.35  -28.00:27.99  -30.00:28.40  -32.00:28.39  -34.00:27.76  -36.00:26.25  -38.00:null  -4.00:7.19  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:8.53  -60.00:null  -8.00:9.96  0.00:0.78   (primary; displayLinear unset until the population decides)
+   offset IQR:      1.35 dB over 3 positions (min -16.30, max -13.60)
+3 displayOffsetDb: -14.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_517f614e_2.5.62.json

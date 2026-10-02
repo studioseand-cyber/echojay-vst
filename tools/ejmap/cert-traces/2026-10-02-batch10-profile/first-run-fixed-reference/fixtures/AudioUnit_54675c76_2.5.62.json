@@ -1,0 +1,344 @@
+{
+  "identity": "AudioUnit|54675c76|2.5.62",
+  "product": "Empirical Labs Mike-E Comp",
+  "format": "AudioUnit",
+  "uid": "54675c76",
+  "version": "2.5.62",
+  "sampledAt": "2026-10-02",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 12,
+  "map_fp": "3859324437da80ce6ce6ddd7055f090c242fe8b01cbc0ffa8448eb8f61d6decc",
+  "controls": [
+    {
+      "index": 0,
+      "name": "Preamp Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "CLEAN",
+        "0.500": "8 dB",
+        "1.000": "18 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 8.0,
+        "max": 18.0,
+        "at0": null,
+        "at0_5": 8.0,
+        "at1": 18.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "CLEAN",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Phase",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Hi-Pass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Drive",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "5.00",
+        "1.000": "10.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "5.00",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Comp Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Low Freq Emph",
+        "1.000": "High Freq Emph 1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Ratio",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Bypass",
+        "0.500": "4:1",
+        "1.000": "NUKE"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.6,
+        "display": "4:1",
+        "declaredDefault": 0.6,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.9",
+        "0.500": "12.0",
+        "1.000": "100.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.9,
+        "max": 100.0,
+        "at0": 0.9,
+        "at0_5": 12.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.25,
+        "display": "8.0",
+        "declaredDefault": 0.25,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Release",
+      "unit": "s",
+      "displayAt": {
+        "0.000": "0.05",
+        "0.500": "0.25",
+        "1.000": "0.50"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.05,
+        "max": 0.5,
+        "at0": 0.05,
+        "at0_5": 0.25,
+        "at1": 0.5,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.333333,
+        "display": "0.10",
+        "declaredDefault": 0.333333,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Mix",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "5.00",
+        "1.000": "10.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "10.00",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Out",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "5.00",
+        "1.000": "10.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 10.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.65,
+        "display": "6.50",
+        "declaredDefault": 0.65,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Ext S/C In",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "On",
+        "1.000": "On"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Ext S/C Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "67.0",
+        "0.500": "0.0",
+        "1.000": "-21.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -21.0,
+        "max": 67.0,
+        "at0": 67.0,
+        "at0_5": 0.0,
+        "at1": -21.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.68,
+        "display": "-12.0",
+        "declaredDefault": 0.68,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-02",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "schema": "ej_cert_compressor/1",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  },
+  "thresholdRefusal": {
+    "stage": "plan",
+    "retry": "permanent: a fact about the product; --retry-refused skips it (--retry-refused-all does not)",
+    "reason": "not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+    "recordedAt": "20261002T075122.739+0100",
+    "host": "EJ Map 0.1.0",
+    "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+    "processes": 3,
+    "uncleanProcesses": 0,
+    "note": "stopped before a usable measurement: no thresholdSweep. The worklist skips a recorded refusal; re-run it with --retry-refused (after fixing what the reason names), or by deleting this file, or it re-runs on its own at a new installed version"
+  }
+}

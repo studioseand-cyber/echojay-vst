@@ -1,0 +1,10 @@
+probe: "Tube-Tech CL 1B" | AudioUnit:Effects/aufx,clST,SfTb | uid=517f614e | arch=arm64 | format=AudioUnit
+
+0	Gain	dB	2147483647	0	1	0
+1	Ratio		2147483647	0	1	0
+2	Threshold	dB	2147483647	0	1	0
+3	Meter		2147483647	0	1	0
+4	Attack		2147483647	0	1	0
+5	Release		2147483647	0	1	0
+6	Select Attack Release		2147483647	0	1	0
+7	Sidechain		2147483647	0	1	0

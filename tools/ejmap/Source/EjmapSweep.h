@@ -70,6 +70,13 @@ inline constexpr double kPeakToRmsDb  = 3.0103; // a sine's peak over its RMS
 inline constexpr double kLinearDb     = 2.0;    // the soft end's gains disagreeing by more than this is UNUSABLE data (useful
                                                 // reductions are 3-20 dB); the disagreement itself is recorded on every fixture
 inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must differ by 6 dB within this
+// THE REFERENCE LADDER (2 Oct, Tube-Tech CL 1B): a threshold whose range reaches -57 dBFS peak is already compressing at
+// -48, so the fixed -54/-48 pair failed its own 6 dB check on 10 of 16 positions and those positions had no reference and
+// no curve (3 of 16 reached 1 dB; the export needs 9). The ladder descends a rung at a time, 12 dB each, until a
+// position's pair passes, and the LOUDEST passing rung is the reference (farthest from the noise floor); the rung used is
+// recorded per position. A guard still refuses: a position that passes at no measured rung has no reference. Only rungs
+// the trace holds are walked, so a trace with -54/-48 alone reads exactly as before.
+inline const std::vector<std::pair<double, double>> kQuietLadder { { -54.0, -48.0 }, { -66.0, -60.0 }, { -78.0, -72.0 }, { -90.0, -84.0 } };
 inline constexpr double kSilentDb     = -90.0;  // an output below this at every level is silent
 inline constexpr double kToneFracMin  = 0.5;    // an output with less than half its power at the tone is not the input's tone
 inline constexpr double kBelowRefDb   = 0.5;    // (superseded 30 Sep by kRefErrorFrac; kept for the record in older fixtures)
@@ -128,7 +135,14 @@ struct Plan
     }
     std::vector<double> probeLevels() const  // quiet to loud, as the probe renders them
     {
-        if (profile) return testLevels();                                    // -54 and -48 are in the grid: the quiet reference reads them
+        if (profile)                                                         // the grid, with the ladder's rungs below it (quiet to loud)
+        {
+            std::vector<double> v;
+            for (const auto& [lo, hi] : kQuietLadder) for (double L : { lo, hi }) if (L < -60.0) v.push_back (L);
+            std::sort (v.begin(), v.end());
+            for (double L : testLevels()) v.push_back (L);
+            return v;
+        }
         return quietReference ? std::vector<double> { -54.0, -48.0, -24.0, -12.0, -6.0 } : std::vector<double> { -24.0, -12.0, -6.0 };
     }
     // v1.4: the repeat with the HOLD DOUBLED - the same read window at the end of a hold twice as long.
@@ -549,6 +563,10 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         m.audioS += one.audioS;
         if (m.arch.isEmpty()) m.arch = one.arch;
         if (m.holdS <= 0.0) { m.holdS = one.holdS; m.winS = one.winS; }   // the reference may be absent (ref=0): take the spec from a position
+        // NO REFERENCE PROCESS (ref=0: the detector, the tone check): the merge is ok when a position's process was.
+        // Until 2 Oct `ok` came only from the reference's own sweep line, so every reference-less merge derived as
+        // "no sweep output" and the live detector never recorded a fraction.
+        if (reference.clean && reference.out.isEmpty() && po.clean && one.ok) m.ok = true;
     }
     return m;
 }
@@ -598,7 +616,8 @@ struct Derived
     std::map<juce::String, double> linearGain;
     std::optional<int> softEnd;
     std::optional<double> softEndSpreadDb;
-    std::vector<std::optional<double>> quietCheckDb; // per position: (gain at -48) - (gain at -54); 0 for a linear quiet tone
+    std::vector<std::optional<double>> quietCheckDb; // per position: (gain at the rung's upper level) - (gain at its lower); 0 for a linear quiet tone
+    std::vector<std::optional<std::pair<double, double>>> quietRungDb; // per position: the ladder rung the reference came from (none = no rung passed)
     std::map<juce::String, std::optional<int>> engage;
     std::vector<juce::var> tEquivalent;             // number | {"above": L} | {"below": L} | null
     // THE RATIO-FREE AMOUNT CURVE (Sean's definition, adopted ALONGSIDE ours, 1 Oct): the input level at which gain
@@ -692,7 +711,6 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     std::vector<const PositionReading*> byNorm;
     for (const auto& p : m.positions) byNorm.push_back (&p);
     std::stable_sort (byNorm.begin(), byNorm.end(), [] (auto* a, auto* b) { return a->norm < b->norm; });
-    const auto q54 = levelKey (-54.0), q48 = levelKey (-48.0);
     for (size_t i = 0; i < byNorm.size(); ++i)
     {
         const auto* p = byNorm[i];
@@ -713,18 +731,32 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
             if (! isTone (it->second)) return std::nullopt;
             return it->second.levelDb - it->second.inRmsDb; };
         std::optional<double> quietCheck;
+        std::optional<std::pair<double, double>> rung;
         if (quietReference && ! skip)
         {
-            const auto a = usable (q54), b = usable (q48);
-            if (a && b) quietCheck = *b - *a;
-            if (! quietCheck || std::abs (*quietCheck) > kQuietTolDb)
+            // THE LADDER: rungs the trace holds, loudest first; the first that passes is the reference. The check kept on
+            // refusal is the LAST measured rung's, so the reason names how far the ladder went.
+            int walked = 0;
+            for (const auto& [lo, hi] : kQuietLadder)
+            {
+                if (! p->holds.count (levelKey (lo)) && ! p->holds.count (levelKey (hi))) break;   // not rendered: the ladder ends here
+                ++walked;
+                const auto a = usable (levelKey (lo)), b = usable (levelKey (hi));
+                quietCheck = (a && b) ? std::optional<double> (*b - *a) : std::nullopt;
+                if (quietCheck && std::abs (*quietCheck) <= kQuietTolDb) { rung = std::make_pair (lo, hi); break; }
+            }
+            if (! rung)
             {
                 skip = true;
-                why = ! quietCheck ? juce::String ("quiet reference: -54 or -48 unreadable")
-                                   : "quiet reference: -48 minus -54 is " + juce::String (6.0 + *quietCheck, 2) + " dB, not 6 (compressed or noise floor)";
+                const auto last = kQuietLadder[(size_t) juce::jmax (0, walked - 1)];
+                const juce::String pair = juce::String ((int) last.second) + " minus " + juce::String ((int) last.first);
+                why = ! quietCheck ? "quiet reference: " + juce::String ((int) last.first) + " or " + juce::String ((int) last.second) + " unreadable"
+                                   : "quiet reference: " + pair + " is " + juce::String (6.0 + *quietCheck, 2) + " dB, not 6 (compressed or noise floor)";
+                if (walked > 1) why << " at every rung down to " << juce::String ((int) last.first);
             }
         }
         d.quietCheckDb.push_back (quietCheck);
+        d.quietRungDb.push_back (rung);
         if (skip) { d.skipped.add ((int) i); d.skippedReasons.add (why); }
         // WHICH MECHANISM LANDED THIS POSITION'S WRITE, recorded even when the position is refused later for another
         // reason: "" only when the process itself failed.
@@ -754,7 +786,73 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         if (moving) d.stillMoving.add ((int) i);
     }
     const int n = (int) d.norms.size();
-    if (n < 2) { d.result = "unreadable"; d.reason = "fewer than two positions"; return d; }
+    // EACH POSITION'S OWN LINEAR GAIN, from the upper level of the rung that passed its check above, and the reduction
+    // against it at every level.
+    auto quietReduction = [&] {
+        for (int i = 0; i < n; ++i)
+        {
+            std::optional<double> lin;
+            if (d.quietRungDb[(size_t) i] && ! d.skipped.contains (i))
+                if (auto it = byNorm[(size_t) i]->holds.find (levelKey (d.quietRungDb[(size_t) i]->second)); it != byNorm[(size_t) i]->holds.end())
+                    lin = it->second.levelDb - it->second.inRmsDb;
+            d.quietGainDb.push_back (lin);
+            for (double L : d.levels)
+            {
+                const auto g = d.gain[levelKey (L)][(size_t) i];
+                d.reduction[levelKey (L)].push_back (g && lin ? std::optional<double> (*lin - *g) : std::nullopt);
+            }
+        } };
+    // THE RATIO-FREE CURVE at one position: the level where reduction crosses 1, 2 and 3 dB (linear interpolation between
+    // the bracketing test levels, both readable). Reduction already at the target at the quietest level: below_range;
+    // still under it at the loudest: not_reached; a gap in the readings around the crossing: null. A GUARD, never a
+    // guess: the crossing is reported only when the two readings that bracket it exist, and only where GR rises across it.
+    auto curveInAtGr = [&] (int i) {
+        const auto& lv = d.levels;
+        auto gAt = [&] (size_t k) { return d.reduction[levelKey (lv[k])][(size_t) i]; };
+        Derived::InAtGr rec;
+        for (int target : { 1, 2, 3 })
+        {
+            const double T = (double) target;
+            juce::var out;
+            if (auto g0 = gAt (0); g0 && *g0 >= T) out = "below_range";
+            else
+            {
+                bool reached = false;
+                for (size_t k = 0; k + 1 < lv.size() && ! reached; ++k)
+                {
+                    const auto a = gAt (k), b = gAt (k + 1);
+                    if (! a || ! b) continue;
+                    if (*a < T && *b >= T)                                   // the straddle, and GR rises across it by construction
+                    {
+                        reached = true;
+                        const double t = (T - *a) / (*b - *a);
+                        out = std::round ((lv[k] + t * (lv[k + 1] - lv[k])) * 10.0) / 10.0;
+                        rec.widestGapDb = juce::jmax (rec.widestGapDb, lv[k + 1] - lv[k]);
+                        // quality: a fall in the readings on either side of the straddle marks it non-monotonic
+                        const bool fallBefore = k > 0 && gAt (k - 1) && *gAt (k - 1) > *a + kMonotonicTol;
+                        const bool fallAfter  = k + 2 < lv.size() && gAt (k + 2) && *gAt (k + 2) < *b - kMonotonicTol;
+                        if (fallBefore || fallAfter) ++rec.nonMonotonicStraddles;
+                    }
+                }
+                if (! reached)
+                {
+                    bool everAbove = false; for (size_t k = 0; k < lv.size(); ++k) if (auto g = gAt (k); g && *g >= T) everAbove = true;
+                    if (! everAbove) out = "not_reached";                     // GR never got there by the loudest level
+                    /* else: it got there, but across a gap or a fall - no readable rising straddle: null */
+                }
+            }
+            rec.at[target] = out;
+        }
+        return rec; };
+    if (n < 2)
+    {
+        d.result = "unreadable"; d.reason = "fewer than two positions";
+        // ONE POSITION (the detector's and the tone check's processes): no sense and no verdict, but its reduction against
+        // its own quiet reference and its in_at_gr ARE a measurement and are computed (2 Oct: until then a one-position
+        // derive returned here empty, and the live detector had never recorded a fraction).
+        if (n == 1 && quietReference) { quietReduction(); d.inAtGr.push_back (curveInAtGr (0)); }
+        return d;
+    }
     if (d.stillMoving.size() > kMaxMoving)
     {
         d.result = "unreadable";
@@ -784,20 +882,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
 
     if (quietReference)
     {
-        // EACH POSITION'S OWN LINEAR GAIN, from its -48 reading (checked against -54 above).
-        for (int i = 0; i < n; ++i)
-        {
-            std::optional<double> lin;
-            if (d.quietCheckDb[(size_t) i] && ! d.skipped.contains (i))
-                if (auto it = byNorm[(size_t) i]->holds.find (q48); it != byNorm[(size_t) i]->holds.end())
-                    lin = it->second.levelDb - it->second.inRmsDb;
-            d.quietGainDb.push_back (lin);
-            for (double L : d.levels)
-            {
-                const auto g = d.gain[levelKey (L)][(size_t) i];
-                d.reduction[levelKey (L)].push_back (g && lin ? std::optional<double> (*lin - *g) : std::nullopt);
-            }
-        }
+        quietReduction();
         // THE FLAT TEST READS EVERY POSITION (ruled 30 Sep): a test on the two ends alone read a 27-30 dB drop in the
         // middle as "flat" - API-2500's wrong axis mirrored, false negatives this time.
         double spanMax = 0.0;
@@ -1055,51 +1140,14 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         d.engage[k] = eng;
     }
 
-    // THE RATIO-FREE CURVE: at each position, the level where reduction crosses 1.0 dB (linear interpolation between the
-    // bracketing test levels, both readable). Reduction already 1 dB or more at the quietest level: {"below": L0}; still
-    // under 1 dB at the loudest: {"above": Ln}; a gap in the readings around the crossing: null. A GUARD, never a guess:
-    // the crossing is reported only when the two readings that bracket it exist.
+    // THE RATIO-FREE CURVE at every position (curveInAtGr above), and eff_threshold from its 1 dB crossing.
     for (int i = 0; i < n; ++i)
     {
         const auto& lv = d.levels;
-        auto gAt = [&] (size_t k) { return d.reduction[levelKey (lv[k])][(size_t) i]; };
-        Derived::InAtGr rec;
-        for (int target : { 1, 2, 3 })
-        {
-            const double T = (double) target;
-            juce::var out;
-            if (auto g0 = gAt (0); g0 && *g0 >= T) out = "below_range";
-            else
-            {
-                bool reached = false;
-                for (size_t k = 0; k + 1 < lv.size() && ! reached; ++k)
-                {
-                    const auto a = gAt (k), b = gAt (k + 1);
-                    if (! a || ! b) continue;
-                    if (*a < T && *b >= T)                                   // the straddle, and GR rises across it by construction
-                    {
-                        reached = true;
-                        const double t = (T - *a) / (*b - *a);
-                        out = std::round ((lv[k] + t * (lv[k + 1] - lv[k])) * 10.0) / 10.0;
-                        rec.widestGapDb = juce::jmax (rec.widestGapDb, lv[k + 1] - lv[k]);
-                        // quality: a fall in the readings on either side of the straddle marks it non-monotonic
-                        const bool fallBefore = k > 0 && gAt (k - 1) && *gAt (k - 1) > *a + kMonotonicTol;
-                        const bool fallAfter  = k + 2 < lv.size() && gAt (k + 2) && *gAt (k + 2) < *b - kMonotonicTol;
-                        if (fallBefore || fallAfter) ++rec.nonMonotonicStraddles;
-                    }
-                }
-                if (! reached)
-                {
-                    bool everAbove = false; for (size_t k = 0; k < lv.size(); ++k) if (auto g = gAt (k); g && *g >= T) everAbove = true;
-                    if (! everAbove) out = "not_reached";                     // GR never got there by the loudest level
-                    /* else: it got there, but across a gap or a fall - no readable rising straddle: null */
-                }
-            }
-            rec.at[target] = out;
-        }
+        const auto rec = curveInAtGr (i);
         d.inAtGr.push_back (rec);
         // eff_threshold == in_at_gr["1"] BY CONSTRUCTION (his v1.2 rule), in the record's older shape for its readers.
-        const auto one = rec.at[1];
+        const auto one = rec.at.at (1);
         if (one.isDouble() || one.isInt()) d.tEffective1dB.push_back (one);
         else if (one.toString() == "below_range") { auto* o = new juce::DynamicObject(); o->setProperty ("below", lv.front()); d.tEffective1dB.push_back (juce::var (o)); }
         else if (one.toString() == "not_reached") { auto* o = new juce::DynamicObject(); o->setProperty ("above", lv.back()); d.tEffective1dB.push_back (juce::var (o)); }
@@ -1296,7 +1344,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     s->setProperty ("tone", juce::var (tone));
     s->setProperty ("level_convention", "peak");
     s->setProperty ("procedure", d.quietReference
-                        ? "one process per position, levels quiet to loud; reference = each position's own quiet gain (-48, checked against -54)"
+                        ? "one process per position, levels quiet to loud; reference = each position's own quiet gain (the loudest ladder rung whose pair differs by 6 dB)"
                         : "one process per position, levels quiet to loud; reference = the soft end's linear gain");
     auto* rd = new juce::DynamicObject();
     rd->setProperty ("position", d.ratioText);
@@ -1343,11 +1391,25 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     {
         auto* ref = new juce::DynamicObject();
         ref->setProperty ("mode", "per_position_quiet");
-        ref->setProperty ("levels_dbfs", juce::Array<juce::var> { -54, -48 });
+        ref->setProperty ("levels_dbfs", juce::Array<juce::var> { -54, -48 });   // the first rung; rung_dbfs says which each position used
         ref->setProperty ("tolerance_db", kQuietTolDb);
         juce::Array<juce::var> chk;
         for (auto q : d.quietCheckDb) chk.add (q ? juce::var (std::round (*q * 1000.0) / 1000.0) : juce::var());
         ref->setProperty ("check_db", chk);
+        {
+            // THE LADDER (2 Oct): the rung each position's reference came from, and how many descended below the first.
+            juce::Array<juce::var> rungs; int descended = 0;
+            for (const auto& r : d.quietRungDb)
+            {
+                if (! r) { rungs.add (juce::var()); continue; }
+                rungs.add (juce::Array<juce::var> { (int) r->first, (int) r->second });
+                if (r->first != kQuietLadder.front().first) ++descended;
+            }
+            ref->setProperty ("rung_dbfs", rungs);
+            ref->setProperty ("descended", descended);
+            juce::Array<juce::var> ladder; for (const auto& [lo, hi] : kQuietLadder) ladder.add (juce::Array<juce::var> { (int) lo, (int) hi });
+            ref->setProperty ("ladder_dbfs", ladder);
+        }
         { juce::Array<juce::var> g; for (auto q : d.quietGainDb) g.add (q ? juce::var (std::round (*q * 100.0) / 100.0) : juce::var()); ref->setProperty ("gain_db", g); }
         if (p.referenceFallbackNote.isNotEmpty()) ref->setProperty ("fallback", p.referenceFallbackNote);
         s->setProperty ("linearReference", juce::var (ref));
