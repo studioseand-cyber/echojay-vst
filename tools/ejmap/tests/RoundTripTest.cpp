@@ -5470,7 +5470,59 @@ void testProfileExport()
                "pick P3: a stepped control gets the nearest listed detent, never an interpolated norm (" + juce::String (ps.norm, 4) + ")");
         const auto pkc = pickPosition (prof, -50.0, 2.0);                     // every 1 dB point sits more than 8 dB above... no: L = -50 is far BELOW all points
         const auto pkd = pickPosition (prof, 10.0, 2.0);                      // L = +10: every 1 dB point is more than 8 dB below L -> clamped out
-        check (pkc.ok && ! pkd.ok, "pick P4: the clamp refuses every position whose 1 dB point is more than 8 dB below L (" + pkd.refused + ")");
+        check (pkc.ok && ! pkd.ok, "pick P4 (v1.7: 12 dB, on the pick): L = +10 puts every position's 1 dB point more than 12 dB below L - refused; L = -50 is not (" + pkd.refused + ")");
+        {
+            // v1.7 (P5-P9): deep points on a copy of the profile - 4/5/6 at T + 4.0 / 5.3 / 6.7 (peak) on positions 2..13 only,
+            // positions 0, 1, 14, 15 null at the deep levels; the hard-knee 4:1 device's own geometry (in_at_gr[g] = T + g/0.75).
+            auto deep = juce::JSON::parse (juce::JSON::toString (prof));
+            auto cv = deep.getProperty ("amount", {}).getProperty ("curve", {});
+            for (int i = 0; i < cv.size(); ++i)
+            {
+                auto* g = cv[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject();
+                const double T = -40.0 + 2.0 * i - 3.0103;
+                for (int t : { 4, 5, 6 }) g->setProperty (juce::String (t), (i >= 2 && i <= 13) ? juce::var (T + t / 0.75) : juce::var());
+            }
+            // P5: 3.5 interpolates between the 3 and 4 dB points of a position
+            const auto v35 = inAtGr (cv[5], 3.5), v3 = inAtGr (cv[5], 3.0), v4 = inAtGr (cv[5], 4.0);
+            check (v35 && v3 && v4 && std::abs (*v35 - (*v3 + *v4) / 2.0) < 1e-9, "pick P5: a fractional g (3.5) interpolates between its adjacent points 3 and 4, not between 1..3");
+            // P6: the clamp applies to the PICK's own interpolated 1 dB point, 12 dB; a pick between two positions whose 1 dB points are 11 and 13 dB below L is refused only if the interpolated value is
+            const auto pk4 = pickPosition (deep, -18.0, 4.0);
+            check (pk4.ok && pk4.i1 >= 0 && std::abs (pk4.expectedGrDb - 4.0) < 1e-9 && ! pk4.fellBackToMeasured && std::abs (pk4.pickOneDb - (-18.0 - 4.0 / 0.75 + 1.0 / 0.75)) < 0.05,
+                   "pick P6: at g = 4 the pick interpolates between the bracketing positions and the clamp reads the PICK's own 1 dB point (" + juce::String (pk4.pickOneDb, 2) + " vs L -18: 4.0 dB below, inside 12)");
+            // P7: the deep-null fill - a position with no 5 dB point between two that carry it is filled across the norm axis; the pick says so
+            auto gap = juce::JSON::parse (juce::JSON::toString (deep));
+            gap.getProperty ("amount", {}).getProperty ("curve", {})[8].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("5", juce::var());
+            const double L5 = -40.0 + 2.0 * 8 - 3.0103 + 5.0 / 0.75;            // exactly position 8's (now missing) 5 dB point
+            const auto pk5 = pickPosition (gap, L5, 5.0);
+            check (pk5.ok && (pk5.i0 == 8 || pk5.i1 == 8) && pk5.filledAcrossNorm && std::abs (pk5.expectedGrDb - 5.0) < 1e-9,
+                   "pick P7: a deep level null on one position is filled across the norm axis from its neighbours and the pick is marked filledAcrossNorm (points " + juce::String (pk5.i0) + "/" + juce::String (pk5.i1) + ")");
+            // P8: no position carries 6 dB -> the deepest carried level (5) answers, and the REPORTED figure is 5
+            auto no6 = juce::JSON::parse (juce::JSON::toString (deep));
+            { auto c6 = no6.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c6.size(); ++i) c6[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("6", juce::var()); }
+            const auto pk6 = pickPosition (no6, -18.0, 6.0);
+            check (pk6.ok && pk6.fellBackToMeasured && std::abs (pk6.expectedGrDb - 5.0) < 1e-9 && pk6.note.contains ("deepest measured level answers: 5.0 dB"),
+                   "pick P8: with no 6 dB point anywhere the deepest carried level (5 dB) answers and the figure reported is 5, said in the note");
+            // P8b: a shallow null is never filled - a position null at 2 dB cannot serve g = 2 (the v1.2 rule stands)
+            auto sh = juce::JSON::parse (juce::JSON::toString (deep));
+            sh.getProperty ("amount", {}).getProperty ("curve", {})[11].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("2", juce::var());
+            const auto pk2 = pickPosition (sh, -18.0, 2.0);
+            check (pk2.ok && pk2.i0 != 11 && pk2.i1 != 11 && ! pk2.filledAcrossNorm, "pick P8b: at 2 dB a null position is skipped, never filled");
+            // P9: stepped - only listed detents, even at a deep level; the clamp on that detent's own 1 dB point
+            auto st = juce::JSON::parse (juce::JSON::toString (deep)); st.getProperty ("amount", {}).getDynamicObject()->setProperty ("stepped", true);
+            const auto pks = pickPosition (st, -18.0, 4.5);
+            check (pks.ok && pks.i1 < 0 && std::abs (pks.expectedGrDb - 4.5) < 1e-9, "pick P9: a stepped control gets the nearest listed detent at a fractional deep g, never an interpolated norm");
+            // P10: THE CLAMP IS ON THE PICK, 12 dB. A soft unit: position A 1 dB at -24 / 2 dB at -20, position B 1 dB at -31 / 2 dB at -16.
+            // For L = -18, g = 2 the pick sits halfway (t = 0.5): its own 1 dB point is -27.5, 9.5 dB below L - inside 12 (an 8 dB
+            // clamp refuses it), while B's own 1 dB point is 13 dB below L (a neighbour-checking clamp drops B and loses the bracket).
+            const auto soft = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+                {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -24.0, "2": -20.0, "3": -17.0}},
+                {"norm": 0.4, "display": "b", "in_at_gr_dbfs": {"1": -31.0, "2": -16.0, "3": -12.0}},
+                {"norm": 0.9, "display": "c", "in_at_gr_dbfs": {"1": -8.0, "2": -5.0, "3": -4.0}}]}})json");
+            const auto pkS = pickPosition (soft, -18.0, 2.0);
+            check (pkS.ok && pkS.i0 == 0 && pkS.i1 == 1 && std::abs (pkS.norm - 0.3) < 1e-9 && std::abs (pkS.pickOneDb - (-27.5)) < 1e-9,
+                   "pick P10: the 12 dB clamp reads the PICK's own interpolated 1 dB point (-27.5, 9.5 below L) and keeps the bracket even though a bracketing position's own 1 dB point is 13 dB below L (" + pkS.refused + ")");
+            check (! pickPosition (soft, -14.0, 2.0).ok, "pick P10b: moving L to -14 puts the pick's own 1 dB point 12.5 dB below it: refused by the clamp, with the number");
+        }
     }
     {
         // THE DETECTOR FRACTION: same 2 dB level on both signals = rms (0); the two-tone 3.01 dB earlier = peak (1); the word only at an end.

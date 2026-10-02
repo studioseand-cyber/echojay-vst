@@ -528,52 +528,102 @@ inline Export exportCompProfile (const juce::var& f)
 }
 
 //==============================================================================
-// HIS SECTION 6 (v1.2), as a pure function on an exported profile: for each amount position read in_at_gr_dbfs[g]
-// (interpolating between the 1, 2 and 3 dB points for a fractional g); pick the position whose value is nearest L,
-// interpolating between positions for a continuous control, the nearest listed detent for a stepped one; never a
-// position whose in_at_gr_dbfs["1"] is more than 8 dB below L. Returns the norm to write and what it expects.
-struct Pick { bool ok = false; juce::String refused; double norm = 0.0; double expectedGrDb = 0.0; int i0 = -1, i1 = -1; double inAtG0 = 0, inAtG1 = 0; bool stepped = false; };
+// HIS SECTION 6.4 (v1.7, as amended), as a pure function on an exported profile. For each amount position read
+// in_at_gr_dbfs[g], interpolating between ADJACENT points 1..6 for a fractional g (3.5 sits between 3 and 4); pick the
+// position whose value is nearest L, interpolating between positions for a continuous control, the nearest listed
+// detent for a stepped one; THE CLAMP (12 dB) APPLIES TO THE PICK - the interpolated pick's own in_at_gr["1"] against
+// L - never to the candidate positions (checking the neighbours wrongly excluded valid in-between settings on soft-knee
+// units with sparse positions; 8 dB capped CL 1B at about 2.3 dB). THE DEEP-NULL RULE (6.3, deep levels only): a
+// position null at a deep level is filled by interpolating across the norm axis from the positions that carry it;
+// failing that, the deepest level the profile carries answers and the figure REPORTED is that level. At 1, 2 and 3 dB a
+// null is never filled: that position cannot serve that target. Nothing is extrapolated past what was measured.
+inline constexpr double kPickClampDb = 12.0;
 inline std::optional<double> inAtGr (const juce::var& point, double g)
 {
     const auto m = point.getProperty ("in_at_gr_dbfs", {});
     auto at = [&] (int k) -> std::optional<double> { const auto v = m.getProperty (juce::String (k), {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
+    const int lo = juce::jlimit (1, 6, (int) std::floor (g)), hi = juce::jlimit (1, 6, lo + 1);
     if (g <= 1.0) return at (1);
-    if (g >= 3.0) return at (3);
-    const int lo = (int) std::floor (g), hi = lo + 1;
+    if (g >= 6.0) return at (6);
+    if (std::abs (g - lo) < 1e-9) return at (lo);
     const auto a = at (lo), b = at (hi);
     if (! a || ! b) return std::nullopt;
     return *a + (*b - *a) * (g - lo);
 }
+struct Pick
+{
+    bool ok = false; juce::String refused; double norm = 0.0;
+    double expectedGrDb = 0.0;                 // g, or the deepest measured level when the deep-null rule fell back (reported, never claimed)
+    int i0 = -1, i1 = -1; double inAtG0 = 0, inAtG1 = 0; bool stepped = false;
+    bool filledAcrossNorm = false;             // the pick used a position whose value at g was interpolated across the norm axis
+    bool fellBackToMeasured = false;           // the profile carried no position at g: the deepest carried level answered
+    double pickOneDb = 0.0;                    // the pick's own in_at_gr["1"] (interpolated), what the clamp read
+    juce::String note;
+};
 inline Pick pickPosition (const juce::var& profile, double L, double g)
 {
     Pick p;
     const auto amount = profile.getProperty ("amount", {});
     const auto curve = amount.getProperty ("curve", {});
     p.stepped = (bool) amount.getProperty ("stepped", false);
-    struct Pt { int i; double norm, inAt, one; };
-    std::vector<Pt> pts;
-    for (int i = 0; i < curve.size(); ++i)
+    const double floorDb = profile.getProperty ("measured", {}).getProperty ("steps_dbfs", {}).size() > 0 ? (double) profile.getProperty ("measured", {}).getProperty ("steps_dbfs", {})[0] : -63.01;
+    auto valuesAt = [&] (double gg, std::vector<std::optional<double>>& out, int& numeric) {
+        out.assign ((size_t) curve.size(), std::nullopt); numeric = 0;
+        for (int i = 0; i < curve.size(); ++i) { out[(size_t) i] = inAtGr (curve[i], gg); if (out[(size_t) i]) ++numeric; } };
+    std::vector<std::optional<double>> v; int numeric = 0;
+    double gEff = g;
+    valuesAt (gEff, v, numeric);
+    if (numeric == 0 && g > 3.0)
     {
-        const auto v = inAtGr (curve[i], g);
-        const auto one = curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", {});
-        if (! v || ! (one.isDouble() || one.isInt())) continue;
-        if ((double) one < L - 8.0) continue;                               // the clamp: never a position whose 1 dB point is more than 8 dB below L
-        pts.push_back ({ i, (double) curve[i].getProperty ("norm", 0.0), *v, (double) one });
+        // THE DEEPEST LEVEL THE PROFILE CARRIES ANSWERS (rule 2), and the figure reported is that level
+        for (int t = (int) std::floor (g); t >= 1 && numeric == 0; --t) { if ((double) t >= g) continue; gEff = (double) t; valuesAt (gEff, v, numeric); }
+        if (numeric > 0) { p.fellBackToMeasured = true; p.note = "no position carries " + juce::String (g, 1) + " dB; the deepest measured level answers: " + juce::String (gEff, 1) + " dB, and that is the figure reported"; }
     }
-    if (pts.empty()) { p.refused = "no position has a measured point at g within the clamp"; return p; }
+    if (numeric == 0) { p.refused = "no position has a measured point at " + juce::String (g, 1) + " dB" + (g > 3.0 ? " or any level below it" : juce::String()); return p; }
+    std::vector<bool> filled ((size_t) curve.size(), false);
+    if (g > 3.0)
+    {
+        // THE DEEP-NULL FILL (rule 1): across the norm axis, from the nearest positions that carry the level, never past them
+        for (int i = 0; i < curve.size(); ++i)
+        {
+            if (v[(size_t) i]) continue;
+            int lo = -1, hi = -1;
+            for (int k = i - 1; k >= 0; --k) if (v[(size_t) k]) { lo = k; break; }
+            for (int k = i + 1; k < curve.size(); ++k) if (v[(size_t) k]) { hi = k; break; }
+            if (lo < 0 || hi < 0) continue;
+            const double nl = (double) curve[lo].getProperty ("norm", 0.0), nh = (double) curve[hi].getProperty ("norm", 0.0), ni = (double) curve[i].getProperty ("norm", 0.0);
+            const double t = nh == nl ? 0.0 : (ni - nl) / (nh - nl);
+            v[(size_t) i] = *v[(size_t) lo] + (*v[(size_t) hi] - *v[(size_t) lo]) * t; filled[(size_t) i] = true;
+        }
+    }
+    struct Pt { int i; double norm, inAt; bool filled; };
+    std::vector<Pt> pts;
+    for (int i = 0; i < curve.size(); ++i) if (v[(size_t) i]) pts.push_back ({ i, (double) curve[i].getProperty ("norm", 0.0), *v[(size_t) i], filled[(size_t) i] });
+    if (pts.empty()) { p.refused = "no position has a measured point at " + juce::String (gEff, 1) + " dB"; return p; }
     std::sort (pts.begin(), pts.end(), [] (const Pt& a, const Pt& b) { return a.inAt < b.inAt; });
-    // nearest, and for a continuous control the interpolation between the two that bracket L
     size_t best = 0; for (size_t k = 1; k < pts.size(); ++k) if (std::abs (pts[k].inAt - L) < std::abs (pts[best].inAt - L)) best = k;
-    p.i0 = pts[best].i; p.inAtG0 = pts[best].inAt; p.norm = pts[best].norm; p.expectedGrDb = g;
+    p.i0 = pts[best].i; p.inAtG0 = pts[best].inAt; p.norm = pts[best].norm; p.expectedGrDb = gEff; p.filledAcrossNorm = pts[best].filled;
+    double tt = 0.0;
     if (! p.stepped)
         for (size_t k = 0; k + 1 < pts.size(); ++k)
             if ((pts[k].inAt <= L && L <= pts[k + 1].inAt) || (pts[k + 1].inAt <= L && L <= pts[k].inAt))
             {
-                const double t = pts[k + 1].inAt == pts[k].inAt ? 0.0 : (L - pts[k].inAt) / (pts[k + 1].inAt - pts[k].inAt);
-                p.norm = pts[k].norm + t * (pts[k + 1].norm - pts[k].norm);
-                p.i0 = pts[k].i; p.i1 = pts[k + 1].i; p.inAtG0 = pts[k].inAt; p.inAtG1 = pts[k + 1].inAt;
+                tt = pts[k + 1].inAt == pts[k].inAt ? 0.0 : (L - pts[k].inAt) / (pts[k + 1].inAt - pts[k].inAt);
+                p.norm = pts[k].norm + tt * (pts[k + 1].norm - pts[k].norm);
+                p.i0 = pts[k].i; p.i1 = pts[k + 1].i; p.inAtG0 = pts[k].inAt; p.inAtG1 = pts[k + 1].inAt; p.filledAcrossNorm = pts[k].filled || pts[k + 1].filled;
                 break;
             }
+    // THE CLAMP, ON THE PICK: its own 1 dB point, interpolated between the same two positions with the same t; a 1 dB
+    // point below the sweep floor (null, below_range) is at most the floor, so the clamp reads the floor.
+    // A null 1 dB point is BELOW the sweep floor (below_range), so the floor is its upper bound; the interpolation with
+    // the floor on that side is then an upper bound of the pick's 1 dB point - said in the note, never silently.
+    auto one = [&] (int i) -> std::optional<double> { return i >= 0 ? inAtGr (curve[i], 1.0) : std::nullopt; };
+    const auto o0 = one (p.i0), o1 = one (p.i1);
+    const double a0 = o0 ? *o0 : floorDb, a1 = o1 ? *o1 : floorDb;
+    const double pickOne = p.i1 >= 0 ? a0 + (a1 - a0) * tt : a0;
+    if (! o0 || (p.i1 >= 0 && ! o1)) p.note << (p.note.isEmpty() ? "" : "; ") << "a bracketing position's 1 dB point is below the sweep floor (" << juce::String (floorDb, 2) << "): the clamp read the floor as its upper bound";
+    p.pickOneDb = pickOne;
+    if (L - pickOne > kPickClampDb) { p.refused = "the pick's own 1 dB point (" + juce::String (pickOne, 2) + ") is more than " + juce::String (kPickClampDb, 0) + " dB below L (" + juce::String (L, 2) + ")"; return p; }
     p.ok = true;
     return p;
 }
