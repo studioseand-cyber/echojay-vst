@@ -266,3 +266,34 @@ Two things you should know from the measurement side:
 Also fixed this morning, both older than the spec: a one-position process (your detector and
 tone check) derived nothing, so no live `detector_f` had ever been recorded; and
 `plugin.manufacturer` was empty on a record made by discovery. Neither changes a number above.
+
+## 2 Oct, 10:37: CL 1B v1.4 re-exported on a refined grid — PASS, and two things about the clamp
+
+`~/Desktop/ej_profiles_CL1B_v1.4.zip` (profile, tonecheck, README, the Mac runbook). Changes since the
+08:35 export, all measured again:
+
+| field | value |
+|---|---|
+| amount curve | **28 positions**: the 16-point grid plus 12 added wherever adjacent 2 dB points differed by more than 3 dB (two rounds: 11, then 1) |
+| in_at_gr["2"] numeric | 25 of 28 |
+| ratio | `curve: [{norm 0.5, "6:1", value 6.0, measured_ratio 1.74}]`, `fixed: null`, `knee_db: null` — the norm is what your server writes; measured_ratio is implied from level dependence and says so in notes; no knee was measured, so none is claimed |
+| neutral | Gain 0.0 (0.33), Attack 5.0 (0.5), Release 5.0 (0.5), Select Attack Release Man (1.0), Sidechain Int (0.0) — every control except the amount, the ratio and the meter, at the value it was measured at |
+| detector_f | 0.43 |
+| quality.point_error_db | 0.1 (72 points) |
+| tone check, L = −18 RMS, g = 2 | **1.85 dB → PASS**, writing exactly what your server will: the five neutral controls, Ratio 0.5, then Threshold at norm 0.2167 |
+
+**Two things about section 6's clamp, from the measured curve:**
+
+1. **The clamp is checked on the bracketing positions, not on the interpolated pick.** On the 16-point
+   grid position 4 was excluded (its 1 dB point 11.9 dB below L), so no interpolation was possible —
+   but the point the interpolation would have landed on, between 3 and 4, has its 1 dB point only
+   4.5–6.0 dB below L (measured now at norms 0.208 and 0.217: −22.5 and −24.0 RMS), inside the clamp.
+   On the refined grid the same thing recurs one step finer: the neighbour at 0.233 has its 1 dB
+   point 8.5 dB below L and is dropped by 0.5 dB, so the pick is still a single position. Suggest
+   applying the clamp to the interpolated pick (its own 1 dB point, interpolated like its norm)
+   rather than to each bracketing position.
+2. **On CL 1B the clamp caps the GR the server can ever ask for at about 2.3 dB.** Measured over the
+   22 positions with all three points: the 1 → 2 dB spacing is 6.7 dB (6.3–6.8) and 1 → 3 is 10.3 dB
+   (9.7–10.6). A position whose 1 dB point is 8 dB below L therefore sits at about 2.3–2.4 dB of GR at
+   L; a pick for g = 3 finds nothing inside the clamp on this device. If you want g = 3 reachable on
+   soft-knee units, the clamp needs to scale with the measured 1 → g spacing (it is in the profile).

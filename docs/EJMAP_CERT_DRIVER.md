@@ -1365,3 +1365,34 @@ tuned.
 **A third defect:** the discovery path never stamped `manufacturer` (the 103 store records got it by
 hand on 1 Oct), so the export's `plugin.manufacturer` was empty. `composeFixtureImpl` now writes the
 host's `manufacturerName` (M0b).
+
+## 22. Grid refinement, the ratio and neutral fields, the tone check's writes (2 Oct, 10:00-10:40)
+
+Kathy's six items on the 08:35 export, built in order, each committed and pushed:
+
+1. **Grid refinement** (`sweep::refineNorms`, driver `refineGrid`): wherever adjacent positions' 2 dB
+   points differ by more than 3 dB, ceil(gap/3) − 1 positions are added between them and measured
+   with the same procedure (preconditions, engage writes, quiet ladder, hold-doubled repeat) under
+   the same tag prefix with the next indices, until no gap is over the bar (4 rounds / 64 positions
+   cap). A null neighbour is an absence, not a gap. `gridRefinement {rule, gap_db, rounds,
+   added_norms}` on the record, restored on re-derive. Pins G1-G5b, four mutants red. CL 1B: 11 + 1
+   positions added; the 9.3 dB jump between norm 0.200 and 0.267 is now six steps of ≤ 3 dB.
+2. **Ratio**: an adjustable ratio never exports as fixed (X22-X22c): one curve point at the norm the
+   sweep ran at (a ratio_raise precondition's, else the instantiate value), its display, the value
+   read back, `measured_ratio` implied from level dependence and labelled so; `fixed` null;
+   `knee_db` null everywhere (none measured).
+3. **Neutral** = the measurement conditions (X23-X24): every control except the amount, the ratio,
+   readouts/meters (`isReadoutOrMeter`: the readout flag or a name answering meter/vu/readout/display),
+   the engage writes and never_touch, at a precondition's set value where written else the
+   instantiate value from the defaults sample, with set text, norm and source; a control with no
+   instantiate value refuses by name. Four mutants red across 2 and 3.
+4. **Tone check writes** (`profile::toneWrites`, T1-T3): engage[], neutral[] and ratio.curve[0] from
+   the exported profile, resolved by name through the record's controls, then the section 6 pick -
+   the record's own sweep is no longer consulted. Live: six writes, 1.85 dB, PASS.
+5. `~/Desktop/ej_profiles_CL1B_v1.4.zip`: `ej_comp_profile/` + `SEAN_MAC_RUNBOOK.md`, nothing else.
+6. Reply doc: the clamp is checked on positions not the pick; the 1 → 2 / 1 → 3 spacings (6.7 / 10.3
+   dB) cap the reachable GR at about 2.3 dB under an 8 dB clamp.
+
+Known, not fixed: `repeatFor` looks up the repeat by "" or "q." and never by an engaged prefix
+("e<idx>."), so an engaged profile sweep would get no repeat quality - no engaged product has been
+profile-swept yet; the refinement uses `lastSweepPrefix`, which is the key sweepFor wrote.
