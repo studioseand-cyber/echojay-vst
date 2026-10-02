@@ -37,8 +37,18 @@ If this Mac has never run EJ Map: `open /Applications/ejmap.app`, sign in (the t
 
 That is the Scan button, then the Categorise button (one server round-trip to read categories and
 map-state), then quit. It writes `~/Library/ejmap/scan-cache.xml`, `categories.json` and
-`map-state.json` — what certification discovers from. It resumes by itself if an earlier scan died
-inside a bundle. The last lines say how many rows were scanned and categorised.
+`map-state.json` — what certification discovers from.
+
+**The first scan can take a long time, and must be left alone.** It opens every VST3 bundle on the
+Mac. A bundle that raises a licence or activation window (every iLok product with the iLok away;
+expired and demo plugins) is killed at once by the window watch and listed as `needs_licence` —
+seconds each, nothing is clicked, nothing retried. A bundle that hangs is quarantined by the
+watchdog after its deadline (minutes each; the mapper's rule). After either, the app relaunches
+itself and carries on from where it was. Do not click anything that appears; do not relaunch it
+yourself; if it stops on its own, run the same command again and it resumes. The last lines say how
+many rows were scanned, how many bundles were quarantined and how many need a licence.
+
+When the licence is back: `"$BIN" --scan --retry-licence` re-probes only the `needs_licence` bundles.
 
 ## 3. The smoke check (one minute, before the batch)
 
@@ -102,6 +112,9 @@ row has exactly one state:
 | `refused` | the measurement stopped at a named stage; the reason is on the row | `cert/fixtures/<identity>.json` (`thresholdRefusal`) |
 | `held` | not measured on purpose: licence (PACE, no iLok) or hardware | the row |
 | `needs_review` | measured, but a rule is missing or the result is not profile-grade (several threshold candidates; a flat sweep; an export the exporter refused) | the row's reason, then the record |
+| `needs_licence` | the scan's window watch killed the bundle's load: an activation / licence window; never retried until `--scan --retry-licence` | `~/Library/ejmap/licence-stops.json` (bundle, windows, time) |
+| `quarantined_at_scan` | the scan quarantined the bundle (a stall or a crash); the row names its products and category | `~/Library/ejmap/quarantine.json` |
+| `unmapped` | installed and categorised a compressor or tuner, but no map at this build: the mapping sweep (step 3) maps it, then the batch measures it | the row |
 
 A row with no reason, or an `exported` row without its files, is a bug: the batch exits 2 and says
 `OUTCOME INVARIANT BROKEN`. Send that log back.
