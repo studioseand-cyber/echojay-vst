@@ -628,6 +628,27 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     return p;
 }
 
+// THE DEEP LEVELS A PROFILE CARRIES (v1.7 section 8): every deep target with a numeric point on any position - each gets
+// its own tone check. A level that fails is NULL ACROSS ALL POSITIONS (the whole level comes out), and the profile's
+// pass is the g = 2 check alone: a failed deep level never fails the profile.
+inline std::vector<int> deepLevelsCarried (const juce::var& profile)
+{
+    std::vector<int> out;
+    const auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
+    for (int t : sweep::kGrTargets)
+    {
+        if (t < sweep::kDeepFrom) continue;
+        for (int i = 0; i < curve.size(); ++i) { const auto v = curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), {}); if (v.isDouble() || v.isInt()) { out.push_back (t); break; } }
+    }
+    return out;
+}
+inline void nullLevelAcrossPositions (juce::var& profile, int t)
+{
+    auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
+    for (int i = 0; i < curve.size(); ++i) if (auto* g = curve[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) g->setProperty (juce::String (t), juce::var());
+}
+inline int toneExitCode (bool mainPass, int /*deepFailures*/) { return mainPass ? 0 : 1; }   // the deep levels never decide it
+
 // THE TONE CHECK'S WRITES (2 Oct, ruled): exactly what the server will write - engage[], neutral[] and ratio.curve[0]
 // from the exported profile, by control NAME resolved through the record's controls - nothing from the record's own
 // sweep. Returns the refusal, or empty. The section 6 pick is written by the caller as the swept position.

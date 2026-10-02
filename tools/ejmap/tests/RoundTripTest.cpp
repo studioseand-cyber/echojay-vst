@@ -5522,6 +5522,15 @@ void testProfileExport()
             check (pkS.ok && pkS.i0 == 0 && pkS.i1 == 1 && std::abs (pkS.norm - 0.3) < 1e-9 && std::abs (pkS.pickOneDb - (-27.5)) < 1e-9,
                    "pick P10: the 12 dB clamp reads the PICK's own interpolated 1 dB point (-27.5, 9.5 below L) and keeps the bracket even though a bracketing position's own 1 dB point is 13 dB below L (" + pkS.refused + ")");
             check (! pickPosition (soft, -14.0, 2.0).ok, "pick P10b: moving L to -14 puts the pick's own 1 dB point 12.5 dB below it: refused by the clamp, with the number");
+            // THE DEEP TONE LEVELS (v1.7 section 8, T4-T6): the levels a profile carries; a failing level nulled across ALL positions; the profile still passes
+            const auto carried = deepLevelsCarried (deep);
+            check (carried == std::vector<int> { 4, 5, 6 } && deepLevelsCarried (prof).empty(), "tone T4: the deep levels a profile carries are those with a numeric point on any position (4, 5, 6 here; none on the shallow-only profile)");
+            auto nulledP = juce::JSON::parse (juce::JSON::toString (deep)); nullLevelAcrossPositions (nulledP, 5);
+            const auto nc = nulledP.getProperty ("amount", {}).getProperty ("curve", {});
+            bool all5null = true, any4 = false; for (int i = 0; i < nc.size(); ++i) { if (! nc[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid()) all5null = false; if (nc[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isDouble()) any4 = true; }
+            check (all5null && any4 && nc.size() == 16 && deepLevelsCarried (nulledP) == std::vector<int> { 4, 6 },
+                   "tone T5: a failing deep level is null across ALL positions (the whole level comes out), the other levels and every position stay");
+            check (toneExitCode (true, 3) == 0 && toneExitCode (false, 0) == 1, "tone T6: the profile's pass is the g = 2 check alone - three failed deep levels do not fail it, and a failed g = 2 does");
         }
     }
     {

@@ -2331,6 +2331,7 @@ inline int runCertTuner (const SweepOptions& opt);   // defined below (tuner cer
 // measure is a row too (held, with which reason). The closing "finish pass" walks every record in the store that has
 // no row yet (a batch stopped and resumed, or records from an earlier binary), so a second invocation completes what
 // the first left and changes nothing else.
+inline constexpr int kToneWindowExit = 5;    // the probe showed a window during the tone check: needs_licence, not a failed check
 inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, const juce::String& candidate);
 inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g, const juce::String& candidate);
 inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused, bool retryAll);
@@ -2399,6 +2400,12 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
                 if (auto* po = prof.getDynamicObject()) { po->setProperty ("tone_check", juce::JSON::parse (toneFile.loadFileAsString())); profileFile.replaceWithText (juce::JSON::toString (prof) + "\n", false, false, "\n"); }
             }
             else toneWhy = "tone check exit " + juce::String (trc) + (toneFile.existsAsFile() ? juce::String() : " (no result file)");
+            if (trc == kToneWindowExit)
+            {
+                // A WINDOW DURING THE TONE CHECK is the same evidence as at the scan or the sweep: needs_licence, not needs_review
+                loop::Outcome w; w.state = "needs_licence"; w.reason = "window at the probe's load during the tone check (" + toneWhy + "); the export stands, not retried until --retry-licence";
+                return loop::makeRow (identity, product, category, w, recordFile.getFullPathName(), profilePath, {}, nowStamp());
+            }
         }
         o = loop::outcomeAfterExport (e.ok, e.refused, toneRan, toneWhy);
     }
@@ -2694,7 +2701,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {});
     if (! id.ok) { say ("TONE: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
-    const auto profile = juce::JSON::parse (profileFile.loadFileAsString());
+    auto profile = juce::JSON::parse (profileFile.loadFileAsString());
     auto record  = juce::JSON::parse (recordFile.loadFileAsString());
     if (! profile.isObject() || ! record.isObject()) { say ("TONE: cannot read the profile or the record"); return 2; }
     if (candidate.isNotEmpty()) { juce::String why; record = profile::candidateAsSingle (record, candidate, why); if (record.isVoid()) { say ("TONE: " + why); return 2; } }
@@ -2703,8 +2710,6 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("TONE: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
     const auto& desc = hits[0].desc;
-    const auto pick = profile::pickPosition (profile, Lrms, g);
-    if (! pick.ok) { say ("TONE: " + product + " - section 6 picks nothing: " + pick.refused); return 4; }
     // THE WRITES (2 Oct): engage + neutral + ratio, every one from the exported profile, resolved to indices through the
     // record's controls (profile::toneWrites, pinned); then the section 6 pick. The check rehearses the server's writes.
     juce::StringArray sets; juce::Array<juce::var> writes; juce::String ratioNote;
@@ -2717,42 +2722,87 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     const double Lpeak = Lrms + profile::kPeakToSineRmsDb;
     // the whole reference ladder below L, quiet to loud, so the picked position gets the same reference rule as the sweep
     juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
-    juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
-                             "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (pick.norm, 6),
-                             "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
-    if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-    say ("TONE: " + product + " - L " + juce::String (Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (g, 1)
-         + "; section 6 picks norm " + juce::String (pick.norm, 4) + (pick.i1 >= 0 ? " between points " + juce::String (pick.i0) + " and " + juce::String (pick.i1) : " at point " + juce::String (pick.i0))
-         + " (in_at_gr at g: " + juce::String (pick.inAtG0, 2) + (pick.i1 >= 0 ? " / " + juce::String (pick.inAtG1, 2) : juce::String()) + "); " + ratioNote);
-    const auto r = runChild (args, opt.timeoutMs);
-    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
-    const auto rawFile = raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.1.txt");
-    rawFile.replaceWithText (r.out, false, false, "\n");
-    if (! r.cleanExit()) { say ("TONE: the probe " + r.describe()); return 1; }
-    sweep::ProcessOut po { r.out, true, r.describe(), (float) pick.norm };
-    const auto m = sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po });
-    const auto d = sweep::derive (m, { Lpeak }, plan.ratioIndex, true);
-    const auto key = sweep::levelKey (Lpeak);
-    std::optional<double> gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
-    const bool quietOk = ! d.quietCheckDb.empty() && d.quietCheckDb[0] && std::abs (*d.quietCheckDb[0]) <= sweep::kQuietTolDb;
-    const bool pass = gr && quietOk && std::abs (*gr - g) <= 0.5;
+
+    // ONE LEVEL (v1.7 section 8): the pick at g, the writes, one fresh process at L, the GR against g within 0.5 dB.
+    struct LevelResult { double g = 0; bool ran = false, pass = false, quietOk = false, window = false; std::optional<double> gr; profile::Pick pick; juce::String why; };
+    auto checkAt = [&] (double gg, const juce::String& tag) -> LevelResult
+    {
+        LevelResult lr; lr.g = gg;
+        lr.pick = profile::pickPosition (profile, Lrms, gg);
+        if (! lr.pick.ok) { lr.why = "section 6 picks nothing at " + juce::String (gg, 1) + " dB: " + lr.pick.refused; say ("TONE: " + product + " - " + lr.why); return lr; }
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
+                                 "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (lr.pick.norm, 6),
+                                 "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
+        if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
+        say ("TONE: " + product + " - L " + juce::String (Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (gg, 1)
+             + "; section 6 picks norm " + juce::String (lr.pick.norm, 4) + (lr.pick.i1 >= 0 ? " between points " + juce::String (lr.pick.i0) + " and " + juce::String (lr.pick.i1) : " at point " + juce::String (lr.pick.i0))
+             + " (in_at_gr at g: " + juce::String (lr.pick.inAtG0, 2) + (lr.pick.i1 >= 0 ? " / " + juce::String (lr.pick.inAtG1, 2) : juce::String()) + "; pick's 1 dB point " + juce::String (lr.pick.pickOneDb, 2) + ")"
+             + (lr.pick.note.isNotEmpty() ? "; " + lr.pick.note : juce::String()) + "; " + ratioNote);
+        const auto r = runChild (args, opt.timeoutMs);
+        auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+        raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck" + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        if (r.kind == ChildResult::Kind::uiShown) { lr.window = true; lr.why = "the probe " + r.describe(); say ("TONE: " + lr.why); return lr; }
+        if (! r.cleanExit()) { lr.why = "the probe " + r.describe(); say ("TONE: " + lr.why); return lr; }
+        lr.ran = true;
+        sweep::ProcessOut po { r.out, true, r.describe(), (float) lr.pick.norm };
+        const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { Lpeak }, plan.ratioIndex, true);
+        const auto key = sweep::levelKey (Lpeak);
+        lr.gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
+        lr.quietOk = ! d.quietCheckDb.empty() && d.quietCheckDb[0] && std::abs (*d.quietCheckDb[0]) <= sweep::kQuietTolDb;
+        lr.pass = lr.gr && lr.quietOk && std::abs (*lr.gr - lr.pick.expectedGrDb) <= 0.5;
+        say ("TONE: " + product + " - GR " + (lr.gr ? juce::String (*lr.gr, 2) : juce::String ("unreadable")) + " dB at L (target " + juce::String (lr.pick.expectedGrDb, 1) + ", quiet check "
+             + (lr.quietOk ? "ok" : "FAILED") + ") -> " + (lr.pass ? "PASS" : "FAIL") + " (within 0.5 dB)");
+        return lr;
+    };
+    auto pickVar = [] (const profile::Pick& pk) { auto* p = new juce::DynamicObject(); p->setProperty ("norm", pk.norm); p->setProperty ("point", pk.i0); if (pk.i1 >= 0) p->setProperty ("point_next", pk.i1);
+        p->setProperty ("in_at_g", pk.inAtG0); p->setProperty ("stepped", pk.stepped); p->setProperty ("pick_one_db", pk.pickOneDb); p->setProperty ("expected_gr_db", pk.expectedGrDb);
+        p->setProperty ("filled_across_norm", pk.filledAcrossNorm); p->setProperty ("fell_back_to_measured", pk.fellBackToMeasured); if (pk.note.isNotEmpty()) p->setProperty ("note", pk.note); return juce::var (p); };
+
+    const auto main = checkAt (g, "");
+    if (main.window) return kToneWindowExit;
     auto* o = new juce::DynamicObject();
     o->setProperty ("product", product); o->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", ""));
     o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("L_peak_dbfs", Lpeak); o->setProperty ("g_db", g);
-    auto* pk = new juce::DynamicObject(); pk->setProperty ("norm", pick.norm); pk->setProperty ("point", pick.i0); if (pick.i1 >= 0) pk->setProperty ("point_next", pick.i1);
-    pk->setProperty ("in_at_g", pick.inAtG0); pk->setProperty ("stepped", pick.stepped); o->setProperty ("pick", juce::var (pk));
-    o->setProperty ("writes", writes);                                     // engage + neutral + ratio, every one from the exported profile
+    o->setProperty ("pick", main.pick.ok ? pickVar (main.pick) : juce::var());
+    o->setProperty ("writes", writes);
     o->setProperty ("writes_source", "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick");
-    o->setProperty ("quiet_check_ok", quietOk);
-    o->setProperty ("gr_measured_db", gr ? juce::var (std::round (*gr * 100.0) / 100.0) : juce::var());
-    o->setProperty ("pass_within_0_5_db", pass);
+    o->setProperty ("quiet_check_ok", main.quietOk);
+    o->setProperty ("gr_measured_db", main.gr ? juce::var (std::round (*main.gr * 100.0) / 100.0) : juce::var());
+    o->setProperty ("pass_within_0_5_db", main.pass);
+    if (! main.ran) o->setProperty ("why_not_run", main.why);
     o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
     o->setProperty ("ratio_norm_source", ratioNote);
+    // THE DEEP LEVELS (v1.7 section 8): every deep level the profile carries on any position, same tolerance; a level that
+    // FAILS is null across ALL positions of the exported profile and never fails the profile.
+    juce::Array<juce::var> deepArr, nulled;
+    for (int t : profile::deepLevelsCarried (profile))
+    {
+        const auto lr = checkAt ((double) t, ".g" + juce::String (t));
+        if (lr.window) return kToneWindowExit;
+        auto* dl = new juce::DynamicObject(); dl->setProperty ("g_db", (double) t); dl->setProperty ("ran", lr.ran); dl->setProperty ("gr_measured_db", lr.gr ? juce::var (std::round (*lr.gr * 100.0) / 100.0) : juce::var());
+        dl->setProperty ("quiet_check_ok", lr.quietOk); dl->setProperty ("pass_within_0_5_db", lr.pass); dl->setProperty ("pick", lr.pick.ok ? pickVar (lr.pick) : juce::var()); if (! lr.ran) dl->setProperty ("why_not_run", lr.why);
+        deepArr.add (juce::var (dl));
+        if (! lr.pass)
+        {
+            nulled.add ((double) t);
+            profile::nullLevelAcrossPositions (profile, t);
+            say ("TONE: " + product + " - the " + juce::String (t) + " dB level " + (lr.ran ? "FAILED its tone check" : "could not be checked") + ": null across all positions (the profile stands)");
+        }
+    }
+    o->setProperty ("deep_levels", deepArr); o->setProperty ("deep_levels_nulled", nulled);
+    if (! nulled.isEmpty())
+    {
+        if (auto* po = profile.getDynamicObject())
+        {
+            juce::StringArray nl; for (const auto& n : nulled) nl.add (juce::String ((double) n, 0) + " dB");
+            po->setProperty ("notes", profile.getProperty ("notes", "").toString() + " deep levels nulled across all positions by the section 8 tone check (v1.7): " + nl.joinIntoString (", ") + ";");
+            profileFile.replaceWithText (juce::JSON::toString (profile) + "\n", false, false, "\n");
+        }
+    }
     const auto out = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
     out.replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
-    say ("TONE: " + product + " - GR " + (gr ? juce::String (*gr, 2) : juce::String ("unreadable")) + " dB at L (target " + juce::String (g, 1) + ", quiet check "
-         + (quietOk ? "ok" : "FAILED") + ") -> " + (pass ? "PASS" : "FAIL") + " (within 0.5 dB) -> " + out.getFileName());
-    return pass ? 0 : 1;
+    say ("TONE: " + product + " - g " + juce::String (g, 1) + " " + (main.pass ? "PASS" : "FAIL") + "; deep levels checked " + juce::String (deepArr.size()) + ", nulled " + juce::String (nulled.size()) + " -> " + out.getFileName());
+    return profile::toneExitCode (main.pass, nulled.size());
 }
 
 //==============================================================================
