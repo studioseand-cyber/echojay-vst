@@ -4861,23 +4861,32 @@ void testCertRecordAndDefaultPaths()
     // THE MAPPER'S ESCAPE HATCH: a disposition other than sweep in categories.json is honoured by cert discovery.
     auto led = root.getChildFile ("ledger");
     led.createDirectory();
-    led.getChildFile ("map-state.json").replaceWithText (R"({"identities": {"AudioUnit|cccc0001|1.0.0": {"state": 3}, "AudioUnit|cccc0002|1.0.0": {"state": 3}, "AudioUnit|cccc0003|1.0.0": {"state": 3}}})");
+    led.getChildFile ("map-state.json").replaceWithText (R"({"identities": {"AudioUnit|cccc0001|1.0.0": {"state": 3}, "AudioUnit|cccc0002|1.0.0": {"state": 3}, "AudioUnit|cccc0003|1.0.0": {"state": 3}, "AudioUnit|cccc0004|1.0.0": {"state": 3}, "AudioUnit|cccc0005|1.0.0": {"state": 3}}})");
     led.getChildFile ("categories.json").replaceWithText (R"({"products": {
         "hanger|test":  {"category": "compressor", "disposition": "operator_excluded", "why": "hangs on load", "mark_keys": ["AudioUnit|cccc0001"]},
         "fine|test":    {"category": "compressor", "disposition": "sweep", "mark_keys": ["AudioUnit|cccc0002"]},
-        "nodisp|test":  {"category": "compressor", "mark_keys": ["AudioUnit|cccc0003"]}}})");
+        "nodisp|test":  {"category": "compressor", "mark_keys": ["AudioUnit|cccc0003"]},
+        "tuner|test":   {"category": "pitch", "disposition": "no_dial_set", "mark_keys": ["AudioUnit|cccc0004"]},
+        "reviewed|test": {"category": "compressor", "disposition": "review", "why": "arms disagree", "mark_keys": ["AudioUnit|cccc0005"]}}})");
     auto inst = [] (const char* name, int uid, const char* code) {
         InstalledRecord r; r.desc.name = name; r.desc.uniqueId = uid; r.desc.version = "1.0.0"; r.desc.pluginFormatName = "AudioUnit";
         r.desc.fileOrIdentifier = juce::String ("AudioUnit:Effects/") + code; r.identityKey = echojay::identityKeyForDescription (r.desc);
         r.uidKey = "AudioUnit|" + juce::String::toHexString (uid).toLowerCase(); return r; };
-    const std::vector<InstalledRecord> installed { inst ("Hanger", 0xcccc0001, "aufx,hang,Test"), inst ("Fine", 0xcccc0002, "aufx,fine,Test"), inst ("NoDisp", 0xcccc0003, "aufx,nodi,Test") };
+    const std::vector<InstalledRecord> installed { inst ("Hanger", 0xcccc0001, "aufx,hang,Test"), inst ("Fine", 0xcccc0002, "aufx,fine,Test"), inst ("NoDisp", 0xcccc0003, "aufx,nodi,Test"),
+                                                   inst ("Tuner", 0xcccc0004, "aufx,tune,Test"), inst ("Reviewed", 0xcccc0005, "aufx,revw,Test") };
     const auto in = loadDiscoveryInputs (led);
     const auto disc = discoverCandidates (in, installed, {});
     juce::StringArray cand; for (const auto& c : disc.candidates) cand.add (c.inst.desc.name);
-    check (cand == juce::StringArray { "Fine", "NoDisp" } && disc.excludedByDisposition.size() == 1 && disc.excludedByDisposition[0].contains ("hangs on load")
-             && in.notes.joinIntoString (" ").contains ("disposition other than sweep"),
+    check (cand.contains ("Fine") && cand.contains ("NoDisp") && ! cand.contains ("Hanger") && disc.excludedByDisposition.size() == 1 && disc.excludedByDisposition[0].contains ("hangs on load")
+             && in.notes.joinIntoString (" ").contains ("exclusion disposition"),
            "record R10: operator_excluded in categories.json keeps a mapped compressor out of the cert worklist, with its why; "
            "disposition sweep and no disposition are both candidates (" + cand.joinIntoString (",") + ")");
+    // RE-RULED 2 Oct: a mapping verdict is not an exclusion - the category decides.
+    check (cand.contains ("Tuner") && disc.tuners.contains ("Tuner") && cand.contains ("Reviewed"),
+           "record R10b: a tuner with category pitch and disposition no_dial_set IS discovered (for tuner certification), and a compressor with disposition review IS a candidate (" + cand.joinIntoString (",") + ")");
+    check (exclusionDisposition ("operator_excluded") && exclusionDisposition ("hang_on_load") && exclusionDisposition ("crash_on_load") && ! exclusionDisposition ("no_dial_set")
+             && ! exclusionDisposition ("review") && ! exclusionDisposition ("not_a_processor") && ! exclusionDisposition ("sweep") && ! exclusionDisposition (""),
+           "record R10c: exclusion dispositions are operator_excluded and the hang/crash family; mapping verdicts are not");
     root.deleteRecursively();
 }
 

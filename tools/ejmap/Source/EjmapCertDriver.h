@@ -1127,6 +1127,19 @@ struct DiscoveryInputs
     juce::StringArray notes;                                // what was read, for the report
 };
 
+// ONLY AN EXCLUSION STOPS CERTIFICATION (re-ruled 2 Oct; the 30 Sep ruling was too broad). operator_excluded and the
+// hang / crash family are the mapper's escape hatch and are honoured. A MAPPING verdict - no_dial_set, review,
+// not_a_processor - says nothing about whether a product can be measured: the CATEGORY decides (compressor, pitch).
+// Measured on the fresh-ledger test: 202 products held by disposition against 7 before, every tuner among them.
+inline bool exclusionDisposition (const juce::String& disp)
+{
+    const auto d = disp.trim().toLowerCase();
+    if (d.isEmpty() || d == "sweep") return false;
+    if (d == "operator_excluded") return true;
+    for (const char* t : { "hang", "crash", "unstable", "quarantin", "timeout" }) if (d.contains (t)) return true;
+    return false;
+}
+
 inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
 {
     DiscoveryInputs in;
@@ -1155,13 +1168,13 @@ inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
                     const auto uidKey = k.toString().toLowerCase().replace ("audiounit|", "AudioUnit|").replace ("vst3|", "VST3|");
                     in.categoryByUid[uidKey] = p.value.getProperty ("category", "").toString();
                     const auto disp = p.value.getProperty ("disposition", "").toString().trim();
-                    if (disp.isNotEmpty() && disp != "sweep")
+                    if (exclusionDisposition (disp))
                         in.dispositionByUid[uidKey] = disp + (p.value.hasProperty ("why") ? " (" + p.value.getProperty ("why", "").toString() + ")" : juce::String());
                 }
     in.notes.add (juce::String (maps) + " local map(s), " + juce::String ((int) in.mapState.size()) + " map-state row(s)"
                   + (ms.getProperty ("fetched_at", "").toString().isNotEmpty() ? " (fetched " + ms.getProperty ("fetched_at", "").toString() + ")" : juce::String (" (never fetched)"))
                   + ", " + juce::String ((int) in.categoryByUid.size()) + " categorised identities"
-                  + (in.dispositionByUid.empty() ? juce::String() : ", " + juce::String ((int) in.dispositionByUid.size()) + " with a disposition other than sweep (honoured)"));
+                  + (in.dispositionByUid.empty() ? juce::String() : ", " + juce::String ((int) in.dispositionByUid.size()) + " with an exclusion disposition (operator_excluded / hang / crash: honoured; mapping verdicts are not)"));
     return in;
 }
 
