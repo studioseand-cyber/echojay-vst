@@ -123,6 +123,7 @@ struct Plan
     juce::String pickNote;                   // how one threshold was chosen from several, when it was
     juce::String channel;                    // "L" when an L/R pair was reduced to channel A (spec 4.7)
     juce::StringArray linkStates;            // every control answering "link", as instantiated: recorded, never written
+    juce::StringArray wordValuedDropped;     // threshold-named controls whose values are words (a mode switch), dropped from the candidates (ruled 2 Oct)
     bool quietReference = false;             // input-as-threshold: each position carries its own quiet reference
     juce::String referenceFallbackNote;      // set when the quiet reference was used because the soft end had no linear anchor
     // ENGAGE WRITES (spec section 3 `engage`, built 1 Oct): the switch(es) the product needed before its threshold did
@@ -256,6 +257,23 @@ inline std::optional<float> chooseRatioRaise (const std::vector<GridPoint>& grid
     return best;
 }
 
+// WORD-VALUED: every sampled display text is a word with no digit in it (Disabled / Enabled, In / Out, Fix / Man);
+// a threshold prints levels. The defaults sample's displayAt is the evidence; a control with no sample is not judged.
+inline bool wordValued (const juce::var& c)
+{
+    const auto da = c.getProperty ("displayAt", {});
+    const auto* o = da.getDynamicObject();
+    if (o == nullptr || o->getProperties().size() == 0) return false;
+    for (const auto& kv : o->getProperties())
+    {
+        const auto t = kv.value.toString().trim().toLowerCase();
+        if (t.isEmpty()) return false;
+        if (t.containsAnyOf ("0123456789")) return false;
+        if (t.startsWith ("-inf") || t.startsWith ("inf") || t == "off") return false;   // a level's own words: -inf dB, Off
+    }
+    return true;
+}
+
 inline bool isSteppedControl (const juce::var& c)
 {
     const int steps = (int) c.getProperty ("numSteps", 0);
@@ -326,6 +344,10 @@ inline Plan planFromFixture (const juce::var& fixture)
     std::vector<const roles::ControlRole*> thr, ratio;
     for (const auto& r : cl.controls)
     {
+        // A CONTROL WHOSE VALUES ARE WORDS IS NEVER A THRESHOLD CANDIDATE (ruled 2 Oct, evening - Unfiltered Audio Zip's
+        // "Auto Threshold": Disabled / Enabled, a mode switch the name put among the thresholds). A threshold's values are
+        // levels; the defaults sample says which controls print only words.
+        if (r.role == "threshold" && wordValued (findControl (fixture, r.index))) { p.wordValuedDropped.add (r.name); continue; }
         if (r.role == "threshold") thr.push_back (&r);
         if (r.role == "ratio") ratio.push_back (&r);
     }
@@ -700,6 +722,32 @@ inline bool showsResponse (const Derived& d)
     if (d.result == "flat") return false;
     return (d.flatSpanDb && *d.flatSpanDb > kSenseDb) || (d.responseDb && *d.responseDb > kSenseDb) || d.result == "certified" || d.result == "nonmonotonic";
 }
+
+// RULE 1, THE COMPRESSOR STAGE WORD (ruled 2 Oct, evening; built at PLAN time). Among a product's threshold candidates,
+// exactly one has a name token that is EXACTLY "comp", "compressor" or "compression" (whole token, case-folded; tokens
+// split on space, dash, underscore, slash, arrow and brackets - never a prefix match, so "Compare" is not it). That one is
+// swept first, alone; if it certifies it is the amount control and the other candidates (and every other control) stay
+// at their instantiate values; if it does not, the rest are swept and the record ends with the full table (needs_review)
+// - no information lost on a miss. EMO-D5 (s): Comp Thresh with Comp On, the hand run's choice, ~9 min instead of 43.
+inline bool compressorWord (const juce::String& name)
+{
+    for (const auto& t : juce::StringArray::fromTokens (name, " -_/>()[]", ""))
+    {
+        const auto w = t.trim().toLowerCase();
+        if (w == "comp" || w == "compressor" || w == "compression") return true;
+    }
+    return false;
+}
+inline std::optional<int> ruleOnePick (const std::vector<Plan::Candidate>& candidates)
+{
+    std::optional<int> pick; int n = 0;
+    for (int i = 0; i < (int) candidates.size(); ++i) if (compressorWord (candidates[(size_t) i].name)) { ++n; pick = i; }
+    return n == 1 ? pick : std::nullopt;
+}
+// THE HOLD-DOUBLED REPEAT IS SKIPPED ONLY FOR A PASS-THROUGH FIRST PASS (ruled 2 Oct): identical output at every
+// position and level, repeated, proves nothing. A merely flat sweep is NOT that - flat has meant "our signal did not
+// reach it", and the repeat is part of the evidence.
+inline bool repeatWorthwhile (const Derived& first) { return ! first.passThroughAtDefaults; }
 
 // THE REFINEMENT RULE, pure: norms in order with each one's 2 dB point (null where not measured) -> the norms to add.
 // Only neighbours that BOTH have a numeric 2 dB point are compared (a null is not a gap, it is an absence); a gap over

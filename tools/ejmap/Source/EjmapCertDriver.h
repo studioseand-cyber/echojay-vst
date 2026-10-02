@@ -1609,9 +1609,16 @@ inline void resolveLicenceAtProductLevel (std::vector<std::pair<sweep::Plan, Der
 // SEVERAL CANDIDATES (ruled 30 Sep): one fixture carrying every candidate's sweep, labelled, and NO thresholdSweep - a
 // human reads the curves and picks. The fixture says so in `thresholdReview`.
 inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan& plan, const std::vector<std::pair<sweep::Plan, Derivation>>& cands,
-                                        const juce::File& fixtureOut, const juce::File& reportOut)
+                                        const juce::File& fixtureOut, const juce::File& reportOut, const juce::var& ruleDecided = {})
 {
     auto f = sweep::stripPrivate (juce::JSON::parse (juce::JSON::toString (base)));
+    if (ruleDecided.isObject())
+    {
+        f.getDynamicObject()->setProperty ("ruleDecided", ruleDecided);
+        auto* pk = new juce::DynamicObject(); pk->setProperty ("index", ruleDecided.getProperty ("pick", {}).getProperty ("index", -1)); pk->setProperty ("name", ruleDecided.getProperty ("pick", {}).getProperty ("name", ""));
+        pk->setProperty ("note", "decided by Rule 1 (ruleDecided): the comp-worded candidate certified alone");
+        f.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk));
+    }
     juce::Array<juce::var> arr;
     juce::String rep;
     for (const auto& [q, one] : cands)
@@ -1887,7 +1894,10 @@ inline int runCertSweep (const SweepOptions& opt)
         // v1.4 THE HOLD-DOUBLED REPEAT: every position measured again in a fresh process with the hold at 5 s (same 300 ms
         // read at its end), tagged "r2." + prefix; the disagreement on any in_at_gr point is quality.point_error_db, the
         // trust gate - a point that moves had not settled. Only the profile sweep (repeats = 2) does this.
-        if (q.repeats > 1)
+        const bool repeatIt = q.repeats > 1 && ! windowSeen && ! overBudget()
+                              && sweep::repeatWorthwhile (sweep::derive (sweep::mergeProcesses (refOut, posOut), q.testLevels(), q.ratioIndex, q.quietReference));
+        if (q.repeats > 1 && ! repeatIt) std::cout << "  hold-doubled repeat skipped: the first pass is pass-through (identical at every position)" << std::endl;
+        if (repeatIt)
         {
             std::vector<sweep::ProcessOut> again;
             const sweep::Plan slow = q.holdDoubled();
@@ -1910,6 +1920,7 @@ inline int runCertSweep (const SweepOptions& opt)
     sweep::ProcessOut refOut;
     std::vector<sweep::ProcessOut> posOut;
     std::vector<std::pair<sweep::Plan, std::pair<sweep::ProcessOut, std::vector<sweep::ProcessOut>>>> candRuns;
+    std::optional<sweep::Plan::Candidate> ruleOneDecided;        // RULE 1: the comp-worded candidate that certified alone
     // THE QUIET-LEVEL FALLBACK (ruled 30 Sep): a sweep whose soft end has no linear anchor is re-swept at once with the
     // per-position quiet reference (levels -54/-48 added), tagged "q." + the candidate's prefix so both runs stay in the
     // traces. The plan that comes back is the one to derive from. Same processes, same probe, one more pass.
@@ -2010,8 +2021,16 @@ inline int runCertSweep (const SweepOptions& opt)
         refineGrid (plan, lastSweepPrefix, refOut, posOut);
     }
     else
-        for (const auto& c : plan.candidates)
+    {
+        // RULE 1 AT PLAN TIME (ruled 2 Oct, evening): the comp-worded candidate first, alone; the rest only on a miss.
+        const auto r1 = sweep::ruleOnePick (plan.candidates);
+        std::vector<sweep::Plan::Candidate> order;
+        if (r1) order.push_back (plan.candidates[(size_t) *r1]);
+        for (int i = 0; i < (int) plan.candidates.size(); ++i) if (! r1 || i != *r1) order.push_back (plan.candidates[(size_t) i]);
+        if (r1) std::cout << "  RULE 1: '" << plan.candidates[(size_t) *r1].name << "' carries the compressor stage word alone - swept first; the rest only if it does not certify" << std::endl;
+        for (size_t k = 0; k < order.size(); ++k)
         {
+            const auto& c = order[k];
             if (windowSeen || overBudget()) break;
             auto q = plan.forCandidate (c);
             sweep::applyCandidateControl (q, base);
@@ -2019,7 +2038,14 @@ inline int runCertSweep (const SweepOptions& opt)
             q = sweepWithFallback (q, "c" + juce::String (c.index) + ".", cr, cp);
             refineGrid (q, lastSweepPrefix, cr, cp);
             candRuns.push_back ({ q, { cr, cp } });
+            if (r1 && k == 0)
+            {
+                const auto first = sweep::derive (sweep::mergeProcesses (cr, cp), q.testLevels(), q.ratioIndex, q.quietReference);
+                if (first.result == "certified") { ruleOneDecided = c; std::cout << "  RULE 1: '" << c.name << "' certifies - the amount control; the other candidates stay at their instantiate values" << std::endl; break; }
+                std::cout << "  RULE 1: '" << c.name << "' did not certify (" << first.result << ") - falling back to the full candidate table" << std::endl;
+            }
         }
+    }
     opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
     auto fixturesDir = opt.out.getChildFile ("fixtures");
     fixturesDir.createDirectory();
@@ -2125,7 +2151,39 @@ inline int runCertSweep (const SweepOptions& opt)
         cands.push_back ({ q, one });
     }
     resolveLicenceAtProductLevel (cands, pv);
-    composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"));
+    juce::var ruleDecided;
+    if (ruleOneDecided && ! cands.empty() && cands.front().second.d.result == "certified")
+    {
+        // THE RECORD SAYS WHAT RULE 1 DECIDED: the pick, its engage write, every other candidate at its instantiate value,
+        // and whether the defaults reference shows gain reduction with every candidate at its instantiate value - a stage
+        // active at the defaults is IN the exported curve (MDynamics: Processor 1 at -20 dB); which one is not measured
+        // individually under the plan-time rule, so the candidates left at a level are named.
+        auto* rd = new juce::DynamicObject();
+        rd->setProperty ("rule", "R1: exactly one candidate carries the compressor stage word (whole token: comp / compressor / compression) and certifies alone; the others stay at their instantiate values");
+        auto* pk = new juce::DynamicObject(); pk->setProperty ("index", ruleOneDecided->index); pk->setProperty ("name", ruleOneDecided->name); rd->setProperty ("pick", juce::var (pk));
+        rd->setProperty ("engage", cands.front().second.sweepVar.getProperty ("engageWrites", {}).getProperty ("writes", juce::Array<juce::var>()));
+        juce::Array<juce::var> others, atLevel;
+        for (const auto& c : plan.candidates)
+        {
+            if (c.index == ruleOneDecided->index) continue;
+            const auto doi = sweep::findControl (base, c.index).getProperty ("defaultOnInstantiate", {});
+            auto* o = new juce::DynamicObject(); o->setProperty ("index", c.index); o->setProperty ("name", c.name); o->setProperty ("set", doi.getProperty ("display", "")); o->setProperty ("norm", doi.getProperty ("normalised", juce::var()));
+            others.add (juce::var (o));
+            const auto txt = doi.getProperty ("display", "").toString().trim().toLowerCase();
+            if (txt.isNotEmpty() && txt != "off" && ! txt.startsWith ("-inf") && txt.retainCharacters ("0123456789").isNotEmpty() && txt.getDoubleValue() != 0.0) atLevel.add (c.name + " at " + doi.getProperty ("display", "").toString());
+        }
+        rd->setProperty ("othersAtInstantiate", others);
+        const auto& dg = cands.front().second.d.defaultGain;
+        double gmin = 1e9, gmax = -1e9; for (const auto& [k, g] : dg) { gmin = juce::jmin (gmin, g); gmax = juce::jmax (gmax, g); }
+        const bool active = ! dg.empty() && gmax - gmin > sweep::kSenseDb;
+        rd->setProperty ("defaultsGr_db", dg.empty() ? juce::var() : juce::var (std::round ((gmax - gmin) * 100.0) / 100.0));
+        rd->setProperty ("activeAtDefaults", active);
+        rd->setProperty ("candidatesLeftAtLevel", atLevel);
+        rd->setProperty ("note", active ? "the defaults reference shows gain reduction with every candidate at its instantiate value: another stage is active at the defaults and is IN this curve; which one is not measured individually under the plan-time rule - the candidates left at a level are named"
+                                        : "the defaults reference shows no gain reduction: no other stage is active at the defaults");
+        ruleDecided = juce::var (rd);
+    }
+    composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), ruleDecided);
     return 0;
 }
 
@@ -2311,12 +2369,15 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
         auto profilesDir = opt.out.getChildFile ("profiles"); profilesDir.createDirectory();
         const auto stem = juce::File::createLegalFileName (product).replaceCharacter (' ', '_') + "_" + record.getProperty ("version", "").toString();
         const auto profileFile = profilesDir.getChildFile (stem + ".json");
-        if (! record.getProperty ("thresholdSweep", {}).getProperty ("detector", {}).isObject())
+        // RULE 1: a candidates record with a pick is read through its single view; the detector and the tone check take the pick by name
+        const juce::String pick = record.getProperty ("thresholdSweep", {}).isObject() ? juce::String() : record.getProperty ("pickedCandidate", {}).getProperty ("name", "").toString();
+        auto single = [&] (const juce::var& r) { if (pick.isEmpty()) return r; juce::String why; auto v = profile::candidateAsSingle (r, pick, why); return v.isVoid() ? r : v; };
+        if (! single (record).getProperty ("thresholdSweep", {}).getProperty ("detector", {}).isObject())
         {
-            runDetector (opt, recordFile, {});                                                // writes detector into the record, or says why not
+            runDetector (opt, recordFile, pick);                                              // writes detector into the record (the pick's sweep), or says why not
             record = juce::JSON::parse (recordFile.loadFileAsString());
         }
-        const auto e = profile::exportCompProfile (record);
+        const auto e = profile::exportCompProfile (single (record));
         bool toneRan = false; juce::String toneWhy;
         if (e.ok)
         {
@@ -2324,7 +2385,7 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
             profilePath = profileFile.getFullPathName();
             const auto toneFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
             toneFile.deleteFile();                                                             // a result file is this call's or nobody's
-            const int trc = runToneCheck (opt, profileFile, recordFile, -18.0, 2.0, {});
+            const int trc = runToneCheck (opt, profileFile, recordFile, -18.0, 2.0, pick);
             // THE TONE CHECK RAN when it wrote its result; exit 1 is a FAILED check (a result on the profile), not a check
             // that could not run (exits 2-4 write nothing). Lindell 254E, 11:17: a failed check was read as "could not run".
             if (toneFile.existsAsFile())

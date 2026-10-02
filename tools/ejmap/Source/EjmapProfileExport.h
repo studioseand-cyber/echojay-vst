@@ -474,6 +474,21 @@ inline Export exportCompProfile (const juce::var& f)
               << "level dependence (not a gain law), quiet-reference 6 dB self-check (" << juce::String ((int) quietGains.size()) << " of " << juce::String (norms.size()) << " positions), "
               << "ascending-only levels in each fresh process, still-moving rule; ";
     }
+    if (const auto rd = f.getProperty ("ruleDecided", {}); rd.isObject())
+    {
+        // RULE-DECIDED (ruled 2 Oct): the rule, the pick, its engage write, every other candidate at its instantiate value,
+        // and whether another stage is active at the defaults (named by the candidates left at a level).
+        notes << "amount control decided by Rule 1 (the compressor stage word): pick " << rd.getProperty ("pick", {}).getProperty ("name", "").toString();
+        if (const auto* ew = rd.getProperty ("engage", {}).getArray(); ew != nullptr && ! ew->isEmpty()) { juce::StringArray e; for (const auto& w : *ew) e.add (w.getProperty ("control", "").toString() + " -> " + w.getProperty ("set", "").toString()); notes << " with engage " << e.joinIntoString (", "); }
+        if (const auto* ot = rd.getProperty ("othersAtInstantiate", {}).getArray(); ot != nullptr && ! ot->isEmpty()) { juce::StringArray e; for (const auto& x : *ot) e.add (x.getProperty ("name", "").toString() + "='" + x.getProperty ("set", "").toString() + "'"); notes << "; other threshold candidates and every other control at their instantiate values: " << e.joinIntoString (", "); }
+        if ((bool) rd.getProperty ("activeAtDefaults", false))
+        {
+            notes << "; ANOTHER STAGE IS ACTIVE AT THE DEFAULTS and is in this curve (defaults reference GR " << juce::String ((double) rd.getProperty ("defaultsGr_db", 0.0), 2) << " dB)";
+            if (const auto* al = rd.getProperty ("candidatesLeftAtLevel", {}).getArray(); al != nullptr && ! al->isEmpty()) { juce::StringArray e; for (const auto& x : *al) e.add (x.toString()); notes << ": candidates left at a level: " << e.joinIntoString (", ") << " (which of them: not measured individually)"; }
+        }
+        else notes << "; no other stage active at the defaults (defaults reference flat)";
+        notes << "; ";
+    }
     notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured; "
           << "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate); ";
     notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position";

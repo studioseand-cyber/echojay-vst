@@ -5545,6 +5545,38 @@ void testProfileSweepPlan()
            "profile N3: a candidate of a profile plan keeps the quiet reference and the grid (a candidate's own flag would have reset it)");
     Plan q; check (q.testLevels().size() == 3 && ! q.quietReference && q.holdS == 1.5, "profile N4: a certification plan is unchanged: three levels, 1.5 s");
     {
+        // RULE 1 (ruled 2 Oct, evening): the compressor stage word, WHOLE token; EMO-D5's pick; the pass-through repeat skip.
+        check (compressorWord ("Comp Thresh") && compressorWord ("Compressor -> Threshold") && compressorWord ("Threshold Comp") && compressorWord ("COMPRESSION") && compressorWord ("Band 2 Compressor -> Threshold"),
+               "rule1 K1: comp / compressor / compression as whole tokens, in any position, any case");
+        check (! compressorWord ("Compare Thresh") && ! compressorWord ("Component Threshold") && ! compressorWord ("Compressor1") && ! compressorWord ("Gate Thresh") && ! compressorWord ("Leveller Thresh") && ! compressorWord ("Limiter Thresh"),
+               "rule1 K2: a prefix is not the word - Compare, Component, Compressor1 are not it; neither is a leveller or a limiter stage");
+        auto cands = [] (std::initializer_list<const char*> names) { std::vector<Plan::Candidate> v; int i = 0; for (auto* n : names) v.push_back ({ i++, n, {}, false }); return v; };
+        const auto emo = cands ({ "Gate Thresh", "Comp Thresh", "Leveller Thresh", "DeEsser Thresh", "Limiter Thresh" });
+        const auto pick = ruleOnePick (emo);
+        check (pick && emo[(size_t) *pick].name == "Comp Thresh", "rule1 K3 (EMO-D5): among Gate / Comp / Leveller / DeEsser / Limiter the pick is Comp Thresh - the hand run's choice");
+        check (! ruleOnePick (cands ({ "Mod Comp 1 Thresh dB", "Mod Comp 2 Thresh dB", "Opt B Comp 1 Threshold dB", "Opt B Comp 2 Threshold dB" })),
+               "rule1 K4: four comp-worded candidates (Auto-Tune Vocal Compressor) decide nothing - needs_review");
+        check (! ruleOnePick (cands ({ "Low Level Thresh", "High Level Thresh" })) && ! ruleOnePick (cands ({ "Compare Thresh", "Gate Thresh" })),
+               "rule1 K5: no comp word (MaxxVolume) decides nothing; a Compare control is not a pick");
+        check (ruleOnePick (cands ({ "Compressor -> Threshold", "Gate - Threshold", "Processor 1 - Threshold", "Processor 2 - Threshold" })) == std::optional<int> (0)
+                 && ruleOnePick (cands ({ "Threshold Comp", "Threshold G/E" })) == std::optional<int> (0),
+               "rule1 K6: MDynamics picks Compressor -> Threshold, Solid Dynamics picks Threshold Comp");
+        Derived pt; pt.passThroughAtDefaults = true; Derived fl; fl.result = "flat"; fl.passThroughAtDefaults = false;
+        check (! repeatWorthwhile (pt) && repeatWorthwhile (fl), "rule1 K7: the hold-doubled repeat is skipped ONLY for a pass-through first pass, never for a merely flat one");
+    }
+    {
+        // ZIP IS A ROLES CASE (ruled 2 Oct): a threshold-named control whose values are words is a mode switch, never a candidate.
+        const auto zip = juce::JSON::parse (R"json({"controls": [
+            {"index": 6,  "name": "Auto Threshold", "numSteps": 2147483647, "displayAt": {"0.000": "Disabled", "0.500": "Enabled", "1.000": "Enabled"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "Disabled"}},
+            {"index": 17, "name": "Threshold", "unit": "dB", "numSteps": 2147483647, "displayAt": {"0.000": "-inf dB", "0.500": "-40 dB", "1.000": "0.0 dB"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0 dB"}},
+            {"index": 3,  "name": "Ratio", "numSteps": 2147483647, "displayAt": {"0.000": "1:1", "0.500": "4:1", "1.000": "20:1"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "4:1"}}]})json");
+        const auto zp = planFromFixture (zip);
+        check (zp.ok && zp.thr == 17 && zp.candidates.empty() && zp.wordValuedDropped == juce::StringArray { "Auto Threshold" },
+               "roles Z1: Zip's 'Auto Threshold' (Disabled / Enabled) is dropped as word-valued and Threshold is the single candidate (" + zp.why + ")");
+        check (wordValued (zip.getProperty ("controls", {})[0]) && ! wordValued (zip.getProperty ("controls", {})[1]) && ! wordValued (juce::JSON::parse (R"({"name": "x"})")),
+               "roles Z2: word-valued means every sampled text is a word with no digit; '-inf dB' and 'Off' are a level's own words; no sample is not judged");
+    }
+    {
         // GRID REFINEMENT (2 Oct): CL 1B's 2 dB points, positions 0-5 (null, null, null, -13.91, -23.21, -27.71): the
         // 9.3 dB gap between 3 and 4 gets ceil(9.3/3) - 1 = 3 positions, the 4.5 dB gap between 4 and 5 gets 1; nulls
         // are absences, not gaps.
@@ -5662,10 +5694,19 @@ void testLoopOutcomes()
     juce::Array<juce::var> pcs; pcs.add (obj ({ { "index", 4 } }));
     check (outcomeForRecord (obj ({ { "schema", "ej_cert_tuner/1" }, { "pitchCandidates", pcs } })).state == "recorded"
              && outcomeForRecord (obj ({ { "schema", "ej_cert_tuner/1" } })).state == "needs_review", "loop L2: a tuner record with pitch candidates is recorded, without them needs_review");
-    // several candidates: needs_review, the rule not built
+    // several candidates: needs_review unless Rule 1 decided (pickedCandidate + ruleDecided, the pick certified profile-grade)
     juce::Array<juce::var> cs; cs.add (obj ({})); cs.add (obj ({}));
     o = outcomeForRecord (obj ({ { "thresholdCandidates", cs } }));
-    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("nobody picks"), "loop L3: several candidates end as needs_review naming the missing rule, never a pick");
+    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("nobody picks"), "loop L3: several candidates end as needs_review, never a pick, when no rule decides");
+    {
+        juce::Array<juce::var> grid; for (int L = -60; L <= 0; L += 2) grid.add ((double) L);
+        juce::Array<juce::var> cc; cc.add (obj ({ { "index", 1 }, { "name", "Gate Thresh" }, { "thresholdSweep", obj ({ { "result", "certified" }, { "hold_s", 2.5 }, { "tone", obj ({ { "levels_dbfs", grid } }) } }) } }));
+        cc.add (obj ({ { "index", 16 }, { "name", "Comp Thresh" }, { "thresholdSweep", obj ({ { "result", "certified" }, { "hold_s", 2.5 }, { "tone", obj ({ { "levels_dbfs", grid } }) } }) } }));
+        const auto decided = obj ({ { "thresholdCandidates", cc }, { "pickedCandidate", obj ({ { "index", 16 }, { "name", "Comp Thresh" } }) }, { "ruleDecided", obj ({ { "rule", "R1" } }) } });
+        check (outcomeForRecord (decided).exportPending, "loop L3b (Rule 1): a candidates record whose pick certified on the profile grid is export-pending through its single view");
+        const auto noRule = obj ({ { "thresholdCandidates", cc }, { "pickedCandidate", obj ({ { "index", 16 }, { "name", "Comp Thresh" } }) } });
+        check (! outcomeForRecord (noRule).exportPending, "loop L3c: a pick without ruleDecided (a hand --candidate) is not the batch's to export");
+    }
     // a flat sweep: needs_review with the result
     o = outcomeForRecord (obj ({ { "thresholdSweep", obj ({ { "result", "flat" }, { "reason", "no two positions differ" } }) } }));
     check (o.state == "needs_review" && o.reason.contains ("flat") && o.reason.contains ("no two positions differ"), "loop L4: a non-certified sweep is needs_review with the sweep's result and reason");

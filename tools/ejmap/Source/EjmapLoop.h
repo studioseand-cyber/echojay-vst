@@ -77,8 +77,20 @@ inline Outcome outcomeForRecord (const juce::var& record)
     }
     if (const auto cands = record.getProperty ("thresholdCandidates", {}); cands.isArray())
     {
+        // RULE 1 (ruled 2 Oct, evening): a record whose comp-worded candidate certified alone carries pickedCandidate +
+        // ruleDecided; it goes on through the single view (candidateAsSingle) like any certified profile-grade record.
+        const auto pick = record.getProperty ("pickedCandidate", {});
+        if (pick.isObject() && record.getProperty ("ruleDecided", {}).isObject())
+        {
+            for (int i = 0; i < cands.size(); ++i)
+                if ((int) cands[i].getProperty ("index", -2) == (int) pick.getProperty ("index", -1))
+                {
+                    const auto sw = cands[i].getProperty ("thresholdSweep", {});
+                    if (sw.getProperty ("result", "").toString() == "certified" && profileGrade (sw)) { o.exportPending = true; o.state = "needs_review"; o.reason = "export pending (Rule 1 pick)"; return o; }
+                }
+        }
         o.state = "needs_review";
-        o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): the one-candidate rule is not built, nobody picks";
+        o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): no rule decides it, nobody picks";
         return o;
     }
     const auto sw = record.getProperty ("thresholdSweep", {});
