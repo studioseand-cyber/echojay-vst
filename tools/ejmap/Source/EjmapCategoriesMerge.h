@@ -35,8 +35,8 @@ inline int mergeServed (juce::var& doc, const juce::var& served, const std::map<
     int n = 0;
     if (obj != nullptr)
         for (const auto& kv : obj->getProperties())
-            if (! prodObj->hasProperty (kv.name)) { prodObj->setProperty (kv.name, stamp (kv.name.toString(), kv.value)); ++n; }
-    // existing entries without keys (a file written by the reply alone) get them too
+            if (! prodObj->hasProperty (kv.name)) { prodObj->setProperty (kv.name, kv.value); ++n; }
+    // ONE PASS stamps every entry without keys: the ones just served and the ones a reply alone wrote earlier
     for (const auto& kv : prodObj->getProperties()) prodObj->setProperty (kv.name, stamp (kv.name.toString(), kv.value));
     if (! docObj->hasProperty ("run")) { auto* run = new juce::DynamicObject(); run->setProperty ("tool", "categorise-endpoint/1"); docObj->setProperty ("run", juce::var (run)); }
     return n;
