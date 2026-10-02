@@ -1,0 +1,317 @@
+{
+  "product": "EMO-D5 (s)",
+  "map_fp": "62995254f7ddb93ef3298c6d855fc84c87cf151397acc428adce2db46c2e9970",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.6272922125,
+    "point": 18,
+    "point_next": 19,
+    "in_at_g": -19.309999999999999,
+    "stepped": false
+  },
+  "writes": [
+    {
+      "control": "Comp On",
+      "index": 15,
+      "norm": 1.0,
+      "set": "On",
+      "why": "engage[] from the profile"
+    },
+    {
+      "control": "Gate On",
+      "index": 0,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Thresh",
+      "index": 1,
+      "norm": 0.0,
+      "set": "-Inf",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "GateExp",
+      "index": 2,
+      "norm": 0.0,
+      "set": "Gate",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Attack",
+      "index": 3,
+      "norm": 0.333333,
+      "set": "1.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Rel",
+      "index": 4,
+      "norm": 0.666667,
+      "set": "100.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Hold",
+      "index": 5,
+      "norm": 0.0,
+      "set": "0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Close",
+      "index": 6,
+      "norm": 1.0,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Floor",
+      "index": 7,
+      "norm": 0.0,
+      "set": "-Inf",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Int Ext",
+      "index": 8,
+      "norm": 0.0,
+      "set": "Int",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Monitor",
+      "index": 9,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate HPF On",
+      "index": 10,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate HPF Freq",
+      "index": 11,
+      "norm": 0.190867,
+      "set": "60",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate Filter Link",
+      "index": 12,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate LPF On",
+      "index": 13,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gate LPF Freq",
+      "index": 14,
+      "norm": 0.974136,
+      "set": "15000",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Knee",
+      "index": 18,
+      "norm": 0.5,
+      "set": "Normal",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Attack",
+      "index": 19,
+      "norm": 0.412551,
+      "set": "7.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Auto Manual",
+      "index": 20,
+      "norm": 0.0,
+      "set": "Manual",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Rel",
+      "index": 21,
+      "norm": 0.673667,
+      "set": "220.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Int Ext",
+      "index": 22,
+      "norm": 0.0,
+      "set": "Int",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Monitor",
+      "index": 23,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp HPF On",
+      "index": 24,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp HPF Freq",
+      "index": 25,
+      "norm": 0.190867,
+      "set": "60",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Filter Link",
+      "index": 26,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp LPF Freq",
+      "index": 27,
+      "norm": 0.974136,
+      "set": "15000",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Mix",
+      "index": 28,
+      "norm": 1.0,
+      "set": "100.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Leveller On",
+      "index": 29,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Leveller Thresh",
+      "index": 30,
+      "norm": 1.0,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Leveller Range",
+      "index": 31,
+      "norm": 0.125,
+      "set": "6.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DeEsser On",
+      "index": 32,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DeEsser Thresh",
+      "index": 33,
+      "norm": 1.0,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DeEsser Monitor",
+      "index": 34,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DeEsser Type",
+      "index": 35,
+      "norm": 0.0,
+      "set": "Shelf",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DeEsser Freq",
+      "index": 36,
+      "norm": 0.784005,
+      "set": "4490",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DeEsser Range",
+      "index": 37,
+      "norm": 0.5,
+      "set": "-6.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limiter On",
+      "index": 38,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limiter Thresh",
+      "index": 39,
+      "norm": 1.0,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limiter Rel",
+      "index": 40,
+      "norm": 0.75,
+      "set": "100.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Makeup",
+      "index": 41,
+      "norm": 0.5,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp LPF On",
+      "index": 42,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Comp Ratio",
+      "index": 17,
+      "norm": 0.366726,
+      "set": "3.00",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 1.97,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T170826.846+0100",
+  "ratio_norm_source": "ratio 3.00 written from profile.ratio.curve[0].norm 0.3667"
+}

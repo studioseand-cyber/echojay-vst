@@ -1,0 +1,53 @@
+CANDIDATE [16] Comp Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [16] Comp Thresh unit 'dB' (class bands_or_stages) | positions 30 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -60.00 out-in -0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in -0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in -0.00  -46.00 out-in 0.00  -44.00 out-in -0.00  -42.00 out-in -0.00  -40.00 out-in 0.00  -38.00 out-in -0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in -0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in -0.00  -24.00 out-in 0.00  -22.00 out-in -0.00  -20.00 out-in 0.00  -18.00 out-in 0.00  -16.00 out-in -0.00  -14.00 out-in 0.00  -12.00 out-in -0.00  -10.00 out-in -0.00  -8.00 out-in -0.01  -6.00 out-in -0.03  -4.00 out-in -0.09  -2.00 out-in -0.27  0.00 out-in -0.70  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 0.00 -0.06 -0.02 -0.01 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 3 position(s) below the first rung (0@-60 1@-60 2@-60)
+writes landed by: instack 1 pump 29
+processes: 90 run, 0 retried, 0 position(s) failed
+write verify: 30 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 30, pump slices total 189, longest confirm 65.5 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          15.80    23.80    27.80       -47.7      0.30
+  1  0.0333    -46.4          14.73    22.73    26.73       -46.1      0.30
+  2  0.0667    -44.8          13.66    21.66    25.66       -44.5      0.30
+  3  0.1000    -43.2          12.54    20.54    24.54       -42.8      0.40
+  4  0.1333    -41.6          11.51    19.50    23.51       -41.3      0.30
+  5  0.1667    -40.0          10.45    18.45    22.45       -39.7      0.30
+  6  0.2000    -38.4           9.39    17.39    21.39       -38.1      0.30
+  7  0.2333    -36.8           8.33    16.33    20.33       -36.5      0.30
+  8  0.2667    -35.2           7.26    15.26    19.26       -34.9      0.30
+  9  0.3000    -33.6           6.20    14.20    18.20       -33.3      0.30
+ 10  0.3333    -32.0           5.14    13.13    17.13       -31.7      0.30
+ 11  0.3667    -30.4           4.10    12.06    16.06       -30.1      0.30
+ 12  0.4000    -28.8           3.08    11.00    15.00       -28.5      0.30
+ 13  0.4333    -27.2           2.13     9.93    13.93       -26.9      0.30
+ 14  0.4667    -25.6           1.31     8.86    12.86       -25.3      0.30
+ 15  0.5000    -24.0           0.70     7.80    11.80       -23.7      0.30
+ 16  0.5333    -22.4           0.33     6.73    10.73       -22.1      0.30
+ 17  0.5667    -20.8           0.14     5.67     9.66       -20.5      0.30
+ 18  0.6000    -19.2           0.06     4.62     8.60       -18.9      0.30
+ 19  0.6333    -17.6           0.02     3.58     7.53       -17.3      0.30
+ 20  0.6667    -16.0           0.01     2.59     6.47       -15.7      0.30
+ 21  0.7000    -14.4           0.00     1.69     5.41       -14.1      0.30
+ 22  0.7333    -12.8          -0.00     0.97     4.36       -12.5      0.30
+ 23  0.7667    -11.2          -0.00     0.49     3.33       -11.0      0.20
+ 24  0.8000    -9.6           -0.00     0.22     2.36        -9.5      0.10
+ 25  0.8333    -8.0           -0.00     0.09     1.50        -7.9      0.10
+ 26  0.8667    -6.4           -0.00     0.04     0.83        -6.4      0.00
+ 27  0.9000    -4.8           -0.00     0.01     0.40        -4.9     -0.10
+ 28  0.9333    -3.2           -0.00     0.00     0.18        -3.4     -0.20
+ 29  1.0000    0.0            -0.00    -0.00     0.03        -1.1     -1.10
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:0 -46.00:1 -44.00:2 -42.00:4 -40.00:5 -38.00:6 -36.00:7 -34.00:9 -32.00:10 -30.00:11 -28.00:12 -26.00:14 -24.00:15 -22.00:16 -20.00:17 -18.00:19 -16.00:20 -14.00:21 -12.00:22 -10.00:24 -8.00:25 -6.00:26 -4.00:27 -2.00:28 0.00:29
+2 engage drift:    0.79  -10.00:0.65  -12.00:0.25  -14.00:0.39  -16.00:0.53  -18.00:0.65  -2.00:0.11  -20.00:0.25  -22.00:0.39  -24.00:0.53  -26.00:0.65  -28.00:0.25  -30.00:0.39  -32.00:0.53  -34.00:0.66  -36.00:0.26  -38.00:0.39  -4.00:0.25  -40.00:0.52  -42.00:0.61  -44.00:0.26  -46.00:0.40  -48.00:0.90  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:0.39  -60.00:null  -8.00:0.53  0.00:0.45   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.00 dB over 30 positions (min -1.10, max 0.40)
+3 displayOffsetDb: 0.30  (inside spec 7's 2 dB bar)
+fixture: AudioUnit_4942687d_12.0.0.json
+

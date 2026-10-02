@@ -136,3 +136,17 @@ both channels, and an export with Left Threshold alone would be right for the se
 stays 'Linked' (neutral holds it there). It is not a Rule 2 case and not a twin. What it is, is a
 third shape — a link mode that makes one control the whole unit — and a rule for it would read the
 link control's instantiate value, not the right side's flatness. Not built; your call.
+
+## EMO-D5 (s) under Rule 1, live (2 Oct 16:59–17:08; traces `cert-traces/2026-10-02-rehearsal/rule1-emo-d5/`)
+
+`RULE 1: 'Comp Thresh' carries the compressor stage word alone - swept first`; first pass pass-through,
+its hold-doubled repeat skipped; engage search: `Comp On -> 1` verified; the engaged sweep with grid
+refinement (14 positions added) and its repeat; `'Comp Thresh' certifies - the amount control`.
+**Sweep 491 s, whole product 521 s (8.7 min) against 2589 s this afternoon.** Only Comp Thresh was
+swept (`thresholdCandidates` holds one). Export: `engage [Comp On -> On]`, 40 neutral entries (every
+other control at its instantiate value — Gate On Off, Gate Thresh −Inf, Leveller On Off, Leveller Thresh
+0.0, DeEsser On Off, Limiter On Off, Limiter Thresh 0.0 …), detector_f 0.70, tone check **1.97 dB
+PASS** writing all 42 controls, and the notes line: *amount control decided by Rule 1 (the compressor
+stage word): pick Comp Thresh with engage Comp On -> On; other threshold candidates and every other
+control at their instantiate values: Gate Thresh='-Inf', Leveller Thresh='0.0', DeEsser Thresh='0.0',
+Limiter Thresh='0.0'; no other stage active at the defaults (defaults reference flat)*.

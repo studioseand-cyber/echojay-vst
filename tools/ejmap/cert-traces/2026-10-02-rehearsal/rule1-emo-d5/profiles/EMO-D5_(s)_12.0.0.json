@@ -1,0 +1,943 @@
+{
+  "schema": "ej_comp_profile/1",
+  "plugin": {
+    "name": "EMO-D5 (s)",
+    "manufacturer": "Waves",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|4942687d|12.0.0",
+    "version": "12.0.0",
+    "map_fp": "62995254f7ddb93ef3298c6d855fc84c87cf151397acc428adce2db46c2e9970"
+  },
+  "measured": {
+    "tool": "EJ Maps 0.1.0 (feat/ejmap-cert)",
+    "date": "2026-10-02",
+    "sample_rate": 48000,
+    "signal": "sine 997 Hz, stepped",
+    "level_ref": "sine_rms_dbfs",
+    "steps_dbfs": [
+      -63.009999999999998,
+      -3.01,
+      2.0
+    ],
+    "hold_ms": 2500,
+    "read_window_ms": 300,
+    "host": "out_of_process",
+    "reference_ratio": 3.0
+  },
+  "topology": "threshold",
+  "engage": [
+    {
+      "control": "Comp On",
+      "set": "On",
+      "norm": 1.0,
+      "verified": true
+    }
+  ],
+  "never_touch": [],
+  "neutral": [
+    {
+      "control": "Gate On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Thresh",
+      "set": "-Inf",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "GateExp",
+      "set": "Gate",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Attack",
+      "set": "1.00",
+      "norm": 0.333333,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Rel",
+      "set": "100.0",
+      "norm": 0.666667,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Hold",
+      "set": "0",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Close",
+      "set": "0.0",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Floor",
+      "set": "-Inf",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Int Ext",
+      "set": "Int",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Monitor",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate HPF On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate HPF Freq",
+      "set": "60",
+      "norm": 0.190867,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate Filter Link",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate LPF On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Gate LPF Freq",
+      "set": "15000",
+      "norm": 0.974136,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Knee",
+      "set": "Normal",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Attack",
+      "set": "7.00",
+      "norm": 0.412551,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Auto Manual",
+      "set": "Manual",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Rel",
+      "set": "220.0",
+      "norm": 0.673667,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Int Ext",
+      "set": "Int",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Monitor",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp HPF On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp HPF Freq",
+      "set": "60",
+      "norm": 0.190867,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Filter Link",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp LPF Freq",
+      "set": "15000",
+      "norm": 0.974136,
+      "source": "instantiate"
+    },
+    {
+      "control": "Comp Mix",
+      "set": "100.0",
+      "norm": 1.0,
+      "role": "mix_wet",
+      "source": "precondition"
+    },
+    {
+      "control": "Leveller On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Leveller Thresh",
+      "set": "0.0",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Leveller Range",
+      "set": "6.0",
+      "norm": 0.125,
+      "source": "instantiate"
+    },
+    {
+      "control": "DeEsser On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "DeEsser Thresh",
+      "set": "0.0",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "DeEsser Monitor",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "DeEsser Type",
+      "set": "Shelf",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "DeEsser Freq",
+      "set": "4490",
+      "norm": 0.784005,
+      "source": "instantiate"
+    },
+    {
+      "control": "DeEsser Range",
+      "set": "-6.0",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Limiter On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Limiter Thresh",
+      "set": "0.0",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Limiter Rel",
+      "set": "100.0",
+      "norm": 0.75,
+      "source": "instantiate"
+    },
+    {
+      "control": "Makeup",
+      "set": "0.0",
+      "norm": 0.5,
+      "role": "makeup_zero",
+      "source": "precondition"
+    },
+    {
+      "control": "Comp LPF On",
+      "set": "Off",
+      "norm": 0.0,
+      "source": "instantiate"
+    }
+  ],
+  "amount": {
+    "control": "Comp Thresh",
+    "curve": [
+      {
+        "norm": 0.0,
+        "display": "-48.0",
+        "eff_threshold_dbfs": -50.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -50.310000000000002,
+          "2": -48.109999999999999,
+          "3": -46.409999999999997
+        }
+      },
+      {
+        "norm": 0.033333,
+        "display": "-46.4",
+        "eff_threshold_dbfs": -48.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -48.609999999999999,
+          "2": -46.509999999999998,
+          "3": -44.710000000000001
+        }
+      },
+      {
+        "norm": 0.066667,
+        "display": "-44.8",
+        "eff_threshold_dbfs": -47.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -47.009999999999998,
+          "2": -44.909999999999997,
+          "3": -43.109999999999999
+        }
+      },
+      {
+        "norm": 0.1,
+        "display": "-43.2",
+        "eff_threshold_dbfs": -45.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -45.210000000000001,
+          "2": -43.109999999999999,
+          "3": -41.509999999999998
+        }
+      },
+      {
+        "norm": 0.133333,
+        "display": "-41.6",
+        "eff_threshold_dbfs": -43.810000000000002,
+        "in_at_gr_dbfs": {
+          "1": -43.810000000000002,
+          "2": -41.609999999999999,
+          "3": -39.909999999999997
+        }
+      },
+      {
+        "norm": 0.166667,
+        "display": "-40.0",
+        "eff_threshold_dbfs": -42.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -42.210000000000001,
+          "2": -40.109999999999999,
+          "3": -38.310000000000002
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "-38.4",
+        "eff_threshold_dbfs": -40.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -40.609999999999999,
+          "2": -38.509999999999998,
+          "3": -36.710000000000001
+        }
+      },
+      {
+        "norm": 0.233333,
+        "display": "-36.8",
+        "eff_threshold_dbfs": -38.909999999999997,
+        "in_at_gr_dbfs": {
+          "1": -38.909999999999997,
+          "2": -36.810000000000002,
+          "3": -35.109999999999999
+        }
+      },
+      {
+        "norm": 0.266667,
+        "display": "-35.2",
+        "eff_threshold_dbfs": -37.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -37.409999999999997,
+          "2": -35.310000000000002,
+          "3": -33.509999999999998
+        }
+      },
+      {
+        "norm": 0.3,
+        "display": "-33.6",
+        "eff_threshold_dbfs": -35.909999999999997,
+        "in_at_gr_dbfs": {
+          "1": -35.909999999999997,
+          "2": -33.710000000000001,
+          "3": -32.009999999999998
+        }
+      },
+      {
+        "norm": 0.333333,
+        "display": "-32.0",
+        "eff_threshold_dbfs": -34.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -34.210000000000001,
+          "2": -32.109999999999999,
+          "3": -30.309999999999999
+        }
+      },
+      {
+        "norm": 0.366666,
+        "display": "-30.4",
+        "eff_threshold_dbfs": -32.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -32.609999999999999,
+          "2": -30.510000000000002,
+          "3": -28.710000000000001
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "-28.8",
+        "eff_threshold_dbfs": -30.91,
+        "in_at_gr_dbfs": {
+          "1": -30.91,
+          "2": -28.809999999999999,
+          "3": -27.109999999999999
+        }
+      },
+      {
+        "norm": 0.433334,
+        "display": "-27.2",
+        "eff_threshold_dbfs": -29.41,
+        "in_at_gr_dbfs": {
+          "1": -29.41,
+          "2": -27.309999999999999,
+          "3": -25.510000000000002
+        }
+      },
+      {
+        "norm": 0.466667,
+        "display": "-25.6",
+        "eff_threshold_dbfs": -27.91,
+        "in_at_gr_dbfs": {
+          "1": -27.91,
+          "2": -25.710000000000001,
+          "3": -24.010000000000002
+        }
+      },
+      {
+        "norm": 0.5,
+        "display": "-24.0",
+        "eff_threshold_dbfs": -26.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -26.210000000000001,
+          "2": -24.109999999999999,
+          "3": -22.309999999999999
+        }
+      },
+      {
+        "norm": 0.533333,
+        "display": "-22.4",
+        "eff_threshold_dbfs": -24.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -24.609999999999999,
+          "2": -22.510000000000002,
+          "3": -20.710000000000001
+        }
+      },
+      {
+        "norm": 0.566666,
+        "display": "-20.8",
+        "eff_threshold_dbfs": -22.91,
+        "in_at_gr_dbfs": {
+          "1": -22.91,
+          "2": -20.809999999999999,
+          "3": -19.109999999999999
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "-19.2",
+        "eff_threshold_dbfs": -21.41,
+        "in_at_gr_dbfs": {
+          "1": -21.41,
+          "2": -19.309999999999999,
+          "3": -17.510000000000002
+        }
+      },
+      {
+        "norm": 0.633334,
+        "display": "-17.6",
+        "eff_threshold_dbfs": -19.91,
+        "in_at_gr_dbfs": {
+          "1": -19.91,
+          "2": -17.710000000000001,
+          "3": -15.91
+        }
+      },
+      {
+        "norm": 0.666667,
+        "display": "-16.0",
+        "eff_threshold_dbfs": -18.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -18.210000000000001,
+          "2": -16.109999999999999,
+          "3": -14.31
+        }
+      },
+      {
+        "norm": 0.7,
+        "display": "-14.4",
+        "eff_threshold_dbfs": -16.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -16.609999999999999,
+          "2": -14.51,
+          "3": -12.710000000000001
+        }
+      },
+      {
+        "norm": 0.733333,
+        "display": "-12.8",
+        "eff_threshold_dbfs": -14.91,
+        "in_at_gr_dbfs": {
+          "1": -14.91,
+          "2": -12.81,
+          "3": -11.109999999999999
+        }
+      },
+      {
+        "norm": 0.766667,
+        "display": "-11.2",
+        "eff_threshold_dbfs": -13.41,
+        "in_at_gr_dbfs": {
+          "1": -13.41,
+          "2": -11.31,
+          "3": -9.51
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "-9.6",
+        "eff_threshold_dbfs": -11.91,
+        "in_at_gr_dbfs": {
+          "1": -11.91,
+          "2": -9.710000000000001,
+          "3": -7.91
+        }
+      },
+      {
+        "norm": 0.833333,
+        "display": "-8.0",
+        "eff_threshold_dbfs": -10.210000000000001,
+        "in_at_gr_dbfs": {
+          "1": -10.210000000000001,
+          "2": -8.109999999999999,
+          "3": -6.31
+        }
+      },
+      {
+        "norm": 0.866667,
+        "display": "-6.4",
+        "eff_threshold_dbfs": -8.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -8.609999999999999,
+          "2": -6.51,
+          "3": -4.71
+        }
+      },
+      {
+        "norm": 0.9,
+        "display": "-4.8",
+        "eff_threshold_dbfs": -6.91,
+        "in_at_gr_dbfs": {
+          "1": -6.91,
+          "2": -4.81,
+          "3": -3.11
+        }
+      },
+      {
+        "norm": 0.933333,
+        "display": "-3.2",
+        "eff_threshold_dbfs": -5.41,
+        "in_at_gr_dbfs": {
+          "1": -5.41,
+          "2": -3.31,
+          "3": null
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "0.0",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null
+        }
+      }
+    ],
+    "stepped": false
+  },
+  "ratio": {
+    "control": "Comp Ratio",
+    "curve": [
+      {
+        "norm": 0.366726,
+        "set": "3.00",
+        "value": 3.0,
+        "measured_ratio": 2.93,
+        "source": "instantiate"
+      }
+    ],
+    "fixed": null,
+    "knee_db": null
+  },
+  "static_gain_db": 0.0,
+  "detector_f": 0.7,
+  "detector_f_raw": 0.7,
+  "quality": {
+    "point_error_db": 0.1,
+    "method": "hold 2.5 s vs 5 s",
+    "points_compared": 86,
+    "shape_disagreements": 0,
+    "monotonic_within_positions": true,
+    "monotonic_across_positions": true,
+    "violations": []
+  },
+  "level_coupling": null,
+  "fit": {
+    "max_error_db": 0.2,
+    "points": 238,
+    "model": "threshold per position from the 1 dB crossing; ratio 3.0, knee 9.0 dB, grid-searched; nothing tuned",
+    "error_vs_2db_target": 0.1,
+    "measured_point_quality": {
+      "non_monotonic_straddles": 0,
+      "widest_gap_db": 2.0,
+      "points_with_1db": 29
+    }
+  },
+  "notes": "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; guards passed: tone_frac (0 readings refused as not the tone), level dependence (not a gain law), quiet-reference 6 dB self-check (30 of 30 positions), ascending-only levels in each fresh process, still-moving rule; amount control decided by Rule 1 (the compressor stage word): pick Comp Thresh with engage Comp On -> On; other threshold candidates and every other control at their instantiate values: Gate Thresh='-Inf', Leveller Thresh='0.0', DeEsser Thresh='0.0', Limiter Thresh='0.0'; no other stage active at the defaults (defaults reference flat); ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured; neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate); profile sweep, 31 levels ascending per fresh process, quiet reference per position (reference ladder: 3 position(s) referenced below -54/-48);",
+  "tone_check": {
+    "product": "EMO-D5 (s)",
+    "map_fp": "62995254f7ddb93ef3298c6d855fc84c87cf151397acc428adce2db46c2e9970",
+    "L_rms_dbfs": -18.0,
+    "L_peak_dbfs": -14.989700043360187,
+    "g_db": 2.0,
+    "pick": {
+      "norm": 0.6272922125,
+      "point": 18,
+      "point_next": 19,
+      "in_at_g": -19.309999999999999,
+      "stepped": false
+    },
+    "writes": [
+      {
+        "control": "Comp On",
+        "index": 15,
+        "norm": 1.0,
+        "set": "On",
+        "why": "engage[] from the profile"
+      },
+      {
+        "control": "Gate On",
+        "index": 0,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Thresh",
+        "index": 1,
+        "norm": 0.0,
+        "set": "-Inf",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "GateExp",
+        "index": 2,
+        "norm": 0.0,
+        "set": "Gate",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Attack",
+        "index": 3,
+        "norm": 0.333333,
+        "set": "1.00",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Rel",
+        "index": 4,
+        "norm": 0.666667,
+        "set": "100.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Hold",
+        "index": 5,
+        "norm": 0.0,
+        "set": "0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Close",
+        "index": 6,
+        "norm": 1.0,
+        "set": "0.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Floor",
+        "index": 7,
+        "norm": 0.0,
+        "set": "-Inf",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Int Ext",
+        "index": 8,
+        "norm": 0.0,
+        "set": "Int",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Monitor",
+        "index": 9,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate HPF On",
+        "index": 10,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate HPF Freq",
+        "index": 11,
+        "norm": 0.190867,
+        "set": "60",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate Filter Link",
+        "index": 12,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate LPF On",
+        "index": 13,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Gate LPF Freq",
+        "index": 14,
+        "norm": 0.974136,
+        "set": "15000",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Knee",
+        "index": 18,
+        "norm": 0.5,
+        "set": "Normal",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Attack",
+        "index": 19,
+        "norm": 0.412551,
+        "set": "7.00",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Auto Manual",
+        "index": 20,
+        "norm": 0.0,
+        "set": "Manual",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Rel",
+        "index": 21,
+        "norm": 0.673667,
+        "set": "220.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Int Ext",
+        "index": 22,
+        "norm": 0.0,
+        "set": "Int",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Monitor",
+        "index": 23,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp HPF On",
+        "index": 24,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp HPF Freq",
+        "index": 25,
+        "norm": 0.190867,
+        "set": "60",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Filter Link",
+        "index": 26,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp LPF Freq",
+        "index": 27,
+        "norm": 0.974136,
+        "set": "15000",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Mix",
+        "index": 28,
+        "norm": 1.0,
+        "set": "100.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Leveller On",
+        "index": 29,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Leveller Thresh",
+        "index": 30,
+        "norm": 1.0,
+        "set": "0.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Leveller Range",
+        "index": 31,
+        "norm": 0.125,
+        "set": "6.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "DeEsser On",
+        "index": 32,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "DeEsser Thresh",
+        "index": 33,
+        "norm": 1.0,
+        "set": "0.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "DeEsser Monitor",
+        "index": 34,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "DeEsser Type",
+        "index": 35,
+        "norm": 0.0,
+        "set": "Shelf",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "DeEsser Freq",
+        "index": 36,
+        "norm": 0.784005,
+        "set": "4490",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "DeEsser Range",
+        "index": 37,
+        "norm": 0.5,
+        "set": "-6.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Limiter On",
+        "index": 38,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Limiter Thresh",
+        "index": 39,
+        "norm": 1.0,
+        "set": "0.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Limiter Rel",
+        "index": 40,
+        "norm": 0.75,
+        "set": "100.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Makeup",
+        "index": 41,
+        "norm": 0.5,
+        "set": "0.0",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp LPF On",
+        "index": 42,
+        "norm": 0.0,
+        "set": "Off",
+        "why": "neutral[] from the profile"
+      },
+      {
+        "control": "Comp Ratio",
+        "index": 17,
+        "norm": 0.366726,
+        "set": "3.00",
+        "why": "ratio.curve[0] from the profile"
+      }
+    ],
+    "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+    "quiet_check_ok": true,
+    "gr_measured_db": 1.97,
+    "pass_within_0_5_db": true,
+    "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+    "measuredAt": "20261002T170826.846+0100",
+    "ratio_norm_source": "ratio 3.00 written from profile.ratio.curve[0].norm 0.3667"
+  }
+}
