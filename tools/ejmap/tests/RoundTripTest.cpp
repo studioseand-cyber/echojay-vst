@@ -3010,6 +3010,18 @@ void testSweepRules()
     ejmap::sweepProgressMarker (root).replaceWithText ("9");
     check (! (ejmap::sweepProgressCount (root) > 9),
            "supervisor: a child that loaded and died without finishing IS charged");
+    // PROGRESS IS WHAT IS ON DISK (2 Oct): a scan's probed bundles and its quarantined stalls count too
+    auto root2 = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-scan-test-" + juce::Uuid().toDashedString());
+    root2.createDirectory();
+    check (ejmap::progressCount (root2) == -1, "supervisor P1: nothing on disk is no progress, not zero progress");
+    root2.getChildFile ("scan-progress.jsonl").replaceWithText ("{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n");
+    const int p0 = ejmap::progressCount (root2);
+    root2.getChildFile ("quarantine.json").replaceWithText ("[{\"plugin_id\": \"/x/ANA2.vst3\", \"reason\": \"hang_in_findAllTypesForFile\"}]");
+    const int p1 = ejmap::progressCount (root2);
+    check (p0 == 3 && p1 == 4, "supervisor P2: a scan that probed three bundles and then quarantined a stalling one made progress (3 -> 4): the restart is not charged (" + juce::String (p0) + " -> " + juce::String (p1) + ")");
+    ejmap::sweepProgressMarker (root2).replaceWithText ("2");
+    check (ejmap::progressCount (root2) == 6, "supervisor P3: maps, bundles probed and quarantines add up (2 + 3 + 1)");
+    root2.deleteRecursively();
 
     // AND THE COUNT MUST BE CUMULATIVE. Per-launch counters make it go DOWN
     // after a crash -- measured on the first supervised sweep, 2 mapped then a

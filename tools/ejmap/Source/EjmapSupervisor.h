@@ -98,6 +98,32 @@ inline int sweepProgressCount (const juce::File& root)
     return f.existsAsFile() ? f.loadFileAsString().trim().getIntValue() : -1;
 }
 
+/** PROGRESS IS WHAT IS ON DISK, whichever job the child was doing (2 Oct). The sweep's marker counts
+    maps; a SCAN's progress is the bundles it has probed (scan-progress.jsonl, one line each) and the
+    bundles it quarantined for stalling (quarantine.json) - a stall that ends in a quarantine entry IS
+    the scan doing its job, and the next child skips that bundle. Until this, a headless scan of a
+    library with three stalling VST3s in a row (ANA2, SSL DeEss, SSL LMC+, 11:28-11:38) was stopped by
+    the supervisor as "3 abnormal exits with no successful load", 247 bundles in, with each stall
+    correctly quarantined and nothing left to do but relaunch by hand. -1 only when none of the three
+    files exists, so a child that wrote nothing still reads as no progress. */
+inline int progressCount (const juce::File& root)
+{
+    int n = 0; bool any = false;
+    if (const int sw = sweepProgressCount (root); sw >= 0) { n += sw; any = true; }
+    if (auto sp = root.getChildFile ("scan-progress.jsonl"); sp.existsAsFile())
+    {
+        any = true;
+        for (const auto& line : juce::StringArray::fromLines (sp.loadFileAsString())) if (line.trim().isNotEmpty()) ++n;
+    }
+    if (auto q = root.getChildFile ("quarantine.json"); q.existsAsFile())
+    {
+        any = true;
+        const auto parsed = juce::JSON::parse (q.loadFileAsString());          // held: getArray() on a temporary dangles
+        if (const auto* a = parsed.getArray()) n += a->size();
+    }
+    return any ? n : -1;
+}
+
 /** Written by the child the first time a load succeeds. The supervisor deletes
     it before each spawn and checks for it after, which is what makes "no
     successful load between them" measurable rather than assumed.
@@ -155,7 +181,7 @@ inline int runSupervisor (int argc, char* argv[])
     for (;;)
     {
         marker.deleteFile();
-        const int progressBefore = sweepProgressCount (root);
+        const int progressBefore = progressCount (root);
 
         std::vector<juce::String> childArgs = base;
         childArgs.push_back ("--child");
@@ -217,7 +243,7 @@ inline int runSupervisor (int argc, char* argv[])
             consecutive = 0;
 
         // Progress, not activity. See sweepProgressMarker.
-        const int progressAfter = sweepProgressCount (root);
+        const int progressAfter = progressCount (root);
         const bool madeProgress = progressAfter > progressBefore && progressBefore >= 0;
 
         ++consecutive;
@@ -237,9 +263,9 @@ inline int runSupervisor (int argc, char* argv[])
             // session is dying before it can be used".
             consecutive = 0;
             fastDeaths  = 0;
-            note ("supervisor: the sweep finished "
+            note ("supervisor: the child finished "
                     + juce::String (progressAfter - progressBefore)
-                    + " plugin(s) before this exit; the restart is not charged");
+                    + " unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged");
         }
         else
             ++totalRestarts;
