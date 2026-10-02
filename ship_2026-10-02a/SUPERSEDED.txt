@@ -1,0 +1,15 @@
+SUPERSEDED by ../ship_2026-10-02b/ - do not install this one.
+
+Built 01:56-01:58 from feat/comp-profiles @ 0482617.
+  EchoJay V2    785D9918-99F4-3734-A637-158700FA7182
+  EchoJay Link  625CD984-8CF9-3792-AF78-DFC69F2A6073
+
+WHY IT WAS REPLACED. This pair carries the compressor closing line OUTSIDE the feature flag. With
+comp_profiles_on.txt absent - the default, and how you would first run it - a compressor build says
+"<plugin>: set as dialled, no profile yet." instead of letter (q)'s "Set as dialled, level matched, Output X dB."
+"No profile yet" tells you profiles exist when none do and there is no way to get one, and Part 2's rule was
+behind a flag, default OFF. Found by level_loop_guard (16) on the first fast gate this branch ever had, which was
+after this pair was already built and placed. Fixed in cba5f02; ship_2026-10-02b has the fix.
+
+Kept rather than deleted so the UUIDs above can still be matched against anything already installed. If either
+UUID is what Logic reports, you are running the superseded pair.

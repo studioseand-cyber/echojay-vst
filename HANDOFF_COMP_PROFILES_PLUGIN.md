@@ -258,6 +258,10 @@ The path is `~/Library/EchoJay/` (JUCE's `userApplicationDataDirectory` is `~/Li
 
 ### Item 4 — the build to install
 
+**SUPERSEDED — see the 04:50 section below. Install `ship_2026-10-02b/`, not this.** The pair described
+here carries the compressor closing line outside the feature flag; it was built before this branch's
+first gate existed.
+
 **ONE build from `feat/comp-profiles` at `0482617`. Unsigned, NOT installed, nothing in `/Library`.**
 
 ```
@@ -379,6 +383,143 @@ The gate's real content is red 1 (ours) and red 2 (ours, unexplained).
 **every** archive its two-process guards link - `EchoJay` and `EchoJayLink`, not just the Link - or refuse to run.
 Building one and not the other is not a partial check; it is a check whose failures are meaningless, and it cost
 this gate five reds, three wrong attributions and most of a night.
+
+
+---
+
+## 02:20 — PUSHED. The gate's five reds were two harness faults and one real defect.
+
+**`merge/kathy-2026-09-06` is on origin: `971e4c1..b0ce97e`, 92 commits, verified by `git ls-remote` agreeing
+with the local hash.** Sean's condition was "green, or the only reds are proven pre-existing". The final gate is
+**98% passed, 1 of 53 failed**, and that one is proven pre-existing at four separate commits.
+
+### What the five reds actually were
+
+| Red | Verdict | Commit |
+|---|---|---|
+| `lease_id_guard` | **not the product** — stale V2 archive. Now GREEN. | `9c3dd79` |
+| `role_snapshot_guard` | **not the product** — same. Now GREEN. | `9c3dd79` |
+| `calib_link_guard` | **REAL, ours** — one rule in two places, (m) updated one. Now GREEN. | `1bd5e4f` |
+| `level_loop_guard` | **not the product** — the scribble leg shared the first leg's state root. Now GREEN. | `b0ce97e` |
+| `level_match_guard` | **genuinely pre-existing** — case (1) x3, reproduces at `0e2cfa9`, `ba61a36`, `7c348a8`, `9d47209` and now. STILL RED. | owed |
+
+So one of five was a product defect, one was a real pre-existing defect, and **three were faults in the gate
+itself**. That ratio is the finding, not an aside: a suite whose failures are mostly its own cannot be used to
+judge a branch, and it took most of a night to separate them.
+
+### THE PUSH CONTAINS FOUR COMMITS BEYOND (l)-(q) — read this before accepting it
+
+Sean authorised "push `merge/kathy-2026-09-06` with (l)-(q)". The branch now also carries:
+
+| Commit | What | Risk |
+|---|---|---|
+| `9d47209` | the gate's own two faults (a leg that assumed the machine kept up; a tail that hid the FAIL) | test-only |
+| `9c3dd79` | the V2-side stale-archive refusal | test-only |
+| `b0ce97e` | the scribble leg's own state root | test-only |
+| `1bd5e4f` | **`CalibLoop::openFromPurpose` — ONE derivation of the purpose's opening state** | **product behaviour** |
+
+`1bd5e4f` is the one to look at. It is a product change Sean has not reviewed, and it went in because red 1
+could not be cleared without it — so the choice was push with it or do not push at all, and his instruction
+plainly wanted the push once the gate justified it. What it does: the 6-arg `begin()` stopped carrying (e)'s
+withdrawn "settle budget opens already spent" and now uses (m)'s rule, the same one `begin(Config)` already used.
+**If Sean disagrees, revert `1bd5e4f` and the gate goes back to one red — nothing else depends on it.**
+
+### The two harness lessons, both of which cost hours
+
+1. **A build line that covers one archive and not the other.** Item 1 said `--target EchoJayLink EchoJayProbe`.
+   That is not the V2 archive, and the V2-side harnesses link the V2 archive. Mismatched headers and archive
+   meant `LinkSlotInfo.uid` was read at the wrong struct offset: three guards died with SIGSEGV before printing
+   an assertion, which reads exactly like a product crash. `dbc0e91` had already fixed this for the **Link**
+   archive on the premise that "ctest -L fast rebuilds build-guards, which is the V2 archive" — but build-guards
+   is a different tree from build-release. Now both are refusals.
+2. **Isolation applies BETWEEN THE TWO LEGS of one guard.** Both legs shared one `ECHOJAY_STATE_HOME`, so the
+   scribble leg was the guard run a second time on top of the first run's state. `storeParamMaps` persists to
+   `param_maps.json`, so a leg that marks AUDelay as a compressor poisons the next leg's precondition. It looked
+   like a memory bug for hours purely because the second leg is the hardened one. Two plain runs in one root
+   reproduce it with no MallocScribble anywhere.
+
+**WITHDRAWN:** the "three memory-shaped failures" hypothesis recorded earlier tonight. Not one of the three was a
+dangling pointer — two were the state leak, one was the layout mismatch. It was labelled a hypothesis and it was
+wrong; the ASan session it asked for is not needed for any of these three.
+
+### Still owed
+
+- **`level_match_guard` case (1)**, 3 assertions: each Link's own trim moves but lands on the wrong value
+  (`asked 1.10, reads 0.30`). Pre-existing, untouched tonight, and it is what the crash was masking. This is the
+  one real gate red left.
+- **Red 2's sibling:** `comp_profile_guard`'s `(2a)` on `feat/comp-profiles` had the same state-leak cause; the
+  fix is cherry-picked there and the branch gate confirms it.
+
+---
+
+## 04:50 — the feature branch's FIRST gate, and what it caught
+
+`feat/comp-profiles` had never had a fast gate run on it. Running one found a defect in the day session's own
+work, in a build I had already placed and described as ready to install.
+
+### `level_loop_guard` (16): the closing line was NOT behind the flag
+
+```
+FAIL  (16) ...and the closing line says "set as dialled" with what it did about the level
+      [EchoJay Limiter: set as dialled, no profile yet.]
+```
+
+Item 4 rewrote the whole `if (dynamicsSlot)` branch of `completedLine()` to section 7's wording. That branch runs
+whether the feature is on or not, so **with `comp_profiles_on.txt` absent — the default, and how Sean would first
+run it — a compressor build told him "set as dialled, no profile yet"** instead of letter (q)'s "Set as dialled,
+level matched, Output X dB." A sentence that says profiles exist, to someone who has none and no way to get one.
+Part 2's rule was "behind a flag, default OFF", and the sentence the user reads is behaviour.
+
+Worse, the comment above `stampCompProfileOnLoop` asserted the property the code lacked: *"with it off hasProfile
+stays false and the loop behaves exactly as letter (q) — set as dialled, hold once, and a line that says so."*
+The first two were true; the line was not.
+
+Fixed in `cba5f02`. `CalibLoop::profilesFeatureOn` is set by `stampCompProfileOnLoop` when the flag is on, before
+its early returns, so an unprofiled compressor on a flag-on session still gets section 7's wording:
+
+```
+flag OFF -> letter (q), word for word
+flag ON  -> section 7, profiled or not
+```
+
+**Why it survived until now: only the flag-ON side of that wording had a test.** `comp_contract_guard` asserted
+section 7's line; nothing asserted that the flag-OFF line was unchanged. Both sides are pinned now — (16) for off,
+`comp_contract_guard`'s two legs for on.
+
+### The build to install — USE `b`, NOT `a`
+
+```
+/Users/SeanD/echojay-vst/ship_2026-10-02b/          <- INSTALL THIS
+  EchoJay V2.component     67M   D2585D92-8090-398A-9796-90BA505ADB25
+  EchoJay Link.component   49M   D75297D7-A8F7-39F3-9593-EE0F3E26C754
+```
+
+Built from `b82f2ba`, both UUIDs read back from the placed bundles and matching the build tree. Unsigned, not
+installed, nothing in `/Library`.
+
+`ship_2026-10-02a/` is **superseded** and carries a `SUPERSEDED.txt` naming its UUIDs, so if Logic reports
+`785D9918` or `625CD984` you are running the pair with the unflagged closing line. It was kept rather than deleted
+precisely so those two hashes can still be identified.
+
+### Both branches now stand at one red, the same one
+
+| Branch | Gate | Red |
+|---|---|---|
+| `merge/kathy-2026-09-06` (PUSHED, `b0ce97e`) | 98%, 1 of 53 | `level_match_guard` case (1) |
+| `feat/comp-profiles` (local, `b82f2ba`) | 98%, 1 of 56 | `level_match_guard` case (1) |
+
+`feat/comp-profiles` carries `1bd5e4f` (cherry-picked) and `cba5f02`, so `calib_link_guard` and `level_loop_guard`
+are green on both. The one remaining red is the pre-existing trim defect, proven at five commits now.
+
+### Owed, in the order I would take them
+
+1. **`level_match_guard` case (1)** — 3 assertions, each Link's trim moves but lands wrong (`asked 1.10, reads
+   0.30`). Pre-existing, reproduces everywhere, and it is the only real red left in either branch.
+2. **The profile flags do not ride the sidecar.** Neither `hasProfile` nor `profilesFeatureOn` is serialised, and
+   stamping happens at `calibStart` and for companions, not per tick. A loop that hands over to the Link and back
+   loses section 7's wording mid-flight. Harmless while the flag is off; it must be settled before the feature
+   ships. Pre-existing from the day session, deliberately not widened into tonight.
+3. **Review `1bd5e4f`** — the one product change in the push that Sean has not seen.
 
 ---
 
