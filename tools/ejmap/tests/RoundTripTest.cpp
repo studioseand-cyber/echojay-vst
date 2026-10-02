@@ -33,6 +33,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
 #include "EjmapLoop.h"
+#include "EjmapWindowWatch.h"
 #include "EjmapSchema.h"
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
@@ -3021,6 +3022,8 @@ void testSweepRules()
     check (p0 == 3 && p1 == 4, "supervisor P2: a scan that probed three bundles and then quarantined a stalling one made progress (3 -> 4): the restart is not charged (" + juce::String (p0) + " -> " + juce::String (p1) + ")");
     ejmap::sweepProgressMarker (root2).replaceWithText ("2");
     check (ejmap::progressCount (root2) == 6, "supervisor P3: maps, bundles probed and quarantines add up (2 + 3 + 1)");
+    root2.getChildFile ("licence-stops.json").replaceWithText ("[{\"plugin_id\": \"/x/Drumstrip.vst3\", \"state\": \"needs_licence\"}]");
+    check (ejmap::progressCount (root2) == 7, "supervisor P4: a licence stop is the job done too (2 + 3 + 1 + 1): the relaunch after it is not charged");
     root2.deleteRecursively();
 
     // AND THE COUNT MUST BE CUMULATIVE. Per-launch counters make it go DOWN
@@ -5634,8 +5637,8 @@ void testLoopOutcomes()
     Outcome bad; bad.state = "exported"; bad.reason = "";
     Outcome odd; odd.state = "done"; odd.reason = "x";
     check (rowViolation (noFile).contains ("without a profile") && rowViolation (makeRow ("i", "P", "c", bad, "", "p", "t", "now")).contains ("no reason")
-             && rowViolation (makeRow ("i", "P", "c", odd, "", "", "", "now")).contains ("not one of the six"),
-           "loop L10: the invariant refuses an export without its file, a state without a reason, and a state outside the six");
+             && rowViolation (makeRow ("i", "P", "c", odd, "", "", "", "now")).contains ("not one of the"),
+           "loop L10: the invariant refuses an export without its file, a state without a reason, and a state outside the named ones");
     // merge by identity, count
     juce::var rows = juce::Array<juce::var>();
     rows = mergeRow (rows, makeRow ("A", "a", "compressor", outcomeHeld (true, false, "x"), "", "", "", "t1"));
@@ -5668,6 +5671,28 @@ void testLoopOutcomes()
                "loop L13: the row is in the sixth state with the quarantine's reason and the category, and satisfies the invariant");
         juce::var r2 = juce::Array<juce::var>(); r2 = mergeRow (r2, row); r2 = mergeRow (r2, quarantineRow (qb[1], "now"));
         check (count (r2).quarantined == 2 && count (r2).rows == 2, "loop L14: the closing counts carry quarantined_at_scan");
+        // NEEDS LICENCE (L15, 2 Oct): a licence-stops entry becomes a row in its own state with the windows it saw
+        juce::Array<juce::var> wins { "PACE [pid 123]" };
+        juce::Array<juce::var> ls; ls.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3" }, { "state", "needs_licence" }, { "pace", true }, { "windows", wins }, { "stage", "scan" }, { "at", "t" } }));
+        const auto lb = quarantinedAtScan (juce::var (ls), cats, {}, {});
+        const auto lrow = quarantineRow (lb[0], "now");
+        check (lb.size() == 1 && lb[0].licence && lrow.getProperty ("state", "") == "needs_licence" && lrow.getProperty ("reason", "").toString().contains ("activation window")
+                 && lrow.getProperty ("reason", "").toString().contains ("PACE [pid 123]") && lrow.getProperty ("reason", "").toString().contains ("not retried") && rowViolation (lrow).isEmpty()
+                 && count (mergeRow (juce::var (juce::Array<juce::var>()), lrow)).needsLicence == 1,
+               "loop L15: a licence stop is the state needs_licence, naming the window and that it was not retried; counted on its own");
+    }
+    {
+        // THE SCAN'S WINDOW WATCH, the pure rule (W1-W3, 2 Oct): an owner that appeared or grew is a new window; one that
+        // closed is not news; the host's own windows at the baseline are not news. PACE by owner name.
+        using namespace ejmap::windowwatch;
+        OwnerCounts base { { "ejmap [pid 1]", 1 } };
+        check (newWindows (base, OwnerCounts { { "ejmap [pid 1]", 1 } }).isEmpty() && newWindows (base, OwnerCounts {}).isEmpty(),
+               "watch W1: the same windows, or fewer, are not a new window");
+        check (newWindows (base, OwnerCounts { { "ejmap [pid 1]", 2 } }) == juce::StringArray { "ejmap [pid 1]" },
+               "watch W2: one more window from the host's own process (a vendor's in-process serial dialog) is a new window");
+        const auto nw = newWindows (base, OwnerCounts { { "ejmap [pid 1]", 1 }, { "PACEEdenExperience [pid 77]", 1 } });
+        check (nw == juce::StringArray { "PACEEdenExperience [pid 77]" } && isPaceOwner (nw) && ! isPaceOwner (juce::StringArray { "ejmap [pid 1]" }),
+               "watch W3: a window from a new process in the tree is a new window, and PACE's is known by its owner");
     }
 }
 

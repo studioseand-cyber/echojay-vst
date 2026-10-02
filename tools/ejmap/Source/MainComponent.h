@@ -9692,12 +9692,13 @@ public:
 
     /** --categorise: the same path the button drives, so the CLI proof and the
         mapper's press cannot diverge. */
-    juce::String scanSummaryLine() const { return juce::String ((int) rows.size()) + " scanned row(s) in " + scanCacheFile().getFullPathName(); }
+    juce::String scanSummaryLine() const { return juce::String ((int) rows.size()) + " scanned row(s) in " + scanCacheFile().getFullPathName()
+                                                  + "; " + juce::String (lastScan.vst3Quarantined) + " quarantined, " + juce::String (lastScan.vst3NeedsLicence) + " needs licence (skipped)"; }
     // --scan: the Scan button with NOBODY AT THE KEYBOARD. The retry rule discounts an unattributed death because an
     // operator may have force-quit; a headless scan has no operator, exactly as the sweep says of itself (runSweep).
     // Without this, 2 Oct 12:01: Melodya.vst3 exited the process three times in four seconds, each death
     // "not counted, somebody may be at the keyboard", nothing quarantined, and the supervisor stopped.
-    void scanFromCli() { ledger.setUnattended (true); runScan(); }
+    void scanFromCli (bool retryLicence = false) { ledger.setUnattended (true); scanner.retryLicence = retryLicence; runScan(); }
 
     void categoriseFromCli()
     {

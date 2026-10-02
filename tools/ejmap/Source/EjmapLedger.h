@@ -722,6 +722,37 @@ public:
         for a bounded period, and if the lock never comes it writes the row to a
         separate lock-free file instead. A deadlock still produces a row.
     */
+    /** NEEDS LICENCE (ruled 2 Oct): the scan's window watch killed a load that raised a window. The row's outcome is
+        license_refused - NOT a counted failure, so the quarantine rules never see it - and the bundle goes into
+        licence-stops.json, which the scan skips (until --retry-licence), and the census and the batch report as
+        the state "needs_licence". Lock-free like the watchdog's emergency path: the message thread is inside the
+        plugin's dialog. The stake is cleared so the next launch records no death for it. */
+    juce::File licenceStopsFile() const { return root.getChildFile ("licence-stops.json"); }
+    void recordLicenceStop (LedgerRecord r, const juce::StringArray& windows, bool pace)
+    {
+        r.at = nowIso(); r.runId = runId; r.outcome = LoadOutcome::licenseRefused;
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("plugin_id", r.pluginId); o->setProperty ("name", r.name); o->setProperty ("format", r.format);
+        o->setProperty ("stage", r.stage); o->setProperty ("at", r.at); o->setProperty ("pace", pace);
+        juce::Array<juce::var> w; for (const auto& x : windows) w.add (x); o->setProperty ("windows", w);
+        o->setProperty ("state", "needs_licence");
+        auto f = licenceStopsFile();
+        auto existing = juce::JSON::parse (f.loadFileAsString());             // held: getArray() on a temporary dangles
+        juce::Array<juce::var> all; if (const auto* a = existing.getArray()) all = *a;
+        all.add (juce::var (o));
+        f.replaceWithText (juce::JSON::toString (juce::var (all)) + "\n", false, false, "\n");
+        juce::FileOutputStream out (emergencyFile);
+        if (out.openedOk()) { out.setPosition (emergencyFile.getSize()); out.writeText (juce::JSON::toString (r.toVar(), true) + "\n", false, false, nullptr); out.flush(); }
+        inflightFile.deleteFile();
+    }
+    static juce::StringArray licenceStoppedIds (const juce::File& root)
+    {
+        juce::StringArray ids;
+        const auto v = juce::JSON::parse (root.getChildFile ("licence-stops.json").loadFileAsString());
+        if (const auto* a = v.getArray()) for (const auto& e : *a) ids.add (e.getProperty ("plugin_id", "").toString());
+        return ids;
+    }
+
     void recordWatchdogExpiry (LedgerRecord r, const juce::String& quarantineReason)
     {
         r.at      = nowIso();

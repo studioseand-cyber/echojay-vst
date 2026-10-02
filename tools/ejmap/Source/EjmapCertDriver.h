@@ -49,6 +49,8 @@
 #include "EjmapPitch.h"
 #include "EjmapProfileExport.h"
 #include "EjmapLoop.h"
+#include "EjmapWindowWatch.h"
+#include "EjmapWatchdog.h"
 #include <sstream>
 #include "EchoJayParamMaps.h"   // fingerprintForDescription: the join key, one function for all three sides
 
@@ -112,23 +114,9 @@ struct ChildResult
 // WINDOW WATCHING (docs/EJMAP_CERT_DRIVER.md section 3: a precondition before any
 // PACE subject joins). An activation dialog blocks instantiation, so without this
 // it can only ever surface as a timeout, indistinguishable from a hang.
-inline pid_t parentOf (pid_t pid)
-{
-    proc_bsdinfo info {};
-    return proc_pidinfo (pid, PROC_PIDTBSDINFO, 0, &info, sizeof info) == (int) sizeof info ? (pid_t) info.pbi_ppid : 0;
-}
+using windowwatch::parentOf;
+using windowwatch::inTreeOf;
 
-inline bool inTreeOf (pid_t pid, pid_t root)
-{
-    for (int depth = 0; pid > 1 && depth < 16; ++depth, pid = parentOf (pid))
-        if (pid == root) return true;
-    return false;
-}
-
-// Owner names of windows owned by `root` or any descendant. onScreenOnly is the
-// production setting: a dialog is a window the user can SEE. The option is a
-// parameter so the attribution and the kill path can be tested with an off-screen
-// window, without flashing anything on the user's desktop.
 inline juce::StringArray windowsOwnedByTree (pid_t root, bool onScreenOnly = true)
 {
     juce::StringArray owners;
@@ -1195,7 +1183,12 @@ inline std::vector<InstalledRecord> installedAudioUnits()
 // their category (loop::quarantinedAtScan), so the census and the batch can name what never reached them.
 inline std::vector<loop::QuarantinedBundle> quarantinedBundles (const juce::File& ledgerRoot)
 {
-    const auto q = juce::JSON::parse (ledgerRoot.getChildFile ("quarantine.json").loadFileAsString());
+    // the quarantine and the licence stops, one list: both are bundles the census never sees
+    auto q = juce::JSON::parse (ledgerRoot.getChildFile ("quarantine.json").loadFileAsString());
+    juce::Array<juce::var> both; if (const auto* a = q.getArray()) both = *a;
+    const auto ls = juce::JSON::parse (ledgerRoot.getChildFile ("licence-stops.json").loadFileAsString());
+    if (const auto* a = ls.getArray()) for (const auto& e : *a) both.add (e);
+    q = juce::var (both);
     const auto cats = juce::JSON::parse (ledgerRoot.getChildFile ("categories.json").loadFileAsString());
     std::map<juce::String, juce::StringArray> auNamesByBundle; std::map<juce::String, juce::String> uidByName;
     const auto bundles = componentBundles();
@@ -2403,7 +2396,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped, " << finished << " finished from the store\n";
     for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
     std::cout << "OUTCOMES (" << outcomesFile.getFullPathName() << "): " << c.rows << " rows - exported " << c.exported << ", recorded " << c.recorded
-              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << std::endl;
+              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << ", needs_licence " << c.needsLicence << std::endl;
     int broken = 0; if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (loop::rowViolation (r).isNotEmpty()) ++broken;
     if (broken > 0) std::cout << "OUTCOME INVARIANT BROKEN on " << broken << " row(s)" << std::endl;
     std::cout << std::flush;
@@ -2764,10 +2757,13 @@ inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledg
         std::cout << "  " << why << " (" << names.size() << "): " << names.joinIntoString (", ") << "\n";
     {
         const auto qb = quarantinedBundles (ledgerRoot);
-        int certCats = 0; for (const auto& b : qb) if (loop::certificationCategory (b.category)) ++certCats;
-        std::cout << "QUARANTINED AT SCAN (never reach this census): " << (int) qb.size() << ", of which compressors or tuners: " << certCats << "\n";
-        for (const auto& b : qb)
+        int certCats = 0, lic = 0, licCert = 0; for (const auto& b : qb) { if (b.licence) { ++lic; if (loop::certificationCategory (b.category)) ++licCert; } else if (loop::certificationCategory (b.category)) ++certCats; }
+        std::cout << "QUARANTINED AT SCAN (never reach this census): " << (int) qb.size() - lic << ", of which compressors or tuners: " << certCats << "\n";
+        for (const auto& b : qb) if (! b.licence)
             std::cout << "  " << b.products.joinIntoString (", ") << "  [" << b.category << "]  " << b.reason << " at " << b.stage << (b.vst3 ? "  (VST3 bundle; the AudioUnit is unaffected if it scanned)" : "") << "\n";
+        std::cout << "NEEDS LICENCE (activation window at scan; --scan --retry-licence once the licence is back): " << lic << ", of which compressors or tuners: " << licCert << "\n";
+        for (const auto& b : qb) if (b.licence)
+            std::cout << "  " << b.products.joinIntoString (", ") << "  [" << b.category << "]  " << b.reason << "  " << b.at << (b.vst3 ? "  (VST3 bundle; the AudioUnit is unaffected if it scanned)" : "") << "\n";
     }
     std::cout << std::flush;
     return 0;
@@ -2803,6 +2799,49 @@ inline int runProbeOnce (const juce::File& probe, const juce::StringArray& probe
 //   - the helper as a GRANDCHILD (via /bin/sh, forced to fork): PACE's activation
 //     UI is a child of the probe, one level below what the driver spawns
 //   - a child that shows no window: must exit cleanly, untouched
+// THE SCAN WINDOW WATCH SELF-TEST (ruled 2 Oct): the child arms the watchdog at the scan stage for a fake bundle,
+// shows a window (off-screen, so nothing flashes on the desktop; the watch is told so), and must be killed by the watch
+// within seconds with the licence-stops entry on disk; a child that shows no window must come back clean. The parent
+// judges both. Run by the rehearsal's pre-flight, and whenever the watch changes.
+inline int runScanWatchSelfTestChild (const juce::File& root, bool showWindow)
+{
+    juce::ScopedJuceInitialiser_GUI gui;
+    root.createDirectory();
+    Ledger ledger (root);
+    Watchdog dog (ledger);
+    dog.setWindowWatch (true, /*onScreenOnly*/ false);
+    std::unique_ptr<juce::DocumentWindow> w;
+    {
+        Watchdog::Scope guard (dog, "findAllTypesForFile", "/selftest/FakeLicence.vst3", "FakeLicence", "VST3", "scan", 10000);
+        if (showWindow)
+        {
+            w = std::make_unique<juce::DocumentWindow> ("PACE selftest window", juce::Colours::black, 0);
+            w->setBounds (-10000, -10000, 200, 100);   // off-screen: a window to the window server, nothing on the desktop
+            w->setVisible (true);
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (3000);
+    }
+    w.reset();
+    return 0;   // reached only when the watch did NOT fire
+}
+inline int runScanWatchSelfTest (const juce::File& executable)
+{
+    const auto root = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ejmap-scanwatch-selftest-" + juce::Uuid().toDashedString());
+    const auto t0 = juce::Time::getMillisecondCounterHiRes();
+    const auto shown = runChild ({ executable.getFullPathName(), "--scan-watch-selftest-child", root.getFullPathName(), "window" }, 15000, WatchOptions { false });
+    const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+    const auto stops = juce::JSON::parse (root.getChildFile ("licence-stops.json").loadFileAsString());
+    const bool stopped = stops.isArray() && stops.size() == 1 && stops[0].getProperty ("plugin_id", "").toString() == "/selftest/FakeLicence.vst3"
+                         && stops[0].getProperty ("state", "").toString() == "needs_licence";
+    const auto quiet = runChild ({ executable.getFullPathName(), "--scan-watch-selftest-child", root.getChildFile ("quiet").getFullPathName(), "none" }, 15000, WatchOptions { false });
+    std::cout << "window shown:     " << shown.describe() << "  (" << juce::String (ms / 1000.0, 1) << " s to the kill; licence-stops entry " << (stopped ? "written" : "MISSING") << ")" << std::endl;
+    std::cout << "no window (ctrl): " << quiet.describe() << std::endl;
+    const bool ok = shown.kind == ChildResult::Kind::exited && shown.code == kLicenceStopExitCode && ms < 6000.0 && stopped && quiet.cleanExit();
+    std::cout << (ok ? "SCAN WATCH SELFTEST: GREEN" : "SCAN WATCH SELFTEST: RED") << std::endl;
+    root.deleteRecursively();
+    return ok ? 0 : 1;
+}
+
 inline int runWatchSelfTest (const juce::File& helper)
 {
     auto direct = runChild ({ helper.getFullPathName() }, 15000);

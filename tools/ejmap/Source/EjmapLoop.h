@@ -4,6 +4,9 @@
   The certification batch (--cert-sweep-all) must leave every discovered compressor and tuner in EXACTLY ONE named
   state, with no silent drops and no hand steps, on a Mac nobody here controls. The states:
 
+    needs_licence  the scan's window watch killed the bundle's load because it raised a licence / activation window
+                  (PACE's with the iLok away, or a vendor's own); recorded with the windows and the time; re-scanned
+                  only by --scan --retry-licence once the licence is back; never clicked
     quarantined_at_scan  the scan quarantined the bundle (a stall or a crash) so it never reached the census; the row
                   names the product(s), the category where known, and says if it is a VST3 (the AU is unaffected)
 
@@ -26,7 +29,7 @@
 
 namespace ejmap::loop
 {
-inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan" };
+inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence" };
 inline bool isState (const juce::String& s) { for (auto* k : kStates) if (s == k) return true; return false; }
 
 struct Outcome
@@ -116,7 +119,7 @@ inline juce::var makeRow (const juce::String& identity, const juce::String& prod
 inline juce::String rowViolation (const juce::var& row)
 {
     const auto state = row.getProperty ("state", "").toString();
-    if (! isState (state)) return "state '" + state + "' is not one of the six";
+    if (! isState (state)) return "state '" + state + "' is not one of the seven";
     if (row.getProperty ("reason", "").toString().isEmpty()) return "no reason";
     if (state == "exported" && row.getProperty ("profile", "").toString().isEmpty()) return "exported without a profile file";
     if (state == "exported" && row.getProperty ("tonecheck", "").toString().isEmpty()) return "exported without a tone check";
@@ -150,7 +153,7 @@ inline juce::var findRow (const juce::var& outcomes, const juce::String& identit
 // becomes a row in its own state, with the product's category from categories.json where the product was ever
 // categorised (by the bundle's registered AU uid, else by name), else "unknown". A VST3 bundle is named as such:
 // certification hosts AudioUnits, so the same product's AU, if it scanned, is unaffected.
-struct QuarantinedBundle { juce::String bundle, reason, stage, at; juce::StringArray products; juce::String category = "unknown"; bool vst3 = false; };
+struct QuarantinedBundle { juce::String bundle, reason, stage, at; juce::StringArray products; juce::String category = "unknown"; bool vst3 = false; bool licence = false; juce::StringArray windows; };
 inline std::vector<QuarantinedBundle> quarantinedAtScan (const juce::var& quarantine, const juce::var& categories,
                                                          const std::map<juce::String, juce::StringArray>& auNamesByBundle,
                                                          const std::map<juce::String, juce::String>& uidByAuName)
@@ -171,6 +174,13 @@ inline std::vector<QuarantinedBundle> quarantinedAtScan (const juce::var& quaran
             QuarantinedBundle b;
             b.bundle = q.getProperty ("plugin_id", "").toString(); b.reason = q.getProperty ("reason", "").toString();
             b.stage = q.getProperty ("stage", "").toString(); b.at = q.getProperty ("at", "").toString();
+            // NEEDS LICENCE (ruled 2 Oct): an entry from licence-stops.json carries its windows and state instead of a reason
+            if (q.getProperty ("state", "").toString() == "needs_licence")
+            {
+                b.licence = true;
+                if (const auto* w = q.getProperty ("windows", {}).getArray()) for (const auto& x : *w) b.windows.add (x.toString());
+                b.reason = juce::String ((bool) q.getProperty ("pace", false) ? "activation window" : "window") + " at scan (" + b.windows.joinIntoString (", ") + "); load killed at once, not retried";
+            }
             b.vst3 = b.bundle.endsWithIgnoreCase (".vst3");
             const auto stem = juce::File (b.bundle).getFileNameWithoutExtension();
             if (auto it = auNamesByBundle.find (b.bundle); it != auNamesByBundle.end()) b.products = it->second;
@@ -187,12 +197,12 @@ inline std::vector<QuarantinedBundle> quarantinedAtScan (const juce::var& quaran
 inline bool certificationCategory (const juce::String& c) { return c == "compressor" || c == "pitch" || c == "tuner"; }
 inline juce::var quarantineRow (const QuarantinedBundle& b, const juce::String& when)
 {
-    Outcome o; o.state = "quarantined_at_scan";
+    Outcome o; o.state = b.licence ? "needs_licence" : "quarantined_at_scan";
     o.reason = b.reason + " at stage " + b.stage + (b.vst3 ? " (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned)" : juce::String()) + "; category " + b.category;
     return makeRow ("bundle|" + b.bundle, b.products.joinIntoString (", "), b.category, o, {}, {}, {}, when);
 }
 
-struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, rows = 0; };
+struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, rows = 0; };
 inline Counts count (const juce::var& outcomes)
 {
     Counts c;
@@ -202,7 +212,7 @@ inline Counts count (const juce::var& outcomes)
             ++c.rows;
             const auto s = r.getProperty ("state", "").toString();
             if (s == "exported") ++c.exported; else if (s == "recorded") ++c.recorded; else if (s == "refused") ++c.refused;
-            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined;
+            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined; else if (s == "needs_licence") ++c.needsLicence;
         }
     return c;
 }

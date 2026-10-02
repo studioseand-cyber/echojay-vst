@@ -95,6 +95,7 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
     const int vstTotal = files.size();
     int vstDone = 0;
 
+    const auto licenceStopped = Ledger::licenceStoppedIds (ledger.getRoot());
     for (const auto& file : files)
     {
         ++result.totalFound;
@@ -114,6 +115,14 @@ void PluginScanner::scanVST3 (Result& result, Ledger& ledger, Watchdog& watchdog
             ++result.vst3Quarantined;
             result.errors.add ("skipped quarantined VST3 " + file
                                  + " (a previous scan died inside it; release it explicitly to retry)");
+            continue;
+        }
+        // NEEDS LICENCE (ruled 2 Oct): a bundle whose load raised a licence / activation window in an earlier scan is
+        // not probed again - a licence does not appear on a retry - until --retry-licence says the licence is back.
+        if (! retryLicence && licenceStopped.contains (file))
+        {
+            ++result.vst3NeedsLicence;
+            result.errors.add ("skipped VST3 " + file + " (needs licence: an activation window stopped its last scan; --retry-licence once the licence is back)");
             continue;
         }
 

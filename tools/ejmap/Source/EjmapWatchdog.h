@@ -38,6 +38,7 @@
 
 #include <juce_core/juce_core.h>
 #include "EjmapLedger.h"
+#include "EjmapWindowWatch.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -51,6 +52,7 @@ namespace ejmap
     a watchdog stop from a crash or a clean quit.
 */
 inline constexpr int kWatchdogExitCode = 87;
+inline constexpr int kLicenceStopExitCode = 86;   // the scan's window watch killed the load: a licence / activation window
 
 //==============================================================================
 class Watchdog : private juce::Thread
@@ -119,8 +121,15 @@ public:
         armedMs     = deadlineMs;
         expiresAt   = juce::Time::getMillisecondCounter() + (juce::uint32) deadlineMs;
         armed       = true;
+        // THE WINDOW WATCH (ruled 2 Oct): at the scan stage the windows our own process tree shows when the
+        // load starts are the baseline; a window that appears during the load is a licence / activation
+        // dialog nobody is here to click, and the load is killed at once - no deadline, no retry.
+        windowBaseline = (stage == "scan" && windowWatch) ? windowwatch::windowCountsByOwner (getpid(), windowOnScreenOnly) : windowwatch::OwnerCounts();
         notify();
     }
+
+    /** The scan's window watch: on for every scan arming (the default); onScreenOnly false only in a self-test. */
+    void setWindowWatch (bool on, bool onScreenOnly = true) { const juce::ScopedLock sl (lock); windowWatch = on; windowOnScreenOnly = onScreenOnly; }
 
     void disarm()
     {
@@ -178,6 +187,17 @@ private:
             int ms = 0;
             {
                 const juce::ScopedLock sl (lock);
+                if (armed && windowWatch && armedStage == "scan")
+                {
+                    const auto shown = windowwatch::newWindows (windowBaseline, windowwatch::windowCountsByOwner (getpid(), windowOnScreenOnly));
+                    if (! shown.isEmpty())
+                    {
+                        site = armedSite; id = armedId; name = armedName; format = armedFormat; stage = armedStage;
+                        armed = false;
+                        lock.exit();
+                        fireWindow (site, id, name, format, stage, shown);   // does not return
+                    }
+                }
                 if (! armed || juce::Time::getMillisecondCounter() < expiresAt)
                     continue;
 
@@ -188,6 +208,24 @@ private:
 
             fire (site, id, name, format, stage, ms);
         }
+    }
+
+    /** A LICENCE / ACTIVATION WINDOW DURING THE SCAN. Does not return. Recorded as its own state (licence-stops.json
+        in the ledger root, read by the scan to skip the bundle and by the census and the batch to name it), a
+        ledger row with outcome license_refused (not a counted failure: nothing is quarantined, nothing retried),
+        the inflight stake cleared so the next launch records no death. Nothing in the dialog is ever clicked. */
+    void fireWindow (const juce::String& site, const juce::String& id, const juce::String& name,
+                     const juce::String& format, const juce::String& stage, const juce::StringArray& shown)
+    {
+        const bool pace = windowwatch::isPaceOwner (shown);
+        LedgerRecord r;
+        r.pluginId = id; r.name = name; r.format = format; r.stage = stage;
+        r.detail = juce::String (pace ? "activation window" : "window") + " at " + site + " (" + shown.joinIntoString (", ")
+                   + "); load killed at once by the window watch, no retry" + (pace ? "" : " (not PACE's: a window, not called a licence fact)");
+        ledger.recordLicenceStop (r, shown, pace);
+        std::cerr << "ejmap window watch: " << r.detail << " [" << id << "]" << std::endl;
+        std::cerr.flush();
+        std::_Exit (kLicenceStopExitCode);
     }
 
     /** Does not return. */
@@ -282,6 +320,8 @@ private:
 
     juce::CriticalSection lock;
     bool armed = false;
+    bool windowWatch = true, windowOnScreenOnly = true;
+    windowwatch::OwnerCounts windowBaseline;
     juce::uint32 expiresAt = 0;
     int armedMs = kDefaultDeadlineMs;
     juce::String armedSite, armedId, armedName, armedFormat, armedStage;

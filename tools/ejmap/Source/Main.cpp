@@ -59,7 +59,7 @@ public:
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
-        bool worklist = false, worklistNext = false, categoriseOnly = false, scanOnly = false;
+        bool worklist = false, worklistNext = false, categoriseOnly = false, scanOnly = false, retryLicence = false;
         bool sweepReport = false, sweepReportPerRun = false, sweepReportByVendor = false;
         bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
         juce::String resweepTargetsPath;
@@ -134,6 +134,8 @@ public:
                 categoriseOnly = true;
             else if (args[i] == "--scan")                      // the Scan button, headless (2 Oct: the stranger's runbook has no GUI step)
                 scanOnly = true;
+            else if (args[i] == "--retry-licence")             // re-probe the bundles the window watch stopped: the licence is back
+                retryLicence = true;
             else if (args[i] == "--next")
                 worklistNext = true;
             else if (args[i] == "--sweep")
@@ -384,11 +386,11 @@ public:
         {
             // --scan [--categorise]: exactly what the Scan button (then the Categorise button) does, then quit. The
             // scan writes scan-cache.xml and resumes from scan-progress.jsonl if an earlier attempt died in a bundle.
-            auto* m2 = mainWindow->getMain(); const bool alsoCat = categoriseOnly;
-            juce::MessageManager::callAsync ([m2, alsoCat]
+            auto* m2 = mainWindow->getMain(); const bool alsoCat = categoriseOnly, rl = retryLicence;
+            juce::MessageManager::callAsync ([m2, alsoCat, rl]
             {
-                std::cout << "SCAN: starting (the Scan button, headless)" << std::endl;
-                m2->scanFromCli();
+                std::cout << "SCAN: starting (the Scan button, headless" << (rl ? ", re-probing licence stops" : "") << ")" << std::endl;
+                m2->scanFromCli (rl);
                 std::cout << "SCAN: done - " << m2->scanSummaryLine() << std::endl;
                 if (alsoCat) m2->categoriseFromCli();
                 juce::JUCEApplication::quit();
@@ -599,6 +601,10 @@ namespace
             auto cwdFile = [] (const juce::String& p) { return juce::File::getCurrentWorkingDirectory().getChildFile (p); };
             if (a == "--cert-rederive" && i + 1 < argc)
                 return ejmap::cert::runRederive (cwdFile (argAt (argc, argv, i + 1)));
+            if (a == "--scan-watch-selftest")
+                return ejmap::cert::runScanWatchSelfTest (juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+            if (a == "--scan-watch-selftest-child" && i + 2 < argc)
+                return ejmap::cert::runScanWatchSelfTestChild (juce::File (argAt (argc, argv, i + 1)), argAt (argc, argv, i + 2) == "window");
             if (a == "--cert-watch-selftest" && i + 1 < argc)
                 return ejmap::cert::runWatchSelfTest (cwdFile (argAt (argc, argv, i + 1)));
             // --cert-probe-once <probe> <timeout-s> <probe args...>

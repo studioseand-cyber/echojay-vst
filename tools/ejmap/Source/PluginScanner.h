@@ -82,6 +82,7 @@ public:
         int vst3Resumed     = 0;   // restored from progress, not re-probed
         int vst3Restamped   = 0;   // had an entry, but changed on disk: re-probed
         int vst3Quarantined = 0;   // skipped: a previous Scan died inside them
+        int vst3NeedsLicence = 0;  // skipped: a previous Scan's window watch stopped them (licence-stops.json); --retry-licence re-probes
 
         /** Component type code -> how many were dropped. Every drop lands here.
             A filter that discards without counting is the silent-drop class.
@@ -110,6 +111,7 @@ public:
         Passing a Ledger is therefore not a caller's choice. There is no
         overload that scans without one.
     */
+    bool retryLicence = false;      // --retry-licence: re-probe the bundles the window watch stopped (the licence is back)
     Result scan (Ledger& ledger, Watchdog& watchdog, ScanProgress& progress,
                  ProgressFn onProgress = {});
 

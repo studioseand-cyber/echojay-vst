@@ -115,12 +115,13 @@ inline int progressCount (const juce::File& root)
         any = true;
         for (const auto& line : juce::StringArray::fromLines (sp.loadFileAsString())) if (line.trim().isNotEmpty()) ++n;
     }
-    if (auto q = root.getChildFile ("quarantine.json"); q.existsAsFile())
-    {
-        any = true;
-        const auto parsed = juce::JSON::parse (q.loadFileAsString());          // held: getArray() on a temporary dangles
-        if (const auto* a = parsed.getArray()) n += a->size();
-    }
+    for (const char* name : { "quarantine.json", "licence-stops.json" })        // a quarantined stall or a licence stop is the job done
+        if (auto q = root.getChildFile (name); q.existsAsFile())
+        {
+            any = true;
+            const auto parsed = juce::JSON::parse (q.loadFileAsString());      // held: getArray() on a temporary dangles
+            if (const auto* a = parsed.getArray()) n += a->size();
+        }
     return any ? n : -1;
 }
 
