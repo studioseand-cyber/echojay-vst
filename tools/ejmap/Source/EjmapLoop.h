@@ -7,6 +7,8 @@
     needs_licence  the scan's window watch killed the bundle's load because it raised a licence / activation window
                   (PACE's with the iLok away, or a vendor's own); recorded with the windows and the time; re-scanned
                   only by --scan --retry-licence once the licence is back; never clicked
+    unmapped      installed and categorised a compressor or tuner, but no map at this build (local or server): discovery
+                  never sees it; the mapping sweep maps it; a row so it does not vanish (elysia mpressor, 2 Oct rehearsal)
     quarantined_at_scan  the scan quarantined the bundle (a stall or a crash) so it never reached the census; the row
                   names the product(s), the category where known, and says if it is a VST3 (the AU is unaffected)
 
@@ -29,7 +31,7 @@
 
 namespace ejmap::loop
 {
-inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence" };
+inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence", "unmapped" };
 inline bool isState (const juce::String& s) { for (auto* k : kStates) if (s == k) return true; return false; }
 
 struct Outcome
@@ -202,7 +204,7 @@ inline juce::var quarantineRow (const QuarantinedBundle& b, const juce::String& 
     return makeRow ("bundle|" + b.bundle, b.products.joinIntoString (", "), b.category, o, {}, {}, {}, when);
 }
 
-struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, rows = 0; };
+struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, unmapped = 0, rows = 0; };
 inline Counts count (const juce::var& outcomes)
 {
     Counts c;
@@ -212,7 +214,7 @@ inline Counts count (const juce::var& outcomes)
             ++c.rows;
             const auto s = r.getProperty ("state", "").toString();
             if (s == "exported") ++c.exported; else if (s == "recorded") ++c.recorded; else if (s == "refused") ++c.refused;
-            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined; else if (s == "needs_licence") ++c.needsLicence;
+            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined; else if (s == "needs_licence") ++c.needsLicence; else if (s == "unmapped") ++c.unmapped;
         }
     return c;
 }

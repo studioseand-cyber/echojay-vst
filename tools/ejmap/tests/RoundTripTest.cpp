@@ -4745,6 +4745,9 @@ void testDiscoveryFromMaps()
     // ONE STORE (ruled 1 Oct): a pitch product is a CANDIDATE, for tuner certification, in the same worklist.
     juce::String tunerCat;
     for (const auto& c : d.candidates) if (c.inst.desc.name == "A Tuner") tunerCat = c.category;
+    { juce::StringArray un; for (const auto& u : d.unmapped) un.add (u.name + ":" + u.category);
+      check (d.unmapped.size() == 2 && un.contains ("Unmapped Comp:compressor") && un.contains ("Other Build:compressor") && ! un.contains ("Some EQ:eq"),
+             "discovery F4 (2 Oct): an installed compressor or tuner with no map at this build is NAMED in the discovery's unmapped list, not just counted; an EQ is not (" + un.joinIntoString (", ") + ")"); }
     check (! names.contains ("Some EQ") && ! names.contains ("Other Build") && ! names.contains ("Unmapped Comp")
              && names.contains ("A Tuner") && tunerCat == "pitch" && d.tuners.contains ("A Tuner"),
            "discovery F3: another category, a map for a different build, and an unmapped compressor are not candidates; a pitch product IS a candidate, category pitch (one store)");
@@ -5647,6 +5650,8 @@ void testLoopOutcomes()
     const auto c = count (rows);
     check (rows.size() == 2 && c.rows == 2 && c.exported == 1 && c.refused == 1 && c.held == 0 && findRow (rows, "A").getProperty ("at", "") == "t2",
            "loop L11: a later row for the same identity replaces the earlier (a resumed batch rewrites what it finished); counts follow");
+    { Outcome u; u.state = "unmapped"; u.reason = "no map at this build"; const auto ur = makeRow ("AudioUnit|1|2.0", "elysia mpressor", "compressor", u, {}, {}, {}, "t");
+      check (rowViolation (ur).isEmpty() && count (mergeRow (juce::var (juce::Array<juce::var>()), ur)).unmapped == 1, "loop L16: unmapped is a named state with its own count"); }
     {
         // QUARANTINED AT SCAN (L12-L14): a bundle the scan quarantined becomes a row in its own state, with the product's
         // category from categories.json by the registered AU's uid, else by name, else unknown; a VST3 says so.

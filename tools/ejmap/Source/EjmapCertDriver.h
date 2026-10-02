@@ -1205,7 +1205,12 @@ inline std::vector<loop::QuarantinedBundle> quarantinedBundles (const juce::File
 // THE PURE CORE: which installed products are candidates, and why the rest are not. `fixtureKeys` holds "uid|version"
 // (lowercase uid) for every fixture in the store.
 struct Candidate { InstalledRecord inst; juce::String category, mappedBy; };
-struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners, excludedByDisposition; };
+// UNMAPPED (ruled 2 Oct): an installed AU that categories.json calls a compressor or a tuner but that has no map at
+// its installed build (local or server) is not discovered - and until today it was a count ("566 not mapped at this
+// build"), never a name: elysia mpressor and bx_crispytuner vanished from a rehearsal that way. Named, so the batch
+// can give each its own row (state unmapped: run the mapping sweep) and nothing drops out silently.
+struct UnmappedProduct { juce::String name, version, category, uidKey; };
+struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners, excludedByDisposition; std::vector<UnmappedProduct> unmapped; };
 
 inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vector<InstalledRecord>& installed,
                                      const std::set<juce::String>& fixtureKeys)
@@ -1216,7 +1221,13 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
         const auto local = in.localMapCategory.find (r.identityKey);
         const auto st = in.mapState.find (r.identityKey);
         const bool serverMapped = st != in.mapState.end() && st->second >= 1 && st->second <= 3;
-        if (local == in.localMapCategory.end() && ! serverMapped) { ++d.excluded["not mapped at this build"]; continue; }
+        if (local == in.localMapCategory.end() && ! serverMapped)
+        {
+            ++d.excluded["not mapped at this build"];
+            if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end() && (c->second == "compressor" || c->second == "pitch"))
+                d.unmapped.push_back ({ r.desc.name, r.desc.version, c->second, r.uidKey });
+            continue;
+        }
         juce::String category = local != in.localMapCategory.end() ? local->second : juce::String();
         if (category.isEmpty()) if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end()) category = c->second;
         const auto fxKey = juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version;
@@ -1256,7 +1267,8 @@ inline StorePartition partitionStore (const std::vector<Subject>& fromStore, boo
 }
 
 inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace,
-                                           juce::StringArray& report, bool retryRefused = false, bool retryAll = false)
+                                           juce::StringArray& report, bool retryRefused = false, bool retryAll = false,
+                                           std::vector<UnmappedProduct>* unmappedOut = nullptr)
 {
     std::vector<Subject> fromStore;
     if (fixturesDir.isDirectory()) fromStore = loadFixtures (fixturesDir);
@@ -1316,6 +1328,12 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
     if (! disc.excludedByDisposition.isEmpty())
         report.add ("left alone by categories.json disposition: " + disc.excludedByDisposition.joinIntoString ("; "));
     if (! disc.tuners.isEmpty()) report.add ("pitch category, on the worklist for tuner certification: " + disc.tuners.joinIntoString (", "));
+    {
+        juce::StringArray un; for (const auto& u : disc.unmapped) un.add (u.name + " " + u.version + " [" + u.category + "]");
+        report.add ("UNMAPPED compressors and tuners (installed, categorised, no map at this build - the mapping sweep maps them; until then a row in state unmapped): "
+                    + juce::String ((int) disc.unmapped.size()) + (un.isEmpty() ? juce::String() : ": " + un.joinIntoString (", ")));
+    }
+    if (unmappedOut != nullptr) *unmappedOut = disc.unmapped;
     return out;
 }
 
@@ -2340,9 +2358,16 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         std::cout << cap.str();
     }
     std::cout << "iLok: " << ilok << std::endl;
-    juce::StringArray wl;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll);
+    juce::StringArray wl; std::vector<UnmappedProduct> unmapped;
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll, &unmapped);
     std::cout << wl.joinIntoString ("\n") << std::endl;
+    // UNMAPPED: a row per installed, categorised compressor or tuner with no map at this build (the slice applies).
+    for (const auto& u : unmapped)
+    {
+        if (! opt.slice.isEmpty() && ! opt.slice.contains (u.name)) continue;
+        loop::Outcome o; o.state = "unmapped"; o.reason = "installed at " + u.version + ", categorised " + u.category + ", no map at this build (local or server): the mapping sweep (--sweep) maps it, then the batch measures it";
+        record (loop::makeRow (u.uidKey + "|" + u.version, u.name, u.category, o, {}, {}, {}, nowStamp()));
+    }
     juce::StringArray done, refused;
     int n = 0;
     const SleepGuard sleepGuard ("EJ Map certification batch");
@@ -2396,7 +2421,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped, " << finished << " finished from the store\n";
     for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
     std::cout << "OUTCOMES (" << outcomesFile.getFullPathName() << "): " << c.rows << " rows - exported " << c.exported << ", recorded " << c.recorded
-              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << ", needs_licence " << c.needsLicence << std::endl;
+              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << ", needs_licence " << c.needsLicence << ", unmapped " << c.unmapped << std::endl;
     int broken = 0; if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (loop::rowViolation (r).isNotEmpty()) ++broken;
     if (broken > 0) std::cout << "OUTCOME INVARIANT BROKEN on " << broken << " row(s)" << std::endl;
     std::cout << std::flush;
