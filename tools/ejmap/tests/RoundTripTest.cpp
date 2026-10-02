@@ -5171,6 +5171,9 @@ void testMapFpJoinKey()
     Subject sv = s; sv.desc.manufacturerName = "NEOLD";
     check (composeFixture (sv, list, text, 0, 0, "probe", "2026-10-02").getProperty ("manufacturer", "").toString() == "NEOLD" && ! fx.hasProperty ("manufacturer"),
            "mapfp M0b: manufacturer is the host's manufacturerName on the record, and absent (never empty) when the host has none");
+    Subject sm = s; sm.mapState = "none";
+    check (composeFixture (sm, list, text, 0, 0, "probe", "2026-10-02").getProperty ("mapState", "").toString() == "none" && ! fx.hasProperty ("mapState"),
+           "mapfp M0c (ruled 2 Oct): the record carries mapState as information when the subject has it (the tuner path sets it from the batch's option), absent otherwise");
 
     // Against the corpus: every store record with a local map reproduces that map's fp. Skipped (said so) without the maps.
     auto mapsDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/ejmap/maps");
@@ -5717,6 +5720,19 @@ void testLoopOutcomes()
         const auto ow = outcomeForRecord (winRef);
         check (ow.state == "needs_licence" && ow.reason.contains ("window at the probe's load") && ow.reason.contains ("PACE [pid 9]") && ! ow.exportPending,
                "loop L19: a window at the probe's load in the batch is needs_licence (the window watch guards batch loads: a licence can vanish between scan and batch)");
+        // ONE ROW PER PRODUCT (L20-L21, ruled 2 Oct evening): a bundle's products that are subjects get no bundle row (their own row
+        // carries the state); the others get one row each, keyed by product, linked to the bundle; the same product named by two
+        // bundles (AU + VST3) gets one row.
+        QuarantinedBundle two; two.bundle = "/x/SSL Pack.vst3"; two.licence = true; two.products = juce::StringArray { "SSL LMC+", "SSL X-Gate" }; two.reason = "activation window at scan"; two.stage = "scan"; two.category = "compressor";
+        QuarantinedBundle dup; dup.bundle = "/x/SSL LMC+.component"; dup.licence = true; dup.products = juce::StringArray { "SSL LMC+" }; dup.reason = "activation window at scan"; dup.stage = "scan";
+        const auto rows = bundleRows ({ st, two, dup }, juce::StringArray { "SSL Native Drumstrip v6 (s)" }, "now");
+        juce::StringArray ids; for (const auto& r : rows) ids.add (r.getProperty ("identity", "").toString());
+        check (rows.size() == 2 && ids.contains ("product|ssl lmc+") && ids.contains ("product|ssl x-gate") && ! ids.contains ("product|ssl native drumstrip v6")
+                 && rows[0].getProperty ("scan_bundle", "").toString() == "/x/SSL Pack.vst3" && rowViolation (rows[0]).isEmpty(),
+               "loop L20: a subject's bundle gives no second row; non-subject products get one row EACH, keyed by product, linked to the bundle; a product in two bundles gets one (" + ids.joinIntoString (", ") + ")");
+        juce::var all = juce::Array<juce::var>(); for (const auto& r : rows) all = mergeRow (all, r);
+        all = mergeRow (all, makeRow ("AudioUnit|d|1", "SSL Native Drumstrip v6 (s)", "compressor", outcomeCarriedLicence (st), {}, {}, {}, "now"));
+        check (count (all).rows == 3 && count (all).needsLicence == 3, "loop L21: counts are per product: 3 products, 3 rows, 3 needs_licence");
     }
     {
         // QUARANTINED AT SCAN (L12-L14): a bundle the scan quarantined becomes a row in its own state, with the product's

@@ -1382,6 +1382,7 @@ struct SweepOptions
     bool profile = false;                            // the profile sweep (31 levels, 2.5 s, quiet reference everywhere)
     juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
     bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
+    juce::String mapState;                           // INFORMATION for the record (ruled 2 Oct): set by the batch from the subject; the tuner path has no Subject of its own
 };
 
 // WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
@@ -2409,7 +2410,9 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         if (! opt.retryLicence)
             if (const auto stop = loop::carriedLicenceStop (scanStops, s.product); stop)
             {
-                record (withMap (loop::makeRow (identity, s.product, s.category, loop::outcomeCarriedLicence (*stop), {}, {}, {}, nowStamp())));
+                auto row = withMap (loop::makeRow (identity, s.product, s.category, loop::outcomeCarriedLicence (*stop), {}, {}, {}, nowStamp()));
+                if (auto* o = row.getDynamicObject()) o->setProperty ("scan_bundle", stop->bundle);     // the link to the scan's evidence
+                record (row);
                 continue;
             }
         if (! tuner && ! planLater && ! sweep::planFromFixture (s.pushed).ok)
@@ -2420,7 +2423,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         }
         ++n;
         std::cout << "\n=== [" << n << "] " << s.product << (tuner ? " (tuner)" : "") << std::endl;
-        opt.product = s.product;
+        opt.product = s.product; opt.mapState = s.mapState;
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         const int rc = tuner ? runCertTuner (opt) : runCertSweep (opt);
         std::cout << "  wall " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 0) << " s, exit " << rc << std::endl;
@@ -2429,8 +2432,11 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         if (rec.existsAsFile()) record (withMap (finishRecord (opt, rec, s.category)));
         else { loop::Outcome o; o.state = "refused"; o.reason = "stage unknown: the run wrote no record (exit " + juce::String (rc) + ")"; record (loop::makeRow (identity, s.product, s.category, o, {}, {}, {}, nowStamp())); }
     }
-    // QUARANTINED AT SCAN: a row per bundle the scan quarantined, so nothing drops out silently (not limited by the slice).
-    for (const auto& b : quarantinedBundles (opt.ledger)) record (loop::quarantineRow (b, nowStamp()));
+    // ONE ROW PER PRODUCT (ruled 2 Oct, evening): a bundle the scan stopped or quarantined gives a row only for the
+    // products that are NOT subjects of the batch (a subject's own row carries the carried-forward state and names the
+    // bundle); one row per product, never per bundle, so every count is per product (loop::bundleRows).
+    { juce::StringArray subjectNames; for (const auto& s : subjects) subjectNames.add (s.product);
+      for (const auto& row : loop::bundleRows (scanStops, subjectNames, nowStamp())) record (row); }
     // THE FINISH PASS: every record in the store without a row (resumed batch, or records from before the loop).
     int finished = 0;
     for (const auto& f : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
@@ -2483,11 +2489,11 @@ inline int runCertTuner (const SweepOptions& opt)
     if (hits.empty()) { say ("TUNER: '" + opt.product + "' is not an installed AudioUnit"); return 2; }
     if (hits.size() > 1) { say ("TUNER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " components; refused"); return 2; }
     Subject s; s.desc = hits[0].desc; s.product = s.desc.name; s.uid = juce::String::toHexString (s.desc.uniqueId).toLowerCase(); s.version = s.desc.version;
-    s.reach = Subject::Reach::unfixtured; s.installedUnique = true; s.category = "pitch";
+    s.reach = Subject::Reach::unfixtured; s.installedUnique = true; s.category = "pitch"; s.mapState = opt.mapState;
     // A refusal is a record here too: the identity with no controls, so the worklist stops offering it.
     auto identityOnly = [&] { auto* o = new juce::DynamicObject(); o->setProperty ("product", s.product); o->setProperty ("uid", s.uid);
                               o->setProperty ("version", s.version); o->setProperty ("format", "AudioUnit"); o->setProperty ("category", "pitch");
-                              o->setProperty ("schema", kSchemaTuner); return juce::var (o); };
+                              o->setProperty ("schema", kSchemaTuner); if (s.mapState.isNotEmpty()) o->setProperty ("mapState", s.mapState); return juce::var (o); };
     if (araOnlyByName (opt.product))
     {
         say ("TUNER: " + opt.product + " is an ARA/offline tool with no real-time pitch path: uncertifiable by any harness, refused before any process");

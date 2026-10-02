@@ -165,6 +165,7 @@ inline juce::var findRow (const juce::var& outcomes, const juce::String& identit
 // becomes a row in its own state, with the product's category from categories.json where the product was ever
 // categorised (by the bundle's registered AU uid, else by name), else "unknown". A VST3 bundle is named as such:
 // certification hosts AudioUnits, so the same product's AU, if it scanned, is unaffected.
+inline juce::String productKeyName (const juce::String& n);
 struct QuarantinedBundle { juce::String bundle, reason, stage, at; juce::StringArray products; juce::String category = "unknown"; bool vst3 = false; bool licence = false; juce::StringArray windows; };
 inline std::vector<QuarantinedBundle> quarantinedAtScan (const juce::var& quarantine, const juce::var& categories,
                                                          const std::map<juce::String, juce::StringArray>& auNamesByBundle,
@@ -207,6 +208,32 @@ inline std::vector<QuarantinedBundle> quarantinedAtScan (const juce::var& quaran
     return out;
 }
 inline bool certificationCategory (const juce::String& c) { return c == "compressor" || c == "pitch" || c == "tuner"; }
+// ONE ROW PER PRODUCT (ruled 2 Oct, evening): the scan's bundle evidence becomes rows for the products that have no
+// subject row of their own - one per product named by the bundle, keyed "product|<name>", linked to the bundle. A product
+// the batch has as a subject gets its state on its own row (carried forward) and no second row here.
+inline juce::var bundleProductRow (const QuarantinedBundle& b, const juce::String& product, const juce::String& when)
+{
+    Outcome o; o.state = b.licence ? "needs_licence" : "quarantined_at_scan";
+    o.reason = b.reason + " at stage " + b.stage + (b.vst3 ? " (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned)" : juce::String()) + "; category " + b.category;
+    auto row = makeRow ("product|" + productKeyName (product), product, b.category, o, {}, {}, {}, when);
+    if (auto* r = row.getDynamicObject()) r->setProperty ("scan_bundle", b.bundle);
+    return row;
+}
+inline std::vector<juce::var> bundleRows (const std::vector<QuarantinedBundle>& bundles, const juce::StringArray& subjectNames, const juce::String& when)
+{
+    juce::StringArray subjects; for (const auto& n : subjectNames) subjects.add (productKeyName (n));
+    std::vector<juce::var> out; juce::StringArray seen;
+    for (const auto& b : bundles)
+        for (const auto& p : b.products)
+        {
+            const auto key = productKeyName (p);
+            if (subjects.contains (key) || seen.contains (key)) continue;
+            seen.add (key);
+            out.push_back (bundleProductRow (b, p, when));
+        }
+    return out;
+}
+
 inline juce::var quarantineRow (const QuarantinedBundle& b, const juce::String& when)
 {
     Outcome o; o.state = b.licence ? "needs_licence" : "quarantined_at_scan";
