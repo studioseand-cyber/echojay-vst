@@ -1443,3 +1443,54 @@ numeric 1 dB points on the certification sweep:** Lindell SBC (9/16), Lindell 25
 mpressor (6), Acme Opticom XLA-3 (4), bx_opto (4). Cost, from CL 1B (200 s with two refinement rounds)
 and U2A (169 s with the engage search): about 3-4 minutes each, 30-40 minutes for the nine, plus the
 after-chain (detector, export, tone check) under a minute each. Started 10:51.
+
+## 24. PROPOSAL (not built): the channel-strip rule, measured on the store (2 Oct, 11:30)
+
+EMO-D5 needed `--candidate "Comp Thresh"`; on a stranger's Mac nobody picks. Until a rule lands, every
+record with several threshold candidates ends as `needs_review` (a pass state, EjmapLoop.h L3). The
+rule as proposed, applied to the 42 multi-candidate records in the store today:
+
+**Rule 1 (as asked): exactly one candidate whose name carries the compressor stage word (a token
+starting "comp"), and it certifies; the other stages stay at their instantiate defaults; that
+candidate is the amount control.** Decides **4 of 42**:
+
+| product | pick | the others |
+|---|---|---|
+| EMO-D5 (m) 12.0.0 | Comp Thresh | Gate Thresh certified, Limiter Thresh certified, Leveller unreadable, DeEsser flat |
+| EMO-D5 (s) 12.0.0 | Comp Thresh | same |
+| Solid Dynamics 1.4.5 | Threshold Comp | Threshold G/E flat |
+| MDynamics 14.16.0 (PACE) | Compressor -> Threshold | Processor 1 - Threshold ALSO certified (not comp-worded), Gate flat |
+
+Refused by Rule 1 and why, the other 38: no candidate carries the word (34: multibands' "Band N",
+L/R and 1/2 twins, Low/Mid/High, Processor N, Optical/Discrete); several carry it (MTurboCompMB 6
+bands "Band N Compressor", Maag MAGNUM-K "K Comp Threshold 1/2" both flat, Auto-Tune Vocal
+Compressor 4 "Comp" candidates, 1 certifies). MDynamics is the one to look at: Rule 1 picks the
+compressor while a second, differently named stage also certifies - the rule says "other stages at
+their defaults", which is what the sweep did, so the pick is still the right one for the server;
+flagging it so you see the shape.
+
+**Two extensions, measured, for you to accept or refuse (each a separate rule with its own pins):**
+
+- **Rule 2 - exactly one candidate certifies and no candidate is band-named** (a "Band N", "Low/Mid/
+  High", "L/M/H" name means a crossover, and the one certifying band is the one the 997 Hz tone
+  landed in, not the product's amount control). Decides **+2**: Unfiltered Audio Zip (Threshold;
+  Auto Threshold flat), PuigChild 670 (s) (Left Threshold; Right flat - the probe's tone is on the
+  left). Would NOT decide C4/C6 (band), Lindell 354E/MBC (Low/Mid/High), SSL G3 (Low/Mid/High),
+  MTurboCompMB (bands), MSpectralDynamics/Mini (Processor 1 of 2 - not band-named, but a two-processor
+  chain; I would hold these as needs_review by a "Processor N" exclusion - your call).
+- **Rule 3 - channel twins: exactly two candidates whose names differ only by a channel suffix
+  (L/R, 1/2, A/B, L/M vs R/S, "" vs " R") and BOTH certify; pick the first and record the twin so the
+  server writes both.** Decides **+9**: DPR-402 (s) (L/M + R/S), SPL IRON (L + R), elysia alpha
+  master (1 + 2), AMEK Mastering Compressor (1 + 2), Millennia TCL-2 (1 + 2), Vertigo VSC-2 (A + B),
+  Abbey Road RS124 (s) (Input Control + R), MaxxVolume (m/s) are NOT twins (Low Level / High Level
+  are two stages, both certifying - needs_review stays), Shadow Hills ×2 are NOT twins (Optical /
+  Discrete are two circuits - needs_review stays).
+
+**Stays needs_review under all three (27):** every multiband (LinMB ×2, C4 ×2, C6 ×4, MDynamicsMB ×2,
+MTurboCompMB, OTT, DynOne3, Lindell 354E/MBC, SSL G3, Drawmer 1973), dbx-160 (s) (nothing certifies),
+MDrumLeveler, Pro Audio DSP DSM V3 (3 certify), Kiive XTComp (3 input controls certify), Maag
+MAGNUM-K, Auto-Tune Vocal Compressor, MSpectralDynamics ×2, MaxxVolume ×2, Shadow Hills ×2. That is
+the honest shape: a multiband or a two-stage device is not a single amount control, and nobody
+should pick for it.
+
+The rehearsal (item 5) runs with NO rule: channel strips end as needs_review.
