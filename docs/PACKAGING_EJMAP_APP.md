@@ -1,7 +1,7 @@
 # Packaging EJ Map the way a stranger gets it — ONE-TIME steps (2 Oct 2026)
 
 These steps are done ONCE on the Mac that builds (Sean's, with his Developer ID). They are not mapper
-steps: the mapper (`docs/STRANGER_MAC_RUNBOOK.md`) uses only the finished `ejmap.app`.
+steps: the mapper (`docs/SEAN_MAC_RUNBOOK.md`) uses only the finished `ejmap.app`.
 
 What comes out: one `ejmap.app` with `EchoJayProbe` inside `Contents/MacOS`, both signed with the same
 Developer ID (hardened runtime, timestamp, the probe's entitlements), so every certification command

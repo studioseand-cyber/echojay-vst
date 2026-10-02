@@ -1,270 +1,135 @@
-# Running EJ Map certification on Sean's Mac (Waves 15.0.70, his Developer ID, no iLok)
+# EJ Map certification on a stranger's Mac — the mapper's runbook (2 Oct 2026)
 
-Written 1 Oct 2026 from the real commands on Kathy's Mac, branch `feat/ejmap-cert`. Every
-command below was run here exactly as written unless marked **[his Mac only]**. Where a step
-could not be tested here, it says so and says why.
+This is the general loop and nothing else. It is judged against `docs/STRANGER_MAC_TEST.md`. You
+need the packaged `ejmap.app` (made once per building Mac by `docs/PACKAGING_EJMAP_APP.md`); no
+repo, no build tree, no path you edit. Every product-specific decision is made by the app and
+written on the product's row; you never pass a product name, pick a candidate, or re-run one
+plugin by hand. (The 1 Oct per-product runbook is archived as `archive_SEAN_MAC_RUNBOOK_2026-10-01.md`.)
 
-Set these once per terminal:
-
-```
-REPO="$HOME/echojay-vst"          # wherever you clone it; the JUCE checkout must be its SIBLING: $HOME/JUCE
-BIN="$REPO/build-ejmap/tools/ejmap/ejmap_artefacts/RelWithDebInfo/ejmap.app/Contents/MacOS/ejmap"
-PROBE="$REPO/build-ejmap/EchoJayProbe_artefacts/RelWithDebInfo/EchoJayProbe"
-```
-
-## a. Get the code  — tested here
+**Conditions:** mains, lid open (the batch holds the Mac awake, but a closed lid still sleeps it).
+ONE Waves version installed (12 or 15, never stacked). **The iLok absent is expected** — PACE
+products are held, not tried. **NEVER press Send or Send All** in EJ Map: the map store is shared
+and unprefixed, so anything sent lands in production. Certification sends nothing.
 
 ```
-git clone https://github.com/studioseand-cyber/echojay-vst.git "$REPO"
-cd "$REPO" && git checkout feat/ejmap-cert && git log --oneline -1
+BIN=/Applications/ejmap.app/Contents/MacOS/ejmap      # or wherever the packaged app was put
 ```
 
-The commit this runbook needs: **`ed0ac2da`** (1 Oct, "Sean's Mac runbook … the --candidate
-pick …") or later on the same branch — the `--candidate` pick in step g landed in that commit.
-`git pull` is fine.
-
-JUCE **8.0.12** must sit beside the checkout as `$HOME/JUCE` (the root `CMakeLists.txt` reads
-`JUCE_PATH = ${CMAKE_SOURCE_DIR}/../JUCE`; override with `-DJUCE_PATH=/path/to/JUCE`). The AAX SDK
-is optional: without it the configure prints "AAX SDK not found — building without AAX" and
-carries on; neither the ejmap app nor the probe needs it.
-
-## b. Build the ejmap app and EchoJayProbe  — tested here (from-scratch configure + build, 1 Oct 21:35, and a configure without the AAX SDK)
-
-One build tree, configured from the repo root (the root CMake owns `tools/ejmap` and
-`tools/au_instantiate_probe`); both targets come out of it:
+## 1. Pre-flight (10 seconds)
 
 ```
-cd "$REPO"
-cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DJUCE_PATH="$HOME/JUCE"
-cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
-ls -l "$BIN" "$PROBE"
+killall AudioComponentRegistrar 2>/dev/null           # only if plugins were just installed or changed: refreshes the AU list
+"$BIN" --cert-preflight
 ```
 
-Configure prints `AAX SDK not found — building without AAX` on a Mac without the SDK and carries
-on (tested here with `-DAAX_SDK_PATH=/nonexistent`). The from-scratch build took about 15 minutes
-at `-j 4` on an M1 Pro.
+It prints the probe it will use — the line must say **"beside the executable: the default"** — the
+probe's Team ID, the cert root (`~/Library/ejmap/cert`), the ledger, the iLok and the power. Exit 0.
+Anything else: stop, send the output back.
 
-`-j 4`, not `-j`: an unlimited make on a 16 GB Mac has crashed this build before. The driver
-looks for the probe beside `ejmap` by default; on a built tree it is not there, so every driver
-command below passes `--probe "$PROBE"` explicitly.
+## 2. Sign in, scan, categorise (once per Mac, 5-10 minutes)
 
-## c. Sign the probe  — tested here (the same identity signs here)
-
-PACE refuses a probe without a real Developer ID Team Identifier, and so does the driver (it
-runs the verify below before it opens any plugin). Sign once, after every rebuild of the probe:
+If this Mac has never run EJ Map: `open /Applications/ejmap.app`, sign in (the token lands in
+`~/Library/ejmap/config.json`), quit. Then, headless:
 
 ```
-cd "$REPO"
-codesign -f -s "Developer ID Application: Sean Donoghue (8BT5F9B887)" --timestamp --options runtime \
-  --entitlements tools/au_instantiate_probe/EchoJayProbe.entitlements "$PROBE"
-codesign --verify --strict "$PROBE" && echo "probe verifies"
-codesign -dvvv "$PROBE" 2>&1 | grep -E "^TeamIdentifier|^CDHash"
+"$BIN" --scan --categorise 2>&1 | tee ~/Library/ejmap/scan.log
 ```
 
-`TeamIdentifier=8BT5F9B887` must print; `TeamIdentifier=not set` means ad-hoc, and the driver
-will refuse with "PACE needs a Developer ID". If `codesign` sits for more than a few seconds it
-is waiting on a keychain prompt — unlock the login keychain and run it again. The CDHash is the
-probe's identity in every record (`probe` field).
+That is the Scan button, then the Categorise button (one server round-trip to read categories and
+map-state), then quit. It writes `~/Library/ejmap/scan-cache.xml`, `categories.json` and
+`map-state.json` — what certification discovers from. It resumes by itself if an earlier scan died
+inside a bundle. The last lines say how many rows were scanned and categorised.
 
-## d. Pre-flight  — each command tested here except where marked
-
-**Exactly one Waves version installed.** Waves ships one AU component per shell; list them:
+## 3. The smoke check (one minute, before the batch)
 
 ```
-ls /Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/Components 2>/dev/null | grep -i WaveShell
+"$BIN" --cert-sweep-census 2>&1 | grep -E "worklist:|RUNNABLE:|NOT RUNNABLE|EMO-D5"
+grep -l '"name": "EMO-D5 (s)"' ~/Library/ejmap/maps/*.json 2>/dev/null
 ```
 
-One version means every line reads the same major (e.g. `WaveShell1-AU 15.x`). Kathy's Mac
-prints 12.0, 12.1, 12.4, 12.5, 12.6 — that is what "stacked" looks like, and it is why nothing
-Waves is certified on V12 here. If yours shows anything but 15.x, STOP and remove or exclude it
-before sweeping: a product that resolves through two shells is refused as ambiguous, and one that
-resolves through the wrong one measures the wrong binary.
+The check is **EMO-D5 (s) 15.0.70, map_fp `32b7e1d9a0c3…`**: the census line should read
+`EMO-D5 (s)  DISCOVERED at 15.0.70, mapped (…)`, and if a local map exists its file is named by that
+fp. This proves the Waves version, the AU list and the map keying agree. It is a smoke check, not a
+procedure: EMO-D5 is then just one product in the batch.
 
-**Mains, lid open.**
-
-```
-pmset -g ps | head -1            # must say: Now drawing from 'AC Power'
-ioreg -r -k AppleClamshellState -d 4 | grep AppleClamshellState   # must say: = No
-```
-
-A sweep that runs across a sleep is refused and re-run once; on battery the Mac WILL sleep
-mid-batch (it did here twice). Keep it plugged in and open for the whole run.
-
-**No iLok, so PACE products refuse — expected.** Any product that is PACE-wrapped (SSL Native,
-Softube, kHs, Antares, Tube-Tech CL 1B…) will show PACE's activation window at the first probe
-and be recorded as a `transient` refusal ("UNLICENSED ON HOST"). That is correct behaviour, not a
-setup fault; Kathy certifies those here with the iLok. Waves is not PACE.
-
-**NEVER press Send or Send All in EJ Map on your Mac.** The map store on the server is shared and
-unprefixed: anything sent from the GUI lands in production under the shared ingest token.
-Certification sends nothing — every command below is local — and the results go back as a zip
-(step i). This cannot be tested here without sending; it is a rule, not a check.
-
-## e. First run on a fresh machine  — tested here (GUI steps are the runbook's §1-§2)
+If the census does not see products you expect, they have no map at their installed build (discovery
+is keyed on maps: a local one, or one the server knows). Map them first — the normal mapping sweep,
+local only:
 
 ```
-killall AudioComponentRegistrar 2>/dev/null     # if Waves was just installed or updated: a stale AU cache hands EJ Map the old list
-open "$REPO/build-ejmap/tools/ejmap/ejmap_artefacts/RelWithDebInfo/ejmap.app"
+"$BIN" --sweep --sweep-limit 50 2>&1 | tee -a ~/Library/ejmap/mapping.log     # opens unmapped plugins and writes maps into ~/Library/ejmap/maps/; never sends
+"$BIN" --cert-sweep-census 2>&1 | grep -E "RUNNABLE:"
 ```
 
-In the app: **Scan**, then **Categorise** (server-side; one connected run). That writes
-`~/Library/ejmap/scan-cache.xml`, `categories.json` and `map-state.json`, which is what
-certification discovers from. Quit the app afterwards; the driver runs headless. Do not press
-Sweep All or Send All.
+(Run it again with a larger limit until RUNNABLE stops growing. A plugin that hangs is skipped by
+the supervisor and noted in the log.)
 
-## f. Census, and confirm EMO-D5 (s) is 15.0.70  — the census tested here on a scratch ledger
+## 4. The batch (unattended; hours — see the cost table at the end)
 
 ```
-"$BIN" --cert-sweep-census 2>&1 | grep -E "worklist:|RUNNABLE:|EMO-D5"
+caffeinate -i "$BIN" --cert-sweep-all --profile 2>&1 | tee -a ~/Library/ejmap/cert/batch.log
 ```
 
-The store defaults to `~/Library/ejmap/cert/fixtures` (empty on a fresh machine, which is right).
-A good line:
+That is the whole loop. For every discovered compressor it samples the defaults, plans, sweeps the
+profile grid (31 levels, quiet-reference ladder, engage search where the control does nothing, grid
+refinement where the curve is bunched, the hold-doubled repeat), measures the detector, exports the
+`ej_comp_profile/1` file and runs the section 8 tone check into it; for every discovered tuner it
+writes the pitch record. It opens with the iLok's presence and the census (`cert/census.txt`), and
+closes with the counts. It holds the Mac awake itself; `caffeinate -i` is belt and braces.
+
+**It is resumable.** Power cut, sleep, ctrl-C, a crash: run the same command again. Finished
+products keep their rows and files; unfinished ones complete; nothing is measured twice.
+
+**It never needs you.** No `--product`, no `--candidate`, no `--include-pace`, no `--retry-refused`.
+A product the rules cannot decide ends as `needs_review` with the reason, which is a correct result.
+
+## 5. Read the result (one minute)
+
+The last lines of the batch:
 
 ```
-  EMO-D5 (s)      DISCOVERED at 15.0.70, mapped (server map state 3) (defaults first; plan after sampling)
+SWEEP-ALL: N attempted, ...
+OUTCOMES (~/Library/ejmap/cert/outcomes.json): R rows - exported E, recorded T, refused F, held H, needs_review V
 ```
 
-(Here it reads `12.0.0`.) **If EMO-D5 (s) is not in the census** it is because discovery is
-keyed on MAPS: the product must have a map at ITS installed build — a local one in
-`~/Library/ejmap/maps/`, or one the server knows (`map-state.json` state 1–3). A V12 map does not
-count for V15. Then: run the runbook's §3 mapping sweep for it first, in the app (`Sweep All`
-is fine LOCALLY; just never Send), or from the terminal:
+`R` must equal the number of discovered compressors and tuners (the census's RUNNABLE + held). Every
+row has exactly one state:
 
-```
-"$BIN" --sweep --sweep-limit 25      # maps up to 25 unmapped plugins into ~/Library/ejmap/maps/ (add --dry-run to see what it would open)
-"$BIN" --cert-sweep-census 2>&1 | grep "EMO-D5"
-```
-
-(The flag is `--sweep-limit`; the mapper runbook had `--limit`, which the app does not read —
-corrected 1 Oct after a dry run here.)
-
-**Confirming the fingerprint.** The map file's NAME is the fp:
-
-```
-grep -l '"name": "EMO-D5 (s)"' ~/Library/ejmap/maps/*.json
-```
-
-should print a file named `32b7e1d9a0c3….json` (the 64-hex `map_fp` that EchoJay logs as
-`fp=32b7e1d9a0c3`). The certification record carries the same value as `map_fp` once the
-defaults pass has run (next step); `param_count` beside it is the number the hash is built from.
-
-**Native or bridged?** Each record says: `thresholdSweep.host` reads `.../arm64/...` and
-`bridged: false` for a native V15, `bridged: true` (x86_64 under Rosetta) for V12. Write landing
-differs between the two (`positionLandedBy` per position), so note which you got.
-
-## g. EMO-D5 (s) alone: engage, the v1.4 profile run, tone check, export  — commands tested here on CL 1B / batch 8; EMO-D5 itself [his Mac only]
-
-Everything lands under `~/Library/ejmap/cert/`: `fixtures/<identity>.json` (the record),
-`raw/` (one text file per probe process), `<identity>.sweep.processes.json`, `run.jsonl`,
-`<identity>.sweep.report.txt`.
-
-```
-mkdir -p ~/Library/ejmap/cert
-"$BIN" --cert-sweep --profile --product "EMO-D5 (s)" --probe "$PROBE" 2>&1 | tee ~/Library/ejmap/cert/emo-d5-s.log
-```
-
-That one command does, in order: the defaults pass (`param_count`, `map_fp`), the plan (threshold
-candidates by role), the neutral set (mix 100 % wet, make-up 0, auto make-up off — each read back
-and recorded as `preconditions[]`), then per candidate: the 31-level sweep (−60..0 dBFS peak, 2 dB
-steps, 2.5 s hold / last 300 ms, ascending in each fresh process, the quiet reference at every
-position), **engage detection** when a candidate reads pass-through (each `…On` switch tried in a
-quick probe; EMO-D5 found `Comp On`, `Gate On`, `Limiter On` here on the first candidate each),
-the full sweep with the verified write, and **the hold-doubled repeat** (5 s) for
-`quality.point_error_db`. Expect roughly 10–20 min; the log says which candidate is running.
-
-Then the detector fraction (two-tone at the same RMS, at the compressing position nearest −18 dBFS
-RMS), written into the record:
-
-```
-REC=$(grep -l '"product": "EMO-D5 (s)"' ~/Library/ejmap/cert/fixtures/*.json)
-"$BIN" --cert-detector "$REC" --probe "$PROBE"
-```
-
-Export (v1.4; refuses with a reason if anything required is missing):
-
-```
-mkdir -p ~/Library/ejmap/cert/export
-"$BIN" --export-profile "$REC" ~/Library/ejmap/cert/export/EMO-D5_s.json
-```
-
-Tone check (his section 8, run before he does): picks the position by section 6 from the
-EXPORTED profile, writes engage + neutral + the reference ratio, renders 997 Hz at L = −18 dBFS
-RMS, measures GR; pass within 0.5 dB of 2:
-
-```
-"$BIN" --cert-tone-check ~/Library/ejmap/cert/export/EMO-D5_s.json "$REC" --probe "$PROBE"
-```
-
-writes `~/Library/ejmap/cert/export/EMO-D5_s.tonecheck.json` beside the profile.
-
-**EMO-D5 has FIVE threshold candidates** (Gate / Comp / Leveller / DeEsser / Limiter), so its
-record is a `thresholdCandidates` record and, unpicked, exports as "topology other". The human
-pick his section 3 asks for is `--candidate "Comp Thresh"`, accepted by all three commands; the
-export then carries `pickedCandidate` and topology `threshold`. So for EMO-D5 the three commands
-above are:
-
-```
-"$BIN" --cert-detector   "$REC" --probe "$PROBE" --candidate "Comp Thresh"
-"$BIN" --export-profile  "$REC" ~/Library/ejmap/cert/export/EMO-D5_s.json --candidate "Comp Thresh"
-"$BIN" --cert-tone-check ~/Library/ejmap/cert/export/EMO-D5_s.json "$REC" --probe "$PROBE" --candidate "Comp Thresh"
-```
-
-(The pick is pinned in the suite, C1–C5; tested here on a synthetic five-candidate record, not
-yet on EMO-D5 15.0.70 — that is the run itself.)
-
-## h. What a good result looks like, and what each refusal means
-
-A good export, read from the file (the template Kathy fills for CL 1B):
-
-```
-<product> <version>  map_fp <64 hex>
-reference_ratio: <read-back ratio>   detector_f: <0..1>
-points with numeric in_at_gr["2"]: <n> of <positions>
-quality.point_error_db (2.5 s vs 5 s): <dB>        (server gate: 0.5)
-fit.max_error_db (informational): <dB>
-monotonic self-check: pass/fail
-tone check (997 Hz at L = -18 RMS, g = 2): measured GR <dB> -> pass/fail (0.5 dB)
-```
-
-Refusals you can meet, and what they are:
-
-| message | meaning | setup or real? |
+| state | meaning | where to look |
 |---|---|---|
-| `ABORTED BEFORE ANY PLUGIN - the probe is not validly signed` / `no Team Identifier` | step c not done, or ad-hoc signed | setup |
-| `'X' is not on the worklist` | not discovered: no map at the installed build, or a record already exists | setup (map it, or `--retry-refused`) |
-| `UNLICENSED ON HOST: … SHOWED A WINDOW (PACEEdenExperience)` | PACE product, no iLok here | expected on your Mac |
-| `refusal recorded at stage 'defaults' (transient)` | the plugin would not list/instantiate in the probe (timeout, crash) | real; re-run once with `--retry-refused` |
-| `not swept: 0 controls hold the threshold role` (stage `plan`, permanent) | no control named like a threshold | real |
-| `the soft end is not linear …` then `re-sweeping with the quiet-level reference` | normal: the fallback | real, handled |
-| `stopped after 2 unclean processes (budget)` | the plugin hangs or crashes per process | real; transient |
-| `pass-through at defaults: trying N engage candidate(s)` then `engage verified: …` | normal | real, handled |
-| export: `detector_f not measured` | run `--cert-detector` first | setup |
-| export: `quality.point_error_db not measured` | the record is from a non-profile sweep; re-run with `--profile` | setup |
-| export: `only N curve point(s) reach 1 dB` | the threshold's range leaves fewer than 9 positions inside −60..0 | real |
-| export: `topology other: several threshold candidates` | multi-threshold product unpicked (EMO-D5 is one) | pass `--candidate "Comp Thresh"` |
-| `'Nope' is not a candidate of this record (candidates: …)` | the pick named a control that is not a threshold candidate | setup; use a listed name |
-| tone check: `FAIL` with `quiet check FAILED` | the chosen position compresses at −48 dBFS already | real |
+| `exported` | an `ej_comp_profile/1` file with its tone check embedded | `cert/profiles/<Product>_<version>.json` (+ `.tonecheck.json`) |
+| `recorded` | a tuner's pitch record | `cert/fixtures/<identity>.json` |
+| `refused` | the measurement stopped at a named stage; the reason is on the row | `cert/fixtures/<identity>.json` (`thresholdRefusal`) |
+| `held` | not measured on purpose: licence (PACE, no iLok) or hardware | the row |
+| `needs_review` | measured, but a rule is missing or the result is not profile-grade (several threshold candidates; a flat sweep; an export the exporter refused) | the row's reason, then the record |
 
-## i. Sending results back  — tested here (the zip excludes the token)
+A row with no reason, or an `exported` row without its files, is a bug: the batch exits 2 and says
+`OUTCOME INVARIANT BROKEN`. Send that log back.
 
-Zip ONLY the cert directory. `~/Library/ejmap/config.json` holds `ingest_token` and
-`mapper_token`; the whole-ledger zip in the mapper runbook is for maps and must not travel for this.
+## 6. Send it back (one minute)
 
 ```
-cd ~/Library/ejmap && zip -rq ~/Desktop/sean-cert.zip cert && unzip -l ~/Desktop/sean-cert.zip | grep -c json
+cd ~/Library/ejmap && zip -rq ~/Desktop/ejmap-cert-$(hostname -s)-$(date +%Y%m%d).zip cert
+unzip -l ~/Desktop/ejmap-cert-*.zip | grep -c config.json      # must print 0
 ```
 
-Send `~/Desktop/sean-cert.zip`. It contains the records, the raw traces (so any rule can be
-re-derived here without re-measuring), the exports and the tone-check results, and nothing else.
+`cert/` only — never the whole `~/Library/ejmap` (its `config.json` holds the mapper token). Email the
+zip. Nothing was sent to the map store at any point.
 
-## Tested here / his Mac only — the honest list
+## Cost (measured on the operator's Mac, M1 Pro 16 GB, 2 Oct; refined by the dress rehearsal)
 
-Tested on Kathy's Mac, 1 Oct: a, b (from-scratch configure and build of both targets into a
-scratch tree, and a configure with no AAX SDK), c (sign + verify + identity print), d (the four
-commands), e's terminal lines, f's census on a scratch copy of this ledger with an empty store and
-the mapping sweep's `--dry-run`, g's commands on CL 1B and on batch 8's engage products (the
-`--candidate` pick on a synthetic record), h's refusal texts (each one seen in a real run), i's zip (on a scratch ledger laid out like ~/Library/ejmap: the zip holds cert/ and not config.json).
-Only on his Mac: a single Waves 15 install, EMO-D5 (s) at 15.0.70 and its fingerprint
-32b7e1d9a0c3…, native-vs-bridged for V15, the GUI Scan/Categorise on a machine that has never
-mapped, and the EMO-D5 profile run itself.
+| what | time |
+|---|---|
+| pre-flight, census, smoke check | under 2 minutes |
+| scan + categorise, ~900 plugins | 5-10 minutes |
+| one compressor, profile run, no refinement (16 positions × 36 levels × 2 passes + reference) | 55-110 s |
+| one compressor with engage search or grid refinement (up to 28 positions) | 120-200 s |
+| detector + export + tone check per exported product | 30-40 s |
+| a refusal (no threshold role) | 15-20 s |
+| held (licence / hardware) | 0 (a row, no process) |
+| one tuner | 60-120 s |
+
+Rule of thumb: **2.5 minutes per discovered compressor, 1.5 per tuner, 0.3 per refusal.** A library
+like the operator's (about 100 discovered compressors and tuners, 20 of them PACE-held) is 3-4
+hours. A library twice that size is an evening, not a weekend. The batch can be stopped and resumed,
+so it can run over several evenings.
