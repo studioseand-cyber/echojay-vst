@@ -699,6 +699,30 @@ struct CalibLoop
         return true;
     }
 
+
+    /** THE ONE PLACE THE PURPOSE DECIDES HOW A LOOP OPENS (2 Oct 2026).
+
+        This rule existed TWICE - once in begin(Config) and once in the 6-arg begin - and on 30 Sep letter (m)
+        changed it in one of them. begin(Config) got (m)'s rule, "a build opens with its SEEK AHEAD of it"
+        (settleSteps 0); the 6-arg overload kept (e)'s withdrawn rule, "already spent" (kSettleMaxSteps), while
+        its comment claimed it derived "the SAME three things begin(Config) derives". PluginProcessor.cpp reaches
+        that overload with a caller-supplied purpose - it is the road the "Build this chain" pill takes - so the
+        same build opened with opposite settle budgets depending on which entry point it came through, and which
+        one you got was invisible at the call site. calib_link_guard's (f) leg is what caught it.
+        Two copies of a rule is one rule too many: they drift, and when they disagree nobody knows which one
+        decided. So the derivation lives here, once, and both entry points call it.
+        THE RULE IS (m)'s, which is the current one:
+          buildHold  the seek is ahead of it - settleSteps 0, bounded by the 12-window cap and the slot range,
+                     and it promises NOTHING on the way in, because its only line is the closing one;
+          askRung    one rung - kSettleMaxSteps - 1 - and it says on the way in what it is doing. */
+    void openFromPurpose (Purpose p)
+    {
+        purpose = p;
+        settling = true; landed = false; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        settleSteps = (p == Purpose::buildHold) ? 0 : kSettleMaxSteps - 1;
+        askOwed     = (p == Purpose::buildHold) ? juce::String() : openingLine();
+    }
+
     void begin (const Config& c)
     {
         plugin = c.plugin; slot = c.slot;
@@ -719,22 +743,8 @@ struct CalibLoop
         blockHeardS = c.heardS; fromWorking = c.working;
         purpose = c.purpose;
         dynamicsSlot = c.dynamicsSlot;   // (l)
-        // 21t-m item 2 (29 Sep 2026 ruling): A BUILD HAS NO LOOP. It applies the working position, matches the
-        // level ONCE through OUT, and closes. So a build opens with its settle budget ALREADY SPENT: the first
-        // judged window lands, the hold runs once, and the line closes. It never hunts and never steps a rung.
-        // An ASK gets ONE rung - "harder" is one move, not a search.
-        // (The 28 Sep "the build opens the settle" rule is superseded by this: Sean's 21:53 compressor walked
-        // three rungs over eighteen windows for a build he never asked to have dialled.)
-        settling = true; landed = false; settleHeardS = 0.0f; settleStartHeardS = -1.0f;
-        // (m) 30 Sep 2026: A BUILD OPENS WITH ITS SEEK AHEAD OF IT. (e) opened it already spent, which is why a
-        // passive build reading gr=0.0 against a 2-3 dB band landed on its first judged window instead of moving
-        // IN - the step condition failed on its budget term whatever the reading said. A build's bound is now the
-        // 12-window cap and the slot range; an ask keeps one rung.
-        settleSteps = (c.purpose == Purpose::buildHold) ? 0 : kSettleMaxSteps - 1;
+        openFromPurpose (c.purpose);   // settling/landed/settleSteps/askOwed - ONE derivation, see below
         senseLogsOwed = senseParams.isEmpty() ? 0 : kSenseLogWindows;   // 21t-j: the cross-check, five windows
-        // 21t-m item 2: a BUILD says nothing on the way in - it has nothing to promise, because it is not going
-        // to hunt. Its one line is the closing one.
-        askOwed = (c.purpose == Purpose::buildHold) ? juce::String() : openingLine();
         // ONE current value, whichever knob is being dialled: the drive keeps preDb (the mirror needs it), the
         // threshold keeps value. Both are set so a log line and a closing sentence can be written either way.
         value = c.startDb;
@@ -767,15 +777,9 @@ struct CalibLoop
         stepDb = kStepDb; judged = 0; asked = false; noSignalSaid = false;
         pendingStep = 0; slotHeardS = 0.0f; stepsTaken = 0; askOwed.clear();
         freshWanted = 0; lastHeardS = -1.0f;
-        // The SAME three things begin(Config) derives from the purpose, and derived here for the same reasons -
-        // a build opens with its settle budget already spent and promises nothing on the way in.
-        purpose = p;
-        settling = true; landed = false;
-        settleSteps = (p == Purpose::buildHold) ? kSettleMaxSteps : kSettleMaxSteps - 1;
-        settleHeardS = 0.0f; settleStartHeardS = -1.0f;
+        openFromPurpose (p);           // the SAME derivation begin(Config) uses - not a second copy of it
         senseLogsOwed = 0;
         blockHeardS = std::numeric_limits<float>::quiet_NaN(); fromWorking = false;
-        askOwed = (p == Purpose::buildHold) ? juce::String() : openingLine();
         state = State::Listening;
     }
 

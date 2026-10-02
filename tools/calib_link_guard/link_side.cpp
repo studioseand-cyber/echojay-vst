@@ -139,8 +139,18 @@ int main (int argc, char** argv)
             check (started.askOwed.isEmpty(),
                    "(f) ...so it promises NOTHING on the way in - a build's only line is its closing one",
                    started.askOwed.isEmpty() ? juce::String ("(nothing owed)") : started.askOwed);
-            check (started.settleSteps >= echojay::CalibLoop::kSettleMaxSteps,
-                   "(f) ...and its settle budget opens already SPENT, so it lands on the first judged window",
+            // SUPERSEDED EXPECTATION, RE-RULED 2 Oct 2026. This asserted "already SPENT" (>= kSettleMaxSteps),
+            // which was letter (e)'s rule. Letter (m) withdrew it on 30 Sep: a build opens with its SEEK AHEAD of
+            // it, bounded by the 12-window cap and the slot range, because opening it spent made a passive build
+            // reading gr=0.0 against a 2-3 dB band land on its first judged window instead of moving in. The leg
+            // was written in the same commit as (m) and kept the old number, so it failed against the rule that
+            // replaced it - and in failing it found the real defect: the rule lived in TWO places and (m) updated
+            // one, so this entry point still opened spent while begin(Config) did not. Now there is one
+            // derivation (CalibLoop::openFromPurpose) and this asserts it.
+            check (started.settleSteps == 0,
+                   "(f) ...and its settle budget opens with the SEEK AHEAD of it, the same on this side as on V2 "
+                   "(RED as it stood: this entry point kept (e)'s withdrawn 'already spent', so the same build "
+                   "opened differently depending on which begin() it came through)",
                    juce::String (started.settleSteps) + " of "
                        + juce::String (echojay::CalibLoop::kSettleMaxSteps));
             // THE FIXTURE'S COMPRESSOR IS A BUILT-IN, and a built-in has no fingerprint and no param map: the
