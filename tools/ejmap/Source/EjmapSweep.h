@@ -723,6 +723,52 @@ inline bool showsResponse (const Derived& d)
     return (d.flatSpanDb && *d.flatSpanDb > kSenseDb) || (d.responseDb && *d.responseDb > kSenseDb) || d.result == "certified" || d.result == "nonmonotonic";
 }
 
+// A STAGE'S OWN ENGAGE SWITCH AT INSTANTIATE (ruled 2 Oct, evening): for a threshold candidate left at its instantiate
+// value under Rule 1, the record says whether its stage is OFF by reading that stage's engage switch - a control that
+// shares the candidate's first word (Gate / Leveller / Limiter / DeEsser) and answers on / enable / engage / active / in
+// with a two-step or named shape - never by inferring from a stage reading flat (that inference is what Rule 2 was
+// rejected for). A stage with no such switch is "no engage control, not verified".
+struct StageSwitch { juce::String switchName, display; bool off = false; };
+inline std::optional<StageSwitch> stageSwitchAtInstantiate (const juce::var& fixture, const juce::String& candidateName)
+{
+    const auto first = juce::StringArray::fromTokens (candidateName, " -_/", "")[0].toLowerCase();
+    if (first.isEmpty()) return std::nullopt;
+    if (const auto* cs = fixture.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const auto n = c.getProperty ("name", {}).toString();
+            if (n.isEmpty() || n == candidateName || neverTouchName (n)) continue;
+            if (juce::StringArray::fromTokens (n, " -_/", "")[0].toLowerCase() != first) continue;
+            bool named = false;
+            for (const char* t : { "on", "enable", "enabled", "engage", "active", "in" }) named = named || nametokens::controlAnswersTerm (n, t);
+            const bool twoStep = (int) c.getProperty ("numSteps", 0) == 2;
+            if (! named && ! twoStep) continue;
+            const auto d = c.getProperty ("defaultOnInstantiate", {});
+            StageSwitch sw; sw.switchName = n; sw.display = d.getProperty ("display", "").toString();
+            const auto disp = sw.display.trim().toLowerCase();
+            sw.off = disp == "off" || disp == "disabled" || disp == "out" || disp == "bypass" || ((double) d.getProperty ("normalised", 1.0) < 0.5 && ! (disp == "on" || disp == "in" || disp == "enabled"));
+            return sw;
+        }
+    return std::nullopt;
+}
+// The stages' line for the record and the export: one clause per candidate left at its instantiate value.
+inline juce::String stagesAtDefaultsLine (const juce::var& fixture, const std::vector<Plan::Candidate>& candidates, int pickIndex)
+{
+    juce::StringArray parts;
+    for (const auto& c : candidates)
+    {
+        if (c.index == pickIndex) continue;
+        const auto stage = juce::StringArray::fromTokens (c.name, " -_/", "")[0];
+        const auto doi = findControl (fixture, c.index).getProperty ("defaultOnInstantiate", {});
+        const auto left = "left at '" + doi.getProperty ("display", "").toString() + "'";
+        if (const auto sw = stageSwitchAtInstantiate (fixture, c.name); sw)
+            parts.add (stage + ": " + (sw->off ? "off at instantiate" : "ON at instantiate") + " (" + sw->switchName + " = " + sw->display + "), " + c.name + " " + left);
+        else
+            parts.add (stage + ": no engage control, not verified; " + c.name + " " + left);
+    }
+    return parts.joinIntoString ("; ");
+}
+
 // RULE 1, THE COMPRESSOR STAGE WORD (ruled 2 Oct, evening; built at PLAN time). Among a product's threshold candidates,
 // exactly one has a name token that is EXACTLY "comp", "compressor" or "compression" (whole token, case-folded; tokens
 // split on space, dash, underscore, slash, arrow and brackets - never a prefix match, so "Compare" is not it). That one is

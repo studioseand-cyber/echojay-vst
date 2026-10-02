@@ -5563,6 +5563,22 @@ void testProfileSweepPlan()
                "rule1 K6: MDynamics picks Compressor -> Threshold, Solid Dynamics picks Threshold Comp");
         Derived pt; pt.passThroughAtDefaults = true; Derived fl; fl.result = "flat"; fl.passThroughAtDefaults = false;
         check (! repeatWorthwhile (pt) && repeatWorthwhile (fl), "rule1 K7: the hold-doubled repeat is skipped ONLY for a pass-through first pass, never for a merely flat one");
+        // K8 (ruled 2 Oct, evening): the stages line names its source - each stage's own engage switch at instantiate, or
+        // "no engage control, not verified" - never a stage reading flat.
+        const auto strip = juce::JSON::parse (R"json({"controls": [
+            {"index": 0,  "name": "Gate On",      "numSteps": 2, "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}},
+            {"index": 1,  "name": "Gate Thresh",  "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 0.0, "display": "-Inf"}},
+            {"index": 15, "name": "Comp On",      "numSteps": 2, "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}},
+            {"index": 16, "name": "Comp Thresh",  "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0"}},
+            {"index": 30, "name": "Leveller On",  "numSteps": 2, "defaultOnInstantiate": {"normalised": 1.0, "display": "On"}},
+            {"index": 31, "name": "Leveller Thresh", "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0"}},
+            {"index": 40, "name": "Processor 1 - Threshold", "numSteps": 2147483647, "defaultOnInstantiate": {"normalised": 0.5, "display": "-20.0 dB"}}]})json");
+        const auto st = cands ({ "Gate Thresh", "Comp Thresh", "Leveller Thresh", "Processor 1 - Threshold" });
+        std::vector<Plan::Candidate> stc; int idx[] = { 1, 16, 31, 40 }; for (size_t i = 0; i < st.size(); ++i) stc.push_back ({ idx[i], st[i].name, {}, false });
+        const auto line = stagesAtDefaultsLine (strip, stc, 16);
+        check (line.contains ("Gate: off at instantiate (Gate On = Off)") && line.contains ("Leveller: ON at instantiate (Leveller On = On)")
+                 && line.contains ("Processor: no engage control, not verified; Processor 1 - Threshold left at '-20.0 dB'") && ! line.contains ("Comp"),
+               "rule1 K8: each stage's claim comes from its own switch at instantiate (off / ON, named), a stage with no switch is 'no engage control, not verified', the pick is not listed (" + line + ")");
     }
     {
         // ZIP IS A ROLES CASE (ruled 2 Oct): a threshold-named control whose values are words is a mode switch, never a candidate.

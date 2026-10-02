@@ -481,12 +481,12 @@ inline Export exportCompProfile (const juce::var& f)
         notes << "amount control decided by Rule 1 (the compressor stage word): pick " << rd.getProperty ("pick", {}).getProperty ("name", "").toString();
         if (const auto* ew = rd.getProperty ("engage", {}).getArray(); ew != nullptr && ! ew->isEmpty()) { juce::StringArray e; for (const auto& w : *ew) e.add (w.getProperty ("control", "").toString() + " -> " + w.getProperty ("set", "").toString()); notes << " with engage " << e.joinIntoString (", "); }
         if (const auto* ot = rd.getProperty ("othersAtInstantiate", {}).getArray(); ot != nullptr && ! ot->isEmpty()) { juce::StringArray e; for (const auto& x : *ot) e.add (x.getProperty ("name", "").toString() + "='" + x.getProperty ("set", "").toString() + "'"); notes << "; other threshold candidates and every other control at their instantiate values: " << e.joinIntoString (", "); }
-        if ((bool) rd.getProperty ("activeAtDefaults", false))
-        {
-            notes << "; ANOTHER STAGE IS ACTIVE AT THE DEFAULTS and is in this curve (defaults reference GR " << juce::String ((double) rd.getProperty ("defaultsGr_db", 0.0), 2) << " dB)";
-            if (const auto* al = rd.getProperty ("candidatesLeftAtLevel", {}).getArray(); al != nullptr && ! al->isEmpty()) { juce::StringArray e; for (const auto& x : *al) e.add (x.toString()); notes << ": candidates left at a level: " << e.joinIntoString (", ") << " (which of them: not measured individually)"; }
-        }
-        else notes << "; no other stage active at the defaults (defaults reference flat)";
+        // THE SOURCE IS STATED (ruled 2 Oct, evening): per stage, its own engage switch at instantiate, or "no engage
+        // control, not verified"; product-wide, the defaults reference's GR. Never a stage reading flat.
+        if (rd.getProperty ("stagesAtDefaults", "").toString().isNotEmpty()) notes << "; stages at the defaults (from each stage's engage switch at instantiate): " << rd.getProperty ("stagesAtDefaults", "").toString();
+        const auto gr = rd.getProperty ("defaultsGr_db", {});
+        notes << "; defaults reference with every control at its instantiate value: GR " << ((gr.isDouble() || gr.isInt()) ? juce::String ((double) gr, 2) + " dB" : juce::String ("not measured"))
+              << ((bool) rd.getProperty ("activeAtDefaults", false) ? " - above the 1 dB sense bar: a stage is active at the defaults and is IN this curve (which one: not measured individually)" : " - below the 1 dB sense bar");
         notes << "; ";
     }
     notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured; "

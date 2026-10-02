@@ -2179,8 +2179,12 @@ inline int runCertSweep (const SweepOptions& opt)
         rd->setProperty ("defaultsGr_db", dg.empty() ? juce::var() : juce::var (std::round ((gmax - gmin) * 100.0) / 100.0));
         rd->setProperty ("activeAtDefaults", active);
         rd->setProperty ("candidatesLeftAtLevel", atLevel);
-        rd->setProperty ("note", active ? "the defaults reference shows gain reduction with every candidate at its instantiate value: another stage is active at the defaults and is IN this curve; which one is not measured individually under the plan-time rule - the candidates left at a level are named"
-                                        : "the defaults reference shows no gain reduction: no other stage is active at the defaults");
+        // THE SOURCE OF EVERY WORD (ruled 2 Oct, evening): each stage's own engage switch at instantiate, else "no engage
+        // control, not verified"; and the defaults reference's GR as product-level evidence - never a stage reading flat.
+        rd->setProperty ("stagesAtDefaults", sweep::stagesAtDefaultsLine (base, plan.candidates, ruleOneDecided->index));
+        rd->setProperty ("note", juce::String ("defaults reference (every control at its instantiate value): GR ") + (dg.empty() ? juce::String ("not measured") : juce::String (gmax - gmin, 2) + " dB across the levels")
+                                 + (active ? " - above the 1 dB sense bar: a stage is active at the defaults and is IN this curve (which one: not measured individually)" : " - below the 1 dB sense bar")
+                                 + "; per stage, from each stage's engage switch at instantiate, never from a stage reading flat");
         ruleDecided = juce::var (rd);
     }
     composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), ruleDecided);
