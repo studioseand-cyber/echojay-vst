@@ -62,17 +62,15 @@ The check is **EMO-D5 (s) 15.0.70, map_fp `32b7e1d9a0c3…`**: the census line s
 fp. This proves the Waves version, the AU list and the map keying agree. It is a smoke check, not a
 procedure: EMO-D5 is then just one product in the batch.
 
-If the census does not see products you expect, they have no map at their installed build (discovery
-is keyed on maps: a local one, or one the server knows). Map them first — the normal mapping sweep,
-local only:
+**Mapping is optional for certification (ruled 2 Oct).** Certification does not need a map: the
+batch samples each plugin's controls itself and computes `map_fp` exactly as EchoJay does, so the
+server can join a profile to a map whenever the map arrives. The census's `NO MAP YET` line is
+information. If you also want local maps (the mapper's normal work), the mapping sweep is the same
+as ever and takes about 5 s per product — never Send:
 
 ```
-"$BIN" --sweep --sweep-limit 50 2>&1 | tee -a ~/Library/ejmap/mapping.log     # opens unmapped plugins and writes maps into ~/Library/ejmap/maps/; never sends
-"$BIN" --cert-sweep-census 2>&1 | grep -E "RUNNABLE:"
+"$BIN" --sweep --sweep-limit 50 2>&1 | tee -a ~/Library/ejmap/mapping.log     # local maps into ~/Library/ejmap/maps/; nothing sent
 ```
-
-(Run it again with a larger limit until RUNNABLE stops growing. A plugin that hangs is skipped by
-the supervisor and noted in the log.)
 
 ## 4. The batch (unattended; hours — see the cost table at the end)
 
@@ -90,8 +88,12 @@ closes with the counts. It holds the Mac awake itself; `caffeinate -i` is belt a
 **It is resumable.** Power cut, sleep, ctrl-C, a crash: run the same command again. Finished
 products keep their rows and files; unfinished ones complete; nothing is measured twice.
 
-**It never needs you.** No `--product`, no `--candidate`, no `--include-pace`, no `--retry-refused`.
-A product the rules cannot decide ends as `needs_review` with the reason, which is a correct result.
+**It never needs you.** No `--product`, no `--candidate`, no `--retry-refused`, and no `--include-pace`
+(gone: PACE-wrapped is not unlicensed). A product whose bundle raised an activation window at the scan
+is `needs_licence` in the batch too, carried forward and not loaded again; every other product is
+tried, and the probe's own window watch catches a licence that vanished since the scan. When the
+licence is back: `"$BIN" --cert-sweep-all --profile --retry-licence` re-checks only that set. A
+product the rules cannot decide ends as `needs_review` with the reason, which is a correct result.
 
 ## 5. Read the result (one minute)
 
@@ -102,8 +104,8 @@ SWEEP-ALL: N attempted, ...
 OUTCOMES (~/Library/ejmap/cert/outcomes.json): R rows - exported E, recorded T, refused F, held H, needs_review V
 ```
 
-`R` must equal the number of discovered compressors and tuners (the census's RUNNABLE + held). Every
-row has exactly one state:
+`R` covers every discovered compressor and tuner (the census's RUNNABLE + held) plus one row per
+bundle the scan stopped or quarantined. Every row has exactly one state:
 
 | state | meaning | where to look |
 |---|---|---|
@@ -112,9 +114,12 @@ row has exactly one state:
 | `refused` | the measurement stopped at a named stage; the reason is on the row | `cert/fixtures/<identity>.json` (`thresholdRefusal`) |
 | `held` | not measured on purpose: licence (PACE, no iLok) or hardware | the row |
 | `needs_review` | measured, but a rule is missing or the result is not profile-grade (several threshold candidates; a flat sweep; an export the exporter refused) | the row's reason, then the record |
-| `needs_licence` | the scan's window watch killed the bundle's load: an activation / licence window; never retried until `--scan --retry-licence` | `~/Library/ejmap/licence-stops.json` (bundle, windows, time) |
+| `needs_licence` | an activation / licence window — at the scan (carried forward, not loaded again) or at the probe's load in the batch; re-checked only by `--retry-licence` (scan: `--scan --retry-licence`; batch: `--cert-sweep-all --profile --retry-licence`) | `~/Library/ejmap/licence-stops.json`, the row |
 | `quarantined_at_scan` | the scan quarantined the bundle (a stall or a crash); the row names its products and category | `~/Library/ejmap/quarantine.json` |
-| `unmapped` | installed and categorised a compressor or tuner, but no map at this build: the mapping sweep (step 3) maps it, then the batch measures it | the row |
+
+Every row also carries `map`: `local map` / `server map state N` / `server map at a different build` /
+`none` — information, never a gate. A carried-forward licence product has a product row AND the scan's
+bundle row (two rows, one fact).
 
 A row with no reason, or an `exported` row without its files, is a bug: the batch exits 2 and says
 `OUTCOME INVARIANT BROKEN`. Send that log back.
@@ -129,20 +134,24 @@ unzip -l ~/Desktop/ejmap-cert-*.zip | grep -c config.json      # must print 0
 `cert/` only — never the whole `~/Library/ejmap` (its `config.json` holds the mapper token). Email the
 zip. Nothing was sent to the map store at any point.
 
-## Cost (measured on the operator's Mac, M1 Pro 16 GB, 2 Oct; refined by the dress rehearsal)
+## Cost (measured on the operator's Mac, M1 Pro 16 GB, mains, iLok absent — the dress rehearsal, 2 Oct)
 
 | what | time |
 |---|---|
-| pre-flight, census, smoke check | under 2 minutes |
-| scan + categorise, ~900 plugins | 5-10 minutes |
-| one compressor, profile run, no refinement (16 positions × 36 levels × 2 passes + reference) | 55-110 s |
-| one compressor with engage search or grid refinement (up to 28 positions) | 120-200 s |
-| detector + export + tone check per exported product | 30-40 s |
-| a refusal (no threshold role) | 15-20 s |
-| held (licence / hardware) | 0 (a row, no process) |
-| one tuner | 60-120 s |
+| pre-flight + scan-watch self-test | 4 s |
+| **scan + categorise, 1733 rows from empty** | **362 s** — of which 94 licence stops at a median 2.7 s each (319 s): on a Mac with many iLok products and no iLok the stops ARE the scan; 1073 catalogue answers took seconds |
+| census | 7 s |
+| one tuner | 13 s |
+| one compressor, profile run (16 positions, 36 levels, 2 passes) | 60–125 s |
+| one compressor with an engage search or grid refinement | 120–200 s |
+| **one channel strip (several threshold candidates, every switch tried)** | **~2600 s** (EMO-D5: 43 minutes to end as needs_review — the one-candidate rule, when it lands, cuts this) |
+| a refusal (no threshold role) | 15 s |
+| carried-forward licence / hardware held | 0 s (a row, no process) |
+| mapping one product locally (optional) | 5 s |
+| zip | 1 s |
 
-Rule of thumb: **2.5 minutes per discovered compressor, 1.5 per tuner, 0.3 per refusal.** A library
-like the operator's (about 100 discovered compressors and tuners, 20 of them PACE-held) is 3-4
-hours. A library twice that size is an evening, not a weekend. The batch can be stopped and resumed,
-so it can run over several evenings.
+Rule of thumb: **2 minutes per compressor, 15 s per tuner, 45 minutes per channel strip, 3 s per
+licence stop, 6 minutes for the scan.** The operator's library (≈120 runnable compressors and tuners, of
+which 17 PACE and a handful of channel strips) is about 4–6 hours end to end; a library twice that size is
+an evening and a morning, not a weekend. The batch resumes after any interruption, so it can run over
+several evenings; the channel strips are the long pole until the one-candidate rule lands.
