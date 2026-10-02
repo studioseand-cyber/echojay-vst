@@ -1,0 +1,93 @@
+{
+  "product": "Lindell 254E",
+  "map_fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.766999835,
+    "point": 11,
+    "point_next": 12,
+    "in_at_g": -19.010000000000002,
+    "stepped": false
+  },
+  "writes": [
+    {
+      "control": "Mix",
+      "index": 0,
+      "norm": 1.0,
+      "set": "100%",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "HPF",
+      "index": 1,
+      "norm": 0.0,
+      "set": "20Hz",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limit",
+      "index": 2,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Compress",
+      "index": 3,
+      "norm": 1.0,
+      "set": "Fast",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain",
+      "index": 5,
+      "norm": 0.1,
+      "set": "2dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Compress Recovery",
+      "index": 8,
+      "norm": 1.0,
+      "set": "Auto",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limit Level",
+      "index": 9,
+      "norm": 0.5,
+      "set": "8.0dBu",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limit Recovery",
+      "index": 10,
+      "norm": 1.0,
+      "set": "Auto",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ext SideChain",
+      "index": 12,
+      "norm": 0.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ratio",
+      "index": 6,
+      "norm": 0.5,
+      "set": "3:1",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": false,
+  "gr_measured_db": null,
+  "pass_within_0_5_db": false,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T112002.871+0100",
+  "ratio_norm_source": "ratio 3:1 written from profile.ratio.curve[0].norm 0.5000"
+}

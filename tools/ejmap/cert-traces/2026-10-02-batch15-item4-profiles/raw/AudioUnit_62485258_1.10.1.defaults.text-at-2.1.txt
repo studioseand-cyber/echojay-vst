@@ -1,0 +1,72 @@
+probe: "Acme Opticom XLA-3" | AudioUnit:Effects/aufx,AOCX,Brwx | uid=62485258 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Meter Mode	unit	
+def	1.000000	Output	default	1.000000
+at	0.000	Input
+at	0.500	Input
+at	1.000	Output
+param	2	Response	unit	
+def	0.500000	Normal	default	0.500000
+at	0.000	Slow
+at	0.500	Normal
+at	1.000	Fast
+param	3	Input Gain	unit	
+def	0.400000	4.0	default	0.400000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	4	Output Gain	unit	
+def	0.400000	4.0	default	0.400000
+at	0.000	0.0
+at	0.500	5.0
+at	1.000	10.0
+param	5	Mode	unit	
+def	1.000000	In	default	1.000000
+at	0.000	Amp
+at	0.500	Out
+at	1.000	In
+param	6	Input Pad	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Stereo Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	Level Trim	unit	
+def	1.000000	0.0 dB	default	1.000000
+at	0.000	-20.0 dB
+at	0.500	-10.0 dB
+at	1.000	0.0 dB
+param	9	Dry/Wet Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	10	Noise Level	unit	
+def	0.500000	-90.0 dB	default	0.500000
+at	0.000	-oo dB
+at	0.500	-90.0 dB
+at	1.000	-60.0 dB
+param	11	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	12	VU Meter	unit	
+def	0.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	
+param	13	GR Meter	unit	
+def	0.714090		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	

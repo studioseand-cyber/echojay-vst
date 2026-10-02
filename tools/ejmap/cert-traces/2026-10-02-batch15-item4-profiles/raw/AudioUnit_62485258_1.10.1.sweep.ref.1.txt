@@ -1,0 +1,65 @@
+probe: "Acme Opticom XLA-3" | AudioUnit:Effects/aufx,AOCX,Brwx | uid=62485258 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Gain	positions	0	levels	36
+spec	hz	997.000	hold_s	2.500	discard_s	2.200	win_s	0.300	ref_s	2.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	1.000000	Meter Mode	Output
+param	2	0.500000	Response	Normal
+param	3	0.400000	Input Gain	4.0
+param	4	0.400000	Output Gain	4.0
+param	5	1.000000	Mode	In
+param	6	0.000000	Input Pad	Off
+param	7	1.000000	Stereo Link	On
+param	8	1.000000	Level Trim	0.0 dB
+param	9	1.000000	Dry/Wet Mix	100 %
+param	10	0.500000	Noise Level	-90.0 dB
+param	11	0.000000	Bank	A
+param	12	0.000000	VU Meter	
+param	13	0.714090	GR Meter	
+set	9	1.000000	confirm_ms	2.5	getValue	1.000000	landed_by	instack	render_blocks	0	text	100 %
+stage	reference
+refpos	val	0.400000	text	4.0
+ref	-90.00	level_db	-83.8882	in_peak_db	-90.0000	in_rms_db	-93.0103	tone_frac	0.8672	ch	-83.9064,-83.8700	win	-83.8853,-83.8874,-83.9051,-83.8791,-83.9072,-83.9027	nonfinite	0
+ref	-84.00	level_db	-77.8027	in_peak_db	-84.0000	in_rms_db	-87.0103	tone_frac	0.9735	ch	-77.8141,-77.7913	win	-77.8093,-77.8091,-77.7972,-77.7989,-77.7857,-77.7995	nonfinite	0
+ref	-78.00	level_db	-71.6414	in_peak_db	-78.0000	in_rms_db	-81.0103	tone_frac	0.9924	ch	-71.6408,-71.6420	win	-71.6477,-71.6373,-71.6374,-71.6410,-71.6356,-71.6416	nonfinite	0
+ref	-72.00	level_db	-65.6841	in_peak_db	-72.0000	in_rms_db	-75.0103	tone_frac	0.9985	ch	-65.6828,-65.6854	win	-65.6944,-65.6867,-65.6873,-65.6880,-65.6852,-65.6845	nonfinite	0
+ref	-66.00	level_db	-59.5905	in_peak_db	-66.0000	in_rms_db	-69.0103	tone_frac	0.9993	ch	-59.5919,-59.5891	win	-59.5972,-59.5868,-59.5883,-59.5913,-59.5905,-59.5903	nonfinite	0
+ref	-60.00	level_db	-53.6072	in_peak_db	-60.0000	in_rms_db	-63.0103	tone_frac	1.0000	ch	-53.6074,-53.6071	win	-53.6144,-53.6084,-53.6068,-53.6065,-53.6075,-53.6094	nonfinite	0
+ref	-58.00	level_db	-51.5998	in_peak_db	-58.0000	in_rms_db	-61.0103	tone_frac	1.0000	ch	-51.5997,-51.6000	win	-51.6040,-51.6015,-51.6027,-51.6020,-51.6007,-51.6001	nonfinite	0
+ref	-56.00	level_db	-49.6067	in_peak_db	-56.0000	in_rms_db	-59.0103	tone_frac	0.9996	ch	-49.6066,-49.6068	win	-49.6095,-49.6048,-49.6042,-49.6063,-49.6071,-49.6064	nonfinite	0
+ref	-54.00	level_db	-47.6032	in_peak_db	-54.0000	in_rms_db	-57.0103	tone_frac	1.0000	ch	-47.6034,-47.6031	win	-47.6086,-47.6060,-47.6047,-47.6035,-47.6038,-47.6050	nonfinite	0
+ref	-52.00	level_db	-45.6050	in_peak_db	-52.0000	in_rms_db	-55.0103	tone_frac	1.0000	ch	-45.6049,-45.6051	win	-45.6082,-45.6041,-45.6061,-45.6064,-45.6049,-45.6035	nonfinite	0
+ref	-50.00	level_db	-43.6084	in_peak_db	-50.0000	in_rms_db	-53.0103	tone_frac	0.9997	ch	-43.6086,-43.6081	win	-43.6117,-43.6068,-43.6059,-43.6068,-43.6083,-43.6084	nonfinite	0
+ref	-48.00	level_db	-41.6033	in_peak_db	-48.0000	in_rms_db	-51.0103	tone_frac	1.0000	ch	-41.6033,-41.6032	win	-41.6078,-41.6057,-41.6051,-41.6041,-41.6033,-41.6043	nonfinite	0
+ref	-46.00	level_db	-39.6073	in_peak_db	-46.0000	in_rms_db	-49.0103	tone_frac	0.9998	ch	-39.6073,-39.6073	win	-39.6102,-39.6053,-39.6068,-39.6080,-39.6075,-39.6056	nonfinite	0
+ref	-44.00	level_db	-37.6069	in_peak_db	-44.0000	in_rms_db	-47.0103	tone_frac	0.9999	ch	-37.6069,-37.6069	win	-37.6109,-37.6070,-37.6054,-37.6055,-37.6069,-37.6081	nonfinite	0
+ref	-42.00	level_db	-35.6093	in_peak_db	-42.0000	in_rms_db	-45.0103	tone_frac	1.0000	ch	-35.6092,-35.6094	win	-35.6135,-35.6110,-35.6119,-35.6107,-35.6092,-35.6095	nonfinite	0
+ref	-40.00	level_db	-33.6129	in_peak_db	-40.0000	in_rms_db	-43.0103	tone_frac	0.9997	ch	-33.6129,-33.6129	win	-33.6155,-33.6103,-33.6110,-33.6126,-33.6129,-33.6116	nonfinite	0
+ref	-38.00	level_db	-31.6106	in_peak_db	-38.0000	in_rms_db	-41.0103	tone_frac	1.0000	ch	-31.6106,-31.6106	win	-31.6150,-31.6122,-31.6106,-31.6097,-31.6106,-31.6121	nonfinite	0
+ref	-36.00	level_db	-29.6100	in_peak_db	-36.0000	in_rms_db	-39.0103	tone_frac	1.0000	ch	-29.6101,-29.6100	win	-29.6136,-29.6106,-29.6120,-29.6116,-29.6100,-29.6094	nonfinite	0
+ref	-34.00	level_db	-27.6118	in_peak_db	-34.0000	in_rms_db	-37.0103	tone_frac	0.9997	ch	-27.6118,-27.6118	win	-27.6147,-27.6096,-27.6092,-27.6106,-27.6118,-27.6111	nonfinite	0
+ref	-32.00	level_db	-25.6102	in_peak_db	-32.0000	in_rms_db	-35.0103	tone_frac	1.0000	ch	-25.6102,-25.6101	win	-25.6148,-25.6126,-25.6116,-25.6101,-25.6102,-25.6117	nonfinite	0
+ref	-30.00	level_db	-23.6110	in_peak_db	-30.0000	in_rms_db	-33.0103	tone_frac	1.0000	ch	-23.6110,-23.6110	win	-23.6141,-23.6101,-23.6117,-23.6123,-23.6110,-23.6097	nonfinite	0
+ref	-28.00	level_db	-21.6325	in_peak_db	-28.0000	in_rms_db	-31.0103	tone_frac	0.9998	ch	-21.6325,-21.6325	win	-21.6179,-21.6168,-21.6190,-21.6230,-21.6277,-21.6309	nonfinite	0
+ref	-26.00	level_db	-20.3059	in_peak_db	-26.0000	in_rms_db	-29.0103	tone_frac	1.0000	ch	-20.3059,-20.3059	win	-20.1403,-20.3009,-20.3079,-20.3068,-20.3059,-20.3069	nonfinite	0
+ref	-24.00	level_db	-19.6006	in_peak_db	-24.0000	in_rms_db	-27.0103	tone_frac	0.9998	ch	-19.6006,-19.6006	win	-19.5509,-19.5984,-19.5997,-19.6010,-19.6006,-19.5990	nonfinite	0
+ref	-22.00	level_db	-19.1100	in_peak_db	-22.0000	in_rms_db	-25.0103	tone_frac	0.9999	ch	-19.1100,-19.1101	win	-19.0880,-19.1104,-19.1088,-19.1086,-19.1100,-19.1111	nonfinite	0
+ref	-20.00	level_db	-18.6952	in_peak_db	-20.0000	in_rms_db	-23.0103	tone_frac	1.0000	ch	-18.6952,-18.6951	win	-18.6804,-18.6969,-18.6977,-18.6966,-18.6952,-18.6953	nonfinite	0
+ref	-18.00	level_db	-18.3174	in_peak_db	-18.0000	in_rms_db	-21.0103	tone_frac	0.9997	ch	-18.3174,-18.3174	win	-18.3047,-18.3148,-18.3153,-18.3169,-18.3174,-18.3161	nonfinite	0
+ref	-16.00	level_db	-17.9320	in_peak_db	-16.0000	in_rms_db	-19.0103	tone_frac	1.0000	ch	-17.9320,-17.9320	win	-17.9237,-17.9337,-17.9322,-17.9312,-17.9320,-17.9336	nonfinite	0
+ref	-14.00	level_db	-17.5195	in_peak_db	-14.0000	in_rms_db	-17.0103	tone_frac	1.0000	ch	-17.5195,-17.5195	win	-17.5096,-17.5199,-17.5213,-17.5211,-17.5195,-17.5188	nonfinite	0
+ref	-12.00	level_db	-17.0452	in_peak_db	-12.0000	in_rms_db	-15.0103	tone_frac	0.9997	ch	-17.0452,-17.0452	win	-17.0355,-17.0430,-17.0427,-17.0439,-17.0452,-17.0447	nonfinite	0
+ref	-10.00	level_db	-16.4521	in_peak_db	-10.0000	in_rms_db	-13.0103	tone_frac	1.0000	ch	-16.4521,-16.4521	win	-16.4443,-16.4546,-16.4537,-16.4522,-16.4521,-16.4536	nonfinite	0
+ref	-8.00	level_db	-15.6740	in_peak_db	-8.0000	in_rms_db	-11.0103	tone_frac	0.9999	ch	-15.6740,-15.6740	win	-15.6643,-15.6729,-15.6744,-15.6752,-15.6740,-15.6726	nonfinite	0
+ref	-6.00	level_db	-14.6121	in_peak_db	-6.0000	in_rms_db	-9.0103	tone_frac	0.9997	ch	-14.6121,-14.6121	win	-14.6048,-14.6112,-14.6100,-14.6106,-14.6121,-14.6125	nonfinite	0
+ref	-4.00	level_db	-13.3317	in_peak_db	-4.0000	in_rms_db	-7.0103	tone_frac	1.0000	ch	-13.3317,-13.3317	win	-13.3277,-13.3341,-13.3342,-13.3327,-13.3317,-13.3326	nonfinite	0
+ref	-2.00	level_db	-11.8978	in_peak_db	-2.0000	in_rms_db	-5.0103	tone_frac	0.9997	ch	-11.8978,-11.8978	win	-11.8936,-11.8955,-11.8966,-11.8981,-11.8978,-11.8962	nonfinite	0
+ref	0.00	level_db	-10.3438	in_peak_db	0.0000	in_rms_db	-3.0103	tone_frac	0.9998	ch	-10.3438,-10.3438	win	-10.3422,-10.3444,-10.3428,-10.3425,-10.3438,-10.3450	nonfinite	0
+timing	wall_ms	2802.1	audio_s	72.000
+stage	done

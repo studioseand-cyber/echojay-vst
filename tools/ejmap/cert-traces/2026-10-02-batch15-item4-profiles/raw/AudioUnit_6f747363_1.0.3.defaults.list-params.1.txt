@@ -1,0 +1,25 @@
+probe: "Lindell SBC" | AudioUnit:Effects/aufx,Lsbc,Brwx | uid=6f747363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+0	SC HPF		2147483647	0	1	0
+1	Mix		2147483647	0	1	0
+2	THD		2147483647	0	1	0
+3	Gain		2147483647	0	1	0
+4	Knee		3	1	1	0
+5	Link		7	1	1	0
+6	Smash		2	1	1	0
+7	Input Gain		2147483647	0	1	0
+8	Ratio		7	1	1	0
+9	Style		2	1	1	0
+10	Link HP		2	1	1	0
+11	Link LP		2	1	1	0
+12	External Side Chain		2	1	1	0
+13	Threshold		2147483647	0	1	0
+14	Output Gain		2147483647	0	1	0
+15	Manual Gain		2	1	1	0
+16	Release		2147483647	0	1	0
+17	Meter Mode		3	1	1	0
+18	Compress		2	1	1	0
+19	Attack		7	1	1	0
+20	Bypass		2	1	1	0
+21	Filter		3	1	1	0

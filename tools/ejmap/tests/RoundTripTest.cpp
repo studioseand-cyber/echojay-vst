@@ -4493,9 +4493,9 @@ void testSweepSplitVerdict()
              && tdc.engageDriftDb && std::abs (*tdc.engageDriftDb - 4.46) < 0.01,
            "sweep V4: townhouse certifies its map; the display records engage drift 4.46, IQR 4.50, offset -15.00 - never merged");
 
-    // THE COMMITTED FIXTURE RE-DERIVES FROM ITS TRACE (decision D2: re-compute, never re-measure).
-    const auto fx = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT)
-                        .getChildFile ("tools/ejmap/cert-fixtures/profiles/AudioUnit_417f6e76_1.8.1.json").loadFileAsString());
+    // THE COMMITTED FIXTURE RE-DERIVES FROM ITS TRACE (decision D2: re-compute, never re-measure). The record sits
+    // beside its trace (frozen 2 Oct, when the store's townhouse record became the profile sweep's).
+    const auto fx = juce::JSON::parse (dir.getChildFile ("AudioUnit_417f6e76_1.8.1.json").loadFileAsString());
     const auto plan = planFromFixture (fx);
     Provenance pv; pv.measuredAt = "x"; pv.host = "x";
     const auto again = composeThresholdSweep (td, tdc, plan, pv);

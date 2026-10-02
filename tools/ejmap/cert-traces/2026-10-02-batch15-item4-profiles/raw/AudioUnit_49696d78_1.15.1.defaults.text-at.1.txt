@@ -1,0 +1,92 @@
+probe: "elysia mpressor" | AudioUnit:Effects/aufx,mprs,Elys | uid=49696d78 | arch=arm64 | format=AudioUnit
+
+param	0	Floor	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Active	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	3	Threshold	unit	
+def	0.000000	16.0 dB	default	0.000000
+at	0.000	16.0 dB
+at	0.500	-6.5 dB
+at	1.000	-18.0 dB
+param	4	SC Extern	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	5	Attack	unit	
+def	0.500000	19.0 ms	default	0.500000
+at	0.000	0.0 ms
+at	0.500	19.0 ms
+at	1.000	150.0 ms
+param	6	Auto Fast	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Release	unit	
+def	0.500000	117.5 ms	default	0.500000
+at	0.000	5.0 ms
+at	0.500	117.5 ms
+at	1.000	1200.0 ms
+param	8	Anti Log	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	9	Ratio	unit	
+def	0.363636	2.8	default	0.363636
+at	0.000	1.2
+at	0.500	6.7
+at	1.000	-4.0
+param	10	EQ Gain	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	6.0 dB
+at	0.500	0.0 dB
+at	1.000	6.0 dB
+param	11	EQ On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	EQ Freq	unit	
+def	0.500000	230.0 Hz	default	0.500000
+at	0.000	26.0 Hz
+at	0.500	230.0 Hz
+at	1.000	2200.0 Hz
+param	13	EQ Freq x10	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	14	GR Limit	unit	
+def	0.500000	10.0 dB	default	0.500000
+at	0.000	21.0 dB
+at	0.500	10.0 dB
+at	1.000	0.0 dB
+param	15	GR Limit On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Gain	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	5.0 dB
+at	1.000	20.0 dB
+param	17	Gain Reduction	unit	
+def	0.000000	0.00 dB	default	0.000000
+at	0.000	0.00 dB
+at	0.500	-9.75 dB
+at	1.000	-19.50 dB

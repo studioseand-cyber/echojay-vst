@@ -1,0 +1,107 @@
+{
+  "product": "Lindell 7X-500",
+  "map_fp": "5da42046bed73462a7d0c3b576c6ebcef0c555cdd787ee11484254db5c6d59a2",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.269824863157895,
+    "point": 8,
+    "point_next": 7,
+    "in_at_g": -19.809999999999999,
+    "stepped": false
+  },
+  "writes": [
+    {
+      "control": "Output",
+      "index": 1,
+      "norm": 0.3,
+      "set": "3.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Attack",
+      "index": 2,
+      "norm": 1.0,
+      "set": "Slow",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release",
+      "index": 3,
+      "norm": 0.0,
+      "set": "Fast",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Mix",
+      "index": 4,
+      "norm": 1.0,
+      "set": "10.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC High Pass Filter",
+      "index": 6,
+      "norm": 0.0,
+      "set": "OFF",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Continuous Attack",
+      "index": 7,
+      "norm": 0.5,
+      "set": "5.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Continuous Release",
+      "index": 8,
+      "norm": 0.5,
+      "set": "5.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Stereo Link",
+      "index": 9,
+      "norm": 0.5,
+      "set": "50%",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Continuous ON",
+      "index": 11,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Link ON",
+      "index": 12,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Analog ON",
+      "index": 13,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ratio",
+      "index": 5,
+      "norm": 0.0,
+      "set": "4:1",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 1.96,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T111729.743+0100",
+  "ratio_norm_source": "ratio 4:1 written from profile.ratio.curve[0].norm 0.0000"
+}

@@ -1,0 +1,16 @@
+probe: "Lindell 7X-500" | AudioUnit:Effects/aufx,LBc2,Brwx | uid=6f457232 | arch=arm64 | format=AudioUnit
+
+0	Input		2147483647	0	1	0
+1	Output		2147483647	0	1	0
+2	Attack		2147483647	0	1	0
+3	Release		2147483647	0	1	0
+4	Mix		2147483647	0	1	0
+5	Ratio		2147483647	0	1	0
+6	SC High Pass Filter		2147483647	0	1	0
+7	Continuous Attack		2147483647	0	1	0
+8	Continuous Release		2147483647	0	1	0
+9	Stereo Link		2147483647	0	1	0
+10	Bypass		2147483647	0	1	0
+11	Continuous ON		2147483647	0	1	0
+12	Link ON		2147483647	0	1	0
+13	Analog ON		2147483647	0	1	0

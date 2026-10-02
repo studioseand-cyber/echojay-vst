@@ -1,0 +1,86 @@
+{
+  "product": "Acme Opticom XLA-3",
+  "map_fp": "6eae9b96464e7f5a51ab7d898d8a3b925e6b29c5073ee44e44b5f5ec012d9c96",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.183508936842105,
+    "point": 6,
+    "point_next": 5,
+    "in_at_g": -19.41,
+    "stepped": false
+  },
+  "writes": [
+    {
+      "control": "Response",
+      "index": 2,
+      "norm": 0.5,
+      "set": "Normal",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Output Gain",
+      "index": 4,
+      "norm": 0.4,
+      "set": "4.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Mode",
+      "index": 5,
+      "norm": 1.0,
+      "set": "In",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Input Pad",
+      "index": 6,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Stereo Link",
+      "index": 7,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Level Trim",
+      "index": 8,
+      "norm": 1.0,
+      "set": "0.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Dry/Wet Mix",
+      "index": 9,
+      "norm": 1.0,
+      "set": "100 %",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Noise Level",
+      "index": 10,
+      "norm": 0.5,
+      "set": "-90.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Bank",
+      "index": 11,
+      "norm": 0.0,
+      "set": "A",
+      "why": "neutral[] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.0,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T111737.824+0100",
+  "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written"
+}

@@ -1,0 +1,135 @@
+{
+  "product": "Bettermaker Bus Compressor DSP",
+  "map_fp": "b1fa8de10439a89a945bef15b56618e390d26df3d2070c823fbeb2d2c0b37cd4",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.402619060714286,
+    "point": 6,
+    "point_next": 7,
+    "in_at_g": -18.109999999999999,
+    "stepped": false
+  },
+  "writes": [
+    {
+      "control": "SNAPSHOT",
+      "index": 0,
+      "norm": 0.0,
+      "set": "A",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "ENGAGE",
+      "index": 1,
+      "norm": 1.0,
+      "set": "ON",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "ATTACK",
+      "index": 4,
+      "norm": 0.499165,
+      "set": "30.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "RELEASE",
+      "index": 5,
+      "norm": 0.201681,
+      "set": "250.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "AUTO RELEASE",
+      "index": 6,
+      "norm": 0.0,
+      "set": "OFF",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "MIX",
+      "index": 7,
+      "norm": 1.0,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "OUTPUT",
+      "index": 8,
+      "norm": 0.4,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "THD ENABLE",
+      "index": 9,
+      "norm": 1.0,
+      "set": "ON",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "THD",
+      "index": 10,
+      "norm": 0.0,
+      "set": "0.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "THD MIX",
+      "index": 11,
+      "norm": 1.0,
+      "set": "100.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC HPF ENGAGE",
+      "index": 12,
+      "norm": 0.0,
+      "set": "OFF",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC HPF FREQ",
+      "index": 13,
+      "norm": 0.0,
+      "set": "10.00",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC MID ENGAGE",
+      "index": 14,
+      "norm": 0.0,
+      "set": "OFF",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "DETECTOR",
+      "index": 15,
+      "norm": 0.0,
+      "set": "PEAK",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "EXTERNAL SIDE CHAIN",
+      "index": 17,
+      "norm": 0.0,
+      "set": "OFF",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "RATIO",
+      "index": 3,
+      "norm": 0.25,
+      "set": "2.00",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 1.98,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T111733.182+0100",
+  "ratio_norm_source": "ratio 2.00 written from profile.ratio.curve[0].norm 0.2500"
+}

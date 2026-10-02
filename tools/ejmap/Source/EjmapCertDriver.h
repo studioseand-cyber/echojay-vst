@@ -2268,9 +2268,12 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
         {
             profileFile.replaceWithText (juce::JSON::toString (e.profile) + "\n", false, false, "\n");
             profilePath = profileFile.getFullPathName();
-            const int trc = runToneCheck (opt, profileFile, recordFile, -18.0, 2.0, {});
             const auto toneFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
-            if (trc == 0 && toneFile.existsAsFile())
+            toneFile.deleteFile();                                                             // a result file is this call's or nobody's
+            const int trc = runToneCheck (opt, profileFile, recordFile, -18.0, 2.0, {});
+            // THE TONE CHECK RAN when it wrote its result; exit 1 is a FAILED check (a result on the profile), not a check
+            // that could not run (exits 2-4 write nothing). Lindell 254E, 11:17: a failed check was read as "could not run".
+            if (toneFile.existsAsFile())
             {
                 toneRan = true; tonePath = toneFile.getFullPathName();
                 auto prof = juce::JSON::parse (profileFile.loadFileAsString());                  // the tone check rides the profile (criterion A5)

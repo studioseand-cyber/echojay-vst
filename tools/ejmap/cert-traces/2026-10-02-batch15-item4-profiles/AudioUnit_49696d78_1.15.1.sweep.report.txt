@@ -1,0 +1,42 @@
+EJ Map threshold sweep - elysia mpressor -> AudioUnit_49696d78_1.15.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] Threshold unit 'dB' (class single_threshold) | positions 20 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [1] Link = 'On'
+ratio: [9] ran at '2.8' -> 2.8 | auto make-up disabled: no
+default-threshold reference ('16.0 dB', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.02  -56.00 out-in -0.02  -54.00 out-in -0.02  -52.00 out-in -0.02  -50.00 out-in -0.02  -48.00 out-in -0.02  -46.00 out-in -0.02  -44.00 out-in -0.02  -42.00 out-in -0.02  -40.00 out-in -0.02  -38.00 out-in -0.02  -36.00 out-in -0.02  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.03  -22.00 out-in -0.03  -20.00 out-in -0.03  -18.00 out-in -0.03  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.06  -10.00 out-in -0.08  -8.00 out-in -0.11  -6.00 out-in -0.16  -4.00 out-in -0.39  -2.00 out-in -1.54  0.00 out-in -3.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 -0.00 0.00 -0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 -0.00 0.00 0.00 0.00 0.00 0.00 0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 20
+processes: 44 run, 0 retried, 0 position(s) failed
+write verify: 20 landed, 0 write_unlanded (skipped), in-stack read already matched on 20 of 20, pump slices total 20, longest confirm 2.5 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    16.0 dB         0.00     0.04     0.13        -4.5    -20.50
+  1  0.0667    14.5 dB         0.00     0.04     0.22        -5.8    -20.30
+  2  0.1333    11.7 dB         0.00     0.04     1.55        -8.5    -20.20
+  3  0.1667    9.8 dB          0.00     0.04     2.72       -10.3    -20.10
+  4  0.2000    8.2 dB          0.00     0.17     3.76       -11.9    -20.10
+  5  0.2667    5.3 dB          0.00     1.70     5.64       -14.8    -20.10
+  6  0.3000    3.5 dB          0.00     2.83     6.81       -16.5    -20.00
+  7  0.3333    1.7 dB          0.00     4.00     7.97       -18.3    -20.00
+  8  0.3667    -0.2 dB         0.00     5.18     9.14       -20.1    -19.90
+  9  0.4000    -2.0 dB         0.00     6.40    10.32       -21.9    -19.90
+ 10  0.4333    -3.8 dB         0.14     7.55    11.49       -23.7    -19.90
+ 11  0.4667    -5.4 dB         0.82     8.55    12.54       -25.2    -19.80
+ 12  0.5333    -7.6 dB         2.22     9.96    13.93       -27.5    -19.90
+ 13  0.6000    -9.8 dB         3.63    11.37    15.33       -29.6    -19.80
+ 14  0.6667    -11.7 dB        4.82    12.61    16.53       -31.5    -19.80
+ 15  0.7333    -13.1 dB        5.77    13.53    17.47       -33.0    -19.90
+ 16  0.8000    -14.6 dB        6.74    14.47    18.46       -34.4    -19.80
+ 17  0.8667    -16.1 dB        7.67    15.40    19.38       -35.9    -19.80
+ 18  0.9333    -17.3 dB        8.43    16.17    20.14       -37.1    -19.80
+ 19  1.0000    -18.0 dB        8.90    16.64    20.61       -37.8    -19.80
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:18 -34.00:17 -32.00:15 -30.00:14 -28.00:13 -26.00:12 -24.00:11 -22.00:10 -20.00:9 -18.00:8 -16.00:7 -14.00:6 -12.00:5 -10.00:4 -8.00:3 -6.00:2 -4.00:1 -2.00:0 0.00:0
+2 engage drift:    0.97  -10.00:19.11  -12.00:19.22  -14.00:19.08  -16.00:19.13  -18.00:19.06  -2.00:19.63  -20.00:19.07  -22.00:19.09  -24.00:19.11  -26.00:19.09  -28.00:19.05  -30.00:19.04  -32.00:19.13  -34.00:19.00  -36.00:19.06  -38.00:null  -4.00:19.32  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:19.41  -60.00:null  -8.00:19.15  0.00:19.98   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.30 dB over 20 positions (min -20.50, max -19.80)
+3 displayOffsetDb: -19.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_49696d78_1.15.1.json

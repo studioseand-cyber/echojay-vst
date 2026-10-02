@@ -1,0 +1,101 @@
+[
+  {
+    "identity": "AudioUnit|6f747363|1.0.3",
+    "product": "Lindell SBC",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_6f747363_1.0.3.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Lindell_SBC_1.0.3.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Lindell_SBC_1.0.3.tonecheck.json",
+    "at": "20261002T111727"
+  },
+  {
+    "identity": "AudioUnit|417f7e74|1.10.1",
+    "product": "bx_opto",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_417f7e74_1.10.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/bx_opto_1.10.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/bx_opto_1.10.1.tonecheck.json",
+    "at": "20261002T111728"
+  },
+  {
+    "identity": "AudioUnit|6f457232|1.2.2",
+    "product": "Lindell 7X-500",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_6f457232_1.2.2.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Lindell_7X-500_1.2.2.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Lindell_7X-500_1.2.2.tonecheck.json",
+    "at": "20261002T111729"
+  },
+  {
+    "identity": "AudioUnit|49696d78|1.15.1",
+    "product": "elysia mpressor",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_49696d78_1.15.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/elysia_mpressor_1.15.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/elysia_mpressor_1.15.1.tonecheck.json",
+    "at": "20261002T111731"
+  },
+  {
+    "identity": "AudioUnit|417f6e76|1.8.1",
+    "product": "bx_townhouse Buss Compressor",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_417f6e76_1.8.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/bx_townhouse_Buss_Compressor_1.8.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/bx_townhouse_Buss_Compressor_1.8.1.tonecheck.json",
+    "at": "20261002T111732"
+  },
+  {
+    "identity": "AudioUnit|6f603a72|1.0.0",
+    "product": "Bettermaker Bus Compressor DSP",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_6f603a72_1.0.0.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Bettermaker_Bus_Compressor_DSP_1.0.0.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Bettermaker_Bus_Compressor_DSP_1.0.0.tonecheck.json",
+    "at": "20261002T111733"
+  },
+  {
+    "identity": "AudioUnit|45756f3a|1.17.1",
+    "product": "elysia alpha mix",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_45756f3a_1.17.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/elysia_alpha_mix_1.17.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/elysia_alpha_mix_1.17.1.tonecheck.json",
+    "at": "20261002T111736"
+  },
+  {
+    "identity": "AudioUnit|62485258|1.10.1",
+    "product": "Acme Opticom XLA-3",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_62485258_1.10.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Acme_Opticom_XLA-3_1.10.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Acme_Opticom_XLA-3_1.10.1.tonecheck.json",
+    "at": "20261002T111737"
+  },
+  {
+    "identity": "AudioUnit|6f457233|1.2.2",
+    "product": "Lindell 254E",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/fixtures/AudioUnit_6f457233_1.2.2.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Lindell_254E_1.2.2.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/batch15/profiles/Lindell_254E_1.2.2.tonecheck.json",
+    "at": "20261002T112002"
+  }
+]

@@ -1,0 +1,52 @@
+probe: "bx_opto" | AudioUnit:Effects/aufx,bxot,Brwx | uid=417f7e74 | arch=arm64 | format=AudioUnit
+
+param	0	Power	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Speed	unit	
+def	0.500000	50	default	0.500000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	2	Peak Reduction	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	3	Output Gain	unit	
+def	0.000000	0 dB	default	0.000000
+at	0.000	0 dB
+at	0.500	12 dB
+at	1.000	24 dB
+param	4	Sidechain Filter Type	unit	
+def	0.000000	HP	default	0.000000
+at	0.000	HP
+at	0.500	BP wide
+at	1.000	BP narrow
+param	5	Sidechain Frequency	unit	
+def	0.000000	20 Hz	default	0.000000
+at	0.000	20 Hz
+at	0.500	632 Hz
+at	1.000	20000 Hz
+param	6	Mix	unit	
+def	1.000000	100 %	default	1.000000
+at	0.000	0 %
+at	0.500	50 %
+at	1.000	100 %
+param	7	Sidechain Off/On/Solo	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	On
+at	1.000	Solo
+param	8	Bank	unit	
+def	0.000000	A	default	0.000000
+at	0.000	A
+at	0.500	C
+at	1.000	D
+param	9		unit	
+def	1.000000		default	0.000000
+at	0.000	
+at	0.500	
+at	1.000	

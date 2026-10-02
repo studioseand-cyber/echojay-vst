@@ -1,0 +1,47 @@
+EJ Map threshold sweep - Acme Opticom XLA-3 -> AudioUnit_62485258_1.10.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] Input Gain unit '' (class input_as_threshold, flags input_as_threshold) | positions 24 (16 evenly spaced), one process each, levels quiet to loud
+pick: input_as_threshold: [3] is the only continuous candidate; [6] stepped, 2 steps - chosen by range and step count, not by name
+links as instantiated (recorded, not written): [7] Stereo Link = 'On'
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('4.0', spec 4.7 check only):  -60.00 out-in 9.40  -58.00 out-in 9.41  -56.00 out-in 9.40  -54.00 out-in 9.41  -52.00 out-in 9.41  -50.00 out-in 9.40  -48.00 out-in 9.41  -46.00 out-in 9.40  -44.00 out-in 9.40  -42.00 out-in 9.40  -40.00 out-in 9.40  -38.00 out-in 9.40  -36.00 out-in 9.40  -34.00 out-in 9.40  -32.00 out-in 9.40  -30.00 out-in 9.40  -28.00 out-in 9.38  -26.00 out-in 8.70  -24.00 out-in 7.41  -22.00 out-in 5.90  -20.00 out-in 4.32  -18.00 out-in 2.69  -16.00 out-in 1.08  -14.00 out-in -0.51  -12.00 out-in -2.03  -10.00 out-in -3.44  -8.00 out-in -4.66  -6.00 out-in -5.60  -4.00 out-in -6.32  -2.00 out-in -6.89  0.00 out-in -7.33  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- -- 0.05 -0.02 -0.01 -0.00 0.00 -0.01 -0.01 -0.00 0.00 -0.00 -0.00 -0.00 -0.00 -0.00 0.00 0.00 0.00 0.00 -0.01 -0.01 -0.01 -0.01
+reference ladder: 3 position(s) below the first rung (21@-60 22@-60 23@-60)
+writes landed by: instack 24
+processes: 53 run, 0 retried, 0 position(s) failed
+write verify: 24 landed, 0 write_unlanded (skipped), in-stack read already matched on 24 of 24, pump slices total 24, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.0               --       --       --          --          
+  1  0.0667    0.7               --       --       --          --          
+  2  0.1333    1.3             0.01     0.15     4.01          --          
+  3  0.1444    1.4             0.00     0.98     5.49          --          
+  4  0.1556    1.6             0.01     2.01     6.73          --          
+  5  0.1778    1.8             0.00     3.86     8.69          --          
+  6  0.2000    2.0             0.01     5.38    10.19          --          
+  7  0.2333    2.3             0.00     7.03    11.73          --          
+  8  0.2667    2.7             0.03     8.38    12.89          --          
+  9  0.3333    3.3             0.92    10.22    14.28          --          
+ 10  0.4000    4.0             1.99    11.44    15.01          --          
+ 11  0.4667    4.7             3.48    12.83    15.72          --          
+ 12  0.5000    5.0             4.14    13.37    15.97          --          
+ 13  0.5167    5.2             6.00    14.63    16.55          --          
+ 14  0.5333    5.3             7.47    15.36    16.91          --          
+ 15  0.5667    5.7             9.70    16.22    17.37          --          
+ 16  0.6000    6.0            11.32    16.70    17.66          --          
+ 17  0.6333    6.3            12.54    17.02    17.86          --          
+ 18  0.6667    6.7            13.47    17.25    18.02          --          
+ 19  0.7333    7.3            14.80    17.61    18.31          --          
+ 20  0.8000    8.0            15.60    17.86    18.57          --          
+ 21  0.8667    8.7            16.19    18.09    18.90          --          
+ 22  0.9333    9.3            16.40    18.19    19.08          --          
+ 23  1.0000    10.0           16.41    18.19    19.08          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:21 -46.00:20 -44.00:20 -42.00:19 -40.00:18 -38.00:16 -36.00:15 -34.00:15 -32.00:14 -30.00:13 -28.00:11 -26.00:10 -24.00:9 -22.00:8 -20.00:7 -18.00:6 -16.00:5 -14.00:4 -12.00:3 -10.00:2 -8.00:2 -6.00:2 -4.00:2 -2.00:2 0.00:2
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_62485258_1.10.1.json

@@ -1,0 +1,82 @@
+probe: "elysia alpha mix" | AudioUnit:Effects/aufx,alp1,Elys | uid=45756f3a | arch=arm64 | format=AudioUnit
+
+param	0	Active	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	1	Link	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	2	Threshold	unit	
+def	0.000000	+20.0 dB	default	0.000000
+at	0.000	+20.0 dB
+at	0.500	+2.0 dB
+at	1.000	-13.0 dB
+param	3	Feed Forward	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	4	Attack	unit	
+def	0.500000	26.0 ms	default	0.500000
+at	0.000	0.0 ms
+at	0.500	26.0 ms
+at	1.000	150.0 ms
+param	5	Attack Auto Fast	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	6	Release	unit	
+def	0.500000	359.2 ms	default	0.500000
+at	0.000	60.0 ms
+at	0.500	359.2 ms
+at	1.000	1800.0 ms
+param	7	Release Auto Fast	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	8	Ratio	unit	
+def	0.363636	1.5	default	0.363636
+at	0.000	1.1
+at	0.500	1.7
+at	1.000	2.4
+param	9	SC Gain	unit	
+def	0.500000	0.0 dB	default	0.500000
+at	0.000	-oo dB
+at	0.500	0.0 dB
+at	1.000	-oo dB
+param	10	SC On	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	SC Freq	unit	
+def	0.500000	310.0 Hz	default	0.500000
+at	0.000	30.0 Hz
+at	0.500	310.0 Hz
+at	1.000	3300.0 Hz
+param	12	Warm	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	13	Mix	unit	
+def	1.000000	100.0 %	default	1.000000
+at	0.000	0.0 %
+at	0.500	55.0 %
+at	1.000	100.0 %
+param	14	Gain	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	4.0 dB
+at	1.000	12.0 dB
+param	15	Gain Reduction	unit	
+def	0.000000	0.0 dB	default	0.000000
+at	0.000	0.0 dB
+at	0.500	7.2 dB
+at	1.000	20.0 dB

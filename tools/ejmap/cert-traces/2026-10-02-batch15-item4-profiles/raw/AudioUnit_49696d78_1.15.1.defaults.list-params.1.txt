@@ -1,0 +1,20 @@
+probe: "elysia mpressor" | AudioUnit:Effects/aufx,mprs,Elys | uid=49696d78 | arch=arm64 | format=AudioUnit
+
+0	Floor		2	1	1	0
+1	Link		2	1	1	0
+2	Active		2	1	1	0
+3	Threshold		2147483647	0	1	0
+4	SC Extern		2	1	1	0
+5	Attack		2147483647	0	1	0
+6	Auto Fast		2	1	1	0
+7	Release		2147483647	0	1	0
+8	Anti Log		2	1	1	0
+9	Ratio		2147483647	0	1	0
+10	EQ Gain		2147483647	0	1	0
+11	EQ On		2	1	1	0
+12	EQ Freq		2147483647	0	1	0
+13	EQ Freq x10		2	1	1	0
+14	GR Limit		2147483647	0	1	0
+15	GR Limit On		2	1	1	0
+16	Gain		2147483647	0	1	0
+17	Gain Reduction		2147483647	0	1	0

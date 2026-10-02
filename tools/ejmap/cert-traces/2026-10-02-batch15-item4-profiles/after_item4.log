@@ -1,0 +1,38 @@
+AFTER START 11:07:59
+=== AudioUnit_417f6e76_1.8.1 11:07:59
+DETECTOR: bx_townhouse Buss Compressor - sine 2 dB at -13.80, two-tone at -15.90: shift 2.10 dB -> f = 0.70 (unknown) -> written into AudioUnit_417f6e76_1.8.1.json
+EMITTED        bx_townhouse Buss Compressor: 15 curve points, fit max error 0.61 dB -> AudioUnit_417f6e76_1.8.1.json
+TONE: bx_townhouse Buss Compressor - GR 1.96 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_417f6e76_1.8.1.tonecheck.json
+=== AudioUnit_417f7e74_1.10.1 11:08:02
+DETECTOR: bx_opto - sine 2 dB at -15.90, two-tone at -17.80: shift 1.90 dB -> f = 0.63 (unknown) -> written into AudioUnit_417f7e74_1.10.1.json
+EMITTED        bx_opto: 24 curve points, fit max error 0.36 dB -> AudioUnit_417f7e74_1.10.1.json
+TONE: bx_opto - GR 1.99 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_417f7e74_1.10.1.tonecheck.json
+=== AudioUnit_45756f3a_1.17.1 11:08:05
+DETECTOR: elysia alpha mix - sine 2 dB at -14.00, two-tone at -14.70: shift 0.70 dB -> f = 0.23 (unknown) -> written into AudioUnit_45756f3a_1.17.1.json
+EMITTED        elysia alpha mix: 13 curve points, fit max error 1.37 dB -> AudioUnit_45756f3a_1.17.1.json
+TONE: elysia alpha mix - GR 2.00 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_45756f3a_1.17.1.tonecheck.json
+=== AudioUnit_49696d78_1.15.1 11:08:09
+DETECTOR: elysia mpressor - sine 2 dB at -15.10, two-tone at -16.30: shift 1.20 dB -> f = 0.40 (unknown) -> written into AudioUnit_49696d78_1.15.1.json
+EMITTED        elysia mpressor: 20 curve points, fit max error 0.38 dB -> AudioUnit_49696d78_1.15.1.json
+TONE: elysia mpressor - GR 1.97 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_49696d78_1.15.1.tonecheck.json
+=== AudioUnit_62485258_1.10.1 11:08:14
+DETECTOR: Acme Opticom XLA-3 - sine 2 dB at -14.50, two-tone at -16.70: shift 2.20 dB -> f = 0.73 (unknown) -> written into AudioUnit_62485258_1.10.1.json
+EMITTED        Acme Opticom XLA-3: 22 curve points, fit max error 0.34 dB -> AudioUnit_62485258_1.10.1.json
+TONE: Acme Opticom XLA-3 - GR 2.00 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_62485258_1.10.1.tonecheck.json
+=== AudioUnit_6f457232_1.2.2 11:08:24
+DETECTOR: Lindell 7X-500 - sine 2 dB at -14.90, two-tone at -15.30: shift 0.40 dB -> f = 0.13 (unknown) -> written into AudioUnit_6f457232_1.2.2.json
+EMITTED        Lindell 7X-500: 21 curve points, fit max error 0.16 dB -> AudioUnit_6f457232_1.2.2.json
+TONE: Lindell 7X-500 - GR 1.96 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_6f457232_1.2.2.tonecheck.json
+=== AudioUnit_6f457233_1.2.2 11:08:29
+DETECTOR: Lindell 254E - sine 2 dB at -14.00, two-tone at -16.50: shift 2.50 dB -> f = 0.83 (unknown) -> written into AudioUnit_6f457233_1.2.2.json
+EMITTED        Lindell 254E: 16 curve points, fit max error 0.82 dB -> AudioUnit_6f457233_1.2.2.json
+TONE: Lindell 254E - GR unreadable dB at L (target 2.0, quiet check FAILED) -> FAIL (within 0.5 dB) -> AudioUnit_6f457233_1.2.2.tonecheck.json
+=== AudioUnit_6f603a72_1.0.0 11:08:33
+DETECTOR: Bettermaker Bus Compressor DSP - sine 2 dB at -15.10, two-tone at -17.90: shift 2.80 dB -> f = 0.93 (peak) -> written into AudioUnit_6f603a72_1.0.0.json
+EMITTED        Bettermaker Bus Compressor DSP: 14 curve points, fit max error 1.17 dB -> AudioUnit_6f603a72_1.0.0.json
+TONE: Bettermaker Bus Compressor DSP - GR 1.98 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_6f603a72_1.0.0.tonecheck.json
+=== AudioUnit_6f747363_1.0.3 11:08:36
+DETECTOR: Lindell SBC - sine 2 dB at -14.20, two-tone at -14.20: shift 0.00 dB -> f = 0.00 (rms) -> written into AudioUnit_6f747363_1.0.3.json
+EMITTED, FIT OVER 1.5  Lindell SBC: 16 curve points, fit max error 1.51 dB -> AudioUnit_6f747363_1.0.3.json
+TONE: Lindell SBC - GR 1.99 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> AudioUnit_6f747363_1.0.3.tonecheck.json
+AFTER DONE 11:08:42

@@ -1,0 +1,66 @@
+probe: "Acme Opticom XLA-3" | AudioUnit:Effects/aufx,AOCX,Brwx | uid=62485258 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Input Gain	positions	1	levels	36
+spec	hz	997.000	hold_s	2.500	discard_s	2.200	win_s	0.300	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input #1	2	Stereo	enabled
+bus	render	out	0	Output #1	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	1.000000	Power	On
+param	1	1.000000	Meter Mode	Output
+param	2	0.500000	Response	Normal
+param	3	0.400000	Input Gain	4.0
+param	4	0.400000	Output Gain	4.0
+param	5	1.000000	Mode	In
+param	6	0.000000	Input Pad	Off
+param	7	1.000000	Stereo Link	On
+param	8	1.000000	Level Trim	0.0 dB
+param	9	1.000000	Dry/Wet Mix	100 %
+param	10	0.500000	Noise Level	-90.0 dB
+param	11	0.000000	Bank	A
+param	12	0.000000	VU Meter	
+param	13	0.714090	GR Meter	
+set	9	1.000000	confirm_ms	2.5	getValue	1.000000	landed_by	instack	render_blocks	0	text	100 %
+stage	position
+pos	0	norm	0.266667	confirm_ms	2.54	slices	1	instack_match	1	getValue	0.266667	landed_by	instack	render_blocks	0	text_ms	22.4	reads	2	text	2.7
+hold	0	-90.00	level_db	-86.5692	in_rms_db	-93.0103	tone_frac	0.7951	ch	-86.5945,-86.5440	doubled	0	last_move_db	0.0203	final_move_db	0.0203	win	-86.6063,-86.5632,-86.6010,-86.5738,-86.6150,-86.6175,-86.5965,-86.5762	nonfinite	0
+hold	0	-84.00	level_db	-81.0663	in_rms_db	-87.0103	tone_frac	0.9343	ch	-81.0520,-81.0806	doubled	0	last_move_db	-0.0002	final_move_db	-0.0002	win	-81.0904,-81.0789,-81.0859,-81.0644,-81.0733,-81.0891,-81.0595,-81.0597	nonfinite	0
+hold	0	-78.00	level_db	-76.0832	in_rms_db	-81.0103	tone_frac	0.9804	ch	-76.0814,-76.0850	doubled	0	last_move_db	-0.0023	final_move_db	-0.0023	win	-76.0810,-76.0714,-76.0691,-76.0751,-76.0790,-76.0775,-76.0776,-76.0799	nonfinite	0
+hold	0	-72.00	level_db	-69.4720	in_rms_db	-75.0103	tone_frac	0.9964	ch	-69.4695,-69.4745	doubled	0	last_move_db	0.0022	final_move_db	0.0022	win	-69.4801,-69.4766,-69.4826,-69.4751,-69.4758,-69.4743,-69.4790,-69.4769	nonfinite	0
+hold	0	-66.00	level_db	-63.5370	in_rms_db	-69.0103	tone_frac	0.9991	ch	-63.5367,-63.5373	doubled	0	last_move_db	0.0018	final_move_db	0.0018	win	-63.5438,-63.5379,-63.5353,-63.5313,-63.5352,-63.5386,-63.5382,-63.5364	nonfinite	0
+hold	0	-60.00	level_db	-57.5791	in_rms_db	-63.0103	tone_frac	0.9994	ch	-57.5794,-57.5788	doubled	0	last_move_db	-0.0005	final_move_db	-0.0005	win	-57.5862,-57.5773,-57.5760,-57.5786,-57.5797,-57.5786,-57.5767,-57.5773	nonfinite	0
+hold	0	-58.00	level_db	-55.5550	in_rms_db	-61.0103	tone_frac	0.9999	ch	-55.5558,-55.5542	doubled	0	last_move_db	-0.0011	final_move_db	-0.0011	win	-55.5582,-55.5559,-55.5562,-55.5561,-55.5557,-55.5535,-55.5553,-55.5564	nonfinite	0
+hold	0	-56.00	level_db	-53.5438	in_rms_db	-59.0103	tone_frac	1.0000	ch	-53.5439,-53.5438	doubled	0	last_move_db	0.0004	final_move_db	0.0004	win	-53.5488,-53.5456,-53.5449,-53.5430,-53.5436,-53.5445,-53.5459,-53.5455	nonfinite	0
+hold	0	-54.00	level_db	-51.5383	in_rms_db	-57.0103	tone_frac	0.9997	ch	-51.5381,-51.5385	doubled	0	last_move_db	0.0017	final_move_db	0.0017	win	-51.5414,-51.5375,-51.5362,-51.5370,-51.5390,-51.5390,-51.5376,-51.5359	nonfinite	0
+hold	0	-52.00	level_db	-49.5474	in_rms_db	-55.0103	tone_frac	0.9998	ch	-49.5475,-49.5473	doubled	0	last_move_db	-0.0010	final_move_db	-0.0010	win	-49.5498,-49.5461,-49.5466,-49.5480,-49.5479,-49.5460,-49.5458,-49.5468	nonfinite	0
+hold	0	-50.00	level_db	-47.5405	in_rms_db	-53.0103	tone_frac	1.0000	ch	-47.5402,-47.5407	doubled	0	last_move_db	-0.0009	final_move_db	-0.0009	win	-47.5445,-47.5427,-47.5430,-47.5413,-47.5401,-47.5411,-47.5423,-47.5432	nonfinite	0
+hold	0	-48.00	level_db	-45.5463	in_rms_db	-51.0103	tone_frac	0.9999	ch	-45.5464,-45.5462	doubled	0	last_move_db	0.0020	final_move_db	0.0020	win	-45.5504,-45.5467,-45.5454,-45.5450,-45.5467,-45.5475,-45.5469,-45.5450	nonfinite	0
+hold	0	-46.00	level_db	-43.5476	in_rms_db	-49.0103	tone_frac	0.9997	ch	-43.5477,-43.5475	doubled	0	last_move_db	-0.0005	final_move_db	-0.0005	win	-43.5504,-43.5451,-43.5459,-43.5471,-43.5477,-43.5462,-43.5451,-43.5456	nonfinite	0
+hold	0	-44.00	level_db	-41.5442	in_rms_db	-47.0103	tone_frac	1.0000	ch	-41.5441,-41.5443	doubled	0	last_move_db	-0.0013	final_move_db	-0.0013	win	-41.5481,-41.5453,-41.5464,-41.5457,-41.5444,-41.5440,-41.5451,-41.5465	nonfinite	0
+hold	0	-42.00	level_db	-39.5447	in_rms_db	-45.0103	tone_frac	1.0000	ch	-39.5448,-39.5447	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	-39.5494,-39.5469,-39.5455,-39.5442,-39.5448,-39.5463,-39.5466,-39.5456	nonfinite	0
+hold	0	-40.00	level_db	-37.5475	in_rms_db	-43.0103	tone_frac	0.9997	ch	-37.5476,-37.5474	doubled	0	last_move_db	0.0004	final_move_db	0.0004	win	-37.5504,-37.5455,-37.5451,-37.5463,-37.5476,-37.5472,-37.5454,-37.5450	nonfinite	0
+hold	0	-38.00	level_db	-35.5501	in_rms_db	-41.0103	tone_frac	1.0000	ch	-35.5501,-35.5501	doubled	0	last_move_db	-0.0016	final_move_db	-0.0016	win	-35.5531,-35.5491,-35.5507,-35.5514,-35.5500,-35.5487,-35.5491,-35.5507	nonfinite	0
+hold	0	-36.00	level_db	-33.5498	in_rms_db	-39.0103	tone_frac	1.0000	ch	-33.5498,-33.5498	doubled	0	last_move_db	0.0003	final_move_db	0.0003	win	-33.5542,-33.5522,-33.5518,-33.5504,-33.5497,-33.5508,-33.5523,-33.5520	nonfinite	0
+hold	0	-34.00	level_db	-31.5517	in_rms_db	-37.0103	tone_frac	0.9999	ch	-31.5517,-31.5517	doubled	0	last_move_db	0.0014	final_move_db	0.0014	win	-31.5553,-31.5513,-31.5499,-31.5501,-31.5517,-31.5524,-31.5513,-31.5499	nonfinite	0
+hold	0	-32.00	level_db	-29.5512	in_rms_db	-35.0103	tone_frac	0.9998	ch	-29.5513,-29.5512	doubled	0	last_move_db	-0.0010	final_move_db	-0.0010	win	-29.5539,-29.5490,-29.5501,-29.5515,-29.5513,-29.5498,-29.5490,-29.5500	nonfinite	0
+hold	0	-30.00	level_db	-27.5488	in_rms_db	-33.0103	tone_frac	1.0000	ch	-27.5488,-27.5489	doubled	0	last_move_db	-0.0008	final_move_db	-0.0008	win	-27.5529,-27.5506,-27.5514,-27.5503,-27.5489,-27.5489,-27.5505,-27.5514	nonfinite	0
+hold	0	-28.00	level_db	-25.5506	in_rms_db	-31.0103	tone_frac	1.0000	ch	-25.5506,-25.5507	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-25.5550,-25.5520,-25.5505,-25.5496,-25.5506,-25.5521,-25.5520,-25.5505	nonfinite	0
+hold	0	-26.00	level_db	-23.5520	in_rms_db	-29.0103	tone_frac	0.9997	ch	-23.5520,-23.5520	doubled	0	last_move_db	-0.0001	final_move_db	-0.0001	win	-23.5546,-23.5495,-23.5495,-23.5510,-23.5519,-23.5510,-23.5494,-23.5495	nonfinite	0
+hold	0	-24.00	level_db	-21.5813	in_rms_db	-27.0103	tone_frac	1.0000	ch	-21.5813,-21.5813	doubled	0	last_move_db	-0.0048	final_move_db	-0.0048	win	-21.5566,-21.5576,-21.5634,-21.5675,-21.5699,-21.5726,-21.5769,-21.5817	nonfinite	0
+hold	0	-22.00	level_db	-20.2782	in_rms_db	-25.0103	tone_frac	1.0000	ch	-20.2782,-20.2782	doubled	0	last_move_db	0.0009	final_move_db	0.0009	win	-20.1202,-20.2748,-20.2795,-20.2783,-20.2782,-20.2797,-20.2807,-20.2799	nonfinite	0
+hold	0	-20.00	level_db	-19.5838	in_rms_db	-23.0103	tone_frac	0.9998	ch	-19.5838,-19.5838	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	-19.5378,-19.5825,-19.5814,-19.5822,-19.5838,-19.5840,-19.5825,-19.5814	nonfinite	0
+hold	0	-18.00	level_db	-19.0974	in_rms_db	-21.0103	tone_frac	0.9999	ch	-19.0974,-19.0974	doubled	0	last_move_db	-0.0014	final_move_db	-0.0014	win	-19.0726,-19.0955,-19.0969,-19.0981,-19.0974,-19.0958,-19.0955,-19.0969	nonfinite	0
+hold	0	-16.00	level_db	-18.6831	in_rms_db	-19.0103	tone_frac	1.0000	ch	-18.6831,-18.6831	doubled	0	last_move_db	-0.0004	final_move_db	-0.0004	win	-18.6689,-18.6853,-18.6856,-18.6843,-18.6831,-18.6837,-18.6853,-18.6857	nonfinite	0
+hold	0	-14.00	level_db	-18.3049	in_rms_db	-17.0103	tone_frac	1.0000	ch	-18.3048,-18.3049	doubled	0	last_move_db	0.0016	final_move_db	0.0016	win	-18.2947,-18.3055,-18.3039,-18.3035,-18.3049,-18.3061,-18.3055,-18.3039	nonfinite	0
+hold	0	-12.00	level_db	-17.9217	in_rms_db	-15.0103	tone_frac	0.9997	ch	-17.9217,-17.9217	doubled	0	last_move_db	-0.0006	final_move_db	-0.0006	win	-17.9107,-17.9191,-17.9197,-17.9213,-17.9217,-17.9204,-17.9191,-17.9197	nonfinite	0
+hold	0	-10.00	level_db	-17.5062	in_rms_db	-13.0103	tone_frac	1.0000	ch	-17.5062,-17.5062	doubled	0	last_move_db	-0.0013	final_move_db	-0.0013	win	-17.4966,-17.5070,-17.5083,-17.5078,-17.5062,-17.5057,-17.5070,-17.5083	nonfinite	0
+hold	0	-8.00	level_db	-17.0278	in_rms_db	-11.0103	tone_frac	1.0000	ch	-17.0278,-17.0278	doubled	0	last_move_db	0.0013	final_move_db	0.0013	win	-17.0201,-17.0299,-17.0286,-17.0273,-17.0278,-17.0293,-17.0299,-17.0286	nonfinite	0
+hold	0	-6.00	level_db	-16.4342	in_rms_db	-9.0103	tone_frac	0.9997	ch	-16.4342,-16.4342	doubled	0	last_move_db	0.0006	final_move_db	0.0006	win	-16.4245,-16.4322,-16.4316,-16.4328,-16.4342,-16.4339,-16.4322,-16.4317	nonfinite	0
+hold	0	-4.00	level_db	-15.6464	in_rms_db	-7.0103	tone_frac	0.9999	ch	-15.6464,-15.6464	doubled	0	last_move_db	-0.0015	final_move_db	-0.0015	win	-15.6367,-15.6453,-15.6469,-15.6476,-15.6464,-15.6450,-15.6454,-15.6469	nonfinite	0
+hold	0	-2.00	level_db	-14.5741	in_rms_db	-5.0103	tone_frac	1.0000	ch	-14.5741,-14.5742	doubled	0	last_move_db	0.0002	final_move_db	0.0002	win	-14.5681,-14.5767,-14.5764,-14.5749,-14.5741,-14.5753,-14.5766,-14.5764	nonfinite	0
+hold	0	0.00	level_db	-13.2923	in_rms_db	-3.0103	tone_frac	0.9998	ch	-13.2923,-13.2923	doubled	0	last_move_db	0.0015	final_move_db	0.0015	win	-13.2874,-13.2920,-13.2906,-13.2908,-13.2923,-13.2931,-13.2921,-13.2905	nonfinite	0
+reread	0	steady
+timing	wall_ms	3513.5	audio_s	90.000
+stage	done

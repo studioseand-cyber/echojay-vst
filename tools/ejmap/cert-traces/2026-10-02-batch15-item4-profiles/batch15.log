@@ -1,0 +1,412 @@
+=== [1] Lindell SBC   10:51:31   ilok=[0x01130000 / 2]   power='AC Power'
+  neutral: [1] Mix -> norm 1 ('100') for mix_wet
+  sweeping Lindell SBC (unseen version 1.0.3: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - Lindell SBC -> AudioUnit_6f747363_1.0.3.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [13] Threshold unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [5] Link = 'Off', [10] Link HP = 'Off', [11] Link LP = 'Off'
+ratio: [8] ran at '4:1' -> 4 | auto make-up disabled: no
+default-threshold reference ('-1.61', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.01  -52.00 out-in -0.01  -50.00 out-in -0.02  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.02  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.07  -22.00 out-in -0.30  -20.00 out-in -0.68  -18.00 out-in -1.17  -16.00 out-in -1.73  -14.00 out-in -2.35  -12.00 out-in -3.06  -10.00 out-in -3.81  -8.00 out-in -4.59  -6.00 out-in -5.39  -4.00 out-in -6.17  -2.00 out-in -6.97  0.00 out-in -7.77  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 37 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    10.00           0.01     0.01     0.58        -4.7          
+  1  0.0667    9.20            0.01     0.05     1.05        -6.1          
+  2  0.1333    8.40            0.01     0.28     1.58        -7.5          
+  3  0.2000    6.93            0.01     0.64     2.18        -8.9          
+  4  0.2667    4.78            0.01     1.07     2.83       -10.3          
+  5  0.3333    2.97            0.01     1.55     3.52       -11.8          
+  6  0.4000    1.31            0.01     2.11     4.25       -13.2          
+  7  0.4667    -0.49           0.02     2.71     5.00       -14.1          
+  8  0.5333    -2.73           0.13     3.38     5.75       -15.5          
+  9  0.6000    -4.85           0.42     4.09     6.52       -17.0          
+ 10  0.6667    -6.77           0.81     4.84     7.32       -18.5          
+ 11  0.7333    -8.75           1.29     5.61     8.13       -19.9          
+ 12  0.8000    -10.92          1.87     6.44     8.99       -21.5          
+ 13  0.8667    -13.62          2.54     7.31     9.89       -23.5          
+ 14  0.9333    -16.78          3.33     8.23    10.81       -25.6          
+ 15  1.0000    -20.00          4.23     9.21    11.81       -28.2          
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:15 -34.00:15 -32.00:14 -30.00:13 -28.00:12 -26.00:11 -24.00:10 -22.00:9 -20.00:8 -18.00:6 -16.00:5 -14.00:4 -12.00:3 -10.00:2 -8.00:1 -6.00:0 -4.00:0 -2.00:0 0.00:0
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f747363_1.0.3.json
+--- exit=0   10:53:40   wall_s=129   ilok=[0x01130000 / 2]
+=== [2] Lindell 254E   10:53:40   ilok=[0x01130000 / 2]   power='AC Power'
+  neutral: [0] Mix -> norm 1 ('100%') for mix_wet
+  sweeping Lindell 254E (unseen version 1.2.2: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - Lindell 254E -> AudioUnit_6f457233_1.2.2.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [7] Threshold unit 'dBu' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [6] ran at '3:1' -> 3 | auto make-up disabled: no
+default-threshold reference ('-4dBu', spec 4.7 check only):  -60.00 out-in 2.28  -58.00 out-in 2.28  -56.00 out-in 2.28  -54.00 out-in 2.28  -52.00 out-in 2.28  -50.00 out-in 2.28  -48.00 out-in 2.28  -46.00 out-in 2.28  -44.00 out-in 2.28  -42.00 out-in 2.28  -40.00 out-in 2.28  -38.00 out-in 2.28  -36.00 out-in 2.28  -34.00 out-in 2.28  -32.00 out-in 2.28  -30.00 out-in 2.28  -28.00 out-in 2.28  -26.00 out-in 2.28  -24.00 out-in 1.88  -22.00 out-in 0.30  -20.00 out-in -0.80  -18.00 out-in -1.52  -16.00 out-in -2.20  -14.00 out-in -3.09  -12.00 out-in -4.14  -10.00 out-in -5.31  -8.00 out-in -6.57  -6.00 out-in -7.90  -4.00 out-in -9.27  -2.00 out-in -10.67  0.00 out-in -12.11  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 37 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -20dBu          8.85    17.30    21.76       -37.8          
+  1  0.0667    -18dBu          7.59    15.84    20.25       -35.8          
+  2  0.1333    -16dBu          6.42    14.38    18.77       -33.8          
+  3  0.2000    -14dBu          5.37    12.95    17.30       -31.8          
+  4  0.2667    -12dBu          4.48    11.55    15.84       -29.8          
+  5  0.3333    -10dBu          3.81    10.18    14.39       -27.8          
+  6  0.4000    -8dBu           3.09     8.85    12.95       -25.8          
+  7  0.4667    -6dBu           1.99     7.59    11.55       -23.8          
+  8  0.5333    -4dBu           0.40     6.42    10.18       -21.8          
+  9  0.6000    -2dBu          -0.00     5.37     8.86       -19.8          
+ 10  0.6667    0dBu           -0.00     4.48     7.59       -17.8          
+ 11  0.7333    2dBu           -0.00     3.81     6.42       -16.1          
+ 12  0.8000    4dBu           -0.00     3.09     5.37       -14.4          
+ 13  0.8667    6dBu           -0.00     1.99     4.48       -12.7          
+ 14  0.9333    8dBu           -0.00     0.40     3.81       -11.2          
+ 15  1.0000    10dBu          -0.00    -0.00     3.09        -9.7          
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:0 -36.00:1 -34.00:2 -32.00:3 -30.00:4 -28.00:5 -26.00:6 -24.00:7 -22.00:8 -20.00:9 -18.00:10 -16.00:11 -14.00:12 -12.00:13 -10.00:14 -8.00:15 -6.00:15 -4.00:15 -2.00:15 0.00:15
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f457233_1.2.2.json
+--- exit=0   10:54:39   wall_s=59   ilok=[]
+=== [3] Lindell 7X-500   10:54:39   ilok=[]   power='AC Power'
+  neutral: [4] Mix -> norm 1 ('10.0') for mix_wet
+  sweeping Lindell 7X-500 (unseen version 1.2.2: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 5 position(s) added where adjacent 2 dB points differ by more than 3 dB
+  grid refinement round 2: 1 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - Lindell 7X-500 -> AudioUnit_6f457232_1.2.2.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [0] Input unit '' (class input_as_threshold, flags input_as_threshold) | positions 22 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [9] Stereo Link = '50%', [12] Link ON = 'Off'
+ratio: [5] ran at '4:1' -> 4 | auto make-up disabled: no
+default-threshold reference ('3.0', spec 4.7 check only):  -60.00 out-in 1.81  -58.00 out-in 1.81  -56.00 out-in 1.81  -54.00 out-in 1.81  -52.00 out-in 1.81  -50.00 out-in 1.81  -48.00 out-in 1.81  -46.00 out-in 1.81  -44.00 out-in 1.81  -42.00 out-in 1.81  -40.00 out-in 1.81  -38.00 out-in 1.81  -36.00 out-in 1.81  -34.00 out-in 1.81  -32.00 out-in 1.80  -30.00 out-in 1.80  -28.00 out-in 1.80  -26.00 out-in 1.80  -24.00 out-in 1.80  -22.00 out-in 1.80  -20.00 out-in 1.78  -18.00 out-in 1.32  -16.00 out-in -0.08  -14.00 out-in -1.77  -12.00 out-in -3.54  -10.00 out-in -5.35  -8.00 out-in -7.16  -6.00 out-in -8.96  -4.00 out-in -10.74  -2.00 out-in -12.49  0.00 out-in -14.20  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 22
+processes: 49 run, 0 retried, 0 position(s) failed
+write verify: 22 landed, 0 write_unlanded (skipped), in-stack read already matched on 22 of 22, pump slices total 22, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.0               --       --       --          --          
+  1  0.0667    0.7             0.00     0.01     0.12        -5.5          
+  2  0.0889    0.9             0.00     0.01     1.44        -8.3          
+  3  0.1111    1.1             0.00     0.02     3.03       -10.4          
+  4  0.1333    1.3             0.01     0.12     4.42       -12.1          
+  5  0.1667    1.7             0.01     1.05     6.16       -14.2          
+  6  0.2000    2.0             0.01     2.27     7.59       -15.7          
+  7  0.2667    2.7             0.01     4.44     9.85       -18.3          
+  8  0.3333    3.3             0.01     6.18    11.59       -20.2          
+  9  0.4000    4.0             0.01     7.61    12.99       -21.7          
+ 10  0.4667    4.7             0.02     8.82    14.15       -23.1          
+ 11  0.5333    5.3             0.13     9.87    15.15       -24.3          
+ 12  0.6000    6.0             0.50    10.79    16.03       -25.2          
+ 13  0.6167    6.2             1.77    12.42    17.57       -27.2          
+ 14  0.6333    6.3             3.03    13.75    18.81       -28.8          
+ 15  0.6667    6.7             5.17    15.83    20.74       -31.1          
+ 16  0.7000    7.0             6.87    17.42    22.20       -33.0          
+ 17  0.7333    7.3             8.27    18.69    23.37       -34.6          
+ 18  0.8000    8.0            10.49    20.65    25.18       -37.0          
+ 19  0.8667    8.7            12.19    22.14    26.55       -38.9          
+ 20  0.9333    9.3            13.57    23.32    27.64       -40.5          
+ 21  1.0000    10.0           14.72    24.31    28.55       -41.7          
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:21 -38.00:20 -36.00:19 -34.00:18 -32.00:17 -30.00:16 -28.00:15 -26.00:14 -24.00:12 -22.00:11 -20.00:9 -18.00:8 -16.00:7 -14.00:6 -12.00:5 -10.00:4 -8.00:3 -6.00:2 -4.00:1 -2.00:1 0.00:1
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f457232_1.2.2.json
+--- exit=0   10:56:43   wall_s=124   ilok=[]
+=== [4] bx_townhouse Buss Compressor   10:56:43   ilok=[]   power='AC Power'
+  neutral: [8] MakeUp -> norm 0 ('0.0 dB') for makeup_zero
+  neutral: [10] Mix -> norm 1 ('100 %') for mix_wet
+  sweeping bx_townhouse Buss Compressor (unseen version 1.8.1: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - bx_townhouse Buss Compressor -> AudioUnit_417f6e76_1.8.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [4] Thresh unit 'dB' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [5] ran at '2:1' -> 2 | auto make-up disabled: no
+default-threshold reference ('0.0 dB', spec 4.7 check only):  -60.00 out-in 0.25  -58.00 out-in 0.25  -56.00 out-in 0.25  -54.00 out-in 0.25  -52.00 out-in 0.25  -50.00 out-in 0.25  -48.00 out-in 0.25  -46.00 out-in 0.25  -44.00 out-in 0.25  -42.00 out-in 0.25  -40.00 out-in 0.25  -38.00 out-in 0.25  -36.00 out-in 0.25  -34.00 out-in 0.25  -32.00 out-in 0.25  -30.00 out-in 0.25  -28.00 out-in 0.25  -26.00 out-in 0.25  -24.00 out-in 0.25  -22.00 out-in 0.25  -20.00 out-in 0.25  -18.00 out-in 0.25  -16.00 out-in 0.25  -14.00 out-in 0.25  -12.00 out-in -0.32  -10.00 out-in -1.08  -8.00 out-in -1.92  -6.00 out-in -2.84  -4.00 out-in -3.82  -2.00 out-in -4.83  0.00 out-in -5.98  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 38 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -20.0 dB        7.78    15.60    19.92       -39.3    -19.30
+  1  0.0667    -18.0 dB        6.28    13.77    17.96       -36.8    -18.80
+  2  0.1333    -16.0 dB        4.80    11.96    16.06       -34.1    -18.10
+  3  0.2000    -14.0 dB        3.45    10.23    14.21       -31.3    -17.30
+  4  0.2667    -12.0 dB        2.21     8.58    12.43       -28.7    -16.70
+  5  0.3333    -10.0 dB        1.09     7.00    10.65       -26.0    -16.00
+  6  0.4000    -8.0 dB         0.16     5.49     8.97       -23.3    -15.30
+  7  0.4667    -6.0 dB        -0.00     4.09     7.37       -20.7    -14.70
+  8  0.5333    -4.0 dB        -0.00     2.80     5.84       -17.8    -13.80
+  9  0.6000    -2.0 dB        -0.00     1.61     4.42       -15.1    -13.10
+ 10  0.6667    0.0 dB         -0.00     0.58     3.10       -12.4    -12.40
+ 11  0.7333    +2.0 dB        -0.00    -0.00     1.90        -9.5    -11.50
+ 12  0.8000    +4.0 dB        -0.00    -0.00     0.82        -7.1    -11.10
+ 13  0.8667    +6.0 dB        -0.00    -0.00    -0.00        -4.7    -10.70
+ 14  0.9333    +8.0 dB        -0.00    -0.00     0.00        -2.1    -10.10
+ 15  1.0000    +10.0 dB       -0.00    -0.00     0.00   {"above": 0.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:0 -36.00:1 -34.00:1 -32.00:2 -30.00:3 -28.00:4 -26.00:4 -24.00:5 -22.00:6 -20.00:7 -18.00:7 -16.00:8 -14.00:9 -12.00:10 -10.00:10 -8.00:11 -6.00:12 -4.00:13 -2.00:13 0.00:14
+2 engage drift:    9.82  -10.00:11.50  -12.00:12.17  -14.00:12.63  -16.00:13.08  -18.00:13.46  -2.00:9.48  -20.00:14.19  -22.00:14.64  -24.00:15.05  -26.00:15.52  -28.00:16.21  -30.00:16.64  -32.00:17.10  -34.00:17.55  -36.00:18.22  -38.00:18.84  -4.00:10.16  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:10.59  -60.00:null  -8.00:11.06  0.00:9.02   (primary; displayLinear unset until the population decides)
+   offset IQR:      5.05 dB over 15 positions (min -19.30, max -10.10)
+3 displayOffsetDb: -14.70  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_417f6e76_1.8.1.json
+--- exit=0   10:57:36   wall_s=53   ilok=[]
+=== [5] elysia alpha mix   10:57:36   ilok=[]   power='AC Power'
+  neutral: [13] Mix -> norm 0.9375 ('100.0 %') for mix_wet
+  sweeping elysia alpha mix (unseen version 1.17.1: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - elysia alpha mix -> AudioUnit_45756f3a_1.17.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Threshold unit 'dB' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [1] Link = 'On'
+ratio: [8] ran at '1.5' -> 1.5 | auto make-up disabled: no
+default-threshold reference ('+20.0 dB', spec 4.7 check only):  -60.00 out-in 0.00  -58.00 out-in 0.00  -56.00 out-in -0.00  -54.00 out-in 0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in 0.00  -46.00 out-in -0.00  -44.00 out-in -0.00  -42.00 out-in 0.00  -40.00 out-in -0.00  -38.00 out-in 0.00  -36.00 out-in 0.00  -34.00 out-in -0.00  -32.00 out-in 0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in 0.00  -24.00 out-in -0.00  -22.00 out-in 0.00  -20.00 out-in 0.00  -18.00 out-in -0.00  -16.00 out-in 0.00  -14.00 out-in 0.00  -12.00 out-in -0.00  -10.00 out-in 0.00  -8.00 out-in 0.00  -6.00 out-in -0.00  -4.00 out-in 0.00  -2.00 out-in -0.00  0.00 out-in -0.13  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 37 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 3.0 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    +20.0 dB       -0.00     0.00     0.00   {"above": 0.0}          
+  1  0.0667    +18.5 dB       -0.00     0.00     0.00   {"above": 0.0}          
+  2  0.1333    +16.6 dB       -0.00     0.00     0.00        -1.9    -18.50
+  3  0.2000    +14.2 dB       -0.00     0.00     0.12        -3.7    -17.90
+  4  0.2667    +11.3 dB       -0.00     0.00     0.51        -6.3    -17.60
+  5  0.3333    +9.0 dB        -0.00     0.07     0.93        -8.0    -17.00
+  6  0.4000    +6.4 dB        -0.00     0.32     1.46       -10.0    -16.40
+  7  0.4667    +3.5 dB        -0.00     0.84     2.12       -12.4    -15.90
+  8  0.5333    +0.5 dB        -0.00     1.43     2.84       -15.0    -15.50
+  9  0.6000    -1.8 dB        -0.00     1.95     3.45       -17.0    -15.20
+ 10  0.6667    -4.0 dB         0.13     2.48     4.05       -18.9    -14.90
+ 11  0.7333    -6.2 dB         0.42     3.03     4.66       -20.9    -14.70
+ 12  0.8000    -8.4 dB         0.81     3.61     5.30       -22.8    -14.40
+ 13  0.8667    -10.6 dB        1.25     4.21     5.97       -24.8    -14.20
+ 14  0.9333    -12.3 dB        1.61     4.68     6.51       -26.3    -14.00
+ 15  1.0000    -13.0 dB        1.77     4.89     6.74       -27.1    -14.10
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:15 -28.00:14 -26.00:13 -24.00:12 -22.00:11 -20.00:10 -18.00:9 -16.00:8 -14.00:8 -12.00:7 -10.00:6 -8.00:5 -6.00:4 -4.00:4 -2.00:3 0.00:2
+2 engage drift:    0.33  -10.00:17.28  -12.00:17.23  -14.00:17.04  -16.00:17.27  -18.00:17.25  -2.00:17.27  -20.00:17.29  -22.00:17.25  -24.00:17.19  -26.00:17.28  -28.00:17.19  -30.00:17.32  -32.00:null  -34.00:null  -36.00:null  -38.00:null  -4.00:17.26  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:17.37  -60.00:null  -8.00:17.36  0.00:17.29   (primary; displayLinear unset until the population decides)
+   offset IQR:      2.38 dB over 14 positions (min -18.50, max -14.00)
+3 displayOffsetDb: -15.35  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_45756f3a_1.17.1.json
+--- exit=0   10:58:58   wall_s=82   ilok=[]
+=== [6] Bettermaker Bus Compressor DSP   10:58:58   ilok=[]   power='AC Power'
+  neutral: [7] MIX -> norm 1 ('100.00') for mix_wet
+  neutral: [11] THD MIX -> norm 1 ('100.00') for mix_wet
+  sweeping Bettermaker Bus Compressor DSP (unseen version 1.0.0: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - Bettermaker Bus Compressor DSP -> AudioUnit_6f603a72_1.0.0.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] THRESHOLD unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [3] ran at '2.00' -> 2 | auto make-up disabled: no
+default-threshold reference ('-5.00', spec 4.7 check only):  -60.00 out-in 0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in 0.00  -52.00 out-in 0.01  -50.00 out-in 0.00  -48.00 out-in 0.00  -46.00 out-in 0.01  -44.00 out-in 0.00  -42.00 out-in 0.00  -40.00 out-in 0.01  -38.00 out-in 0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in 0.00  -30.00 out-in 0.01  -28.00 out-in 0.00  -26.00 out-in 0.00  -24.00 out-in 0.01  -22.00 out-in 0.00  -20.00 out-in 0.00  -18.00 out-in 0.01  -16.00 out-in 0.00  -14.00 out-in 0.00  -12.00 out-in -0.04  -10.00 out-in -0.19  -8.00 out-in -0.42  -6.00 out-in -0.76  -4.00 out-in -1.18  -2.00 out-in -1.71  0.00 out-in -2.33  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 38 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -35.00          4.76    10.74    13.74       -33.5          
+  1  0.0667    -32.30          3.56     9.39    12.39       -30.8          
+  2  0.1333    -29.70          2.57     8.09    11.09       -28.3          
+  3  0.2000    -27.00          1.71     6.74     9.74       -25.5          
+  4  0.2667    -24.30          1.03     5.39     8.39       -22.8          
+  5  0.3333    -21.70          0.53     4.16     7.09       -20.3          
+  6  0.4000    -19.00          0.19     3.04     5.74       -17.7          
+  7  0.4667    -16.30          0.02     2.10     4.43       -15.3          
+  8  0.5333    -13.70          0.00     1.36     3.31       -13.1          
+  9  0.6000    -11.00          0.00     0.76     2.33       -10.7          
+ 10  0.6667    -8.30           0.00     0.33     1.52        -8.6          
+ 11  0.7333    -5.70           0.00     0.09     0.90        -6.7          
+ 12  0.8000    -3.00           0.00     0.00     0.43        -4.4          
+ 13  0.8667    -0.30           0.00     0.00     0.13        -2.7          
+ 14  0.9333    2.30            0.00     0.00     0.01        -1.1          
+ 15  1.0000    5.00            0.00     0.00    -0.00   {"above": 0.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:0 -34.00:1 -32.00:2 -30.00:2 -28.00:3 -26.00:4 -24.00:5 -22.00:5 -20.00:6 -18.00:7 -16.00:8 -14.00:8 -12.00:9 -10.00:10 -8.00:11 -6.00:11 -4.00:12 -2.00:13 0.00:14
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f603a72_1.0.0.json
+--- exit=0   10:59:52   wall_s=54   ilok=[]
+=== [7] elysia mpressor   10:59:53   ilok=[]   power='AC Power'
+  sweeping elysia mpressor (unseen version 1.15.1: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 4 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - elysia mpressor -> AudioUnit_49696d78_1.15.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] Threshold unit 'dB' (class single_threshold) | positions 20 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [1] Link = 'On'
+ratio: [9] ran at '2.8' -> 2.8 | auto make-up disabled: no
+default-threshold reference ('16.0 dB', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.02  -56.00 out-in -0.02  -54.00 out-in -0.02  -52.00 out-in -0.02  -50.00 out-in -0.02  -48.00 out-in -0.02  -46.00 out-in -0.02  -44.00 out-in -0.02  -42.00 out-in -0.02  -40.00 out-in -0.02  -38.00 out-in -0.02  -36.00 out-in -0.02  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.03  -22.00 out-in -0.03  -20.00 out-in -0.03  -18.00 out-in -0.03  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.06  -10.00 out-in -0.08  -8.00 out-in -0.11  -6.00 out-in -0.16  -4.00 out-in -0.39  -2.00 out-in -1.54  0.00 out-in -3.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 -0.00 0.00 -0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 -0.00 0.00 0.00 0.00 0.00 0.00 0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 20
+processes: 44 run, 0 retried, 0 position(s) failed
+write verify: 20 landed, 0 write_unlanded (skipped), in-stack read already matched on 20 of 20, pump slices total 20, longest confirm 2.5 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    16.0 dB         0.00     0.04     0.13        -4.5    -20.50
+  1  0.0667    14.5 dB         0.00     0.04     0.22        -5.8    -20.30
+  2  0.1333    11.7 dB         0.00     0.04     1.55        -8.5    -20.20
+  3  0.1667    9.8 dB          0.00     0.04     2.72       -10.3    -20.10
+  4  0.2000    8.2 dB          0.00     0.17     3.76       -11.9    -20.10
+  5  0.2667    5.3 dB          0.00     1.70     5.64       -14.8    -20.10
+  6  0.3000    3.5 dB          0.00     2.83     6.81       -16.5    -20.00
+  7  0.3333    1.7 dB          0.00     4.00     7.97       -18.3    -20.00
+  8  0.3667    -0.2 dB         0.00     5.18     9.14       -20.1    -19.90
+  9  0.4000    -2.0 dB         0.00     6.40    10.32       -21.9    -19.90
+ 10  0.4333    -3.8 dB         0.14     7.55    11.49       -23.7    -19.90
+ 11  0.4667    -5.4 dB         0.82     8.55    12.54       -25.2    -19.80
+ 12  0.5333    -7.6 dB         2.22     9.96    13.93       -27.5    -19.90
+ 13  0.6000    -9.8 dB         3.63    11.37    15.33       -29.6    -19.80
+ 14  0.6667    -11.7 dB        4.82    12.61    16.53       -31.5    -19.80
+ 15  0.7333    -13.1 dB        5.77    13.53    17.47       -33.0    -19.90
+ 16  0.8000    -14.6 dB        6.74    14.47    18.46       -34.4    -19.80
+ 17  0.8667    -16.1 dB        7.67    15.40    19.38       -35.9    -19.80
+ 18  0.9333    -17.3 dB        8.43    16.17    20.14       -37.1    -19.80
+ 19  1.0000    -18.0 dB        8.90    16.64    20.61       -37.8    -19.80
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:18 -34.00:17 -32.00:15 -30.00:14 -28.00:13 -26.00:12 -24.00:11 -22.00:10 -20.00:9 -18.00:8 -16.00:7 -14.00:6 -12.00:5 -10.00:4 -8.00:3 -6.00:2 -4.00:1 -2.00:0 0.00:0
+2 engage drift:    0.97  -10.00:19.11  -12.00:19.22  -14.00:19.08  -16.00:19.13  -18.00:19.06  -2.00:19.63  -20.00:19.07  -22.00:19.09  -24.00:19.11  -26.00:19.09  -28.00:19.05  -30.00:19.04  -32.00:19.13  -34.00:19.00  -36.00:19.06  -38.00:null  -4.00:19.32  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:19.41  -60.00:null  -8.00:19.15  0.00:19.98   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.30 dB over 20 positions (min -20.50, max -19.80)
+3 displayOffsetDb: -19.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_49696d78_1.15.1.json
+--- exit=0   11:01:40   wall_s=107   ilok=[]
+=== [8] Acme Opticom XLA-3   11:01:40   ilok=[]   power='AC Power'
+  neutral: [9] Dry/Wet Mix -> norm 1 ('100 %') for mix_wet
+  sweeping Acme Opticom XLA-3 (unseen version 1.10.1: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 6 position(s) added where adjacent 2 dB points differ by more than 3 dB
+  grid refinement round 2: 2 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - Acme Opticom XLA-3 -> AudioUnit_62485258_1.10.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] Input Gain unit '' (class input_as_threshold, flags input_as_threshold) | positions 24 (16 evenly spaced), one process each, levels quiet to loud
+pick: input_as_threshold: [3] is the only continuous candidate; [6] stepped, 2 steps - chosen by range and step count, not by name
+links as instantiated (recorded, not written): [7] Stereo Link = 'On'
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('4.0', spec 4.7 check only):  -60.00 out-in 9.40  -58.00 out-in 9.41  -56.00 out-in 9.40  -54.00 out-in 9.41  -52.00 out-in 9.41  -50.00 out-in 9.40  -48.00 out-in 9.41  -46.00 out-in 9.40  -44.00 out-in 9.40  -42.00 out-in 9.40  -40.00 out-in 9.40  -38.00 out-in 9.40  -36.00 out-in 9.40  -34.00 out-in 9.40  -32.00 out-in 9.40  -30.00 out-in 9.40  -28.00 out-in 9.38  -26.00 out-in 8.70  -24.00 out-in 7.41  -22.00 out-in 5.90  -20.00 out-in 4.32  -18.00 out-in 2.69  -16.00 out-in 1.08  -14.00 out-in -0.51  -12.00 out-in -2.03  -10.00 out-in -3.44  -8.00 out-in -4.66  -6.00 out-in -5.60  -4.00 out-in -6.32  -2.00 out-in -6.89  0.00 out-in -7.33  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- -- 0.05 -0.02 -0.01 -0.00 0.00 -0.01 -0.01 -0.00 0.00 -0.00 -0.00 -0.00 -0.00 -0.00 0.00 0.00 0.00 0.00 -0.01 -0.01 -0.01 -0.01
+reference ladder: 3 position(s) below the first rung (21@-60 22@-60 23@-60)
+writes landed by: instack 24
+processes: 53 run, 0 retried, 0 position(s) failed
+write verify: 24 landed, 0 write_unlanded (skipped), in-stack read already matched on 24 of 24, pump slices total 24, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.0               --       --       --          --          
+  1  0.0667    0.7               --       --       --          --          
+  2  0.1333    1.3             0.01     0.15     4.01          --          
+  3  0.1444    1.4             0.00     0.98     5.49          --          
+  4  0.1556    1.6             0.01     2.01     6.73          --          
+  5  0.1778    1.8             0.00     3.86     8.69          --          
+  6  0.2000    2.0             0.01     5.38    10.19          --          
+  7  0.2333    2.3             0.00     7.03    11.73          --          
+  8  0.2667    2.7             0.03     8.38    12.89          --          
+  9  0.3333    3.3             0.92    10.22    14.28          --          
+ 10  0.4000    4.0             1.99    11.44    15.01          --          
+ 11  0.4667    4.7             3.48    12.83    15.72          --          
+ 12  0.5000    5.0             4.14    13.37    15.97          --          
+ 13  0.5167    5.2             6.00    14.63    16.55          --          
+ 14  0.5333    5.3             7.47    15.36    16.91          --          
+ 15  0.5667    5.7             9.70    16.22    17.37          --          
+ 16  0.6000    6.0            11.32    16.70    17.66          --          
+ 17  0.6333    6.3            12.54    17.02    17.86          --          
+ 18  0.6667    6.7            13.47    17.25    18.02          --          
+ 19  0.7333    7.3            14.80    17.61    18.31          --          
+ 20  0.8000    8.0            15.60    17.86    18.57          --          
+ 21  0.8667    8.7            16.19    18.09    18.90          --          
+ 22  0.9333    9.3            16.40    18.19    19.08          --          
+ 23  1.0000    10.0           16.41    18.19    19.08          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:21 -46.00:20 -44.00:20 -42.00:19 -40.00:18 -38.00:16 -36.00:15 -34.00:15 -32.00:14 -30.00:13 -28.00:11 -26.00:10 -24.00:9 -22.00:8 -20.00:7 -18.00:6 -16.00:5 -14.00:4 -12.00:3 -10.00:2 -8.00:2 -6.00:2 -4.00:2 -2.00:2 0.00:2
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_62485258_1.10.1.json
+--- exit=0   11:06:29   wall_s=289   ilok=[]
+=== [9] bx_opto   11:06:29   ilok=[]   power='AC Power'
+  neutral: [6] Mix -> norm 1 ('100 %') for mix_wet
+  sweeping bx_opto (unseen version 1.10.1: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 11 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - bx_opto -> AudioUnit_417f7e74_1.10.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Peak Reduction unit '' (class single_threshold) | positions 27 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.02  -52.00 out-in -0.01  -50.00 out-in -0.01  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.01  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.01  -32.00 out-in -0.02  -30.00 out-in -0.01  -28.00 out-in -0.01  -26.00 out-in -0.01  -24.00 out-in -0.01  -22.00 out-in -0.01  -20.00 out-in -0.01  -18.00 out-in -0.01  -16.00 out-in -0.02  -14.00 out-in -0.01  -12.00 out-in -0.01  -10.00 out-in -0.01  -8.00 out-in -0.01  -6.00 out-in -0.01  -4.00 out-in -0.01  -2.00 out-in -0.01  0.00 out-in -0.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 0.00 0.00 0.00 0.00
+reference ladder: 4 position(s) below the first rung (23@-60 24@-60 25@-60 26@-60)
+writes landed by: instack 27
+processes: 59 run, 0 retried, 0 position(s) failed
+write verify: 27 landed, 0 write_unlanded (skipped), in-stack read already matched on 27 of 27, pump slices total 27, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0              -0.00    -0.00    -0.00          --          
+  1  0.0667    6              -0.00    -0.00    -0.00          --          
+  2  0.1333    13             -0.00    -0.00    -0.00          --          
+  3  0.2000    20             -0.00    -0.00    -0.00          --          
+  4  0.2667    26             -0.00    -0.00     0.43          --          
+  5  0.3000    30             -0.00    -0.00     1.48          --          
+  6  0.3333    33             -0.00     0.04     2.70          --          
+  7  0.3667    36             -0.00     0.66     4.09          --          
+  8  0.4000    40             -0.00     1.74     5.58          --          
+  9  0.4333    43             -0.00     3.00     7.13          --          
+ 10  0.4667    46             -0.00     4.43     8.71          --          
+ 11  0.5000    50              0.00     5.94    10.31          --          
+ 12  0.5333    53              0.20     7.49    11.92          --          
+ 13  0.5667    56              1.14     9.08    13.52          --          
+ 14  0.6000    60              2.30    10.68    15.13          --          
+ 15  0.6333    63              3.65    12.29    16.72          --          
+ 16  0.6667    66              5.12    13.89    18.30          --          
+ 17  0.7000    70              6.65    15.50    19.87          --          
+ 18  0.7333    73              8.22    17.09    21.41          --          
+ 19  0.7667    76              9.82    18.66    22.93          --          
+ 20  0.8000    80             11.42    20.23    24.42          --          
+ 21  0.8333    83             13.03    21.77    25.90          --          
+ 22  0.8667    86             14.63    23.27    27.32          --          
+ 23  0.9000    90             16.24    24.77    28.73          --          
+ 24  0.9333    93             17.82    26.23    30.09          --          
+ 25  0.9667    96             19.39    27.65    31.40          --          
+ 26  1.0000    100            20.94    29.04    32.68          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:26 -50.00:25 -48.00:24 -46.00:23 -44.00:22 -42.00:21 -40.00:20 -38.00:19 -36.00:18 -34.00:17 -32.00:17 -30.00:16 -28.00:15 -26.00:14 -24.00:13 -22.00:12 -20.00:11 -18.00:10 -16.00:9 -14.00:8 -12.00:7 -10.00:6 -8.00:5 -6.00:5 -4.00:4 -2.00:4 0.00:3
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7e74_1.10.1.json
+--- exit=0   11:07:31   wall_s=62   ilok=[]
+PROFILE DONE 11:07:31

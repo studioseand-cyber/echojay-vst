@@ -1,0 +1,68 @@
+probe: "Lindell 254E" | AudioUnit:Effects/aufx,LBc3,Brwx | uid=6f457233 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+param	0	Mix	unit	
+def	1.000000	100%	default	1.000000
+at	0.000	0%
+at	0.500	50%
+at	1.000	100%
+param	1	HPF	unit	
+def	0.000000	20Hz	default	0.000000
+at	0.000	20Hz
+at	0.500	89Hz
+at	1.000	400Hz
+param	2	Limit	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Slow
+at	1.000	Fast
+param	3	Compress	unit	
+def	1.000000	Fast	default	1.000000
+at	0.000	Off
+at	0.500	Slow
+at	1.000	Fast
+param	4	Meter	unit	
+def	0.500000	Control	default	0.500000
+at	0.000	In
+at	0.500	Control
+at	1.000	Out
+param	5	Gain	unit	
+def	0.100000	2dB	default	0.100000
+at	0.000	0dB
+at	0.500	10dB
+at	1.000	20dB
+param	6	Ratio	unit	
+def	0.500000	3:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	3:1
+at	1.000	6:1
+param	7	Threshold	unit	
+def	0.533333	-4dBu	default	0.533333
+at	0.000	-20dBu
+at	0.500	-4dBu
+at	1.000	10dBu
+param	8	Compress Recovery	unit	
+def	1.000000	Auto	default	1.000000
+at	0.000	100mS
+at	0.500	800mS
+at	1.000	Auto
+param	9	Limit Level	unit	
+def	0.500000	8.0dBu	default	0.500000
+at	0.000	4.0dBu
+at	0.500	8.0dBu
+at	1.000	12.0dBu
+param	10	Limit Recovery	unit	
+def	1.000000	Auto	default	1.000000
+at	0.000	100mS
+at	0.500	800mS
+at	1.000	Auto
+param	11	Bypass	unit	
+def	0.000000	In	default	0.000000
+at	0.000	In
+at	0.500	Byp
+at	1.000	Byp
+param	12	Ext SideChain	unit	
+def	0.000000	On	default	0.000000
+at	0.000	On
+at	0.500	Off
+at	1.000	Off

@@ -1,0 +1,113 @@
+probe: "Lindell SBC" | AudioUnit:Effects/aufx,Lsbc,Brwx | uid=6f747363 | arch=arm64 | format=AudioUnit
+Initializing LSRLib...
+
+param	0	SC HPF	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	90.0 Hz
+at	1.000	400.0 Hz
+param	1	Mix	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	2	THD	unit	
+def	0.500000	-0.00	default	0.500000
+at	0.000	-30.00
+at	0.500	-0.00
+at	1.000	30.00
+param	3	Gain	unit	
+def	0.000000	0.00	default	0.000000
+at	0.000	0.00
+at	0.500	9.00
+at	1.000	24.00
+param	4	Knee	unit	
+def	0.000000	SOFT	default	0.000000
+at	0.000	SOFT
+at	0.500	MED
+at	1.000	HARD
+param	5	Link	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	70 %
+at	1.000	100 %
+param	6	Smash	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	7	Input Gain	unit	
+def	0.500000	-0.00	default	0.500000
+at	0.000	-10.00
+at	0.500	-0.00
+at	1.000	10.00
+param	8	Ratio	unit	
+def	0.500000	4:1	default	0.500000
+at	0.000	1.5:1
+at	0.500	4:1
+at	1.000	Inf
+param	9	Style	unit	
+def	0.000000	Feed Back	default	0.000000
+at	0.000	Feed Back
+at	0.500	Feed Back
+at	1.000	Feed Forward
+param	10	Link HP	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	11	Link LP	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	12	External Side Chain	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	13	Threshold	unit	
+def	0.500000	-1.61	default	0.500000
+at	0.000	10.00
+at	0.500	-1.61
+at	1.000	-20.00
+param	14	Output Gain	unit	
+def	0.500000	-0.00	default	0.500000
+at	0.000	-10.00
+at	0.500	-0.00
+at	1.000	10.00
+param	15	Manual Gain	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	16	Release	unit	
+def	0.500000	0.500	default	0.500000
+at	0.000	0.050
+at	0.500	0.500
+at	1.000	3.000
+param	17	Meter Mode	unit	
+def	0.500000	GR	default	0.500000
+at	0.000	IN
+at	0.500	GR
+at	1.000	OUT
+param	18	Compress	unit	
+def	1.000000	On	default	1.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	19	Attack	unit	
+def	0.500000	1 ms	default	0.500000
+at	0.000	0.03 ms
+at	0.500	1 ms
+at	1.000	30 ms
+param	20	Bypass	unit	
+def	0.000000	Off	default	0.000000
+at	0.000	Off
+at	0.500	Off
+at	1.000	On
+param	21	Filter	unit	
+def	0.000000	OFF	default	0.000000
+at	0.000	OFF
+at	0.500	MED
+at	1.000	LOUD

@@ -1,0 +1,37 @@
+EJ Map threshold sweep - Lindell 254E -> AudioUnit_6f457233_1.2.2.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [7] Threshold unit 'dBu' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [6] ran at '3:1' -> 3 | auto make-up disabled: no
+default-threshold reference ('-4dBu', spec 4.7 check only):  -60.00 out-in 2.28  -58.00 out-in 2.28  -56.00 out-in 2.28  -54.00 out-in 2.28  -52.00 out-in 2.28  -50.00 out-in 2.28  -48.00 out-in 2.28  -46.00 out-in 2.28  -44.00 out-in 2.28  -42.00 out-in 2.28  -40.00 out-in 2.28  -38.00 out-in 2.28  -36.00 out-in 2.28  -34.00 out-in 2.28  -32.00 out-in 2.28  -30.00 out-in 2.28  -28.00 out-in 2.28  -26.00 out-in 2.28  -24.00 out-in 1.88  -22.00 out-in 0.30  -20.00 out-in -0.80  -18.00 out-in -1.52  -16.00 out-in -2.20  -14.00 out-in -3.09  -12.00 out-in -4.14  -10.00 out-in -5.31  -8.00 out-in -6.57  -6.00 out-in -7.90  -4.00 out-in -9.27  -2.00 out-in -10.67  0.00 out-in -12.11  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 37 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -20dBu          8.85    17.30    21.76       -37.8          
+  1  0.0667    -18dBu          7.59    15.84    20.25       -35.8          
+  2  0.1333    -16dBu          6.42    14.38    18.77       -33.8          
+  3  0.2000    -14dBu          5.37    12.95    17.30       -31.8          
+  4  0.2667    -12dBu          4.48    11.55    15.84       -29.8          
+  5  0.3333    -10dBu          3.81    10.18    14.39       -27.8          
+  6  0.4000    -8dBu           3.09     8.85    12.95       -25.8          
+  7  0.4667    -6dBu           1.99     7.59    11.55       -23.8          
+  8  0.5333    -4dBu           0.40     6.42    10.18       -21.8          
+  9  0.6000    -2dBu          -0.00     5.37     8.86       -19.8          
+ 10  0.6667    0dBu           -0.00     4.48     7.59       -17.8          
+ 11  0.7333    2dBu           -0.00     3.81     6.42       -16.1          
+ 12  0.8000    4dBu           -0.00     3.09     5.37       -14.4          
+ 13  0.8667    6dBu           -0.00     1.99     4.48       -12.7          
+ 14  0.9333    8dBu           -0.00     0.40     3.81       -11.2          
+ 15  1.0000    10dBu          -0.00    -0.00     3.09        -9.7          
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:0 -36.00:1 -34.00:2 -32.00:3 -30.00:4 -28.00:5 -26.00:6 -24.00:7 -22.00:8 -20.00:9 -18.00:10 -16.00:11 -14.00:12 -12.00:13 -10.00:14 -8.00:15 -6.00:15 -4.00:15 -2.00:15 0.00:15
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f457233_1.2.2.json

@@ -1,0 +1,18 @@
+probe: "bx_townhouse Buss Compressor" | AudioUnit:Effects/aumf,bxth,Brwx | uid=417f6e76 | arch=arm64 | format=AudioUnit
+
+0	Bank		4	1	1	0
+1	Comp In		2	1	1	0
+2	Key In		2	1	1	0
+3	AutoFade		2	1	1	0
+4	Thresh		2147483647	0	1	0
+5	Ratio		3	1	1	0
+6	Attack		6	1	1	0
+7	Release		5	1	1	0
+8	MakeUp		2147483647	0	1	0
+9	FadeRate		2147483647	0	1	0
+10	Mix		2147483647	0	1	0
+11	SC Filter		2147483647	0	1	0
+12	Virtual Gain		2147483647	0	1	0
+13	Headroom		2147483647	0	1	0
+14	Gain Reduction		2147483647	0	1	0
+15	Input		2147483647	0	1	0

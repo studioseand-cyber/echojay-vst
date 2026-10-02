@@ -1,0 +1,128 @@
+{
+  "product": "elysia alpha mix",
+  "map_fp": "cf86aa93352f9bd799f0ab5959a332bec663b056aff7623963fe906885953d60",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.6966667,
+    "point": 11,
+    "point_next": 10,
+    "in_at_g": -19.210000000000001,
+    "stepped": false
+  },
+  "writes": [
+    {
+      "control": "Active",
+      "index": 0,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Link",
+      "index": 1,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Feed Forward",
+      "index": 3,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Attack",
+      "index": 4,
+      "norm": 0.5,
+      "set": "26.0 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Attack Auto Fast",
+      "index": 5,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release",
+      "index": 6,
+      "norm": 0.5,
+      "set": "359.2 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release Auto Fast",
+      "index": 7,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC Gain",
+      "index": 9,
+      "norm": 0.5,
+      "set": "0.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC On",
+      "index": 10,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC Freq",
+      "index": 11,
+      "norm": 0.5,
+      "set": "310.0 Hz",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Warm",
+      "index": 12,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Mix",
+      "index": 13,
+      "norm": 0.9375,
+      "set": "100.0 %",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain",
+      "index": 14,
+      "norm": 0.0,
+      "set": "0.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain Reduction",
+      "index": 15,
+      "norm": 0.0,
+      "set": "0.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ratio",
+      "index": 8,
+      "norm": 0.363636,
+      "set": "1.5",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.0,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T111736.137+0100",
+  "ratio_norm_source": "ratio 1.5 written from profile.ratio.curve[0].norm 0.3636"
+}

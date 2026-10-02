@@ -1,0 +1,60 @@
+probe: "Bettermaker Bus Compressor DSP" | AudioUnit:Effects/aufx,Lx7x,Bmkr | uid=6f603a72 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	2	name	THRESHOLD	positions	1	levels	9
+spec	hz	997.000	hold_s	2.500	discard_s	2.200	win_s	0.300	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	in	1	Sidechain	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+sidechain	1	Sidechain	2	enabled	silent
+stage	prepare
+config	main_in	2	main_out	2	latency	0
+param	0	0.000000	SNAPSHOT	A
+param	1	1.000000	ENGAGE	ON
+param	2	0.750000	THRESHOLD	-5.00
+param	3	0.250000	RATIO	2.00
+param	4	0.499165	ATTACK	30.00
+param	5	0.201681	RELEASE	250.00
+param	6	0.000000	AUTO RELEASE	OFF
+param	7	1.000000	MIX	100.00
+param	8	0.400000	OUTPUT	0.00
+param	9	1.000000	THD ENABLE	ON
+param	10	0.000000	THD	0.00
+param	11	1.000000	THD MIX	100.00
+param	12	0.000000	SC HPF ENGAGE	OFF
+param	13	0.000000	SC HPF FREQ	10.00
+param	14	0.000000	SC MID ENGAGE	OFF
+param	15	0.000000	DETECTOR	PEAK
+param	16	0.000000	GAIN REDUCTION METER	0.00
+param	17	0.000000	EXTERNAL SIDE CHAIN	OFF
+set	0	0.000000	confirm_ms	3.0	getValue	0.000000	landed_by	instack	render_blocks	0	text	A
+set	1	1.000000	confirm_ms	2.2	getValue	1.000000	landed_by	instack	render_blocks	0	text	ON
+set	4	0.499165	confirm_ms	3.0	getValue	0.499165	landed_by	instack	render_blocks	0	text	30.00
+set	5	0.201681	confirm_ms	2.7	getValue	0.201681	landed_by	instack	render_blocks	0	text	250.00
+set	6	0.000000	confirm_ms	2.5	getValue	0.000000	landed_by	instack	render_blocks	0	text	OFF
+set	7	1.000000	confirm_ms	3.0	getValue	1.000000	landed_by	instack	render_blocks	0	text	100.00
+set	8	0.400000	confirm_ms	3.0	getValue	0.400000	landed_by	instack	render_blocks	0	text	0.00
+set	9	1.000000	confirm_ms	3.0	getValue	1.000000	landed_by	instack	render_blocks	0	text	ON
+set	10	0.000000	confirm_ms	3.2	getValue	0.000000	landed_by	instack	render_blocks	0	text	0.00
+set	11	1.000000	confirm_ms	2.2	getValue	1.000000	landed_by	instack	render_blocks	0	text	100.00
+set	12	0.000000	confirm_ms	2.8	getValue	0.000000	landed_by	instack	render_blocks	0	text	OFF
+set	13	0.000000	confirm_ms	3.6	getValue	0.000000	landed_by	instack	render_blocks	0	text	10.00
+set	14	0.000000	confirm_ms	2.7	getValue	0.000000	landed_by	instack	render_blocks	0	text	OFF
+set	15	0.000000	confirm_ms	3.8	getValue	0.000000	landed_by	instack	render_blocks	0	text	PEAK
+set	17	0.000000	confirm_ms	2.8	getValue	0.000000	landed_by	instack	render_blocks	0	text	OFF
+set	3	0.250000	confirm_ms	3.1	getValue	0.250000	landed_by	instack	render_blocks	0	text	2.00
+stage	position
+pos	0	norm	0.402619	confirm_ms	3.05	slices	1	instack_match	1	getValue	0.402619	landed_by	instack	render_blocks	0	text_ms	24.2	reads	2	text	-18.90
+hold	0	-90.00	level_db	-92.6603	in_rms_db	-93.0103	tone_frac	0.9181	ch	-92.6603,-92.6603	doubled	1	last_move_db	-0.1002	final_move_db	0.0158	win	-87.4542,-91.3703,-92.4369,-92.5928,-92.6347,-92.6443,-92.5876,-92.6878,-92.6292,-92.6487,-92.6281,-92.6443,-92.6612,-92.6405,-92.6339,-92.6180	nonfinite	0
+hold	0	-84.00	level_db	-86.9030	in_rms_db	-87.0103	tone_frac	0.9785	ch	-86.9030,-86.9030	doubled	0	last_move_db	0.0085	final_move_db	0.0085	win	-86.9093,-86.9262,-86.9129,-86.9441,-86.9099,-86.9359,-86.9138,-86.9053	nonfinite	0
+hold	0	-78.00	level_db	-80.9810	in_rms_db	-81.0103	tone_frac	0.9945	ch	-80.9810,-80.9810	doubled	0	last_move_db	0.0077	final_move_db	0.0077	win	-80.9906,-80.9813,-80.9857,-80.9809,-80.9839,-80.9786,-80.9837,-80.9759	nonfinite	0
+hold	0	-72.00	level_db	-75.0001	in_rms_db	-75.0103	tone_frac	0.9983	ch	-75.0001,-75.0001	doubled	0	last_move_db	0.0009	final_move_db	0.0009	win	-75.0007,-75.0004,-74.9994,-74.9998,-75.0046,-75.0009,-74.9971,-74.9962	nonfinite	0
+hold	0	-66.00	level_db	-69.0026	in_rms_db	-69.0103	tone_frac	0.9998	ch	-69.0026,-69.0026	doubled	0	last_move_db	-0.0031	final_move_db	-0.0031	win	-69.0060,-69.0055,-69.0055,-69.0072,-69.0039,-69.0036,-69.0032,-69.0064	nonfinite	0
+hold	0	-60.00	level_db	-63.0034	in_rms_db	-63.0103	tone_frac	1.0000	ch	-63.0034,-63.0034	doubled	0	last_move_db	0.0012	final_move_db	0.0012	win	-63.0055,-63.0080,-63.0061,-63.0042,-63.0048,-63.0069,-63.0068,-63.0056	nonfinite	0
+hold	0	-54.00	level_db	-57.0074	in_rms_db	-57.0103	tone_frac	0.9997	ch	-57.0074,-57.0074	doubled	0	last_move_db	0.0011	final_move_db	0.0011	win	-57.0069,-57.0057,-57.0046,-57.0058,-57.0072,-57.0072,-57.0059,-57.0047	nonfinite	0
+hold	0	-48.00	level_db	-51.0065	in_rms_db	-51.0103	tone_frac	0.9999	ch	-51.0065,-51.0065	doubled	0	last_move_db	-0.0016	final_move_db	-0.0016	win	-51.0050,-51.0050,-51.0068,-51.0074,-51.0067,-51.0050,-51.0054,-51.0071	nonfinite	0
+hold	0	-14.99	level_db	-19.9746	in_rms_db	-18.0000	tone_frac	1.0000	ch	-19.9746,-19.9746	doubled	0	last_move_db	0.0002	final_move_db	0.0002	win	-19.8746,-19.9772,-19.9770,-19.9754,-19.9746,-19.9757,-19.9772,-19.9770	nonfinite	0
+reread	0	steady
+timing	wall_ms	191.4	audio_s	25.000
+stage	done
