@@ -5653,7 +5653,7 @@ void testLoopOutcomes()
         qa.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/Unseen.vst3" }, { "reason", "hang_in_findAllTypesForFile" }, { "stage", "scan" }, { "at", "t" } }));
         juce::Array<juce::var> mk1 { "AudioUnit|62485258" };
         auto* prods = new juce::DynamicObject();
-        prods->setProperty ("acme opticom xla-3|acme", obj ({ { "name", "Acme Opticom XLA-3" }, { "category", "compressor" }, { "mark_keys", mk1 } }));
+        prods->setProperty ("acme opticom xla-3|acme", obj ({ { "name", "Opticom XLA-3 (Acme)" }, { "category", "compressor" }, { "mark_keys", mk1 } }));   // the name differs from the AU's: only the uid resolves it
         prods->setProperty ("ana2|sonic academy", obj ({ { "name", "ANA2" }, { "category", "synth" }, { "mark_keys", juce::Array<juce::var>() } }));
         const auto cats = obj ({ { "products", juce::var (prods) } });
         std::map<juce::String, juce::StringArray> byBundle { { "/Library/Audio/Plug-Ins/Components/Acme.component", juce::StringArray { "Acme Opticom XLA-3" } } };
