@@ -9692,6 +9692,9 @@ public:
 
     /** --categorise: the same path the button drives, so the CLI proof and the
         mapper's press cannot diverge. */
+    juce::String scanSummaryLine() const { return juce::String ((int) rows.size()) + " scanned row(s) in " + scanCacheFile().getFullPathName(); }
+    void scanFromCli() { runScan(); }          // the Scan button, for --scan
+
     void categoriseFromCli()
     {
         std::cout << "CATEGORISE (before): " << categoriseLine() << std::endl;

@@ -59,7 +59,7 @@ public:
         juce::String fitTestId; int fitHoldSeconds = 0;
         juce::String mbandsTestId, mbandsMode;
         juce::String conlyTestId, conlyCat;
-        bool worklist = false, worklistNext = false, categoriseOnly = false;
+        bool worklist = false, worklistNext = false, categoriseOnly = false, scanOnly = false;
         bool sweepReport = false, sweepReportPerRun = false, sweepReportByVendor = false;
         bool sweep = false, sweepDry = false, sweepCaptures = false; int sweepLimit = 0;
         juce::String resweepTargetsPath;
@@ -132,6 +132,8 @@ public:
                 sweepReportByVendor = true;
             else if (args[i] == "--categorise")
                 categoriseOnly = true;
+            else if (args[i] == "--scan")                      // the Scan button, headless (2 Oct: the stranger's runbook has no GUI step)
+                scanOnly = true;
             else if (args[i] == "--next")
                 worklistNext = true;
             else if (args[i] == "--sweep")
@@ -378,6 +380,20 @@ public:
                 m->runSweep (lim, dry, caps);
             });
         }
+        else if (scanOnly && mainWindow->getMain() != nullptr)
+        {
+            // --scan [--categorise]: exactly what the Scan button (then the Categorise button) does, then quit. The
+            // scan writes scan-cache.xml and resumes from scan-progress.jsonl if an earlier attempt died in a bundle.
+            auto* m2 = mainWindow->getMain(); const bool alsoCat = categoriseOnly;
+            juce::MessageManager::callAsync ([m2, alsoCat]
+            {
+                std::cout << "SCAN: starting (the Scan button, headless)" << std::endl;
+                m2->scanFromCli();
+                std::cout << "SCAN: done - " << m2->scanSummaryLine() << std::endl;
+                if (alsoCat) m2->categoriseFromCli();
+                juce::JUCEApplication::quit();
+            });
+        }
         else if (categoriseOnly && mainWindow->getMain() != nullptr)
         {
             auto* m2 = mainWindow->getMain();
@@ -592,6 +608,14 @@ namespace
                 for (int j = i + 3; j < argc; ++j) rest.add (juce::String (juce::CharPointer_UTF8 (argv[j])));
                 return ejmap::cert::runProbeOnce (cwdFile (argAt (argc, argv, i + 1)),
                                                   rest, juce::jmax (1, argAt (argc, argv, i + 2).getIntValue()) * 1000);
+            }
+            // --cert-preflight: what a batch would use, with no flags - the probe beside this executable and its signature,
+            // the cert root, the ledger, the iLok. The stranger's-Mac test's A1 evidence (docs/STRANGER_MAC_TEST.md).
+            if (a == "--cert-preflight")
+            {
+                ejmap::cert::SweepOptions o;
+                ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+                return ejmap::cert::runPreflight (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
             }
             // --cert-sweep-census [fixturesDir]: the store defaults to ~/Library/ejmap/cert/fixtures, as the sweep's does.
             if (a == "--cert-sweep-census")

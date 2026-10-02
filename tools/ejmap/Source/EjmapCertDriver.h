@@ -2286,6 +2286,27 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
     return loop::makeRow (identity, product, category, o, recordFile.getFullPathName(), profilePath, tonePath, nowStamp());
 }
 
+inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
+{
+    std::cout << "EJ Map pre-flight" << std::endl;
+    std::cout << "  executable : " << executable.getFullPathName() << std::endl;
+    {
+        auto d = runChild ({ "/usr/bin/codesign", "-dvv", executable.getFullPathName() }, 20000);
+        juce::String team = "not set", auth;
+        for (auto line : juce::StringArray::fromLines (d.out)) { line = line.trim(); if (line.startsWith ("TeamIdentifier=")) team = line.fromFirstOccurrenceOf ("=", false, false); if (line.startsWith ("Authority=Developer ID Application")) auth = line.fromFirstOccurrenceOf ("=", false, false); }
+        std::cout << "  app signed : team " << team << (auth.isNotEmpty() ? " (" + auth + ")" : juce::String (" (NOT a Developer ID signature)")) << std::endl;
+    }
+    const auto id = checkProbe (opt.probe, {}, {});
+    std::cout << "  probe      : " << opt.probe.getFullPathName() << (opt.probe == defaultProbeBeside (executable) ? "  (beside the executable: the default)" : "  (NOT the default location)") << std::endl;
+    std::cout << "  probe sig  : " << (id.ok ? "team " + id.team + ", cdhash " + id.cdhash : "REFUSED - " + id.why) << std::endl;
+    std::cout << "  cert root  : " << opt.out.getFullPathName() << (opt.out == defaultCertRoot() ? "  (default)" : "") << std::endl;
+    std::cout << "  store      : " << opt.fixtures.getFullPathName() << std::endl;
+    std::cout << "  ledger     : " << opt.ledger.getFullPathName() << (opt.ledger.exists() ? "" : "  (MISSING - scan first)") << std::endl;
+    std::cout << "  iLok       : " << iLokPresence() << std::endl;
+    std::cout << "  power      : " << runChild ({ "/usr/bin/pmset", "-g", "ps" }, 10000).out.upToFirstOccurrenceOf ("\n", false, false).trim() << std::endl;
+    return id.ok ? 0 : 3;
+}
+
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 {
     const auto fixturesDir = opt.out.getChildFile ("fixtures"); fixturesDir.createDirectory();
