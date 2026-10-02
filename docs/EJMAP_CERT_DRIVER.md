@@ -1396,3 +1396,50 @@ Kathy's six items on the 08:35 export, built in order, each committed and pushed
 Known, not fixed: `repeatFor` looks up the repeat by "" or "q." and never by an engaged prefix
 ("e<idx>."), so an engaged profile sweep would get no repeat quality - no engaged product has been
 profile-swept yet; the refinement uses `lastSweepPrefix`, which is the key sweepFor wrote.
+
+## 23. After the iLok: licence-free work (2 Oct, from 10:39)
+
+The iLok watcher (`ilok_watch.sh`, every 20 s) logs each change of the dongle's presence; its log is
+committed with the day's traces so a later reader knows why no PACE product ran after it left.
+The census's licence classification (bundle PACE wrapping, `isPaceWrapped`) decides what is runnable:
+of the 98 compressor records, 74 are licence-free, 20 PACE, 4 unresolved by uid (Solid Dynamics,
+Solid Bus Comp, Drawmer 1973, TBTECH Cenozoix - no bundle matched; treated as not runnable until
+classified). Waves V12 records are also left alone: Sean replaces 12 with 15, and a V12 profile
+never matches a V15 map (the EMO-D5 ruling).
+
+**NEOLD U2A** (licence-free): flat with the neutral set, and the engage signature once that was
+widened (section 22): the search ran, tried its one candidate (Mode -> Limit) and the sweep stayed
+flat - Peak Reduction and Mode both land (read back) and change nothing in the audio; the GR Meter
+parameter reads 1.0 throughout. Nothing else on the product is switch-shaped. LEAD, not chased: a
+plugin whose parameter writes are accepted but not processed (a bank/preset layer?). The record in
+the store carries `engageWrites.tried`.
+
+**NEOLD V76U73** (licence-free) - refused at plan, class none. PROPOSAL, not built:
+- The known trap is on the record: `Mode` instantiates at **'Bypass'** (norm 0.5, between 'Compress' 0.0
+  and 'Limit' 1.0). The engage write would be Mode -> 0.0 'Compress'. Today's engage candidates never
+  consider a control whose texts are Compress/Bypass/Limit (not on/off-shaped, and "bypass" is a
+  never-touch word), so the search would not find it; the plan needs the write as a named rule
+  (a three-text mode control whose instantiate text is 'Bypass' and whose other texts name a process).
+- No threshold exists: the U73 is a vari-mu whose amount is the level driven into it. Amount control:
+  `Send` (-24..+24 dB, index 16, the level from the V76 stage into the U73) - **topology input_drive**,
+  quiet reference per position. The alternative `Gain` (43-76 dB, the V76 preamp) also drives it but
+  carries the preamp's saturation; `Trim` and `Makeup Gain` are output trims (neutral). The role
+  lexicon does not know "Send" as drive; it would need the word.
+- Ratio: none (vari-mu); the profile's ratio block would be `fixed {measured_ratio implied}`.
+
+**Empirical Labs Mike-E Comp** (PACE: waits for the iLok's return) - refused at plan, class
+amount_only. PROPOSAL, not built:
+- Amount control `Drive` (0-10, index 3): **topology input_drive** (a Distressor-family input drive).
+- `Ratio` (index 5) is stepped with a **'Bypass'** detent at norm 0 and 'NUKE' at 1; the instantiate value
+  '4:1' is a working ratio, so no ratio raise, but the ratio_raise rule must never choose 'Bypass'.
+- `Comp Mode` instantiates at 'Off' (Off / Low Freq Emph / High Freq Emph): on the hardware this is the
+  detector emphasis, not an engage - unverified here; the engage search would try it only if the
+  sweep read the signature, which is the right test.
+- `Preamp Gain` 'CLEAN' and `Mix` 10.00 are the neutral conditions as instantiated; `Out` is a trim.
+
+**Item 4 (the rest, licence-free, already certified in the store, non-Waves), highest quality first by
+numeric 1 dB points on the certification sweep:** Lindell SBC (9/16), Lindell 254E (8), Lindell 7X-500
+(8), bx_townhouse Buss Compressor (7), elysia alpha mix (7), Bettermaker Bus Compressor DSP (6), elysia
+mpressor (6), Acme Opticom XLA-3 (4), bx_opto (4). Cost, from CL 1B (200 s with two refinement rounds)
+and U2A (169 s with the engage search): about 3-4 minutes each, 30-40 minutes for the nine, plus the
+after-chain (detector, export, tone check) under a minute each. Started 10:51.

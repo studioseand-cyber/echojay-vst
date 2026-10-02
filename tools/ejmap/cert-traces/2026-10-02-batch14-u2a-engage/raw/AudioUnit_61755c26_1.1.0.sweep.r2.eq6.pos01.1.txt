@@ -1,0 +1,34 @@
+probe: "NEOLD U2A" | AudioUnit:Effects/aufx,NeU2,Neol | uid=61755c26 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	9	name	Peak Reduction	positions	1	levels	3
+spec	hz	997.000	hold_s	3.000	discard_s	2.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Stereo In	2	Stereo	enabled
+bus	render	out	0	Stereo Out	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	0.000000	Aging	New
+param	1	0.000000	Bank	A
+param	2	1.000000	Mix	Wet
+param	3	0.250000	Drive	25.0 %
+param	4	0.240000	Gain	24.0
+param	5	0.500000	Meter Mode	Reduction
+param	6	0.000000	Mode	Compress
+param	7	1.000000	GR Meter	1.0000
+param	8	0.000000	VU Meter	0.0000
+param	9	0.000000	Peak Reduction	0.0
+param	10	1.000000	Power	On
+param	11	1.000000	R37	Flat
+param	12	0.750000	Recovery	75.0 %
+set	2	0.968750	confirm_ms	2.2	getValue	0.968750	landed_by	instack	render_blocks	0	text	96.9 %
+set	3	0.031250	confirm_ms	2.5	getValue	0.031250	landed_by	instack	render_blocks	0	text	3.1 %
+set	6	1.000000	confirm_ms	2.5	getValue	1.000000	landed_by	instack	render_blocks	0	text	Limit
+stage	position
+pos	0	norm	0.533333	confirm_ms	2.58	slices	1	instack_match	1	getValue	0.533333	landed_by	instack	render_blocks	0	text_ms	22.4	reads	2	text	53.3
+hold	0	-24.00	level_db	-26.8253	in_rms_db	-27.0103	tone_frac	1.0000	ch	-26.8253,-26.8253	doubled	0	last_move_db	0.0046	final_move_db	0.0046	win	-26.8405,-26.8253,-26.8299,-26.8253,-26.8299,-26.8253,-26.8299,-26.8253,-26.8299,-26.8253,-26.8299,-26.8253	nonfinite	0
+hold	0	-12.00	level_db	-14.8315	in_rms_db	-15.0103	tone_frac	1.0000	ch	-14.8315,-14.8315	doubled	0	last_move_db	0.0034	final_move_db	0.0034	win	-14.8454,-14.8314,-14.8348,-14.8315,-14.8348,-14.8314,-14.8348,-14.8315,-14.8348,-14.8314,-14.8348,-14.8315	nonfinite	0
+hold	0	-6.00	level_db	-8.8501	in_rms_db	-9.0103	tone_frac	1.0000	ch	-8.8501,-8.8501	doubled	0	last_move_db	0.0018	final_move_db	0.0018	win	-8.8611,-8.8500,-8.8520,-8.8501,-8.8520,-8.8500,-8.8520,-8.8501,-8.8520,-8.8500,-8.8520,-8.8501	nonfinite	0
+reread	0	steady
+timing	wall_ms	310.7	audio_s	9.000
+stage	done

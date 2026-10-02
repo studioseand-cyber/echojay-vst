@@ -1,0 +1,15 @@
+probe: "NEOLD U2A" | AudioUnit:Effects/aufx,NeU2,Neol | uid=61755c26 | arch=arm64 | format=AudioUnit
+
+0	Aging		2147483647	0	1	0
+1	Bank		2147483647	0	1	0
+2	Mix		2147483647	0	1	0
+3	Drive		2147483647	0	1	0
+4	Gain	%	2147483647	0	1	0
+5	Meter Mode		2147483647	0	1	0
+6	Mode		2	1	1	0
+7	GR Meter		2147483647	0	0	0
+8	VU Meter		2147483647	0	0	0
+9	Peak Reduction	%	2147483647	0	1	0
+10	Power		2	1	1	0
+11	R37		2147483647	0	1	0
+12	Recovery		2147483647	0	1	0
