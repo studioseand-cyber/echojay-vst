@@ -2433,6 +2433,63 @@ inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
     return id.ok ? 0 : 3;
 }
 
+// TONE-CHECK-ONLY MODE (v1.7, for the follow-up on a Mac that already ran the batch): from a cert folder's records and
+// traces, re-derive every exported record (the deep points 4/5/6 come out of the same traces), carry over what the traces
+// do not hold, re-export, then load the plugin for the tone checks only - g = 2 with the v1.7 pick plus every deep level
+// the profile carries. No sweeps. Resumable: a profile whose tone check already carries spec v1.7 and its deep levels is
+// skipped. The same window watch: a window during the check is needs_licence; a product the scan stopped is not loaded.
+inline int runToneCheckAll (SweepOptions opt)
+{
+    const auto fixturesDir = opt.out.getChildFile ("fixtures");
+    const auto outcomesFile = opt.out.getChildFile ("outcomes.json");
+    auto outcomes = juce::JSON::parse (outcomesFile.loadFileAsString()); if (! outcomes.isArray()) outcomes = juce::Array<juce::var>();
+    auto writeOutcomes = [&] { outcomesFile.replaceWithText (juce::JSON::toString (outcomes) + "\n", false, false, "\n"); };
+    const auto id = checkProbe (opt.probe, {}, {});
+    if (! id.ok) { std::cout << "TONECHECK-ALL: ABORTED BEFORE ANY PLUGIN - " << id.why << std::endl; return 3; }
+    const auto scanStops = quarantinedBundles (opt.ledger);
+    std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << std::endl;
+    int done = 0, skipped = 0, licence = 0, failed = 0, noTraces = 0;
+    juce::Array<juce::var> rows; if (const auto* a = outcomes.getArray()) rows = *a;
+    for (const auto& row : rows)
+    {
+        if (row.getProperty ("state", "").toString() != "exported") continue;
+        const auto product = row.getProperty ("product", "").toString();
+        if (! opt.slice.isEmpty() && ! opt.slice.contains (product)) continue;
+        const juce::File recordFile (row.getProperty ("record", "").toString().replace ("~", juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName()));
+        const juce::File profileFile (row.getProperty ("profile", "").toString().replace ("~", juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName()));
+        if (! recordFile.existsAsFile()) { std::cout << "  " << product << ": record missing (" << recordFile.getFullPathName() << ")" << std::endl; continue; }
+        const auto tcFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
+        const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
+        if (! opt.retryLicence && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels")) { ++skipped; continue; }   // RESUME
+        if (! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
+        std::cout << "\n=== tone checks: " << product << std::endl;
+        // 1. RE-DERIVE from the traces (the deep points), carrying over what the traces do not hold
+        const auto old = juce::JSON::parse (recordFile.loadFileAsString());
+        const auto stem = recordFile.getFileNameWithoutExtension();
+        const auto processesJson = opt.out.getChildFile (stem + ".sweep.processes.json"), rawDir = opt.out.getChildFile ("raw");
+        if (processesJson.existsAsFile() && rawDir.isDirectory())
+        {
+            const auto tmp = opt.out.getChildFile (stem + ".rederived.json");
+            if (runSweepRederive (recordFile, processesJson, rawDir, tmp) == 0 && tmp.existsAsFile())
+            {
+                const auto fresh = loop::carryOverAfterRederive (old, juce::JSON::parse (tmp.loadFileAsString()));
+                recordFile.replaceWithText (juce::JSON::toString (fresh) + "\n", false, false, "\n");
+                tmp.deleteFile();
+            }
+            else std::cout << "  re-derivation did not complete; the existing record is used" << std::endl;
+        }
+        else { ++noTraces; std::cout << "  no traces for this record (" << processesJson.getFileName() << "): the existing points are used, no deep points can be derived" << std::endl; }
+        // 2. RE-EXPORT and 3. the tone checks, through the batch's own finish step (detector kept, pick by Rule 1 where decided)
+        const auto newRow = finishRecord (opt, recordFile, row.getProperty ("category", "compressor").toString());
+        outcomes = loop::mergeRow (outcomes, newRow); writeOutcomes();
+        const auto st = newRow.getProperty ("state", "").toString();
+        std::cout << "  -> " << st << ": " << newRow.getProperty ("reason", "").toString() << std::endl;
+        if (st == "exported") ++done; else if (st == "needs_licence") ++licence; else ++failed;
+    }
+    std::cout << "\nTONECHECK-ALL: " << done << " re-checked, " << skipped << " already at v1.7 (skipped), " << licence << " needs_licence, " << failed << " not exported now, " << noTraces << " without traces" << std::endl;
+    return 0;
+}
+
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 {
     const auto fixturesDir = opt.out.getChildFile ("fixtures"); fixturesDir.createDirectory();
@@ -2771,7 +2828,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     o->setProperty ("pass_within_0_5_db", main.pass);
     if (! main.ran) o->setProperty ("why_not_run", main.why);
     o->setProperty ("probe", id.cdhash); o->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
-    o->setProperty ("ratio_norm_source", ratioNote);
+    o->setProperty ("ratio_norm_source", ratioNote); o->setProperty ("spec", "v1.7");
     // THE DEEP LEVELS (v1.7 section 8): every deep level the profile carries on any position, same tolerance; a level that
     // FAILS is null across ALL positions of the exported profile and never fails the profile.
     juce::Array<juce::var> deepArr, nulled;

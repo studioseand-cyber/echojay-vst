@@ -280,6 +280,24 @@ inline Outcome outcomeCarriedLicence (const QuarantinedBundle& b)
     return o;
 }
 
+// CARRY-OVER ON RE-DERIVATION (v1.7 tone-check-only mode): a re-derivation rebuilds the sweep from the traces, and the
+// traces do not hold what later steps wrote INTO the record - the detector (its own processes), Rule 1's decision, the
+// pick, the map state, the manufacturer. Those ride over from the old record; the sweep's measured fields do not.
+inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var fresh)
+{
+    auto* o = fresh.getDynamicObject(); if (o == nullptr) return fresh;
+    for (const char* k : { "ruleDecided", "pickedCandidate", "mapState", "manufacturer", "category" })
+        if (oldRecord.hasProperty (k) && ! fresh.hasProperty (k)) o->setProperty (k, oldRecord.getProperty (k, {}));
+    auto copyDetector = [] (const juce::var& from, juce::var to) { const auto d = from.getProperty ("detector", {}); if (d.isObject()) if (auto* t = to.getDynamicObject()) if (! to.hasProperty ("detector")) t->setProperty ("detector", d); };
+    if (oldRecord.getProperty ("thresholdSweep", {}).isObject() && fresh.getProperty ("thresholdSweep", {}).isObject())
+        copyDetector (oldRecord.getProperty ("thresholdSweep", {}), fresh.getProperty ("thresholdSweep", {}));
+    if (const auto* oc = oldRecord.getProperty ("thresholdCandidates", {}).getArray())
+        if (const auto* nc = fresh.getProperty ("thresholdCandidates", {}).getArray())
+            for (const auto& a : *oc) for (const auto& b : *nc)
+                if ((int) a.getProperty ("index", -1) == (int) b.getProperty ("index", -2)) copyDetector (a.getProperty ("thresholdSweep", {}), b.getProperty ("thresholdSweep", {}));
+    return fresh;
+}
+
 struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, rows = 0; };
 inline Counts count (const juce::var& outcomes)
 {

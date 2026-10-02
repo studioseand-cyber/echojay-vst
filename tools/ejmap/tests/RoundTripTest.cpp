@@ -5920,6 +5920,20 @@ void testLoopOutcomes()
                "loop L13: the row is in the sixth state with the quarantine's reason and the category, and satisfies the invariant");
         juce::var r2 = juce::Array<juce::var>(); r2 = mergeRow (r2, row); r2 = mergeRow (r2, quarantineRow (qb[1], "now"));
         check (count (r2).quarantined == 2 && count (r2).rows == 2, "loop L14: the closing counts carry quarantined_at_scan");
+        // CARRY-OVER ON RE-DERIVATION (L22, v1.7): the detector, Rule 1's decision, the pick, the map state and the manufacturer ride
+        // over from the old record; the sweep's measured fields come from the fresh one; a candidate's detector by index.
+        const auto oldR = obj ({ { "manufacturer", "Softube" }, { "mapState", "server map state 3" }, { "ruleDecided", obj ({ { "rule", "R1" } }) }, { "pickedCandidate", obj ({ { "index", 16 }, { "name", "Comp Thresh" } }) },
+                                { "thresholdSweep", obj ({ { "result", "certified" }, { "detector", obj ({ { "fraction", 0.4 } }) }, { "positions", 16 } }) } });
+        const auto freshR = carryOverAfterRederive (oldR, obj ({ { "thresholdSweep", obj ({ { "result", "certified" }, { "positions", 28 } }) } }));
+        check (freshR.getProperty ("manufacturer", "") == "Softube" && freshR.getProperty ("mapState", "") == "server map state 3" && freshR.getProperty ("ruleDecided", {}).isObject() && freshR.getProperty ("pickedCandidate", {}).getProperty ("index", -1).equals (16)
+                 && std::abs ((double) freshR.getProperty ("thresholdSweep", {}).getProperty ("detector", {}).getProperty ("fraction", 0.0) - 0.4) < 1e-9 && (int) freshR.getProperty ("thresholdSweep", {}).getProperty ("positions", 0) == 28,
+               "loop L22: re-derivation carries over detector, ruleDecided, pickedCandidate, mapState, manufacturer and keeps the fresh sweep's fields");
+        juce::Array<juce::var> oc; oc.add (obj ({ { "index", 16 }, { "thresholdSweep", obj ({ { "detector", obj ({ { "fraction", 0.7 } }) } }) } })); oc.add (obj ({ { "index", 1 }, { "thresholdSweep", obj ({}) } }));
+        juce::Array<juce::var> ncs; ncs.add (obj ({ { "index", 16 }, { "thresholdSweep", obj ({ { "result", "certified" } }) } })); ncs.add (obj ({ { "index", 1 }, { "thresholdSweep", obj ({ { "result", "flat" } }) } }));
+        const auto freshC = carryOverAfterRederive (obj ({ { "thresholdCandidates", oc } }), obj ({ { "thresholdCandidates", ncs } }));
+        check (std::abs ((double) freshC.getProperty ("thresholdCandidates", {})[0].getProperty ("thresholdSweep", {}).getProperty ("detector", {}).getProperty ("fraction", 0.0) - 0.7) < 1e-9
+                 && ! freshC.getProperty ("thresholdCandidates", {})[1].getProperty ("thresholdSweep", {}).hasProperty ("detector"),
+               "loop L22b: a candidate's detector carries over by index, only where the old candidate had one");
         // NEEDS LICENCE (L15, 2 Oct): a licence-stops entry becomes a row in its own state with the windows it saw
         juce::Array<juce::var> wins { "PACE [pid 123]" };
         juce::Array<juce::var> ls; ls.add (obj ({ { "plugin_id", "/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3" }, { "state", "needs_licence" }, { "pace", true }, { "windows", wins }, { "stage", "scan" }, { "at", "t" } }));

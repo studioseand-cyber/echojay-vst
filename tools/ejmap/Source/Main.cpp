@@ -687,6 +687,23 @@ namespace
                 if (o.product.isEmpty()) { std::cerr << "usage: ejmap --cert-tuner --product <name> [--out <dir>] [--probe <EchoJayProbe>] [--timeout-s N]" << std::endl; return 2; }
                 return ejmap::cert::runCertTuner (o);
             }
+            // TONE-CHECK-ONLY (v1.7): re-derive, re-export and tone-check every exported record of a cert folder; no sweeps.
+            if (a == "--cert-tonecheck-all")
+            {
+                ejmap::cert::SweepOptions o;
+                for (int j = 1; j < argc; ++j)
+                {
+                    const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
+                    if      (k == "--out"           && j + 1 < argc) o.out = cwdFile (v);
+                    else if (k == "--probe"         && j + 1 < argc) o.probe = cwdFile (v);
+                    else if (k == "--ejmap-ledger"  && j + 1 < argc) o.ledger = cwdFile (v);
+                    else if (k == "--timeout-s"     && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
+                    else if (k == "--slice"         && j + 1 < argc) { for (const auto& l : juce::StringArray::fromLines (cwdFile (v).loadFileAsString())) if (l.trim().isNotEmpty()) o.slice.add (l.trim()); }
+                    else if (k == "--retry-licence")                 o.retryLicence = true;
+                }
+                ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
+                return ejmap::cert::runToneCheckAll (o);
+            }
             if (a == "--cert-sweep" || a == "--cert-sweep-all")
             {
                 ejmap::cert::SweepOptions o;
