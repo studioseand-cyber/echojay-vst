@@ -1,0 +1,138 @@
+batch 20261002T162301  iLok ABSENT  profile yes  slice bx_crispytuner, Auto-Tune Pro, UAD Auto-Tune Realtime X
+SWEEP CENSUS - PACE held
+worklist: 0 fixture(s) in the store (0 already record a sweep, candidates or a refusal; 0 refusal(s), 0 of them permanent), 168 discovered from the ledger at /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_tuners
+0 local map(s), 0 map-state row(s) (never fetched), 1730 categorised identities
+installed AUs not discovered: 69 category amp_sim, 101 category channel_strip, 21 category de-esser, 46 category delay, 167 category eq, 7 category gate, 35 category limiter, 89 category reverb, 107 category saturation, 16 category transient_shaper, 550 no category
+pitch category, on the worklist for tuner certification: Auto-Tune EFX, Auto-Tune Access, bx_crispytuner, Auto-Tune EFX+, UAD Auto-Tune Realtime Access, UAD Antares Auto-Tune Realtime, Auto-Tune Pro, Auto-Tune Artist, UAD Auto-Tune Realtime Advanced, UAD Auto-Tune Realtime X
+NO MAP YET (information, not a gate - certified anyway; the mapping sweep can map them, the server joins by map_fp): 168: TBTECH Cenozoix Compressor 1.1.0 [compressor], Drawmer 1973 2.5.62 [compressor], UAD elysia alpha mix 11.2.0 [compressor], UAD Manley Variable Mu 11.2.0 [compressor], UAD elysia alpha master 11.2.0 [compressor], UAD dbx 160 11.2.0 [compressor], UAD UA 1176LN Legacy 11.2.0 [compressor], UAD Empirical Labs Distressor 11.2.0 [compressor], UAD UA 1176SE Legacy 11.2.0 [compressor], UAD elysia mpressor 11.2.0 [compressor], UAD Teletronix LA-3A 11.2.0 [compressor], UAD 4K Buss Compressor 11.2.0 [compressor], UAD Teletronix LA-2 11.2.0 [compressor], UAD Teletronix LA-2A Legacy 11.2.0 [compressor], CLA-76 (m) 12.0.0 [compressor], CLA-76 (s) 12.0.0 [compressor], UAD Teletronix LA-2A Gray 11.2.0 [compressor], UAD Fairchild 670 Legacy 11.2.0 [compressor], UAD Vertigo VSC-2 11.2.0 [compressor], UAD Neve 33609 C 11.2.0 [compressor], UAD Teletronix LA-2A Silver 11.2.0 [compressor], Acme Opticom XLA-3 1.10.1 [compressor], API-2500 (m) 12.0.0 [compressor], API-2500 (s) 12.0.0 [compressor], Auto-Tune EFX 9.0.1 [pitch], Auto-Tune Access 10.5.0 [pitch], UAD Precision Multiband 11.2.0 [compressor], UAD Neve 33609SE 11.2.0 [compressor], DPR-402 (m) 12.0.0 [compressor], DPR-402 (s) 12.0.0 [compressor], SSL Blitzer 1.0.5 [compressor], SSL LMC+ 1.1.9 [compressor], C1 comp-sc (m) 12.0.0 [compressor], C1 comp-sc (s) 12.0.0 [compressor], C6 (m) 12.0.0 [compressor], C6 (s) 12.0.0 [compressor], C6-SideChain (m) 12.0.0 [compressor], C6-SideChain (s) 12.0.0 [compressor], EMO-D5 (m) 12.0.0 [compressor], EMO-D5 (s) 12.0.0 [compressor], H-Comp (m) 12.0.0 [compressor], H-Comp (s) 12.0.0 [compressor], C1 comp (m) 12.0.0 [compressor], C1 comp (s) 12.0.0 [compressor], C1 comp-gate (m) 12.0.0 [compressor], C1 comp-gate (s) 12.0.0 [compressor], C4 (m) 12.0.0 [compressor], C4 (s) 12.0.0 [compressor], DynOne3 3.12.3 [compressor], UAD Precision Buss Compressor 11.2.0 [compressor], UAD UA 1176 Rev A 11.2.0 [compressor], PuigChild 660 (m) 12.0.0 [compressor], PuigChild 670 (s) 12.0.0 [compressor], SSL G3 MultiBusComp 1.0.12 [compressor], SSL Fusion HF Compressor 1.1.3 [compressor], MaxxVolume (m) 12.0.0 [compressor], MaxxVolume (s) 12.0.0 [compressor], UAD UA 175-B 11.2.0 [compressor], Kiive XTComp 1.0.0 [compressor], UAD SSL G Bus Compressor Legacy 11.2.0 [compressor], CLA-2A (m) 12.0.0 [compressor], CLA-2A (s) 12.0.0 [compressor], CLA-3A (m) 12.0.0 [compressor], CLA-3A (s) 12.0.0 [compressor], Lindell 7X-500 1.2.2 [compressor], Lindell 254E 1.2.2 [compressor], Lindell 354E 1.0.4 [compressor], LinMB (m) 12.0.0 [compressor], LinMB (s) 12.0.0 [compressor], Low Control 1.1.6 [compressor], Lindell MBC 1.0.3 [compressor], Lindell SBC 1.0.3 [compressor], Bettermaker Bus Compressor DSP 1.0.0 [compressor], UAD UA 176 11.2.0 [compressor], MO-TT 1.1.8 [compressor], MV2 (m) 12.0.0 [compressor], MV2 (s) 12.0.0 [compressor], RVox (m) 12.0.0 [compressor], RVox (s) 12.0.0 [compressor], Millennia TCL-2 1.11.1 [compressor], UAD UA 1176LN Rev E 11.2.0 [compressor], SSL Native Bus Compressor 2 1.3.4 [compressor], NEOLD U17 1.2.0 [compressor], VComp (m) 12.0.0 [compressor], VComp (s) 12.0.0 [compressor], NEOLD U2A 1.1.0 [compressor], NEOLD V76U73 1.3.0 [compressor], Solid Bus Comp 1.4.5 [compressor], Solid Dynamics 1.4.5 [compressor], OneKnob Pressure (m) 12.0.0 [compressor], OneKnob Pressure (s) 12.0.0 [compressor], Kramer PIE (m) 12.0.0 [compressor], Kramer PIE (s) 12.0.0 [compressor], Mixland Vac Attack 1.0.1 [compressor], Renaissance Axx (m) 12.0.0 [compressor], Renaissance Axx (s) 12.0.0 [compressor], Abbey Road RS124 (m) 12.1.0 [compressor], Abbey Road RS124 (s) 12.1.0 [compressor], Rubber Band Compressor V2 1.0.1 [compressor], UAD Neve 2254 E 11.2.0 [compressor], Shadow Hills Mastering Compressor 1.5.1 [compressor], SSLComp (m) 12.0.0 [compressor], SSLComp (s) 12.0.0 [compressor], SSL Native X-Comp v6 6.6.7 [compressor], SSL Native X-ValveComp v6 6.6.13 [compressor], OneKnob Pumper (m) 12.0.0 [compressor], OneKnob Pumper (s) 12.0.0 [compressor], SPL IRON 1.6.1 [compressor], UAD UA 1176AE 11.2.0 [compressor], bx_crispytuner 1.1.0 [pitch], U73b Compressor 3.0.0 [compressor], UAD API 2500 11.2.0 [compressor], UAD Neve 2254 E Dual 11.2.0 [compressor], RCompressor (m) 12.0.0 [compressor], RCompressor (s) 12.0.0 [compressor], UAD Fairchild 670 11.2.0 [compressor], VBC FG-Grey 1.3.5 [compressor], VBC Rack 1.3.5 [compressor], VBC FG-MU 1.3.5 [compressor], VBC FG-Red 1.3.5 [compressor], dbx-160 (m) 12.0.0 [compressor], dbx-160 (s) 12.0.0 [compressor], Vertigo VSC-2 1.15.1 [compressor], Auto-Tune EFX+ 10.5.0 [pitch], Auto-Tune Vocal Compressor 1.5.0 [compressor], UAD Fairchild 660 11.2.0 [compressor], OTT 1.3.7 [compressor], UAD SSL G Bus Compressor 11.2.0 [compressor], elysia alpha mix 1.17.1 [compressor], elysia alpha master 1.17.1 [compressor], bx_opto Pedal 1.10.1 [compressor], bx_opto 1.10.1 [compressor], APB C-18 Compressor 1.3.9 [compressor], APB C673-A Compressor 1.3.9 [compressor], Tube-Tech CL 1B 2.5.62 [compressor], UAD Shadow Hills Mastering Compressor 11.2.0 [compressor], UAD Summit Audio TLA-100A 11.2.0 [compressor], UAD Tube-Tech CL 1B mk II 11.2.0 [compressor], UAD Auto-Tune Realtime Access 11.2.0 [pitch], Empirical Labs Mike-E Comp 2.5.62 [compressor], kHs Compressor 2.1.0 [compressor], kHs Dynamics 2.1.0 [compressor], APB MC-3 MultiComp 1.3.9 [compressor], elysia mpressor 1.15.1 [compressor], APB Royal Mu 1.3.9 [compressor], UAD Tube-Tech CL 1B 11.2.0 [compressor], UAD Antares Auto-Tune Realtime 11.2.0 [pitch], AMEK Mastering Compressor 1.1.1 [compressor], Auto-Tune Pro 11.5.1 [pitch], Auto-Tune Artist 9.5.0 [pitch], Pro Audio DSP DSM V3 3.6.1 [compressor], MSpectralDynamics 14.16.0 [compressor], MSpectralDynamicsMini 14.16.0 [compressor], MDynamics 14.16.0 [compressor], MDynamicsMB 14.16.0 [compressor], MCompressor 14.16.0 [compressor], MDynamicsMBLarge 14.16.0 [compressor], MDrumLeveler 14.16.0 [compressor], MModernCompressor 14.16.0 [compressor], MTurboCompMB 14.16.0 [compressor], MTurboComp 14.16.0 [compressor], Maag MAGNUM-K 1.6.1 [compressor], Purple Audio MC 77 1.5.1 [compressor], Shadow Hills Class A Mastering Comp 1.4.1 [compressor], UAD Auto-Tune Realtime Advanced 11.2.0 [pitch], bx_townhouse Buss Compressor 1.8.1 [compressor], Unfiltered Audio Zip 1.4.2 [compressor], UAD Auto-Tune Realtime X 11.2.0 [pitch]
+RUNNABLE: 124 (0 as a new identity at the installed version, 124 discovered with no fixture at all)
+  Abbey Road RS124 (m)                    DISCOVERED at 12.1.0, map: none (defaults first; plan after sampling)
+  Abbey Road RS124 (s)                    DISCOVERED at 12.1.0, map: none (defaults first; plan after sampling)
+  Acme Opticom XLA-3                      DISCOVERED at 1.10.1, map: none (defaults first; plan after sampling)
+  AMEK Mastering Compressor               DISCOVERED at 1.1.1, map: none (defaults first; plan after sampling)
+  API-2500 (m)                            DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  API-2500 (s)                            DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Auto-Tune Access                        DISCOVERED at 10.5.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  Auto-Tune Artist                        DISCOVERED at 9.5.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  Auto-Tune EFX                           DISCOVERED at 9.0.1, map: none (defaults first; plan after sampling)
+  Auto-Tune EFX+                          DISCOVERED at 10.5.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  Auto-Tune Pro                           DISCOVERED at 11.5.1, map: none (defaults first; plan after sampling)  [licence-bound]
+  Auto-Tune Vocal Compressor              DISCOVERED at 1.5.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  Bettermaker Bus Compressor DSP          DISCOVERED at 1.0.0, map: none (defaults first; plan after sampling)
+  bx_crispytuner                          DISCOVERED at 1.1.0, map: none (defaults first; plan after sampling)
+  bx_opto                                 DISCOVERED at 1.10.1, map: none (defaults first; plan after sampling)
+  bx_opto Pedal                           DISCOVERED at 1.10.1, map: none (defaults first; plan after sampling)
+  bx_townhouse Buss Compressor            DISCOVERED at 1.8.1, map: none (defaults first; plan after sampling)
+  C1 comp (m)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C1 comp (s)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C1 comp-gate (m)                        DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C1 comp-gate (s)                        DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C1 comp-sc (m)                          DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C1 comp-sc (s)                          DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C4 (m)                                  DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C4 (s)                                  DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C6 (m)                                  DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C6 (s)                                  DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C6-SideChain (m)                        DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  C6-SideChain (s)                        DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  CLA-2A (m)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  CLA-2A (s)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  CLA-3A (m)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  CLA-3A (s)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  CLA-76 (m)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  CLA-76 (s)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  dbx-160 (m)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  dbx-160 (s)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  DPR-402 (m)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  DPR-402 (s)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Drawmer 1973                            DISCOVERED at 2.5.62, map: none (defaults first; plan after sampling)  [licence-bound]
+  DynOne3                                 DISCOVERED at 3.12.3, map: none (defaults first; plan after sampling)
+  elysia alpha master                     DISCOVERED at 1.17.1, map: none (defaults first; plan after sampling)
+  elysia alpha mix                        DISCOVERED at 1.17.1, map: none (defaults first; plan after sampling)
+  elysia mpressor                         DISCOVERED at 1.15.1, map: none (defaults first; plan after sampling)
+  EMO-D5 (m)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  EMO-D5 (s)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Empirical Labs Mike-E Comp              DISCOVERED at 2.5.62, map: none (defaults first; plan after sampling)  [licence-bound]
+  H-Comp (m)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  H-Comp (s)                              DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  kHs Compressor                          DISCOVERED at 2.1.0, map: none (defaults first; plan after sampling)
+  kHs Dynamics                            DISCOVERED at 2.1.0, map: none (defaults first; plan after sampling)
+  Kiive XTComp                            DISCOVERED at 1.0.0, map: none (defaults first; plan after sampling)
+  Kramer PIE (m)                          DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Kramer PIE (s)                          DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Lindell 254E                            DISCOVERED at 1.2.2, map: none (defaults first; plan after sampling)
+  Lindell 354E                            DISCOVERED at 1.0.4, map: none (defaults first; plan after sampling)
+  Lindell 7X-500                          DISCOVERED at 1.2.2, map: none (defaults first; plan after sampling)
+  Lindell MBC                             DISCOVERED at 1.0.3, map: none (defaults first; plan after sampling)
+  Lindell SBC                             DISCOVERED at 1.0.3, map: none (defaults first; plan after sampling)
+  LinMB (m)                               DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  LinMB (s)                               DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Low Control                             DISCOVERED at 1.1.6, map: none (defaults first; plan after sampling)
+  Maag MAGNUM-K                           DISCOVERED at 1.6.1, map: none (defaults first; plan after sampling)
+  MaxxVolume (m)                          DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  MaxxVolume (s)                          DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  MCompressor                             DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MDrumLeveler                            DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MDynamics                               DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MDynamicsMB                             DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MDynamicsMBLarge                        DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  Millennia TCL-2                         DISCOVERED at 1.11.1, map: none (defaults first; plan after sampling)
+  Mixland Vac Attack                      DISCOVERED at 1.0.1, map: none (defaults first; plan after sampling)
+  MModernCompressor                       DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MO-TT                                   DISCOVERED at 1.1.8, map: none (defaults first; plan after sampling)  [licence-bound]
+  MSpectralDynamics                       DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MSpectralDynamicsMini                   DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MTurboComp                              DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MTurboCompMB                            DISCOVERED at 14.16.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  MV2 (m)                                 DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  MV2 (s)                                 DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  NEOLD U17                               DISCOVERED at 1.2.0, map: none (defaults first; plan after sampling)
+  NEOLD U2A                               DISCOVERED at 1.1.0, map: none (defaults first; plan after sampling)
+  NEOLD V76U73                            DISCOVERED at 1.3.0, map: none (defaults first; plan after sampling)
+  OneKnob Pressure (m)                    DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  OneKnob Pressure (s)                    DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  OneKnob Pumper (m)                      DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  OneKnob Pumper (s)                      DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  OTT                                     DISCOVERED at 1.3.7, map: none (defaults first; plan after sampling)
+  Pro Audio DSP DSM V3                    DISCOVERED at 3.6.1, map: none (defaults first; plan after sampling)
+  PuigChild 660 (m)                       DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  PuigChild 670 (s)                       DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Purple Audio MC 77                      DISCOVERED at 1.5.1, map: none (defaults first; plan after sampling)
+  RCompressor (m)                         DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  RCompressor (s)                         DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Renaissance Axx (m)                     DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Renaissance Axx (s)                     DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Rubber Band Compressor V2               DISCOVERED at 1.0.1, map: none (defaults first; plan after sampling)
+  RVox (m)                                DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  RVox (s)                                DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Shadow Hills Class A Mastering Comp     DISCOVERED at 1.4.1, map: none (defaults first; plan after sampling)
+  Shadow Hills Mastering Compressor       DISCOVERED at 1.5.1, map: none (defaults first; plan after sampling)
+  Solid Bus Comp                          DISCOVERED at 1.4.5, map: none (defaults first; plan after sampling)
+  Solid Dynamics                          DISCOVERED at 1.4.5, map: none (defaults first; plan after sampling)
+  SPL IRON                                DISCOVERED at 1.6.1, map: none (defaults first; plan after sampling)
+  SSL Blitzer                             DISCOVERED at 1.0.5, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSL Fusion HF Compressor                DISCOVERED at 1.1.3, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSL G3 MultiBusComp                     DISCOVERED at 1.0.12, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSL LMC+                                DISCOVERED at 1.1.9, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSL Native Bus Compressor 2             DISCOVERED at 1.3.4, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSL Native X-Comp v6                    DISCOVERED at 6.6.7, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSL Native X-ValveComp v6               DISCOVERED at 6.6.13, map: none (defaults first; plan after sampling)  [licence-bound]
+  SSLComp (m)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  SSLComp (s)                             DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  TBTECH Cenozoix Compressor              DISCOVERED at 1.1.0, map: none (defaults first; plan after sampling)
+  Tube-Tech CL 1B                         DISCOVERED at 2.5.62, map: none (defaults first; plan after sampling)  [licence-bound]
+  U73b Compressor                         DISCOVERED at 3.0.0, map: none (defaults first; plan after sampling)  [licence-bound]
+  Unfiltered Audio Zip                    DISCOVERED at 1.4.2, map: none (defaults first; plan after sampling)
+  VBC FG-Grey                             DISCOVERED at 1.3.5, map: none (defaults first; plan after sampling)  [licence-bound]
+  VBC FG-MU                               DISCOVERED at 1.3.5, map: none (defaults first; plan after sampling)  [licence-bound]
+  VBC FG-Red                              DISCOVERED at 1.3.5, map: none (defaults first; plan after sampling)  [licence-bound]
+  VBC Rack                                DISCOVERED at 1.3.5, map: none (defaults first; plan after sampling)  [licence-bound]
+  VComp (m)                               DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  VComp (s)                               DISCOVERED at 12.0.0, map: none (defaults first; plan after sampling)
+  Vertigo VSC-2                           DISCOVERED at 1.15.1, map: none (defaults first; plan after sampling)
+NOT RUNNABLE, BY REASON
+  discovered, CONDITIONAL - needs McDSP APB hardware present (one re-run once attached) (4): APB C-18 Compressor, APB C673-A Compressor, APB MC-3 MultiComp, APB Royal Mu
+  discovered, CONDITIONAL - needs UAD hardware (UAD-2) present (one re-run once attached) (40): UAD 4K Buss Compressor, UAD Antares Auto-Tune Realtime, UAD API 2500, UAD Auto-Tune Realtime Access, UAD Auto-Tune Realtime Advanced, UAD Auto-Tune Realtime X, UAD dbx 160, UAD elysia alpha master, UAD elysia alpha mix, UAD elysia mpressor, UAD Empirical Labs Distressor, UAD Fairchild 660, UAD Fairchild 670, UAD Fairchild 670 Legacy, UAD Manley Variable Mu, UAD Neve 2254 E, UAD Neve 2254 E Dual, UAD Neve 33609 C, UAD Neve 33609SE, UAD Precision Buss Compressor, UAD Precision Multiband, UAD Shadow Hills Mastering Compressor, UAD SSL G Bus Compressor, UAD SSL G Bus Compressor Legacy, UAD Summit Audio TLA-100A, UAD Teletronix LA-2, UAD Teletronix LA-2A Gray, UAD Teletronix LA-2A Legacy, UAD Teletronix LA-2A Silver, UAD Teletronix LA-3A, UAD Tube-Tech CL 1B, UAD Tube-Tech CL 1B mk II, UAD UA 1176 Rev A, UAD UA 1176AE, UAD UA 1176LN Legacy, UAD UA 1176LN Rev E, UAD UA 1176SE Legacy, UAD UA 175-B, UAD UA 176, UAD Vertigo VSC-2
+QUARANTINED AT SCAN (never reach this census): 0, of which compressors or tuners: 0
+NEEDS LICENCE (activation window at scan; --scan --retry-licence once the licence is back): 0, of which compressors or tuners: 0
+

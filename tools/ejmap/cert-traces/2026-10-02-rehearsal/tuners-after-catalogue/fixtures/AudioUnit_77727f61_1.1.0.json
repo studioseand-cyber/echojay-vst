@@ -1,0 +1,708 @@
+{
+  "identity": "AudioUnit|77727f61|1.1.0",
+  "product": "bx_crispytuner",
+  "format": "AudioUnit",
+  "manufacturer": "Plugin Alliance",
+  "uid": "77727f61",
+  "version": "1.1.0",
+  "sampledAt": "2026-10-02",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 17,
+  "map_fp": "785ce749276e7b2d15e7de74fde2ea2b7f804cadcc4ae6d753b53e1bac6cf0b4",
+  "controls": [
+    {
+      "index": 0,
+      "name": "Formant Preservation",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Reference Frequency",
+      "unit": null,
+      "displayAt": {
+        "0.000": "420",
+        "0.500": "440",
+        "1.000": "460"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 420.0,
+        "max": 460.0,
+        "at0": 420.0,
+        "at0_5": 440.0,
+        "at1": 460.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "440",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Transition Time",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "77.05",
+        "1.000": "150.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 150.0,
+        "at0": 0.0,
+        "at0_5": 77.049999999999997,
+        "at1": 150.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.22,
+        "display": "35.00",
+        "declaredDefault": 0.22,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Root Key Override",
+      "unit": null,
+      "displayAt": {
+        "0.000": "None",
+        "0.500": "F",
+        "1.000": "B"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "None",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Pitch Tolerance",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "25",
+        "1.000": "50"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 50.0,
+        "at0": 0.0,
+        "at0_5": 25.0,
+        "at1": 50.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.4,
+        "display": "20",
+        "declaredDefault": 0.4,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Transpose",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-12",
+        "0.500": "0",
+        "1.000": "12"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -12.0,
+        "max": 12.0,
+        "at0": -12.0,
+        "at0_5": 0.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "LowCutFrequency",
+      "unit": null,
+      "displayAt": {
+        "0.000": "20.0",
+        "0.500": "260.0",
+        "1.000": "500.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 20.0,
+        "max": 500.0,
+        "at0": 20.0,
+        "at0_5": 260.0,
+        "at1": 500.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0625,
+        "display": "50.0",
+        "declaredDefault": 0.0625,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "LowCutPower",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "1",
+        "1.000": "1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 1.0,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "1",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Time Tolerance",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "100",
+        "1.000": "200"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 200.0,
+        "at0": 0.0,
+        "at0_5": 100.0,
+        "at1": 200.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.05,
+        "display": "10",
+        "declaredDefault": 0.05,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Scale Override",
+      "unit": null,
+      "displayAt": {
+        "0.000": "None",
+        "0.500": "Acoustic",
+        "1.000": "Hirajoshi"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "None",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Tightness",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "43.42",
+        "1.000": "150.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 150.0,
+        "at0": 0.0,
+        "at0_5": 43.420000000000002,
+        "at1": 150.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.22,
+        "display": "10.00",
+        "declaredDefault": 0.22,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "HighCutFrequency",
+      "unit": null,
+      "displayAt": {
+        "0.000": "10000.0",
+        "0.500": "15000.0",
+        "1.000": "20000.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 10000.0,
+        "max": 20000.0,
+        "at0": 10000.0,
+        "at0_5": 15000.0,
+        "at1": 20000.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "20000.0",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "Amount",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "HighCutPower",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "1",
+        "1.000": "1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 1.0,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "1",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Formant Shift",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-12.0",
+        "0.500": "0.0",
+        "1.000": "12.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -12.0,
+        "max": 12.0,
+        "at0": -12.0,
+        "at0_5": 0.0,
+        "at1": 12.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "Pitch Shift",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-1200",
+        "0.500": "0",
+        "1.000": "1200"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -1200.0,
+        "max": 1200.0,
+        "at0": -1200.0,
+        "at0_5": 0.0,
+        "at1": 1200.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "Pre/Post Filtering",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "1",
+        "1.000": "1"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 1.0,
+        "at0": 0.0,
+        "at0_5": 1.0,
+        "at1": 1.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-02",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "schema": "ej_cert_tuner/1",
+  "category": "pitch",
+  "pitchCandidates": [
+    {
+      "measuredAt": "20261002T162350.636+0100",
+      "control": 12,
+      "controlName": "Amount",
+      "generator": {
+        "note_hz": 220.0,
+        "detune_cents": 30.0,
+        "vibrato": "square 0.50 Hz",
+        "latency_samples": 5879
+      },
+      "keyScale": {
+        "index": 3,
+        "asInstantiated": "None",
+        "note": "A3, in every major scale and chromatic: no write needed"
+      },
+      "positions": [
+        {
+          "norm": 0.0,
+          "display": "0",
+          "strength": {
+            "result": "measured",
+            "strength": 0.0,
+            "residual_cents": 30.0,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 139.0,
+            "edges": 4,
+            "excursion_cents": 60.0,
+            "edge_durations_ms": [
+              139.0,
+              139.0,
+              139.0,
+              139.0
+            ]
+          }
+        },
+        {
+          "norm": 0.142857000231743,
+          "display": "14",
+          "strength": {
+            "result": "measured",
+            "strength": 0.269,
+            "residual_cents": 21.899999999999999,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 133.0,
+            "edges": 4,
+            "excursion_cents": 44.100000000000001,
+            "edge_durations_ms": [
+              139.0,
+              128.0,
+              128.0,
+              139.0
+            ]
+          }
+        },
+        {
+          "norm": 0.285714000463486,
+          "display": "29",
+          "strength": {
+            "result": "measured",
+            "strength": 0.269,
+            "residual_cents": 21.899999999999999,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 139.0,
+            "edges": 4,
+            "excursion_cents": 44.100000000000001,
+            "edge_durations_ms": [
+              139.0,
+              139.0,
+              139.0,
+              139.0
+            ]
+          }
+        },
+        {
+          "norm": 0.428570985794067,
+          "display": "43",
+          "strength": {
+            "result": "measured",
+            "strength": 0.537,
+            "residual_cents": 13.9,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 160.0,
+            "edges": 4,
+            "excursion_cents": 28.199999999999999,
+            "edge_durations_ms": [
+              160.0,
+              149.0,
+              160.0,
+              160.0
+            ]
+          }
+        },
+        {
+          "norm": 0.571429014205933,
+          "display": "57",
+          "strength": {
+            "result": "measured",
+            "strength": 0.537,
+            "residual_cents": 13.9,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 149.0,
+            "edges": 4,
+            "excursion_cents": 28.300000000000001,
+            "edge_durations_ms": [
+              149.0,
+              149.0,
+              149.0,
+              139.0
+            ]
+          }
+        },
+        {
+          "norm": 0.714286029338837,
+          "display": "71",
+          "strength": {
+            "result": "measured",
+            "strength": 0.803,
+            "residual_cents": 5.9,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 165.0,
+            "edges": 4,
+            "excursion_cents": 12.4,
+            "edge_durations_ms": [
+              171.0,
+              160.0,
+              160.0,
+              171.0
+            ]
+          }
+        },
+        {
+          "norm": 0.857142984867096,
+          "display": "86",
+          "strength": {
+            "result": "measured",
+            "strength": 1.069,
+            "residual_cents": -2.1,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 53.0,
+            "edges": 3,
+            "excursion_cents": 11.6,
+            "edge_durations_ms": [
+              43.0,
+              64.0,
+              53.0
+            ]
+          }
+        },
+        {
+          "norm": 1.0,
+          "display": "100",
+          "strength": {
+            "result": "measured",
+            "strength": 1.069,
+            "residual_cents": -2.1,
+            "input_cents": 30.0,
+            "steady_iqr_cents": 0.0,
+            "windows": 187
+          },
+          "speed": {
+            "result": "measured",
+            "duration_ms": 53.0,
+            "edges": 4,
+            "excursion_cents": 13.6,
+            "edge_durations_ms": [
+              53.0,
+              53.0,
+              64.0,
+              43.0
+            ]
+          }
+        }
+      ],
+      "strengthMeasured": 8,
+      "speedMeasured": 8,
+      "procedure": "static detuned note (strength: fraction of the detune removed at steady state) and square vibrato (speed: duration of each output transition, read off the output trace alone)",
+      "index": 12,
+      "name": "Amount"
+    }
+  ],
+  "pitchReview": {
+    "candidates": 1,
+    "measured": 16,
+    "windowSeen": false,
+    "note": "every control holding the strength role was swept with a static detuned note and a square vibrato; a control whose static residual moves across positions is a strength control, one whose transition duration moves is a speed control; the server half reads both"
+  }
+}

@@ -1,0 +1,87 @@
+probe: "bx_crispytuner" | AudioUnit:Effects/aufx,Tuna,Brwx | uid=77727f61 | arch=arm64 | format=AudioUnit
+
+param	0	Formant Preservation	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	1	Reference Frequency	unit	
+def	0.500000	440	default	0.500000
+at	0.000	420
+at	0.500	440
+at	1.000	460
+param	2	Transition Time	unit	
+def	0.220000	35.00	default	0.220000
+at	0.000	0.00
+at	0.500	77.05
+at	1.000	150.00
+param	3	Root Key Override	unit	
+def	0.000000	None	default	0.000000
+at	0.000	None
+at	0.500	F
+at	1.000	B
+param	4	Pitch Tolerance	unit	
+def	0.400000	20	default	0.400000
+at	0.000	0
+at	0.500	25
+at	1.000	50
+param	5	Transpose	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-12
+at	0.500	0
+at	1.000	12
+param	6	LowCutFrequency	unit	
+def	0.062500	50.0	default	0.062500
+at	0.000	20.0
+at	0.500	260.0
+at	1.000	500.0
+param	7	LowCutPower	unit	
+def	1.000000	1	default	1.000000
+at	0.000	0
+at	0.500	1
+at	1.000	1
+param	8	Time Tolerance	unit	
+def	0.050000	10	default	0.050000
+at	0.000	0
+at	0.500	100
+at	1.000	200
+param	9	Scale Override	unit	
+def	0.000000	None	default	0.000000
+at	0.000	None
+at	0.500	Acoustic
+at	1.000	Hirajoshi
+param	10	Tightness	unit	
+def	0.220000	10.00	default	0.220000
+at	0.000	0.00
+at	0.500	43.42
+at	1.000	150.00
+param	11	HighCutFrequency	unit	
+def	1.000000	20000.0	default	1.000000
+at	0.000	10000.0
+at	0.500	15000.0
+at	1.000	20000.0
+param	12	Amount	unit	
+def	1.000000	100	default	1.000000
+at	0.000	0
+at	0.500	50
+at	1.000	100
+param	13	HighCutPower	unit	
+def	1.000000	1	default	1.000000
+at	0.000	0
+at	0.500	1
+at	1.000	1
+param	14	Formant Shift	unit	
+def	0.500000	0.0	default	0.500000
+at	0.000	-12.0
+at	0.500	0.0
+at	1.000	12.0
+param	15	Pitch Shift	unit	
+def	0.500000	0	default	0.500000
+at	0.000	-1200
+at	0.500	0
+at	1.000	1200
+param	16	Pre/Post Filtering	unit	
+def	0.000000	0	default	0.000000
+at	0.000	0
+at	0.500	1
+at	1.000	1

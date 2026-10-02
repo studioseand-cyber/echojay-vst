@@ -67,7 +67,7 @@ seeded batch rehearsal (11:59–12:49) are in the same folder and are NOT the ve
 | A6 | **PASS** | no `send`/`upload` in the batch log (0 matches); the mapping step reported `sent: 0`; the zip holds `cert_unbroken/` only, `config.json` count 0 |
 | A7 | **PASS** (with the harness's three flags) | no `--product`, `--candidate`, `--retry-refused`; `--include-pace` is gone (prints "ignored"); the only product-specific inputs were the test's two labelled scratch edits (the stand-in category; Lindell's server map-state removed) — test instrumentation, not mapper steps |
 | A8 | **PASS** (demonstrated on the seeded batch rehearsal) | interrupted during product 3 at 12:44, re-run the same command: bx_opto (12:00:53) and EMO-D5 (12:43:55) kept their rows and files, Lindell SBC completed, no duplicate rows; held rows are re-evaluated on each run (timestamps change) by design |
-| A9 | **BLOCKED (external)** — tested with a stand-in | the server catalogue files every real-time tuner as category null / `no_dial_set` (COMP_PROFILE_REPLY, 2 Oct afternoon), so a fresh Mac discovers no tuner; with bx_crispytuner's category set to `pitch` as a labelled stand-in it was discovered WITHOUT a map and `recorded` in 12.9 s (strength at 8 positions, speed at 8). Gap noted: tuner records do not carry the `mapState` field the compressor records do (the row does) |
+| A9 | **PASS** (verified 2 Oct 16:0x, after Sean's catalogue deploy) | a fresh `--categorise` on a scratch ledger (the run-2 scan cache, no categories): all ten real-time tuners now `category pitch` from the server (dispositions unchanged, `no_dial_set`); the census lists all ten on the tuner worklist by category alone, no map, no stand-in; the slice: bx_crispytuner `recorded` 12.3 s, Auto-Tune Pro `recorded` 30.5 s (machine-activated on this Mac: no window, the same curve as 1 Oct), UAD Auto-Tune Realtime X `held` (hardware). Traces `cert-traces/2026-10-02-rehearsal/tuners-after-catalogue/`. Earlier in the day this row was BLOCKED and passed only with a labelled stand-in. Gap closed below: tuner records now carry `mapState` |
 
 Also measured by the run (not criteria): mapping Lindell 7X-500 locally with `--sweep --resweep-targets`
 took 5 s (10 controls), sent nothing, and the census then listed `1 local map(s)`; the mapping sweep
@@ -75,5 +75,5 @@ declined bx_crispytuner as `no_dial_set` even when targeted (section 25 row 6 of
 the ruling it no longer needs the map. The existing-ledger census under the new binary discovers 167
 (the seven "no map yet" products among them, Auto-Tune EFX 9.0.1 and MCompressor included).
 
-**Verdict: the process passes A1–A8 on this Mac; A9 is blocked on Sean's catalogue. Ready for Sean's
-Mac with the packaged app, the sign-in, and the runbook.**
+**Verdict: the process passes A1–A9 on this Mac (A9 after Sean's catalogue deploy, verified from here).
+Ready for Sean's Mac with the packaged app, the sign-in, and the runbook.**

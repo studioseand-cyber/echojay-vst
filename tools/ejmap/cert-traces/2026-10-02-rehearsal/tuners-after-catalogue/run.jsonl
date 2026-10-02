@@ -1,0 +1,8 @@
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 1658.670166611671448}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 19035.13658332824707}
+{"tag": "c4.static", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.c4.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 4087.487708330154419}
+{"tag": "c4.vibrato", "attempt": 1, "file": "AudioUnit_76720177_11.5.1.tuner.c4.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 5509.36775004863739}
+{"tag": "list-params", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.list-params.1.txt", "outcome": "exit 0", "clean": true, "ms": 517.863083362579346}
+{"tag": "text-at", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.text-at.1.txt", "outcome": "exit 0", "clean": true, "ms": 3791.336416721343994}
+{"tag": "c12.static", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.c12.static.1.txt", "outcome": "exit 0", "clean": true, "ms": 3267.109541654586792}
+{"tag": "c12.vibrato", "attempt": 1, "file": "AudioUnit_77727f61_1.1.0.tuner.c12.vibrato.1.txt", "outcome": "exit 0", "clean": true, "ms": 4557.466416597366333}

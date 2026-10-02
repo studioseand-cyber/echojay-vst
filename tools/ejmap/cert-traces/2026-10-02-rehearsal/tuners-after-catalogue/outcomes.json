@@ -1,0 +1,31 @@
+[
+  {
+    "identity": "AudioUnit|76720177|11.5.1",
+    "product": "Auto-Tune Pro",
+    "category": "pitch",
+    "state": "recorded",
+    "reason": "1 pitch candidate(s) recorded",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_tuners/fixtures/AudioUnit_76720177_11.5.1.json",
+    "at": "20261002T162338",
+    "map": "none"
+  },
+  {
+    "identity": "AudioUnit|77727f61|1.1.0",
+    "product": "bx_crispytuner",
+    "category": "pitch",
+    "state": "recorded",
+    "reason": "1 pitch candidate(s) recorded",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_tuners/fixtures/AudioUnit_77727f61_1.1.0.json",
+    "at": "20261002T162350",
+    "map": "none"
+  },
+  {
+    "identity": "AudioUnit|38424d57|11.2.0",
+    "product": "UAD Auto-Tune Realtime X",
+    "category": "pitch",
+    "state": "held",
+    "reason": "hardware: map: none; needs UAD hardware (UAD-2) present",
+    "at": "20261002T162350",
+    "map": "none"
+  }
+]
