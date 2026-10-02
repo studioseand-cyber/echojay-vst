@@ -221,7 +221,7 @@ inline Export exportCompProfile (const juce::var& f)
     const auto norms = sweepVar.getProperty ("positionNorms", {}); const auto inAt = sweepVar.getProperty ("inAtGr", {});
     if (! inAt.isArray() || inAt.size() != norms.size()) return refuse ("no in_at_gr on this record (re-derive it)");
     const auto texts = [&] { juce::StringArray t; const auto arr = sweepVar.getProperty ("positionTexts", {}); for (int i = 0; i < arr.size(); ++i) t.add (arr[i].toString()); return t; }();
-    juce::Array<juce::var> curve; std::vector<std::optional<double>> crossing; int withOne = 0;
+    juce::Array<juce::var> curve; std::vector<std::optional<double>> crossing; int withOne = 0; juce::StringArray deepOnlyNulled;
     for (int i = 0; i < norms.size(); ++i)
     {
         auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
@@ -233,7 +233,13 @@ inline Export exportCompProfile (const juce::var& f)
         o->setProperty ("display", i < texts.size() ? texts[i] : juce::String());
         o->setProperty ("eff_threshold_dbfs", one);
         auto* g = new juce::DynamicObject();
-        g->setProperty ("1", one); g->setProperty ("2", conv (inAt[i].getProperty ("2", {}))); g->setProperty ("3", conv (inAt[i].getProperty ("3", {})));
+        // EVERY TARGET 1..6 (v1.7): a number or null; a position with NO shallow (1/2/3) value exports its deep points as
+        // null too - a position described only by deep points is a defect (his section 3) - and is never dropped.
+        bool shallow = false;
+        for (int t : sweep::kTrustTargets) if (! conv (inAt[i].getProperty (juce::String (t), {})).isVoid()) shallow = true;
+        for (int t : sweep::kGrTargets)
+            g->setProperty (juce::String (t), (t >= sweep::kDeepFrom && ! shallow) ? juce::var() : conv (inAt[i].getProperty (juce::String (t), {})));
+        if (! shallow) for (int t : sweep::kGrTargets) if (t >= sweep::kDeepFrom && ! conv (inAt[i].getProperty (juce::String (t), {})).isVoid()) deepOnlyNulled.add ("position " + juce::String (i) + " @" + juce::String (t));
         o->setProperty ("in_at_gr_dbfs", juce::var (g));
         curve.add (juce::var (o));
     }
@@ -416,24 +422,34 @@ inline Export exportCompProfile (const juce::var& f)
         if (! (q.getProperty ("point_error_db", {}).isDouble() || q.getProperty ("point_error_db", {}).isInt()))
             return refuse ("quality.point_error_db not measured (v1.4 requires the hold-doubled repeat): this record has no repeat pass");
         qq->setProperty ("point_error_db", q.getProperty ("point_error_db", juce::var()));
+        qq->setProperty ("deep_point_error_db", q.getProperty ("deep_point_error_db", juce::var()));   // v1.7: informational, never a gate
         qq->setProperty ("method", q.getProperty ("method", "none"));
         qq->setProperty ("points_compared", q.getProperty ("pointsCompared", 0));
         qq->setProperty ("shape_disagreements", q.getProperty ("shapeDisagreements", 0));
         // The monotonic check is computed HERE from the exported points (not read from the record): within a position
         // 1 < 2 < 3, across positions the 1 dB values move one way. His server rejects a violation; we say it first.
         bool within = true, across = true; juce::Array<juce::var> viol;
-        std::vector<double> ones;
+        // MONOTONIC (v1.4, extended v1.7 to every target): within a position strictly rising over the present targets 1..6,
+        // nulls skipped; across positions one direction PER LEVEL, nulls skipped, equal neighbours allowed.
+        auto numAt = [] (const juce::var& g, int t) -> std::optional<double> { const auto v = g.getProperty (juce::String (t), {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
         for (int i = 0; i < curve.size(); ++i)
         {
             const auto g = curve[i].getProperty ("in_at_gr_dbfs", {});
-            auto at = [&] (const char* k) -> std::optional<double> { const auto v = g.getProperty (k, {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
-            const auto a = at ("1"), b = at ("2"), c = at ("3");
-            if (a && b && *b <= *a) { within = false; viol.add ("point " + juce::String (i) + ": 2 dB not strictly above 1 dB"); }      // STRICTLY within
-            if (b && c && *c <= *b) { within = false; viol.add ("point " + juce::String (i) + ": 3 dB not strictly above 2 dB"); }
-            if (a) ones.push_back (*a);                                                                                                  // nulls skipped
+            std::optional<std::pair<int, double>> prev;
+            for (int t : sweep::kGrTargets)
+            {
+                const auto v = numAt (g, t); if (! v) continue;
+                if (prev && *v <= prev->second) { within = false; viol.add ("point " + juce::String (i) + ": " + juce::String (t) + " dB not strictly above " + juce::String (prev->first) + " dB"); }
+                prev = std::make_pair (t, *v);
+            }
         }
-        if (ones.size() >= 3) { int up = 0, down = 0; for (size_t k = 1; k < ones.size(); ++k) { if (ones[k] > ones[k - 1]) ++up; if (ones[k] < ones[k - 1]) ++down; }   // equal neighbours allowed
-                                if (up > 0 && down > 0) { across = false; viol.add ("1 dB values rise " + juce::String (up) + " and fall " + juce::String (down) + " times across positions"); } }
+        for (int t : sweep::kGrTargets)
+        {
+            std::vector<double> vals; for (int i = 0; i < curve.size(); ++i) if (auto v = numAt (curve[i].getProperty ("in_at_gr_dbfs", {}), t)) vals.push_back (*v);
+            if (vals.size() < 3) continue;
+            int up = 0, down = 0; for (size_t k = 1; k < vals.size(); ++k) { if (vals[k] > vals[k - 1]) ++up; if (vals[k] < vals[k - 1]) ++down; }
+            if (up > 0 && down > 0) { across = false; viol.add (juce::String (t) + " dB values rise " + juce::String (up) + " and fall " + juce::String (down) + " times across positions"); }
+        }
         qq->setProperty ("monotonic_within_positions", within);
         qq->setProperty ("monotonic_across_positions", across);
         qq->setProperty ("violations", viol);
@@ -488,6 +504,15 @@ inline Export exportCompProfile (const juce::var& f)
         notes << "; defaults reference with every control at its instantiate value: GR " << ((gr.isDouble() || gr.isInt()) ? juce::String ((double) gr, 2) + " dB" : juce::String ("not measured"))
               << ((bool) rd.getProperty ("activeAtDefaults", false) ? " - above the 1 dB sense bar: a stage is active at the defaults and is IN this curve (which one: not measured individually)" : " - below the 1 dB sense bar");
         notes << "; ";
+    }
+    {
+        // DEEP POINTS (v1.7): what was nulled and why, so a gap reads as a decision
+        const auto q = sweepVar.getProperty ("quality", {});
+        juce::StringArray dn; if (const auto* a = q.getProperty ("deepPointsNulled", {}).getArray()) for (const auto& x : *a) dn.add (x.toString());
+        const auto dpe = q.getProperty ("deep_point_error_db", {});
+        notes << "deep points 4/5/6 (v1.7): deep_point_error_db " << ((dpe.isDouble() || dpe.isInt()) ? juce::String ((double) dpe, 2) + " dB over " + juce::String ((int) q.getProperty ("deepPointsCompared", 0)) + " surviving deep points" : juce::String ("none (no deep point measured twice)"))
+              << ", informational; deep points nulled by the hold-doubling test (over " << juce::String (sweep::kDeepHoldTolDb, 1) << " dB): " << (dn.isEmpty() ? juce::String ("none") : dn.joinIntoString (", "))
+              << (deepOnlyNulled.isEmpty() ? juce::String() : "; deep points nulled on positions with no shallow point: " + deepOnlyNulled.joinIntoString (", ")) << "; ";
     }
     notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured; "
           << "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate); ";

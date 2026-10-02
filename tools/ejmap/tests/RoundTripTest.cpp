@@ -4263,6 +4263,28 @@ void testSweepDerivation()
                 Derived zig = tx; zig.inAtGr.clear();                                           // four positions whose 1 dB values go -30, -20, -25, -15: up, down, up
                 for (double v : { -30.0, -20.0, -25.0, -15.0 }) { Derived::InAtGr r; r.at[1] = v; r.at[2] = v + 1.0; r.at[3] = v + 2.0; zig.inAtGr.push_back (r); }
                 check (! repeatQuality (zig, nullptr).acrossMonotonic, "quality Q6: 1 dB values that rise and fall across positions are an across-position violation");
+                // DEEP POINTS (v1.7, Q7-Q10): targets 1..6 from one constant; the trust gate stays 1/2/3; a deep point whose repeat
+                // differs by more than 0.5 dB is null and listed; deep_point_error_db is the worst over the SURVIVING deep points.
+                check (kGrTargets == std::vector<int> { 1, 2, 3, 4, 5, 6 } && kTrustTargets == std::vector<int> { 1, 2, 3 } && kDeepFrom == 4 && std::abs (kDeepHoldTolDb - 0.5) < 1e-9,
+                       "quality Q7: the targets are 1..6 from one constant, the trust gate 1/2/3, deep from 4, the deep hold tolerance 0.5 dB");
+                Derived dp = tx; for (auto& r : dp.inAtGr) if (r.at.count (3) && r.at.at (3).isDouble()) { const double v3 = (double) r.at.at (3); r.at[4] = v3 + 1.5; r.at[5] = v3 + 3.0; r.at[6] = v3 + 4.5; }
+                Derived dq = dp; bool bumped = false; int bumpedPos = -1;
+                for (size_t i = 0; i < dq.inAtGr.size() && ! bumped; ++i) if (dq.inAtGr[i].at.count (5) && dq.inAtGr[i].at.at (5).isDouble()) { dq.inAtGr[i].at[5] = (double) dq.inAtGr[i].at.at (5) + 0.8; bumped = true; bumpedPos = (int) i; }
+                for (auto& r : dq.inAtGr) if (r.at.count (4) && r.at.at (4).isDouble()) r.at[4] = (double) r.at.at (4) + 0.2;      // the 4 dB points move 0.2: survive, and set the figure
+                const auto dqq = repeatQuality (dp, &dq);
+                check (bumped && dqq.deepNullSet.count ({ bumpedPos, 5 }) == 1 && dqq.deepNulled.size() == 1 && dqq.deepNulled[0].startsWith (juce::String (bumpedPos) + "@5")
+                         && dqq.deepPointErrorDb && std::abs (*dqq.deepPointErrorDb - 0.2) < 0.01 && dqq.pointErrorDb && std::abs (*dqq.pointErrorDb) < 1e-9,
+                       "quality Q8: a 5 dB point whose repeat moved 0.8 dB is nulled and listed; deep_point_error_db is the worst SURVIVING deep disagreement (0.20); point_error_db (1/2/3) untouched at 0");
+                // the record: the nulled deep point is a gap in inAtGr itself, and the quality carries the deep figures
+                Plan pq; pq.thr = 0; pq.thrName = "Threshold"; pq.norms.resize (dp.inAtGr.size(), 0.5f); pq.makeProfile();
+                auto sv = composeThresholdSweep (dp, displayCheck (dp, "dB"), pq, {});
+                attachRepeatQuality (sv, dp, &dq);
+                const auto nulled = sv.getProperty ("inAtGr", {})[bumpedPos].getProperty ("5", {});
+                check (nulled.isVoid() && sv.getProperty ("inAtGr", {})[bumpedPos].getProperty ("4", {}).isDouble() && std::abs ((double) sv.getProperty ("quality", {}).getProperty ("deep_point_error_db", -1.0) - 0.2) < 0.01
+                         && sv.getProperty ("quality", {}).getProperty ("deepPointsNulled", {}).size() == 1,
+                       "quality Q9: the record's inAtGr carries the nulled deep point as null (its 4 dB neighbour stays), quality.deep_point_error_db and deepPointsNulled beside it");
+                Derived deepBent = dp; for (auto& r : deepBent.inAtGr) if (r.at.count (6) && r.at.at (6).isDouble()) { r.at[6] = (double) r.at.at (5) - 0.5; break; }
+                check (! repeatQuality (deepBent, nullptr).withinMonotonic, "quality Q10: the within-position check runs over 1..6 - a 6 dB point below its 5 dB point is a violation");
             }
             auto gap = cl; gap[4][1] = std::nullopt;   // position 4's -12 reading missing: the crossing has no bracket
             const auto gx = derive (fromGains (gap), kLevels, -1);
@@ -5350,6 +5372,28 @@ void testProfileExport()
     check (! exportCompProfile (record (16, true, true, "", "certified")).ok && exportCompProfile (record (16, true, true, "", "certified")).refused.contains ("other"),
            "export X10: several candidates is topology other and no profile");
     check (! exportCompProfile (record (16, true, false, "", "flat")).ok, "export X11: a non-certified sweep refuses");
+    {
+        // DEEP POINTS IN THE EXPORT (v1.7, X25-X27): keys 1..6 on every point; a position with no shallow point exports its deep
+        // points null too and is never dropped; deep_point_error_db is written (null when none) and never refuses.
+        auto deepRec = juce::JSON::parse (juce::JSON::toString (rec));
+        auto ia = deepRec.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
+        for (int i = 0; i < ia.size(); ++i) if (auto* o = ia[i].getDynamicObject()) { if (ia[i].getProperty ("3", {}).isDouble()) { const double v = (double) ia[i].getProperty ("3", {}); o->setProperty ("4", v + 1.4); o->setProperty ("5", v + 2.8); o->setProperty ("6", juce::var()); } }
+        // position 0: deep only (no shallow point) - must export with 4/5/6 null, still present
+        if (auto* o = ia[0].getDynamicObject()) { o->setProperty ("1", juce::var()); o->setProperty ("2", juce::var()); o->setProperty ("3", juce::var()); o->setProperty ("4", -40.0); o->setProperty ("5", -38.0); }
+        deepRec.getProperty ("thresholdSweep", {}).getProperty ("quality", {}).getDynamicObject()->setProperty ("deep_point_error_db", 0.4);
+        const auto ed = exportCompProfile (deepRec);
+        const auto dc = ed.profile.getProperty ("amount", {}).getProperty ("curve", {});
+        check (ed.ok && dc.size() == 16 && dc[1].getProperty ("in_at_gr_dbfs", {}).hasProperty ("6") && dc[1].getProperty ("in_at_gr_dbfs", {}).getProperty ("6", 0.0).isVoid()
+                 && std::abs ((double) dc[1].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0) - ((double) dc[1].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", 0.0) + 1.4)) < 0.01,
+               "export X25: every point carries keys 1..6, numbers converted like the shallow ones, null where not reached (" + ed.refused + ")");
+        check (dc[0].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && dc[0].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && dc[0].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", 0.0).isVoid()
+                 && ed.profile.getProperty ("notes", "").toString().contains ("deep points nulled on positions with no shallow point: position 0"),
+               "export X26: a position with no 1/2/3 value exports its deep points as null too - present, never dropped, and said in notes");
+        check (std::abs ((double) ed.profile.getProperty ("quality", {}).getProperty ("deep_point_error_db", -1.0) - 0.4) < 1e-9 && (bool) ed.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", false),
+               "export X27: deep_point_error_db is written from the record and the monotonic check runs over 1..6 (a rising 4/5 keeps it true)");
+        auto deepBig = juce::JSON::parse (juce::JSON::toString (deepRec)); deepBig.getProperty ("thresholdSweep", {}).getProperty ("quality", {}).getDynamicObject()->setProperty ("deep_point_error_db", 3.0);
+        check (exportCompProfile (deepBig).ok, "export X27b: a large deep_point_error_db never refuses the profile (informational)");
+    }
     {
         // RATIO (2 Oct, ruled): an adjustable ratio never exports as fixed; its one curve point carries the norm the sweep
         // ran at, the display, the value, and measured_ratio implied from level dependence; knee_db null everywhere.

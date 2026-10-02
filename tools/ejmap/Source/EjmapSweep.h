@@ -57,6 +57,7 @@
 #include "EjmapRoles.h"
 #include <map>
 #include <optional>
+#include <set>
 
 namespace ejmap::sweep
 {
@@ -81,6 +82,13 @@ inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must dif
 // Wherever two adjacent positions' 2 dB points differ by more than kRefineGapDb, positions are added between them, evenly,
 // ceil(gap / kRefineGapDb) segments, and the check runs again on the denser grid, up to kRefineRounds rounds or
 // kRefinePositionsMax positions in all. Same procedure for every added position (quiet ladder, hold-doubled repeat).
+// THE GR TARGETS (spec v1.7 section 3): the shallow points 1/2/3 dB every build uses and the TRUST GATE reads, and the
+// deep points 4/5/6 for the explicit "harder" ladder (informational gate). Same straddle, same words, no extrapolation,
+// nothing above -3.01 dBFS RMS (0 dBFS peak is the sweep's ceiling). One constant, so nothing counts to 3 by hand.
+inline const std::vector<int> kGrTargets { 1, 2, 3, 4, 5, 6 };
+inline const std::vector<int> kTrustTargets { 1, 2, 3 };
+inline constexpr int    kDeepFrom         = 4;      // targets at or above this are deep
+inline constexpr double kDeepHoldTolDb    = 0.5;    // a deep point whose hold-doubled repeat differs by more than this is null (v1.7)
 inline constexpr double kRefineGapDb      = 3.0;
 inline constexpr int    kRefineRounds     = 4;
 inline constexpr int    kRefinePositionsMax = 64;
@@ -956,7 +964,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
         const auto& lv = d.levels;
         auto gAt = [&] (size_t k) { return d.reduction[levelKey (lv[k])][(size_t) i]; };
         Derived::InAtGr rec;
-        for (int target : { 1, 2, 3 })
+        for (int target : kGrTargets)
         {
             const double T = (double) target;
             juce::var out;
@@ -1743,9 +1751,15 @@ inline juce::var composeFixture (const juce::var& base, const juce::var& thresho
 // averaged - the normal sweep is the record's curve, the doubled-hold one is kept beside it, the disagreement is the number.
 struct RepeatQuality
 {
-    int repeats = 1, pointsCompared = 0, shapeDisagreements = 0;   // shape: one repeat numeric, the other not
+    int repeats = 1, pointsCompared = 0, shapeDisagreements = 0;   // shape: one repeat numeric, the other not (1/2/3)
     juce::String method = "hold 2.5 s vs 5 s";
-    std::optional<double> pointErrorDb;
+    std::optional<double> pointErrorDb;                              // THE TRUST GATE: worst over the 1/2/3 points (unchanged by v1.7)
+    // DEEP POINTS (v1.7): a 4/5/6 point whose repeat differs by more than kDeepHoldTolDb is NULL and listed; the worst
+    // over the SURVIVING deep points is deep_point_error_db - informational, never a gate.
+    int deepPointsCompared = 0;
+    std::optional<double> deepPointErrorDb;
+    juce::StringArray deepNulled;                                    // "position@target: delta dB"
+    std::set<std::pair<int, int>> deepNullSet;                       // (position, target) to null on the record
     bool withinMonotonic = true, acrossMonotonic = true;
     juce::StringArray violations;
 };
@@ -1755,31 +1769,50 @@ inline RepeatQuality repeatQuality (const Derived& d1, const Derived* d2)
     auto num = [] (const juce::var& v) { return v.isDouble() || v.isInt(); };
     if (d2 != nullptr && d2->inAtGr.size() == d1.inAtGr.size())
     {
-        q.repeats = 2; double worst = 0.0;
+        q.repeats = 2; double worst = 0.0, worstDeep = 0.0;
         for (size_t i = 0; i < d1.inAtGr.size(); ++i)
-            for (int t : { 1, 2, 3 })
+            for (int t : kGrTargets)
             {
                 const auto a = d1.inAtGr[i].at.count (t) ? d1.inAtGr[i].at.at (t) : juce::var(), b = d2->inAtGr[i].at.count (t) ? d2->inAtGr[i].at.at (t) : juce::var();
-                if (num (a) && num (b)) { ++q.pointsCompared; worst = juce::jmax (worst, std::abs ((double) a - (double) b)); }
-                else if (num (a) != num (b)) ++q.shapeDisagreements;
+                if (t < kDeepFrom)
+                {
+                    if (num (a) && num (b)) { ++q.pointsCompared; worst = juce::jmax (worst, std::abs ((double) a - (double) b)); }
+                    else if (num (a) != num (b)) ++q.shapeDisagreements;
+                }
+                else if (num (a) && num (b))
+                {
+                    const double delta = std::abs ((double) a - (double) b);
+                    if (delta > kDeepHoldTolDb) { q.deepNullSet.insert ({ (int) i, t }); q.deepNulled.add (juce::String ((int) i) + "@" + juce::String (t) + ": " + juce::String (delta, 2) + " dB"); }
+                    else { ++q.deepPointsCompared; worstDeep = juce::jmax (worstDeep, delta); }
+                }
             }
         if (q.pointsCompared > 0) q.pointErrorDb = std::round (worst * 100.0) / 100.0;
+        if (q.deepPointsCompared > 0) q.deepPointErrorDb = std::round (worstDeep * 100.0) / 100.0;
     }
-    // within a position: 1 < 2 < 3 where numeric
-    for (size_t i = 0; i < d1.inAtGr.size(); ++i)
+    // THE POINTS AS THE RECORD WILL CARRY THEM (deep nulls applied), for the monotonic checks
+    std::vector<std::map<int, juce::var>> pts;
+    for (size_t i = 0; i < d1.inAtGr.size(); ++i) { auto m = d1.inAtGr[i].at; for (int t : kGrTargets) if (q.deepNullSet.count ({ (int) i, t })) m[t] = juce::var(); pts.push_back (m); }
+    // within a position: strictly rising over every present target 1..6, nulls skipped
+    for (size_t i = 0; i < pts.size(); ++i)
     {
-        const auto& m = d1.inAtGr[i].at;
-        for (int t : { 1, 2 })
-            if (m.count (t) && m.count (t + 1) && num (m.at (t)) && num (m.at (t + 1)) && (double) m.at (t + 1) <= (double) m.at (t))   // STRICTLY rising within a position
-            { q.withinMonotonic = false; q.violations.add ("position " + juce::String ((int) i) + ": " + juce::String (t + 1) + " dB at " + juce::String ((double) m.at (t + 1), 1) + " below " + juce::String (t) + " dB at " + juce::String ((double) m.at (t), 1)); }
+        const auto& m = pts[i];
+        std::optional<std::pair<int, double>> prev;
+        for (int t : kGrTargets)
+        {
+            if (! m.count (t) || ! num (m.at (t))) continue;
+            const double v = (double) m.at (t);
+            if (prev && v <= prev->second) { q.withinMonotonic = false; q.violations.add ("position " + juce::String ((int) i) + ": " + juce::String (t) + " dB at " + juce::String (v, 1) + " below or equal to " + juce::String (prev->first) + " dB at " + juce::String (prev->second, 1)); }
+            prev = std::make_pair (t, v);
+        }
     }
-    // across positions: the 1 dB values must move in one direction (ascending norm order), ignoring non-numeric positions
-    std::vector<double> ones; for (const auto& r : d1.inAtGr) if (r.at.count (1) && num (r.at.at (1))) ones.push_back ((double) r.at.at (1));
-    if (ones.size() >= 3)
+    // across positions: per level, the values must move in one direction (ascending norm order); nulls skipped; equal neighbours count as neither
+    for (int t : kGrTargets)
     {
-        int up = 0, down = 0;                                                      // nulls already skipped; equal neighbours count as neither
-        for (size_t k = 1; k < ones.size(); ++k) { if (ones[k] > ones[k - 1]) ++up; if (ones[k] < ones[k - 1]) ++down; }
-        if (up > 0 && down > 0) { q.acrossMonotonic = false; q.violations.add ("across positions the 1 dB values rise " + juce::String (up) + " time(s) and fall " + juce::String (down) + " time(s)"); }
+        std::vector<double> vals; for (const auto& m : pts) if (m.count (t) && num (m.at (t))) vals.push_back ((double) m.at (t));
+        if (vals.size() < 3) continue;
+        int up = 0, down = 0;
+        for (size_t k = 1; k < vals.size(); ++k) { if (vals[k] > vals[k - 1]) ++up; if (vals[k] < vals[k - 1]) ++down; }
+        if (up > 0 && down > 0) { q.acrossMonotonic = false; q.violations.add ("across positions the " + juce::String (t) + " dB values rise " + juce::String (up) + " time(s) and fall " + juce::String (down) + " time(s)"); }
     }
     return q;
 }
@@ -1793,10 +1826,18 @@ inline void attachRepeatQuality (juce::var& sweepVar, const Derived& d1, const D
         for (const auto& r : d2->inAtGr) { auto* x = new juce::DynamicObject(); for (const auto& [t, v] : r.at) x->setProperty (juce::String (t), v); arr.add (juce::var (x)); }
         o->setProperty ("inAtGrRepeat", arr);
     }
+    // DEEP NULLS ON THE RECORD (v1.7): the failed deep points come out of inAtGr itself, so every reader sees a gap.
+    if (! q.deepNullSet.empty())
+        if (auto* arr = o->getProperty ("inAtGr").getArray())
+            for (const auto& [i, t] : q.deepNullSet)
+                if (i < arr->size()) if (auto* x = (*arr)[i].getDynamicObject()) x->setProperty (juce::String (t), juce::var());
     auto* qq = new juce::DynamicObject();
     qq->setProperty ("repeats", q.repeats);
     qq->setProperty ("method", q.repeats > 1 ? q.method : juce::String ("none"));
     qq->setProperty ("point_error_db", q.pointErrorDb ? juce::var (*q.pointErrorDb) : juce::var());
+    qq->setProperty ("deep_point_error_db", q.deepPointErrorDb ? juce::var (*q.deepPointErrorDb) : juce::var());
+    qq->setProperty ("deepPointsCompared", q.deepPointsCompared);
+    { juce::Array<juce::var> dn; for (const auto& x : q.deepNulled) dn.add (x); qq->setProperty ("deepPointsNulled", dn); }
     qq->setProperty ("pointsCompared", q.pointsCompared); qq->setProperty ("shapeDisagreements", q.shapeDisagreements);
     qq->setProperty ("withinPositionsMonotonic", q.withinMonotonic); qq->setProperty ("acrossPositionsMonotonic", q.acrossMonotonic);
     juce::Array<juce::var> vs; for (const auto& v : q.violations) vs.add (v); qq->setProperty ("violations", vs);
