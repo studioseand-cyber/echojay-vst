@@ -4889,7 +4889,7 @@ void testCertRecordAndDefaultPaths()
     juce::StringArray cand; for (const auto& c : disc.candidates) cand.add (c.inst.desc.name);
     check (cand.contains ("Fine") && cand.contains ("NoDisp") && ! cand.contains ("Hanger") && disc.excludedByDisposition.size() == 1 && disc.excludedByDisposition[0].contains ("hangs on load")
              && in.notes.joinIntoString (" ").contains ("exclusion disposition"),
-           "record R10: operator_excluded in categories.json keeps a mapped compressor out of the cert worklist, with its why; "
+           "record R10 (kept by the 2 Oct ruling): operator_excluded - the mapper's own manual exclusion, not a verdict - keeps a compressor out of the cert worklist even with a category and a clean scan, with its why; "
            "disposition sweep and no disposition are both candidates (" + cand.joinIntoString (",") + ")");
     // RE-RULED 2 Oct: a mapping verdict is not an exclusion - the category decides.
     check (cand.contains ("Tuner") && disc.tuners.contains ("Tuner") && cand.contains ("Reviewed"),
