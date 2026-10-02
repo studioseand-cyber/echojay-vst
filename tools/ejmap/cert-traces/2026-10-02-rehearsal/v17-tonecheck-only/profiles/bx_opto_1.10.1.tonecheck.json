@@ -1,0 +1,141 @@
+{
+  "product": "bx_opto",
+  "map_fp": "a21e559b70943059fe7b9ff2cc7f6d9f94525fc6e9454c863a8c7e4e3cce90a9",
+  "L_rms_dbfs": -18.0,
+  "L_peak_dbfs": -14.989700043360187,
+  "g_db": 2.0,
+  "pick": {
+    "norm": 0.452879259090909,
+    "point": 10,
+    "point_next": 9,
+    "in_at_g": -18.91,
+    "stepped": false,
+    "pick_one_db": -19.899999999999999,
+    "expected_gr_db": 2.0,
+    "filled_across_norm": false,
+    "fell_back_to_measured": false
+  },
+  "writes": [
+    {
+      "control": "Speed",
+      "index": 1,
+      "norm": 0.5,
+      "set": "50",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Output Gain",
+      "index": 3,
+      "norm": 0.0,
+      "set": "0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Sidechain Filter Type",
+      "index": 4,
+      "norm": 0.0,
+      "set": "HP",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Sidechain Frequency",
+      "index": 5,
+      "norm": 0.0,
+      "set": "20 Hz",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Mix",
+      "index": 6,
+      "norm": 1.0,
+      "set": "100 %",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Sidechain Off/On/Solo",
+      "index": 7,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Bank",
+      "index": 8,
+      "norm": 0.0,
+      "set": "A",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "",
+      "index": 9,
+      "norm": 1.0,
+      "set": "",
+      "why": "neutral[] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 1.99,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261002T230635.666+0100",
+  "ratio_norm_source": "no ratio control in the profile (fixed ratio): nothing written",
+  "spec": "v1.7",
+  "deep_levels": [
+    {
+      "g_db": 4.0,
+      "ran": true,
+      "gr_measured_db": 4.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.502878759090909,
+        "point": 12,
+        "point_next": 11,
+        "in_at_g": -20.010000000000002,
+        "stepped": false,
+        "pick_one_db": -23.19136363636364,
+        "expected_gr_db": 4.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      }
+    },
+    {
+      "g_db": 5.0,
+      "ran": true,
+      "gr_measured_db": 5.01,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.525605804545454,
+        "point": 12,
+        "point_next": 11,
+        "in_at_g": -18.510000000000002,
+        "stepped": false,
+        "pick_one_db": -24.623181818181816,
+        "expected_gr_db": 5.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      }
+    },
+    {
+      "g_db": 6.0,
+      "ran": true,
+      "gr_measured_db": 6.01,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.547459842857143,
+        "point": 13,
+        "point_next": 12,
+        "in_at_g": -19.210000000000001,
+        "stepped": false,
+        "pick_one_db": -26.042380952380952,
+        "expected_gr_db": 6.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      }
+    }
+  ],
+  "deep_levels_nulled": []
+}

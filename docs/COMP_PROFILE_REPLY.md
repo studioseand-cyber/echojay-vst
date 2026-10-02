@@ -334,3 +334,26 @@ the instrument tuners (GTR Tuner, MTuner, bx_tuner, UAD bx_tuner — `not_a_proc
 The server's own `kind` field already says "pitch correction" for exactly the right eleven — the
 category just never followed. Until it does, **"tuners on a fresh Mac" is BLOCKED on this catalogue
 fix** in the pass criteria, and the operator's Mac stays the only place tuner records are made.
+
+## 2 Oct, night: v1.7 built — deep points, the amended pick, the deep tone checks (held until v1.8 lands)
+
+Built on top of `36397676` (Sean's build commit, untouched): `9ed3ba81` deep points, `9d932c7e` the pick,
+`03e600eb` the tone checks, `741689b5` the tone-check-only mode (`docs/SEAN_MAC_TONECHECK.md`).
+Nothing re-measured: the probe already renders every level to −3.01 RMS at every position and the
+straddle reads the whole curve, so 4/5/6 are derivation + export, and the batch's traces (kept in
+`cert/raw` with the hold-doubled repeat) let a cert folder be re-derived afterwards.
+
+**CL 1B, re-derived from its committed traces:** deep points on 25 of 28 positions at 4, 5 and 6 dB;
+`deep_point_error_db` 0.10 over 75 surviving deep points; nothing nulled by the hold test; monotonic
+within and across at every level. At norm 0.2167: 1→6 dB at −24.0 / −17.2 / −13.5 / −11.5 / −9.7 / −7.9
+RMS. **The new g = 2 pick** (12 dB clamp on the pick itself): norm 0.2217, interpolated between the
+positions whose 2 dB points bracket L (−17.21 / −19.81), its own 1 dB point −24.77 — 6.8 dB below L —
+where the old rule picked 0.2167 alone (its neighbour dropped by the 8 dB clamp) and measured 1.85 dB.
+**Its tone checks could not run here: the iLok is with Sean**, so the probe showed PACE's window after
+2.9 s and was killed — on Sean's Mac the tone-check-only mode runs them from the same traces.
+
+**Measured on four licence-free products here (17 s for all four):** every deep level within 0.05 dB of
+its target — bx_opto 4.00 / 5.01 / 6.01, Lindell 7X-500 4.05 / 5.00 / 6.02, elysia mpressor 3.98 / 5.00 /
+6.02, Lindell SBC 4.00 / 4.99 and its 6 dB level **nulled**: at L = −18 the only settings reaching 6 dB
+have their 1 dB point 14 dB below L, the clamp refuses, the level cannot be confirmed and comes out of
+the profile (the profile stands at 1–5) — section 8 as written.
