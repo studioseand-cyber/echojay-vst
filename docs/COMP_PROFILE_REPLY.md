@@ -297,3 +297,40 @@ tone check) derived nothing, so no live `detector_f` had ever been recorded; and
    (9.7–10.6). A position whose 1 dB point is 8 dB below L therefore sits at about 2.3–2.4 dB of GR at
    L; a pick for g = 3 finds nothing inside the clamp on this device. If you want g = 3 reachable on
    soft-knee units, the clamp needs to scale with the measured 1 → g spacing (it is in the profile).
+
+## 2 Oct, afternoon: the server catalogue files every tuner as `no_dial_set` — a fresh Mac finds no tuners
+
+Found by the stranger's-Mac test (an empty ledger, `--scan --categorise`, the census): the categorise
+endpoint serves verdicts dated **5 Aug**, and on that date no product carried `category: pitch`.
+The 26 Aug re-categorisation on the operator's Mac (local tool `categorise/1`) gave the real-time
+tuners `pitch / sweep`, but that file never reached the server. So every tuner is `category null /
+no_dial_set` on the server, discovery sees no category, and tuner certification has nothing to do on
+any Mac but the operator's. **No server data was changed; this is yours to update.**
+
+What the eight real-time tuners need is `category: pitch` (the client's discovery then puts them on
+the tuner worklist; disposition no longer matters — ruled 2 Oct, only `operator_excluded` and the
+hang/crash family exclude). Current server verdict → needed:
+
+| product | server now (5 Aug) | kind the server itself wrote | needs |
+|---|---|---|---|
+| Auto-Tune Pro (Antares) | null / no_dial_set | pitch correction | pitch |
+| Auto-Tune Artist (Antares) | null / no_dial_set | pitch correction | pitch |
+| Auto-Tune EFX+ (Antares) | null / no_dial_set | pitch correction | pitch |
+| Auto-Tune EFX (Antares, 9.0.1) | null / no_dial_set | pitch correction | pitch |
+| Auto-Tune Access (Antares) | null / no_dial_set | pitch correction | pitch |
+| UAD Antares Auto-Tune Realtime | null / no_dial_set | pitch correction | pitch (hardware-held on a Mac without a UAD-2, but categorised) |
+| UAD Auto-Tune Realtime Access / Advanced / X | null / no_dial_set | pitch correction | pitch (same) |
+| bx_crispytuner (Plugin Alliance) | null / no_dial_set | pitch correction | pitch — measured 1 Oct: a strength curve 0 → 1.07 |
+| MetaTune (Slate Digital) | null / no_dial_set | pitch correction | pitch (PACE; licence-held without the iLok) |
+| Waves Tune Real-Time (Waves) | null / no_dial_set | pitch correction | pitch (not installed here; on a Waves Mac it would be the tuner) |
+| MAutoPitch (MeldaProduction) | null / no_dial_set | pitch correction | pitch |
+
+Not tuners for this purpose, and correctly not `pitch`: Melodyne, Waves Tune, Waves Tune LT (ARA /
+offline — the harness refuses them by name anyway); the pitch *shifters* and harmonisers (Little
+AlterBoy, MicroShift, SoundShifter, Torque, UltraPitch ×6, Vocal Bender, Harmony Engine,
+MHarmonizerMB, MTransformer, MUnison, Pitchwheel, kHs Pitch Shifter, UAD H910, Fault, Crystallizer);
+the instrument tuners (GTR Tuner, MTuner, bx_tuner, UAD bx_tuner — `not_a_processor`, right).
+
+The server's own `kind` field already says "pitch correction" for exactly the right eleven — the
+category just never followed. Until it does, **"tuners on a fresh Mac" is BLOCKED on this catalogue
+fix** in the pass criteria, and the operator's Mac stays the only place tuner records are made.
