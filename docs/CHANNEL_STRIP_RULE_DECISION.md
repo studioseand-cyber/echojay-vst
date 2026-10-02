@@ -93,3 +93,46 @@ Which of R1 / R2 / R3 to build; whether R1 runs at plan time (only the comp-word
 the 9-minute EMO-D5) or after a full sweep (today's cost, but the full review table survives); the
 PuigChild twin question in risk 2; and whether a product decided by a rule exports with a `notes` line
 naming the rule and the stages left at default (I would).
+
+## The ruling (2 Oct, evening) and what was done
+
+- **Rule 1 — BUILT, at plan time** (`130cbf9d`): whole-token match on exactly comp / compressor /
+  compression (a prefix match makes a "Compare" control go red: pin K2/K5, mutant R1-M1); the pick is
+  swept first, alone; a miss falls back to the full table; rule-decided exports carry a `notes` line
+  naming the rule, the pick, its engage write, every other candidate and control at its instantiate
+  value, and any stage active at the defaults (the defaults reference's GR, with the candidates left at
+  a level named — which of them is not measured individually under the plan-time rule). The
+  hold-doubled repeat is skipped only for a pass-through first pass (K7, mutant R1-M3). EMO-D5 pinned
+  (K3) and run live below.
+- **Rule 2 — REJECTED.** Zip was a roles bug: "Auto Threshold" (Disabled / Enabled) is a word-valued
+  mode switch; a threshold-named control whose sampled values are words is never a candidate (Z1–Z2,
+  two mutants), so Zip is single-threshold. Auto-Tune Vocal Compressor stays needs_review.
+- **Rule 3 — accepted in principle, NOT built**: Sean's v1.4 has one amount control; a twin exported
+  today would make the server write the left threshold only. Needs a spec field (Kathy is asking Sean);
+  then two guards — the twins' in_at_gr curves agree within the 0.5 dB point_error gate or
+  needs_review, and the tone check writes BOTH and measures GR on BOTH channels. The seven R3 products
+  stay needs_review.
+
+## PuigChild 670 (s): why Right Threshold reads flat — reported, nothing changed
+
+From the traces (`cert-traces/2026-09-30-batch5b-candidates/raw/AudioUnit_4c45797d_12.0.0.sweep.*`)
+and the defaults sample:
+
+- **The probe drives both channels.** Every hold logs per-channel output (`ch[L,R]`) and the two are
+  identical in every process of both candidates (e.g. −25.0950 / −25.0950 at −24 dBFS). With **Left
+  Threshold at its maximum, BOTH channels compress identically** (−13.22 dB out−in at −6 dBFS on L and
+  on R). So the right channel receives the tone and is processed — there is no routing bug, and SPL
+  IRON / Vertigo / DPR-402 certified their right sides for the same reason.
+- **Right Threshold's writes land and change nothing on either channel.** At norm 0.0 and at 1.0 the
+  outputs are the same to 0.01 dB (1.91 / 1.05 / −1.89 dB, the defaults' own level dependence with Left
+  Threshold at 2.2) and `getValue` reads back 1.000000.
+- **The cause is on the record: `Link` instantiates at 'Linked'** (0.5; the other positions are
+  'Left/Right' and 'Lat/Ver'). On a 670 in Linked mode the left-side controls drive both channels and
+  the right-side controls are followers — the plugin models exactly that. "Flat" here means "this
+  control is a follower in the instantiate mode", not "the signal did not reach it".
+
+So PuigChild 670 (s) is a single-amount-control product in its instantiate mode: Left Threshold drives
+both channels, and an export with Left Threshold alone would be right for the server AS LONG AS Link
+stays 'Linked' (neutral holds it there). It is not a Rule 2 case and not a twin. What it is, is a
+third shape — a link mode that makes one control the whole unit — and a rule for it would read the
+link control's instantiate value, not the right side's flatness. Not built; your call.
