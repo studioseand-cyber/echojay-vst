@@ -709,7 +709,8 @@ namespace
                     else if (k == "--timeout-s" && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
                     else if (k == "--slice" && j + 1 < argc) { for (const auto& l : juce::StringArray::fromLines (cwdFile (v).loadFileAsString())) if (l.trim().isNotEmpty()) o.slice.add (l.trim()); }   // the dress rehearsal only
                     else if (k == "--reset-per-hold")            o.resetPerHold = true;
-                    else if (k == "--include-pace")              o.includePace = true;
+                    else if (k == "--include-pace")              std::cout << "ignored: --include-pace (ruled 2 Oct: the window is the evidence; the scan's licence stops are carried forward)" << std::endl;
+                    else if (k == "--retry-licence")             o.retryLicence = true;
                     else if (k == "--retry-refused")             o.retryRefused = true;
                     else if (k == "--retry-refused-all")         o.retryRefused = o.retryAll = true;
                     else if (k == "--profile")                   o.profile = true;

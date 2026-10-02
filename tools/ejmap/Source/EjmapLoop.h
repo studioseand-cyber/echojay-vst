@@ -7,8 +7,8 @@
     needs_licence  the scan's window watch killed the bundle's load because it raised a licence / activation window
                   (PACE's with the iLok away, or a vendor's own); recorded with the windows and the time; re-scanned
                   only by --scan --retry-licence once the licence is back; never clicked
-    unmapped      installed and categorised a compressor or tuner, but no map at this build (local or server): discovery
-                  never sees it; the mapping sweep maps it; a row so it does not vanish (elysia mpressor, 2 Oct rehearsal)
+  "Unmapped" is a FIELD on the row (map: local map | server map state N | server map at a different build | none),
+  never a state (ruled 2 Oct, afternoon): certification does not need a map - the join is by map_fp.
     quarantined_at_scan  the scan quarantined the bundle (a stall or a crash) so it never reached the census; the row
                   names the product(s), the category where known, and says if it is a VST3 (the AU is unaffected)
 
@@ -28,10 +28,12 @@
 */
 #pragma once
 #include <juce_core/juce_core.h>
+#include <optional>
+#include <cstring>
 
 namespace ejmap::loop
 {
-inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence", "unmapped" };
+inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence" };
 inline bool isState (const juce::String& s) { for (auto* k : kStates) if (s == k) return true; return false; }
 
 struct Outcome
@@ -55,6 +57,14 @@ inline Outcome outcomeForRecord (const juce::var& record)
     Outcome o;
     if (const auto ref = record.getProperty ("thresholdRefusal", {}); ref.isObject())
     {
+        // A WINDOW AT THE PROBE'S LOAD IS needs_licence (ruled 2 Oct): the same evidence the scan's window watch records,
+        // the same state; --retry-licence brings it back when the licence is.
+        if (ref.getProperty ("stage", "").toString() == "window")
+        {
+            o.state = "needs_licence";
+            o.reason = "window at the probe's load (batch): " + ref.getProperty ("reason", "").toString() + "; not retried until --retry-licence";
+            return o;
+        }
         o.state = "refused";
         o.reason = "stage " + ref.getProperty ("stage", "?").toString() + ": " + ref.getProperty ("reason", "").toString();
         return o;
@@ -204,7 +214,34 @@ inline juce::var quarantineRow (const QuarantinedBundle& b, const juce::String& 
     return makeRow ("bundle|" + b.bundle, b.products.joinIntoString (", "), b.category, o, {}, {}, {}, when);
 }
 
-struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, unmapped = 0, rows = 0; };
+// THE SCAN'S LICENCE EVIDENCE, CARRIED FORWARD (ruled 2 Oct): the batch does not load a product whose bundle raised an
+// activation window at the scan; it writes the same state and names the scan's window. Matched by product name
+// (the scan loads the VST3 bundle; the licence is the product's, so its AudioUnit is held by the same evidence);
+// "(m)/(s)" channel suffixes do not break the match.
+inline juce::String productKeyName (const juce::String& n)
+{
+    auto s = n.trim().toLowerCase();
+    for (const char* suf : { " (m)", " (s)", " (mono)", " (stereo)" }) if (s.endsWith (suf)) s = s.dropLastCharacters ((int) std::strlen (suf)).trim();
+    return s;
+}
+inline std::optional<QuarantinedBundle> carriedLicenceStop (const std::vector<QuarantinedBundle>& stops, const juce::String& product)
+{
+    const auto want = productKeyName (product);
+    for (const auto& b : stops)
+    {
+        if (! b.licence) continue;
+        for (const auto& p : b.products) if (productKeyName (p) == want) return b;
+    }
+    return std::nullopt;
+}
+inline Outcome outcomeCarriedLicence (const QuarantinedBundle& b)
+{
+    Outcome o; o.state = "needs_licence";
+    o.reason = "carried forward from the scan: " + b.reason + " at " + b.at + " (" + juce::File (b.bundle).getFileName() + "); not loaded again; --retry-licence re-checks it";
+    return o;
+}
+
+struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, rows = 0; };
 inline Counts count (const juce::var& outcomes)
 {
     Counts c;
@@ -214,7 +251,7 @@ inline Counts count (const juce::var& outcomes)
             ++c.rows;
             const auto s = r.getProperty ("state", "").toString();
             if (s == "exported") ++c.exported; else if (s == "recorded") ++c.recorded; else if (s == "refused") ++c.refused;
-            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined; else if (s == "needs_licence") ++c.needsLicence; else if (s == "unmapped") ++c.unmapped;
+            else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined; else if (s == "needs_licence") ++c.needsLicence;
         }
     return c;
 }

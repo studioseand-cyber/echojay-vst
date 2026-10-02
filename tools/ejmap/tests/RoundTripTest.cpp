@@ -4670,7 +4670,8 @@ void testMeasurableRule()
     s.installedUnique = true; s.hardware = true;
     check (! measurable (s, false), "measurable M4: a hardware product stays unmeasured whatever its version");
     s.hardware = false; s.licenceBound = true;
-    check (! measurable (s, false) && measurable (s, true), "measurable M5: licence-bound only with PACE included");
+    Subject u = s; u.reach = Subject::Reach::unfixtured;
+    check (measurable (s, false) && measurable (s, true) && measurable (u, false), "measurable M5 (ruled 2 Oct, both reaches): PACE-wrapped is NOT unlicensed - no marker hold, no --include-pace; the scan's licence stops are carried forward and the probe's window watch decides");
     s.licenceBound = false;
     for (auto r : { Subject::Reach::notInstalled, Subject::Reach::ambiguous, Subject::Reach::heldPace, Subject::Reach::requiresHardware })
     { s.reach = r; check (! measurable (s, true), "measurable M6: " + ejmap::cert::reachName (r) + " is not measurable"); }
@@ -4740,18 +4741,22 @@ void testDiscoveryFromMaps()
     juce::StringArray names;
     for (const auto& c : d.candidates) names.add (c.inst.desc.name);
     check (! d.candidates.empty(), "discovery F1 (THE FRESH SYSTEM): a ledger with maps and NO fixtures produces a non-empty worklist");
-    check (names.contains ("elysia mpressor") && names.contains ("Local Comp") && names.size() == 3,
+    check (names.contains ("elysia mpressor") && names.contains ("Local Comp") && names.contains ("A Tuner"),
            "discovery F2: mapped by another machine (map state only, no local map) and mapped here (local map) are both candidates ("
              + names.joinIntoString (", ") + ")");
     // ONE STORE (ruled 1 Oct): a pitch product is a CANDIDATE, for tuner certification, in the same worklist.
     juce::String tunerCat;
     for (const auto& c : d.candidates) if (c.inst.desc.name == "A Tuner") tunerCat = c.category;
     { juce::StringArray un; for (const auto& u : d.unmapped) un.add (u.name + ":" + u.category);
-      check (d.unmapped.size() == 2 && un.contains ("Unmapped Comp:compressor") && un.contains ("Other Build:compressor") && ! un.contains ("Some EQ:eq"),
-             "discovery F4 (2 Oct): an installed compressor or tuner with no map at this build is NAMED in the discovery's unmapped list, not just counted; an EQ is not (" + un.joinIntoString (", ") + ")"); }
-    check (! names.contains ("Some EQ") && ! names.contains ("Other Build") && ! names.contains ("Unmapped Comp")
+      check (d.unmapped.size() == 1 && un.contains ("Unmapped Comp:compressor") && ! un.contains ("Some EQ:eq") && d.noMapYet >= 1,
+             "discovery F4 (2 Oct): a compressor with no map anywhere is NAMED in the no-map-yet list (information), an EQ is not (" + un.joinIntoString (", ") + ")"); }
+    // CERTIFICATION DOES NOT NEED A MAP (ruled 2 Oct, afternoon, reversing 29 Sep): installed + category + not excluded.
+    { juce::String mbU, mbO; for (const auto& c : d.candidates) { if (c.inst.desc.name == "Unmapped Comp") mbU = c.mappedBy; if (c.inst.desc.name == "Other Build") mbO = c.mappedBy; }
+      check (names.contains ("Unmapped Comp") && mbU == "none" && names.contains ("Other Build") && mbO == "server map at a different build",
+             "discovery F5: an installed, categorised, UNMAPPED compressor is discovered, map state 'none' on its row; a map at another build is 'server map at a different build' (" + mbU + " / " + mbO + ")"); }
+    check (! names.contains ("Some EQ")
              && names.contains ("A Tuner") && tunerCat == "pitch" && d.tuners.contains ("A Tuner"),
-           "discovery F3: another category, a map for a different build, and an unmapped compressor are not candidates; a pitch product IS a candidate, category pitch (one store)");
+           "discovery F3: another category is not a candidate; a pitch product IS a candidate, category pitch (one store)");
     const auto withFixture = discoverCandidates (in, installed, { "49696d78|1.15.1" });
     bool still = false; for (const auto& c : withFixture.candidates) still = still || c.inst.desc.name == "elysia mpressor";
     const auto otherVersion = discoverCandidates (in, installed, { "49696d78|1.0.0" });
@@ -4808,6 +4813,11 @@ void testCertRecordAndDefaultPaths()
            "record R3b: --retry-refused re-runs the TRANSIENT refusals (defaults, budget, window, ratio search, reference) and skips the PERMANENT ones (plan, no ratio at 4:1) ("
              + trNames.joinIntoString (",") + ")");
     const auto all = names (partitionStore (mixed, true, true).toSweep);
+    {
+        // --retry-licence (ruled 2 Oct): only the refusals a licence window caused come back
+        const auto lic = names (partitionStore (mixed, true, false, true).toSweep);
+        check (lic == juce::StringArray { "aaaa0004", "aaaa0008" }, "record R12: --retry-licence re-runs ONLY the refusal a window caused (aaaa0008) beside the never-swept record (aaaa0004), not defaults, budget, plan, ratio or reference refusals (" + lic.joinIntoString (",") + ")");
+    }
     check (all.contains ("aaaa0005") && all.contains ("aaaa0006") && all.size() == 8,
            "record R3c: --retry-refused-all is the override that re-runs the permanent ones too");
     check (! names (partitionStore (mixed, false).toSweep).contains ("aaaa0007"), "record R3d: without either flag no refusal is re-run");
@@ -4884,9 +4894,9 @@ void testCertRecordAndDefaultPaths()
     // RE-RULED 2 Oct: a mapping verdict is not an exclusion - the category decides.
     check (cand.contains ("Tuner") && disc.tuners.contains ("Tuner") && cand.contains ("Reviewed"),
            "record R10b: a tuner with category pitch and disposition no_dial_set IS discovered (for tuner certification), and a compressor with disposition review IS a candidate (" + cand.joinIntoString (",") + ")");
-    check (exclusionDisposition ("operator_excluded") && exclusionDisposition ("hang_on_load") && exclusionDisposition ("crash_on_load") && ! exclusionDisposition ("no_dial_set")
+    check (exclusionDisposition ("operator_excluded") && ! exclusionDisposition ("hang_on_load") && ! exclusionDisposition ("crash_on_load") && ! exclusionDisposition ("no_dial_set")
              && ! exclusionDisposition ("review") && ! exclusionDisposition ("not_a_processor") && ! exclusionDisposition ("sweep") && ! exclusionDisposition (""),
-           "record R10c: exclusion dispositions are operator_excluded and the hang/crash family; mapping verdicts are not");
+           "record R10c (THE PRINCIPLE, 2 Oct): the only exclusion disposition is the operator's; every other disposition word is a mapping verdict - load evidence lives in the ledger, not in categories.json");
     root.deleteRecursively();
 }
 
@@ -5689,8 +5699,25 @@ void testLoopOutcomes()
     const auto c = count (rows);
     check (rows.size() == 2 && c.rows == 2 && c.exported == 1 && c.refused == 1 && c.held == 0 && findRow (rows, "A").getProperty ("at", "") == "t2",
            "loop L11: a later row for the same identity replaces the earlier (a resumed batch rewrites what it finished); counts follow");
-    { Outcome u; u.state = "unmapped"; u.reason = "no map at this build"; const auto ur = makeRow ("AudioUnit|1|2.0", "elysia mpressor", "compressor", u, {}, {}, {}, "t");
-      check (rowViolation (ur).isEmpty() && count (mergeRow (juce::var (juce::Array<juce::var>()), ur)).unmapped == 1, "loop L16: unmapped is a named state with its own count"); }
+    { Outcome u; u.state = "unmapped"; u.reason = "no map at this build";
+      check (rowViolation (makeRow ("AudioUnit|1|2.0", "elysia mpressor", "compressor", u, {}, {}, {}, "t")).contains ("not one of the"),
+             "loop L16 (re-ruled 2 Oct): 'unmapped' is NOT a state - the row carries the map as a field; certification does not wait on a map"); }
+    {
+        // THE SCAN'S LICENCE EVIDENCE, CARRIED FORWARD (L17-L19, ruled 2 Oct): three paths.
+        QuarantinedBundle st; st.bundle = "/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3"; st.licence = true; st.products.add ("SSL Native Drumstrip v6"); st.reason = "activation window at scan (PACE [pid 1])"; st.at = "t";
+        QuarantinedBundle qa; qa.bundle = "/x/ANA2.vst3"; qa.products.add ("ANA2"); qa.reason = "hang_in_findAllTypesForFile";
+        const std::vector<QuarantinedBundle> stops { st, qa };
+        const auto c1 = carriedLicenceStop (stops, "SSL Native Drumstrip v6");
+        const auto c1m = carriedLicenceStop (stops, "SSL Native Drumstrip v6 (m)");
+        check (c1 && c1m && outcomeCarriedLicence (*c1).state == "needs_licence" && outcomeCarriedLicence (*c1).reason.contains ("carried forward from the scan") && outcomeCarriedLicence (*c1).reason.contains ("not loaded again"),
+               "loop L17: a product whose bundle raised an activation window at the scan is needs_licence in the batch, carried forward, NOT loaded again; a (m)/(s) suffix does not break the match");
+        check (! carriedLicenceStop (stops, "ANA2") && ! carriedLicenceStop (stops, "bx_opto"),
+               "loop L18: a bundle quarantined for a hang is not a licence stop, and a product that loaded fine at the scan runs with no flag");
+        const auto winRef = obj ({ { "identity", "AudioUnit|2|1" }, { "thresholdRefusal", obj ({ { "stage", "window" }, { "reason", "UNLICENSED ON HOST: a window appeared in the probe's tree (PACE [pid 9])" } }) } });
+        const auto ow = outcomeForRecord (winRef);
+        check (ow.state == "needs_licence" && ow.reason.contains ("window at the probe's load") && ow.reason.contains ("PACE [pid 9]") && ! ow.exportPending,
+               "loop L19: a window at the probe's load in the batch is needs_licence (the window watch guards batch loads: a licence can vanish between scan and batch)");
+    }
     {
         // QUARANTINED AT SCAN (L12-L14): a bundle the scan quarantined becomes a row in its own state, with the product's
         // category from categories.json by the registered AU's uid, else by name, else unknown; a VST3 says so.

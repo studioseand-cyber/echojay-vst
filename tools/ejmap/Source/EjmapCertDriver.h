@@ -412,6 +412,7 @@ struct Subject
     enum class Reach { reachable, reachableNoVersion, heldPace, requiresHardware, versionMismatch, notInstalled, ambiguous, unfixtured } reach
         = Reach::notInstalled;
     juce::String detail;                 // installed version(s), the ambiguity, ...
+    juce::String mapState;               // INFORMATION (ruled 2 Oct): "local map" | "server map state N" | "server map at a different build" | "none"
     juce::PluginDescription desc;        // resolved component, when installed
     bool licenceBound = false;           // PACE-wrapped, or its PACE state could not be checked
     // versionMismatch only: the ONE installed version, resolved for MEASUREMENT (see measurable()).
@@ -425,12 +426,15 @@ struct Subject
 //   - reachable, with or without a recorded version; or
 //   - installed at another version, exactly ONE version installed (several: never pick one), not a
 //     hardware product, and not licence-bound unless PACE is included.
-inline bool measurable (const Subject& s, bool includePace)
+// NO PACE-MARKER HOLD (ruled 2 Oct): PACE-wrapped is not unlicensed; the window is the evidence. The batch carries
+// forward what the SCAN observed (licence-stops.json: needs_licence, not loaded again) and the probe's own window
+// watch guards every batch load (a licence can vanish between scan and batch). includePace is kept for the call
+// sites' shape and does nothing.
+inline bool measurable (const Subject& s, bool /*includePace*/)
 {
     if (s.reach == Subject::Reach::reachable || s.reach == Subject::Reach::reachableNoVersion) return true;
-    if (s.reach == Subject::Reach::unfixtured) return ! s.hardware && (! s.licenceBound || includePace);
-    return s.reach == Subject::Reach::versionMismatch && s.installedUnique && ! s.hardware
-           && (! s.licenceBound || includePace);
+    if (s.reach == Subject::Reach::unfixtured) return ! s.hardware;
+    return s.reach == Subject::Reach::versionMismatch && s.installedUnique && ! s.hardware;
 }
 
 // PLUGINS THAT NEED EXTERNAL HARDWARE (logged 29 Sep, docs/EJMAP_CERT_DRIVER.md
@@ -723,6 +727,7 @@ inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListR
     // the vendor as the host registers it (the export's plugin.manufacturer): the 103 store records got it stamped on
     // 1 Oct by hand; a record made since by discovery had none (CL 1B, 2 Oct)
     if (s.desc.manufacturerName.isNotEmpty()) o->setProperty ("manufacturer", s.desc.manufacturerName);
+    if (s.mapState.isNotEmpty()) o->setProperty ("mapState", s.mapState);   // INFORMATION (ruled 2 Oct): certification does not wait on a map
     o->setProperty ("uid", uid);
     o->setProperty ("version", version);
     o->setProperty ("sampledAt", date);
@@ -1131,13 +1136,13 @@ struct DiscoveryInputs
 // hang / crash family are the mapper's escape hatch and are honoured. A MAPPING verdict - no_dial_set, review,
 // not_a_processor - says nothing about whether a product can be measured: the CATEGORY decides (compressor, pitch).
 // Measured on the fresh-ledger test: 202 products held by disposition against 7 before, every tuner among them.
+// THE PRINCIPLE (ruled 2 Oct, afternoon): certification may be gated ONLY by facts about the plugin (installed,
+// category, the operator's exclusion) and by evidence observed at load (a licence window, a hang, a crash) - NEVER by a
+// verdict the mapping workflow produced for its own purposes. A disposition is a verdict; the operator's exclusion is
+// a fact; load evidence lives in the ledger (quarantine, licence stops), not in a disposition word.
 inline bool exclusionDisposition (const juce::String& disp)
 {
-    const auto d = disp.trim().toLowerCase();
-    if (d.isEmpty() || d == "sweep") return false;
-    if (d == "operator_excluded") return true;
-    for (const char* t : { "hang", "crash", "unstable", "quarantin", "timeout" }) if (d.contains (t)) return true;
-    return false;
+    return disp.trim().toLowerCase() == "operator_excluded";
 }
 
 inline DiscoveryInputs loadDiscoveryInputs (const juce::File& ledgerRoot)
@@ -1218,12 +1223,11 @@ inline std::vector<loop::QuarantinedBundle> quarantinedBundles (const juce::File
 // THE PURE CORE: which installed products are candidates, and why the rest are not. `fixtureKeys` holds "uid|version"
 // (lowercase uid) for every fixture in the store.
 struct Candidate { InstalledRecord inst; juce::String category, mappedBy; };
-// UNMAPPED (ruled 2 Oct): an installed AU that categories.json calls a compressor or a tuner but that has no map at
-// its installed build (local or server) is not discovered - and until today it was a count ("566 not mapped at this
-// build"), never a name: elysia mpressor and bx_crispytuner vanished from a rehearsal that way. Named, so the batch
-// can give each its own row (state unmapped: run the mapping sweep) and nothing drops out silently.
+// NO MAP YET (ruled 2 Oct, afternoon): an installed compressor or tuner with no map at its installed build is
+// DISCOVERED like any other (certification does not need a map); the list is INFORMATION for the census - the mapping
+// sweep can still map them, and the server joins by map_fp whenever it does.
 struct UnmappedProduct { juce::String name, version, category, uidKey; };
-struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners, excludedByDisposition; std::vector<UnmappedProduct> unmapped; };
+struct Discovery { std::vector<Candidate> candidates; std::map<juce::String, int> excluded; juce::StringArray tuners, excludedByDisposition; std::vector<UnmappedProduct> unmapped; int noMapYet = 0; };
 
 inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vector<InstalledRecord>& installed,
                                      const std::set<juce::String>& fixtureKeys)
@@ -1231,18 +1235,22 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
     Discovery d;
     for (const auto& r : installed)
     {
+        // CERTIFICATION DOES NOT NEED A MAP (ruled 2 Oct, reversing 29 Sep): the join is by map_fp, which the record
+        // computes exactly as EchoJay does, and it can happen whenever the map arrives. Discovery = INSTALLED + CATEGORY
+        // (compressor | pitch) + NOT EXCLUDED. The map state is INFORMATION on the record: local, server, server at a
+        // different build, or none. Certification no longer waits on mapping (the coverage state machine changed here).
         const auto local = in.localMapCategory.find (r.identityKey);
         const auto st = in.mapState.find (r.identityKey);
         const bool serverMapped = st != in.mapState.end() && st->second >= 1 && st->second <= 3;
-        if (local == in.localMapCategory.end() && ! serverMapped)
-        {
-            ++d.excluded["not mapped at this build"];
-            if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end() && (c->second == "compressor" || c->second == "pitch"))
-                d.unmapped.push_back ({ r.desc.name, r.desc.version, c->second, r.uidKey });
-            continue;
-        }
-        juce::String category = local != in.localMapCategory.end() ? local->second : juce::String();
-        if (category.isEmpty()) if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end()) category = c->second;
+        const juce::String mappedBy = local != in.localMapCategory.end() ? juce::String ("local map")
+                                    : serverMapped ? "server map state " + juce::String (st->second)
+                                    : (st != in.mapState.end() && st->second == 4) ? juce::String ("server map at a different build")
+                                    : juce::String ("none");
+        if (mappedBy == "none") ++d.noMapYet;
+        juce::String category;
+        if (auto c = in.categoryByUid.find (r.uidKey); c != in.categoryByUid.end()) category = c->second;   // the catalogue's category is the fact
+        if (category.isEmpty() && local != in.localMapCategory.end()) category = local->second;             // a local map's, when the catalogue has none
+        if (mappedBy == "none" && (category == "compressor" || category == "pitch")) d.unmapped.push_back ({ r.desc.name, r.desc.version, category, r.uidKey });
         const auto fxKey = juce::String::toHexString (r.desc.uniqueId).toLowerCase() + "|" + r.desc.version;
         if (fixtureKeys.count (fxKey)) { ++d.excluded["fixture present at this version"]; continue; }
         if (auto disp = in.dispositionByUid.find (r.uidKey); disp != in.dispositionByUid.end())
@@ -1250,8 +1258,7 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
         // TUNERS ARE CANDIDATES (ruled 1 Oct, one store): category pitch gets the tuner certification, in the same worklist.
         if (category == "pitch") d.tuners.add (r.desc.name);
         else if (category != "compressor") { ++d.excluded[category.isEmpty() ? juce::String ("no category") : "category " + category]; continue; }
-        d.candidates.push_back ({ r, category, local != in.localMapCategory.end() ? juce::String ("local map")
-                                                                                  : "server map state " + juce::String (st->second) });
+        d.candidates.push_back ({ r, category, mappedBy });
     }
     return d;
 }
@@ -1264,7 +1271,8 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
 // the rest go on. `retryRefused` puts the refusals back (the iLok is in now, the hardware is attached): the record
 // stays in the fixture until the re-run replaces it.
 struct StorePartition { std::vector<Subject> toSweep; int recorded = 0, refused = 0, permanent = 0; };
-inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused, bool retryAll = false)
+inline bool refusalAtWindow (const juce::var& fixture) { return refusalRecorded (fixture) && fixture.getProperty ("thresholdRefusal", {}).getProperty ("stage", "").toString() == "window"; }
+inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused, bool retryAll = false, bool licenceOnly = false)
 {
     StorePartition p;
     for (const auto& s : fromStore)
@@ -1272,7 +1280,8 @@ inline StorePartition partitionStore (const std::vector<Subject>& fromStore, boo
         const bool refusal = refusalRecorded (s.pushed), permanent = refusalPermanent (s.pushed);
         if (refusal) ++p.refused;
         if (permanent) ++p.permanent;
-        const bool retry = retryRefused && refusal && (retryAll || ! permanent);
+        // --retry-licence (ruled 2 Oct): only the refusals a licence window caused come back
+        const bool retry = retryRefused && refusal && (licenceOnly ? refusalAtWindow (s.pushed) : (retryAll || ! permanent));
         if (sweepRecorded (s.pushed) && ! retry) ++p.recorded;
         else p.toSweep.push_back (s);
     }
@@ -1281,7 +1290,7 @@ inline StorePartition partitionStore (const std::vector<Subject>& fromStore, boo
 
 inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace,
                                            juce::StringArray& report, bool retryRefused = false, bool retryAll = false,
-                                           std::vector<UnmappedProduct>* unmappedOut = nullptr)
+                                           std::vector<UnmappedProduct>* unmappedOut = nullptr, bool licenceOnly = false)
 {
     std::vector<Subject> fromStore;
     if (fixturesDir.isDirectory()) fromStore = loadFixtures (fixturesDir);
@@ -1292,7 +1301,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         fixtureKeys.insert (s.uid + "|" + s.version);
         storeUids.insert (s.uid);
     }
-    const auto part = partitionStore (fromStore, retryRefused, retryAll);
+    const auto part = partitionStore (fromStore, retryRefused, retryAll, licenceOnly);
     std::vector<Subject> out = part.toSweep;
     const int certified = part.recorded;
 
@@ -1310,7 +1319,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         auto* o = new juce::DynamicObject();
         o->setProperty ("product", s.product); o->setProperty ("uid", uid); o->setProperty ("version", s.version);
         o->setProperty ("format", "AudioUnit");
-        o->setProperty ("discovered", "mapped (" + c.mappedBy + "), category " + c.category + ", no fixture: defaults are sampled first");
+        o->setProperty ("discovered", "map: " + c.mappedBy + ", category " + c.category + ", no fixture: defaults are sampled first");
         o->setProperty ("category", c.category);
         s.pushed = juce::var (o);
         s.category = c.category == "pitch" ? "pitch" : "compressor";
@@ -1320,7 +1329,8 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         s.hardware = requiresExternalHardware (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false));
         juce::String why;
         s.licenceBound = paceHeld (c.inst.desc, bundles, why);
-        s.detail = "mapped (" + c.mappedBy + ")" + (s.hardware ? "; needs " + externalHardwareNeeded (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) + " present" : juce::String());
+        s.mapState = c.mappedBy;
+        s.detail = "map: " + c.mappedBy + (s.hardware ? "; needs " + externalHardwareNeeded (s.product, c.inst.desc.fileOrIdentifier.fromLastOccurrenceOf ("/", false, false)) + " present" : juce::String());
         out.push_back (s);
         ++added;
     }
@@ -1343,7 +1353,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
     if (! disc.tuners.isEmpty()) report.add ("pitch category, on the worklist for tuner certification: " + disc.tuners.joinIntoString (", "));
     {
         juce::StringArray un; for (const auto& u : disc.unmapped) un.add (u.name + " " + u.version + " [" + u.category + "]");
-        report.add ("UNMAPPED compressors and tuners (installed, categorised, no map at this build - the mapping sweep maps them; until then a row in state unmapped): "
+        report.add ("NO MAP YET (information, not a gate - certified anyway; the mapping sweep can map them, the server joins by map_fp): "
                     + juce::String ((int) disc.unmapped.size()) + (un.isEmpty() ? juce::String() : ": " + un.joinIntoString (", ")));
     }
     if (unmappedOut != nullptr) *unmappedOut = disc.unmapped;
@@ -1371,6 +1381,7 @@ struct SweepOptions
     bool includePace = false, resetPerHold = false, retryRefused = false, retryAll = false;
     bool profile = false;                            // the profile sweep (31 levels, 2.5 s, quiet reference everywhere)
     juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
+    bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
 };
 
 // WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
@@ -2372,15 +2383,12 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     }
     std::cout << "iLok: " << ilok << std::endl;
     juce::StringArray wl; std::vector<UnmappedProduct> unmapped;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll, &unmapped);
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused || opt.retryLicence, opt.retryAll, &unmapped, opt.retryLicence);
     std::cout << wl.joinIntoString ("\n") << std::endl;
-    // UNMAPPED: a row per installed, categorised compressor or tuner with no map at this build (the slice applies).
-    for (const auto& u : unmapped)
-    {
-        if (! opt.slice.isEmpty() && ! opt.slice.contains (u.name)) continue;
-        loop::Outcome o; o.state = "unmapped"; o.reason = "installed at " + u.version + ", categorised " + u.category + ", no map at this build (local or server): the mapping sweep (--sweep) maps it, then the batch measures it";
-        record (loop::makeRow (u.uidKey + "|" + u.version, u.name, u.category, o, {}, {}, {}, nowStamp()));
-    }
+    // THE SCAN'S LICENCE EVIDENCE, CARRIED FORWARD (ruled 2 Oct): a product whose bundle raised an activation window at
+    // the scan is needs_licence here too and is NOT loaded again (a second window for a bundle we already know about is
+    // the gratuitous dialog). --retry-licence re-checks just that set.
+    const auto scanStops = quarantinedBundles (opt.ledger);
     juce::StringArray done, refused;
     int n = 0;
     const SleepGuard sleepGuard ("EJ Map certification batch");
@@ -2392,11 +2400,18 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         const bool tuner = s.category == "pitch";
         const auto identity = "AudioUnit|" + s.uid + "|" + (s.desc.version.isNotEmpty() ? s.desc.version : s.version);
         if (skip.contains (s.product)) continue;
+        auto withMap = [&] (juce::var row) { if (s.mapState.isNotEmpty()) if (auto* o = row.getDynamicObject()) o->setProperty ("map", s.mapState); return row; };
         if (! measurable (s, opt.includePace))
         {
-            record (loop::makeRow (identity, s.product, s.category, loop::outcomeHeld (s.licenceBound, s.hardware, s.detail), {}, {}, {}, nowStamp()));
+            record (withMap (loop::makeRow (identity, s.product, s.category, loop::outcomeHeld (false, s.hardware, s.detail), {}, {}, {}, nowStamp())));
             continue;
         }
+        if (! opt.retryLicence)
+            if (const auto stop = loop::carriedLicenceStop (scanStops, s.product); stop)
+            {
+                record (withMap (loop::makeRow (identity, s.product, s.category, loop::outcomeCarriedLicence (*stop), {}, {}, {}, nowStamp())));
+                continue;
+            }
         if (! tuner && ! planLater && ! sweep::planFromFixture (s.pushed).ok)
         {
             loop::Outcome o; o.state = "needs_review"; o.reason = "no plan from the record's controls: " + sweep::planFromFixture (s.pushed).why;
@@ -2411,7 +2426,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
         std::cout << "  wall " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 0) << " s, exit " << rc << std::endl;
         (rc == 0 ? done : refused).add (s.product + (rc == 0 ? juce::String() : " (exit " + juce::String (rc) + ")"));
         const auto rec = latestRecordFor (fixturesDir, s.product);
-        if (rec.existsAsFile()) record (finishRecord (opt, rec, s.category));
+        if (rec.existsAsFile()) record (withMap (finishRecord (opt, rec, s.category)));
         else { loop::Outcome o; o.state = "refused"; o.reason = "stage unknown: the run wrote no record (exit " + juce::String (rc) + ")"; record (loop::makeRow (identity, s.product, s.category, o, {}, {}, {}, nowStamp())); }
     }
     // QUARANTINED AT SCAN: a row per bundle the scan quarantined, so nothing drops out silently (not limited by the slice).
@@ -2434,7 +2449,7 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped, " << finished << " finished from the store\n";
     for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
     std::cout << "OUTCOMES (" << outcomesFile.getFullPathName() << "): " << c.rows << " rows - exported " << c.exported << ", recorded " << c.recorded
-              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << ", needs_licence " << c.needsLicence << ", unmapped " << c.unmapped << std::endl;
+              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << ", needs_licence " << c.needsLicence << std::endl;
     int broken = 0; if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (loop::rowViolation (r).isNotEmpty()) ++broken;
     if (broken > 0) std::cout << "OUTCOME INVARIANT BROKEN on " << broken << " row(s)" << std::endl;
     std::cout << std::flush;

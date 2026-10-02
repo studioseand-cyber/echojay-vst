@@ -1542,3 +1542,52 @@ products whatever their disposition — but that is a mapping-sweep rule, and it
 
 Also proposed from #9: the batch stops pre-holding PACE products by the bundle marker and lets the
 probe's window watch decide, the same rule as the scan; `--include-pace` goes away.
+
+## 26. The ruling on the audit, applied (2 Oct, 14:30)
+
+**1. Certification does not need a map** (reverses 29 Sep). The map was a proxy for "somewhere to
+attach"; the join is by `map_fp`, which the record computes exactly as EchoJay does (ab70ea5337fe…
+matched Sean's log), and it can happen whenever the map arrives. Discovery = **installed + category
+(compressor | pitch) + not excluded**. The map state goes on the record and the row as INFORMATION:
+`mapState` / `map` = `local map` | `server map state N` | `server map at a different build` | `none`.
+"Unmapped" is a field, not a state. **This changes the coverage state machine: certification no longer
+waits on mapping.** The census's "NO MAP YET" line is information. Pins: F5 (an installed, categorised,
+UNMAPPED compressor is discovered, map `none`; a different-build map is named), F4 (the no-map list is
+information), L16 (`unmapped` is not a state); mutant: the old MAPPED gate back in → F4, F5 red.
+
+**2. Licence, from the scan's evidence** (accepted with the change). The PACE-marker hold and
+`--include-pace` are gone (`measurable` no longer reads `licenceBound`; the flag prints "ignored").
+Three paths, pinned:
+- recorded `needs_licence` at the scan → carried forward as that state, **not loaded again**
+  (`loop::carriedLicenceStop`, matched by product name with (m)/(s) suffixes ignored; L17; mutant red);
+  a hang quarantine is not a licence stop (L18; mutant red);
+- loaded fine at the scan → runs, no flag (L18);
+- a window at the probe's load in the batch → `needs_licence` too, not `refused` (L19; mutant red) —
+  the probe's window watch still guards every batch load, a licence can vanish between scan and batch.
+`--retry-licence` on the batch re-checks just the needs-licence set: the carried-forward products are
+loaded, and only the refusals a window caused come back (R12; mutant red). M5 (both reaches): a
+PACE-wrapped subject is measurable; mutant red.
+
+**3. The principle, re-checked row by row** (section 25): *certification may be gated ONLY by facts
+about the plugin — installed, category, operator exclusion — and by evidence observed at load — licence
+window, hang, crash — NEVER by a verdict the mapping workflow produced for its own purposes.*
+
+| row | verdict against the principle | changed |
+|---|---|---|
+| 1 category | a fact (the catalogue's classification) | kept; the catalogue's category is now read FIRST, a local map's only when the catalogue has none |
+| 2 disposition | `operator_excluded` is a fact; the "hang/crash family" of disposition WORDS was a verdict dressed as evidence — load evidence lives in the ledger, not in categories.json | **changed**: only `operator_excluded` excludes (R10c; mutant red) |
+| 3 refused_by_both / kind / hedged | verdicts; not read | unchanged |
+| 4 map-state gate | a mapping-workflow fact used as a certification gate | **removed** (point 1) |
+| 5 local map category | a fact, same source as 1 | precedence swapped (see 1) |
+| 6 the mapping sweep's skip rules | verdicts, inherited through 4 | **no longer inherited** (4 removed): an unmapped tuner is a subject |
+| 7 quarantine.json | load evidence (hang / crash) — admissible | unchanged: the batch's probe gathers its own load evidence out of process; a scan-stage VST3 quarantine is a row, a load-stage one is not consulted (allowed, not required) |
+| 8 licence-stops.json | load evidence (a window) | **now carried forward** (point 2) |
+| 9 PACE marker + `--include-pace` | a fact about the bundle's wrapper, not about the licence — a pre-judgement | **removed** (point 2) |
+| 10 scan rows | facts | unchanged |
+| 11 marks | the mapper's hand decisions, not read | unchanged |
+| 12 operator_excluded | the operator's fact | unchanged, honoured |
+| 13 config.json | the sign-in, for categorise / map-state only | unchanged |
+
+Tuners stay BLOCKED on the catalogue (section 24 of the reply doc): with category null they are not
+subjects; with category pitch they now are, map or no map — bx_crispytuner with its labelled stand-in
+category is the test of that.
