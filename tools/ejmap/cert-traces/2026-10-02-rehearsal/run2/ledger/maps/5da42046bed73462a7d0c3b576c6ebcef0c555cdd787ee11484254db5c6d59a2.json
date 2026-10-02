@@ -1,0 +1,794 @@
+{
+  "fp": "5da42046bed73462a7d0c3b576c6ebcef0c555cdd787ee11484254db5c6d59a2",
+  "schema": "2.4",
+  "identity": {
+    "format": "AudioUnit",
+    "uid": "6f457232",
+    "name": "Lindell 7X-500",
+    "vendor": "Plugin Alliance",
+    "version": "1.2.2",
+    "param_count": 14
+  },
+  "category": "compressor",
+  "mode": "fast",
+  "params": {
+  },
+  "controls": {
+    "Input": {
+      "name": "Input",
+      "index": 0,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          0.050000000745058
+        ],
+        [
+          1.0,
+          0.100000001490116
+        ],
+        [
+          1.5,
+          0.150000005960464
+        ],
+        [
+          2.0,
+          0.200000002980232
+        ],
+        [
+          2.5,
+          0.25
+        ],
+        [
+          3.0,
+          0.300000011920929
+        ],
+        [
+          3.5,
+          0.350000023841858
+        ],
+        [
+          4.0,
+          0.400000005960464
+        ],
+        [
+          4.5,
+          0.449999988079071
+        ],
+        [
+          5.0,
+          0.5
+        ],
+        [
+          5.5,
+          0.550000011920929
+        ],
+        [
+          6.0,
+          0.600000023841858
+        ],
+        [
+          6.5,
+          0.649999976158142
+        ],
+        [
+          7.0,
+          0.699999988079071
+        ],
+        [
+          7.5,
+          0.75
+        ],
+        [
+          8.0,
+          0.800000011920929
+        ],
+        [
+          8.5,
+          0.850000023841858
+        ],
+        [
+          9.0,
+          0.899999976158142
+        ],
+        [
+          9.5,
+          0.949999988079071
+        ],
+        [
+          10.0,
+          1.0
+        ]
+      ],
+      "trust": "setread"
+    },
+    "Output": {
+      "name": "Output",
+      "index": 1,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          0.050000000745058
+        ],
+        [
+          1.0,
+          0.100000001490116
+        ],
+        [
+          1.5,
+          0.150000005960464
+        ],
+        [
+          2.0,
+          0.200000002980232
+        ],
+        [
+          2.5,
+          0.25
+        ],
+        [
+          3.0,
+          0.300000011920929
+        ],
+        [
+          3.5,
+          0.350000023841858
+        ],
+        [
+          4.0,
+          0.400000005960464
+        ],
+        [
+          4.5,
+          0.449999988079071
+        ],
+        [
+          5.0,
+          0.5
+        ],
+        [
+          5.5,
+          0.550000011920929
+        ],
+        [
+          6.0,
+          0.600000023841858
+        ],
+        [
+          6.5,
+          0.649999976158142
+        ],
+        [
+          7.0,
+          0.699999988079071
+        ],
+        [
+          7.5,
+          0.75
+        ],
+        [
+          8.0,
+          0.800000011920929
+        ],
+        [
+          8.5,
+          0.850000023841858
+        ],
+        [
+          9.0,
+          0.899999976158142
+        ],
+        [
+          9.5,
+          0.949999988079071
+        ],
+        [
+          10.0,
+          1.0
+        ]
+      ],
+      "trust": "setread"
+    },
+    "Attack": {
+      "name": "Attack",
+      "index": 2,
+      "kind": "mode",
+      "range": [
+        0.0,
+        0.0
+      ],
+      "unit": null,
+      "labels": {
+        "Fast": 0.0,
+        "Medium": 0.800000011920929
+      },
+      "caseInsensitiveOk": true,
+      "trust": "setread"
+    },
+    "Release": {
+      "name": "Release",
+      "index": 3,
+      "kind": "mode",
+      "range": [
+        0.0,
+        0.0
+      ],
+      "unit": null,
+      "labels": {
+        "Fast": 0.0,
+        "Medium": 0.800000011920929
+      },
+      "caseInsensitiveOk": true,
+      "trust": "setread"
+    },
+    "Mix": {
+      "name": "Mix",
+      "index": 4,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          0.050000000745058
+        ],
+        [
+          1.0,
+          0.100000001490116
+        ],
+        [
+          1.5,
+          0.150000005960464
+        ],
+        [
+          2.0,
+          0.200000002980232
+        ],
+        [
+          2.5,
+          0.25
+        ],
+        [
+          3.0,
+          0.300000011920929
+        ],
+        [
+          3.5,
+          0.350000023841858
+        ],
+        [
+          4.0,
+          0.400000005960464
+        ],
+        [
+          4.5,
+          0.449999988079071
+        ],
+        [
+          5.0,
+          0.5
+        ],
+        [
+          5.5,
+          0.550000011920929
+        ],
+        [
+          6.0,
+          0.600000023841858
+        ],
+        [
+          6.5,
+          0.649999976158142
+        ],
+        [
+          7.0,
+          0.699999988079071
+        ],
+        [
+          7.5,
+          0.75
+        ],
+        [
+          8.0,
+          0.800000011920929
+        ],
+        [
+          8.5,
+          0.850000023841858
+        ],
+        [
+          9.0,
+          0.899999976158142
+        ],
+        [
+          9.5,
+          0.949999988079071
+        ],
+        [
+          10.0,
+          1.0
+        ]
+      ],
+      "trust": "setread"
+    },
+    "Ratio": {
+      "name": "Ratio",
+      "index": 5,
+      "kind": "anchored",
+      "range": [
+        4.0,
+        100.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          4.0,
+          0.200000002980232
+        ],
+        [
+          12.0,
+          0.550000011920929
+        ],
+        [
+          100.0,
+          0.850000023841858
+        ]
+      ],
+      "trust": "setread"
+    },
+    "SC High Pass Filter": {
+      "name": "SC High Pass Filter",
+      "index": 6,
+      "kind": "anchored",
+      "range": [
+        100.0,
+        300.0
+      ],
+      "unit": "hz",
+      "anchors": [
+        [
+          100.0,
+          0.600000023841858
+        ],
+        [
+          300.0,
+          0.850000023841858
+        ]
+      ],
+      "trust": "setread"
+    },
+    "Continuous Attack": {
+      "name": "Continuous Attack",
+      "index": 7,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          0.050000000745058
+        ],
+        [
+          1.0,
+          0.100000001490116
+        ],
+        [
+          1.5,
+          0.150000005960464
+        ],
+        [
+          2.0,
+          0.200000002980232
+        ],
+        [
+          2.5,
+          0.25
+        ],
+        [
+          3.0,
+          0.300000011920929
+        ],
+        [
+          3.5,
+          0.350000023841858
+        ],
+        [
+          4.0,
+          0.400000005960464
+        ],
+        [
+          4.5,
+          0.449999988079071
+        ],
+        [
+          5.0,
+          0.5
+        ],
+        [
+          5.5,
+          0.550000011920929
+        ],
+        [
+          6.0,
+          0.600000023841858
+        ],
+        [
+          6.5,
+          0.649999976158142
+        ],
+        [
+          7.0,
+          0.699999988079071
+        ],
+        [
+          7.5,
+          0.75
+        ],
+        [
+          8.0,
+          0.800000011920929
+        ],
+        [
+          8.5,
+          0.850000023841858
+        ],
+        [
+          9.0,
+          0.899999976158142
+        ],
+        [
+          9.5,
+          0.949999988079071
+        ],
+        [
+          10.0,
+          1.0
+        ]
+      ],
+      "trust": "setread"
+    },
+    "Continuous Release": {
+      "name": "Continuous Release",
+      "index": 8,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        10.0
+      ],
+      "unit": null,
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          0.5,
+          0.050000000745058
+        ],
+        [
+          1.0,
+          0.100000001490116
+        ],
+        [
+          1.5,
+          0.150000005960464
+        ],
+        [
+          2.0,
+          0.200000002980232
+        ],
+        [
+          2.5,
+          0.25
+        ],
+        [
+          3.0,
+          0.300000011920929
+        ],
+        [
+          3.5,
+          0.350000023841858
+        ],
+        [
+          4.0,
+          0.400000005960464
+        ],
+        [
+          4.5,
+          0.449999988079071
+        ],
+        [
+          5.0,
+          0.5
+        ],
+        [
+          5.5,
+          0.550000011920929
+        ],
+        [
+          6.0,
+          0.600000023841858
+        ],
+        [
+          6.5,
+          0.649999976158142
+        ],
+        [
+          7.0,
+          0.699999988079071
+        ],
+        [
+          7.5,
+          0.75
+        ],
+        [
+          8.0,
+          0.800000011920929
+        ],
+        [
+          8.5,
+          0.850000023841858
+        ],
+        [
+          9.0,
+          0.899999976158142
+        ],
+        [
+          9.5,
+          0.949999988079071
+        ],
+        [
+          10.0,
+          1.0
+        ]
+      ],
+      "trust": "setread"
+    },
+    "Stereo Link": {
+      "name": "Stereo Link",
+      "index": 9,
+      "kind": "anchored",
+      "range": [
+        0.0,
+        100.0
+      ],
+      "unit": "pct",
+      "anchors": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          5.0,
+          0.050000000745058
+        ],
+        [
+          10.0,
+          0.100000001490116
+        ],
+        [
+          15.0,
+          0.150000005960464
+        ],
+        [
+          20.0,
+          0.200000002980232
+        ],
+        [
+          25.0,
+          0.25
+        ],
+        [
+          30.0,
+          0.300000011920929
+        ],
+        [
+          35.0,
+          0.350000023841858
+        ],
+        [
+          40.0,
+          0.400000005960464
+        ],
+        [
+          45.0,
+          0.449999988079071
+        ],
+        [
+          50.0,
+          0.5
+        ],
+        [
+          55.0,
+          0.550000011920929
+        ],
+        [
+          60.0,
+          0.600000023841858
+        ],
+        [
+          65.0,
+          0.649999976158142
+        ],
+        [
+          70.0,
+          0.699999988079071
+        ],
+        [
+          75.0,
+          0.75
+        ],
+        [
+          80.0,
+          0.800000011920929
+        ],
+        [
+          85.0,
+          0.850000023841858
+        ],
+        [
+          90.0,
+          0.899999976158142
+        ],
+        [
+          95.0,
+          0.949999988079071
+        ],
+        [
+          100.0,
+          1.0
+        ]
+      ],
+      "trust": "setread"
+    }
+  },
+  "groups": [],
+  "skips": [
+    {
+      "semantic": "threshold_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "ratio",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "attack_ms",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "release_ms",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "makeup_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "knee_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "mix_pct",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "input_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "output_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "range_db",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "hold_ms",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "tone",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    },
+    {
+      "semantic": "slope_db_oct",
+      "outcome": "deferred",
+      "reason": "left for the proposer: unclaimed at submit"
+    }
+  ],
+  "declines": [
+    {
+      "index": 10,
+      "name": "Bypass",
+      "reason": "labels collapse under set-then-read (held through 200 ms settle): not a dialable switch"
+    },
+    {
+      "index": 11,
+      "name": "Continuous ON",
+      "reason": "labels collapse under set-then-read (held through 200 ms settle): not a dialable switch"
+    },
+    {
+      "index": 12,
+      "name": "Link ON",
+      "reason": "labels collapse under set-then-read (held through 200 ms settle): not a dialable switch"
+    },
+    {
+      "index": 13,
+      "name": "Analog ON",
+      "reason": "labels collapse under set-then-read (held through 200 ms settle): not a dialable switch"
+    }
+  ],
+  "evidence": {
+    "noise_mask": [],
+    "readback": {
+    },
+    "visual_confirmed": [],
+    "audio_probe": {
+    },
+    "rehearsal": null,
+    "screenshots": {
+      "labelled": "",
+      "full": ""
+    },
+    "assist_turns": 0,
+    "duration_s": 4
+  },
+  "provenance": {
+    "tester_id": "",
+    "mapper_ref": "5771520407f9",
+    "machine_id": "cd9ef69f-9660-4f2d-8d58-dbd0af2e6ea2",
+    "ejmap_version": "0.1.0 (a2950b24-dirty)",
+    "extractor_version": "5",
+    "apply_header_sha": "cb9ec96432be8aba29ee57fa7d39fabfc25c75e6753a37574ebaa0676c9f44d5",
+    "plugin_version": "1.2.2",
+    "host_os": "Mac OSX 15.7.5",
+    "at": "2026-10-02T15:43:09.662+01:00"
+  }
+}

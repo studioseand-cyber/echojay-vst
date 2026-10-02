@@ -1,0 +1,1131 @@
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11123]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/ANA2.vst3]
+supervisor: child died (code:86) after 3082ms; consecutive=1 fastDeaths=1 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 1 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: RESTARTED after an abnormal exit (code:86). 1 of 3 restarts used. No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11125]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL SubGen.vst3]
+supervisor: the child finished 3 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2725ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11129]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/bloom.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2422ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11138]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3]
+supervisor: the child finished 11 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 4907ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11143]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Virtual Tape Machines.vst3]
+supervisor: the child finished 15 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3477ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11146]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/FG-X 2.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2478ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11155]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Inf Bass.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2420ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11164]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/VerbSuite Classics.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2432ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11180]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Murda Melodies.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2676ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11183]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC Rack.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2435ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11193]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-MU.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2421ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11195]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Fresh Air.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2402ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11199]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Inf EQ.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2420ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11202]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-Red.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2429ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11222]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Virtual Mix Rack.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2683ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11245]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-Grey.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2703ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11248]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Storch Filter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2966ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11250]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/MetaTune.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2462ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11259]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/Heatwave.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2421ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11261]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Slate Digital/MO-TT.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2422ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+## ExtendedFilename : 0
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11294]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis AirEQ.vst3]
+supervisor: the child finished 41 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 21519ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11297]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis E2Deesser.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2755ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11316]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis AirEQ 5.1.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2429ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11325]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL DeEss.vst3]
+supervisor: the child finished 5 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2463ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11328]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Fusion HF Compressor.vst3]
+supervisor: the child finished 9 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 4546ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11363]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL LMC+.vst3]
+supervisor: the child finished 135 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 14063ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11383]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native X-Saturator v6.vst3]
+supervisor: the child finished 5 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2961ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11386]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Guitarstrip.vst3]
+supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2734ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11390]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Fusion Transformer.vst3]
+supervisor: the child finished 7 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2515ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11397]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL 4K E.vst3]
+supervisor: the child finished 4 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2461ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11400]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL X-Gate.vst3]
+supervisor: the child finished 14 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 5043ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11410]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL X-Limit.vst3]
+supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3932ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+UADLogger::Init()
+Config file not found at '~/Library/Preferences/Universal Audio/UAD-2 System Log Config.json'.  Using default values.
+Adding log file at ~/Library/Logs/Universal Audio/ejmap_%N.log (where '%N' is the file number)
+UADLogger::Init() complete.
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+
+              Timers:
+                       General@info
+                        Errors@warn
+                       Sockets@warn
+                 ServerSockets@warn
+                 ClientSockets@warn
+                         Mixer@info
+                        Engine@info
+                        Plugin@info
+                         Async@warn
+                      MIDISync@warn
+                          UAPW@info
+                          HBGF@info
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11428]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Repeater.vst3]
+supervisor: the child finished 224 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 5815ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11439]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Saturation Knob.vst3]
+supervisor: the child finished 12 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 5247ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11441]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL 4K B.vst3]
+supervisor: the child finished 8 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3405ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11446]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Overloud/TH-U Slate.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2770ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+Attempting to load VST: /Library/Audio/Plug-Ins/VST/Rob Papen/SubBoomBass2.vst
+Creating VST instance: SubBoomBass2
+<CFData 0x600003f60820 [0x204b87ef8]>{length = 6, capacity = 6, bytes = 0xbcd0744e174c}
+Initialising VST: SubBoomBass2 (1.0.2.0)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11456]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native X-EQ 2.vst3]
+supervisor: the child finished 10 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3190ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11465]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Empirical Labs Mike-E Comp.vst3]
+supervisor: the child finished 9 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2518ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+
+Initializing Melodya Version 1.3.0 (x64) built Dec 19 2021...
+Loading preferences...
+Error: Path does not exist: 
+~/Documents/Melodya
+
+ejmap window watch: window at findAllTypesForFile (ejmap [pid 11466]); load killed at once by the window watch, no retry (not PACE's: a window, not called a licence fact) [/Library/Audio/Plug-Ins/VST3/Melodya.vst3]
+supervisor: the child finished 18 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 1256ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+aoo_client: not connected
+aoo_client: not connected
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11470]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Lustrous Plates.vst3]
+supervisor: the child finished 6 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2848ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11479]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Tube-Tech CL 1B.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2709ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11482]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native X-Phase v6.vst3]
+supervisor: the child finished 20 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3068ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11485]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL G3 MultiBusComp.vst3]
+supervisor: the child finished 6 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 6060ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11520]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL X-Delay.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2533ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11525]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Fusion Vintage Drive.vst3]
+supervisor: the child finished 25 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 4047ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+aoo_client: not connected
+aoo_client: not connected
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11536]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native X-Echo.vst3]
+supervisor: the child finished 30 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 4413ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11538]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native FlexVerb.vst3]
+supervisor: the child finished 11 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3618ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+PaceAP ThreadLoopBase::loop - Starting the license state callback loop...
+PaceAP ThreadLoopBase::loop - Starting the producer loop...
+PaceAP ThreadLoopBase::loop - Starting the queue creation loop...
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP:ExplicitLicenseCheck0(0000:0000) - 5 layers
+PaceAP - Stats: Current elapsed microseconds: 000000039772
+PaceAP:ExplicitLicenseCheck0(0000:0000) - Waiting because the queue is empty...
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with the host location (2) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - About to call the developer's license state callback with event 1...
+PaceAP LicenseStateCallbackThread::callLicenseStateCallbackFromThread - Exiting.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with the host location (2) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with the host location (2) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+PaceAP DlcQueue::updateQueue - About to perform the DLC key exchange.
+PaceAP DlcQueue::dlcCallback - Called by libpacefusion with the host location (2) and publisher/authID 0x89e29e8ef3
+PaceAP DlcQueue::updateQueue - New queue entry added!
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11550]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Gate.vst3]
+supervisor: the child finished 22 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 6099ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11559]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Distortion.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2505ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11562]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Delay.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2503ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11566]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Resonator.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2516ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11575]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Formant Filter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2802ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11577]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Dynamics.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2522ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11580]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Phaser.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2469ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11585]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Compressor.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2769ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11594]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Pitch Shifter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2479ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11605]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Gain.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2557ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11607]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Comb Filter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2474ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11610]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/Faturator.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2477ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11619]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Phase Distortion.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2486ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11621]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Trance Gate.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2767ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11623]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Transient Shaper.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2766ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11628]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Tape Stop.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2485ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11658]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/Multipass.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2485ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11667]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/Disperser.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2742ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11670]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs 3-Band EQ.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2783ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11684]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Haas.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2765ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11693]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Ladder Filter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3023ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11695]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Chorus.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2484ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11698]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Stereo.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2482ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11702]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Bitcrush.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2760ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11716]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Reverser.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2509ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11718]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Frequency Shifter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2792ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11722]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Ring Mod.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2763ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11731]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Limiter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3005ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11733]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/Snap Heap.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2796ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11735]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Reverb.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2501ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11740]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Filter.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3036ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11771]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native X-Comp v6.vst3]
+supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2790ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11780]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native X-ValveComp v6.vst3]
+supervisor: the child finished 14 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3170ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11791]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SontecEQ.vst3]
+supervisor: the child finished 20 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 7127ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11799]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Weiss Deess.vst3]
+supervisor: the child finished 6 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2744ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11806]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native Channel Strip 2.vst3]
+supervisor: the child finished 5 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2802ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11827]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Blitzer.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2724ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11843]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Meter.vst3]
+supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2770ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+Subscriber::receive(): Shutdown was requested
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11851]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native Bus Compressor 2.vst3]
+supervisor: the child finished 24 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 6709ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11858]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Fusion Violet EQ.vst3]
+supervisor: the child finished 4 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2517ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11862]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_De-Esser.vst3]
+supervisor: the child finished 17 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2727ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11865]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_DrumFlow.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2785ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11874]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_32Bus.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2525ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11883]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_BassFlow.vst3]
+supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 2785ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11888]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/Audified/U73b Compressor.vst3]
+supervisor: the child finished 27 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 5683ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+num params = 189
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11897]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Native Vocalstrip 2.vst3]
+supervisor: the child finished 8 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3912ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+ejmap window watch: activation window at findAllTypesForFile (PACEEdenExperience [pid 11899]); load killed at once by the window watch, no retry [/Library/Audio/Plug-Ins/VST3/SSL Fusion Stereo Image.vst3]
+supervisor: the child finished 8 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+supervisor: child died (code:86) after 3917ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+BACKLOG: 0 mapped, 0 sent
+ejmap status: No saved scan. Scan to enumerate installed plugins.
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SCAN: starting (the Scan button, headless)
+Asking the server which plugins are already mapped: batch 1/70  (25/1731 identities)
+  batch 1: request 543 ms, parse+ingest 0 ms, 4271 bytes
+Asking the server which plugins are already mapped: batch 2/70  (50/1731 identities)
+  batch 2: request 374 ms, parse+ingest 0 ms, 4136 bytes
+Asking the server which plugins are already mapped: batch 3/70  (75/1731 identities)
+  batch 3: request 420 ms, parse+ingest 0 ms, 3443 bytes
+Asking the server which plugins are already mapped: batch 4/70  (100/1731 identities)
+  batch 4: request 400 ms, parse+ingest 0 ms, 3584 bytes
+Asking the server which plugins are already mapped: batch 5/70  (125/1731 identities)
+  batch 5: request 395 ms, parse+ingest 0 ms, 3575 bytes
+Asking the server which plugins are already mapped: batch 6/70  (150/1731 identities)
+  batch 6: request 422 ms, parse+ingest 0 ms, 2746 bytes
+Asking the server which plugins are already mapped: batch 7/70  (175/1731 identities)
+  batch 7: request 418 ms, parse+ingest 0 ms, 3573 bytes
+Asking the server which plugins are already mapped: batch 8/70  (200/1731 identities)
+  batch 8: request 388 ms, parse+ingest 0 ms, 3996 bytes
+Asking the server which plugins are already mapped: batch 9/70  (225/1731 identities)
+  batch 9: request 445 ms, parse+ingest 1 ms, 3997 bytes
+Asking the server which plugins are already mapped: batch 10/70  (250/1731 identities)
+  batch 10: request 457 ms, parse+ingest 0 ms, 3292 bytes
+Asking the server which plugins are already mapped: batch 11/70  (275/1731 identities)
+  batch 11: request 379 ms, parse+ingest 0 ms, 2613 bytes
+Asking the server which plugins are already mapped: batch 12/70  (300/1731 identities)
+  batch 12: request 395 ms, parse+ingest 0 ms, 3717 bytes
+Asking the server which plugins are already mapped: batch 13/70  (325/1731 identities)
+  batch 13: request 441 ms, parse+ingest 1 ms, 3711 bytes
+Asking the server which plugins are already mapped: batch 14/70  (350/1731 identities)
+  batch 14: request 389 ms, parse+ingest 1 ms, 2887 bytes
+Asking the server which plugins are already mapped: batch 15/70  (375/1731 identities)
+  batch 15: request 405 ms, parse+ingest 0 ms, 4133 bytes
+Asking the server which plugins are already mapped: batch 16/70  (400/1731 identities)
+  batch 16: request 429 ms, parse+ingest 1 ms, 3851 bytes
+Asking the server which plugins are already mapped: batch 17/70  (425/1731 identities)
+  batch 17: request 409 ms, parse+ingest 1 ms, 3991 bytes
+Asking the server which plugins are already mapped: batch 18/70  (450/1731 identities)
+  batch 18: request 375 ms, parse+ingest 1 ms, 3569 bytes
+Asking the server which plugins are already mapped: batch 19/70  (475/1731 identities)
+  batch 19: request 378 ms, parse+ingest 0 ms, 3157 bytes
+Asking the server which plugins are already mapped: batch 20/70  (500/1731 identities)
+  batch 20: request 388 ms, parse+ingest 0 ms, 3721 bytes
+Asking the server which plugins are already mapped: batch 21/70  (525/1731 identities)
+  batch 21: request 424 ms, parse+ingest 0 ms, 2747 bytes
+Asking the server which plugins are already mapped: batch 22/70  (550/1731 identities)
+  batch 22: request 408 ms, parse+ingest 0 ms, 2889 bytes
+Asking the server which plugins are already mapped: batch 23/70  (575/1731 identities)
+  batch 23: request 375 ms, parse+ingest 0 ms, 3847 bytes
+Asking the server which plugins are already mapped: batch 24/70  (600/1731 identities)
+  batch 24: request 376 ms, parse+ingest 0 ms, 2478 bytes
+Asking the server which plugins are already mapped: batch 25/70  (625/1731 identities)
+  batch 25: request 484 ms, parse+ingest 1 ms, 2616 bytes
+Asking the server which plugins are already mapped: batch 26/70  (650/1731 identities)
+  batch 26: request 395 ms, parse+ingest 0 ms, 4134 bytes
+Asking the server which plugins are already mapped: batch 27/70  (675/1731 identities)
+  batch 27: request 531 ms, parse+ingest 1 ms, 3722 bytes
+Asking the server which plugins are already mapped: batch 28/70  (700/1731 identities)
+  batch 28: request 388 ms, parse+ingest 1 ms, 3305 bytes
+Asking the server which plugins are already mapped: batch 29/70  (725/1731 identities)
+  batch 29: request 360 ms, parse+ingest 1 ms, 3854 bytes
+Asking the server which plugins are already mapped: batch 30/70  (750/1731 identities)
+  batch 30: request 401 ms, parse+ingest 1 ms, 3301 bytes
+Asking the server which plugins are already mapped: batch 31/70  (775/1731 identities)
+  batch 31: request 388 ms, parse+ingest 0 ms, 3301 bytes
+Asking the server which plugins are already mapped: batch 32/70  (800/1731 identities)
+  batch 32: request 365 ms, parse+ingest 1 ms, 3853 bytes
+Asking the server which plugins are already mapped: batch 33/70  (825/1731 identities)
+  batch 33: request 405 ms, parse+ingest 1 ms, 3714 bytes
+Asking the server which plugins are already mapped: batch 34/70  (850/1731 identities)
+  batch 34: request 441 ms, parse+ingest 1 ms, 3440 bytes
+Asking the server which plugins are already mapped: batch 35/70  (875/1731 identities)
+  batch 35: request 393 ms, parse+ingest 0 ms, 2064 bytes
+Asking the server which plugins are already mapped: batch 36/70  (900/1731 identities)
+  batch 36: request 411 ms, parse+ingest 1 ms, 3440 bytes
+Asking the server which plugins are already mapped: batch 37/70  (925/1731 identities)
+  batch 37: request 374 ms, parse+ingest 0 ms, 3162 bytes
+Asking the server which plugins are already mapped: batch 38/70  (950/1731 identities)
+  batch 38: request 493 ms, parse+ingest 1 ms, 2609 bytes
+Asking the server which plugins are already mapped: batch 39/70  (975/1731 identities)
+  batch 39: request 403 ms, parse+ingest 1 ms, 3846 bytes
+Asking the server which plugins are already mapped: batch 40/70  (1000/1731 identities)
+  batch 40: request 371 ms, parse+ingest 1 ms, 3842 bytes
+Asking the server which plugins are already mapped: batch 41/70  (1025/1731 identities)
+  batch 41: request 442 ms, parse+ingest 0 ms, 3577 bytes
+Asking the server which plugins are already mapped: batch 42/70  (1050/1731 identities)
+  batch 42: request 408 ms, parse+ingest 0 ms, 3030 bytes
+Asking the server which plugins are already mapped: batch 43/70  (1075/1731 identities)
+  batch 43: request 455 ms, parse+ingest 0 ms, 3713 bytes
+Asking the server which plugins are already mapped: batch 44/70  (1100/1731 identities)
+  batch 44: request 371 ms, parse+ingest 0 ms, 3296 bytes
+Asking the server which plugins are already mapped: batch 45/70  (1125/1731 identities)
+  batch 45: request 378 ms, parse+ingest 0 ms, 2610 bytes
+Asking the server which plugins are already mapped: batch 46/70  (1150/1731 identities)
+  batch 46: request 429 ms, parse+ingest 1 ms, 4159 bytes
+Asking the server which plugins are already mapped: batch 47/70  (1175/1731 identities)
+  batch 47: request 512 ms, parse+ingest 0 ms, 4020 bytes
+Asking the server which plugins are already mapped: batch 48/70  (1200/1731 identities)
+  batch 48: request 391 ms, parse+ingest 0 ms, 4159 bytes
+Asking the server which plugins are already mapped: batch 49/70  (1225/1731 identities)
+  batch 49: request 372 ms, parse+ingest 0 ms, 4297 bytes
+Asking the server which plugins are already mapped: batch 50/70  (1250/1731 identities)
+  batch 50: request 366 ms, parse+ingest 0 ms, 3581 bytes
+Asking the server which plugins are already mapped: batch 51/70  (1275/1731 identities)
+  batch 51: request 401 ms, parse+ingest 0 ms, 2889 bytes
+Asking the server which plugins are already mapped: batch 52/70  (1300/1731 identities)
+  batch 52: request 384 ms, parse+ingest 1 ms, 3157 bytes
+Asking the server which plugins are already mapped: batch 53/70  (1325/1731 identities)
+  batch 53: request 407 ms, parse+ingest 0 ms, 2561 bytes
+Asking the server which plugins are already mapped: batch 54/70  (1350/1731 identities)
+  batch 54: request 399 ms, parse+ingest 1 ms, 2599 bytes
+Asking the server which plugins are already mapped: batch 55/70  (1375/1731 identities)
+  batch 55: request 422 ms, parse+ingest 0 ms, 1542 bytes
+Asking the server which plugins are already mapped: batch 56/70  (1400/1731 identities)
+  batch 56: request 395 ms, parse+ingest 0 ms, 2744 bytes
+Asking the server which plugins are already mapped: batch 57/70  (1425/1731 identities)
+  batch 57: request 530 ms, parse+ingest 0 ms, 950 bytes
+Asking the server which plugins are already mapped: batch 58/70  (1450/1731 identities)
+  batch 58: request 345 ms, parse+ingest 0 ms, 3710 bytes
+Asking the server which plugins are already mapped: batch 59/70  (1475/1731 identities)
+  batch 59: request 396 ms, parse+ingest 0 ms, 1524 bytes
+Asking the server which plugins are already mapped: batch 60/70  (1500/1731 identities)
+  batch 60: request 393 ms, parse+ingest 0 ms, 2491 bytes
+Asking the server which plugins are already mapped: batch 61/70  (1525/1731 identities)
+  batch 61: request 394 ms, parse+ingest 0 ms, 4011 bytes
+Asking the server which plugins are already mapped: batch 62/70  (1550/1731 identities)
+  batch 62: request 419 ms, parse+ingest 1 ms, 3871 bytes
+Asking the server which plugins are already mapped: batch 63/70  (1575/1731 identities)
+  batch 63: request 379 ms, parse+ingest 0 ms, 4146 bytes
+Asking the server which plugins are already mapped: batch 64/70  (1600/1731 identities)
+  batch 64: request 401 ms, parse+ingest 0 ms, 3873 bytes
+Asking the server which plugins are already mapped: batch 65/70  (1625/1731 identities)
+  batch 65: request 380 ms, parse+ingest 0 ms, 2768 bytes
+Asking the server which plugins are already mapped: batch 66/70  (1650/1731 identities)
+  batch 66: request 413 ms, parse+ingest 0 ms, 4010 bytes
+Asking the server which plugins are already mapped: batch 67/70  (1675/1731 identities)
+  batch 67: request 392 ms, parse+ingest 0 ms, 3597 bytes
+Asking the server which plugins are already mapped: batch 68/70  (1700/1731 identities)
+  batch 68: request 400 ms, parse+ingest 0 ms, 2084 bytes
+Asking the server which plugins are already mapped: batch 69/70  (1725/1731 identities)
+  batch 69: request 432 ms, parse+ingest 0 ms, 2253 bytes
+Asking the server which plugins are already mapped: batch 70/70  (1731/1731 identities)
+  batch 70: request 395 ms, parse+ingest 0 ms, 764 bytes
+MAP STATE: 1731 identities in 70 batch(es), 70 ok, 1731 resolved, endpoint https://www.echojay.ai/api/params/maps
+COLUMNS [scan complete] rows 1733 | mapped 0 | sent 0 | onServer yes 1271 diff 0 no 462 unknown 0 | localMaps 0 sentIds 0 serverIds 1731 | mapState ok, asked 0h ago
+SCAN: done - 1733 scanned row(s) in /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_empty/scan-cache.xml; 0 quarantined, 94 needs licence (skipped)
+CATEGORISE (before): 1073 product(s) need categorising
+Categorising 1073 product(s): batch 1/6
+Categorising 1073 product(s): batch 2/6
+Categorising 1073 product(s): batch 3/6
+Categorising 1073 product(s): batch 4/6
+Categorising 1073 product(s): batch 5/6
+Categorising 1073 product(s): batch 6/6
+Categorised 1073 product(s) (0 newly answered, the rest from the server's cache). categories: all 1073 known
+CATEGORISE (after):  categories: all 1073 known
+supervisor: child exited cleanly

@@ -1,0 +1,841 @@
+[
+  {
+    "identity": "AudioUnit|4f271a4b|1.3.9",
+    "product": "APB C-18 Compressor",
+    "category": "compressor",
+    "state": "held",
+    "reason": "hardware: mapped (server map state 3); needs McDSP APB hardware present",
+    "at": "20261002T142454"
+  },
+  {
+    "identity": "AudioUnit|417f7e74|1.10.1",
+    "product": "bx_opto",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_417f7e74_1.10.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/bx_opto_1.10.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/bx_opto_1.10.1.tonecheck.json",
+    "at": "20261002T133414"
+  },
+  {
+    "identity": "AudioUnit|49696d78|1.15.1",
+    "product": "elysia mpressor",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_49696d78_1.15.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/elysia_mpressor_1.15.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/elysia_mpressor_1.15.1.tonecheck.json",
+    "at": "20261002T133604"
+  },
+  {
+    "identity": "AudioUnit|4942687d|12.0.0",
+    "product": "EMO-D5 (s)",
+    "category": "compressor",
+    "state": "needs_review",
+    "reason": "5 threshold candidates (a channel strip or multiband): the one-candidate rule is not built, nobody picks",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_4942687d_12.0.0.json",
+    "at": "20261002T141912"
+  },
+  {
+    "identity": "AudioUnit|6f747363|1.0.3",
+    "product": "Lindell SBC",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_6f747363_1.0.3.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/Lindell_SBC_1.0.3.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/Lindell_SBC_1.0.3.tonecheck.json",
+    "at": "20261002T142125"
+  },
+  {
+    "identity": "AudioUnit|61755c26|1.1.0",
+    "product": "NEOLD U2A",
+    "category": "compressor",
+    "state": "needs_review",
+    "reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_61755c26_1.1.0.json",
+    "at": "20261002T142411"
+  },
+  {
+    "identity": "AudioUnit|61755f23|1.3.0",
+    "product": "NEOLD V76U73",
+    "category": "compressor",
+    "state": "refused",
+    "reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_61755f23_1.3.0.json",
+    "at": "20261002T142425"
+  },
+  {
+    "identity": "AudioUnit|517f614e|2.5.62",
+    "product": "Tube-Tech CL 1B",
+    "category": "compressor",
+    "state": "held",
+    "reason": "licence: PACE-wrapped and the batch runs without the iLok (mapped (server map state 3))",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/ANA2.vst3",
+    "product": "ANA2",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11123]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL SubGen.vst3",
+    "product": "SSL SubGen",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11125]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/bloom.vst3",
+    "product": "bloom",
+    "category": "eq",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11129]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3",
+    "product": "SSL Native Drumstrip v6",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11138]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Virtual Tape Machines.vst3",
+    "product": "Virtual Tape Machines",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11143]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/FG-X 2.vst3",
+    "product": "FG-X 2",
+    "category": "limiter",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11146]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category limiter",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Inf Bass.vst3",
+    "product": "Inf Bass",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11155]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/VerbSuite Classics.vst3",
+    "product": "VerbSuite Classics",
+    "category": "reverb",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11164]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Murda Melodies.vst3",
+    "product": "Murda Melodies",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11180]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC Rack.vst3",
+    "product": "VBC Rack",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11183]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-MU.vst3",
+    "product": "VBC FG-MU",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11193]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Fresh Air.vst3",
+    "product": "Fresh Air",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11195]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Inf EQ.vst3",
+    "product": "Inf EQ",
+    "category": "eq",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11199]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-Red.vst3",
+    "product": "VBC FG-Red",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11202]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Virtual Mix Rack.vst3",
+    "product": "Virtual Mix Rack",
+    "category": "channel_strip",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11222]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-Grey.vst3",
+    "product": "VBC FG-Grey",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11245]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Storch Filter.vst3",
+    "product": "Storch Filter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11248]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/MetaTune.vst3",
+    "product": "MetaTune",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11250]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/Heatwave.vst3",
+    "product": "Heatwave",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11259]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Slate Digital/MO-TT.vst3",
+    "product": "MO-TT",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11261]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis AirEQ.vst3",
+    "product": "Eiosis AirEQ",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11294]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis E2Deesser.vst3",
+    "product": "Eiosis E2Deesser",
+    "category": "de-esser",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11297]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis AirEQ 5.1.vst3",
+    "product": "Eiosis AirEQ 5.1",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11316]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL DeEss.vst3",
+    "product": "SSL DeEss",
+    "category": "de-esser",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11325]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Fusion HF Compressor.vst3",
+    "product": "SSL Fusion HF Compressor",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11328]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL LMC+.vst3",
+    "product": "SSL LMC+",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11363]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native X-Saturator v6.vst3",
+    "product": "SSL Native X-Saturator v6",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11383]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Guitarstrip.vst3",
+    "product": "SSL Guitarstrip",
+    "category": "channel_strip",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11386]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Fusion Transformer.vst3",
+    "product": "SSL Fusion Transformer",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11390]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL 4K E.vst3",
+    "product": "SSL 4K E",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11397]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL X-Gate.vst3",
+    "product": "SSL X-Gate",
+    "category": "gate",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11400]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category gate",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL X-Limit.vst3",
+    "product": "SSL X-Limit",
+    "category": "limiter",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11410]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category limiter",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Repeater.vst3",
+    "product": "Repeater",
+    "category": "delay",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11428]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Saturation Knob.vst3",
+    "product": "Saturation Knob",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11439]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL 4K B.vst3",
+    "product": "SSL 4K B",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11441]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Overloud/TH-U Slate.vst3",
+    "product": "TH-U Slate",
+    "category": "amp_sim",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11446]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category amp_sim",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native X-EQ 2.vst3",
+    "product": "SSL Native X-EQ 2",
+    "category": "eq",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11456]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Empirical Labs Mike-E Comp.vst3",
+    "product": "Empirical Labs Mike-E Comp",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11465]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Melodya.vst3",
+    "product": "Melodya",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "window at scan (ejmap [pid 11466]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Lustrous Plates.vst3",
+    "product": "Lustrous Plates",
+    "category": "reverb",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11470]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Tube-Tech CL 1B.vst3",
+    "product": "Tube-Tech CL 1B",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11479]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native X-Phase v6.vst3",
+    "product": "SSL Native X-Phase v6",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11482]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL G3 MultiBusComp.vst3",
+    "product": "SSL G3 MultiBusComp",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11485]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL X-Delay.vst3",
+    "product": "SSL X-Delay",
+    "category": "delay",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11520]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Fusion Vintage Drive.vst3",
+    "product": "SSL Fusion Vintage Drive",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11525]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native X-Echo.vst3",
+    "product": "SSL Native X-Echo",
+    "category": "delay",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11536]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native FlexVerb.vst3",
+    "product": "SSL Native FlexVerb",
+    "category": "reverb",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11538]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Gate.vst3",
+    "product": "kHs Gate",
+    "category": "gate",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11550]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category gate",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Distortion.vst3",
+    "product": "kHs Distortion",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11559]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Delay.vst3",
+    "product": "kHs Delay",
+    "category": "delay",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11562]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Resonator.vst3",
+    "product": "kHs Resonator",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11566]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Formant Filter.vst3",
+    "product": "kHs Formant Filter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11575]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Dynamics.vst3",
+    "product": "kHs Dynamics",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11577]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Phaser.vst3",
+    "product": "kHs Phaser",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11580]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Compressor.vst3",
+    "product": "kHs Compressor",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11585]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Pitch Shifter.vst3",
+    "product": "kHs Pitch Shifter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11594]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Gain.vst3",
+    "product": "kHs Gain",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11605]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Comb Filter.vst3",
+    "product": "kHs Comb Filter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11607]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/Faturator.vst3",
+    "product": "Faturator",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11610]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Phase Distortion.vst3",
+    "product": "kHs Phase Distortion",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11619]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Trance Gate.vst3",
+    "product": "kHs Trance Gate",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11621]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Transient Shaper.vst3",
+    "product": "kHs Transient Shaper",
+    "category": "transient_shaper",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11623]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category transient_shaper",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Tape Stop.vst3",
+    "product": "kHs Tape Stop",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11628]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/Multipass.vst3",
+    "product": "Multipass",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11658]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/Disperser.vst3",
+    "product": "Disperser",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11667]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs 3-Band EQ.vst3",
+    "product": "kHs 3-Band EQ",
+    "category": "eq",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11670]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Haas.vst3",
+    "product": "kHs Haas",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11684]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Ladder Filter.vst3",
+    "product": "kHs Ladder Filter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11693]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Chorus.vst3",
+    "product": "kHs Chorus",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11695]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Stereo.vst3",
+    "product": "kHs Stereo",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11698]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Bitcrush.vst3",
+    "product": "kHs Bitcrush",
+    "category": "saturation",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11702]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Reverser.vst3",
+    "product": "kHs Reverser",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11716]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Frequency Shifter.vst3",
+    "product": "kHs Frequency Shifter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11718]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Ring Mod.vst3",
+    "product": "kHs Ring Mod",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11722]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Limiter.vst3",
+    "product": "kHs Limiter",
+    "category": "limiter",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11731]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category limiter",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/Snap Heap.vst3",
+    "product": "Snap Heap",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11733]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Reverb.vst3",
+    "product": "kHs Reverb",
+    "category": "reverb",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11735]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Filter.vst3",
+    "product": "kHs Filter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11740]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native X-Comp v6.vst3",
+    "product": "SSL Native X-Comp v6",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11771]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native X-ValveComp v6.vst3",
+    "product": "SSL Native X-ValveComp v6",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11780]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SontecEQ.vst3",
+    "product": "SontecEQ",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11791]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Weiss Deess.vst3",
+    "product": "Weiss Deess",
+    "category": "de-esser",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11799]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native Channel Strip 2.vst3",
+    "product": "SSL Native Channel Strip 2",
+    "category": "channel_strip",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11806]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Blitzer.vst3",
+    "product": "SSL Blitzer",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11827]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Meter.vst3",
+    "product": "SSL Meter",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11843]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native Bus Compressor 2.vst3",
+    "product": "SSL Native Bus Compressor 2",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11851]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Fusion Violet EQ.vst3",
+    "product": "SSL Fusion Violet EQ",
+    "category": "eq",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11858]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_De-Esser.vst3",
+    "product": "Harrison_De-Esser",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11862]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_DrumFlow.vst3",
+    "product": "Harrison_DrumFlow",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11865]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_32Bus.vst3",
+    "product": "Harrison_32Bus",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11874]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_BassFlow.vst3",
+    "product": "Harrison_BassFlow",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11883]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/Audified/U73b Compressor.vst3",
+    "product": "U73b Compressor",
+    "category": "compressor",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11888]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Native Vocalstrip 2.vst3",
+    "product": "SSL Native Vocalstrip 2",
+    "category": "channel_strip",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11897]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "bundle|/Library/Audio/Plug-Ins/VST3/SSL Fusion Stereo Image.vst3",
+    "product": "SSL Fusion Stereo Image",
+    "category": "unknown",
+    "state": "needs_licence",
+    "reason": "activation window at scan (PACEEdenExperience [pid 11899]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+    "at": "20261002T142701"
+  },
+  {
+    "identity": "AudioUnit|6f457232|1.2.2",
+    "product": "Lindell 7X-500",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/fixtures/AudioUnit_6f457232_1.2.2.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/Lindell_7X-500_1.2.2.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/profiles/Lindell_7X-500_1.2.2.tonecheck.json",
+    "at": "20261002T142701"
+  }
+]

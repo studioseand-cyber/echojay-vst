@@ -1,0 +1,818 @@
+SWEEP CENSUS - PACE held
+worklist: 0 fixture(s) in the store (0 already record a sweep, candidates or a refusal; 0 refusal(s), 0 of them permanent), 158 discovered from the ledger at /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_empty
+0 local map(s), 1731 map-state row(s) (fetched 2026-10-02T13:32:48.987+01:00), 1730 categorised identities, 663 with a disposition other than sweep (honoured)
+installed AUs not discovered: 69 category amp_sim, 101 category channel_strip, 19 category de-esser, 46 category delay, 165 category eq, 7 category gate, 35 category limiter, 88 category reverb, 107 category saturation, 16 category transient_shaper, 132 disposition no_dial_set in categories.json, 33 disposition not_a_processor in categories.json, 37 disposition review in categories.json, 363 not mapped at this build
+left alone by categories.json disposition: UAD bx_refinement: review (arms disagree: saturation vs none); X-FDBK (s): no_dial_set (); NS1 (s): no_dial_set (); Scheps Parallel Particles (s): review (arms disagree: saturation vs none); Auto-Tune Access: no_dial_set (); AVOX PUNCH: review (arms disagree: transient_shaper vs none); B360 (1->4): review (both refused, differently: not_a_processor vs none); Sub Align (s): review (both refused, differently: none vs not_a_processor); DeBreath (m): no_dial_set (); Bass Rider (s): no_dial_set (); Bass Rider Live (s): no_dial_set (); CLA Effects (s): no_dial_set (); EMO-F2 (s): no_dial_set (); CLA MixDown (s): review (arms disagree: channel_strip vs none); Center (s): no_dial_set (); DTS Neural DownMix 7.1 to 5.1 (8->8): review (both refused, differently: not_a_processor vs none); DTS Neural DownMix 5.1 to Stereo (6->6): review (both refused, differently: not_a_processor vs none); DTS Neural DownMix 7.1 to Stereo (8->8): review (both refused, differently: not_a_processor vs none); DTS Neural Mono2Stereo (m->s): no_dial_set (); Doppler (s): no_dial_set (); Dorrough360 (5->5): not_a_processor (); Dorrough (s): not_a_processor (); Torque-Live (s): no_dial_set (); Torque (s): no_dial_set (); DTS Neural UpMix (2->4): no_dial_set (); EKramer FX (s): review (arms disagree: none vs delay); Enigma (s): no_dial_set (); MetaFlanger (s): no_dial_set (); GW MixCentric (s): no_dial_set (); GW PianoCentric (s): no_dial_set (); IMPusher (s): review (arms disagree: limiter vs none); IDR360 (5->5): no_dial_set (); Lindell 80 Bus: review (arms disagree: compressor vs channel_strip); LFE360 (m): no_dial_set (); Lindell 69 Buss: review (arms disagree: compressor vs channel_strip); LoAir (s): no_dial_set (); Vocal Rider Live (s): no_dial_set (); MannyM Tone Shaper (s): review (arms disagree: eq vs compressor); MondoMod (s): no_dial_set (); MaxxBass (s): no_dial_set (); MV360 (5->5): review (arms disagree: limiter vs compressor); S1 Shuffler (s): no_dial_set (); S1 Imager (s): no_dial_set (); Nx Ambisonics (4->2): no_dial_set (); NX Ambisonics (4->4): no_dial_set (); NX (s): no_dial_set (); InPhase LT (s): not_a_processor (); InPhase LT Live (s): not_a_processor (); InPhase Live (s): not_a_processor (); InPhase (s): not_a_processor (); M360 Manager (5->5): not_a_processor (); S360 Imager (1->5): no_dial_set (); M360 Mixdown (5->5): not_a_processor (); S360 Panner (1->5): review (both refused, differently: none vs not_a_processor); AR TG Meter Bridge (s): not_a_processor (); PlaylistRider (s): review (arms disagree: compressor vs none); PS22 Spread(10) (s): no_dial_set (); PS22 Spread (s): no_dial_set (); PS22 Split (s): no_dial_set (); PS22 XSplit (s): no_dial_set (); Vocal Rider (s): no_dial_set (); RBass (s): review (arms disagree: saturation vs none); OneKnob Filter (s): no_dial_set (); C360 (5->5): review (arms disagree: not_a_processor vs compressor); Submarine (s): no_dial_set (); UltraPitch 3 Voices (m): no_dial_set (); UltraPitch 6 Voices (m): no_dial_set (); UltraPitch Shift (m): no_dial_set (); Sibilance-Live (m): not_a_processor (); Sibilance-Live (s): not_a_processor (); CLA Epic (s): review (arms disagree: reverb vs delay); SPL Vitalizer MK2-T: review (arms disagree: eq vs none); Q-Capture (m): not_a_processor (); TRACT (s): review (arms disagree: eq vs not_a_processor); TRACT LinPhase (s): review (arms disagree: eq vs not_a_processor); TG12345 (s): review (arms disagree: eq vs channel_strip); The Kings Microphones (s): no_dial_set (); SoundShifter Pitch (s): no_dial_set (); WNS (s): no_dial_set (); UM225 (2->5): no_dial_set (); UM226 (2->6): no_dial_set (); Auto-Tune EFX+: no_dial_set (); W43 (s): no_dial_set (); PAZ- Frequency (s): not_a_processor (); PAZ- Analyzer (s): not_a_processor (); PAZ- Position (s): not_a_processor (); Doubler2 (s): no_dial_set (); Doubler4 (s): no_dial_set (); WLM Meter (s): not_a_processor (); Z-Noise (s): no_dial_set (); GW VoiceCentric (s): no_dial_set (); PAZ- Meters (s): not_a_processor (); WLM Plus (s): review (arms disagree: not_a_processor vs limiter); X-Click (s): no_dial_set (); X-Crackle (s): no_dial_set (); X-Hum (s): no_dial_set (); X-Noise (s): no_dial_set (); bx_refinement: review (arms disagree: saturation vs none); UAD Auto-Tune Realtime Access: no_dial_set (); Disperser: no_dial_set (); kHs Comb Filter: no_dial_set (); kHs Chorus: no_dial_set (); kHs Filter: no_dial_set (); kHs Frequency Shifter: no_dial_set (); kHs Haas: no_dial_set (); kHs Ladder Filter: no_dial_set (); kHs Phaser: no_dial_set (); kHs Pitch Shifter: no_dial_set (); kHs Resonator: no_dial_set (); kHs Ring Mod: no_dial_set (); kHs Reverser: no_dial_set (); kHs Stereo: no_dial_set (); kHs Trance Gate: review (arms disagree: none vs gate); kHs Tape Stop: no_dial_set (); kHs Formant Filter: no_dial_set (); MPhaserMB: no_dial_set (); UAD Antares Auto-Tune Realtime: no_dial_set (); Auto-Tune Pro: no_dial_set (); Auto-Tune Artist: no_dial_set (); Kaleidoscopes (s): no_dial_set (); Brauer Motion (s): no_dial_set (); GTR Tool Rack (s): review (arms disagree: none vs amp_sim); Waves Tune Real-Time (s): no_dial_set (); MStereoProcessor: no_dial_set (); MAutoAlign: not_a_processor (); MFlanger: no_dial_set (); MFreqShifterMB: no_dial_set (); MAutopan: no_dial_set (); MPhaser: no_dial_set (); MRingModulator: no_dial_set (); MTremolo: no_dial_set (); MVibrato: no_dial_set (); MFreqShifter: no_dial_set (); MStereoExpander: no_dial_set (); MAnalyzer: not_a_processor (); MFilter: no_dial_set (); MFreeformPhase: no_dial_set (); MAutoVolume: review (arms disagree: compressor vs none); MBandPass: no_dial_set (); MBassador: no_dial_set (); MChannelMatrix: not_a_processor (); MCharacter: review (arms disagree: saturation vs none); MCompare: not_a_processor (); MComb: no_dial_set (); MDrumEnhancer: review (arms disagree: none vs transient_shaper); MultiMod Rack (s): no_dial_set (); MTransformer: no_dial_set (); MLoudnessAnalyzer: not_a_processor (); MMultiAnalyzer: not_a_processor (); MFlangerMB: no_dial_set (); MCombMB: no_dial_set (); MGranularMB: no_dial_set (); MWobblerMB: no_dial_set (); MChorusMB: no_dial_set (); MMorph: no_dial_set (); MNoiseGenerator: not_a_processor (); MNotepad: not_a_processor (); MOscillator: not_a_processor (); MOscilloscope: not_a_processor (); MPhatik: review (arms disagree: transient_shaper vs compressor); MRatio: no_dial_set (); MRecorder: not_a_processor (); MRhythmizerMB: no_dial_set (); MRhythmizer: no_dial_set (); MRotary: no_dial_set (); MStereoScope: not_a_processor (); MSpectralPan: no_dial_set (); MStereoGenerator: no_dial_set (); MStereoSpread: no_dial_set (); MTuner: not_a_processor (); MUnison: no_dial_set (); MVintageRotary: no_dial_set (); MVocoder: no_dial_set (); MWobbler: no_dial_set (); MXXX1: no_dial_set (); MXXX6out: no_dial_set (); MXXX: no_dial_set (); MAGC: review (arms disagree: compressor vs none); MAutoStereoFix: no_dial_set (); MAutoPitch: no_dial_set (); MVibratoMB: no_dial_set (); MHarmonizerMB: no_dial_set (); MRingModulatorMB: no_dial_set (); MTremoloMB: no_dial_set (); MUtility: not_a_processor (); Abbey Road Studio 3 (s): no_dial_set (); Nx Ocean Way Nashville (s): no_dial_set (); OVox (s): no_dial_set (); MetaFilter (s): no_dial_set (); EMO-Generator (m): not_a_processor (); EMO-Generator (s): not_a_processor (); Morphoder (s): no_dial_set (); Abbey Road Vinyl (s): review (arms disagree: none vs saturation); Abbey Road Vinyl Light (s): review (arms disagree: none vs saturation); Vocal Bender (s): no_dial_set (); UAD Auto-Tune Realtime Advanced: no_dial_set (); bx_masterdesk: review (arms disagree: channel_strip vs none); bx_masterdesk Classic: review (arms disagree: channel_strip vs none); MAutopanMB: no_dial_set (); Snap Heap: no_dial_set (); Multipass: no_dial_set (); UAD Auto-Tune Realtime X: no_dial_set ()
+UNMAPPED compressors and tuners (installed, categorised, no map at this build - the mapping sweep maps them; until then a row in state unmapped): 0
+RUNNABLE: 91 (0 as a new identity at the installed version, 91 discovered with no fixture at all)
+  Abbey Road RS124 (m)                    DISCOVERED at 12.1.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Abbey Road RS124 (s)                    DISCOVERED at 12.1.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Acme Opticom XLA-3                      DISCOVERED at 1.10.1, mapped (server map state 3) (defaults first; plan after sampling)
+  AMEK Mastering Compressor               DISCOVERED at 1.1.1, mapped (server map state 3) (defaults first; plan after sampling)
+  API-2500 (m)                            DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  API-2500 (s)                            DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Bettermaker Bus Compressor DSP          DISCOVERED at 1.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  bx_opto                                 DISCOVERED at 1.10.1, mapped (server map state 3) (defaults first; plan after sampling)
+  bx_opto Pedal                           DISCOVERED at 1.10.1, mapped (server map state 3) (defaults first; plan after sampling)
+  bx_townhouse Buss Compressor            DISCOVERED at 1.8.1, mapped (server map state 3) (defaults first; plan after sampling)
+  C1 comp (m)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C1 comp (s)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C1 comp-gate (m)                        DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C1 comp-gate (s)                        DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C1 comp-sc (m)                          DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C1 comp-sc (s)                          DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C4 (m)                                  DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C4 (s)                                  DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C6 (m)                                  DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C6 (s)                                  DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C6-SideChain (m)                        DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  C6-SideChain (s)                        DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  CLA-2A (m)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  CLA-2A (s)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  CLA-3A (m)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  CLA-3A (s)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  CLA-76 (m)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  CLA-76 (s)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  dbx-160 (m)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  dbx-160 (s)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  DPR-402 (m)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  DPR-402 (s)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  DynOne3                                 DISCOVERED at 3.12.3, mapped (server map state 3) (defaults first; plan after sampling)
+  elysia alpha master                     DISCOVERED at 1.17.1, mapped (server map state 3) (defaults first; plan after sampling)
+  elysia alpha mix                        DISCOVERED at 1.17.1, mapped (server map state 3) (defaults first; plan after sampling)
+  elysia mpressor                         DISCOVERED at 1.15.1, mapped (server map state 3) (defaults first; plan after sampling)
+  EMO-D5 (m)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  EMO-D5 (s)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  H-Comp (m)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  H-Comp (s)                              DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  kHs Compressor                          DISCOVERED at 2.1.0, mapped (server map state 3) (defaults first; plan after sampling)
+  kHs Dynamics                            DISCOVERED at 2.1.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Kiive XTComp                            DISCOVERED at 1.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Kramer PIE (m)                          DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Kramer PIE (s)                          DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Lindell 254E                            DISCOVERED at 1.2.2, mapped (server map state 3) (defaults first; plan after sampling)
+  Lindell 354E                            DISCOVERED at 1.0.4, mapped (server map state 3) (defaults first; plan after sampling)
+  Lindell 7X-500                          DISCOVERED at 1.2.2, mapped (server map state 3) (defaults first; plan after sampling)
+  Lindell MBC                             DISCOVERED at 1.0.3, mapped (server map state 3) (defaults first; plan after sampling)
+  Lindell SBC                             DISCOVERED at 1.0.3, mapped (server map state 3) (defaults first; plan after sampling)
+  LinMB (m)                               DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  LinMB (s)                               DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Low Control                             DISCOVERED at 1.1.6, mapped (server map state 3) (defaults first; plan after sampling)
+  Maag MAGNUM-K                           DISCOVERED at 1.6.1, mapped (server map state 3) (defaults first; plan after sampling)
+  MaxxVolume (m)                          DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  MaxxVolume (s)                          DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Millennia TCL-2                         DISCOVERED at 1.11.1, mapped (server map state 3) (defaults first; plan after sampling)
+  Mixland Vac Attack                      DISCOVERED at 1.0.1, mapped (server map state 3) (defaults first; plan after sampling)
+  MV2 (m)                                 DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  MV2 (s)                                 DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  NEOLD U17                               DISCOVERED at 1.2.0, mapped (server map state 3) (defaults first; plan after sampling)
+  NEOLD U2A                               DISCOVERED at 1.1.0, mapped (server map state 3) (defaults first; plan after sampling)
+  NEOLD V76U73                            DISCOVERED at 1.3.0, mapped (server map state 3) (defaults first; plan after sampling)
+  OneKnob Pressure (m)                    DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  OneKnob Pressure (s)                    DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  OneKnob Pumper (m)                      DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  OneKnob Pumper (s)                      DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  OTT                                     DISCOVERED at 1.3.7, mapped (server map state 3) (defaults first; plan after sampling)
+  Pro Audio DSP DSM V3                    DISCOVERED at 3.6.1, mapped (server map state 3) (defaults first; plan after sampling)
+  PuigChild 660 (m)                       DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  PuigChild 670 (s)                       DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Purple Audio MC 77                      DISCOVERED at 1.5.1, mapped (server map state 3) (defaults first; plan after sampling)
+  RCompressor (m)                         DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  RCompressor (s)                         DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Renaissance Axx (m)                     DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Renaissance Axx (s)                     DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Rubber Band Compressor V2               DISCOVERED at 1.0.1, mapped (server map state 3) (defaults first; plan after sampling)
+  RVox (m)                                DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  RVox (s)                                DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Shadow Hills Class A Mastering Comp     DISCOVERED at 1.4.1, mapped (server map state 3) (defaults first; plan after sampling)
+  Shadow Hills Mastering Compressor       DISCOVERED at 1.5.1, mapped (server map state 3) (defaults first; plan after sampling)
+  Solid Bus Comp                          DISCOVERED at 1.4.5, mapped (server map state 3) (defaults first; plan after sampling)
+  Solid Dynamics                          DISCOVERED at 1.4.5, mapped (server map state 3) (defaults first; plan after sampling)
+  SPL IRON                                DISCOVERED at 1.6.1, mapped (server map state 3) (defaults first; plan after sampling)
+  SSLComp (m)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  SSLComp (s)                             DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  TBTECH Cenozoix Compressor              DISCOVERED at 1.1.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Unfiltered Audio Zip                    DISCOVERED at 1.4.2, mapped (server map state 3) (defaults first; plan after sampling)
+  VComp (m)                               DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  VComp (s)                               DISCOVERED at 12.0.0, mapped (server map state 3) (defaults first; plan after sampling)
+  Vertigo VSC-2                           DISCOVERED at 1.15.1, mapped (server map state 3) (defaults first; plan after sampling)
+NOT RUNNABLE, BY REASON
+  discovered, CONDITIONAL - needs McDSP APB hardware present (one re-run once attached) (4): APB C-18 Compressor, APB C673-A Compressor, APB MC-3 MultiComp, APB Royal Mu
+  discovered, CONDITIONAL - needs UAD hardware (UAD-2) present (one re-run once attached) (36): UAD 4K Buss Compressor, UAD API 2500, UAD dbx 160, UAD elysia alpha master, UAD elysia alpha mix, UAD elysia mpressor, UAD Empirical Labs Distressor, UAD Fairchild 660, UAD Fairchild 670, UAD Fairchild 670 Legacy, UAD Manley Variable Mu, UAD Neve 2254 E, UAD Neve 2254 E Dual, UAD Neve 33609 C, UAD Neve 33609SE, UAD Precision Buss Compressor, UAD Precision Multiband, UAD Shadow Hills Mastering Compressor, UAD SSL G Bus Compressor, UAD SSL G Bus Compressor Legacy, UAD Summit Audio TLA-100A, UAD Teletronix LA-2, UAD Teletronix LA-2A Gray, UAD Teletronix LA-2A Legacy, UAD Teletronix LA-2A Silver, UAD Teletronix LA-3A, UAD Tube-Tech CL 1B, UAD Tube-Tech CL 1B mk II, UAD UA 1176 Rev A, UAD UA 1176AE, UAD UA 1176LN Legacy, UAD UA 1176LN Rev E, UAD UA 1176SE Legacy, UAD UA 175-B, UAD UA 176, UAD Vertigo VSC-2
+  discovered, licence-bound (run with --include-pace) (27): Auto-Tune Vocal Compressor, Drawmer 1973, Empirical Labs Mike-E Comp, MCompressor, MDrumLeveler, MDynamics, MDynamicsMB, MDynamicsMBLarge, MModernCompressor, MO-TT, MSpectralDynamics, MSpectralDynamicsMini, MTurboComp, MTurboCompMB, SSL Blitzer, SSL Fusion HF Compressor, SSL G3 MultiBusComp, SSL LMC+, SSL Native Bus Compressor 2, SSL Native X-Comp v6, SSL Native X-ValveComp v6, Tube-Tech CL 1B, U73b Compressor, VBC FG-Grey, VBC FG-MU, VBC FG-Red, VBC Rack
+QUARANTINED AT SCAN (never reach this census): 0, of which compressors or tuners: 0
+NEEDS LICENCE (activation window at scan; --scan --retry-licence once the licence is back): 94, of which compressors or tuners: 17
+  ANA2  [unknown]  activation window at scan (PACEEdenExperience [pid 11123]); load killed at once, not retried  2026-10-02T13:27:03.946+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL SubGen  [unknown]  activation window at scan (PACEEdenExperience [pid 11125]); load killed at once, not retried  2026-10-02T13:27:06.660+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  bloom  [eq]  activation window at scan (PACEEdenExperience [pid 11129]); load killed at once, not retried  2026-10-02T13:27:09.101+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native Drumstrip v6  [unknown]  activation window at scan (PACEEdenExperience [pid 11138]); load killed at once, not retried  2026-10-02T13:27:13.978+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Virtual Tape Machines  [saturation]  activation window at scan (PACEEdenExperience [pid 11143]); load killed at once, not retried  2026-10-02T13:27:17.462+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  FG-X 2  [limiter]  activation window at scan (PACEEdenExperience [pid 11146]); load killed at once, not retried  2026-10-02T13:27:19.963+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Inf Bass  [unknown]  activation window at scan (PACEEdenExperience [pid 11155]); load killed at once, not retried  2026-10-02T13:27:22.387+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  VerbSuite Classics  [reverb]  activation window at scan (PACEEdenExperience [pid 11164]); load killed at once, not retried  2026-10-02T13:27:24.823+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Murda Melodies  [unknown]  activation window at scan (PACEEdenExperience [pid 11180]); load killed at once, not retried  2026-10-02T13:27:27.489+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  VBC Rack  [compressor]  activation window at scan (PACEEdenExperience [pid 11183]); load killed at once, not retried  2026-10-02T13:27:29.936+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  VBC FG-MU  [compressor]  activation window at scan (PACEEdenExperience [pid 11193]); load killed at once, not retried  2026-10-02T13:27:32.358+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Fresh Air  [unknown]  activation window at scan (PACEEdenExperience [pid 11195]); load killed at once, not retried  2026-10-02T13:27:34.760+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Inf EQ  [eq]  activation window at scan (PACEEdenExperience [pid 11199]); load killed at once, not retried  2026-10-02T13:27:37.183+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  VBC FG-Red  [compressor]  activation window at scan (PACEEdenExperience [pid 11202]); load killed at once, not retried  2026-10-02T13:27:39.604+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Virtual Mix Rack  [channel_strip]  activation window at scan (PACEEdenExperience [pid 11222]); load killed at once, not retried  2026-10-02T13:27:42.292+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  VBC FG-Grey  [compressor]  activation window at scan (PACEEdenExperience [pid 11245]); load killed at once, not retried  2026-10-02T13:27:44.974+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Storch Filter  [unknown]  activation window at scan (PACEEdenExperience [pid 11248]); load killed at once, not retried  2026-10-02T13:27:47.955+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  MetaTune  [unknown]  activation window at scan (PACEEdenExperience [pid 11250]); load killed at once, not retried  2026-10-02T13:27:50.430+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Heatwave  [saturation]  activation window at scan (PACEEdenExperience [pid 11259]); load killed at once, not retried  2026-10-02T13:27:52.854+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  MO-TT  [compressor]  activation window at scan (PACEEdenExperience [pid 11261]); load killed at once, not retried  2026-10-02T13:27:55.268+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Eiosis AirEQ  [unknown]  activation window at scan (PACEEdenExperience [pid 11294]); load killed at once, not retried  2026-10-02T13:28:16.764+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Eiosis E2Deesser  [de-esser]  activation window at scan (PACEEdenExperience [pid 11297]); load killed at once, not retried  2026-10-02T13:28:19.533+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Eiosis AirEQ 5.1  [unknown]  activation window at scan (PACEEdenExperience [pid 11316]); load killed at once, not retried  2026-10-02T13:28:21.982+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL DeEss  [de-esser]  activation window at scan (PACEEdenExperience [pid 11325]); load killed at once, not retried  2026-10-02T13:28:24.431+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Fusion HF Compressor  [compressor]  activation window at scan (PACEEdenExperience [pid 11328]); load killed at once, not retried  2026-10-02T13:28:28.988+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL LMC+  [compressor]  activation window at scan (PACEEdenExperience [pid 11363]); load killed at once, not retried  2026-10-02T13:28:43.019+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native X-Saturator v6  [saturation]  activation window at scan (PACEEdenExperience [pid 11383]); load killed at once, not retried  2026-10-02T13:28:45.993+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Guitarstrip  [channel_strip]  activation window at scan (PACEEdenExperience [pid 11386]); load killed at once, not retried  2026-10-02T13:28:48.742+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Fusion Transformer  [saturation]  activation window at scan (PACEEdenExperience [pid 11390]); load killed at once, not retried  2026-10-02T13:28:51.273+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL 4K E  [unknown]  activation window at scan (PACEEdenExperience [pid 11397]); load killed at once, not retried  2026-10-02T13:28:53.735+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL X-Gate  [gate]  activation window at scan (PACEEdenExperience [pid 11400]); load killed at once, not retried  2026-10-02T13:28:58.776+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL X-Limit  [limiter]  activation window at scan (PACEEdenExperience [pid 11410]); load killed at once, not retried  2026-10-02T13:29:02.688+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Repeater  [delay]  activation window at scan (PACEEdenExperience [pid 11428]); load killed at once, not retried  2026-10-02T13:29:08.511+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Saturation Knob  [saturation]  activation window at scan (PACEEdenExperience [pid 11439]); load killed at once, not retried  2026-10-02T13:29:13.759+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL 4K B  [unknown]  activation window at scan (PACEEdenExperience [pid 11441]); load killed at once, not retried  2026-10-02T13:29:17.174+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  TH-U Slate  [amp_sim]  activation window at scan (PACEEdenExperience [pid 11446]); load killed at once, not retried  2026-10-02T13:29:19.962+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native X-EQ 2  [eq]  activation window at scan (PACEEdenExperience [pid 11456]); load killed at once, not retried  2026-10-02T13:29:23.141+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Empirical Labs Mike-E Comp  [compressor]  activation window at scan (PACEEdenExperience [pid 11465]); load killed at once, not retried  2026-10-02T13:29:25.674+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Melodya  [unknown]  window at scan (ejmap [pid 11466]); load killed at once, not retried  2026-10-02T13:29:26.932+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Lustrous Plates  [reverb]  activation window at scan (PACEEdenExperience [pid 11470]); load killed at once, not retried  2026-10-02T13:29:29.793+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Tube-Tech CL 1B  [compressor]  activation window at scan (PACEEdenExperience [pid 11479]); load killed at once, not retried  2026-10-02T13:29:32.502+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native X-Phase v6  [unknown]  activation window at scan (PACEEdenExperience [pid 11482]); load killed at once, not retried  2026-10-02T13:29:35.569+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL G3 MultiBusComp  [compressor]  activation window at scan (PACEEdenExperience [pid 11485]); load killed at once, not retried  2026-10-02T13:29:41.624+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL X-Delay  [delay]  activation window at scan (PACEEdenExperience [pid 11520]); load killed at once, not retried  2026-10-02T13:29:44.173+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Fusion Vintage Drive  [saturation]  activation window at scan (PACEEdenExperience [pid 11525]); load killed at once, not retried  2026-10-02T13:29:48.222+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native X-Echo  [delay]  activation window at scan (PACEEdenExperience [pid 11536]); load killed at once, not retried  2026-10-02T13:29:52.640+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native FlexVerb  [reverb]  activation window at scan (PACEEdenExperience [pid 11538]); load killed at once, not retried  2026-10-02T13:29:56.242+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Gate  [gate]  activation window at scan (PACEEdenExperience [pid 11550]); load killed at once, not retried  2026-10-02T13:30:02.349+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Distortion  [saturation]  activation window at scan (PACEEdenExperience [pid 11559]); load killed at once, not retried  2026-10-02T13:30:04.866+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Delay  [delay]  activation window at scan (PACEEdenExperience [pid 11562]); load killed at once, not retried  2026-10-02T13:30:07.378+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Resonator  [unknown]  activation window at scan (PACEEdenExperience [pid 11566]); load killed at once, not retried  2026-10-02T13:30:09.882+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Formant Filter  [unknown]  activation window at scan (PACEEdenExperience [pid 11575]); load killed at once, not retried  2026-10-02T13:30:12.682+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Dynamics  [compressor]  activation window at scan (PACEEdenExperience [pid 11577]); load killed at once, not retried  2026-10-02T13:30:15.232+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Phaser  [unknown]  activation window at scan (PACEEdenExperience [pid 11580]); load killed at once, not retried  2026-10-02T13:30:17.706+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Compressor  [compressor]  activation window at scan (PACEEdenExperience [pid 11585]); load killed at once, not retried  2026-10-02T13:30:20.468+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Pitch Shifter  [unknown]  activation window at scan (PACEEdenExperience [pid 11594]); load killed at once, not retried  2026-10-02T13:30:22.965+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Gain  [unknown]  activation window at scan (PACEEdenExperience [pid 11605]); load killed at once, not retried  2026-10-02T13:30:25.524+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Comb Filter  [unknown]  activation window at scan (PACEEdenExperience [pid 11607]); load killed at once, not retried  2026-10-02T13:30:28.000+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Faturator  [saturation]  activation window at scan (PACEEdenExperience [pid 11610]); load killed at once, not retried  2026-10-02T13:30:30.483+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Phase Distortion  [saturation]  activation window at scan (PACEEdenExperience [pid 11619]); load killed at once, not retried  2026-10-02T13:30:32.970+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Trance Gate  [unknown]  activation window at scan (PACEEdenExperience [pid 11621]); load killed at once, not retried  2026-10-02T13:30:35.710+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Transient Shaper  [transient_shaper]  activation window at scan (PACEEdenExperience [pid 11623]); load killed at once, not retried  2026-10-02T13:30:38.497+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Tape Stop  [unknown]  activation window at scan (PACEEdenExperience [pid 11628]); load killed at once, not retried  2026-10-02T13:30:40.985+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Multipass  [unknown]  activation window at scan (PACEEdenExperience [pid 11658]); load killed at once, not retried  2026-10-02T13:30:43.484+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Disperser  [unknown]  activation window at scan (PACEEdenExperience [pid 11667]); load killed at once, not retried  2026-10-02T13:30:46.217+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs 3-Band EQ  [eq]  activation window at scan (PACEEdenExperience [pid 11670]); load killed at once, not retried  2026-10-02T13:30:49.010+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Haas  [unknown]  activation window at scan (PACEEdenExperience [pid 11684]); load killed at once, not retried  2026-10-02T13:30:51.790+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Ladder Filter  [unknown]  activation window at scan (PACEEdenExperience [pid 11693]); load killed at once, not retried  2026-10-02T13:30:54.821+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Chorus  [unknown]  activation window at scan (PACEEdenExperience [pid 11695]); load killed at once, not retried  2026-10-02T13:30:57.308+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Stereo  [unknown]  activation window at scan (PACEEdenExperience [pid 11698]); load killed at once, not retried  2026-10-02T13:30:59.793+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Bitcrush  [saturation]  activation window at scan (PACEEdenExperience [pid 11702]); load killed at once, not retried  2026-10-02T13:31:02.533+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Reverser  [unknown]  activation window at scan (PACEEdenExperience [pid 11716]); load killed at once, not retried  2026-10-02T13:31:05.066+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Frequency Shifter  [unknown]  activation window at scan (PACEEdenExperience [pid 11718]); load killed at once, not retried  2026-10-02T13:31:07.827+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Ring Mod  [unknown]  activation window at scan (PACEEdenExperience [pid 11722]); load killed at once, not retried  2026-10-02T13:31:10.611+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Limiter  [limiter]  activation window at scan (PACEEdenExperience [pid 11731]); load killed at once, not retried  2026-10-02T13:31:13.618+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Snap Heap  [unknown]  activation window at scan (PACEEdenExperience [pid 11733]); load killed at once, not retried  2026-10-02T13:31:16.424+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Reverb  [reverb]  activation window at scan (PACEEdenExperience [pid 11735]); load killed at once, not retried  2026-10-02T13:31:18.941+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  kHs Filter  [unknown]  activation window at scan (PACEEdenExperience [pid 11740]); load killed at once, not retried  2026-10-02T13:31:21.954+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native X-Comp v6  [compressor]  activation window at scan (PACEEdenExperience [pid 11771]); load killed at once, not retried  2026-10-02T13:31:24.766+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native X-ValveComp v6  [compressor]  activation window at scan (PACEEdenExperience [pid 11780]); load killed at once, not retried  2026-10-02T13:31:27.926+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SontecEQ  [unknown]  activation window at scan (PACEEdenExperience [pid 11791]); load killed at once, not retried  2026-10-02T13:31:35.053+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Weiss Deess  [de-esser]  activation window at scan (PACEEdenExperience [pid 11799]); load killed at once, not retried  2026-10-02T13:31:37.802+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native Channel Strip 2  [channel_strip]  activation window at scan (PACEEdenExperience [pid 11806]); load killed at once, not retried  2026-10-02T13:31:40.624+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Blitzer  [compressor]  activation window at scan (PACEEdenExperience [pid 11827]); load killed at once, not retried  2026-10-02T13:31:43.359+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Meter  [unknown]  activation window at scan (PACEEdenExperience [pid 11843]); load killed at once, not retried  2026-10-02T13:31:46.103+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native Bus Compressor 2  [compressor]  activation window at scan (PACEEdenExperience [pid 11851]); load killed at once, not retried  2026-10-02T13:31:52.834+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Fusion Violet EQ  [eq]  activation window at scan (PACEEdenExperience [pid 11858]); load killed at once, not retried  2026-10-02T13:31:55.364+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Harrison_De-Esser  [unknown]  activation window at scan (PACEEdenExperience [pid 11862]); load killed at once, not retried  2026-10-02T13:31:58.085+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Harrison_DrumFlow  [unknown]  activation window at scan (PACEEdenExperience [pid 11865]); load killed at once, not retried  2026-10-02T13:32:00.873+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Harrison_32Bus  [unknown]  activation window at scan (PACEEdenExperience [pid 11874]); load killed at once, not retried  2026-10-02T13:32:03.417+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Harrison_BassFlow  [unknown]  activation window at scan (PACEEdenExperience [pid 11883]); load killed at once, not retried  2026-10-02T13:32:06.173+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  U73b Compressor  [compressor]  activation window at scan (PACEEdenExperience [pid 11888]); load killed at once, not retried  2026-10-02T13:32:11.884+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Native Vocalstrip 2  [channel_strip]  activation window at scan (PACEEdenExperience [pid 11897]); load killed at once, not retried  2026-10-02T13:32:15.805+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  SSL Fusion Stereo Image  [unknown]  activation window at scan (PACEEdenExperience [pid 11899]); load killed at once, not retried  2026-10-02T13:32:19.722+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+iLok: ABSENT
+worklist: 0 fixture(s) in the store (0 already record a sweep, candidates or a refusal; 0 refusal(s), 0 of them permanent), 158 discovered from the ledger at /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_empty
+0 local map(s), 1731 map-state row(s) (fetched 2026-10-02T13:32:48.987+01:00), 1730 categorised identities, 663 with a disposition other than sweep (honoured)
+installed AUs not discovered: 69 category amp_sim, 101 category channel_strip, 19 category de-esser, 46 category delay, 165 category eq, 7 category gate, 35 category limiter, 88 category reverb, 107 category saturation, 16 category transient_shaper, 132 disposition no_dial_set in categories.json, 33 disposition not_a_processor in categories.json, 37 disposition review in categories.json, 363 not mapped at this build
+left alone by categories.json disposition: UAD bx_refinement: review (arms disagree: saturation vs none); X-FDBK (s): no_dial_set (); NS1 (s): no_dial_set (); Scheps Parallel Particles (s): review (arms disagree: saturation vs none); Auto-Tune Access: no_dial_set (); AVOX PUNCH: review (arms disagree: transient_shaper vs none); B360 (1->4): review (both refused, differently: not_a_processor vs none); Sub Align (s): review (both refused, differently: none vs not_a_processor); DeBreath (m): no_dial_set (); Bass Rider (s): no_dial_set (); Bass Rider Live (s): no_dial_set (); CLA Effects (s): no_dial_set (); EMO-F2 (s): no_dial_set (); CLA MixDown (s): review (arms disagree: channel_strip vs none); Center (s): no_dial_set (); DTS Neural DownMix 7.1 to 5.1 (8->8): review (both refused, differently: not_a_processor vs none); DTS Neural DownMix 5.1 to Stereo (6->6): review (both refused, differently: not_a_processor vs none); DTS Neural DownMix 7.1 to Stereo (8->8): review (both refused, differently: not_a_processor vs none); DTS Neural Mono2Stereo (m->s): no_dial_set (); Doppler (s): no_dial_set (); Dorrough360 (5->5): not_a_processor (); Dorrough (s): not_a_processor (); Torque-Live (s): no_dial_set (); Torque (s): no_dial_set (); DTS Neural UpMix (2->4): no_dial_set (); EKramer FX (s): review (arms disagree: none vs delay); Enigma (s): no_dial_set (); MetaFlanger (s): no_dial_set (); GW MixCentric (s): no_dial_set (); GW PianoCentric (s): no_dial_set (); IMPusher (s): review (arms disagree: limiter vs none); IDR360 (5->5): no_dial_set (); Lindell 80 Bus: review (arms disagree: compressor vs channel_strip); LFE360 (m): no_dial_set (); Lindell 69 Buss: review (arms disagree: compressor vs channel_strip); LoAir (s): no_dial_set (); Vocal Rider Live (s): no_dial_set (); MannyM Tone Shaper (s): review (arms disagree: eq vs compressor); MondoMod (s): no_dial_set (); MaxxBass (s): no_dial_set (); MV360 (5->5): review (arms disagree: limiter vs compressor); S1 Shuffler (s): no_dial_set (); S1 Imager (s): no_dial_set (); Nx Ambisonics (4->2): no_dial_set (); NX Ambisonics (4->4): no_dial_set (); NX (s): no_dial_set (); InPhase LT (s): not_a_processor (); InPhase LT Live (s): not_a_processor (); InPhase Live (s): not_a_processor (); InPhase (s): not_a_processor (); M360 Manager (5->5): not_a_processor (); S360 Imager (1->5): no_dial_set (); M360 Mixdown (5->5): not_a_processor (); S360 Panner (1->5): review (both refused, differently: none vs not_a_processor); AR TG Meter Bridge (s): not_a_processor (); PlaylistRider (s): review (arms disagree: compressor vs none); PS22 Spread(10) (s): no_dial_set (); PS22 Spread (s): no_dial_set (); PS22 Split (s): no_dial_set (); PS22 XSplit (s): no_dial_set (); Vocal Rider (s): no_dial_set (); RBass (s): review (arms disagree: saturation vs none); OneKnob Filter (s): no_dial_set (); C360 (5->5): review (arms disagree: not_a_processor vs compressor); Submarine (s): no_dial_set (); UltraPitch 3 Voices (m): no_dial_set (); UltraPitch 6 Voices (m): no_dial_set (); UltraPitch Shift (m): no_dial_set (); Sibilance-Live (m): not_a_processor (); Sibilance-Live (s): not_a_processor (); CLA Epic (s): review (arms disagree: reverb vs delay); SPL Vitalizer MK2-T: review (arms disagree: eq vs none); Q-Capture (m): not_a_processor (); TRACT (s): review (arms disagree: eq vs not_a_processor); TRACT LinPhase (s): review (arms disagree: eq vs not_a_processor); TG12345 (s): review (arms disagree: eq vs channel_strip); The Kings Microphones (s): no_dial_set (); SoundShifter Pitch (s): no_dial_set (); WNS (s): no_dial_set (); UM225 (2->5): no_dial_set (); UM226 (2->6): no_dial_set (); Auto-Tune EFX+: no_dial_set (); W43 (s): no_dial_set (); PAZ- Frequency (s): not_a_processor (); PAZ- Analyzer (s): not_a_processor (); PAZ- Position (s): not_a_processor (); Doubler2 (s): no_dial_set (); Doubler4 (s): no_dial_set (); WLM Meter (s): not_a_processor (); Z-Noise (s): no_dial_set (); GW VoiceCentric (s): no_dial_set (); PAZ- Meters (s): not_a_processor (); WLM Plus (s): review (arms disagree: not_a_processor vs limiter); X-Click (s): no_dial_set (); X-Crackle (s): no_dial_set (); X-Hum (s): no_dial_set (); X-Noise (s): no_dial_set (); bx_refinement: review (arms disagree: saturation vs none); UAD Auto-Tune Realtime Access: no_dial_set (); Disperser: no_dial_set (); kHs Comb Filter: no_dial_set (); kHs Chorus: no_dial_set (); kHs Filter: no_dial_set (); kHs Frequency Shifter: no_dial_set (); kHs Haas: no_dial_set (); kHs Ladder Filter: no_dial_set (); kHs Phaser: no_dial_set (); kHs Pitch Shifter: no_dial_set (); kHs Resonator: no_dial_set (); kHs Ring Mod: no_dial_set (); kHs Reverser: no_dial_set (); kHs Stereo: no_dial_set (); kHs Trance Gate: review (arms disagree: none vs gate); kHs Tape Stop: no_dial_set (); kHs Formant Filter: no_dial_set (); MPhaserMB: no_dial_set (); UAD Antares Auto-Tune Realtime: no_dial_set (); Auto-Tune Pro: no_dial_set (); Auto-Tune Artist: no_dial_set (); Kaleidoscopes (s): no_dial_set (); Brauer Motion (s): no_dial_set (); GTR Tool Rack (s): review (arms disagree: none vs amp_sim); Waves Tune Real-Time (s): no_dial_set (); MStereoProcessor: no_dial_set (); MAutoAlign: not_a_processor (); MFlanger: no_dial_set (); MFreqShifterMB: no_dial_set (); MAutopan: no_dial_set (); MPhaser: no_dial_set (); MRingModulator: no_dial_set (); MTremolo: no_dial_set (); MVibrato: no_dial_set (); MFreqShifter: no_dial_set (); MStereoExpander: no_dial_set (); MAnalyzer: not_a_processor (); MFilter: no_dial_set (); MFreeformPhase: no_dial_set (); MAutoVolume: review (arms disagree: compressor vs none); MBandPass: no_dial_set (); MBassador: no_dial_set (); MChannelMatrix: not_a_processor (); MCharacter: review (arms disagree: saturation vs none); MCompare: not_a_processor (); MComb: no_dial_set (); MDrumEnhancer: review (arms disagree: none vs transient_shaper); MultiMod Rack (s): no_dial_set (); MTransformer: no_dial_set (); MLoudnessAnalyzer: not_a_processor (); MMultiAnalyzer: not_a_processor (); MFlangerMB: no_dial_set (); MCombMB: no_dial_set (); MGranularMB: no_dial_set (); MWobblerMB: no_dial_set (); MChorusMB: no_dial_set (); MMorph: no_dial_set (); MNoiseGenerator: not_a_processor (); MNotepad: not_a_processor (); MOscillator: not_a_processor (); MOscilloscope: not_a_processor (); MPhatik: review (arms disagree: transient_shaper vs compressor); MRatio: no_dial_set (); MRecorder: not_a_processor (); MRhythmizerMB: no_dial_set (); MRhythmizer: no_dial_set (); MRotary: no_dial_set (); MStereoScope: not_a_processor (); MSpectralPan: no_dial_set (); MStereoGenerator: no_dial_set (); MStereoSpread: no_dial_set (); MTuner: not_a_processor (); MUnison: no_dial_set (); MVintageRotary: no_dial_set (); MVocoder: no_dial_set (); MWobbler: no_dial_set (); MXXX1: no_dial_set (); MXXX6out: no_dial_set (); MXXX: no_dial_set (); MAGC: review (arms disagree: compressor vs none); MAutoStereoFix: no_dial_set (); MAutoPitch: no_dial_set (); MVibratoMB: no_dial_set (); MHarmonizerMB: no_dial_set (); MRingModulatorMB: no_dial_set (); MTremoloMB: no_dial_set (); MUtility: not_a_processor (); Abbey Road Studio 3 (s): no_dial_set (); Nx Ocean Way Nashville (s): no_dial_set (); OVox (s): no_dial_set (); MetaFilter (s): no_dial_set (); EMO-Generator (m): not_a_processor (); EMO-Generator (s): not_a_processor (); Morphoder (s): no_dial_set (); Abbey Road Vinyl (s): review (arms disagree: none vs saturation); Abbey Road Vinyl Light (s): review (arms disagree: none vs saturation); Vocal Bender (s): no_dial_set (); UAD Auto-Tune Realtime Advanced: no_dial_set (); bx_masterdesk: review (arms disagree: channel_strip vs none); bx_masterdesk Classic: review (arms disagree: channel_strip vs none); MAutopanMB: no_dial_set (); Snap Heap: no_dial_set (); Multipass: no_dial_set (); UAD Auto-Tune Realtime X: no_dial_set ()
+UNMAPPED compressors and tuners (installed, categorised, no map at this build - the mapping sweep maps them; until then a row in state unmapped): 0
+sleep assertions: system held, idle held (a lid-close on battery sleeps regardless; timeouts count awake time only)
+  -> held: hardware: mapped (server map state 3); needs McDSP APB hardware present
+
+=== [1] bx_opto
+  neutral: [6] Mix -> norm 1 ('100 %') for mix_wet
+  sweeping bx_opto (unseen version 1.10.1: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 11 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - bx_opto -> AudioUnit_417f7e74_1.10.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Peak Reduction unit '' (class single_threshold) | positions 27 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.02  -52.00 out-in -0.01  -50.00 out-in -0.01  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.01  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.01  -32.00 out-in -0.02  -30.00 out-in -0.01  -28.00 out-in -0.01  -26.00 out-in -0.01  -24.00 out-in -0.01  -22.00 out-in -0.01  -20.00 out-in -0.01  -18.00 out-in -0.01  -16.00 out-in -0.02  -14.00 out-in -0.01  -12.00 out-in -0.01  -10.00 out-in -0.01  -8.00 out-in -0.01  -6.00 out-in -0.01  -4.00 out-in -0.01  -2.00 out-in -0.01  0.00 out-in -0.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 0.00 0.00 0.00 0.00
+reference ladder: 4 position(s) below the first rung (23@-60 24@-60 25@-60 26@-60)
+writes landed by: instack 27
+processes: 59 run, 0 retried, 0 position(s) failed
+write verify: 27 landed, 0 write_unlanded (skipped), in-stack read already matched on 27 of 27, pump slices total 27, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0              -0.00    -0.00    -0.00          --          
+  1  0.0667    6              -0.00    -0.00    -0.00          --          
+  2  0.1333    13             -0.00    -0.00    -0.00          --          
+  3  0.2000    20             -0.00    -0.00    -0.00          --          
+  4  0.2667    26             -0.00    -0.00     0.43          --          
+  5  0.3000    30             -0.00    -0.00     1.48          --          
+  6  0.3333    33             -0.00     0.04     2.70          --          
+  7  0.3667    36             -0.00     0.66     4.09          --          
+  8  0.4000    40             -0.00     1.74     5.58          --          
+  9  0.4333    43             -0.00     3.00     7.13          --          
+ 10  0.4667    46             -0.00     4.43     8.71          --          
+ 11  0.5000    50              0.00     5.94    10.31          --          
+ 12  0.5333    53              0.20     7.49    11.92          --          
+ 13  0.5667    56              1.14     9.08    13.52          --          
+ 14  0.6000    60              2.30    10.68    15.13          --          
+ 15  0.6333    63              3.65    12.29    16.72          --          
+ 16  0.6667    66              5.12    13.89    18.30          --          
+ 17  0.7000    70              6.65    15.50    19.87          --          
+ 18  0.7333    73              8.22    17.09    21.41          --          
+ 19  0.7667    76              9.82    18.66    22.93          --          
+ 20  0.8000    80             11.42    20.23    24.42          --          
+ 21  0.8333    83             13.03    21.77    25.90          --          
+ 22  0.8667    86             14.63    23.27    27.32          --          
+ 23  0.9000    90             16.24    24.77    28.73          --          
+ 24  0.9333    93             17.82    26.23    30.09          --          
+ 25  0.9667    96             19.39    27.65    31.40          --          
+ 26  1.0000    100            20.94    29.04    32.68          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:26 -50.00:25 -48.00:24 -46.00:23 -44.00:22 -42.00:21 -40.00:20 -38.00:19 -36.00:18 -34.00:17 -32.00:17 -30.00:16 -28.00:15 -26.00:14 -24.00:13 -22.00:12 -20.00:11 -18.00:10 -16.00:9 -14.00:8 -12.00:7 -10.00:6 -8.00:5 -6.00:5 -4.00:4 -2.00:4 0.00:3
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7e74_1.10.1.json
+  wall 59.3951 s, exit 0
+DETECTOR: sine     at norm 0.4667: 2 dB reached at -15.9 dBFS peak-equivalent (unreadable)
+DETECTOR: two-tone at norm 0.4667: 2 dB reached at -17.800000000000001 dBFS peak-equivalent (unreadable)
+DETECTOR: bx_opto - sine 2 dB at -15.90, two-tone at -17.80: shift 1.90 dB -> f = 0.63 (unknown) -> written into AudioUnit_417f7e74_1.10.1.json
+TONE: bx_opto - L -18.00 dBFS RMS (-14.99 peak), g 2.0; section 6 picks norm 0.4529 between points 10 and 9 (in_at_gr at g: -18.91 / -16.71); no ratio control in the profile (fixed ratio): nothing written
+TONE: bx_opto - GR 1.99 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> bx_opto_1.10.1.tonecheck.json
+  -> exported: profile exported with its tone check
+
+=== [2] elysia mpressor
+  sweeping elysia mpressor (unseen version 1.15.1: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 4 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - elysia mpressor -> AudioUnit_49696d78_1.15.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] Threshold unit 'dB' (class single_threshold) | positions 20 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [1] Link = 'On'
+ratio: [9] ran at '2.8' -> 2.8 | auto make-up disabled: no
+default-threshold reference ('16.0 dB', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.02  -56.00 out-in -0.02  -54.00 out-in -0.02  -52.00 out-in -0.02  -50.00 out-in -0.02  -48.00 out-in -0.02  -46.00 out-in -0.02  -44.00 out-in -0.02  -42.00 out-in -0.02  -40.00 out-in -0.02  -38.00 out-in -0.02  -36.00 out-in -0.02  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.03  -22.00 out-in -0.03  -20.00 out-in -0.03  -18.00 out-in -0.03  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.06  -10.00 out-in -0.08  -8.00 out-in -0.11  -6.00 out-in -0.16  -4.00 out-in -0.39  -2.00 out-in -1.54  0.00 out-in -3.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 0.00 0.00 0.00 -0.00 0.00 0.00 0.00 0.00 0.00 0.00 -0.00 0.00 -0.00 0.00 0.00 -0.00 0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 20
+processes: 44 run, 0 retried, 0 position(s) failed
+write verify: 20 landed, 0 write_unlanded (skipped), in-stack read already matched on 20 of 20, pump slices total 20, longest confirm 2.3 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    16.0 dB         0.00     0.04     0.13        -4.5    -20.50
+  1  0.0667    14.5 dB         0.00     0.04     0.22        -5.8    -20.30
+  2  0.1333    11.7 dB         0.00     0.04     1.55        -8.5    -20.20
+  3  0.1667    9.8 dB          0.00     0.04     2.72       -10.3    -20.10
+  4  0.2000    8.2 dB          0.00     0.17     3.76       -11.9    -20.10
+  5  0.2667    5.3 dB          0.00     1.70     5.64       -14.8    -20.10
+  6  0.3000    3.5 dB          0.00     2.83     6.81       -16.5    -20.00
+  7  0.3333    1.7 dB          0.00     4.00     7.97       -18.3    -20.00
+  8  0.3667    -0.2 dB         0.00     5.18     9.14       -20.1    -19.90
+  9  0.4000    -2.0 dB         0.00     6.40    10.32       -21.9    -19.90
+ 10  0.4333    -3.8 dB         0.14     7.55    11.49       -23.7    -19.90
+ 11  0.4667    -5.4 dB         0.82     8.55    12.54       -25.2    -19.80
+ 12  0.5333    -7.6 dB         2.22     9.96    13.93       -27.5    -19.90
+ 13  0.6000    -9.8 dB         3.63    11.37    15.33       -29.6    -19.80
+ 14  0.6667    -11.7 dB        4.82    12.61    16.53       -31.5    -19.80
+ 15  0.7333    -13.1 dB        5.77    13.53    17.47       -33.0    -19.90
+ 16  0.8000    -14.6 dB        6.74    14.47    18.46       -34.4    -19.80
+ 17  0.8667    -16.1 dB        7.67    15.40    19.38       -35.9    -19.80
+ 18  0.9333    -17.3 dB        8.43    16.17    20.14       -37.1    -19.80
+ 19  1.0000    -18.0 dB        8.90    16.64    20.61       -37.8    -19.80
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:18 -34.00:17 -32.00:15 -30.00:14 -28.00:13 -26.00:12 -24.00:11 -22.00:10 -20.00:9 -18.00:8 -16.00:7 -14.00:6 -12.00:5 -10.00:4 -8.00:3 -6.00:2 -4.00:1 -2.00:0 0.00:0
+2 engage drift:    0.98  -10.00:19.11  -12.00:19.22  -14.00:19.08  -16.00:19.14  -18.00:19.06  -2.00:19.63  -20.00:19.07  -22.00:19.09  -24.00:19.11  -26.00:19.09  -28.00:19.05  -30.00:19.04  -32.00:19.13  -34.00:19.00  -36.00:19.06  -38.00:null  -4.00:19.32  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:19.41  -60.00:null  -8.00:19.15  0.00:19.98   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.30 dB over 20 positions (min -20.50, max -19.80)
+3 displayOffsetDb: -19.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_49696d78_1.15.1.json
+  wall 105.361 s, exit 0
+DETECTOR: sine     at norm 0.3333: 2 dB reached at -15.1 dBFS peak-equivalent (unreadable)
+DETECTOR: two-tone at norm 0.3333: 2 dB reached at -16.300000000000001 dBFS peak-equivalent (unreadable)
+DETECTOR: elysia mpressor - sine 2 dB at -15.10, two-tone at -16.30: shift 1.20 dB -> f = 0.40 (unknown) -> written into AudioUnit_49696d78_1.15.1.json
+TONE: elysia mpressor - L -18.00 dBFS RMS (-14.99 peak), g 2.0; section 6 picks norm 0.3313 between points 7 and 6 (in_at_gr at g: -18.11 / -16.31); ratio 2.8 written from profile.ratio.curve[0].norm 0.3636
+TONE: elysia mpressor - GR 1.97 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> elysia_mpressor_1.15.1.tonecheck.json
+  -> exported: profile exported with its tone check
+
+=== [3] EMO-D5 (s)
+  neutral: [28] Comp Mix -> norm 1 ('100.0') for mix_wet
+  neutral: [41] Makeup -> norm 0.5 ('0.0') for makeup_zero
+  sweeping EMO-D5 (s) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Gate On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [1] Gate Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  sweeping EMO-D5 (s) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Comp On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [16] Comp Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 14 position(s) added where adjacent 2 dB points differ by more than 3 dB
+  sweeping EMO-D5 (s) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveller On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Leveller On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [30] Leveller Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 12 position(s) added where adjacent 2 dB points differ by more than 3 dB
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    DeEsser On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp HPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Leveller On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Limiter On -> 1.0 (from 'Off'): flat - no two positions differ by more than 1 dB at any test level
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp LPF On -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    GateExp -> 1.0 (from 'Gate'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate Int Ext -> 1.0 (from 'Int'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Gate Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp Auto Manual -> 1.0 (from 'Manual'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [33] DeEsser Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Comp Filter Link -> 1.0 (from 'Off'): flat - passthrough: output equals input within 0.01 dB at every reading
+  sweeping EMO-D5 (s) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 14 engage candidate(s)
+  sweeping EMO-D5 (s) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 3 position processes
+    Limiter On -> 1.0 (from 'Off'): GAIN REDUCTION
+  engage verified: Limiter On -> 1; full sweep with the write
+  sweeping EMO-D5 (s) candidate [39] Limiter Thresh (unseen version 12.0.0: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 14 position(s) added where adjacent 2 dB points differ by more than 3 dB
+CANDIDATE [1] Gate Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [1] Gate Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('-Inf', spec 4.7 check only):  -60.00 out-in -0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in -0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in -0.00  -46.00 out-in 0.00  -44.00 out-in -0.00  -42.00 out-in -0.00  -40.00 out-in 0.00  -38.00 out-in -0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in -0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in -0.00  -24.00 out-in 0.00  -22.00 out-in -0.00  -20.00 out-in 0.00  -18.00 out-in 0.00  -16.00 out-in -0.00  -14.00 out-in 0.00  -12.00 out-in 0.00  -10.00 out-in -0.00  -8.00 out-in 0.00  -6.00 out-in -0.00  -4.00 out-in -0.00  -2.00 out-in 0.00  0.00 out-in -0.00  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 1 pump 15
+processes: 508 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 87, longest confirm 67.8 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -Inf           -0.00    -0.00    -0.00          --          
+  1  0.0667    -134.4         -0.00    -0.00    -0.00          --          
+  2  0.1333    -124.8         -0.00    -0.00    -0.00          --          
+  3  0.2000    -115.2         -0.00    -0.00    -0.00          --          
+  4  0.2667    -105.6         -0.00    -0.00    -0.00          --          
+  5  0.3333    -96.0          -0.00    -0.00    -0.00          --          
+  6  0.4000    -86.4          -0.00    -0.00    -0.00          --          
+  7  0.4667    -76.8          -0.00    -0.00    -0.00          --          
+  8  0.5333    -67.2          -0.00    -0.00    -0.00          --          
+  9  0.6000    -57.6          -0.00    -0.00    -0.00          --          
+ 10  0.6667    -48.0        -144.00  -144.00  -144.00          --          
+ 11  0.7333    -38.4        -144.00  -144.00  -144.00          --          
+ 12  0.8000    -28.8        -144.00  -144.00  -144.00          --          
+ 13  0.8667    -19.2          -0.00  -144.00  -144.00          --          
+ 14  0.9333    -9.6           -0.00    -0.00  -144.00          --          
+ 15  1.0000    0.0            -0.00    -0.00    -0.00          --          
+
+1 MAP:             unreadable (the ends agree within 1 dB at every level but positions between them differ by 144.00 dB: the response is not across the sweep) | sense -- | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:none -28.00:none -26.00:none -24.00:none -22.00:none -20.00:none -18.00:none -16.00:none -14.00:none -12.00:none -10.00:none -8.00:none -6.00:none -4.00:none -2.00:none 0.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [16] Comp Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [16] Comp Thresh unit 'dB' (class bands_or_stages) | positions 30 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -60.00 out-in -0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in -0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in -0.00  -46.00 out-in 0.00  -44.00 out-in -0.00  -42.00 out-in -0.00  -40.00 out-in 0.00  -38.00 out-in -0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in -0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in -0.00  -24.00 out-in 0.00  -22.00 out-in -0.00  -20.00 out-in 0.00  -18.00 out-in 0.00  -16.00 out-in -0.00  -14.00 out-in 0.00  -12.00 out-in -0.00  -10.00 out-in -0.00  -8.00 out-in -0.01  -6.00 out-in -0.03  -4.00 out-in -0.09  -2.00 out-in -0.27  0.00 out-in -0.70  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 0.00 -0.06 -0.02 -0.01 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 3 position(s) below the first rung (0@-60 1@-60 2@-60)
+writes landed by: instack 1 pump 29
+processes: 508 run, 0 retried, 0 position(s) failed
+write verify: 30 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 30, pump slices total 182, longest confirm 54.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          15.80    23.80    27.80       -47.7      0.30
+  1  0.0333    -46.4          14.73    22.73    26.73       -46.1      0.30
+  2  0.0667    -44.8          13.66    21.66    25.66       -44.5      0.30
+  3  0.1000    -43.2          12.54    20.54    24.54       -42.8      0.40
+  4  0.1333    -41.6          11.51    19.50    23.51       -41.3      0.30
+  5  0.1667    -40.0          10.45    18.45    22.45       -39.7      0.30
+  6  0.2000    -38.4           9.39    17.39    21.39       -38.1      0.30
+  7  0.2333    -36.8           8.33    16.33    20.33       -36.5      0.30
+  8  0.2667    -35.2           7.26    15.26    19.26       -34.9      0.30
+  9  0.3000    -33.6           6.20    14.20    18.20       -33.3      0.30
+ 10  0.3333    -32.0           5.14    13.13    17.13       -31.7      0.30
+ 11  0.3667    -30.4           4.10    12.06    16.06       -30.1      0.30
+ 12  0.4000    -28.8           3.08    11.00    15.00       -28.5      0.30
+ 13  0.4333    -27.2           2.13     9.93    13.93       -26.9      0.30
+ 14  0.4667    -25.6           1.31     8.86    12.86       -25.3      0.30
+ 15  0.5000    -24.0           0.70     7.80    11.80       -23.7      0.30
+ 16  0.5333    -22.4           0.33     6.73    10.73       -22.1      0.30
+ 17  0.5667    -20.8           0.14     5.67     9.66       -20.5      0.30
+ 18  0.6000    -19.2           0.06     4.62     8.60       -18.9      0.30
+ 19  0.6333    -17.6           0.02     3.58     7.53       -17.3      0.30
+ 20  0.6667    -16.0           0.01     2.59     6.47       -15.7      0.30
+ 21  0.7000    -14.4           0.00     1.69     5.41       -14.1      0.30
+ 22  0.7333    -12.8          -0.00     0.97     4.36       -12.5      0.30
+ 23  0.7667    -11.2          -0.00     0.49     3.33       -11.0      0.20
+ 24  0.8000    -9.6           -0.00     0.22     2.36        -9.5      0.10
+ 25  0.8333    -8.0           -0.00     0.09     1.50        -7.9      0.10
+ 26  0.8667    -6.4           -0.00     0.04     0.83        -6.4      0.00
+ 27  0.9000    -4.8           -0.00     0.01     0.40        -4.9     -0.10
+ 28  0.9333    -3.2           -0.00     0.00     0.18        -3.4     -0.20
+ 29  1.0000    0.0            -0.00    -0.00     0.03        -1.1     -1.10
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:0 -46.00:1 -44.00:2 -42.00:4 -40.00:5 -38.00:6 -36.00:7 -34.00:9 -32.00:10 -30.00:11 -28.00:12 -26.00:14 -24.00:15 -22.00:16 -20.00:17 -18.00:19 -16.00:20 -14.00:21 -12.00:22 -10.00:24 -8.00:25 -6.00:26 -4.00:27 -2.00:28 0.00:29
+2 engage drift:    0.79  -10.00:0.65  -12.00:0.25  -14.00:0.39  -16.00:0.53  -18.00:0.65  -2.00:0.11  -20.00:0.25  -22.00:0.39  -24.00:0.53  -26.00:0.65  -28.00:0.25  -30.00:0.39  -32.00:0.53  -34.00:0.66  -36.00:0.26  -38.00:0.39  -4.00:0.25  -40.00:0.52  -42.00:0.61  -44.00:0.26  -46.00:0.40  -48.00:0.90  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:0.39  -60.00:null  -8.00:0.53  0.00:0.45   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.00 dB over 30 positions (min -1.10, max 0.40)
+3 displayOffsetDb: 0.30  (inside spec 7's 2 dB bar)
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [30] Leveller Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [30] Leveller Thresh unit 'dB' (class bands_or_stages) | positions 28 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -60.00 out-in -0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in -0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in -0.00  -46.00 out-in 0.00  -44.00 out-in -0.00  -42.00 out-in -0.00  -40.00 out-in 0.00  -38.00 out-in -0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in -0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in -0.00  -24.00 out-in 0.00  -22.00 out-in -0.00  -20.00 out-in 0.00  -18.00 out-in 0.00  -16.00 out-in -0.00  -14.00 out-in 0.00  -12.00 out-in 0.00  -10.00 out-in -0.00  -8.00 out-in 0.00  -6.00 out-in -0.00  -4.00 out-in -0.00  -2.00 out-in 0.00  0.00 out-in -0.00  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 1 pump 27
+processes: 508 run, 0 retried, 0 position(s) failed
+write verify: 28 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 28, pump slices total 164, longest confirm 65.7 ms, re-rendered 0
+hold doubled at positions: 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0           6.00     6.00     6.00       -31.0     17.00
+  1  0.0667    -44.8           6.00     6.00     6.00       -30.0     14.80
+  2  0.1000    -43.2           6.00     6.00     6.00       -29.0     14.20
+  3  0.1333    -41.6           6.00     6.00     6.00       -28.0     13.60
+  4  0.1667    -40.0           6.00     6.00     6.00       -27.0     13.00
+  5  0.2000    -38.4           6.00     6.00     6.00       -27.0     11.40
+  6  0.2333    -36.8           6.00     6.00     6.00       -26.0     10.80
+  7  0.2667    -35.2           6.00     6.00     6.00       -25.0     10.20
+  8  0.3000    -33.6           6.00     6.00     6.00       -24.0      9.60
+  9  0.3333    -32.0           5.85     6.00     6.00       -23.0      9.00
+ 10  0.3667    -30.4           4.54     6.00     6.00       -23.0      7.40
+ 11  0.4000    -28.8           2.63     6.00     6.00       -22.0      6.80
+ 12  0.4333    -27.2           1.16     6.00     6.00       -21.0      6.20
+ 13  0.4667    -25.6          -0.00     6.00     6.00       -20.0      5.60
+ 14  0.5000    -24.0          -0.00     6.00     6.00       -19.0      5.00
+ 15  0.5333    -22.4          -0.00     6.00     6.00       -18.0      4.40
+ 16  0.5667    -20.8          -0.00     6.00     6.00       -18.0      2.80
+ 17  0.6000    -19.2          -0.00     5.04     6.00       -17.0      2.20
+ 18  0.6333    -17.6          -0.00     3.74     6.00       -15.6      2.00
+ 19  0.6667    -16.0          -0.00     1.85     6.00       -14.8      1.20
+ 20  0.7000    -14.4          -0.00     0.50     6.00       -13.2      1.20
+ 21  0.7333    -12.8          -0.00    -0.00     4.94       -11.6      1.20
+ 22  0.7667    -11.2          -0.00    -0.00     3.34       -11.0      0.20
+ 23  0.8000    -9.6           -0.00    -0.00     1.48        -9.3      0.30
+ 24  0.8333    -8.0           -0.00    -0.00     0.16        -8.2     -0.20
+ 25  0.8667    -6.4           -0.00    -0.00    -0.00        -6.1      0.30
+ 26  0.9333    -3.2           -0.00    -0.00    -0.00        -1.7      1.50
+ 27  1.0000    0.0            -0.00    -0.00    -0.00   {"above": 0.0}          
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:0 -42.00:1 -40.00:2 -38.00:3 -36.00:5 -34.00:6 -32.00:7 -30.00:8 -28.00:10 -26.00:11 -24.00:12 -22.00:13 -20.00:14 -18.00:16 -16.00:17 -14.00:18 -12.00:19 -10.00:21 -8.00:22 -6.00:23 -4.00:24 -2.00:25 0.00:26
+2 engage drift:    1.27  -10.00:-2.44  -12.00:-2.86  -14.00:-2.75  -16.00:-2.48  -18.00:-2.44  -2.00:-2.94  -20.00:-2.86  -22.00:-2.75  -24.00:-2.48  -26.00:-2.44  -28.00:-2.40  -30.00:-2.75  -32.00:-2.48  -34.00:-2.44  -36.00:-2.39  -38.00:-2.75  -4.00:-2.86  -40.00:-2.60  -42.00:-2.48  -44.00:-1.66  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:-2.75  -60.00:null  -8.00:-2.48  0.00:-2.58   (primary; displayLinear unset until the population decides)
+   offset IQR:      9.15 dB over 27 positions (min -0.20, max 17.00)
+3 displayOffsetDb: 5.60  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [33] DeEsser Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [33] DeEsser Thresh unit 'dB' (class bands_or_stages) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '' -> not numeric | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -60.00 out-in -0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in -0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in -0.00  -46.00 out-in 0.00  -44.00 out-in -0.00  -42.00 out-in -0.00  -40.00 out-in 0.00  -38.00 out-in -0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in -0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in -0.00  -24.00 out-in 0.00  -22.00 out-in -0.00  -20.00 out-in 0.00  -18.00 out-in 0.00  -16.00 out-in -0.00  -14.00 out-in 0.00  -12.00 out-in 0.00  -10.00 out-in -0.00  -8.00 out-in 0.00  -6.00 out-in -0.00  -4.00 out-in -0.00  -2.00 out-in 0.00  0.00 out-in -0.00  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 1 pump 15
+processes: 508 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 16, pump slices total 81, longest confirm 64.4 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          -0.00    -0.00    -0.00          --          
+  1  0.0667    -44.8          -0.00    -0.00    -0.00          --          
+  2  0.1333    -41.6          -0.00    -0.00    -0.00          --          
+  3  0.2000    -38.4          -0.00    -0.00    -0.00          --          
+  4  0.2667    -35.2          -0.00    -0.00    -0.00          --          
+  5  0.3333    -32.0          -0.00    -0.00    -0.00          --          
+  6  0.4000    -28.8          -0.00    -0.00    -0.00          --          
+  7  0.4667    -25.6          -0.00    -0.00    -0.00          --          
+  8  0.5333    -22.4          -0.00    -0.00    -0.00          --          
+  9  0.6000    -19.2          -0.00    -0.00    -0.00          --          
+ 10  0.6667    -16.0          -0.00    -0.00    -0.00          --          
+ 11  0.7333    -12.8          -0.00    -0.00    -0.00          --          
+ 12  0.8000    -9.6           -0.00    -0.00    -0.00          --          
+ 13  0.8667    -6.4           -0.00    -0.00    -0.00          --          
+ 14  0.9333    -3.2           -0.00    -0.00    -0.00          --          
+ 15  1.0000    0.0            -0.00    -0.00    -0.00          --          
+
+1 MAP:             flat (passthrough: output equals input within 0.01 dB at every reading) | sense -- | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:none -28.00:none -26.00:none -24.00:none -22.00:none -20.00:none -18.00:none -16.00:none -14.00:none -12.00:none -10.00:none -8.00:none -6.00:none -4.00:none -2.00:none 0.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_4942687d_12.0.0.json
+
+CANDIDATE [39] Limiter Thresh (flags ) - EMO-D5 (s) (class bands_or_stages, 5 candidates; the others at their instantiate defaults)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / x86_64 / 48k (BRIDGED)
+threshold: [39] Limiter Thresh unit 'dB' (class bands_or_stages) | positions 30 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [12] Gate Filter Link = 'Off', [26] Comp Filter Link = 'Off'
+ratio: [17] ran at '3.00' -> 3 | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -60.00 out-in -0.00  -58.00 out-in 0.00  -56.00 out-in 0.00  -54.00 out-in -0.00  -52.00 out-in 0.00  -50.00 out-in -0.00  -48.00 out-in -0.00  -46.00 out-in 0.00  -44.00 out-in -0.00  -42.00 out-in -0.00  -40.00 out-in 0.00  -38.00 out-in -0.00  -36.00 out-in 0.00  -34.00 out-in 0.00  -32.00 out-in -0.00  -30.00 out-in 0.00  -28.00 out-in -0.00  -26.00 out-in -0.00  -24.00 out-in 0.00  -22.00 out-in -0.00  -20.00 out-in 0.00  -18.00 out-in 0.00  -16.00 out-in -0.00  -14.00 out-in 0.00  -12.00 out-in -0.00  -10.00 out-in -0.00  -8.00 out-in -0.01  -6.00 out-in -0.03  -4.00 out-in -0.12  -2.00 out-in -0.41  0.00 out-in -1.11  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 0.00 -0.07 -0.02 -0.01 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 3 position(s) below the first rung (0@-60 1@-60 2@-60)
+writes landed by: instack 1 pump 29
+processes: 508 run, 0 retried, 0 position(s) failed
+write verify: 30 landed, 0 write_unlanded (skipped), in-stack read already matched on 1 of 30, pump slices total 163, longest confirm 67.2 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    -48.0          23.88    35.88    41.88       -50.9     -2.90
+  1  0.0333    -46.4          22.28    34.28    40.28       -48.8     -2.40
+  2  0.0667    -44.8          20.68    32.68    38.68       -47.2     -2.40
+  3  0.1000    -43.2          19.01    31.01    37.01       -45.6     -2.40
+  4  0.1333    -41.6          17.46    29.46    35.46       -44.3     -2.70
+  5  0.1667    -40.0          15.87    27.87    33.87       -42.9     -2.90
+  6  0.2000    -38.4          14.28    26.28    32.28       -40.8     -2.40
+  7  0.2333    -36.8          12.68    24.68    30.68       -39.2     -2.40
+  8  0.2667    -35.2          11.08    23.08    29.08       -37.8     -2.60
+  9  0.3000    -33.6           9.49    21.48    27.48       -36.3     -2.70
+ 10  0.3333    -32.0           7.90    19.88    25.88       -34.9     -2.90
+ 11  0.3667    -30.4           6.32    18.28    24.28       -32.8     -2.40
+ 12  0.4000    -28.8           4.79    16.68    22.68       -31.2     -2.40
+ 13  0.4333    -27.2           3.34    15.08    21.08       -29.8     -2.60
+ 14  0.4667    -25.6           2.07    13.48    19.48       -28.3     -2.70
+ 15  0.5000    -24.0           1.11    11.88    17.88       -26.9     -2.90
+ 16  0.5333    -22.4           0.51    10.28    16.28       -24.8     -2.40
+ 17  0.5667    -20.8           0.20     8.69    14.68       -23.2     -2.40
+ 18  0.6000    -19.2           0.07     7.11    13.08       -21.8     -2.60
+ 19  0.6333    -17.6           0.02     5.55    11.48       -20.3     -2.70
+ 20  0.6667    -16.0           0.00     4.05     9.89       -18.9     -2.90
+ 21  0.7000    -14.4           0.00     2.68     8.29       -16.8     -2.40
+ 22  0.7333    -12.8          -0.00     1.55     6.72       -15.2     -2.40
+ 23  0.7667    -11.2          -0.00     0.76     5.17       -13.8     -2.60
+ 24  0.8000    -9.6           -0.00     0.32     3.69       -11.9     -2.30
+ 25  0.8333    -8.0           -0.00     0.12     2.37       -10.1     -2.10
+ 26  0.8667    -6.4           -0.00     0.04     1.32        -8.6     -2.20
+ 27  0.9000    -4.8           -0.00     0.01     0.63        -6.7     -1.90
+ 28  0.9333    -3.2           -0.00     0.00     0.26        -5.0     -1.80
+ 29  1.0000    0.0            -0.00    -0.00     0.03        -1.7     -1.70
+
+1 MAP:             certified | sense lower_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:1 -46.00:2 -44.00:3 -42.00:4 -40.00:6 -38.00:7 -36.00:8 -34.00:9 -32.00:11 -30.00:12 -28.00:13 -26.00:14 -24.00:16 -22.00:17 -20.00:18 -18.00:19 -16.00:21 -14.00:22 -12.00:23 -10.00:24 -8.00:26 -6.00:27 -4.00:28 -2.00:28 0.00:29
+2 engage drift:    1.09  -10.00:1.18  -12.00:1.34  -14.00:1.49  -16.00:1.62  -18.00:1.18  -2.00:0.54  -20.00:1.34  -22.00:1.49  -24.00:1.62  -26.00:1.18  -28.00:1.34  -30.00:1.49  -32.00:1.62  -34.00:1.18  -36.00:1.34  -38.00:1.49  -4.00:1.34  -40.00:1.61  -42.00:1.19  -44.00:1.17  -46.00:1.49  -48.00:1.63  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:1.49  -60.00:null  -8.00:1.62  0.00:0.88   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.30 dB over 30 positions (min -2.90, max -1.70)
+3 displayOffsetDb: -2.40  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_4942687d_12.0.0.json
+
+  wall 2588.08 s, exit 0
+  -> needs_review: 5 threshold candidates (a channel strip or multiband): the one-candidate rule is not built, nobody picks
+
+=== [4] Lindell SBC
+  neutral: [1] Mix -> norm 1 ('100') for mix_wet
+  sweeping Lindell SBC (unseen version 1.0.3: defaults sampled first) - 1 reference + 16 position processes
+EJ Map threshold sweep - Lindell SBC -> AudioUnit_6f747363_1.0.3.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [13] Threshold unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [5] Link = 'Off', [10] Link HP = 'Off', [11] Link LP = 'Off'
+ratio: [8] ran at '4:1' -> 4 | auto make-up disabled: no
+default-threshold reference ('-1.61', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.01  -52.00 out-in -0.01  -50.00 out-in -0.02  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.02  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.07  -22.00 out-in -0.30  -20.00 out-in -0.68  -18.00 out-in -1.17  -16.00 out-in -1.73  -14.00 out-in -2.35  -12.00 out-in -3.06  -10.00 out-in -3.81  -8.00 out-in -4.59  -6.00 out-in -5.39  -4.00 out-in -6.17  -2.00 out-in -6.97  0.00 out-in -7.77  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 37 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    10.00           0.01     0.01     0.58        -4.7          
+  1  0.0667    9.20            0.01     0.05     1.05        -6.1          
+  2  0.1333    8.40            0.01     0.28     1.58        -7.5          
+  3  0.2000    6.93            0.01     0.64     2.18        -8.9          
+  4  0.2667    4.78            0.01     1.07     2.83       -10.3          
+  5  0.3333    2.97            0.01     1.55     3.52       -11.8          
+  6  0.4000    1.31            0.01     2.11     4.25       -13.2          
+  7  0.4667    -0.49           0.02     2.71     5.00       -14.1          
+  8  0.5333    -2.73           0.13     3.38     5.75       -15.5          
+  9  0.6000    -4.85           0.42     4.09     6.52       -17.0          
+ 10  0.6667    -6.77           0.81     4.84     7.32       -18.5          
+ 11  0.7333    -8.75           1.29     5.61     8.13       -19.9          
+ 12  0.8000    -10.92          1.87     6.44     8.99       -21.5          
+ 13  0.8667    -13.62          2.54     7.31     9.89       -23.5          
+ 14  0.9333    -16.78          3.33     8.23    10.81       -25.6          
+ 15  1.0000    -20.00          4.23     9.21    11.81       -28.2          
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:15 -34.00:15 -32.00:14 -30.00:13 -28.00:12 -26.00:11 -24.00:10 -22.00:9 -20.00:8 -18.00:6 -16.00:5 -14.00:4 -12.00:3 -10.00:2 -8.00:1 -6.00:0 -4.00:0 -2.00:0 0.00:0
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f747363_1.0.3.json
+  wall 126.944 s, exit 0
+DETECTOR: sine     at norm 0.4667: 2 dB reached at -14.199999999999999 dBFS peak-equivalent (unreadable)
+DETECTOR: two-tone at norm 0.4667: 2 dB reached at -14.199999999999999 dBFS peak-equivalent (unreadable)
+DETECTOR: Lindell SBC - sine 2 dB at -14.20, two-tone at -14.20: shift 0.00 dB -> f = 0.00 (rms) -> written into AudioUnit_6f747363_1.0.3.json
+TONE: Lindell SBC - L -18.00 dBFS RMS (-14.99 peak), g 2.0; section 6 picks norm 0.4959 between points 8 and 7 (in_at_gr at g: -19.01 / -17.21); ratio 4:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell SBC - GR 1.99 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB) -> Lindell_SBC_1.0.3.tonecheck.json
+  -> exported: profile exported with its tone check
+
+=== [5] NEOLD U2A
+  neutral: [2] Mix -> norm 0.96875 ('96.9 %') for mix_wet
+  neutral: [3] Drive -> norm 0.03125 ('3.1 %') for drive_cleanest
+  sweeping NEOLD U2A (unseen version 1.1.0: defaults sampled first) - 1 reference + 16 position processes
+  pass-through at defaults: trying 1 engage candidate(s)
+  sweeping NEOLD U2A candidate [9] Peak Reduction (unseen version 1.1.0: defaults sampled first) - 1 reference + 3 position processes
+    Mode -> 1.0 (from 'Compress'): flat - no two positions differ by more than 1 dB at any test level
+EJ Map threshold sweep - NEOLD U2A -> AudioUnit_61755c26_1.1.0.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [9] Peak Reduction unit '%' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0.0', spec 4.7 check only):  -60.00 out-in 0.18  -58.00 out-in 0.18  -56.00 out-in 0.18  -54.00 out-in 0.18  -52.00 out-in 0.18  -50.00 out-in 0.18  -48.00 out-in 0.18  -46.00 out-in 0.18  -44.00 out-in 0.18  -42.00 out-in 0.18  -40.00 out-in 0.18  -38.00 out-in 0.18  -36.00 out-in 0.18  -34.00 out-in 0.18  -32.00 out-in 0.18  -30.00 out-in 0.18  -28.00 out-in 0.18  -26.00 out-in 0.18  -24.00 out-in 0.18  -22.00 out-in 0.18  -20.00 out-in 0.18  -18.00 out-in 0.18  -16.00 out-in 0.18  -14.00 out-in 0.18  -12.00 out-in 0.18  -10.00 out-in 0.17  -8.00 out-in 0.17  -6.00 out-in 0.16  -4.00 out-in 0.15  -2.00 out-in 0.12  0.00 out-in 0.08  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+processes: 45 run, 0 retried, 0 position(s) failed
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.0            -0.00     0.01     0.02          --          
+  1  0.0667    6.7            -0.00     0.01     0.02          --          
+  2  0.1333    13.3           -0.00     0.01     0.02          --          
+  3  0.2000    20.0           -0.00     0.01     0.02          --          
+  4  0.2667    26.7           -0.00     0.01     0.02          --          
+  5  0.3333    33.3           -0.00     0.01     0.02          --          
+  6  0.4000    40.0           -0.00     0.01     0.02          --          
+  7  0.4667    46.7           -0.00     0.01     0.02          --          
+  8  0.5333    53.3           -0.00     0.01     0.02          --          
+  9  0.6000    60.0           -0.00     0.01     0.02          --          
+ 10  0.6667    66.7           -0.00     0.01     0.02          --          
+ 11  0.7333    73.3           -0.00     0.01     0.02          --          
+ 12  0.8000    80.0           -0.00     0.01     0.02          --          
+ 13  0.8667    86.7           -0.00     0.01     0.02          --          
+ 14  0.9333    93.3           -0.00     0.01     0.02          --          
+ 15  1.0000    100.0          -0.00     0.01     0.02          --          
+
+1 MAP:             flat (no two positions differ by more than 1 dB at any test level) | sense -- | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:none -34.00:none -32.00:none -30.00:none -28.00:none -26.00:none -24.00:none -22.00:none -20.00:none -18.00:none -16.00:none -14.00:none -12.00:none -10.00:none -8.00:none -6.00:none -4.00:none -2.00:none 0.00:none
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_61755c26_1.1.0.json
+  wall 166.1 s, exit 0
+  -> needs_review: sweep result flat: no two positions differ by more than 1 dB at any test level
+
+=== [6] NEOLD V76U73
+SWEEP: NEOLD V76U73 - not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+SWEEP: refusal recorded at stage 'plan' (permanent) -> AudioUnit_61755f23_1.3.0.json (skipped by the worklist until --retry-refused-all or a new version)
+  wall 13.5297 s, exit 4
+  -> refused: stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+  -> held: licence: PACE-wrapped and the batch runs without the iLok (mapped (server map state 3))
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11123]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11125]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11129]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11138]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11143]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11146]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category limiter
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11155]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11164]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11180]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11183]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11193]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11195]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11199]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11202]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11222]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11245]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11248]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11250]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11259]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11261]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11294]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11297]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11316]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11325]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11328]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11363]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11383]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11386]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11390]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11397]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11400]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category gate
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11410]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category limiter
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11428]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11439]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11441]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11446]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category amp_sim
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11456]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11465]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: window at scan (ejmap [pid 11466]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11470]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11479]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11482]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11485]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11520]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11525]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11536]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11538]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11550]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category gate
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11559]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11562]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category delay
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11566]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11575]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11577]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11580]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11585]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11594]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11605]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11607]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11610]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11619]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11621]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11623]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category transient_shaper
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11628]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11658]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11667]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11670]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11684]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11693]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11695]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11698]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11702]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category saturation
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11716]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11718]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11722]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11731]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category limiter
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11733]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11735]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category reverb
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11740]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11771]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11780]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11791]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11799]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11806]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11827]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11843]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11851]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11858]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11862]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11865]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11874]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11883]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11888]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category compressor
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11897]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category channel_strip
+  -> needs_licence: activation window at scan (PACEEdenExperience [pid 11899]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown
+
+SWEEP-ALL: 6 attempted, 5 swept to a fixture, 1 stopped, 0 finished from the store
+  stopped: NEOLD V76U73 (exit 4)
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/outcomes.json): 102 rows - exported 3, recorded 0, refused 1, held 2, needs_review 2, quarantined_at_scan 0, needs_licence 94, unmapped 0

@@ -1,0 +1,1130 @@
+[
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/ANA2.vst3",
+    "name": "ANA2",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:10.786+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27300]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL SubGen.vst3",
+    "name": "SSL SubGen",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:13.209+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27304]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/bloom.vst3",
+    "name": "bloom",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:15.868+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27306]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native Drumstrip v6.vst3",
+    "name": "SSL Native Drumstrip v6",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:20.791+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27322]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Virtual Tape Machines.vst3",
+    "name": "Virtual Tape Machines",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:24.532+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27329]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/FG-X 2.vst3",
+    "name": "FG-X 2",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:26.921+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27331]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Inf Bass.vst3",
+    "name": "Inf Bass",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:29.325+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27339]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/VerbSuite Classics.vst3",
+    "name": "VerbSuite Classics",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:31.725+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27341]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Murda Melodies.vst3",
+    "name": "Murda Melodies",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:34.657+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27347]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC Rack.vst3",
+    "name": "VBC Rack",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:37.309+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27356]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-MU.vst3",
+    "name": "VBC FG-MU",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:39.705+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27364]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Fresh Air.vst3",
+    "name": "Fresh Air",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:42.105+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27377]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Inf EQ.vst3",
+    "name": "Inf EQ",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:44.507+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27390]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-Red.vst3",
+    "name": "VBC FG-Red",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:47.157+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27392]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Virtual Mix Rack.vst3",
+    "name": "Virtual Mix Rack",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:49.543+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27400]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/VBC FG-Grey.vst3",
+    "name": "VBC FG-Grey",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:51.945+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27402]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Storch Filter.vst3",
+    "name": "Storch Filter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:54.605+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27406]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/MetaTune.vst3",
+    "name": "MetaTune",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:57.048+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27415]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/Heatwave.vst3",
+    "name": "Heatwave",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:43:59.451+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27423]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Slate Digital/MO-TT.vst3",
+    "name": "MO-TT",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:01.876+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27425]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis AirEQ.vst3",
+    "name": "Eiosis AirEQ",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:23.438+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27463]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis E2Deesser.vst3",
+    "name": "Eiosis E2Deesser",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:25.922+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27474]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Eiosis/Eiosis AirEQ 5.1.vst3",
+    "name": "Eiosis AirEQ 5.1",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:28.328+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27476]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL DeEss.vst3",
+    "name": "SSL DeEss",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:31.520+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27484]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Fusion HF Compressor.vst3",
+    "name": "SSL Fusion HF Compressor",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:36.346+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27488]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL LMC+.vst3",
+    "name": "SSL LMC+",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:48.876+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27538]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native X-Saturator v6.vst3",
+    "name": "SSL Native X-Saturator v6",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:51.525+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27547]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Guitarstrip.vst3",
+    "name": "SSL Guitarstrip",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:53.944+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27551]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Fusion Transformer.vst3",
+    "name": "SSL Fusion Transformer",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:56.443+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27554]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL 4K E.vst3",
+    "name": "SSL 4K E",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:44:58.847+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27563]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL X-Gate.vst3",
+    "name": "SSL X-Gate",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:04.431+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27574]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL X-Limit.vst3",
+    "name": "SSL X-Limit",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:08.258+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27578]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Repeater.vst3",
+    "name": "Repeater",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:18.083+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27600]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Saturation Knob.vst3",
+    "name": "Saturation Knob",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:23.275+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27610]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL 4K B.vst3",
+    "name": "SSL 4K B",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:27.276+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27614]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Overloud/TH-U Slate.vst3",
+    "name": "TH-U Slate",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:29.735+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27617]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native X-EQ 2.vst3",
+    "name": "SSL Native X-EQ 2",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:34.034+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27627]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Empirical Labs Mike-E Comp.vst3",
+    "name": "Empirical Labs Mike-E Comp",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:37.283+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27629]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Melodya.vst3",
+    "name": "Melodya",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:38.757+01:00",
+    "pace": false,
+    "windows": [
+      "ejmap [pid 27637]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Lustrous Plates.vst3",
+    "name": "Lustrous Plates",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:42.531+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27652]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Tube-Tech CL 1B.vst3",
+    "name": "Tube-Tech CL 1B",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:44.961+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27670]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native X-Phase v6.vst3",
+    "name": "SSL Native X-Phase v6",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:47.993+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27673]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL G3 MultiBusComp.vst3",
+    "name": "SSL G3 MultiBusComp",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:54.013+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27683]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL X-Delay.vst3",
+    "name": "SSL X-Delay",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:45:56.732+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27685]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Fusion Vintage Drive.vst3",
+    "name": "SSL Fusion Vintage Drive",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:01.134+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27706]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native X-Echo.vst3",
+    "name": "SSL Native X-Echo",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:06.876+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27710]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native FlexVerb.vst3",
+    "name": "SSL Native FlexVerb",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:11.864+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27730]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Gate.vst3",
+    "name": "kHs Gate",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:18.140+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27742]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Distortion.vst3",
+    "name": "kHs Distortion",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:20.881+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27751]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Delay.vst3",
+    "name": "kHs Delay",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:23.365+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27757]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Resonator.vst3",
+    "name": "kHs Resonator",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:25.847+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27759]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Formant Filter.vst3",
+    "name": "kHs Formant Filter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:28.316+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27762]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Dynamics.vst3",
+    "name": "kHs Dynamics",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:30.786+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27773]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Phaser.vst3",
+    "name": "kHs Phaser",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:33.244+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27777]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Compressor.vst3",
+    "name": "kHs Compressor",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:35.975+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27779]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Pitch Shifter.vst3",
+    "name": "kHs Pitch Shifter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:38.440+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27788]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Gain.vst3",
+    "name": "kHs Gain",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:40.899+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27796]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Comb Filter.vst3",
+    "name": "kHs Comb Filter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:43.352+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27819]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/Faturator.vst3",
+    "name": "Faturator",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:45.817+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27821]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Phase Distortion.vst3",
+    "name": "kHs Phase Distortion",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:48.273+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27824]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Trance Gate.vst3",
+    "name": "kHs Trance Gate",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:50.996+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27832]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Transient Shaper.vst3",
+    "name": "kHs Transient Shaper",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:53.752+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27836]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Tape Stop.vst3",
+    "name": "kHs Tape Stop",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:56.232+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27838]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/Multipass.vst3",
+    "name": "Multipass",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:46:58.940+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27847]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/Disperser.vst3",
+    "name": "Disperser",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:01.654+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27856]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs 3-Band EQ.vst3",
+    "name": "kHs 3-Band EQ",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:04.637+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27860]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Haas.vst3",
+    "name": "kHs Haas",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:07.118+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27862]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Ladder Filter.vst3",
+    "name": "kHs Ladder Filter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:09.608+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27864]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Chorus.vst3",
+    "name": "kHs Chorus",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:12.337+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27872]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Stereo.vst3",
+    "name": "kHs Stereo",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:15.068+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27876]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Bitcrush.vst3",
+    "name": "kHs Bitcrush",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:17.540+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27878]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Reverser.vst3",
+    "name": "kHs Reverser",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:20.010+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27890]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Frequency Shifter.vst3",
+    "name": "kHs Frequency Shifter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:22.482+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27898]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Ring Mod.vst3",
+    "name": "kHs Ring Mod",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:24.949+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27902]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Limiter.vst3",
+    "name": "kHs Limiter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:27.437+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27904]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/Snap Heap.vst3",
+    "name": "Snap Heap",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:29.894+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27906]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Reverb.vst3",
+    "name": "kHs Reverb",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:32.365+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27914]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Kilohearts/kHs Filter.vst3",
+    "name": "kHs Filter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:35.096+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27918]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native X-Comp v6.vst3",
+    "name": "SSL Native X-Comp v6",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:37.538+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27920]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native X-ValveComp v6.vst3",
+    "name": "SSL Native X-ValveComp v6",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:40.702+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27930]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SontecEQ.vst3",
+    "name": "SontecEQ",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:47.918+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27958]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Weiss Deess.vst3",
+    "name": "Weiss Deess",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:52.193+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27982]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native Channel Strip 2.vst3",
+    "name": "SSL Native Channel Strip 2",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:55.236+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27986]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Blitzer.vst3",
+    "name": "SSL Blitzer",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:47:59.558+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 27995]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Meter.vst3",
+    "name": "SSL Meter",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:02.551+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28003]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native Bus Compressor 2.vst3",
+    "name": "SSL Native Bus Compressor 2",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:09.309+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28009]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Fusion Violet EQ.vst3",
+    "name": "SSL Fusion Violet EQ",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:12.324+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28017]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_De-Esser.vst3",
+    "name": "Harrison_De-Esser",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:16.644+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28021]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_DrumFlow.vst3",
+    "name": "Harrison_DrumFlow",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:19.637+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28031]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_32Bus.vst3",
+    "name": "Harrison_32Bus",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:22.894+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28041]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Harrison/Harrison_BassFlow.vst3",
+    "name": "Harrison_BassFlow",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:25.378+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28045]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/Audified/U73b Compressor.vst3",
+    "name": "U73b Compressor",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:30.584+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28050]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Native Vocalstrip 2.vst3",
+    "name": "SSL Native Vocalstrip 2",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:34.227+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28061]"
+    ],
+    "state": "needs_licence"
+  },
+  {
+    "plugin_id": "/Library/Audio/Plug-Ins/VST3/SSL Fusion Stereo Image.vst3",
+    "name": "SSL Fusion Stereo Image",
+    "format": "VST3",
+    "stage": "scan",
+    "at": "2026-10-02T14:48:37.822+01:00",
+    "pace": true,
+    "windows": [
+      "PACEEdenExperience [pid 28063]"
+    ],
+    "state": "needs_licence"
+  }
+]

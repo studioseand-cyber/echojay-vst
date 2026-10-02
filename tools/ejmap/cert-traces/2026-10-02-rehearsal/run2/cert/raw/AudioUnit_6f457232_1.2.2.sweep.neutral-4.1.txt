@@ -1,0 +1,42 @@
+probe: "Lindell 7X-500" | AudioUnit:Effects/aufx,LBc2,Brwx | uid=6f457232 | arch=arm64 | format=AudioUnit
+
+stage	configure
+policy	sidechain	enabled_silent	enable_all_buses	ok
+bus	render	in	0	Input	2	Stereo	enabled
+bus	render	out	0	Output	2	Stereo	enabled
+stage	prepare
+textat	proto	1	index	4	name	Mix	points	33	instantiated	1.000000	10.0
+at	0.000000	landed	getValue	0.000000	confirm_ms	2.6	landed_by	instack	text	0.0
+at	0.031250	landed	getValue	0.031250	confirm_ms	2.5	landed_by	instack	text	0.3
+at	0.062500	landed	getValue	0.062500	confirm_ms	2.5	landed_by	instack	text	0.6
+at	0.093750	landed	getValue	0.093750	confirm_ms	2.4	landed_by	instack	text	0.9
+at	0.125000	landed	getValue	0.125000	confirm_ms	2.3	landed_by	instack	text	1.2
+at	0.156250	landed	getValue	0.156250	confirm_ms	2.5	landed_by	instack	text	1.6
+at	0.187500	landed	getValue	0.187500	confirm_ms	2.5	landed_by	instack	text	1.9
+at	0.218750	landed	getValue	0.218750	confirm_ms	2.6	landed_by	instack	text	2.2
+at	0.250000	landed	getValue	0.250000	confirm_ms	2.6	landed_by	instack	text	2.5
+at	0.281250	landed	getValue	0.281250	confirm_ms	2.6	landed_by	instack	text	2.8
+at	0.312500	landed	getValue	0.312500	confirm_ms	2.2	landed_by	instack	text	3.1
+at	0.343750	landed	getValue	0.343750	confirm_ms	2.6	landed_by	instack	text	3.4
+at	0.375000	landed	getValue	0.375000	confirm_ms	2.7	landed_by	instack	text	3.8
+at	0.406250	landed	getValue	0.406250	confirm_ms	2.5	landed_by	instack	text	4.1
+at	0.437500	landed	getValue	0.437500	confirm_ms	2.6	landed_by	instack	text	4.4
+at	0.468750	landed	getValue	0.468750	confirm_ms	2.6	landed_by	instack	text	4.7
+at	0.500000	landed	getValue	0.500000	confirm_ms	2.3	landed_by	instack	text	5.0
+at	0.531250	landed	getValue	0.531250	confirm_ms	2.6	landed_by	instack	text	5.3
+at	0.562500	landed	getValue	0.562500	confirm_ms	2.7	landed_by	instack	text	5.6
+at	0.593750	landed	getValue	0.593750	confirm_ms	2.6	landed_by	instack	text	5.9
+at	0.625000	landed	getValue	0.625000	confirm_ms	2.6	landed_by	instack	text	6.2
+at	0.656250	landed	getValue	0.656250	confirm_ms	2.7	landed_by	instack	text	6.6
+at	0.687500	landed	getValue	0.687500	confirm_ms	2.2	landed_by	instack	text	6.9
+at	0.718750	landed	getValue	0.718750	confirm_ms	2.7	landed_by	instack	text	7.2
+at	0.750000	landed	getValue	0.750000	confirm_ms	2.7	landed_by	instack	text	7.5
+at	0.781250	landed	getValue	0.781250	confirm_ms	2.4	landed_by	instack	text	7.8
+at	0.812500	landed	getValue	0.812500	confirm_ms	2.6	landed_by	instack	text	8.1
+at	0.843750	landed	getValue	0.843750	confirm_ms	2.4	landed_by	instack	text	8.4
+at	0.875000	landed	getValue	0.875000	confirm_ms	2.6	landed_by	instack	text	8.8
+at	0.906250	landed	getValue	0.906250	confirm_ms	2.8	landed_by	instack	text	9.1
+at	0.937500	landed	getValue	0.937500	confirm_ms	2.6	landed_by	instack	text	9.4
+at	0.968750	landed	getValue	0.968750	confirm_ms	2.4	landed_by	instack	text	9.7
+at	1.000000	landed	getValue	1.000000	confirm_ms	2.6	landed_by	instack	text	10.0
+stage	done

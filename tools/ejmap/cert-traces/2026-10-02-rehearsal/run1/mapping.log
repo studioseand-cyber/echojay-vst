@@ -1,0 +1,47 @@
+BACKLOG: 0 mapped, 0 sent
+COLUMNS [cache restored] rows 1733 | mapped 0 | sent 0 | onServer yes 1271 diff 0 no 462 unknown 0 | localMaps 0 sentIds 0 serverIds 1731 | mapState ok, asked 0h ago
+ejmap status: RESTORED 1733 plugins from scan 20261002T133219-8a99 (51 min ago). Scan to refresh.  |  SWEEP WOULD OPEN 5 of 462 worklist row(s) (462 unmapped, 0 parked, 0 unqueried); the sweep itself declines 457 (292 no dial set, 65 not a processor, 100 review). Not on the worklist at all: 1271 already mapped, 0 unmappable, 0 flagged
+ejmap window title: ejmap 0.1.0  (413f2a95-dirty)  schema 2.4  [supervised]
+SWEEP will open 1 of 2 worklist row(s): 2 unmapped, 0 parked, 0 unqueried; declining 1 on the way past (1 no dial set). Not on the worklist: 1731 already mapped, 0 unmappable, 0 flagged
+SWEEP run 20261002T142430-b24b over 1 worklist row(s), 1073 categorised product(s)   [no editors: no captures, no modal can block]
+RESWEEP: 2 target name(s), 1 worklist row(s) matched (AU/VST3 siblings count separately); NO SCANNED MATCH for 1: bx_crispytuner
+  [1] Lindell 7X-500  (compressor)
+ASSIGN: No classifier verdict for this fp: choose the category first. It decides the dial set, and on an EQ it is what routes you into the bands flow.
+ASSIGN: Assign (compressor): 14 rows, 0 classifier ignores. No proposals: dial-set rows.
+ASSIGN: Sweeping the surface: 0/14
+ASSIGN: Verifying by set-then-read...
+ASSIGN: CONTROLS: 10 named control(s) (2 mode, 0 duplicate name(s) recorded unresolvable, 4 declined with reasons)
+ASSIGN: Review open: SUBMIT writes the map, back returns to the rows.
+COLUMNS [map saved] rows 1733 | mapped 1 | sent 0 | onServer yes 1271 diff 0 no 462 unknown 0 | localMaps 1 sentIds 0 serverIds 1731 | mapState ok, asked 0h ago
+COLUMNS [map saved] AudioUnit|6f457232|1.2.2 -> mapped YES, sent no, onServer YES
+ASSIGN: MAP SAVED (local only -- press Submit to server to send) 5da42046bed73462a7d0c3b576c6ebcef0c555cdd787ee11484254db5c6d59a2.json: 0 params, 0 groups, 10 controls, 13 skips, 4 declines, readback 0/0
+      mapped  10 control(s)
+
+SWEEP DONE   1 opened in 0.1 min
+
+  WORK DONE
+      1  mapped
+      0  swept nothing   loaded fine, no usable control; flagged
+
+  DID NOT FINISH
+      0  sweep_timeout   loaded, then the sweep never returned. A dialog does this
+      0  init_failed   the format refused to instantiate
+      0  license_refused   authorisation
+      0  timeout   the LOAD hung
+      0  stale_controls   REFUSED: staged controls were another plugin's
+
+  NOT OFFERED
+      0  skipped: no dial set   a processor the 11 categories do not cover
+      0  skipped: category undecided   the two arms disagreed
+
+  THE FORECAST, CHECKED
+     1 openable, 1 declined before the run started  |  1 opened, 0 withdrawn while walking   (every openable row accounted for)
+
+  1 MAP(S) ARE ON THIS MACHINE AND HAVE REACHED NOBODY.
+     Press "Send All 1" to deliver them. Every map is reported one line each,
+     because a refusal is the only line worth acting on and a count would bury it.
+
+  THIS RUN ONLY: 20261002T142430-b24b. A supervised campaign is many runs, and summing them counts the same declined plugin once per relaunch -- `--sweep-report` reads every run's log and rolls up by plugin instead.
+
+  log: /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_empty/sweep-20261002T142430-b24b.jsonl
+supervisor: child exited cleanly

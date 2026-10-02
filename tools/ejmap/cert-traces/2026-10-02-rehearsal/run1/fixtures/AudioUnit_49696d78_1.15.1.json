@@ -1,0 +1,1865 @@
+{
+  "identity": "AudioUnit|49696d78|1.15.1",
+  "product": "elysia mpressor",
+  "format": "AudioUnit",
+  "manufacturer": "Plugin Alliance",
+  "uid": "49696d78",
+  "version": "1.15.1",
+  "sampledAt": "2026-10-02",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 18,
+  "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+  "controls": [
+    {
+      "index": 0,
+      "name": "Floor",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Link",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Active",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Threshold",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "16.0 dB",
+        "0.500": "-6.5 dB",
+        "1.000": "-18.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -18.0,
+        "max": 16.0,
+        "at0": 16.0,
+        "at0_5": -6.5,
+        "at1": -18.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "16.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "SC Extern",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.0 ms",
+        "0.500": "19.0 ms",
+        "1.000": "150.0 ms"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 150.0,
+        "at0": 0.0,
+        "at0_5": 19.0,
+        "at1": 150.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "19.0 ms",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Auto Fast",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Release",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "5.0 ms",
+        "0.500": "117.5 ms",
+        "1.000": "1200.0 ms"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 5.0,
+        "max": 1200.0,
+        "at0": 5.0,
+        "at0_5": 117.5,
+        "at1": 1200.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "117.5 ms",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Anti Log",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Ratio",
+      "unit": null,
+      "displayAt": {
+        "0.000": "1.2",
+        "0.500": "6.7",
+        "1.000": "-4.0"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -4.0,
+        "max": 1.2,
+        "at0": 1.2,
+        "at0_5": 6.7,
+        "at1": -4.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.363636,
+        "display": "2.8",
+        "declaredDefault": 0.363636,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "EQ Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "6.0 dB",
+        "0.500": "0.0 dB",
+        "1.000": "6.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 6.0,
+        "max": 6.0,
+        "at0": 6.0,
+        "at0_5": 0.0,
+        "at1": 6.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "flat",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "EQ On",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "EQ Freq",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "26.0 Hz",
+        "0.500": "230.0 Hz",
+        "1.000": "2200.0 Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 26.0,
+        "max": 2200.0,
+        "at0": 26.0,
+        "at0_5": 230.0,
+        "at1": 2200.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "230.0 Hz",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "EQ Freq x10",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "GR Limit",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "21.0 dB",
+        "0.500": "10.0 dB",
+        "1.000": "0.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 21.0,
+        "at0": 21.0,
+        "at0_5": 10.0,
+        "at1": 0.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "10.0 dB",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "GR Limit On",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "Gain",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.0 dB",
+        "0.500": "5.0 dB",
+        "1.000": "20.0 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 20.0,
+        "at0": 0.0,
+        "at0_5": 5.0,
+        "at1": 20.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.0 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Gain Reduction",
+      "unit": "dB",
+      "displayAt": {
+        "0.000": "0.00 dB",
+        "0.500": "-9.75 dB",
+        "1.000": "-19.50 dB"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -19.5,
+        "max": 0.0,
+        "at0": 0.0,
+        "at0_5": -9.75,
+        "at1": -19.5,
+        "inverted": true,
+        "linear": true
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00 dB",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-02",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "schema": "ej_cert_compressor/1",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  },
+  "thresholdSweep": {
+    "measuredAt": "20261002T133559.356+0100",
+    "host": "EJ Map 0.1.0 / arm64 / 48k",
+    "bridged": false,
+    "tone": {
+      "hz": 997.0,
+      "levels_dbfs": [
+        -60.0,
+        -58.0,
+        -56.0,
+        -54.0,
+        -52.0,
+        -50.0,
+        -48.0,
+        -46.0,
+        -44.0,
+        -42.0,
+        -40.0,
+        -38.0,
+        -36.0,
+        -34.0,
+        -32.0,
+        -30.0,
+        -28.0,
+        -26.0,
+        -24.0,
+        -22.0,
+        -20.0,
+        -18.0,
+        -16.0,
+        -14.0,
+        -12.0,
+        -10.0,
+        -8.0,
+        -6.0,
+        -4.0,
+        -2.0,
+        0.0
+      ]
+    },
+    "level_convention": "peak",
+    "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (the loudest ladder rung whose pair differs by 6 dB)",
+    "ratioDuring": {
+      "position": "2.8",
+      "value": 2.8,
+      "assumed": false
+    },
+    "autoMakeupDisabled": false,
+    "preconditions": [],
+    "positions": 20,
+    "positionNorms": [
+      0.0,
+      0.066667,
+      0.133333,
+      0.166667,
+      0.2,
+      0.266667,
+      0.3,
+      0.333333,
+      0.366666,
+      0.4,
+      0.433334,
+      0.466667,
+      0.533333,
+      0.6,
+      0.666667,
+      0.733333,
+      0.8,
+      0.866667,
+      0.933333,
+      1.0
+    ],
+    "positionTexts": [
+      "16.0 dB",
+      "14.5 dB",
+      "11.7 dB",
+      "9.8 dB",
+      "8.2 dB",
+      "5.3 dB",
+      "3.5 dB",
+      "1.7 dB",
+      "-0.2 dB",
+      "-2.0 dB",
+      "-3.8 dB",
+      "-5.4 dB",
+      "-7.6 dB",
+      "-9.8 dB",
+      "-11.7 dB",
+      "-13.1 dB",
+      "-14.6 dB",
+      "-16.1 dB",
+      "-17.3 dB",
+      "-18.0 dB"
+    ],
+    "gridRefinement": {
+      "rule": "positions added between neighbours whose in_at_gr[2] differ by more than 3.0 dB, ceil(gap/3.0) segments, until none do (or 4 rounds / 64 positions)",
+      "gap_db": 3.0,
+      "rounds": 1,
+      "added_norms": [
+        0.166667,
+        0.3,
+        0.366666,
+        0.433334
+      ]
+    },
+    "hold_s": 2.5,
+    "win_s": 0.3,
+    "linearReference": {
+      "mode": "per_position_quiet",
+      "levels_dbfs": [
+        -54,
+        -48
+      ],
+      "tolerance_db": 0.1,
+      "check_db": [
+        -0.001,
+        -0.0,
+        0.0,
+        0.0,
+        0.001,
+        -0.0,
+        0.0,
+        0.001,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.001,
+        -0.0,
+        0.001,
+        -0.0
+      ],
+      "rung_dbfs": [
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ]
+      ],
+      "descended": 0,
+      "ladder_dbfs": [
+        [
+          -54,
+          -48
+        ],
+        [
+          -66,
+          -60
+        ],
+        [
+          -78,
+          -72
+        ],
+        [
+          -90,
+          -84
+        ]
+      ],
+      "gain_db": [
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02,
+        -0.02
+      ],
+      "fallback": "profile sweep: the quiet-level reference on every product by design"
+    },
+    "defaultGain_db": {
+      "-10": -0.08,
+      "-12": -0.06,
+      "-14": -0.04,
+      "-16": -0.04,
+      "-18": -0.03,
+      "-2": -1.54,
+      "-20": -0.03,
+      "-22": -0.03,
+      "-24": -0.03,
+      "-26": -0.02,
+      "-28": -0.02,
+      "-30": -0.02,
+      "-32": -0.02,
+      "-34": -0.02,
+      "-36": -0.02,
+      "-38": -0.02,
+      "-4": -0.39,
+      "-40": -0.02,
+      "-42": -0.02,
+      "-44": -0.02,
+      "-46": -0.02,
+      "-48": -0.02,
+      "-50": -0.02,
+      "-52": -0.02,
+      "-54": -0.02,
+      "-56": -0.02,
+      "-58": -0.02,
+      "-6": -0.16,
+      "-60": -0.02,
+      "-66": -0.01,
+      "-72": 0.04,
+      "-78": 0.21,
+      "-8": -0.11,
+      "-84": 0.84,
+      "-90": 2.72,
+      "0": -3.01
+    },
+    "positionLandedBy": [
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack"
+    ],
+    "writeLanding": {
+      "instack": 20
+    },
+    "reduction_db": {
+      "-60": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-58": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-56": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-54": [
+        -0.0,
+        -0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0,
+        -0.0,
+        0.0,
+        -0.0
+      ],
+      "-52": [
+        -0.0,
+        -0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        0.0,
+        -0.0,
+        0.0,
+        0.0
+      ],
+      "-50": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-48": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-46": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-44": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-42": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-40": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-38": [
+        -0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        0.06,
+        0.17
+      ],
+      "-36": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        0.18,
+        0.74,
+        1.2
+      ],
+      "-34": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.05,
+        0.28,
+        1.2,
+        1.96,
+        2.43
+      ],
+      "-32": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.11,
+        0.64,
+        1.57,
+        2.5,
+        3.27,
+        3.74
+      ],
+      "-30": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        0.13,
+        0.99,
+        1.92,
+        2.85,
+        3.79,
+        4.56,
+        5.04
+      ],
+      "-28": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.1,
+        1.03,
+        2.22,
+        3.15,
+        4.09,
+        5.03,
+        5.81,
+        6.32
+      ],
+      "-26": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.08,
+        0.94,
+        2.33,
+        3.53,
+        4.47,
+        5.41,
+        6.39,
+        7.15,
+        7.61
+      ],
+      "-24": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.14,
+        0.82,
+        2.22,
+        3.63,
+        4.82,
+        5.77,
+        6.74,
+        7.67,
+        8.43,
+        8.9
+      ],
+      "-22": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.16,
+        1.05,
+        2.05,
+        3.45,
+        4.86,
+        6.11,
+        7.03,
+        7.96,
+        8.9,
+        9.67,
+        10.140000000000001
+      ],
+      "-20": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.21,
+        1.19,
+        2.36,
+        3.36,
+        4.77,
+        6.23,
+        7.4,
+        8.34,
+        9.27,
+        10.210000000000001,
+        10.98,
+        11.460000000000001
+      ],
+      "-18": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.25,
+        1.32,
+        2.48,
+        3.65,
+        4.66,
+        6.12,
+        7.51,
+        8.69,
+        9.630000000000001,
+        10.58,
+        11.52,
+        12.33,
+        12.789999999999999
+      ],
+      "-16": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.27,
+        1.38,
+        2.55,
+        3.72,
+        4.9,
+        5.9,
+        7.34,
+        8.74,
+        9.93,
+        10.869999999999999,
+        11.82,
+        12.789999999999999,
+        13.550000000000001,
+        14.02
+      ],
+      "-14": [
+        0.02,
+        0.02,
+        0.02,
+        0.02,
+        0.02,
+        0.41,
+        1.52,
+        2.69,
+        3.86,
+        5.04,
+        6.26,
+        7.25,
+        8.65,
+        10.06,
+        11.26,
+        12.24,
+        13.17,
+        14.1,
+        14.859999999999999,
+        15.33
+      ],
+      "-12": [
+        0.04,
+        0.04,
+        0.04,
+        0.04,
+        0.17,
+        1.7,
+        2.83,
+        4.0,
+        5.18,
+        6.4,
+        7.55,
+        8.550000000000001,
+        9.960000000000001,
+        11.369999999999999,
+        12.609999999999999,
+        13.529999999999999,
+        14.470000000000001,
+        15.4,
+        16.170000000000002,
+        16.640000000000001
+      ],
+      "-10": [
+        0.05,
+        0.05,
+        0.05,
+        0.24,
+        1.08,
+        2.95,
+        4.08,
+        5.26,
+        6.48,
+        7.63,
+        8.800000000000001,
+        9.800000000000001,
+        11.220000000000001,
+        12.66,
+        13.84,
+        14.779999999999999,
+        15.720000000000001,
+        16.66,
+        17.43,
+        17.899999999999999
+      ],
+      "-8": [
+        0.08,
+        0.08,
+        0.32,
+        1.37,
+        2.41,
+        4.29,
+        5.42,
+        6.64,
+        7.8,
+        8.970000000000001,
+        10.140000000000001,
+        11.15,
+        12.6,
+        13.99,
+        15.18,
+        16.120000000000001,
+        17.059999999999999,
+        18.0,
+        18.809999999999999,
+        19.27
+      ],
+      "-6": [
+        0.13,
+        0.22,
+        1.55,
+        2.72,
+        3.76,
+        5.64,
+        6.81,
+        7.97,
+        9.140000000000001,
+        10.32,
+        11.49,
+        12.539999999999999,
+        13.93,
+        15.33,
+        16.530000000000001,
+        17.469999999999999,
+        18.460000000000001,
+        19.379999999999999,
+        20.140000000000001,
+        20.609999999999999
+      ],
+      "-4": [
+        0.37,
+        1.03,
+        2.85,
+        4.02,
+        5.07,
+        6.99,
+        8.109999999999999,
+        9.279999999999999,
+        10.449999999999999,
+        11.630000000000001,
+        12.84,
+        13.83,
+        15.23,
+        16.640000000000001,
+        17.84,
+        18.82,
+        19.75,
+        20.68,
+        21.449999999999999,
+        21.920000000000002
+      ],
+      "-2": [
+        1.51,
+        2.44,
+        4.28,
+        5.45,
+        6.55,
+        8.4,
+        9.529999999999999,
+        10.699999999999999,
+        11.880000000000001,
+        13.09,
+        14.25,
+        15.25,
+        16.66,
+        18.079999999999998,
+        19.300000000000001,
+        20.23,
+        21.170000000000002,
+        22.100000000000001,
+        22.879999999999999,
+        23.350000000000001
+      ],
+      "0": [
+        2.99,
+        3.93,
+        5.77,
+        6.98,
+        8.01,
+        9.880000000000001,
+        11.02,
+        12.199999999999999,
+        13.4,
+        14.56,
+        15.73,
+        16.739999999999998,
+        18.149999999999999,
+        19.59,
+        20.780000000000001,
+        21.710000000000001,
+        22.649999999999999,
+        23.59,
+        24.370000000000001,
+        24.879999999999999
+      ]
+    },
+    "sense": "higher_is_harder",
+    "engage": {
+      "-60": null,
+      "-58": null,
+      "-56": null,
+      "-54": null,
+      "-52": null,
+      "-50": null,
+      "-48": null,
+      "-46": null,
+      "-44": null,
+      "-42": null,
+      "-40": null,
+      "-38": null,
+      "-36": 18,
+      "-34": 17,
+      "-32": 15,
+      "-30": 14,
+      "-28": 13,
+      "-26": 12,
+      "-24": 11,
+      "-22": 10,
+      "-20": 9,
+      "-18": 8,
+      "-16": 7,
+      "-14": 6,
+      "-12": 5,
+      "-10": 4,
+      "-8": 3,
+      "-6": 2,
+      "-4": 1,
+      "-2": 0,
+      "0": 0
+    },
+    "thresholdDbEquivalent": [
+      -4.5,
+      -5.8,
+      -8.5,
+      -10.300000000000001,
+      -11.9,
+      -14.800000000000001,
+      -16.5,
+      -18.300000000000001,
+      -20.100000000000001,
+      -21.899999999999999,
+      -23.699999999999999,
+      -25.199999999999999,
+      -27.5,
+      -29.600000000000001,
+      -31.5,
+      -33.0,
+      -34.399999999999999,
+      -35.899999999999999,
+      -37.100000000000001,
+      -37.799999999999997
+    ],
+    "thresholdEffective1dB": [
+      -2.9,
+      -4.1,
+      -6.9,
+      -8.699999999999999,
+      -10.199999999999999,
+      -13.1,
+      -14.800000000000001,
+      -16.699999999999999,
+      -18.600000000000001,
+      -20.399999999999999,
+      -22.100000000000001,
+      -23.699999999999999,
+      -25.899999999999999,
+      -28.100000000000001,
+      -30.0,
+      -31.399999999999999,
+      -32.899999999999999,
+      -34.399999999999999,
+      -35.600000000000001,
+      -36.399999999999999
+    ],
+    "inAtGr": [
+      {
+        "1": -2.9,
+        "2": -1.3,
+        "3": "not_reached"
+      },
+      {
+        "1": -4.1,
+        "2": -2.6,
+        "3": -1.2
+      },
+      {
+        "1": -6.9,
+        "2": -5.3,
+        "3": -3.8
+      },
+      {
+        "1": -8.699999999999999,
+        "2": -7.1,
+        "3": -5.6
+      },
+      {
+        "1": -10.199999999999999,
+        "2": -8.6,
+        "3": -7.1
+      },
+      {
+        "1": -13.1,
+        "2": -11.5,
+        "3": -9.9
+      },
+      {
+        "1": -14.800000000000001,
+        "2": -13.300000000000001,
+        "3": -11.699999999999999
+      },
+      {
+        "1": -16.699999999999999,
+        "2": -15.1,
+        "3": -13.5
+      },
+      {
+        "1": -18.600000000000001,
+        "2": -16.899999999999999,
+        "3": -15.300000000000001
+      },
+      {
+        "1": -20.399999999999999,
+        "2": -18.699999999999999,
+        "3": -17.199999999999999
+      },
+      {
+        "1": -22.100000000000001,
+        "2": -20.5,
+        "3": -19.0
+      },
+      {
+        "1": -23.699999999999999,
+        "2": -22.100000000000001,
+        "3": -20.5
+      },
+      {
+        "1": -25.899999999999999,
+        "2": -24.300000000000001,
+        "3": -22.699999999999999
+      },
+      {
+        "1": -28.100000000000001,
+        "2": -26.5,
+        "3": -25.0
+      },
+      {
+        "1": -30.0,
+        "2": -28.399999999999999,
+        "3": -26.800000000000001
+      },
+      {
+        "1": -31.399999999999999,
+        "2": -29.899999999999999,
+        "3": -28.199999999999999
+      },
+      {
+        "1": -32.899999999999999,
+        "2": -31.300000000000001,
+        "3": -29.800000000000001
+      },
+      {
+        "1": -34.399999999999999,
+        "2": -32.799999999999997,
+        "3": -31.199999999999999
+      },
+      {
+        "1": -35.600000000000001,
+        "2": -33.899999999999999,
+        "3": -32.399999999999999
+      },
+      {
+        "1": -36.399999999999999,
+        "2": -34.700000000000003,
+        "3": -33.100000000000001
+      }
+    ],
+    "inAtGrQuality": {
+      "nonMonotonicStraddles": 0,
+      "widestGap_db": 2.0,
+      "rule": "linear interpolation between the two steps that straddle 1, 2 and 3 dB, only where GR rises across the straddle; never extrapolated; not_reached and below_range kept apart"
+    },
+    "levelDependence": {
+      "predicted_dg_dl": 0.643,
+      "dg_dl_per_position": [
+        0.05,
+        0.065,
+        0.096,
+        0.116,
+        0.134,
+        0.165,
+        0.184,
+        0.203,
+        0.223,
+        0.243,
+        0.262,
+        0.279,
+        0.303,
+        0.327,
+        0.346,
+        0.362,
+        0.378,
+        0.393,
+        0.406,
+        0.415
+      ],
+      "median_dg_dl": 0.652,
+      "implied_ratio": 2.88,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
+    "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 21.890000000000001,
+    "displayOffsetDb": -19.899999999999999,
+    "displayOffsetSpread": {
+      "positions": 20,
+      "iqr_db": 0.3,
+      "min_db": -20.5,
+      "max_db": -19.800000000000001,
+      "convention": "peak"
+    },
+    "displayEngage": {
+      "-10": 19.109999999999999,
+      "-12": 19.219999999999999,
+      "-14": 19.079999999999998,
+      "-16": 19.140000000000001,
+      "-18": 19.059999999999999,
+      "-2": 19.629999999999999,
+      "-20": 19.07,
+      "-22": 19.09,
+      "-24": 19.109999999999999,
+      "-26": 19.09,
+      "-28": 19.050000000000001,
+      "-30": 19.039999999999999,
+      "-32": 19.129999999999999,
+      "-34": 19.0,
+      "-36": 19.059999999999999,
+      "-38": null,
+      "-4": 19.32,
+      "-40": null,
+      "-42": null,
+      "-44": null,
+      "-46": null,
+      "-48": null,
+      "-50": null,
+      "-52": null,
+      "-54": null,
+      "-56": null,
+      "-58": null,
+      "-6": 19.41,
+      "-60": null,
+      "-8": 19.149999999999999,
+      "0": 19.98,
+      "drift_db": 0.98,
+      "rule": "display where reduction crosses 0.5 dB, less the level where the display falls toward harder, plus it where it rises"
+    },
+    "inAtGrRepeat": [
+      {
+        "1": -2.9,
+        "2": -1.3,
+        "3": "not_reached"
+      },
+      {
+        "1": -4.1,
+        "2": -2.6,
+        "3": -1.2
+      },
+      {
+        "1": -6.9,
+        "2": -5.3,
+        "3": -3.8
+      },
+      {
+        "1": -8.699999999999999,
+        "2": -7.1,
+        "3": -5.6
+      },
+      {
+        "1": -10.199999999999999,
+        "2": -8.6,
+        "3": -7.1
+      },
+      {
+        "1": -13.1,
+        "2": -11.5,
+        "3": -9.9
+      },
+      {
+        "1": -14.800000000000001,
+        "2": -13.300000000000001,
+        "3": -11.699999999999999
+      },
+      {
+        "1": -16.699999999999999,
+        "2": -15.1,
+        "3": -13.5
+      },
+      {
+        "1": -18.600000000000001,
+        "2": -16.899999999999999,
+        "3": -15.300000000000001
+      },
+      {
+        "1": -20.399999999999999,
+        "2": -18.699999999999999,
+        "3": -17.199999999999999
+      },
+      {
+        "1": -22.100000000000001,
+        "2": -20.5,
+        "3": -19.0
+      },
+      {
+        "1": -23.699999999999999,
+        "2": -22.100000000000001,
+        "3": -20.5
+      },
+      {
+        "1": -25.899999999999999,
+        "2": -24.300000000000001,
+        "3": -22.699999999999999
+      },
+      {
+        "1": -28.100000000000001,
+        "2": -26.5,
+        "3": -25.0
+      },
+      {
+        "1": -30.0,
+        "2": -28.399999999999999,
+        "3": -26.800000000000001
+      },
+      {
+        "1": -31.399999999999999,
+        "2": -29.899999999999999,
+        "3": -28.199999999999999
+      },
+      {
+        "1": -32.899999999999999,
+        "2": -31.300000000000001,
+        "3": -29.800000000000001
+      },
+      {
+        "1": -34.399999999999999,
+        "2": -32.799999999999997,
+        "3": -31.199999999999999
+      },
+      {
+        "1": -35.600000000000001,
+        "2": -33.899999999999999,
+        "3": -32.399999999999999
+      },
+      {
+        "1": -36.399999999999999,
+        "2": -34.700000000000003,
+        "3": -33.100000000000001
+      }
+    ],
+    "quality": {
+      "repeats": 2,
+      "method": "hold 2.5 s vs 5 s",
+      "point_error_db": 0.0,
+      "pointsCompared": 59,
+      "shapeDisagreements": 0,
+      "withinPositionsMonotonic": true,
+      "acrossPositionsMonotonic": true,
+      "violations": []
+    },
+    "detector": {
+      "fraction": 0.4,
+      "sine_in_at_2db": -15.1,
+      "twotone_in_at_2db": -16.300000000000001,
+      "hz2": 1201.0,
+      "position_norm": 0.333332985639572,
+      "measuredAt": "20261002T133602.777+0100",
+      "rule": "shift between the sine's and the equal-RMS two-tone's 2 dB levels, over 3.01 dB; 0 = rms detector, 1 = peak detector"
+    }
+  }
+}

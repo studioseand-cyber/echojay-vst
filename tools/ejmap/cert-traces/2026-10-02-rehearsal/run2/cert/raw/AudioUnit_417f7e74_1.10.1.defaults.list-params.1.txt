@@ -1,0 +1,12 @@
+probe: "bx_opto" | AudioUnit:Effects/aufx,bxot,Brwx | uid=417f7e74 | arch=arm64 | format=AudioUnit
+
+0	Power		2	1	1	0
+1	Speed		2147483647	0	1	0
+2	Peak Reduction		2147483647	0	1	0
+3	Output Gain		2147483647	0	1	0
+4	Sidechain Filter Type		4	1	1	0
+5	Sidechain Frequency		2147483647	0	1	0
+6	Mix		2147483647	0	1	0
+7	Sidechain Off/On/Solo		3	1	1	0
+8	Bank		4	1	1	0
+9			2147483647	0	1	0

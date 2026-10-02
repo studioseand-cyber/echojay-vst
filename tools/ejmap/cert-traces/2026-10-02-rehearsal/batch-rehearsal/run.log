@@ -1,0 +1,41 @@
+[11:59:31] STEP 1 pre-flight
+EJ Map pre-flight
+  executable : /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/dist/ejmap.app/Contents/MacOS/ejmap
+  app signed : team 8BT5F9B887 (Developer ID Application: Sean Donoghue (8BT5F9B887))
+  probe      : /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/dist/ejmap.app/Contents/MacOS/EchoJayProbe  (beside the executable: the default)
+  probe sig  : team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+  cert root  : ~/Library/ejmap/cert  (default)
+  store      : ~/Library/ejmap/cert/fixtures
+  ledger     : ~/Library/ejmap
+  iLok       : ABSENT
+  power      : Now drawing from 'AC Power'
+[11:59:32] STEP 3 census
+worklist: 0 fixture(s) in the store (0 already record a sweep, candidates or a refusal; 0 refusal(s), 0 of them permanent), 160 discovered from the ledger at /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger2
+RUNNABLE: 87 (0 as a new identity at the installed version, 87 discovered with no fixture at all)
+  EMO-D5 (m)                              DISCOVERED at 12.0.0, mapped (server map state 2) (defaults first; plan after sampling)
+  EMO-D5 (s)                              DISCOVERED at 12.0.0, mapped (server map state 2) (defaults first; plan after sampling)
+NOT RUNNABLE, BY REASON
+  discovered, CONDITIONAL - needs McDSP APB hardware present (one re-run once attached) (4): APB C-18 Compressor, APB C673-A Compressor, APB MC-3 MultiComp, APB Royal Mu
+  discovered, CONDITIONAL - needs UAD hardware (UAD-2) present (one re-run once attached) (40): UAD 4K Buss Compressor, UAD Antares Auto-Tune Realtime, UAD API 2500, UAD Auto-Tune Realtime Access, UAD Auto-Tune Realtime Advanced, UAD Auto-Tune Realtime X, UAD dbx 160, UAD elysia alpha master, UAD elysia alpha mix, UAD elysia mpressor, UAD Empirical Labs Distressor, UAD Fairchild 660, UAD Fairchild 670, UAD Fairchild 670 Legacy, UAD Manley Variable Mu, UAD Neve 2254 E, UAD Neve 2254 E Dual, UAD Neve 33609 C, UAD Neve 33609SE, UAD Precision Buss Compressor, UAD Precision Multiband, UAD Shadow Hills Mastering Compressor, UAD SSL G Bus Compressor, UAD SSL G Bus Compressor Legacy, UAD Summit Audio TLA-100A, UAD Teletronix LA-2, UAD Teletronix LA-2A Gray, UAD Teletronix LA-2A Legacy, UAD Teletronix LA-2A Silver, UAD Teletronix LA-3A, UAD Tube-Tech CL 1B, UAD Tube-Tech CL 1B mk II, UAD UA 1176 Rev A, UAD UA 1176AE, UAD UA 1176LN Legacy, UAD UA 1176LN Rev E, UAD UA 1176SE Legacy, UAD UA 175-B, UAD UA 176, UAD Vertigo VSC-2
+  discovered, licence-bound (run with --include-pace) (29): Auto-Tune Access, Auto-Tune Artist, Auto-Tune EFX+, Auto-Tune Pro, Auto-Tune Vocal Compressor, Empirical Labs Mike-E Comp, MDrumLeveler, MDynamics, MDynamicsMB, MDynamicsMBLarge, MModernCompressor, MO-TT, MSpectralDynamics, MSpectralDynamicsMini, MTurboComp, MTurboCompMB, SSL Blitzer, SSL Fusion HF Compressor, SSL G3 MultiBusComp, SSL LMC+, SSL Native Bus Compressor 2, SSL Native X-Comp v6, SSL Native X-ValveComp v6, Tube-Tech CL 1B, U73b Compressor, VBC FG-Grey, VBC FG-MU, VBC FG-Red, VBC Rack
+[11:59:38] STEP 4 batch (first invocation, to be interrupted after the second product - criterion A8)
+[12:44:03] INTERRUPT: ctrl-C the batch during product 3
+[12:44:08] first invocation ended; rows so far: 3
+[12:44:08] STEP 4 batch (second invocation: the same command - resume)
+iLok: ABSENT
+  -> held: hardware: mapped (server map state 2); needs McDSP APB hardware present
+=== [1] Lindell SBC
+  wall 126.226 s, exit 0
+  -> exported: profile exported with its tone check
+=== [2] NEOLD U2A
+  wall 165.596 s, exit 0
+  -> needs_review: sweep result flat: no two positions differ by more than 1 dB at any test level
+=== [3] NEOLD V76U73
+  wall 13.5763 s, exit 4
+  -> refused: stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+  -> held: licence: PACE-wrapped and the batch runs without the iLok (mapped (server map state 2))
+SWEEP-ALL: 3 attempted, 2 swept to a fixture, 1 stopped, 0 finished from the store
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/outcomes.json): 7 rows - exported 2, recorded 0, refused 1, held 2, needs_review 2
+[12:49:32] STEP 6 zip
+0
+[12:49:32] REHEARSAL DONE

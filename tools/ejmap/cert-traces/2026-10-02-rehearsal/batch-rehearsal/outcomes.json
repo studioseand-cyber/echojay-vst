@@ -1,0 +1,67 @@
+[
+  {
+    "identity": "AudioUnit|4f271a4b|1.3.9",
+    "product": "APB C-18 Compressor",
+    "category": "compressor",
+    "state": "held",
+    "reason": "hardware: mapped (server map state 2); needs McDSP APB hardware present",
+    "at": "20261002T124420"
+  },
+  {
+    "identity": "AudioUnit|417f7e74|1.10.1",
+    "product": "bx_opto",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/fixtures/AudioUnit_417f7e74_1.10.1.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/profiles/bx_opto_1.10.1.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/profiles/bx_opto_1.10.1.tonecheck.json",
+    "at": "20261002T120053"
+  },
+  {
+    "identity": "AudioUnit|4942687d|12.0.0",
+    "product": "EMO-D5 (s)",
+    "category": "compressor",
+    "state": "needs_review",
+    "reason": "5 threshold candidates (a channel strip or multiband): the one-candidate rule is not built, nobody picks",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/fixtures/AudioUnit_4942687d_12.0.0.json",
+    "at": "20261002T124355"
+  },
+  {
+    "identity": "AudioUnit|6f747363|1.0.3",
+    "product": "Lindell SBC",
+    "category": "compressor",
+    "state": "exported",
+    "reason": "profile exported with its tone check",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/fixtures/AudioUnit_6f747363_1.0.3.json",
+    "profile": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/profiles/Lindell_SBC_1.0.3.json",
+    "tonecheck": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/profiles/Lindell_SBC_1.0.3.tonecheck.json",
+    "at": "20261002T124633"
+  },
+  {
+    "identity": "AudioUnit|61755c26|1.1.0",
+    "product": "NEOLD U2A",
+    "category": "compressor",
+    "state": "needs_review",
+    "reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/fixtures/AudioUnit_61755c26_1.1.0.json",
+    "at": "20261002T124918"
+  },
+  {
+    "identity": "AudioUnit|61755f23|1.3.0",
+    "product": "NEOLD V76U73",
+    "category": "compressor",
+    "state": "refused",
+    "reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+    "record": "/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert/fixtures/AudioUnit_61755f23_1.3.0.json",
+    "at": "20261002T124932"
+  },
+  {
+    "identity": "AudioUnit|517f614e|2.5.62",
+    "product": "Tube-Tech CL 1B",
+    "category": "compressor",
+    "state": "held",
+    "reason": "licence: PACE-wrapped and the batch runs without the iLok (mapped (server map state 2))",
+    "at": "20261002T124932"
+  }
+]

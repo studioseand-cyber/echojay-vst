@@ -1,0 +1,1717 @@
+{
+  "identity": "AudioUnit|6f747363|1.0.3",
+  "product": "Lindell SBC",
+  "format": "AudioUnit",
+  "manufacturer": "Plugin Alliance",
+  "mapState": "server map state 3",
+  "uid": "6f747363",
+  "version": "1.0.3",
+  "sampledAt": "2026-10-02",
+  "certified": false,
+  "note": "PROFILE ONLY - nothing certified, nothing written to the plugin.",
+  "probe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "listParamsRc": 0,
+  "textAtRc": 0,
+  "param_count": 22,
+  "map_fp": "afdb3916a60b69fd8638f3c9a20080df2d91d4216912b2b7ef535c0b6de2282c",
+  "controls": [
+    {
+      "index": 0,
+      "name": "SC HPF",
+      "unit": "Hz",
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "90.0 Hz",
+        "1.000": "400.0 Hz"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 90.0,
+        "max": 400.0,
+        "at0": null,
+        "at0_5": 90.0,
+        "at1": 400.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Mix",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0",
+        "0.500": "50",
+        "1.000": "100"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 100.0,
+        "at0": 0.0,
+        "at0_5": 50.0,
+        "at1": 100.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "100",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 2,
+      "name": "THD",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-30.00",
+        "0.500": "-0.00",
+        "1.000": "30.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -30.0,
+        "max": 30.0,
+        "at0": -30.0,
+        "at0_5": -0.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "-0.00",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 3,
+      "name": "Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.00",
+        "0.500": "9.00",
+        "1.000": "24.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.0,
+        "max": 24.0,
+        "at0": 0.0,
+        "at0_5": 9.0,
+        "at1": 24.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "0.00",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 4,
+      "name": "Knee",
+      "unit": null,
+      "displayAt": {
+        "0.000": "SOFT",
+        "0.500": "MED",
+        "1.000": "HARD"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "SOFT",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Link",
+      "unit": "%",
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "70 %",
+        "1.000": "100 %"
+      },
+      "numSteps": 7,
+      "discrete": true,
+      "range": {
+        "min": 70.0,
+        "max": 100.0,
+        "at0": null,
+        "at0_5": 70.0,
+        "at1": 100.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Smash",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 7,
+      "name": "Input Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-10.00",
+        "0.500": "-0.00",
+        "1.000": "10.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -10.0,
+        "max": 10.0,
+        "at0": -10.0,
+        "at0_5": -0.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "-0.00",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Ratio",
+      "unit": ":1",
+      "displayAt": {
+        "0.000": "1.5:1",
+        "0.500": "4:1",
+        "1.000": "Inf"
+      },
+      "numSteps": 7,
+      "discrete": true,
+      "range": {
+        "min": 1.5,
+        "max": 4.0,
+        "at0": 1.5,
+        "at0_5": 4.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "4:1",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 9,
+      "name": "Style",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Feed Back",
+        "0.500": "Feed Back",
+        "1.000": "Feed Forward"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Feed Back",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 10,
+      "name": "Link HP",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 11,
+      "name": "Link LP",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 12,
+      "name": "External Side Chain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Threshold",
+      "unit": null,
+      "displayAt": {
+        "0.000": "10.00",
+        "0.500": "-1.61",
+        "1.000": "-20.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -20.0,
+        "max": 10.0,
+        "at0": 10.0,
+        "at0_5": -1.61,
+        "at1": -20.0,
+        "inverted": true,
+        "linear": false
+      },
+      "direction": "descending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "-1.61",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 14,
+      "name": "Output Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "-10.00",
+        "0.500": "-0.00",
+        "1.000": "10.00"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": -10.0,
+        "max": 10.0,
+        "at0": -10.0,
+        "at0_5": -0.0,
+        "at1": 10.0,
+        "inverted": false,
+        "linear": true
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "-0.00",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 15,
+      "name": "Manual Gain",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 16,
+      "name": "Release",
+      "unit": null,
+      "displayAt": {
+        "0.000": "0.050",
+        "0.500": "0.500",
+        "1.000": "3.000"
+      },
+      "numSteps": 2147483647,
+      "discrete": false,
+      "range": {
+        "min": 0.05,
+        "max": 3.0,
+        "at0": 0.05,
+        "at0_5": 0.5,
+        "at1": 3.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "0.500",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 17,
+      "name": "Meter Mode",
+      "unit": null,
+      "displayAt": {
+        "0.000": "IN",
+        "0.500": "GR",
+        "1.000": "OUT"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "GR",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 18,
+      "name": "Compress",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 1.0,
+        "display": "On",
+        "declaredDefault": 1.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 19,
+      "name": "Attack",
+      "unit": "ms",
+      "displayAt": {
+        "0.000": "0.03 ms",
+        "0.500": "1 ms",
+        "1.000": "30 ms"
+      },
+      "numSteps": 7,
+      "discrete": true,
+      "range": {
+        "min": 0.03,
+        "max": 30.0,
+        "at0": 0.03,
+        "at0_5": 1.0,
+        "at1": 30.0,
+        "inverted": false,
+        "linear": false
+      },
+      "direction": "ascending",
+      "defaultOnInstantiate": {
+        "normalised": 0.5,
+        "display": "1 ms",
+        "declaredDefault": 0.5,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 20,
+      "name": "Bypass",
+      "unit": null,
+      "displayAt": {
+        "0.000": "Off",
+        "0.500": "Off",
+        "1.000": "On"
+      },
+      "numSteps": 2,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "Off",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    },
+    {
+      "index": 21,
+      "name": "Filter",
+      "unit": null,
+      "displayAt": {
+        "0.000": "OFF",
+        "0.500": "MED",
+        "1.000": "LOUD"
+      },
+      "numSteps": 3,
+      "discrete": true,
+      "range": {
+        "status": "text is not numeric"
+      },
+      "direction": "named positions",
+      "defaultOnInstantiate": {
+        "normalised": 0.0,
+        "display": "OFF",
+        "declaredDefault": 0.0,
+        "note": "the value the plugin instantiated with; declaredDefault is what the plugin calls its default - they are not always the same"
+      }
+    }
+  ],
+  "defaultsSampledAt": "2026-10-02",
+  "defaultsProbe": "signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "schema": "ej_cert_compressor/1",
+  "readoutCheck": {
+    "method": "instantiate_twice",
+    "instances": 2
+  },
+  "thresholdSweep": {
+    "measuredAt": "20261002T153957.483+0100",
+    "host": "EJ Map 0.1.0 / arm64 / 48k",
+    "bridged": false,
+    "tone": {
+      "hz": 997.0,
+      "levels_dbfs": [
+        -60.0,
+        -58.0,
+        -56.0,
+        -54.0,
+        -52.0,
+        -50.0,
+        -48.0,
+        -46.0,
+        -44.0,
+        -42.0,
+        -40.0,
+        -38.0,
+        -36.0,
+        -34.0,
+        -32.0,
+        -30.0,
+        -28.0,
+        -26.0,
+        -24.0,
+        -22.0,
+        -20.0,
+        -18.0,
+        -16.0,
+        -14.0,
+        -12.0,
+        -10.0,
+        -8.0,
+        -6.0,
+        -4.0,
+        -2.0,
+        0.0
+      ]
+    },
+    "level_convention": "peak",
+    "procedure": "one process per position, levels quiet to loud; reference = each position's own quiet gain (the loudest ladder rung whose pair differs by 6 dB)",
+    "ratioDuring": {
+      "position": "4:1",
+      "value": 4.0,
+      "assumed": false
+    },
+    "autoMakeupDisabled": false,
+    "preconditions": [
+      {
+        "index": 1,
+        "norm": 1.0,
+        "set": "100",
+        "role": "mix_wet"
+      }
+    ],
+    "positions": 16,
+    "positionNorms": [
+      0.0,
+      0.066667,
+      0.133333,
+      0.2,
+      0.266667,
+      0.333333,
+      0.4,
+      0.466667,
+      0.533333,
+      0.6,
+      0.666667,
+      0.733333,
+      0.8,
+      0.866667,
+      0.933333,
+      1.0
+    ],
+    "positionTexts": [
+      "10.00",
+      "9.20",
+      "8.40",
+      "6.93",
+      "4.78",
+      "2.97",
+      "1.31",
+      "-0.49",
+      "-2.73",
+      "-4.85",
+      "-6.77",
+      "-8.75",
+      "-10.92",
+      "-13.62",
+      "-16.78",
+      "-20.00"
+    ],
+    "hold_s": 2.5,
+    "win_s": 0.3,
+    "linearReference": {
+      "mode": "per_position_quiet",
+      "levels_dbfs": [
+        -54,
+        -48
+      ],
+      "tolerance_db": 0.1,
+      "check_db": [
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001,
+        -0.001
+      ],
+      "rung_dbfs": [
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ],
+        [
+          -54,
+          -48
+        ]
+      ],
+      "descended": 0,
+      "ladder_dbfs": [
+        [
+          -54,
+          -48
+        ],
+        [
+          -66,
+          -60
+        ],
+        [
+          -78,
+          -72
+        ],
+        [
+          -90,
+          -84
+        ]
+      ],
+      "gain_db": [
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01,
+        -0.01
+      ],
+      "fallback": "profile sweep: the quiet-level reference on every product by design"
+    },
+    "defaultGain_db": {
+      "-10": -3.81,
+      "-12": -3.06,
+      "-14": -2.35,
+      "-16": -1.73,
+      "-18": -1.17,
+      "-2": -6.97,
+      "-20": -0.68,
+      "-22": -0.3,
+      "-24": -0.07,
+      "-26": -0.02,
+      "-28": -0.02,
+      "-30": -0.02,
+      "-32": -0.02,
+      "-34": -0.02,
+      "-36": -0.01,
+      "-38": -0.02,
+      "-4": -6.17,
+      "-40": -0.01,
+      "-42": -0.01,
+      "-44": -0.02,
+      "-46": -0.01,
+      "-48": -0.01,
+      "-50": -0.02,
+      "-52": -0.01,
+      "-54": -0.01,
+      "-56": -0.01,
+      "-58": -0.01,
+      "-6": -5.39,
+      "-60": -0.02,
+      "-66": -0.01,
+      "-72": -0.01,
+      "-78": 0.01,
+      "-8": -4.59,
+      "-84": 0.09,
+      "-90": 0.48,
+      "0": -7.77
+    },
+    "positionLandedBy": [
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack",
+      "instack"
+    ],
+    "writeLanding": {
+      "instack": 16
+    },
+    "reduction_db": {
+      "-60": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-58": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-56": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-54": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-52": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-50": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-48": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-46": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0
+      ],
+      "-44": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "-42": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.01
+      ],
+      "-40": [
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        -0.0,
+        0.04
+      ],
+      "-38": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.02,
+        0.23
+      ],
+      "-36": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.01,
+        0.16,
+        0.56
+      ],
+      "-34": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.01,
+        0.12,
+        0.47,
+        0.98
+      ],
+      "-32": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.01,
+        0.1,
+        0.41,
+        0.87,
+        1.48
+      ],
+      "-30": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.01,
+        0.1,
+        0.39,
+        0.82,
+        1.37,
+        2.06
+      ],
+      "-28": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.11,
+        0.39,
+        0.8,
+        1.32,
+        1.95,
+        2.72
+      ],
+      "-26": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.02,
+        0.12,
+        0.4,
+        0.79,
+        1.29,
+        1.9,
+        2.6,
+        3.45
+      ],
+      "-24": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.02,
+        0.13,
+        0.42,
+        0.81,
+        1.29,
+        1.87,
+        2.54,
+        3.33,
+        4.23
+      ],
+      "-22": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.03,
+        0.16,
+        0.45,
+        0.84,
+        1.31,
+        1.87,
+        2.51,
+        3.27,
+        4.1,
+        5.02
+      ],
+      "-20": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.03,
+        0.18,
+        0.49,
+        0.87,
+        1.34,
+        1.89,
+        2.51,
+        3.23,
+        4.03,
+        4.89,
+        5.83
+      ],
+      "-18": [
+        0.01,
+        0.01,
+        0.01,
+        0.01,
+        0.04,
+        0.21,
+        0.53,
+        0.93,
+        1.39,
+        1.93,
+        2.54,
+        3.22,
+        3.99,
+        4.82,
+        5.7,
+        6.66
+      ],
+      "-16": [
+        0.01,
+        0.01,
+        0.01,
+        0.05,
+        0.25,
+        0.58,
+        0.98,
+        1.45,
+        1.99,
+        2.59,
+        3.27,
+        4.0,
+        4.79,
+        5.63,
+        6.53,
+        7.51
+      ],
+      "-14": [
+        0.01,
+        0.01,
+        0.05,
+        0.27,
+        0.61,
+        1.03,
+        1.51,
+        2.05,
+        2.65,
+        3.32,
+        4.04,
+        4.8,
+        5.6,
+        6.46,
+        7.37,
+        8.359999999999999
+      ],
+      "-12": [
+        0.01,
+        0.05,
+        0.28,
+        0.64,
+        1.07,
+        1.55,
+        2.11,
+        2.71,
+        3.38,
+        4.09,
+        4.84,
+        5.61,
+        6.44,
+        7.31,
+        8.23,
+        9.210000000000001
+      ],
+      "-10": [
+        0.05,
+        0.27,
+        0.64,
+        1.1,
+        1.61,
+        2.16,
+        2.78,
+        3.45,
+        4.15,
+        4.88,
+        5.65,
+        6.45,
+        7.29,
+        8.17,
+        9.09,
+        10.08
+      ],
+      "-8": [
+        0.24,
+        0.62,
+        1.08,
+        1.61,
+        2.19,
+        2.82,
+        3.52,
+        4.22,
+        4.94,
+        5.69,
+        6.48,
+        7.28,
+        8.140000000000001,
+        9.029999999999999,
+        9.949999999999999,
+        10.94
+      ],
+      "-6": [
+        0.58,
+        1.05,
+        1.58,
+        2.18,
+        2.83,
+        3.52,
+        4.25,
+        5.0,
+        5.75,
+        6.52,
+        7.32,
+        8.130000000000001,
+        8.99,
+        9.890000000000001,
+        10.81,
+        11.81
+      ],
+      "-4": [
+        1.03,
+        1.58,
+        2.17,
+        2.83,
+        3.54,
+        4.26,
+        5.01,
+        5.77,
+        6.54,
+        7.35,
+        8.16,
+        8.98,
+        9.84,
+        10.74,
+        11.68,
+        12.69
+      ],
+      "-2": [
+        1.57,
+        2.19,
+        2.85,
+        3.56,
+        4.28,
+        5.02,
+        5.78,
+        6.56,
+        7.35,
+        8.16,
+        9.0,
+        9.83,
+        10.699999999999999,
+        11.6,
+        12.539999999999999,
+        13.56
+      ],
+      "0": [
+        2.18,
+        2.87,
+        3.59,
+        4.34,
+        5.08,
+        5.82,
+        6.57,
+        7.36,
+        8.16,
+        8.970000000000001,
+        9.81,
+        10.66,
+        11.56,
+        12.470000000000001,
+        13.41,
+        14.44
+      ]
+    },
+    "sense": "higher_is_harder",
+    "engage": {
+      "-60": null,
+      "-58": null,
+      "-56": null,
+      "-54": null,
+      "-52": null,
+      "-50": null,
+      "-48": null,
+      "-46": null,
+      "-44": null,
+      "-42": null,
+      "-40": null,
+      "-38": null,
+      "-36": 15,
+      "-34": 15,
+      "-32": 14,
+      "-30": 13,
+      "-28": 12,
+      "-26": 11,
+      "-24": 10,
+      "-22": 9,
+      "-20": 8,
+      "-18": 6,
+      "-16": 5,
+      "-14": 4,
+      "-12": 3,
+      "-10": 2,
+      "-8": 1,
+      "-6": 0,
+      "-4": 0,
+      "-2": 0,
+      "0": 0
+    },
+    "thresholdDbEquivalent": [
+      -4.7,
+      -6.1,
+      -7.5,
+      -8.9,
+      -10.300000000000001,
+      -11.800000000000001,
+      -13.199999999999999,
+      -14.1,
+      -15.5,
+      -17.0,
+      -18.5,
+      -19.899999999999999,
+      -21.5,
+      -23.5,
+      -25.600000000000001,
+      -28.199999999999999
+    ],
+    "thresholdEffective1dB": [
+      -4.1,
+      -6.2,
+      -8.4,
+      -10.4,
+      -12.300000000000001,
+      -14.1,
+      -15.9,
+      -17.699999999999999,
+      -19.5,
+      -21.399999999999999,
+      -23.300000000000001,
+      -25.199999999999999,
+      -27.199999999999999,
+      -29.300000000000001,
+      -31.5,
+      -33.899999999999999
+    ],
+    "inAtGr": [
+      {
+        "1": -4.1,
+        "2": -0.6,
+        "3": "not_reached"
+      },
+      {
+        "1": -6.2,
+        "2": -2.6,
+        "3": "not_reached"
+      },
+      {
+        "1": -8.4,
+        "2": -4.6,
+        "3": -1.6
+      },
+      {
+        "1": -10.4,
+        "2": -6.6,
+        "3": -3.5
+      },
+      {
+        "1": -12.300000000000001,
+        "2": -8.699999999999999,
+        "3": -5.5
+      },
+      {
+        "1": -14.1,
+        "2": -10.5,
+        "3": -7.5
+      },
+      {
+        "1": -15.9,
+        "2": -12.4,
+        "3": -9.4
+      },
+      {
+        "1": -17.699999999999999,
+        "2": -14.199999999999999,
+        "3": -11.199999999999999
+      },
+      {
+        "1": -19.5,
+        "2": -16.0,
+        "3": -13.0
+      },
+      {
+        "1": -21.399999999999999,
+        "2": -17.800000000000001,
+        "3": -14.9
+      },
+      {
+        "1": -23.300000000000001,
+        "2": -19.699999999999999,
+        "3": -16.699999999999999
+      },
+      {
+        "1": -25.199999999999999,
+        "2": -21.600000000000001,
+        "3": -18.600000000000001
+      },
+      {
+        "1": -27.199999999999999,
+        "2": -23.600000000000001,
+        "3": -20.600000000000001
+      },
+      {
+        "1": -29.300000000000001,
+        "2": -25.699999999999999,
+        "3": -22.699999999999999
+      },
+      {
+        "1": -31.5,
+        "2": -27.800000000000001,
+        "3": -24.899999999999999
+      },
+      {
+        "1": -33.899999999999999,
+        "2": -30.199999999999999,
+        "3": -27.199999999999999
+      }
+    ],
+    "inAtGrQuality": {
+      "nonMonotonicStraddles": 0,
+      "widestGap_db": 2.0,
+      "rule": "linear interpolation between the two steps that straddle 1, 2 and 3 dB, only where GR rises across the straddle; never extrapolated; not_reached and below_range kept apart"
+    },
+    "levelDependence": {
+      "predicted_dg_dl": 0.75,
+      "dg_dl_per_position": [
+        0.036,
+        0.048,
+        0.06,
+        0.072,
+        0.085,
+        0.097,
+        0.11,
+        0.123,
+        0.136,
+        0.15,
+        0.164,
+        0.178,
+        0.193,
+        0.208,
+        0.224,
+        0.241
+      ],
+      "median_dg_dl": 0.385,
+      "implied_ratio": 1.63,
+      "rule": "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses"
+    },
+    "result": "certified",
+    "passThroughAtDefaults": false,
+    "notToneReadings": [],
+    "flatSpan_db": 12.26,
+    "displayOffsetDb": null,
+    "inAtGrRepeat": [
+      {
+        "1": -4.2,
+        "2": -0.6,
+        "3": "not_reached"
+      },
+      {
+        "1": -6.3,
+        "2": -2.6,
+        "3": "not_reached"
+      },
+      {
+        "1": -8.4,
+        "2": -4.6,
+        "3": -1.6
+      },
+      {
+        "1": -10.4,
+        "2": -6.6,
+        "3": -3.5
+      },
+      {
+        "1": -12.300000000000001,
+        "2": -8.699999999999999,
+        "3": -5.5
+      },
+      {
+        "1": -14.1,
+        "2": -10.5,
+        "3": -7.5
+      },
+      {
+        "1": -15.9,
+        "2": -12.4,
+        "3": -9.4
+      },
+      {
+        "1": -17.699999999999999,
+        "2": -14.199999999999999,
+        "3": -11.199999999999999
+      },
+      {
+        "1": -19.5,
+        "2": -16.0,
+        "3": -13.0
+      },
+      {
+        "1": -21.399999999999999,
+        "2": -17.800000000000001,
+        "3": -14.9
+      },
+      {
+        "1": -23.300000000000001,
+        "2": -19.699999999999999,
+        "3": -16.699999999999999
+      },
+      {
+        "1": -25.199999999999999,
+        "2": -21.600000000000001,
+        "3": -18.600000000000001
+      },
+      {
+        "1": -27.199999999999999,
+        "2": -23.600000000000001,
+        "3": -20.600000000000001
+      },
+      {
+        "1": -29.300000000000001,
+        "2": -25.699999999999999,
+        "3": -22.699999999999999
+      },
+      {
+        "1": -31.5,
+        "2": -27.800000000000001,
+        "3": -24.899999999999999
+      },
+      {
+        "1": -33.899999999999999,
+        "2": -30.199999999999999,
+        "3": -27.199999999999999
+      }
+    ],
+    "quality": {
+      "repeats": 2,
+      "method": "hold 2.5 s vs 5 s",
+      "point_error_db": 0.1,
+      "pointsCompared": 46,
+      "shapeDisagreements": 0,
+      "withinPositionsMonotonic": true,
+      "acrossPositionsMonotonic": true,
+      "violations": []
+    },
+    "detector": {
+      "fraction": 0.0,
+      "sine_in_at_2db": -14.199999999999999,
+      "twotone_in_at_2db": -14.199999999999999,
+      "hz2": 1201.0,
+      "position_norm": 0.466666996479034,
+      "measuredAt": "20261002T154002.477+0100",
+      "rule": "shift between the sine's and the equal-RMS two-tone's 2 dB levels, over 3.01 dB; 0 = rms detector, 1 = peak detector"
+    }
+  }
+}

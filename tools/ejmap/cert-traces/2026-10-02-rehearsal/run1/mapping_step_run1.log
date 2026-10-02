@@ -1,0 +1,40 @@
+  File "<stdin>", line 2
+    L="'"$L"'"
+         ^
+SyntaxError: invalid syntax
+[14:24:30] MAPPING START  maps before:        0
+BACKLOG: 0 mapped, 0 sent
+COLUMNS [cache restored] rows 1733 | mapped 0 | sent 0 | onServer yes 1271 diff 0 no 462 unknown 0 | localMaps 0 sentIds 0 serverIds 1731 | mapState ok, asked 0h ago
+ejmap status: RESTORED 1733 plugins from scan 20261002T133219-8a99 (51 min ago). Scan to refresh.  |  SWEEP WOULD OPEN 5 of 462 worklist row(s) (462 unmapped, 0 parked, 0 unqueried); the sweep itself 
+SWEEP will open 1 of 2 worklist row(s): 2 unmapped, 0 parked, 0 unqueried; declining 1 on the way past (1 no dial set). Not on the worklist: 1731 already mapped, 0 unmappable, 0 flagged
+SWEEP run 20261002T142430-b24b over 1 worklist row(s), 1073 categorised product(s)   [no editors: no captures, no modal can block]
+RESWEEP: 2 target name(s), 1 worklist row(s) matched (AU/VST3 siblings count separately); NO SCANNED MATCH for 1: bx_crispytuner
+COLUMNS [map saved] rows 1733 | mapped 1 | sent 0 | onServer yes 1271 diff 0 no 462 unknown 0 | localMaps 1 sentIds 0 serverIds 1731 | mapState ok, asked 0h ago
+COLUMNS [map saved] AudioUnit|6f457232|1.2.2 -> mapped YES, sent no, onServer YES
+      mapped  10 control(s)
+SWEEP DONE   1 opened in 0.1 min
+      1  mapped
+supervisor: child exited cleanly
+[14:24:36] mapping wall 6 s; maps after:        1; sent: 0
+drwxr-xr-x   3 SeanD  wheel     96  2 Oct 14:24 .
+drwxr-xr-x  19 SeanD  wheel    608  2 Oct 14:24 ..
+-rw-r--r--   1 SeanD  wheel  14675  2 Oct 14:24 5da42046bed73462a7d0c3b576c6ebcef0c555cdd787ee11484254db5c6d59a2.json
+  File "<stdin>", line 2
+    L="'"$L"'"
+         ^
+SyntaxError: invalid syntax
+[14:24:36] census after mapping
+1 local map(s), 1731 map-state row(s) (fetched 2026-10-02T13:32:48.987+01:00), 1730 categorised identities, 663 with a disposition other than sweep (honoured)
+UNMAPPED compressors and tuners (installed, categorised, no map at this build - the mapping sweep maps them; until then a row in state unmapped): 0
+RUNNABLE: 85 (0 as a new identity at the installed version, 85 discovered with no fixture at all)
+  Lindell 7X-500                          DISCOVERED at 1.2.2, mapped (local map) (defaults first; plan after sampling)
+[14:24:42] batch resumed with the slice extended
+  -> held: hardware: mapped (server map state 3); needs McDSP APB hardware present
+=== [1] Lindell 7X-500
+  wall 122.215 s, exit 0
+  -> exported: profile exported with its tone check
+  -> held: licence: PACE-wrapped and the batch runs without the iLok (mapped (server map state 3))
+SWEEP-ALL: 1 attempted, 1 swept to a fixture, 0 stopped, 0 finished from the store
+[14:27:01] batch wall 139 s
+config.json in zip: 0
+[14:27:01] MAPPING DONE

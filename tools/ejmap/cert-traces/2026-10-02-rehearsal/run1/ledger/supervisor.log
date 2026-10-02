@@ -1,0 +1,283 @@
+2026-10-02T13:27:03.957+01:00  supervisor: child died (code:86) after 3082ms; consecutive=1 fastDeaths=1 total=1 loadSucceeded=no
+2026-10-02T13:27:03.958+01:00  supervisor: relaunching (consecutive 1 of 3, total 1 of 10)
+2026-10-02T13:27:06.683+01:00  supervisor: the child finished 3 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:06.684+01:00  supervisor: child died (code:86) after 2725ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:06.684+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:09.106+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:09.106+01:00  supervisor: child died (code:86) after 2422ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:09.106+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:14.014+01:00  supervisor: the child finished 11 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:14.015+01:00  supervisor: child died (code:86) after 4907ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:14.015+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:17.493+01:00  supervisor: the child finished 15 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:17.494+01:00  supervisor: child died (code:86) after 3477ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:17.494+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:19.973+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:19.974+01:00  supervisor: child died (code:86) after 2478ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:19.974+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:22.395+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:22.395+01:00  supervisor: child died (code:86) after 2420ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:22.396+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:24.829+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:24.829+01:00  supervisor: child died (code:86) after 2432ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:24.829+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:27.506+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:27.506+01:00  supervisor: child died (code:86) after 2676ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:27.506+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:29.942+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:29.942+01:00  supervisor: child died (code:86) after 2435ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:29.942+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:32.364+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:32.364+01:00  supervisor: child died (code:86) after 2421ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:32.364+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:34.767+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:34.767+01:00  supervisor: child died (code:86) after 2402ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:34.767+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:37.188+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:37.188+01:00  supervisor: child died (code:86) after 2420ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:37.188+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:39.618+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:39.618+01:00  supervisor: child died (code:86) after 2429ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:39.618+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:42.302+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:42.302+01:00  supervisor: child died (code:86) after 2683ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:42.302+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:45.006+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:45.007+01:00  supervisor: child died (code:86) after 2703ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:45.007+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:47.974+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:47.974+01:00  supervisor: child died (code:86) after 2966ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:47.975+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:50.437+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:50.437+01:00  supervisor: child died (code:86) after 2462ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:50.437+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:52.859+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:52.859+01:00  supervisor: child died (code:86) after 2421ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:52.859+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:27:55.282+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:27:55.282+01:00  supervisor: child died (code:86) after 2422ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:27:55.282+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:16.803+01:00  supervisor: the child finished 41 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:16.803+01:00  supervisor: child died (code:86) after 21519ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:16.803+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:19.559+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:19.559+01:00  supervisor: child died (code:86) after 2755ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:19.560+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:21.989+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:21.989+01:00  supervisor: child died (code:86) after 2429ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:21.989+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:24.454+01:00  supervisor: the child finished 5 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:24.454+01:00  supervisor: child died (code:86) after 2463ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:24.454+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:29.001+01:00  supervisor: the child finished 9 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:29.001+01:00  supervisor: child died (code:86) after 4546ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:29.001+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:43.065+01:00  supervisor: the child finished 135 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:43.066+01:00  supervisor: child died (code:86) after 14063ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:43.066+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:46.028+01:00  supervisor: the child finished 5 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:46.028+01:00  supervisor: child died (code:86) after 2961ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:46.029+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:48.764+01:00  supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:48.764+01:00  supervisor: child died (code:86) after 2734ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:48.764+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:51.280+01:00  supervisor: the child finished 7 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:51.281+01:00  supervisor: child died (code:86) after 2515ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:51.281+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:53.743+01:00  supervisor: the child finished 4 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:53.743+01:00  supervisor: child died (code:86) after 2461ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:53.743+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:28:58.788+01:00  supervisor: the child finished 14 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:28:58.788+01:00  supervisor: child died (code:86) after 5043ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:28:58.788+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:02.722+01:00  supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:02.722+01:00  supervisor: child died (code:86) after 3932ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:02.722+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:08.539+01:00  supervisor: the child finished 224 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:08.539+01:00  supervisor: child died (code:86) after 5815ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:08.539+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:13.789+01:00  supervisor: the child finished 12 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:13.789+01:00  supervisor: child died (code:86) after 5247ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:13.789+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:17.198+01:00  supervisor: the child finished 8 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:17.198+01:00  supervisor: child died (code:86) after 3405ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:17.199+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:19.976+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:19.976+01:00  supervisor: child died (code:86) after 2770ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:19.976+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:23.169+01:00  supervisor: the child finished 10 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:23.169+01:00  supervisor: child died (code:86) after 3190ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:23.170+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:25.691+01:00  supervisor: the child finished 9 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:25.691+01:00  supervisor: child died (code:86) after 2518ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:25.691+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:26.949+01:00  supervisor: the child finished 18 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:26.949+01:00  supervisor: child died (code:86) after 1256ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:26.949+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:29.799+01:00  supervisor: the child finished 6 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:29.799+01:00  supervisor: child died (code:86) after 2848ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:29.800+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:32.510+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:32.511+01:00  supervisor: child died (code:86) after 2709ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:32.511+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:35.581+01:00  supervisor: the child finished 20 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:35.581+01:00  supervisor: child died (code:86) after 3068ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:35.581+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:41.645+01:00  supervisor: the child finished 6 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:41.646+01:00  supervisor: child died (code:86) after 6060ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:41.646+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:44.183+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:44.183+01:00  supervisor: child died (code:86) after 2533ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:44.183+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:48.233+01:00  supervisor: the child finished 25 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:48.233+01:00  supervisor: child died (code:86) after 4047ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:48.233+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:52.649+01:00  supervisor: the child finished 30 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:52.649+01:00  supervisor: child died (code:86) after 4413ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:52.649+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:29:56.269+01:00  supervisor: the child finished 11 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:29:56.270+01:00  supervisor: child died (code:86) after 3618ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:29:56.270+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:02.372+01:00  supervisor: the child finished 22 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:02.373+01:00  supervisor: child died (code:86) after 6099ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:02.373+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:04.880+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:04.880+01:00  supervisor: child died (code:86) after 2505ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:04.880+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:07.387+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:07.387+01:00  supervisor: child died (code:86) after 2503ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:07.387+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:09.911+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:09.911+01:00  supervisor: child died (code:86) after 2516ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:09.911+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:12.717+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:12.718+01:00  supervisor: child died (code:86) after 2802ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:12.718+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:15.243+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:15.244+01:00  supervisor: child died (code:86) after 2522ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:15.244+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:17.716+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:17.716+01:00  supervisor: child died (code:86) after 2469ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:17.716+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:20.488+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:20.489+01:00  supervisor: child died (code:86) after 2769ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:20.489+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:22.972+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:22.973+01:00  supervisor: child died (code:86) after 2479ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:22.973+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:25.533+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:25.533+01:00  supervisor: child died (code:86) after 2557ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:25.533+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:28.009+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:28.009+01:00  supervisor: child died (code:86) after 2474ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:28.009+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:30.489+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:30.489+01:00  supervisor: child died (code:86) after 2477ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:30.489+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:32.977+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:32.977+01:00  supervisor: child died (code:86) after 2486ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:32.977+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:35.746+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:35.747+01:00  supervisor: child died (code:86) after 2767ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:35.747+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:38.517+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:38.517+01:00  supervisor: child died (code:86) after 2766ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:38.517+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:41.006+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:41.006+01:00  supervisor: child died (code:86) after 2485ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:41.007+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:43.497+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:43.497+01:00  supervisor: child died (code:86) after 2485ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:43.497+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:46.245+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:46.245+01:00  supervisor: child died (code:86) after 2742ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:46.245+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:49.034+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:49.034+01:00  supervisor: child died (code:86) after 2783ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:49.034+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:51.802+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:51.802+01:00  supervisor: child died (code:86) after 2765ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:51.802+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:54.828+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:54.828+01:00  supervisor: child died (code:86) after 3023ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:54.828+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:57.314+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:57.315+01:00  supervisor: child died (code:86) after 2484ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:57.315+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:30:59.800+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:30:59.800+01:00  supervisor: child died (code:86) after 2482ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:30:59.800+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:02.562+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:02.562+01:00  supervisor: child died (code:86) after 2760ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:02.562+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:05.075+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:05.075+01:00  supervisor: child died (code:86) after 2509ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:05.075+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:07.871+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:07.872+01:00  supervisor: child died (code:86) after 2792ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:07.872+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:10.638+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:10.638+01:00  supervisor: child died (code:86) after 2763ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:10.638+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:13.645+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:13.646+01:00  supervisor: child died (code:86) after 3005ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:13.646+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:16.446+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:16.446+01:00  supervisor: child died (code:86) after 2796ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:16.446+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:18.950+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:18.950+01:00  supervisor: child died (code:86) after 2501ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:18.950+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:21.989+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:21.989+01:00  supervisor: child died (code:86) after 3036ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:21.989+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:24.783+01:00  supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:24.783+01:00  supervisor: child died (code:86) after 2790ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:24.783+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:27.956+01:00  supervisor: the child finished 14 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:27.956+01:00  supervisor: child died (code:86) after 3170ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:27.956+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:35.088+01:00  supervisor: the child finished 20 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:35.088+01:00  supervisor: child died (code:86) after 7127ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:35.088+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:37.834+01:00  supervisor: the child finished 6 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:37.834+01:00  supervisor: child died (code:86) after 2744ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:37.835+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:40.639+01:00  supervisor: the child finished 5 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:40.639+01:00  supervisor: child died (code:86) after 2802ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:40.639+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:43.365+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:43.365+01:00  supervisor: child died (code:86) after 2724ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:43.365+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:46.140+01:00  supervisor: the child finished 2 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:46.141+01:00  supervisor: child died (code:86) after 2770ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:46.141+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:52.854+01:00  supervisor: the child finished 24 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:52.854+01:00  supervisor: child died (code:86) after 6709ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:52.854+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:55.375+01:00  supervisor: the child finished 4 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:55.375+01:00  supervisor: child died (code:86) after 2517ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:55.375+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:31:58.105+01:00  supervisor: the child finished 17 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:31:58.105+01:00  supervisor: child died (code:86) after 2727ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:31:58.105+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:00.894+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:32:00.895+01:00  supervisor: child died (code:86) after 2785ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:32:00.895+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:03.423+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:32:03.423+01:00  supervisor: child died (code:86) after 2525ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:32:03.424+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:06.212+01:00  supervisor: the child finished 1 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:32:06.212+01:00  supervisor: child died (code:86) after 2785ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:32:06.212+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:11.899+01:00  supervisor: the child finished 27 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:32:11.899+01:00  supervisor: child died (code:86) after 5683ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:32:11.899+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:15.814+01:00  supervisor: the child finished 8 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:32:15.814+01:00  supervisor: child died (code:86) after 3912ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:32:15.814+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:19.734+01:00  supervisor: the child finished 8 unit(s) of work (maps, bundles probed, bundles quarantined) before this exit; the restart is not charged
+2026-10-02T13:32:19.734+01:00  supervisor: child died (code:86) after 3917ms; consecutive=0 fastDeaths=0 total=1 loadSucceeded=no
+2026-10-02T13:32:19.734+01:00  supervisor: relaunching (consecutive 0 of 3, total 1 of 10)
+2026-10-02T13:32:53.452+01:00  supervisor: child exited cleanly
+2026-10-02T14:24:36.195+01:00  supervisor: child exited cleanly

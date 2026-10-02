@@ -1,0 +1,176 @@
+[14:43:03] UNBROKEN-2 START  ledger /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_empty (empty but the sign-in token)  cert /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken (empty)
+[14:43:03] STEP 1 pre-flight
+EJ Map pre-flight
+  executable : /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/dist/ejmap.app/Contents/MacOS/ejmap
+  app signed : team 8BT5F9B887 (Developer ID Application: Sean Donoghue (8BT5F9B887))
+  probe      : /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/dist/ejmap.app/Contents/MacOS/EchoJayProbe  (beside the executable: the default)
+  probe sig  : team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+  cert root  : ~/Library/ejmap/cert  (default)
+  store      : ~/Library/ejmap/cert/fixtures
+  ledger     : ~/Library/ejmap
+  iLok       : ABSENT
+  power      : Now drawing from 'AC Power'
+window shown:     exit 86  (0.3 s to the kill; licence-stops entry written)
+no window (ctrl): exit 0
+SCAN WATCH SELFTEST: GREEN
+[14:43:07] STEP 2 scan + categorise (headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: starting (the Scan button, headless)
+SCAN: done - 1733 scanned row(s) in /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/ledger_empty/scan-cac
+CATEGORISE (before): 1073 product(s) need categorising
+CATEGORISE (after):  categories: all 1073 known
+[14:49:09] scan+categorise wall 362 s; licence stops: 94; quarantined: 0
+TEST EDITS: bx_crispytuner category pitch (stand-in); Lindell 7X-500 map-state removed ['AudioUnit|6f457232|1.2.2']
+[14:49:09] STEP 3 census
+worklist: 0 fixture(s) in the store (0 already record a sweep, candidates or a refusal; 0 refusal(s), 0 of them permanent), 159 discovered from the ledger at /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b
+pitch category, on the worklist for tuner certification: bx_crispytuner
+NO MAP YET (information, not a gate - certified anyway; the mapping sweep can map them, the server joins by map_fp): 2: Lindell 7X-500 1.2.2 [compressor], bx_crispytuner 1.1.0 [pitch]
+RUNNABLE: 119 (0 as a new identity at the installed version, 119 discovered with no fixture at all)
+  bx_crispytuner                          DISCOVERED at 1.1.0, map: none (defaults first; plan after sampling)
+  EMO-D5 (s)                              DISCOVERED at 12.0.0, map: server map state 3 (defaults first; plan after sampling)
+  Lindell 7X-500                          DISCOVERED at 1.2.2, map: none (defaults first; plan after sampling)
+  Tube-Tech CL 1B                         DISCOVERED at 2.5.62, map: server map state 3 (defaults first; plan after sampling)  [licence-bound]
+  discovered, CONDITIONAL - needs McDSP APB hardware present (one re-run once attached) (4): APB C-18 Compressor, APB C673-A Compressor, APB MC-3 MultiComp, APB Royal Mu
+  discovered, CONDITIONAL - needs UAD hardware (UAD-2) present (one re-run once attached) (36): UAD 4K Buss Compressor, UAD API 2500, UAD dbx 160, UAD elysia alpha master, UAD elysia alpha mix, UAD elysia mpressor, UAD Empirical Labs Distressor, UAD 
+QUARANTINED AT SCAN (never reach this census): 0, of which compressors or tuners: 0
+NEEDS LICENCE (activation window at scan; --scan --retry-licence once the licence is back): 94, of which compressors or tuners: 17
+  Tube-Tech CL 1B  [compressor]  activation window at scan (PACEEdenExperience [pid 27670]); load killed at once, not retried  2026-10-02T14:45:44.961+01:00  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+[14:49:16] STEP 4 batch
+iLok: ABSENT
+  -> held: hardware: map: server map state 3; needs McDSP APB hardware present
+=== [1] bx_crispytuner (tuner)
+  wall 12.9113 s, exit 0
+  -> recorded: 1 pitch candidate(s) recorded
+=== [2] bx_opto
+  wall 59.8006 s, exit 0
+  -> exported: profile exported with its tone check
+=== [3] elysia mpressor
+  wall 105.72 s, exit 0
+  -> exported: profile exported with its tone check
+=== [4] EMO-D5 (s)
+  wall 2589.3 s, exit 0
+  -> needs_review: 5 threshold candidates (a channel strip or multiband): the one-candidate rule is not built, nobody picks
+=== [5] Lindell 7X-500
+  wall 123.083 s, exit 0
+  -> exported: profile exported with its tone check
+=== [6] Lindell SBC
+  wall 126.638 s, exit 0
+  -> exported: profile exported with its tone check
+=== [7] NEOLD U2A
+  wall 166.182 s, exit 0
+  -> needs_review: sweep result flat: no two positions differ by more than 1 dB at any test level
+=== [8] NEOLD V76U73
+  wall 13.6789 s, exit 4
+  -> refused: stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+  -> needs_licence: carried forward from the scan: activation window at scan (PACEEdenExperience [pid 27670]); load killed at once, not retried at 2026-10-02T14:45:44.961+01:00 (Tube-Tech CL 1B.vst3);
+  -> needs_licence: window at scan (ejmap [pid 27637]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category u
+SWEEP-ALL: 8 attempted, 7 swept to a fixture, 1 stopped, 0 finished from the store
+OUTCOMES (/private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_unbroken/outcomes.json): 104 rows - export
+[15:43:04] batch wall 3228 s
+[15:43:04] STEP 3b (after, for the record): map Lindell 7X-500 locally, nothing sent
+BACKLOG: 0 mapped, 0 sent
+COLUMNS [cache restored] rows 1733 | mapped 0 | sent 0 | onServer yes 1270 diff 0 no 463 unknown 0 | localMaps 0 sentIds 0 serverIds 1730 | mapState ok, asked 0h ago
+SWEEP will open 1 of 2 worklist row(s): 2 unmapped, 0 parked, 0 unqueried; declining 1 on the way past (1 no dial set). Not on the worklist: 1731 already mapped, 0 unmappable, 0 flagged
+RESWEEP: 2 target name(s), 1 worklist row(s) matched (AU/VST3 siblings count separately); NO SCANNED MATCH for 1: bx_crispytuner
+COLUMNS [map saved] rows 1733 | mapped 1 | sent 0 | onServer yes 1270 diff 0 no 463 unknown 0 | localMaps 1 sentIds 0 serverIds 1731 | mapState ok, asked 0h ago
+COLUMNS [map saved] AudioUnit|6f457232|1.2.2 -> mapped YES, sent no, onServer no
+      mapped  10 control(s)
+[15:43:09] mapping wall 5 s; local maps:        1
+map-state re-fetched by the sweep launch; Lindell server entries removed again: ['AudioUnit|6f457232|1.2.2']
+1 local map(s), 1730 map-state row(s) (fetched 2026-10-02T14:49:05.003+01:00), 1730 categorised identities
+[15:43:16] STEP 6 zip
+config.json in zip: 0
+[15:43:16] UNBROKEN-2 DONE

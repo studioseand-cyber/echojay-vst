@@ -1,0 +1,48 @@
+EJ Map threshold sweep - bx_opto -> AudioUnit_417f7e74_1.10.1.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Peak Reduction unit '' (class single_threshold) | positions 27 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.02  -52.00 out-in -0.01  -50.00 out-in -0.01  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.01  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.01  -32.00 out-in -0.02  -30.00 out-in -0.01  -28.00 out-in -0.01  -26.00 out-in -0.01  -24.00 out-in -0.01  -22.00 out-in -0.01  -20.00 out-in -0.01  -18.00 out-in -0.01  -16.00 out-in -0.02  -14.00 out-in -0.01  -12.00 out-in -0.01  -10.00 out-in -0.01  -8.00 out-in -0.01  -6.00 out-in -0.01  -4.00 out-in -0.01  -2.00 out-in -0.01  0.00 out-in -0.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 0.00 0.00 0.00 0.00
+reference ladder: 4 position(s) below the first rung (23@-60 24@-60 25@-60 26@-60)
+writes landed by: instack 27
+processes: 59 run, 0 retried, 0 position(s) failed
+write verify: 27 landed, 0 write_unlanded (skipped), in-stack read already matched on 27 of 27, pump slices total 27, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0              -0.00    -0.00    -0.00          --          
+  1  0.0667    6              -0.00    -0.00    -0.00          --          
+  2  0.1333    13             -0.00    -0.00    -0.00          --          
+  3  0.2000    20             -0.00    -0.00    -0.00          --          
+  4  0.2667    26             -0.00    -0.00     0.43          --          
+  5  0.3000    30             -0.00    -0.00     1.48          --          
+  6  0.3333    33             -0.00     0.04     2.70          --          
+  7  0.3667    36             -0.00     0.66     4.09          --          
+  8  0.4000    40             -0.00     1.74     5.58          --          
+  9  0.4333    43             -0.00     3.00     7.13          --          
+ 10  0.4667    46             -0.00     4.43     8.71          --          
+ 11  0.5000    50              0.00     5.94    10.31          --          
+ 12  0.5333    53              0.20     7.49    11.92          --          
+ 13  0.5667    56              1.14     9.08    13.52          --          
+ 14  0.6000    60              2.30    10.68    15.13          --          
+ 15  0.6333    63              3.65    12.29    16.72          --          
+ 16  0.6667    66              5.12    13.89    18.30          --          
+ 17  0.7000    70              6.65    15.50    19.87          --          
+ 18  0.7333    73              8.22    17.09    21.41          --          
+ 19  0.7667    76              9.82    18.66    22.93          --          
+ 20  0.8000    80             11.42    20.23    24.42          --          
+ 21  0.8333    83             13.03    21.77    25.90          --          
+ 22  0.8667    86             14.63    23.27    27.32          --          
+ 23  0.9000    90             16.24    24.77    28.73          --          
+ 24  0.9333    93             17.82    26.23    30.09          --          
+ 25  0.9667    96             19.39    27.65    31.40          --          
+ 26  1.0000    100            20.94    29.04    32.68          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:26 -50.00:25 -48.00:24 -46.00:23 -44.00:22 -42.00:21 -40.00:20 -38.00:19 -36.00:18 -34.00:17 -32.00:17 -30.00:16 -28.00:15 -26.00:14 -24.00:13 -22.00:12 -20.00:11 -18.00:10 -16.00:9 -14.00:8 -12.00:7 -10.00:6 -8.00:5 -6.00:5 -4.00:4 -2.00:4 0.00:3
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7e74_1.10.1.json

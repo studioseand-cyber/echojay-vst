@@ -1,0 +1,125 @@
+SWEEP CENSUS - PACE held
+worklist: 0 fixture(s) in the store (0 already record a sweep, candidates or a refusal; 0 refusal(s), 0 of them permanent), 160 discovered from the ledger at ~/Library/ejmap
+1123 local map(s), 1799 map-state row(s) (fetched 2026-08-10T11:50:24.206+01:00), 1798 categorised identities, 666 with a disposition other than sweep (honoured)
+installed AUs not discovered: 69 category amp_sim, 101 category channel_strip, 19 category de-esser, 42 category delay, 164 category eq, 6 category gate, 34 category limiter, 88 category reverb, 104 category saturation, 16 category transient_shaper, 4 disposition not_a_processor in categories.json, 3 disposition review in categories.json, 566 not mapped at this build
+left alone by categories.json disposition: UAD bx_refinement: review (arms disagree: saturation vs none); AVOX PUNCH: review (arms disagree: transient_shaper vs none); Sibilance-Live (m): not_a_processor (); Sibilance-Live (s): not_a_processor (); SPL Vitalizer MK2-T: review (arms disagree: eq vs none); EMO-Generator (m): not_a_processor (); EMO-Generator (s): not_a_processor ()
+pitch category, on the worklist for tuner certification: Auto-Tune Access, Auto-Tune EFX+, UAD Auto-Tune Realtime Access, UAD Antares Auto-Tune Realtime, Auto-Tune Pro, Auto-Tune Artist, UAD Auto-Tune Realtime Advanced, UAD Auto-Tune Realtime X
+UNMAPPED compressors and tuners (installed, categorised, no map at this build - the mapping sweep maps them; until then a row in state unmapped): 7: Drawmer 1973 2.5.62 [compressor], Auto-Tune EFX 9.0.1 [pitch], C1 comp (s) 12.0.0 [compressor], PuigChild 660 (m) 12.0.0 [compressor], elysia alpha mix 1.17.1 [compressor], elysia mpressor 1.15.1 [compressor], MCompressor 14.16.0 [compressor]
+RUNNABLE: 87 (0 as a new identity at the installed version, 87 discovered with no fixture at all)
+  Abbey Road RS124 (m)                    DISCOVERED at 12.1.0, mapped (local map) (defaults first; plan after sampling)
+  Abbey Road RS124 (s)                    DISCOVERED at 12.1.0, mapped (local map) (defaults first; plan after sampling)
+  Acme Opticom XLA-3                      DISCOVERED at 1.10.1, mapped (local map) (defaults first; plan after sampling)
+  AMEK Mastering Compressor               DISCOVERED at 1.1.1, mapped (local map) (defaults first; plan after sampling)
+  API-2500 (m)                            DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  API-2500 (s)                            DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Bettermaker Bus Compressor DSP          DISCOVERED at 1.0.0, mapped (local map) (defaults first; plan after sampling)
+  bx_opto                                 DISCOVERED at 1.10.1, mapped (local map) (defaults first; plan after sampling)
+  bx_opto Pedal                           DISCOVERED at 1.10.1, mapped (local map) (defaults first; plan after sampling)
+  bx_townhouse Buss Compressor            DISCOVERED at 1.8.1, mapped (local map) (defaults first; plan after sampling)
+  C1 comp (m)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C1 comp-gate (m)                        DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C1 comp-gate (s)                        DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C1 comp-sc (m)                          DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C1 comp-sc (s)                          DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C4 (m)                                  DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C4 (s)                                  DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C6 (m)                                  DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C6 (s)                                  DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C6-SideChain (m)                        DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  C6-SideChain (s)                        DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  CLA-2A (m)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  CLA-2A (s)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  CLA-3A (m)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  CLA-3A (s)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  CLA-76 (m)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  CLA-76 (s)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  dbx-160 (m)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  dbx-160 (s)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  DPR-402 (m)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  DPR-402 (s)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  DynOne3                                 DISCOVERED at 3.12.3, mapped (local map) (defaults first; plan after sampling)
+  elysia alpha master                     DISCOVERED at 1.17.1, mapped (local map) (defaults first; plan after sampling)
+  EMO-D5 (m)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  EMO-D5 (s)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  H-Comp (m)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  H-Comp (s)                              DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  kHs Compressor                          DISCOVERED at 2.1.0, mapped (local map) (defaults first; plan after sampling)
+  kHs Dynamics                            DISCOVERED at 2.1.0, mapped (local map) (defaults first; plan after sampling)
+  Kiive XTComp                            DISCOVERED at 1.0.0, mapped (local map) (defaults first; plan after sampling)
+  Kramer PIE (m)                          DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Kramer PIE (s)                          DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Lindell 254E                            DISCOVERED at 1.2.2, mapped (local map) (defaults first; plan after sampling)
+  Lindell 354E                            DISCOVERED at 1.0.4, mapped (local map) (defaults first; plan after sampling)
+  Lindell 7X-500                          DISCOVERED at 1.2.2, mapped (local map) (defaults first; plan after sampling)
+  Lindell MBC                             DISCOVERED at 1.0.3, mapped (local map) (defaults first; plan after sampling)
+  Lindell SBC                             DISCOVERED at 1.0.3, mapped (local map) (defaults first; plan after sampling)
+  LinMB (m)                               DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  LinMB (s)                               DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Low Control                             DISCOVERED at 1.1.6, mapped (local map) (defaults first; plan after sampling)
+  Maag MAGNUM-K                           DISCOVERED at 1.6.1, mapped (local map) (defaults first; plan after sampling)
+  MaxxVolume (m)                          DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  MaxxVolume (s)                          DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Millennia TCL-2                         DISCOVERED at 1.11.1, mapped (local map) (defaults first; plan after sampling)
+  Mixland Vac Attack                      DISCOVERED at 1.0.1, mapped (local map) (defaults first; plan after sampling)
+  MV2 (m)                                 DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  MV2 (s)                                 DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  NEOLD U17                               DISCOVERED at 1.2.0, mapped (local map) (defaults first; plan after sampling)
+  NEOLD U2A                               DISCOVERED at 1.1.0, mapped (local map) (defaults first; plan after sampling)
+  NEOLD V76U73                            DISCOVERED at 1.3.0, mapped (local map) (defaults first; plan after sampling)
+  OneKnob Pressure (m)                    DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  OneKnob Pressure (s)                    DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  OneKnob Pumper (m)                      DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  OneKnob Pumper (s)                      DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  OTT                                     DISCOVERED at 1.3.7, mapped (local map) (defaults first; plan after sampling)
+  Pro Audio DSP DSM V3                    DISCOVERED at 3.6.1, mapped (local map) (defaults first; plan after sampling)
+  PuigChild 670 (s)                       DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Purple Audio MC 77                      DISCOVERED at 1.5.1, mapped (local map) (defaults first; plan after sampling)
+  RCompressor (m)                         DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  RCompressor (s)                         DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Renaissance Axx (m)                     DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Renaissance Axx (s)                     DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Rubber Band Compressor V2               DISCOVERED at 1.0.1, mapped (local map) (defaults first; plan after sampling)
+  RVox (m)                                DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  RVox (s)                                DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Shadow Hills Class A Mastering Comp     DISCOVERED at 1.4.1, mapped (local map) (defaults first; plan after sampling)
+  Shadow Hills Mastering Compressor       DISCOVERED at 1.5.1, mapped (local map) (defaults first; plan after sampling)
+  Solid Bus Comp                          DISCOVERED at 1.4.5, mapped (local map) (defaults first; plan after sampling)
+  Solid Dynamics                          DISCOVERED at 1.4.5, mapped (local map) (defaults first; plan after sampling)
+  SPL IRON                                DISCOVERED at 1.6.1, mapped (local map) (defaults first; plan after sampling)
+  SSLComp (m)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  SSLComp (s)                             DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  TBTECH Cenozoix Compressor              DISCOVERED at 1.1.0, mapped (local map) (defaults first; plan after sampling)
+  Unfiltered Audio Zip                    DISCOVERED at 1.4.2, mapped (local map) (defaults first; plan after sampling)
+  VComp (m)                               DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  VComp (s)                               DISCOVERED at 12.0.0, mapped (local map) (defaults first; plan after sampling)
+  Vertigo VSC-2                           DISCOVERED at 1.15.1, mapped (local map) (defaults first; plan after sampling)
+NOT RUNNABLE, BY REASON
+  discovered, CONDITIONAL - needs McDSP APB hardware present (one re-run once attached) (4): APB C-18 Compressor, APB C673-A Compressor, APB MC-3 MultiComp, APB Royal Mu
+  discovered, CONDITIONAL - needs UAD hardware (UAD-2) present (one re-run once attached) (40): UAD 4K Buss Compressor, UAD Antares Auto-Tune Realtime, UAD API 2500, UAD Auto-Tune Realtime Access, UAD Auto-Tune Realtime Advanced, UAD Auto-Tune Realtime X, UAD dbx 160, UAD elysia alpha master, UAD elysia alpha mix, UAD elysia mpressor, UAD Empirical Labs Distressor, UAD Fairchild 660, UAD Fairchild 670, UAD Fairchild 670 Legacy, UAD Manley Variable Mu, UAD Neve 2254 E, UAD Neve 2254 E Dual, UAD Neve 33609 C, UAD Neve 33609SE, UAD Precision Buss Compressor, UAD Precision Multiband, UAD Shadow Hills Mastering Compressor, UAD SSL G Bus Compressor, UAD SSL G Bus Compressor Legacy, UAD Summit Audio TLA-100A, UAD Teletronix LA-2, UAD Teletronix LA-2A Gray, UAD Teletronix LA-2A Legacy, UAD Teletronix LA-2A Silver, UAD Teletronix LA-3A, UAD Tube-Tech CL 1B, UAD Tube-Tech CL 1B mk II, UAD UA 1176 Rev A, UAD UA 1176AE, UAD UA 1176LN Legacy, UAD UA 1176LN Rev E, UAD UA 1176SE Legacy, UAD UA 175-B, UAD UA 176, UAD Vertigo VSC-2
+  discovered, licence-bound (run with --include-pace) (29): Auto-Tune Access, Auto-Tune Artist, Auto-Tune EFX+, Auto-Tune Pro, Auto-Tune Vocal Compressor, Empirical Labs Mike-E Comp, MDrumLeveler, MDynamics, MDynamicsMB, MDynamicsMBLarge, MModernCompressor, MO-TT, MSpectralDynamics, MSpectralDynamicsMini, MTurboComp, MTurboCompMB, SSL Blitzer, SSL Fusion HF Compressor, SSL G3 MultiBusComp, SSL LMC+, SSL Native Bus Compressor 2, SSL Native X-Comp v6, SSL Native X-ValveComp v6, Tube-Tech CL 1B, U73b Compressor, VBC FG-Grey, VBC FG-MU, VBC FG-Red, VBC Rack
+QUARANTINED AT SCAN (never reach this census): 24, of which compressors or tuners: 1
+  Melodya  [unknown]  crash_on_load at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Solid EQ  [eq]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  TDR SlickEQ M  [eq]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Solid Dynamics  [compressor]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Weiss Deess  [de-esser]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  aumf,MNot,Meld  [unknown]  crash_on_load at load
+  aumf,MAe7,Meld  [unknown]  crash_on_load at load
+  aufx,mprs,Elys  [unknown]  crashes in its own render under the silent pump, no mutation in flight: 3 of 3 loads SIGSEGV on 2026-07-31 (sweep test twice, masktest once; reports 09:46:41, 09:46:59, 09:49:02, faulting thread "ejmap silent pump", plugin frames under AudioUnitRender). Never successfully loaded in ejmap. at load
+  census:MCompressor  [unknown]  probe gate: census walk completed at probe
+  aumf,MAe1,Meld  [unknown]  crash_on_load at probe_gate_load
+  aumf,bxtp,Brwx  [unknown]  crash_on_load at probe_gate_load
+  aufx,XGAT,SSLN  [unknown]  crash_on_load at probe_gate_load
+  aumf,MAe1,Meld  [unknown]  crash_on_load at load
+  SSL SubGen  [unknown]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  Transient Master  [transient_shaper]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  aufx,0yow,SfTb  [unknown]  crash_on_load at load
+  bloom  [eq]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  aufx,FCHM,ksWV  [unknown]  crash_on_load at load
+  aufx,bxrm,Brwx  [unknown]  died_during_load at sweep
+  aufx,AnVD,VST   [unknown]  kills the process during the sweep: 3 unfinished attempts, no outcome reported from any of them at sweep
+  FabFilter Saturn 2  [unknown]  hang_in_findAllTypesForFile at scan  (VST3 bundle; the AudioUnit is unaffected if it scanned)
+  aufx,fndm,SfTb  [unknown]  died_during_load at sweep
+  aufx,BlmA,OekS  [unknown]  died_during_load at sweep
+  aufx,APan,VST   [unknown]  init_failed x3 at stage load (threshold 3): every one of them is a recorded row in the ledger at load
+NEEDS LICENCE (activation window at scan; --scan --retry-licence once the licence is back): 0, of which compressors or tuners: 0
