@@ -32,6 +32,7 @@
 
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
+#include "EjmapLoop.h"
 #include "EjmapSchema.h"
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
@@ -5577,6 +5578,62 @@ void testSleptProcessRetry()
 /** LEVEL DEPENDENCE (ruled 30 Sep): the axis that defines a threshold. API-2500 and H-Comp certified on 29 Sep with
     reduction identical at -24, -12 and -6 - a make-up gain law - because every guard tested the curve across positions
     and none across levels. Their committed traces are the negative cases. */
+/** ONE LOOP (ruled 2 Oct, docs/STRANGER_MAC_TEST.md): every product ends in exactly one of five states, and a product that
+    finishes the loop has an export or a named reason for not having one. The rules in EjmapLoop.h, branch by branch. */
+void testLoopOutcomes()
+{
+    using namespace ejmap::loop;
+    auto obj = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    // refused at a stage
+    const auto refusal = obj ({ { "identity", "AudioUnit|1|1" }, { "thresholdRefusal", obj ({ { "stage", "plan" }, { "reason", "0 threshold roles" } }) } });
+    auto o = outcomeForRecord (refusal);
+    check (o.state == "refused" && o.reason.contains ("stage plan") && o.reason.contains ("0 threshold roles") && ! o.exportPending, "loop L1: a refusal record is refused at its stage with its reason");
+    // a tuner with candidates: recorded; without: needs_review
+    juce::Array<juce::var> pcs; pcs.add (obj ({ { "index", 4 } }));
+    check (outcomeForRecord (obj ({ { "schema", "ej_cert_tuner/1" }, { "pitchCandidates", pcs } })).state == "recorded"
+             && outcomeForRecord (obj ({ { "schema", "ej_cert_tuner/1" } })).state == "needs_review", "loop L2: a tuner record with pitch candidates is recorded, without them needs_review");
+    // several candidates: needs_review, the rule not built
+    juce::Array<juce::var> cs; cs.add (obj ({})); cs.add (obj ({}));
+    o = outcomeForRecord (obj ({ { "thresholdCandidates", cs } }));
+    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("2 threshold candidates") && o.reason.contains ("nobody picks"), "loop L3: several candidates end as needs_review naming the missing rule, never a pick");
+    // a flat sweep: needs_review with the result
+    o = outcomeForRecord (obj ({ { "thresholdSweep", obj ({ { "result", "flat" }, { "reason", "no two positions differ" } }) } }));
+    check (o.state == "needs_review" && o.reason.contains ("flat") && o.reason.contains ("no two positions differ"), "loop L4: a non-certified sweep is needs_review with the sweep's result and reason");
+    // certified on the 3-level certification sweep: needs_review (a profile is needed)
+    juce::Array<juce::var> three { -24.0, -12.0, -6.0 }, grid; for (int L = -60; L <= 0; L += 2) grid.add ((double) L);
+    o = outcomeForRecord (obj ({ { "thresholdSweep", obj ({ { "result", "certified" }, { "hold_s", 1.5 }, { "tone", obj ({ { "levels_dbfs", three } }) } }) } }));
+    check (o.state == "needs_review" && ! o.exportPending && o.reason.contains ("certification-grade"), "loop L5: certified on three levels is not profile-grade: needs_review, no export attempted");
+    // certified on the profile grid: export pending
+    o = outcomeForRecord (obj ({ { "thresholdSweep", obj ({ { "result", "certified" }, { "hold_s", 2.5 }, { "tone", obj ({ { "levels_dbfs", grid } }) } }) } }));
+    check (o.exportPending, "loop L6: certified on the 31-level 2.5 s grid is export-pending");
+    // after the export
+    check (outcomeAfterExport (false, "detector_f not measured", false, "").state == "needs_review" && outcomeAfterExport (false, "detector_f not measured", false, "").reason.contains ("detector_f"),
+           "loop L7: an export the exporter refused is needs_review with the exporter's reason");
+    check (outcomeAfterExport (true, "", false, "exit 4").state == "needs_review" && outcomeAfterExport (true, "", false, "exit 4").reason.contains ("tone check"),
+           "loop L7b: exported but no tone check is needs_review, never exported");
+    check (outcomeAfterExport (true, "", true, "").state == "exported", "loop L7c: export + tone check = exported (pass or fail of the check is a result on the profile)");
+    // held
+    check (outcomeHeld (true, false, "PACE").state == "held" && outcomeHeld (true, false, "PACE").reason.contains ("licence") && outcomeHeld (false, true, "APB").reason.contains ("hardware"),
+           "loop L8: held names licence or hardware");
+    // the row invariant
+    const auto good = makeRow ("AudioUnit|1|1", "P", "compressor", outcomeAfterExport (true, "", true, ""), "r.json", "p.json", "t.json", "now");
+    check (rowViolation (good).isEmpty(), "loop L9: an exported row with profile and tone check files satisfies the invariant");
+    const auto noFile = makeRow ("AudioUnit|1|1", "P", "compressor", outcomeAfterExport (true, "", true, ""), "r.json", "", "t.json", "now");
+    Outcome bad; bad.state = "exported"; bad.reason = "";
+    Outcome odd; odd.state = "done"; odd.reason = "x";
+    check (rowViolation (noFile).contains ("without a profile") && rowViolation (makeRow ("i", "P", "c", bad, "", "p", "t", "now")).contains ("no reason")
+             && rowViolation (makeRow ("i", "P", "c", odd, "", "", "", "now")).contains ("not one of the five"),
+           "loop L10: the invariant refuses an export without its file, a state without a reason, and a state outside the five");
+    // merge by identity, count
+    juce::var rows = juce::Array<juce::var>();
+    rows = mergeRow (rows, makeRow ("A", "a", "compressor", outcomeHeld (true, false, "x"), "", "", "", "t1"));
+    rows = mergeRow (rows, makeRow ("B", "b", "compressor", outcomeForRecord (refusal), "r", "", "", "t1"));
+    rows = mergeRow (rows, makeRow ("A", "a", "compressor", outcomeAfterExport (true, "", true, ""), "r", "p", "t", "t2"));
+    const auto c = count (rows);
+    check (rows.size() == 2 && c.rows == 2 && c.exported == 1 && c.refused == 1 && c.held == 0 && findRow (rows, "A").getProperty ("at", "") == "t2",
+           "loop L11: a later row for the same identity replaces the earlier (a resumed batch rewrites what it finished); counts follow");
+}
+
 void testLevelDependence()
 {
     using namespace ejmap::sweep;
@@ -5698,6 +5755,7 @@ int main (int, char**)
     testProfileSweepPlan();
     testSleptProcessRetry();
     testLevelDependence();
+    testLoopOutcomes();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

@@ -677,6 +677,7 @@ namespace
                         o.extraSets.push_back ({ v.upToFirstOccurrenceOf (":", false, false).getIntValue(),
                                                  (float) v.fromFirstOccurrenceOf (":", false, false).getDoubleValue() });
                     else if (k == "--timeout-s" && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
+                    else if (k == "--slice" && j + 1 < argc) { for (const auto& l : juce::StringArray::fromLines (cwdFile (v).loadFileAsString())) if (l.trim().isNotEmpty()) o.slice.add (l.trim()); }   // the dress rehearsal only
                     else if (k == "--reset-per-hold")            o.resetPerHold = true;
                     else if (k == "--include-pace")              o.includePace = true;
                     else if (k == "--retry-refused")             o.retryRefused = true;

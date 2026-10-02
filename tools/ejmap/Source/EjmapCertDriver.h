@@ -48,6 +48,8 @@
 #include "EjmapSweep.h"
 #include "EjmapPitch.h"
 #include "EjmapProfileExport.h"
+#include "EjmapLoop.h"
+#include <sstream>
 #include "EchoJayParamMaps.h"   // fingerprintForDescription: the join key, one function for all three sides
 
 #include <CoreGraphics/CoreGraphics.h>
@@ -1326,6 +1328,7 @@ struct SweepOptions
     int timeoutMs = 120000;                          // per process
     bool includePace = false, resetPerHold = false, retryRefused = false, retryAll = false;
     bool profile = false;                            // the profile sweep (31 levels, 2.5 s, quiet reference everywhere)
+    juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
 };
 
 // WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
@@ -2205,8 +2208,103 @@ inline int runCertTuner (const SweepOptions& opt);   // defined below (tuner cer
 
 // EVERY RUNNABLE PRODUCT (--cert-sweep-all): the census's runnable list, minus what is named in --skip, one
 // runCertSweep each. A product's failure is reported and the batch goes on.
+// ONE LOOP DOES EVERYTHING (ruled 2 Oct, docs/STRANGER_MAC_TEST.md, rules in EjmapLoop.h). The batch opens with the
+// iLok's presence and the census written to <out>/census.txt; every discovered product ends in exactly one state in
+// <out>/outcomes.json; a certified profile-grade record goes on through the detector, the export and the tone check
+// INSIDE the batch, the tone check embedded in the profile under <out>/profiles/; a product the batch could not
+// measure is a row too (held, with which reason). The closing "finish pass" walks every record in the store that has
+// no row yet (a batch stopped and resumed, or records from an earlier binary), so a second invocation completes what
+// the first left and changes nothing else.
+inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, const juce::String& candidate);
+inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g, const juce::String& candidate);
+inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused, bool retryAll);
+inline juce::String nowStamp() { return juce::Time::getCurrentTime().formatted ("%Y%m%dT%H%M%S"); }
+inline juce::String iLokPresence()
+{
+    const auto r = runChild ({ "/usr/sbin/system_profiler", "SPUSBDataType" }, 30000);
+    bool inBlock = false;
+    for (auto line : juce::StringArray::fromLines (r.out))
+    {
+        line = line.trim();
+        if (line.startsWith ("iLok")) inBlock = true;
+        else if (inBlock && line.startsWith ("Location ID:")) return "present (" + line.fromFirstOccurrenceOf (":", false, false).trim() + ")";
+        else if (inBlock && line.endsWith (":") && ! line.contains (" ")) inBlock = false;
+    }
+    return r.cleanExit() ? "ABSENT" : "unknown (system_profiler " + r.describe() + ")";
+}
+inline juce::File latestRecordFor (const juce::File& fixturesDir, const juce::String& product)
+{
+    juce::File best; juce::Time bestT;
+    for (const auto& f : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (f.getFileName().endsWith (".defaults.json")) continue;
+        if (juce::JSON::parse (f.loadFileAsString()).getProperty ("product", "").toString() != product) continue;
+        if (! best.exists() || f.getLastModificationTime() > bestT) { best = f; bestT = f.getLastModificationTime(); }
+    }
+    return best;
+}
+// The after-chain for one record, through the loop's rules: detector (once), export, tone check, the tone check
+// embedded in the profile. Returns the row.
+inline juce::var finishRecord (const SweepOptions& opt, const juce::File& recordFile, const juce::String& category)
+{
+    auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    const auto identity = record.getProperty ("identity", recordFile.getFileNameWithoutExtension()).toString();
+    const auto product = record.getProperty ("product", "").toString();
+    auto o = loop::outcomeForRecord (record);
+    juce::String profilePath, tonePath;
+    if (o.exportPending)
+    {
+        auto profilesDir = opt.out.getChildFile ("profiles"); profilesDir.createDirectory();
+        const auto stem = juce::File::createLegalFileName (product).replaceCharacter (' ', '_') + "_" + record.getProperty ("version", "").toString();
+        const auto profileFile = profilesDir.getChildFile (stem + ".json");
+        if (! record.getProperty ("thresholdSweep", {}).getProperty ("detector", {}).isObject())
+        {
+            runDetector (opt, recordFile, {});                                                // writes detector into the record, or says why not
+            record = juce::JSON::parse (recordFile.loadFileAsString());
+        }
+        const auto e = profile::exportCompProfile (record);
+        bool toneRan = false; juce::String toneWhy;
+        if (e.ok)
+        {
+            profileFile.replaceWithText (juce::JSON::toString (e.profile) + "\n", false, false, "\n");
+            profilePath = profileFile.getFullPathName();
+            const int trc = runToneCheck (opt, profileFile, recordFile, -18.0, 2.0, {});
+            const auto toneFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
+            if (trc == 0 && toneFile.existsAsFile())
+            {
+                toneRan = true; tonePath = toneFile.getFullPathName();
+                auto prof = juce::JSON::parse (profileFile.loadFileAsString());                  // the tone check rides the profile (criterion A5)
+                if (auto* po = prof.getDynamicObject()) { po->setProperty ("tone_check", juce::JSON::parse (toneFile.loadFileAsString())); profileFile.replaceWithText (juce::JSON::toString (prof) + "\n", false, false, "\n"); }
+            }
+            else toneWhy = "tone check exit " + juce::String (trc) + (toneFile.existsAsFile() ? juce::String() : " (no result file)");
+        }
+        o = loop::outcomeAfterExport (e.ok, e.refused, toneRan, toneWhy);
+    }
+    return loop::makeRow (identity, product, category, o, recordFile.getFullPathName(), profilePath, tonePath, nowStamp());
+}
+
 inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
 {
+    const auto fixturesDir = opt.out.getChildFile ("fixtures"); fixturesDir.createDirectory();
+    const auto outcomesFile = opt.out.getChildFile ("outcomes.json");
+    auto outcomes = juce::JSON::parse (outcomesFile.loadFileAsString()); if (! outcomes.isArray()) outcomes = juce::Array<juce::var>();
+    auto writeOutcomes = [&] { outcomesFile.replaceWithText (juce::JSON::toString (outcomes) + "\n", false, false, "\n"); };
+    auto record = [&] (const juce::var& row) {
+        const auto v = loop::rowViolation (row);
+        if (v.isNotEmpty()) std::cout << "  OUTCOME INVARIANT BROKEN (" << v << "): " << juce::JSON::toString (row, true) << std::endl;
+        outcomes = loop::mergeRow (outcomes, row); writeOutcomes();
+        std::cout << "  -> " << row.getProperty ("state", "").toString() << ": " << row.getProperty ("reason", "").toString() << std::endl; };
+    // THE OPENING: the iLok's presence and the census, on file (criteria A2, B).
+    const auto ilok = iLokPresence();
+    {
+        std::ostringstream cap; auto* old = std::cout.rdbuf (cap.rdbuf());
+        runSweepCensus (opt.fixtures, opt.ledger, opt.includePace, opt.retryRefused, opt.retryAll);
+        std::cout.rdbuf (old);
+        opt.out.getChildFile ("census.txt").replaceWithText ("batch " + nowStamp() + "  iLok " + ilok + "  profile " + (opt.profile ? "yes" : "no")
+                                                             + (opt.slice.isEmpty() ? juce::String() : "  slice " + opt.slice.joinIntoString (", ")) + "\n" + cap.str() + "\n", false, false, "\n");
+        std::cout << cap.str();
+    }
+    std::cout << "iLok: " << ilok << std::endl;
     juce::StringArray wl;
     auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll);
     std::cout << wl.joinIntoString ("\n") << std::endl;
@@ -2216,22 +2314,56 @@ inline int runSweepAll (SweepOptions opt, const juce::StringArray& skip)
     std::cout << sleepGuard.describe() << std::endl;
     for (const auto& s : subjects)
     {
-        // A DISCOVERED product has no controls until its defaults are sampled, so its plan is decided after sampling,
-        // not predicted; a fixture's subject is predicted from the fixture's own controls, as before.
+        if (! opt.slice.isEmpty() && ! opt.slice.contains (s.product)) continue;
         const bool planLater = s.reach == Subject::Reach::unfixtured;
         const bool tuner = s.category == "pitch";
-        if (skip.contains (s.product) || ! measurable (s, opt.includePace) || (! tuner && ! planLater && ! sweep::planFromFixture (s.pushed).ok))
+        const auto identity = "AudioUnit|" + s.uid + "|" + (s.desc.version.isNotEmpty() ? s.desc.version : s.version);
+        if (skip.contains (s.product)) continue;
+        if (! measurable (s, opt.includePace))
+        {
+            record (loop::makeRow (identity, s.product, s.category, loop::outcomeHeld (s.licenceBound, s.hardware, s.detail), {}, {}, {}, nowStamp()));
             continue;
+        }
+        if (! tuner && ! planLater && ! sweep::planFromFixture (s.pushed).ok)
+        {
+            loop::Outcome o; o.state = "needs_review"; o.reason = "no plan from the record's controls: " + sweep::planFromFixture (s.pushed).why;
+            record (loop::makeRow (identity, s.product, s.category, o, s.fixtureFile.getFullPathName(), {}, {}, nowStamp()));
+            continue;
+        }
         ++n;
         std::cout << "\n=== [" << n << "] " << s.product << (tuner ? " (tuner)" : "") << std::endl;
         opt.product = s.product;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
         const int rc = tuner ? runCertTuner (opt) : runCertSweep (opt);
+        std::cout << "  wall " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 0) << " s, exit " << rc << std::endl;
         (rc == 0 ? done : refused).add (s.product + (rc == 0 ? juce::String() : " (exit " + juce::String (rc) + ")"));
+        const auto rec = latestRecordFor (fixturesDir, s.product);
+        if (rec.existsAsFile()) record (finishRecord (opt, rec, s.category));
+        else { loop::Outcome o; o.state = "refused"; o.reason = "stage unknown: the run wrote no record (exit " + juce::String (rc) + ")"; record (loop::makeRow (identity, s.product, s.category, o, {}, {}, {}, nowStamp())); }
     }
-    std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped\n";
+    // THE FINISH PASS: every record in the store without a row (resumed batch, or records from before the loop).
+    int finished = 0;
+    for (const auto& f : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (f.getFileName().endsWith (".defaults.json")) continue;
+        const auto r = juce::JSON::parse (f.loadFileAsString());
+        const auto identity = r.getProperty ("identity", f.getFileNameWithoutExtension()).toString();
+        const auto existing = loop::findRow (outcomes, identity);
+        if (existing.isObject() && existing.getProperty ("state", "").toString() != "held") continue;
+        if (! opt.slice.isEmpty() && ! opt.slice.contains (r.getProperty ("product", "").toString())) continue;
+        ++finished;
+        std::cout << "\n=== finish " << r.getProperty ("product", "").toString() << std::endl;
+        record (finishRecord (opt, f, r.getProperty ("category", "compressor").toString()));
+    }
+    const auto c = loop::count (outcomes);
+    std::cout << "\nSWEEP-ALL: " << n << " attempted, " << done.size() << " swept to a fixture, " << refused.size() << " stopped, " << finished << " finished from the store\n";
     for (const auto& r : refused) std::cout << "  stopped: " << r << "\n";
+    std::cout << "OUTCOMES (" << outcomesFile.getFullPathName() << "): " << c.rows << " rows - exported " << c.exported << ", recorded " << c.recorded
+              << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << std::endl;
+    int broken = 0; if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (loop::rowViolation (r).isNotEmpty()) ++broken;
+    if (broken > 0) std::cout << "OUTCOME INVARIANT BROKEN on " << broken << " row(s)" << std::endl;
     std::cout << std::flush;
-    return refused.isEmpty() ? 0 : 1;
+    return broken > 0 ? 2 : 0;
 }
 
 //==============================================================================
@@ -2396,7 +2528,7 @@ inline int runExportProfiles (const juce::File& in, const juce::File& out, bool 
 // through the signed probe in one fresh process (with -54/-48 for the position's own quiet reference), measure GR. Pass
 // is within 0.5 dB of g. The ratio NORM is not in his profile (only the control name and the value), so it comes from
 // our record's preconditions - said in the result, because it is a gap in the contract.
-inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g, const juce::String& candidate = {})
+inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g, const juce::String& candidate)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {});
@@ -2467,7 +2599,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 // nearest -18 dBFS RMS), two sweeps in fresh processes - the sine and the two-tone at the same RMS - over the profile grid
 // with the quiet reference; the level where each reaches 2 dB; f = shift / 3.01. Written INTO the record's thresholdSweep
 // as `detector {fraction, sine_in_at_2db, twotone_in_at_2db, hz2, position_norm}`; the exporter reads it.
-inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, const juce::String& candidate = {})
+inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, const juce::String& candidate)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
     const auto id = checkProbe (opt.probe, {}, {});
@@ -2539,7 +2671,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
 // instantiated. A product is runnable when it is measurable (the version guard is on comparison, not
 // measurement) AND its plan finds exactly one threshold. For an unseen version the plan is predicted from
 // the pushed fixture's controls; the real plan is made from the defaults sampled at the installed version.
-inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused = false, bool retryAll = false)
+inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused, bool retryAll)
 {
     juce::StringArray wl;
     auto subjects = buildWorklist (fixturesDir, ledgerRoot, includePace, wl, retryRefused, retryAll);
