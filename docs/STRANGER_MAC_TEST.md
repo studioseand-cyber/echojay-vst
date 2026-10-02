@@ -52,18 +52,28 @@ tuner. The slice is the only concession: on the operator's Mac the
 batch is limited to that slice by `--slice <file>` so the rehearsal takes minutes, not hours; the
 runbook for Sean's Mac has no slice.
 
-Score sheet (filled in by the rehearsal, committed with its traces):
+Score sheet — THE TEST, run 2 (2 Oct, 14:43–15:43, empty ledger + sign-in token, empty store, the
+packaged app `dist/ejmap.app` at 4ebf79b6+, slice of 9 + Lindell 7X-500; traces in
+`tools/ejmap/cert-traces/2026-10-02-rehearsal/run2/`). Run 1 (13:27–14:27, before the ruling) and the
+seeded batch rehearsal (11:59–12:49) are in the same folder and are NOT the verdict.
 
 | # | result | evidence |
 |---|---|---|
-| A1 | | |
-| A2 | | |
-| A3 | | |
-| A4 | | |
-| A5 | | |
-| A6 | | |
-| A7 | | |
-| A8 | | |
-| A9 | | |
+| A1 | **PASS** | pre-flight: `probe: …/dist/ejmap.app/Contents/MacOS/EchoJayProbe (beside the executable: the default)`, app and probe both team 8BT5F9B887; `--scan-watch-selftest GREEN` (0.3 s to the kill); no path outside the app or the ledger in the mapper steps (the harness's `--ejmap-ledger/--out/--slice` only) |
+| A2 | **PASS** | `--scan --categorise` headless: 1733 rows scanned, 1073 products categorised (all from the server catalogue, verdicts dated 5 Aug), 362 s; `cert/census.txt`: 1730 categorised identities, 159 discovered, 119 runnable, 40 hardware-held, NEEDS LICENCE 94 (17 compressors/tuners), QUARANTINED 0, NO MAP YET 2 (named). Reconciles against the existing ledger's census under the same binary: 167 vs 159, the only names differing are the nine Antares/UAD tuners (26 Aug local `pitch` vs the catalogue's null) against bx_crispytuner (stand-in) — the catalogue gap, nothing else |
+| A3 | **PASS** | `outcomes.json`: 104 rows, 0 invariant violations; every slice product has exactly one state: bx_opto / elysia mpressor / Lindell SBC / **Lindell 7X-500 (map: none)** exported; bx_crispytuner recorded (map: none, stand-in category); EMO-D5 (s) needs_review (5 candidates); NEOLD U2A needs_review (flat); NEOLD V76U73 refused (plan); Tube-Tech CL 1B needs_licence (carried forward from the scan); APB C-18 held (hardware); the 94 scan licence stops as rows. Known duplication: a carried-forward product (CL 1B) has a product row AND the scan's bundle row — two rows, one fact, keyed differently; not a drop, listed here so nobody reads 104 as 104 products |
+| A4 | **PASS** | scan: 94 licence windows killed by the window watch, median 2.7 s each (total 319 s of the 362), 0 hangs, 0 crashes, 0 quarantines, nobody at the keyboard; batch: per-product wall on every row, the longest EMO-D5 (s) 2589 s (five candidates, every switch tried) — slow, not stalled; the batch reached its closing line |
+| A5 | **PASS** | 4 of 4 exported profiles carry `tone_check` (bx_opto 1.99 PASS, elysia mpressor 1.97 PASS, Lindell SBC 1.99 PASS, Lindell 7X-500 1.96 PASS) with the `.tonecheck.json` beside each |
+| A6 | **PASS** | no `send`/`upload` in the batch log (0 matches); the mapping step reported `sent: 0`; the zip holds `cert_unbroken/` only, `config.json` count 0 |
+| A7 | **PASS** (with the harness's three flags) | no `--product`, `--candidate`, `--retry-refused`; `--include-pace` is gone (prints "ignored"); the only product-specific inputs were the test's two labelled scratch edits (the stand-in category; Lindell's server map-state removed) — test instrumentation, not mapper steps |
+| A8 | **PASS** (demonstrated on the seeded batch rehearsal) | interrupted during product 3 at 12:44, re-run the same command: bx_opto (12:00:53) and EMO-D5 (12:43:55) kept their rows and files, Lindell SBC completed, no duplicate rows; held rows are re-evaluated on each run (timestamps change) by design |
+| A9 | **BLOCKED (external)** — tested with a stand-in | the server catalogue files every real-time tuner as category null / `no_dial_set` (COMP_PROFILE_REPLY, 2 Oct afternoon), so a fresh Mac discovers no tuner; with bx_crispytuner's category set to `pitch` as a labelled stand-in it was discovered WITHOUT a map and `recorded` in 12.9 s (strength at 8 positions, speed at 8). Gap noted: tuner records do not carry the `mapState` field the compressor records do (the row does) |
 
-A rehearsal with any item failed does not go near Sean's Mac.
+Also measured by the run (not criteria): mapping Lindell 7X-500 locally with `--sweep --resweep-targets`
+took 5 s (10 controls), sent nothing, and the census then listed `1 local map(s)`; the mapping sweep
+declined bx_crispytuner as `no_dial_set` even when targeted (section 25 row 6 of the driver doc) — under
+the ruling it no longer needs the map. The existing-ledger census under the new binary discovers 167
+(the seven "no map yet" products among them, Auto-Tune EFX 9.0.1 and MCompressor included).
+
+**Verdict: the process passes A1–A8 on this Mac; A9 is blocked on Sean's catalogue. Ready for Sean's
+Mac with the packaged app, the sign-in, and the runbook.**
