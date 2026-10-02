@@ -582,6 +582,89 @@ build: **the compressor closing line changed outside the feature flag** (`cba5f0
 Two real product defects, four harness faults. The gate found both real ones, which is the case for running it -
 but four of five reds being its own faults is the case for fixing the harness before trusting the next run.
 
+
+---
+
+## 12:55, 2 Oct — Sean's live findings on 02b, and what each turned out to be
+
+All four are root-caused. Two are fixed and in `ship_2026-10-02c`; one is unfixed because nothing in the tree ever
+addressed it; one is diagnosed and left for a ruling.
+
+### 1. The probe put a macOS security prompt on screen — FIXED (`a85786e`)
+
+The chain was "a vocal chain with the Tube-Tech CL 1B", and that bundle carries `__Pace_Eden.bundle` (plus
+`PlugIns/__Pace_Eden` and `Resources/__Pace_Eden`) — verified by **reading** the bundle, nothing loaded. The
+pre-flight probe instantiated it, and a placed build's probe is unsigned, so macOS asked to lower security.
+
+`EJPaceCheck.h` had declared the rule since 21 Sep — *"the signed EchoJayProbe … is the only harness process
+allowed to load them"* — and the probe did not include the header that said so. **The rule existed as prose beside
+the code that broke it**, which is the same shape as the (q) wording living outside its flag.
+
+Proven both directions on the real bundles on this Mac:
+
+```
+CL 1B   (PACE)      -> refused PACE-wrapped: signed probe only (Tube-Tech CL 1B.component)   exit 3, nothing loaded
+AUDelay (not PACE)  -> INSTANTIATE: OK  name="AUDelay" latency=0                              exit 0
+```
+
+Nothing is dropped by the refusal: exit 3 without instantiating is `PreflightState::error` ("in-host create
+proceeds"), and only a TIMEOUT is `hang`, which is the only state that substitutes or skips a slot.
+
+**The trade, stated rather than buried:** a PACE-wrapped plugin is no longer pre-flighted and loses hang
+protection. A prompt is certain harm and a hang is a risk, so that is the right way round — but signing the probe
+with Sean's Developer ID is what buys the protection back, and that needs his identity, so it is **not done**.
+`EJ_PROBE_ALLOW_PACE=1` re-enables probing for a signed build.
+
+### 2. "level matched" on +12 dB of make-up — FIXED (`a6a5c71`)
+
+The CL 1B's hold wrote OUT +12.0 dB — the ceiling — and the line said the level was matched. It *was* matched,
+which is why the line was not false; it was useless, because a compressor needing 12 dB of make-up is pulling
+12 dB down and the sentence said everything was fine.
+
+Above 6 dB the line now names the cause, and says when the figure is only a floor because the trim ran out:
+
+> "Set as dialled, taking about 12 dB off: too much, check the threshold (my output trim is at its +12 dB
+> ceiling, so it may be taking off more than this). Output +12.0 dB."
+
+One derivation (`overCompressionPhrase()`) serves all three closing-line branches — (q)'s, section 7's profiled
+and section 7's unprofiled — rather than being written into each. `level_loop_guard` (17) proves both directions:
++12 warns and drops the match claim, +3 still reports a plain match, and a non-dynamics slot at +12 is not accused
+of compressing at all.
+
+### 3. Still must stop/start Logic to hear processed audio — NOT FIXED, and nothing ever addressed it
+
+There is **no `setLatencySamples` in `PluginProcessor.cpp` or `LinkProcessor.cpp` at all** — only in built-in
+sub-processors (`EedTapeProcessor`, `SurgicalEqProcessor`). Letter (h), the latency budget, was queued behind the
+dry-audio answer and never built, and the MERGE record notes the Logic re-query test was skipped by ruling. So the
+honest answer to "was that fixed?" is no, and nothing in the tree would have fixed it. The log will say which of
+the candidate causes it is (latency not reported -> no graph rebuild; wet/dry not engaged until transport restart;
+bypass state), and guessing between them without it is how three attributions went wrong last night.
+
+### 4. AVOX SYBIL offered but not built — DIAGNOSED, NOT FIXED (needs a ruling)
+
+**A trailing space.** SYBIL's real AU identifier is `AudioUnit:Effects/aufx,AnVD,VST ` — 32 characters, because
+Antares' manufacturer OSType is literally `'VST '`. The `chain_blacklist.txt` line is the same string trimmed to
+31. `ChainHost::isBlacklisted` is an exact `StringArray::contains`, so:
+
+```
+blacklist : 'AudioUnit:Effects/aufx,AnVD,VST'   len 31
+identifier: 'AudioUnit:Effects/aufx,AnVD,VST '  len 32
+exact match: False      trimmed match: True
+```
+
+So the crash skip list — whose own header says a listed plugin is *"withheld from the chain feed and refused at
+load"* — cannot see it. SYBIL is offered among the 1452 feed entries, the model picks it, and then it fails for
+real. It also carries an expired hangs-on-load mark (`"hangs on load (Rosetta static initialisers, 17 Sep
+sample)"`, `until: 2026-09-25`), so it is re-probed and times out. **Offered by name, refused by identity.**
+
+`ChainHost.cpp:7397` trims the path on read (`.trim()` on the value before the TAB), and the file was written
+trimmed as well. **This is a class, not one plugin:** any product whose AU OSType ends in a space can never be
+blacklisted, which means the crash skip list silently fails exactly where it is most needed.
+
+Not fixed because the fix changes which plugins get withheld, and that is Sean's call. The change is small:
+normalise the comparison so existing lines still match, and stop trimming the path on read and on write. It wants
+a leg with a trailing-space fixture, proven both ways.
+
 ---
 
 ## EARLIER — the day session of 1 Oct (unchanged below this line)

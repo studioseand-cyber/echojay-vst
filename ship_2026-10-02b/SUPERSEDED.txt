@@ -1,0 +1,13 @@
+SUPERSEDED by ../ship_2026-10-02c/ - do not install this one.
+
+Built 04:45-04:47 from feat/comp-profiles @ b82f2ba.
+  EchoJay V2    D2585D92-8090-398A-9796-90BA505ADB25
+  EchoJay Link  D75297D7-A8F7-39F3-9593-EE0F3E26C754
+
+This is the pair Sean tested at 11:35 on 2 Oct. Two faults it has, both fixed in 02c:
+  1. the pre-flight probe loads PACE-wrapped bundles, so building a chain with the Tube-Tech CL 1B puts a macOS
+     "lower security settings" prompt on screen (the probe is unsigned in a placed build);
+  2. the compressor closing line says "level matched" when the hold made up +12 dB, instead of saying the
+     compressor is taking about 12 dB off and to check the threshold.
+
+Kept so these UUIDs can still be matched against anything installed.
