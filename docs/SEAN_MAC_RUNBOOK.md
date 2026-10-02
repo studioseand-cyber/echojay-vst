@@ -7,13 +7,31 @@ written on the product's row; you never pass a product name, pick a candidate, o
 plugin by hand. (The 1 Oct per-product runbook is archived as `archive_SEAN_MAC_RUNBOOK_2026-10-01.md`.)
 
 **Conditions:** mains, lid open (the batch holds the Mac awake, but a closed lid still sleeps it).
-ONE Waves version installed (12 or 15, never stacked). **The iLok absent is expected** — PACE
-products are held, not tried. **NEVER press Send or Send All** in EJ Map: the map store is shared
-and unprefixed, so anything sent lands in production. Certification sends nothing.
+ONE Waves version installed (12 or 15, never stacked). **The iLok absent is expected** — a licence
+window at the scan is killed by the app and the product is `needs_licence`; at the batch the same.
+**If a licence or activation window ever appears on screen and stays, Quit the app** (⌘Q) — never
+click in it; run the same command again and the app carries on. **NEVER press Send or Send All** in
+EJ Map: the map store is shared and unprefixed, so anything sent lands in production. Certification
+sends nothing; the hand-over is a zip of `~/Library/ejmap/cert` only.
+
+**The build.** `ejmap.app` is built once from branch `feat/ejmap-cert` at commit **`36397676`** (the
+last code change; later commits on the branch are documentation) by `docs/PACKAGING_EJMAP_APP.md`.
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap      # or wherever the packaged app was put
 ```
+
+## 0. Start from an empty ledger (once; 5 seconds)
+
+If this Mac has run EJ Map before, `~/Library/ejmap` exists. MOVE it aside — never delete it:
+
+```
+[ -d ~/Library/ejmap ] && mv ~/Library/ejmap ~/Library/ejmap.before-cert-$(date +%Y%m%d-%H%M)
+```
+
+The run must start from an empty ledger: the scan, the categorise and the census are then this
+Mac's own, and the result can be reconciled against them. (The sign-in in step 2 recreates
+`~/Library/ejmap` with just the token.)
 
 ## 1. Pre-flight (10 seconds)
 
@@ -58,9 +76,16 @@ grep -l '"name": "EMO-D5 (s)"' ~/Library/ejmap/maps/*.json 2>/dev/null
 ```
 
 The check is **EMO-D5 (s) 15.0.70, map_fp `32b7e1d9a0c3…`**: the census line should read
-`EMO-D5 (s)  DISCOVERED at 15.0.70, mapped (…)`, and if a local map exists its file is named by that
-fp. This proves the Waves version, the AU list and the map keying agree. It is a smoke check, not a
+`EMO-D5 (s)  DISCOVERED at 15.0.70, map: …`, and if a local map exists its file is named by that fp.
+This proves the Waves version, the AU list and the map keying agree. It is a smoke check, not a
 procedure: EMO-D5 is then just one product in the batch.
+
+**Expected result for EMO-D5 (s) in the batch** (measured here on V12 on 2 Oct): `RULE 1: 'Comp
+Thresh' carries the compressor stage word alone`, the engage search finds `Comp On -> 1`, the pick
+certifies, and the row is `exported` in **about 9 minutes** (521 s here), with the profile's notes
+naming the rule, the pick, `Comp On -> On`, and the other stages (Gate / Leveller / DeEsser / Limiter)
+at their instantiate values with their switches Off. A `needs_review` with five candidates means Rule 1
+did not fire — send the record back.
 
 **Mapping is optional for certification (ruled 2 Oct).** Certification does not need a map: the
 batch samples each plugin's controls itself and computes `map_fp` exactly as EchoJay does, so the

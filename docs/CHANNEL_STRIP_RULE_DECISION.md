@@ -150,3 +150,24 @@ PASS** writing all 42 controls, and the notes line: *amount control decided by R
 stage word): pick Comp Thresh with engage Comp On -> On; other threshold candidates and every other
 control at their instantiate values: Gate Thresh='-Inf', Leveller Thresh='0.0', DeEsser Thresh='0.0',
 Limiter Thresh='0.0'; no other stage active at the defaults (defaults reference flat)*.
+
+## Link controls on the twin products (read-only, 2 Oct evening; for the list AFTER Sean's Mac)
+
+Whole-token "Link" control and its instantiate value, from the store's defaults samples:
+
+- elysia alpha master 1.17.1: `Link = 'On'` (Off / On)
+- DPR-402 (s) 12.0.0: no whole-token Link control
+- Abbey Road RS124 (s) 12.1.0: `Link = 'On'` (Off / On)
+- SPL IRON 1.6.1: `Link = 'On'`; also `SC Link = 'Off'`
+- AMEK Mastering Compressor 1.1.1: `Param Link = 'On'`; also `Sidechain Link Mode = 'Max'`, `Sidechain Link Amount = '100 %'`
+- Millennia TCL-2 1.11.1: `Stereo Link = 'On'`
+- Vertigo VSC-2 1.15.1: `Link = 'Stereo'` (Mono / Stereo)
+- PuigChild 670 (s) 12.0.0: `Link = 'Linked'` (Left/Right / Linked / Lat/Ver) — the follower case above
+
+Six of eight start linked, so a **linked-stereo rule** (Link held at its instantiate value; the left
+control drives; GR measured on BOTH channels) goes on the list for after Sean's Mac. One thing the
+rule must measure rather than assume: on the seven R3 products BOTH thresholds certified with Link
+On, so on those "Link" links the detectors (or, AMEK's `Param Link`, may mirror a write to one
+threshold onto the other — which would make each side certify because writing either moves both),
+whereas on PuigChild it makes the right side a follower. Same word, three behaviours; the traces of a
+right-side sweep with the left held, and vice versa, tell them apart. Not built.

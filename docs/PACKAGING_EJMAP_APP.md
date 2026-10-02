@@ -11,7 +11,8 @@ probe's signature.
 ## 1. Build both targets in one tree (RelWithDebInfo)
 
 ```
-REPO=~/src/echojay-vst            # wherever the checkout is; branch feat/ejmap-cert at 321a2c8f or later
+REPO=~/src/echojay-vst            # wherever the checkout is
+git -C "$REPO" fetch && git -C "$REPO" checkout 36397676     # branch feat/ejmap-cert, the build commit for Sean's Mac (2 Oct); later commits are docs
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
