@@ -6970,6 +6970,11 @@ juce::String EchoJayProcessor::calibTick(const juce::String& uid)
 void EchoJayProcessor::stampCompProfileOnLoop(const juce::String& uid, echojay::CalibLoop& loop)
 {
     if (! ChainHost::compProfilesEnabled()) return;
+    // THE FEATURE IS ON, and that alone decides the WORDING of the closing line - section 7's, whether or not
+    // this particular slot turns out to have a profile. Set before any of the early returns below, because an
+    // unprofiled compressor on a flag-on session still gets "set as dialled, no profile yet", and a profiled one
+    // that fails a later check still must not fall back to letter (q)'s line.
+    loop.profilesFeatureOn = true;
     auto* h = uid.isEmpty() ? &getChainHost() : borrowHostIfActiveFor(uid);
     if (h == nullptr || loop.slot < 0 || loop.slot >= h->getNumSlots()) return;
     const auto prof = h->slotCompProfile(loop.slot);

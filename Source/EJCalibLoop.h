@@ -125,6 +125,14 @@ struct CalibLoop
     // COMP_PROFILE_SPEC_v1 items 3 and 4: what the one check found, for the closing line and the log. All
     // false/NaN means there was no profile, and the line then says "set as dialled, no profile yet".
     bool   hasProfile = false;
+    // THE FEATURE FLAG, CARRIED ON THE LOOP (2 Oct 2026). hasProfile answers "did THIS slot get a profile";
+    // this answers "is the measured-profile feature on at all", and the closing line needs BOTH. With the flag
+    // off the line must be letter (q)'s, word for word, because "default OFF means byte-for-byte what it is
+    // today" - and "no profile yet" is actively misleading to someone for whom profiles do not exist. Set by
+    // stampCompProfileOnLoop when ChainHost::compProfilesEnabled(), whether or not a profile was found, because
+    // section 7's wording covers the unprofiled compressor too once the feature is on. Default false, so the
+    // Link - which has no profile path yet - keeps (q)'s wording.
+    bool   profilesFeatureOn = false;
     // The server's own word for it: `from_profile` on the calibration block, true when IT set this compressor
     // open-loop from a profile. The plugin having a profile in its map payload is not the same statement.
     bool   blockFromProfile = false;
@@ -1402,6 +1410,25 @@ struct CalibLoop
             juce::String b = "Built.";
             // (q): A COMPRESSOR IS SET AS DIALLED. It was not driven, so there is no drive figure to report and no
             // band to have reached or missed - only what the hold did about the level.
+            if (dynamicsSlot && ! profilesFeatureOn)
+            {
+                // THE FLAG IS OFF, SO THIS IS LETTER (q)'s LINE, WORD FOR WORD (restored 2 Oct 2026).
+                // Item 4 rewrote this whole branch to section 7's wording and did it OUTSIDE the flag, so with
+                // the feature off a compressor build stopped saying what (q) ruled it should say and started
+                // saying "no profile yet" to users who have no profiles and no way to get one. Part 2's rule is
+                // "behind a flag, default OFF", and a closing line is behaviour. Found by level_loop_guard (16),
+                // which asserts (q)'s wording and was the only thing standing between this and a shipped build.
+                b << " Set as dialled, level ";
+                if (std::abs (levelTrimmedDb) > 0.05f)
+                    b << "matched, Output " << signed1 (slotGainDb) << " dB.";
+                else if (std::abs (levelResidualDb) > 1.0f)
+                    b << "NOT matched - the slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
+                      << (levelResidualDb > 0.0f ? "louder" : "quieter")
+                      << " out than in and my output trim has no more to give.";
+                else
+                    b << "already matched.";
+                return b;
+            }
             if (dynamicsSlot)
             {
                 // COMP_PROFILE_SPEC_v1 item 4 / section 7: THE LINE SAYS WHERE THE SETTING CAME FROM, and names

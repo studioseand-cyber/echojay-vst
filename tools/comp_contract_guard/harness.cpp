@@ -321,6 +321,8 @@ void guardMain()
         c.plugin = "EMO-D5 (s)"; c.slot = 1; c.purpose = echojay::CalibLoop::Purpose::buildHold;
         c.dynamicsSlot = true; c.mode = echojay::CalibLoop::Mode::Passive;
         l.begin (c);
+        // BOTH flags: the feature is on (which picks section 7's wording at all) and THIS slot has a profile.
+        l.profilesFeatureOn = true;
         l.hasProfile = true;
         l.lastGr = -2.0f;                 // the server expected 2 dB; the loop measured it
         l.levelTrimmedDb = -1.5f; l.slotGainDb = -1.5f; l.levelHeld = true;
@@ -330,7 +332,10 @@ void guardMain()
                line);
         check (line.contains ("Output -1.5"),
                "...and states the OUT the hold wrote", line);
-        echojay::CalibLoop l2; l2.begin (c); l2.hasProfile = false;
+        // The unprofiled compressor ON A FLAG-ON SESSION: section 7 still governs the wording, so this sets the
+        // feature on and the profile off. With the feature OFF it would be letter (q)'s line instead, and
+        // level_loop_guard (16) is what asserts that case - the two legs together pin both sides of the flag.
+        echojay::CalibLoop l2; l2.begin (c); l2.profilesFeatureOn = true; l2.hasProfile = false;
         l2.levelTrimmedDb = 0.0f; l2.levelResidualDb = 0.0f;
         check (l2.completedLine().contains ("no profile yet"),
                "...while the one with no profile says so", l2.completedLine());
