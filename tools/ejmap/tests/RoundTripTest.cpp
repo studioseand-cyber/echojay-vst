@@ -34,6 +34,7 @@
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
 #include "EjmapLoop.h"
 #include "EjmapWindowWatch.h"
+#include "EjmapCategoriesMerge.h"
 #include "EjmapSchema.h"
 #include "EjmapSubject.h"
 #include "EjmapTriage.h"
@@ -5598,6 +5599,35 @@ void testSleptProcessRetry()
     and none across levels. Their committed traces are the negative cases. */
 /** ONE LOOP (ruled 2 Oct, docs/STRANGER_MAC_TEST.md): every product ends in exactly one of five states, and a product that
     finishes the loop has an export or a named reason for not having one. The rules in EjmapLoop.h, branch by branch. */
+/** CATEGORIES MERGE (2 Oct): the server's reply carries no mark_keys; the merge stamps them from the scan rows, on a
+    served entry and on an existing entry without them, and leaves an entry that has them alone. */
+void testCategoriesMerge()
+{
+    using namespace ejmap::categoriesmerge;
+    auto obj = [] (std::initializer_list<std::pair<const char*, juce::var>> kv) { auto* o = new juce::DynamicObject(); for (auto& [k, v] : kv) o->setProperty (k, v); return juce::var (o); };
+    std::map<juce::String, ProductKeys> keys;
+    keys["elysia mpressor|elysia"] = { juce::StringArray { "AudioUnit|49696d78" }, juce::StringArray { "AudioUnit:Effects/aufx,mprs,Elys" } };
+    keys["known comp|vendor"]      = { juce::StringArray { "AudioUnit|11112222" }, juce::StringArray { "AudioUnit:Effects/aufx,KNWN,Vndr" } };
+    juce::Array<juce::var> oldKeys { "AudioUnit|deadbeef" };
+    juce::var doc = obj ({ { "products", obj ({ { "known comp|vendor", obj ({ { "name", "Known Comp" }, { "category", "compressor" }, { "mark_keys", oldKeys } }) },
+                                                 { "bare|vendor", obj ({ { "name", "Bare" }, { "category", "eq" } }) } }) } });
+    keys["bare|vendor"] = { juce::StringArray { "AudioUnit|33334444" }, juce::StringArray { "AudioUnit:Effects/aufx,BARE,Vndr" } };
+    const auto served = obj ({ { "elysia mpressor|elysia", obj ({ { "name", "elysia mpressor" }, { "category", "compressor" } }) },
+                               { "nowhere|vendor", obj ({ { "name", "Nowhere" }, { "category", "reverb" } }) } });
+    const int n = mergeServed (doc, served, keys);
+    const auto P = doc.getProperty ("products", {});
+    check (n == 2 && P.getProperty ("elysia mpressor|elysia", {}).getProperty ("mark_keys", {}).size() == 1
+             && P.getProperty ("elysia mpressor|elysia", {}).getProperty ("mark_keys", {})[0].toString() == "AudioUnit|49696d78"
+             && P.getProperty ("elysia mpressor|elysia", {}).getProperty ("members", {})[0].toString() == "AudioUnit:Effects/aufx,mprs,Elys",
+           "categories C1: a served entry is stamped with the scan's mark_keys and members for its product key");
+    check (P.getProperty ("known comp|vendor", {}).getProperty ("mark_keys", {})[0].toString() == "AudioUnit|deadbeef",
+           "categories C2: an existing entry that has mark_keys keeps them (the mapper's categorisation is not rewritten)");
+    check (P.getProperty ("bare|vendor", {}).getProperty ("mark_keys", {}).size() == 1 && P.getProperty ("bare|vendor", {}).getProperty ("mark_keys", {})[0].toString() == "AudioUnit|33334444",
+           "categories C3: an existing entry WITHOUT mark_keys (a file the reply alone wrote) is stamped on the next merge");
+    check (! P.getProperty ("nowhere|vendor", {}).hasProperty ("mark_keys") && P.getProperty ("nowhere|vendor", {}).getProperty ("category", "") == "reverb",
+           "categories C4: a product the scan does not know gets no keys and is kept as served");
+}
+
 void testLoopOutcomes()
 {
     using namespace ejmap::loop;
@@ -5823,6 +5853,7 @@ int main (int, char**)
     testSleptProcessRetry();
     testLevelDependence();
     testLoopOutcomes();
+    testCategoriesMerge();
 
     std::cout << checks << " checks, " << failures << " failures" << std::endl;
     return failures == 0 ? 0 : 1;

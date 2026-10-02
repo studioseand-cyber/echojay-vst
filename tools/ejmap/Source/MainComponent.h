@@ -12,6 +12,7 @@
 
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginScanner.h"
+#include "EjmapCategoriesMerge.h"
 #include "PluginHost.h"
 #include "EjmapLedger.h"
 #include "EjmapWatchdog.h"
@@ -9702,6 +9703,7 @@ public:
 
     void categoriseFromCli()
     {
+        categoriseEveryScannedProduct = true;          // the stranger's runbook: certification, not the mapper's button
         std::cout << "CATEGORISE (before): " << categoriseLine() << std::endl;
         runCategorise();
         std::cout << "CATEGORISE (after):  " << categoriseLine() << std::endl;
@@ -13493,12 +13495,20 @@ private:
     {
         juce::String key, name, vendor, format;
     };
+    // CERTIFICATION ASKS ABOUT EVERY SCANNED PRODUCT (2 Oct): the mapping worklist is the trigger for the mapper's
+    // button (a product nobody will sweep is not worth asking about), but certification opens MAPPED products, which
+    // are exactly the ones the mapping worklist leaves out - on a fresh Mac that was 1269 identities with no
+    // category and nothing discovered. The headless --categorise asks about all of them; the server answers from
+    // its catalogue for the ones it knows (2 Oct: 348 answers, every one dated 5 Aug - no models ran).
+    bool categoriseEveryScannedProduct = false;
     juce::Array<UncategorisedProduct> uncategorisedWorklistProducts() const
     {
         const auto cats = const_cast<MainComponent*> (this)->loadCategories();
         juce::Array<UncategorisedProduct> out;
         juce::StringArray seenKeys;
-        for (const auto& sp : collectWorklist().ordered())
+        juce::Array<ScannedPlugin> pool = categoriseEveryScannedProduct ? rows : collectWorklist().ordered();
+        if (categoriseEveryScannedProduct) { juce::Array<ScannedPlugin> fx; for (const auto& sp : pool) if (! sp.isInstrument()) fx.add (sp); pool = fx; }
+        for (const auto& sp : pool)
         {
             const auto key = categoryKeyFor (sp.desc);
             if (key.isEmpty() || cats.count (key) > 0) continue;
@@ -13650,21 +13660,16 @@ private:
         if (obj == nullptr) return 0;
         auto f = ledger.getRoot().getChildFile ("categories.json");
         auto doc = f.existsAsFile() ? juce::JSON::parse (f.loadFileAsString()) : juce::var();
-        auto* docObj = doc.getDynamicObject();
-        if (docObj == nullptr) { docObj = new juce::DynamicObject(); doc = juce::var (docObj); }
-        auto prods = doc.getProperty ("products", juce::var());
-        auto* prodObj = prods.getDynamicObject();
-        if (prodObj == nullptr) { prodObj = new juce::DynamicObject(); docObj->setProperty ("products", juce::var (prodObj)); }
-        int n = 0;
-        for (const auto& kv : obj->getProperties())
-            if (! prodObj->hasProperty (kv.name))
-            { prodObj->setProperty (kv.name, kv.value); ++n; }
-        if (! docObj->hasProperty ("run"))
+        // THE KEYS DISCOVERY READS (2 Oct, EjmapCategoriesMerge.h): the reply names products; the scan rows know
+        // their identities. mark_keys "Format|uidhex" and members, per product key, stamped on merge.
+        std::map<juce::String, ejmap::categoriesmerge::ProductKeys> keys;
+        for (const auto& sp : rows)
         {
-            auto* run = new juce::DynamicObject();
-            run->setProperty ("tool", "categorise-endpoint/1");
-            docObj->setProperty ("run", juce::var (run));
+            const auto key = categoryKeyFor (sp.desc); if (key.isEmpty()) continue;
+            keys[key].markKeys.addIfNotAlreadyThere (sp.desc.pluginFormatName + "|" + juce::String::toHexString (sp.desc.uniqueId).toLowerCase());
+            keys[key].members.addIfNotAlreadyThere (sp.pluginId());
         }
+        const int n = ejmap::categoriesmerge::mergeServed (doc, served, keys);
         f.replaceWithText (juce::JSON::toString (doc, false));
         return n;
     }
