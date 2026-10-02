@@ -5423,6 +5423,34 @@ void testProfileSweepPlan()
     check (p.forCandidate (p.candidates[0]).quietReference && p.forCandidate (p.candidates[0]).profile,
            "profile N3: a candidate of a profile plan keeps the quiet reference and the grid (a candidate's own flag would have reset it)");
     Plan q; check (q.testLevels().size() == 3 && ! q.quietReference && q.holdS == 1.5, "profile N4: a certification plan is unchanged: three levels, 1.5 s");
+    {
+        // GRID REFINEMENT (2 Oct): CL 1B's 2 dB points, positions 0-5 (null, null, null, -13.91, -23.21, -27.71): the
+        // 9.3 dB gap between 3 and 4 gets ceil(9.3/3) - 1 = 3 positions, the 4.5 dB gap between 4 and 5 gets 1; nulls
+        // are absences, not gaps.
+        std::vector<float> norms { 0.0f, 0.066667f, 0.133333f, 0.2f, 0.266667f, 0.333333f };
+        std::vector<juce::var> two { juce::var(), juce::var(), juce::var(), -13.91, -23.21, -27.71 };
+        const auto add = refineNorms (norms, two, kRefineGapDb, kRefinePositionsMax);
+        juce::String got; for (float n : add) got << juce::String (n, 4) << " ";
+        check (add.size() == 4 && std::abs (add[0] - 0.216667f) < 1e-4f && std::abs (add[1] - 0.233333f) < 1e-4f && std::abs (add[2] - 0.25f) < 1e-4f && std::abs (add[3] - 0.3f) < 1e-4f,
+               "refine G1: a 9.3 dB gap gets three evenly spaced positions, a 4.5 dB gap one, a null neighbour none (" + got + ")");
+        std::vector<juce::var> fine { juce::var(), juce::var(), juce::var(), -13.91, -16.5, -19.4 };
+        check (refineNorms (norms, fine, kRefineGapDb, kRefinePositionsMax).empty(), "refine G2: gaps of 3 dB or less add nothing");
+        std::vector<juce::var> edge { juce::var(), juce::var(), juce::var(), -13.91, -16.91, -19.91 };
+        check (refineNorms (norms, edge, kRefineGapDb, kRefinePositionsMax).empty(), "refine G2b: exactly 3 dB is not over the bar");
+        check (refineNorms (norms, two, kRefineGapDb, 7).size() == 1, "refine G3: the position cap stops the adding (6 measured, cap 7: one added)");
+        check (refineNorms (norms, { juce::var(), -1.0 }, kRefineGapDb, kRefinePositionsMax).empty(), "refine G4: mismatched inputs add nothing");
+        // the record: a plan that refined says so, with the rule and the norms it added
+        Plan rp; rp.thr = 0; rp.thrName = "Threshold"; rp.norms = norms; rp.makeProfile(); rp.refineRounds = 2; rp.refinedNorms = add;
+        Measured mm; mm.ok = true; mm.movingDb = 0.1;
+        for (int i = 0; i < 2; ++i) { PositionReading r; r.k = i; r.norm = (float) i; r.text = juce::String (i); for (double L : { -24.0, -12.0, -6.0 }) { HoldReading h; h.present = true; h.inRmsDb = L - 3.0103; h.levelDb = h.inRmsDb - 2.0 * i; r.holds[levelKey (L)] = h; } mm.positions.push_back (r); }
+        const auto dd = derive (mm, { -24.0, -12.0, -6.0 }, -1);
+        const auto rec = composeThresholdSweep (dd, displayCheck (dd, "dB"), rp, {});
+        const auto g = rec.getProperty ("gridRefinement", {});
+        check (g.isObject() && (int) g.getProperty ("rounds", 0) == 2 && g.getProperty ("added_norms", {}).size() == 4 && g.getProperty ("rule", "").toString().contains ("3.0 dB"),
+               "refine G5: the record carries gridRefinement {rule, gap_db, rounds, added_norms}; a plan that did not refine carries none");
+        Plan np = rp; np.refineRounds = 0; np.refinedNorms.clear();
+        check (! composeThresholdSweep (dd, displayCheck (dd, "dB"), np, {}).hasProperty ("gridRefinement"), "refine G5b: no refinement, no field");
+    }
 
     std::vector<GridPoint> mix { { 0.0f, "0.0" }, { 0.5f, "50.0" }, { 1.0f, "100.0" } }, make { { 0.0f, "-12.0 dB" }, { 0.5f, "0.0 dB" }, { 1.0f, "+12.0 dB" } },
                            drive { { 0.0f, "1.0" }, { 0.5f, "5.0" }, { 1.0f, "10.0" } }, words { { 0.0f, "Dry" }, { 1.0f, "Wet" } };

@@ -1798,6 +1798,7 @@ inline int runCertSweep (const SweepOptions& opt)
     // ONE SWEEP of one threshold control: a reference process, then one process per position. Called once for a single
     // threshold, once per candidate when several hold the role (tags prefixed "c<index>." so the traces stay apart).
     std::map<juce::String, std::vector<sweep::ProcessOut>> repeatRuns;   // v1.3: the second measurement of every position, by prefix
+    juce::String lastSweepPrefix;                                         // the tag prefix of the last full sweep (what repeatRuns is keyed on)
     auto sweepFor = [&] (const sweep::Plan& q, const juce::String& tagPrefix, sweep::ProcessOut& refOut, std::vector<sweep::ProcessOut>& posOut)
     {
         juce::StringArray levelList;
@@ -1810,6 +1811,7 @@ inline int runCertSweep (const SweepOptions& opt)
             for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));   // plus the engage writes
             if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
             return a; };
+        lastSweepPrefix = tagPrefix;
         std::cout << "  sweeping " << s.product << (tagPrefix.isNotEmpty() ? " candidate [" + juce::String (q.thr) + "] " + q.thrName : juce::String())
                   << (newIdentity ? " (unseen version " + s.desc.version + ": defaults sampled first)" : juce::String())
                   << " - 1 reference + " << (int) q.norms.size() << " position processes" << std::endl;
@@ -1900,8 +1902,53 @@ inline int runCertSweep (const SweepOptions& opt)
         sweepFor (q, "q." + (q.engage.empty() ? juce::String() : "e" + juce::String (q.engage.front().index) + ".") + prefix, r, ps);
         return q;
     };
+    // GRID REFINEMENT (2 Oct, ruled): after the sweep (and its engage / quiet fallback) a profile plan's 2 dB points are
+    // read; wherever adjacent ones differ by more than kRefineGapDb, positions are added between them (sweep::refineNorms)
+    // and measured with the SAME procedure - same preconditions and engage writes, quiet ladder, and the hold-doubled
+    // repeat - under the same tag prefix with the next indices (pos16, pos17 ...), so re-derivation reads them as
+    // positions like any other. Rounds until no gap is over the bar, or the round / position caps.
+    auto refineGrid = [&] (sweep::Plan& q, const juce::String& prefix, sweep::ProcessOut& r, std::vector<sweep::ProcessOut>& ps)
+    {
+        if (! q.profile) return;
+        juce::StringArray levelList; for (double L : q.probeLevels()) levelList.add (juce::String ((int) L));
+        auto args = [&] (const sweep::Plan& pl, float norm) {
+            juce::StringArray a { "--sweep", "thr=" + juce::String (pl.thr), "norms=" + juce::String (norm, 6), "levels=" + levelList.joinIntoString (","), "hz=997",
+                                  "hold=" + juce::String (pl.holdS, 2), "discard=" + juce::String (pl.discardS, 2), "win=" + juce::String (pl.winS, 2), "ref=0", "moving_db=0.1",
+                                  juce::String ("reset=") + (opt.resetPerHold ? "1" : "0") };
+            juce::StringArray all = sets; for (const auto& w : q.engage) all.add (juce::String (w.index) + ":" + juce::String (w.norm, 6));
+            if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (","));
+            return a; };
+        for (int round = 1; round <= sweep::kRefineRounds && ! windowSeen && ! overBudget(); ++round)
+        {
+            const auto d = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
+            std::vector<juce::var> two; for (const auto& g : d.inAtGr) two.push_back (g.at.count (2) ? g.at.at (2) : juce::var());
+            const auto added = sweep::refineNorms (d.norms, two, sweep::kRefineGapDb, sweep::kRefinePositionsMax);
+            if (added.empty()) break;
+            std::cout << "  grid refinement round " << round << ": " << (int) added.size() << " position(s) added where adjacent 2 dB points differ by more than "
+                      << sweep::kRefineGapDb << " dB" << std::endl;
+            q.refineRounds = round;
+            const sweep::Plan slow = q.holdDoubled();
+            for (float n : added)
+            {
+                if (windowSeen || overBudget()) break;
+                const auto k = (int) q.norms.size();
+                q.norms.push_back (n); q.refinedNorms.push_back (n);
+                const auto tag = prefix + "pos" + juce::String (k).paddedLeft ('0', 2);
+                const auto pr = runProbe (stem, tag, args (q, n), n);
+                ps.push_back ({ pr.out, pr.cleanExit(), pr.describe(), n });
+                if (q.repeats > 1)
+                {
+                    const auto rr = runProbe (stem, "r2." + tag, args (slow, n), n);
+                    repeatRuns[prefix].push_back ({ rr.out, rr.cleanExit(), rr.describe(), n });
+                }
+            }
+        }
+    };
     if (plan.candidates.empty())
+    {
         plan = sweepWithFallback (plan, "", refOut, posOut);
+        refineGrid (plan, lastSweepPrefix, refOut, posOut);
+    }
     else
         for (const auto& c : plan.candidates)
         {
@@ -1910,6 +1957,7 @@ inline int runCertSweep (const SweepOptions& opt)
             sweep::applyCandidateControl (q, base);
             sweep::ProcessOut cr; std::vector<sweep::ProcessOut> cp;
             q = sweepWithFallback (q, "c" + juce::String (c.index) + ".", cr, cp);
+            refineGrid (q, lastSweepPrefix, cr, cp);
             candRuns.push_back ({ q, { cr, cp } });
         }
     opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
@@ -2070,6 +2118,14 @@ inline void restoreEngage (sweep::Plan& q, const juce::var& oldSweep)
     if (const auto* tr = eg.getProperty ("tried", {}).getArray())
         for (const auto& t : *tr) q.engageTried.add (t.toString());
 }
+// The grid refinement rides the traces as ordinary positions; what the fixture restores is the record of it.
+inline void restoreRefinement (sweep::Plan& q, const juce::var& oldSweep)
+{
+    const auto g = oldSweep.getProperty ("gridRefinement", {});
+    if (! g.isObject()) return;
+    q.refineRounds = (int) g.getProperty ("rounds", 0);
+    if (const auto* an = g.getProperty ("added_norms", {}).getArray()) for (const auto& n : *an) q.refinedNorms.push_back ((float) (double) n);
+}
 
 inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& processesJson, const juce::File& rawDir, const juce::File& fixtureOut)
 {
@@ -2107,6 +2163,7 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         const auto run = resolveTraceRun (processesJson, "");
         if (run.quiet) { plan.quietReference = true; plan.referenceFallbackNote = fallbackNote (old); }
         if (run.engageIndex >= 0) restoreEngage (plan, old);
+        restoreRefinement (plan, old);
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: cannot load the traces" << std::endl; return 2; }
         sweep::ProcessOut ref2; std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
         if (sweep::loadProcesses (processesJson, rawDir, ref2, pos2, "r2." + run.prefix) || (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2)))
@@ -2125,6 +2182,7 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         const auto run = resolveTraceRun (processesJson, "c" + juce::String (c.index) + ".");
         if (run.quiet) { q.quietReference = true; q.referenceFallbackNote = fallbackNote (oldC); }
         if (run.engageIndex >= 0 || oldC.hasProperty ("engageWrites")) restoreEngage (q, oldC);
+        restoreRefinement (q, oldC);
         if (! sweep::loadProcesses (processesJson, rawDir, ref, pos, run.prefix)) { std::cout << "REDERIVE: no traces for candidate " << c.index << std::endl; return 2; }
         std::vector<sweep::ProcessOut> pos2; std::optional<sweep::Derived> rpt;
         if (loadRepeatPositions (processesJson, rawDir, "r2." + run.prefix, pos2))

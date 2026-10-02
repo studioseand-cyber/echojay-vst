@@ -76,6 +76,14 @@ inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must dif
 // position's pair passes, and the LOUDEST passing rung is the reference (farthest from the noise floor); the rung used is
 // recorded per position. A guard still refuses: a position that passes at no measured rung has no reference. Only rungs
 // the trace holds are walked, so a trace with -54/-48 alone reads exactly as before.
+// GRID REFINEMENT (2 Oct, ruled by Kathy on CL 1B): in_at_gr["2"] jumped 9.3 dB between positions 3 and 4 (norm 0.200 ->
+// 0.267) - the knob is bunched near "Off" - and the section 6 pick had nothing inside the clamp to interpolate toward.
+// Wherever two adjacent positions' 2 dB points differ by more than kRefineGapDb, positions are added between them, evenly,
+// ceil(gap / kRefineGapDb) segments, and the check runs again on the denser grid, up to kRefineRounds rounds or
+// kRefinePositionsMax positions in all. Same procedure for every added position (quiet ladder, hold-doubled repeat).
+inline constexpr double kRefineGapDb      = 3.0;
+inline constexpr int    kRefineRounds     = 4;
+inline constexpr int    kRefinePositionsMax = 64;
 inline const std::vector<std::pair<double, double>> kQuietLadder { { -54.0, -48.0 }, { -66.0, -60.0 }, { -78.0, -72.0 }, { -90.0, -84.0 } };
 inline constexpr double kSilentDb     = -90.0;  // an output below this at every level is silent
 inline constexpr double kToneFracMin  = 0.5;    // an output with less than half its power at the tone is not the input's tone
@@ -126,7 +134,11 @@ struct Plan
     // every fresh per-position process (loud-to-quiet contaminates through release - arm B), 2.5 s hold, last 300 ms read,
     // and the per-position quiet reference on EVERY product (-54 and -48 are steps of the grid). Nothing else changes.
     bool profile = false;
-    int repeats = 1;                          // v1.4: a profile sweep measures every position again with the HOLD DOUBLED (5 s): a point that moves had not settled
+    int repeats = 1;
+    // GRID REFINEMENT (2 Oct, ruled): positions added by refineNorms between neighbours whose 2 dB points differ by more
+    // than kRefineGapDb; recorded so a reader knows which positions were not on the original grid.
+    int refineRounds = 0;
+    std::vector<float> refinedNorms;                          // v1.4: a profile sweep measures every position again with the HOLD DOUBLED (5 s): a point that moves had not settled
     double holdS = 1.5, discardS = 0.75, winS = 0.25;
     std::vector<double> testLevels() const   // the levels the derivation reads reduction at
     {
@@ -675,6 +687,34 @@ inline bool showsResponse (const Derived& d)
     if (d.result == "error") return false;
     if (d.result == "flat") return false;
     return (d.flatSpanDb && *d.flatSpanDb > kSenseDb) || (d.responseDb && *d.responseDb > kSenseDb) || d.result == "certified" || d.result == "nonmonotonic";
+}
+
+// THE REFINEMENT RULE, pure: norms in order with each one's 2 dB point (null where not measured) -> the norms to add.
+// Only neighbours that BOTH have a numeric 2 dB point are compared (a null is not a gap, it is an absence); a gap over
+// gapDb gets ceil(gap / gapDb) - 1 evenly spaced positions between the two; nothing is added once the total would pass
+// maxPositions. Returns sorted, without duplicates of what is already there.
+inline std::vector<float> refineNorms (const std::vector<float>& norms, const std::vector<juce::var>& twoDbPoints, double gapDb, int maxPositions)
+{
+    std::vector<float> out;
+    if (norms.size() != twoDbPoints.size() || gapDb <= 0.0) return out;
+    auto num = [] (const juce::var& v) { return v.isDouble() || v.isInt(); };
+    int total = (int) norms.size();
+    for (size_t i = 0; i + 1 < norms.size(); ++i)
+    {
+        if (! num (twoDbPoints[i]) || ! num (twoDbPoints[i + 1])) continue;
+        const double gap = std::abs ((double) twoDbPoints[i + 1] - (double) twoDbPoints[i]);
+        if (gap <= gapDb) continue;
+        const int segments = (int) std::ceil (gap / gapDb);
+        for (int k = 1; k < segments; ++k)
+        {
+            if (total >= maxPositions) return out;
+            const float n = norms[i] + (norms[i + 1] - norms[i]) * (float) k / (float) segments;
+            bool dup = false; for (float x : norms) dup = dup || std::abs (x - n) < 1e-6f; for (float x : out) dup = dup || std::abs (x - n) < 1e-6f;
+            if (! dup) { out.push_back (n); ++total; }
+        }
+    }
+    std::sort (out.begin(), out.end());
+    return out;
 }
 
 inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, int ratioIndex, bool quietReference = false)
@@ -1386,6 +1426,14 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     for (float x : d.norms) norms.add (std::round (x * 1e6) / 1e6);
     s->setProperty ("positionNorms", norms);
     { juce::Array<juce::var> tx; for (const auto& t : d.texts) tx.add (t); s->setProperty ("positionTexts", tx); }   // the display at each position
+    if (p.refineRounds > 0)
+    {
+        auto* g = new juce::DynamicObject();
+        g->setProperty ("rule", "positions added between neighbours whose in_at_gr[2] differ by more than " + juce::String (kRefineGapDb, 1) + " dB, ceil(gap/" + juce::String (kRefineGapDb, 1) + ") segments, until none do (or " + juce::String (kRefineRounds) + " rounds / " + juce::String (kRefinePositionsMax) + " positions)");
+        g->setProperty ("gap_db", kRefineGapDb); g->setProperty ("rounds", p.refineRounds);
+        juce::Array<juce::var> an; for (float n : p.refinedNorms) an.add (std::round (n * 1e6) / 1e6); g->setProperty ("added_norms", an);
+        s->setProperty ("gridRefinement", juce::var (g));
+    }
     if (d.holdS > 0.0) { s->setProperty ("hold_s", d.holdS); s->setProperty ("win_s", d.winS); }
     if (d.quietReference)
     {
