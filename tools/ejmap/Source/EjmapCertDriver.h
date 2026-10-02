@@ -2409,19 +2409,10 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     const auto& desc = hits[0].desc;
     const auto pick = profile::pickPosition (profile, Lrms, g);
     if (! pick.ok) { say ("TONE: " + product + " - section 6 picks nothing: " + pick.refused); return 4; }
-    // The writes: engage + neutral by control NAME from the profile, resolved to indices through the record's controls.
-    auto indexOf = [&] (const juce::String& name) { if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "") == name) return (int) c.getProperty ("index", -1); return -1; };
-    juce::StringArray sets; juce::Array<juce::var> writes;
-    auto addWrite = [&] (const juce::String& name, int idx, double norm, const juce::String& why) {
-        sets.add (juce::String (idx) + ":" + juce::String (norm, 6));
-        auto* o = new juce::DynamicObject(); o->setProperty ("control", name); o->setProperty ("index", idx); o->setProperty ("norm", norm); o->setProperty ("why", why); writes.add (juce::var (o)); };
-    for (const auto& e : *profile.getProperty ("engage", {}).getArray())   { const auto n = e.getProperty ("control", "").toString(); const int i = indexOf (n); if (i < 0) { say ("TONE: engage control '" + n + "' not in the record"); return 2; } addWrite (n, i, (double) e.getProperty ("norm", 0.0), "engage"); }
-    for (const auto& e : *profile.getProperty ("neutral", {}).getArray())  { const auto n = e.getProperty ("control", "").toString(); const int i = indexOf (n); if (i < 0) { say ("TONE: neutral control '" + n + "' not in the record"); return 2; } addWrite (n, i, (double) e.getProperty ("norm", 0.0), "neutral"); }
-    juce::String ratioNote = "no ratio precondition in the record (ratio as instantiated)";
-    if (const auto* pre = record.getProperty ("thresholdSweep", {}).getProperty ("preconditions", {}).getArray())
-        for (const auto& x : *pre)
-            if (x.getProperty ("role", "").toString() == "ratio_raise")
-            { addWrite ("ratio", (int) x.getProperty ("index", -1), (double) x.getProperty ("norm", 0.0), "reference ratio - NORM from our record; his profile carries only the value"); ratioNote = "ratio norm taken from the record's preconditions"; }
+    // THE WRITES (2 Oct): engage + neutral + ratio, every one from the exported profile, resolved to indices through the
+    // record's controls (profile::toneWrites, pinned); then the section 6 pick. The check rehearses the server's writes.
+    juce::StringArray sets; juce::Array<juce::var> writes; juce::String ratioNote;
+    if (const auto why = profile::toneWrites (profile, record, sets, writes, ratioNote); why.isNotEmpty()) { say ("TONE: " + why); return 2; }
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("TONE: the record has no plan: " + plan.why); return 4; }
     if (record.getProperty ("pickedCandidate", {}).isObject())
@@ -2454,7 +2445,8 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("L_peak_dbfs", Lpeak); o->setProperty ("g_db", g);
     auto* pk = new juce::DynamicObject(); pk->setProperty ("norm", pick.norm); pk->setProperty ("point", pick.i0); if (pick.i1 >= 0) pk->setProperty ("point_next", pick.i1);
     pk->setProperty ("in_at_g", pick.inAtG0); pk->setProperty ("stepped", pick.stepped); o->setProperty ("pick", juce::var (pk));
-    o->setProperty ("writes", writes);
+    o->setProperty ("writes", writes);                                     // engage + neutral + ratio, every one from the exported profile
+    o->setProperty ("writes_source", "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick");
     o->setProperty ("quiet_check_ok", quietOk);
     o->setProperty ("gr_measured_db", gr ? juce::var (std::round (*gr * 100.0) / 100.0) : juce::var());
     o->setProperty ("pass_within_0_5_db", pass);

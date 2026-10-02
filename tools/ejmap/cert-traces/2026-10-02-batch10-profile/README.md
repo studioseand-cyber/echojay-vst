@@ -23,3 +23,11 @@ Three sub-directories, in the order they happened:
 
 Every reading on both CL 1B ladder runs agrees: same ten positions descend to the same rungs, the
 same in_at_gr to 0.1 dB, point_error_db 0.1 on both. Paths are redacted (`~`).
+
+- `refined/` - CL 1B (10:27, iLok 0x01130000 / 2) with the GRID REFINEMENT: 16 positions, then round 1
+  added 11 and round 2 added 1 where adjacent 2 dB points differed by more than 3 dB (28 positions,
+  17 referenced below the first rung, 200 s). THE RECORD in `cert-fixtures/profiles/`. Detector at the
+  2 dB point nearest -15 peak: sine -14.2, two-tone -15.5, f = 0.43. Tone check with EVERY write the
+  server will make (Gain, Attack, Release, Select Attack Release, Sidechain at their instantiate values,
+  Ratio 6:1 at norm 0.5, then the section 6 pick norm 0.2167): 1.85 dB, PASS. The pick is still a single
+  position: the neighbour at 0.2333 has its 1 dB point 8.5 dB below L and the clamp drops it by 0.5 dB.

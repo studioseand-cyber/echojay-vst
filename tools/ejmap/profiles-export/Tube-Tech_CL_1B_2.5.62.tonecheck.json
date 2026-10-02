@@ -5,16 +5,60 @@
   "L_peak_dbfs": -14.989700043360187,
   "g_db": 2.0,
   "pick": {
-    "norm": 0.2,
-    "point": 3,
-    "in_at_g": -13.91,
+    "norm": 0.216667,
+    "point": 5,
+    "in_at_g": -17.210000000000001,
     "stepped": false
   },
-  "writes": [],
+  "writes": [
+    {
+      "control": "Gain",
+      "index": 0,
+      "norm": 0.33,
+      "set": "0.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Attack",
+      "index": 4,
+      "norm": 0.5,
+      "set": "5.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release",
+      "index": 5,
+      "norm": 0.5,
+      "set": "5.0",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Select Attack Release",
+      "index": 6,
+      "norm": 1.0,
+      "set": "Man",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Sidechain",
+      "index": 7,
+      "norm": 0.0,
+      "set": "Int",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ratio",
+      "index": 1,
+      "norm": 0.5,
+      "set": "6:1",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
   "quiet_check_ok": true,
-  "gr_measured_db": 1.33,
-  "pass_within_0_5_db": false,
+  "gr_measured_db": 1.85,
+  "pass_within_0_5_db": true,
   "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
-  "measuredAt": "20261002T083417.914+0100",
-  "ratio_norm_source": "no ratio precondition in the record (ratio as instantiated)"
+  "measuredAt": "20261002T103646.537+0100",
+  "ratio_norm_source": "ratio 6:1 written from profile.ratio.curve[0].norm 0.5000"
 }

@@ -538,4 +538,38 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     return p;
 }
 
+// THE TONE CHECK'S WRITES (2 Oct, ruled): exactly what the server will write - engage[], neutral[] and ratio.curve[0]
+// from the exported profile, by control NAME resolved through the record's controls - nothing from the record's own
+// sweep. Returns the refusal, or empty. The section 6 pick is written by the caller as the swept position.
+inline juce::String toneWrites (const juce::var& profile, const juce::var& record, juce::StringArray& sets, juce::Array<juce::var>& writes, juce::String& ratioNote)
+{
+    auto indexOf = [&] (const juce::String& name) { if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) if (c.getProperty ("name", "") == name) return (int) c.getProperty ("index", -1); return -1; };
+    auto addWrite = [&] (const juce::String& name, int idx, double norm, const juce::String& set, const juce::String& why) {
+        sets.add (juce::String (idx) + ":" + juce::String (norm, 6));
+        auto* o = new juce::DynamicObject(); o->setProperty ("control", name); o->setProperty ("index", idx); o->setProperty ("norm", norm); o->setProperty ("set", set); o->setProperty ("why", why); writes.add (juce::var (o)); };
+    for (const char* field : { "engage", "neutral" })
+        if (const auto* arr = profile.getProperty (field, {}).getArray())
+            for (const auto& e : *arr)
+            {
+                const auto n = e.getProperty ("control", "").toString(); const int i = indexOf (n);
+                if (i < 0) return juce::String (field) + " control '" + n + "' not in the record";
+                const auto norm = e.getProperty ("norm", {});
+                if (! (norm.isDouble() || norm.isInt())) return juce::String (field) + " control '" + n + "' has no norm in the profile";
+                addWrite (n, i, (double) norm, e.getProperty ("set", "").toString(), juce::String (field) + "[] from the profile");
+            }
+    const auto rt = profile.getProperty ("ratio", {});
+    const auto curve = rt.getProperty ("curve", {});
+    if (rt.getProperty ("control", {}).isString() && curve.size() > 0)
+    {
+        const auto n = rt.getProperty ("control", "").toString(); const int i = indexOf (n);
+        if (i < 0) return "ratio control '" + n + "' not in the record";
+        const auto norm = curve[0].getProperty ("norm", {});
+        if (! (norm.isDouble() || norm.isInt())) return "the profile's ratio point has no norm; the server could not write it";
+        addWrite (n, i, (double) norm, curve[0].getProperty ("set", "").toString(), "ratio.curve[0] from the profile");
+        ratioNote = "ratio " + curve[0].getProperty ("set", "").toString() + " written from profile.ratio.curve[0].norm " + juce::String ((double) norm, 4);
+    }
+    else ratioNote = "no ratio control in the profile (fixed ratio): nothing written";
+    return {};
+}
+
 } // namespace ejmap::profile

@@ -1,0 +1,55 @@
+=== [1] Tube-Tech CL 1B   10:27:13   ilok=[0x01130000 / 2]   power='AC Power'
+  sweeping Tube-Tech CL 1B (unseen version 2.5.62: defaults sampled first) - 1 reference + 16 position processes
+  grid refinement round 1: 11 position(s) added where adjacent 2 dB points differ by more than 3 dB
+  grid refinement round 2: 1 position(s) added where adjacent 2 dB points differ by more than 3 dB
+EJ Map threshold sweep - Tube-Tech CL 1B -> AudioUnit_517f614e_2.5.62.json  (DISCOVERED: mapped (server map state 3); no fixture existed)
+probe: signed EchoJayProbe (feat/ejmap-cert), team 8BT5F9B887, cdhash e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Threshold unit 'dB' (class single_threshold) | positions 28 (16 evenly spaced), one process each, levels quiet to loud
+ratio: [1] ran at '6:1' -> 6 | auto make-up disabled: no
+default-threshold reference ('Off', spec 4.7 check only):  -60.00 out-in -0.64  -58.00 out-in -0.64  -56.00 out-in -0.64  -54.00 out-in -0.64  -52.00 out-in -0.64  -50.00 out-in -0.64  -48.00 out-in -0.64  -46.00 out-in -0.64  -44.00 out-in -0.64  -42.00 out-in -0.64  -40.00 out-in -0.64  -38.00 out-in -0.64  -36.00 out-in -0.64  -34.00 out-in -0.64  -32.00 out-in -0.64  -30.00 out-in -0.64  -28.00 out-in -0.64  -26.00 out-in -0.64  -24.00 out-in -0.64  -22.00 out-in -0.64  -20.00 out-in -0.64  -18.00 out-in -0.64  -16.00 out-in -0.64  -14.00 out-in -0.64  -12.00 out-in -0.64  -10.00 out-in -0.64  -8.00 out-in -0.64  -6.00 out-in -0.64  -4.00 out-in -0.64  -2.00 out-in -0.64  0.00 out-in -0.64  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.01 -0.01 -0.02 -0.03 -0.04 -0.05 -0.07 -0.09 -0.02 -0.03 -0.04 -0.05 -0.06 -0.08 -0.02 -0.03 -0.04 -0.05 -0.07 -0.09 -0.02 -0.03 -0.04 -0.05 -0.05
+reference ladder: 17 position(s) below the first rung (11@-60 12@-60 13@-60 14@-60 15@-60 16@-60 17@-72 18@-72 19@-72 20@-72 21@-72 22@-72 23@-84 24@-84 25@-84 26@-84 27@-84)
+writes landed by: instack 28
+processes: 60 run, 0 retried, 0 position(s) failed
+write verify: 28 landed, 0 write_unlanded (skipped), in-stack read already matched on 28 of 28, pump slices total 28, longest confirm 3.1 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    Off            -0.00    -0.00     0.00   {"above": 0.0}          
+  1  0.0667    1.4             0.00     0.01     0.05   {"above": 0.0}          
+  2  0.1333    0.8             0.01     0.06     0.14   {"above": 0.0}          
+  3  0.2000    0.2             0.48     1.79     3.51       -13.4    -13.60
+  4  0.2083    0.1             0.60     2.13     4.51       -14.6    -14.70
+  5  0.2167    0.0             0.71     2.46     5.36       -15.7    -15.70
+  6  0.2333    -1.2            0.94     3.53     6.87       -17.1    -15.90
+  7  0.2500    -2.7            1.16     4.61     8.16       -19.1    -16.40
+  8  0.2667    -4.2            1.36     5.47     9.19       -20.5    -16.30
+  9  0.3000    -7.3            1.69     6.76    10.77       -23.0    -15.70
+ 10  0.3333    -10.2           2.13     8.33    12.51       -25.1    -14.90
+ 11  0.3667    -11.8           2.90    10.03    14.40       -28.1    -16.30
+ 12  0.4000    -13.5           3.98    11.48    15.99       -30.2    -16.70
+ 13  0.4333    -15.2           4.90    12.72    17.31       -31.3    -16.10
+ 14  0.4667    -16.8           5.80    13.91    18.62       -33.1    -16.30
+ 15  0.5000    -18.5           6.59    15.00    19.76       -34.4    -15.90
+ 16  0.5333    -20.3           7.87    16.54    21.46       -35.9    -15.60
+ 17  0.5556    -22.0           9.34    18.31    23.29       -39.1    -17.10
+ 18  0.5778    -23.7          10.73    19.95    24.99       -41.0    -17.30
+ 19  0.6000    -25.4          11.99    21.44    26.61       -42.5    -17.10
+ 20  0.6333    -27.9          13.91    23.62    28.95       -45.1    -17.20
+ 21  0.6667    -30.2          15.59    25.50    30.94       -47.2    -17.00
+ 22  0.7000    -31.5          16.91    27.05    32.60       -49.0    -17.50
+ 23  0.7333    -32.7          18.24    28.51    34.12       -50.6    -17.90
+ 24  0.8000    -35.2          20.17    30.65    36.34       -52.3    -17.10
+ 25  0.8667    -37.7          21.57    32.28    38.00       -53.7    -16.00
+ 26  0.9333    -40.0          22.38    33.21    38.96       -54.4    -14.40
+ 27  1.0000    -41.0          22.40    33.23    38.98       -54.4    -13.40
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:22 -58.00:21 -56.00:20 -54.00:19 -52.00:18 -50.00:17 -48.00:17 -46.00:15 -44.00:14 -42.00:12 -40.00:11 -38.00:11 -36.00:10 -34.00:9 -32.00:8 -30.00:7 -28.00:6 -26.00:5 -24.00:4 -22.00:3 -20.00:3 -18.00:3 -16.00:3 -14.00:3 -12.00:3 -10.00:3 -8.00:3 -6.00:3 -4.00:3 -2.00:3 0.00:3
+2 engage drift:    28.64  -10.00:10.61  -12.00:12.57  -14.00:14.53  -16.00:16.48  -18.00:18.42  -2.00:2.68  -20.00:20.36  -22.00:22.28  -24.00:24.19  -26.00:26.40  -28.00:27.76  -30.00:28.37  -32.00:28.44  -34.00:27.12  -36.00:25.86  -38.00:27.85  -4.00:4.59  -40.00:28.46  -42.00:28.65  -44.00:28.46  -46.00:27.58  -48.00:28.42  -50.00:29.10  -52.00:29.37  -54.00:29.36  -56.00:29.19  -58.00:28.37  -6.00:6.50  -60.00:28.52  -8.00:8.45  0.00:0.73   (primary; displayLinear unset until the population decides)
+   offset IQR:      1.40 dB over 25 positions (min -17.90, max -13.40)
+3 displayOffsetDb: -16.30  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_517f614e_2.5.62.json
+--- exit=0   10:30:33   wall_s=200   ilok=[0x01130000 / 2]
+PROFILE DONE 10:30:33

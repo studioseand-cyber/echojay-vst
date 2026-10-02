@@ -5326,6 +5326,18 @@ void testProfileExport()
         bare.getProperty ("controls", {})[5].getDynamicObject()->removeProperty ("defaultOnInstantiate");
         const auto eb = exportCompProfile (bare);
         check (! eb.ok && eb.refused.contains ("Attack"), "export X24: a neutral control with no instantiate value on the record refuses, naming it (" + eb.refused + ")");
+        // THE TONE CHECK'S WRITES (2 Oct): engage + neutral + ratio from the exported profile, resolved by name; nothing from the record's sweep
+        juce::StringArray sets; juce::Array<juce::var> writes; juce::String note;
+        const auto why = toneWrites (ef.profile, full, sets, writes, note);
+        juce::StringArray got; for (const auto& w : writes) got.add (w.getProperty ("control", "").toString() + "@" + juce::String ((double) w.getProperty ("norm", -1.0), 2));
+        check (why.isEmpty() && sets.size() == 5 && got.joinIntoString (" ") == "Comp On@1.00 Attack@0.50 Mix@1.00 Sidechain@0.00 Ratio@0.50" && sets.contains ("1:0.500000"),
+               "tone T1: the writes are engage (Comp On), every neutral entry and ratio.curve[0], all from the profile (" + got.joinIntoString (" ") + "; " + why + ")");
+        auto renamed = juce::JSON::parse (juce::JSON::toString (full)); renamed.getProperty ("controls", {})[1].getDynamicObject()->setProperty ("name", "Slope");
+        juce::StringArray s2; juce::Array<juce::var> w2; juce::String n2;
+        check (toneWrites (ef.profile, renamed, s2, w2, n2).contains ("Ratio"), "tone T2: a profile control the record cannot name refuses, naming it");
+        auto fixedP = juce::JSON::parse (juce::JSON::toString (ef.profile)); fixedP.getProperty ("ratio", {}).getDynamicObject()->setProperty ("control", juce::var()); fixedP.getProperty ("ratio", {}).getDynamicObject()->setProperty ("curve", juce::Array<juce::var>());
+        juce::StringArray s3; juce::Array<juce::var> w3; juce::String n3;
+        check (toneWrites (fixedP, full, s3, w3, n3).isEmpty() && s3.size() == 4 && n3.contains ("fixed"), "tone T3: a fixed-ratio profile writes no ratio and says so");
     }
     const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
     check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
