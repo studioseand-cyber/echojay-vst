@@ -521,6 +521,67 @@ are green on both. The one remaining red is the pre-existing trim defect, proven
    ships. Pre-existing from the day session, deliberately not widened into tonight.
 3. **Review `1bd5e4f`** — the one product change in the push that Sean has not seen.
 
+
+---
+
+## 05:10 — the last red is ALSO the harness. The product applied every delta exactly.
+
+`level_match_guard` case (1) was the one red left in both branches, and I called it "genuinely pre-existing" all
+night. It is pre-existing, but it is **not a product defect** — and that matters, because it is the only thing
+standing between this gate and green.
+
+### The numbers, and they are deterministic
+
+Fixture: trims `-2.5 / -2.4 / -2.6`, deltas `+3.6 / -1.5 / +2.0`, so the targets are `1.10 / -3.90 / -0.60`.
+The leg reads `0.30 / -5.30 / -1.40`. **Identical in all seven runs tonight** — `0e2cfa9`, `ba61a36`, `7c348a8`,
+`9d47209`, both full gates and the feat gate. So it is arithmetic, not timing or audio.
+
+### What the Link's own log shows
+
+```
+seq ...547  v4_1  -2.50 -> 1.10   (delta 3.60)    <- EXACTLY the target
+seq ...548  v5_2  -2.40 -> -3.90  (delta -1.50)   <- EXACTLY the target
+seq ...549  V2_2  -2.60 -> -0.60  (delta 2.00)    <- EXACTLY the target
+            ... then a SECOND level_match arrives ...
+seq ...550  v4_1   1.10 -> 0.30   (delta -0.80)
+seq ...551  v5_2  EJLinkState: remote set gain=-5.30 dB
+seq ...552  V2_2  -0.60 -> -1.40  (delta -0.80)
+```
+
+**The first op is perfect on all three.** The V2 side then sends its second `level_match` (the `editData2` block,
+`v2_side.cpp:156-172`), and that is what the leg ends up reading.
+
+### Why the leg reads the wrong moment
+
+`link_side.cpp:96-104`: it waits for `v2_applied.json`, then `for (k < 60) { feed; pumpMs (50) }` — three seconds
+of audio — and only then asserts. Three seconds is plenty for op 2 to arrive. So case (1) asserts op 1's outcome
+against state op 2 has already moved. There is no handshake between the two sides for "op 1 has been judged".
+
+### NOT FIXED TONIGHT, on purpose
+
+The fix is small - the V2 side should wait for a file the link side writes after case (1) is judged, before
+sending op 2, exactly like the existing `link_ready.json` / `v2_applied.json` handshake. I did not do it, because
+a test change made unattended that turns a red into a green is the one change that must not be made without Sean
+awake. If I get the handshake subtly wrong the gate reports green and nobody looks again. **Ten minutes with the
+context; please do it rather than accept my word that the product is fine.** The evidence above is the argument,
+not my say-so: the three `seq ...547/548/549` lines are the product doing precisely what the leg asks.
+
+### So the real score for the night's five reds
+
+| Guard | Cause | Product defect? |
+|---|---|---|
+| `lease_id_guard` | stale V2 archive (my gate's build line) | no |
+| `role_snapshot_guard` | same | no |
+| `level_loop_guard` | scribble leg shared the first leg's state root | no |
+| `calib_link_guard` | **one rule in two places, (m) updated one** | **YES** — fixed, `1bd5e4f` |
+| `level_match_guard` | the leg reads after a second op lands | no |
+
+Plus the one the feature branch's first gate found, which was the most serious of the night and was in a placed
+build: **the compressor closing line changed outside the feature flag** (`cba5f02`).
+
+Two real product defects, four harness faults. The gate found both real ones, which is the case for running it -
+but four of five reds being its own faults is the case for fixing the harness before trusting the next run.
+
 ---
 
 ## EARLIER — the day session of 1 Oct (unchanged below this line)
