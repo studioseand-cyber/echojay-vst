@@ -101,7 +101,32 @@ fi
 if [ $SCRIBBLE -eq 1 ]; then
   echo "SCRIBBLE LEG: running again with MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 ..."
   SLOG="$ISO/scribble.out"
-  MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 run_guard "$@" > "$SLOG" 2>&1; SRC=$?
+  # THE SCRIBBLE LEG GETS ITS OWN STATE ROOT (2 Oct 2026). It did not, and that cost a night.
+  #
+  # Both legs ran with the one $ISO as HOME/ECHOJAY_STATE_HOME, so the scribble leg was not a second
+  # INDEPENDENT run of the guard - it was the guard run a second time ON TOP OF the first run's state. Guards
+  # legitimately persist: level_loop_guard case (6a) calls storeParamMaps to mark Apple's AUDelay
+  # category=compressor, and that lands in $ISO/Library/EchoJay/param_maps.json. On the second leg a fresh
+  # ChainHost loads it back, so (6a)'s own precondition - "a delay is not a dynamics slot by its OWN category" -
+  # read 1 and failed. comp_profile_guard's (2a), "with no profile published, the slot has none", failed for the
+  # same reason.
+  #
+  # It looked like a memory bug for hours, because the only leg that failed was the one with malloc hardening on.
+  # It is not: TWO PLAIN RUNS in one state root reproduce it exactly, with no MallocScribble anywhere -
+  #     run 1: exit=0  (6a) ok   [0]
+  #     run 2: exit=1  (6a) FAIL [1]
+  # Isolation is a precondition for evidence, and that applies BETWEEN THE TWO LEGS of one guard, not just
+  # between a guard and the user's live state. A second leg sharing the first's state root tests neither the
+  # product nor the allocator; it tests whether the guard happens to be idempotent.
+  SISO="$(mktemp -d "$BASE/ejguard-$(basename "$BIN")-scrib.XXXXXX" 2>&1)" || { echo "  FAIL  no private HOME for the scribble leg under $BASE ($SISO)"; SISO=""; }
+  if [ -z "$SISO" ] || [ ! -d "$SISO" ]; then
+    echo "  FAIL  the scribble leg has no private state root, so its result would not be evidence - REFUSED."
+    SRC=1
+  else
+    mkdir -p "$SISO/Library/Application Support" "$SISO/Documents"
+    HOME="$SISO" ECHOJAY_STATE_HOME="$SISO" EJ_STATE_TEST_HOME="$SISO" TMPDIR="$SISO"       MallocScribble=1 MallocPreScribble=1 MallocGuardEdges=1 run_guard "$@" > "$SLOG" 2>&1; SRC=$?
+    rm -rf "$SISO" 2>/dev/null
+  fi
   # On a failing scribble leg the reason has to be READABLE - a bare exit code is not evidence.
   # THE TAIL IS NOT THE REASON (1 Oct 2026). level_loop_guard failed a scribble leg with "RED (1 assertion(s)
   # failed)" and the 40-line tail was forty `ok` lines, because the failure was earlier in the run - so the log
