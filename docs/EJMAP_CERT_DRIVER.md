@@ -1494,3 +1494,51 @@ the honest shape: a multiband or a two-stage device is not a single amount contr
 should pick for it.
 
 The rehearsal (item 5) runs with NO rule: channel strips end as needs_review.
+
+## 25. AUDIT (not a fix): every place certification reads a MAPPING artefact or verdict (2 Oct, 14:15)
+
+Three mapping rules gated certification silently today, each found by the fresh-ledger test: the
+categorise step asked only about the mapping worklist; discovery obeyed mapping verdicts; the mapping
+sweep skips `no_dial_set`, which is what the server says about every tuner. Kathy asked for the whole
+list before anything else is built. Read from `EjmapCertDriver.h` (`loadDiscoveryInputs`,
+`discoverCandidates`, `buildWorklist`, `quarantinedBundles`, `measurable`), `EjmapLoop.h`,
+`MainComponent.h` (`decideSweep`, `loadCategories`, `uncategorisedWorklistProducts`, `collectWorklist`),
+`EjmapLedger.h`, `PluginScanner.cpp`.
+
+| # | artefact / verdict | what MAPPING uses it for | what CERTIFICATION uses it for | right for certification? | what breaks on a fresh Mac |
+|---|---|---|---|---|---|
+| 1 | `categories.json` → `category` (by `mark_keys` = `Format\|uid`) | which products the mapping sweep opens (`sweepable` = disposition sweep ∧ ¬refused_by_both ∧ category non-empty) | THE worklist: category `compressor` → compressor certification, `pitch` → tuner certification; nothing else is a subject | yes — this is the one mapping artefact certification should depend on | (a) the endpoint reply carried no `mark_keys` → 0 categorised identities [FIXED today: stamped on merge]; (b) only the mapping worklist was asked → mapped products had no category [FIXED today: every scanned product]; (c) the catalogue's content: every real-time tuner is `category null` (5 Aug verdicts) [BLOCKED on Sean, section 24 of COMP_PROFILE_REPLY] |
+| 2 | `categories.json` → `disposition` (+ `why`) | the sweep/skip verdict: `sweep`, `no_dial_set`, `review`, `not_a_processor`, `operator_excluded` | until today: any non-`sweep` disposition excluded the product (30 Sep ruling); now only `operator_excluded` and the hang/crash family (re-ruled 2 Oct) | partly — the operator's exclusion is right; a mapping verdict says nothing about measurability | 202 of 1073 products were held, every tuner among them [FIXED today] |
+| 3 | `categories.json` → `refused_by_both`, `kind`, `hedged` | `sweepable` (a product both arms refused differently is still refused); `kind` is the arms' free text | not read | right not to read them; note `kind` already says "pitch correction" for exactly the tuners the catalogue files as null — it is the evidence Sean's fix can use | nothing |
+| 4 | `map-state.json` (server: 0 unmapped, 1 local only, 2 submitted here, 3 submitted elsewhere, 4 different build) | the mapping worklist (unmapped / different build / unknown are offerable) | **the discovery gate: a product is a subject only if MAPPED (local or server) at its installed build**; also `mappedBy` on the row | **questionable** — see the tuner proposal below: certification samples its own defaults, resolves the plugin in the AU registry and computes `map_fp` itself; the map is used for nothing but its category (and only when local) | a product with no map anywhere is never a subject (now a named `unmapped` row); the file is re-fetched at every GUI/`--sweep` launch, so a scratch edit before the mapping sweep is overwritten (the test's edits go after it) |
+| 5 | local maps `maps/*.json` → `identity`, `category` | the mapping sweep's product; the send queue | category (wins over `categories.json`) and "mapped (local map)" | the category is fine; the precedence is a choice (a local map's category is the mapper's own categorisation at sweep time, from the same `categories.json`) | a fresh Mac has none until the mapper sweeps; nothing breaks, nothing is gained |
+| 6 | the mapping sweep's SKIP rules (`decideSweep`): `skipped_uncategorised`, `skipped_<disposition>` via `sweepable`, `skipped_quarantined`, `marks.isUnmappable`, `marks.hasIssue` (flagged) | which plugins get a map | **not read directly — inherited through #4**: whatever the mapping sweep refuses to map can never be discovered | **no** — this is the third gate: an UNMAPPED tuner (`no_dial_set` on the server) is never mapped, so even after the catalogue gives it `category pitch` it has no map and fails #4 | every unmapped tuner, forever, and any unmapped compressor the catalogue marks `review`/`no_dial_set`; the test measures it today with bx_crispytuner (category pitch set as a stand-in, disposition left as served) |
+| 7 | `quarantine.json` (the ledger's retry rule: hang at scan on the first timeout, deaths at the threshold) | the scan skips the bundle; the sweep skips the plugin | the row `quarantined_at_scan` (named today); the certification PROBE never consults it — it runs the plugin out of process under its own budget (2 unclean, once-retried) | mostly — a scan-stage quarantine of a VST3 never touches the AU; a LOAD-stage quarantine (the plugin crashed the mapper) is not read by the batch, which will try the AU and spend its budget (`refused budget`) | nothing silent now; a crasher costs ~2 × timeout per product |
+| 8 | `licence-stops.json` (new today: the scan's window watch) | the scan skips the bundle until `--retry-licence` | the row `needs_licence`; the census section | yes | nothing silent; a licence stop costs ~3 s |
+| 9 | the batch's own `held (licence)` — `isPaceWrapped` bundle marker + `--include-pace` | — | `measurable()`: a PACE-wrapped product is held unless `--include-pace` | **inconsistent with today's ruling at the scan** ("the window is the evidence; PACE-wrapped is not unlicensed"): on a Mac WITH the iLok every PACE product is held unless the mapper passes a flag — a hand step. The probe already has the window watch (`uiShown`), so the batch could try every product and let the window decide, writing `needs_licence` | a licensed PACE product on a licensed Mac is skipped; an operator must know to pass `--include-pace` |
+| 10 | `scan-cache.xml` (the scan rows) | everything the mapper does | NOT read by certification (`installedAudioUnits()` reads the AU registry) — but the categorise request and the map-state fetch are built from the rows, so a product missing from the scan has no category and no map state | fine for AUs (the AU scan reads the registry, loads nothing); a VST3 stopped or quarantined at scan does not remove the AU | nothing, given #1 and #4 |
+| 11 | `marks` (unmappable / issue flags) | the mapper's hand decisions | not read | right | nothing |
+| 12 | `categories.json` → `operator_excluded` written by the runbook's exclusion script (§3, §B) | the sweep leaves the plugin alone | honoured (#2) | right: the operator's escape hatch reaches cert | nothing |
+| 13 | `config.json` (the sign-in token) | categorise, map-state fetch, send | the categorise step of the runbook needs it; the batch itself never touches the network | right; the zip must exclude it (it does: `cert/` only) | a Mac that never signed in gets no categories and no map state: the runbook's one-time step |
+
+**For tuners specifically — does certification NEED a map?** No. `runCertTuner` resolves the product by
+name in the AU registry, samples its defaults with the probe (the controls come from the plugin, not from
+a map), roles them with the tuner lexicon, runs the pitch sweeps, and the record's `map_fp` is computed
+from the probe's own parameter count (`fingerprintForDescription`), not read from a map. The compressor
+path is the same: the defaults pass supplies the controls; the only thing a map contributes is a
+category, and only when it is local. The MAPPED gate in discovery (#4) is a proxy for "someone has deemed
+this a dialable processor", inherited from the mapping worklist, and it drags the mapping sweep's skip
+rules (#6) into certification.
+
+**Proposal (not built; your ruling):** discovery keyed on INSTALLED + CATEGORY (`compressor` or `pitch`
+from `categories.json`, by product key where `mark_keys` are absent), with the map state recorded on the
+row as information (`mappedBy: local | server | none`) and never as a gate; `unmapped` stops being a
+state and becomes a field. Consequences: a product the mapper never mapped is probed under the probe's
+own budget (2 unclean, once-retried) and ends `refused` or measured; the `map_fp` on the record is still
+ours; the server's map for the identity, if any, is unaffected. With the catalogue fix (section 24 of
+the reply doc) this makes the eleven tuners subjects on any Mac; without it, nothing changes for them.
+If you would rather keep the gate, the smaller change is #6 alone: let `--sweep` map `category pitch`
+products whatever their disposition — but that is a mapping-sweep rule, and it is yours.
+
+Also proposed from #9: the batch stops pre-holding PACE products by the bundle marker and lets the
+probe's window watch decide, the same rule as the scan; `--include-pace` goes away.
