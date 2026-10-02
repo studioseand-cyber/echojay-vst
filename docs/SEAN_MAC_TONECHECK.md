@@ -30,9 +30,10 @@ is nulled across all positions (the profile stands); the result is embedded as `
 
 ## About how long
 
-Per exported product: re-derivation 1–2 s, export under 1 s, then one probe process per level: g = 2
-plus up to three deep levels, about 20–30 s each → **about 1–2 minutes per exported product**. A run
-that exported 60 products is about an hour and a half; it can be stopped and resumed.
+Measured here on 2 Oct on four exported products (traces from the rehearsal): **17 s in all** —
+re-derivation, export and four probe processes each (g = 2 plus 4/5/6; the probe renders offline, so a
+nine-hold tone process is about a second). Call it **5–10 s per exported product**: a run that exported
+60 products is about ten minutes. It can be stopped and resumed.
 
 ## What he zips back
 
