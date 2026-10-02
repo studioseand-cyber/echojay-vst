@@ -245,6 +245,13 @@ struct CalibLoop
     static constexpr float kHoldRefineDb    = 0.5f;  // ...and the refinement above this
     // 21t-m (29 Sep 2026 ruling): the slot output gain's own range, and the ONLY thing that limits the hold.
     static constexpr float kSlotGainMinDb = -24.0f, kSlotGainMaxDb = 12.0f;
+
+    /** MAKE-UP ABOVE THIS MUCH MEANS THE COMPRESSOR IS TAKING TOO MUCH OFF (2 Oct 2026 ruling).
+        Sean's 11:35 session on the Tube-Tech CL 1B: the hold wrote OUT +12.0 dB - the ceiling above - and the
+        closing line still said "level matched". It had matched the level, which is why the old wording was not
+        false; but a compressor that needs 12 dB of make-up is pulling 12 dB down, and reporting that as a match
+        tells the user everything is fine when the threshold is far too low. 6 dB is the ruled line. */
+    static constexpr float kOverCompressionDb = 6.0f;
     static constexpr int kFreshAfterWrite = 2;   // 21t-k item 3 (ruled 28 Sep 2026): two fresh windows per step
     // 21t-m item 5: how much of a window's worth of NEW heard audio makes a window judgeable. Two thirds - a
     // window is 3 s and a judged one must be most of that; Sean's 0.7 s sliver from a stopping transport is not.
@@ -1401,6 +1408,24 @@ struct CalibLoop
     }
 
     /** THE COMPLETED LINE: the same line, finished. Every figure in it is a meter sample. */
+    /** "taking about 12 dB off: too much, check the threshold", or empty when the make-up is reasonable.
+        ONE derivation, called by both closing-line branches - the flag-off (letter (q)) one and section 7's -
+        because the same rule written twice is how (e)'s withdrawn settle budget survived in one of two begin()s
+        until calib_link_guard caught it. The figure quoted is EchoJay's own OUT, which is what the hold wrote and
+        therefore what the compressor took off. */
+    juce::String overCompressionPhrase() const
+    {
+        if (! dynamicsSlot || ! (slotGainDb > kOverCompressionDb)) return {};
+        juce::String p;
+        p << "taking about " << juce::String (juce::roundToInt (slotGainDb))
+          << " dB off: too much, check the threshold";
+        // At the ceiling the number is not even the whole story - the trim ran out before the level was held.
+        if (slotGainDb >= kSlotGainMaxDb - 0.05f)
+            p << " (my output trim is at its +" << juce::String (juce::roundToInt (kSlotGainMaxDb))
+              << " dB ceiling, so it may be taking off more than this)";
+        return p;
+    }
+
     juce::String completedLine() const
     {
         // 21t-m item 2 (29 Sep 2026 ruling): TWO CLOSING LINES, one per purpose.
@@ -1422,15 +1447,23 @@ struct CalibLoop
                 // saying "no profile yet" to users who have no profiles and no way to get one. Part 2's rule is
                 // "behind a flag, default OFF", and a closing line is behaviour. Found by level_loop_guard (16),
                 // which asserts (q)'s wording and was the only thing standing between this and a shipped build.
-                b << " Set as dialled, level ";
-                if (std::abs (levelTrimmedDb) > 0.05f)
-                    b << "matched, Output " << signed1 (slotGainDb) << " dB.";
-                else if (std::abs (levelResidualDb) > 1.0f)
-                    b << "NOT matched - the slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
-                      << (levelResidualDb > 0.0f ? "louder" : "quieter")
-                      << " out than in and my output trim has no more to give.";
+                // OVER-COMPRESSION OUTRANKS "matched" (2 Oct 2026). The level IS matched in this case - that is
+                // what the hold just did - so the old line was not false, only useless: it reported success while
+                // the compressor pulled 12 dB down. What the user needs is the cause, not the symptom.
+                if (const auto over = overCompressionPhrase(); over.isNotEmpty())
+                    b << " Set as dialled, " << over << ". Output " << signed1 (slotGainDb) << " dB.";
                 else
-                    b << "already matched.";
+                {
+                    b << " Set as dialled, level ";
+                    if (std::abs (levelTrimmedDb) > 0.05f)
+                        b << "matched, Output " << signed1 (slotGainDb) << " dB.";
+                    else if (std::abs (levelResidualDb) > 1.0f)
+                        b << "NOT matched - the slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "
+                          << (levelResidualDb > 0.0f ? "louder" : "quieter")
+                          << " out than in and my output trim has no more to give.";
+                    else
+                        b << "already matched.";
+                }
                 return b;
             }
             if (dynamicsSlot)
@@ -1451,9 +1484,14 @@ struct CalibLoop
                     else if (profileCorrected)
                         p << " I eased it back " << juce::String (profileCorrectionDb, 1) << " dB.";
                     if (std::abs (levelTrimmedDb) > 0.05f) p << " Output " << signed1 (slotGainDb) << " dB.";
+                    // Section 7 says what the profile asked for; this says what it actually cost. A profile that
+                    // needs 12 dB of make-up is wrong for this material whatever its own numbers claim.
+                    if (const auto over = overCompressionPhrase(); over.isNotEmpty())
+                        p << " It is " << over << ".";
                     return p;
                 }
                 juce::String p = plugin + ": set as dialled, no profile yet.";
+                if (const auto over = overCompressionPhrase(); over.isNotEmpty()) p << " It is " << over << ".";
                 if (std::abs (levelTrimmedDb) > 0.05f) p << " Output " << signed1 (slotGainDb) << " dB.";
                 else if (std::abs (levelResidualDb) > 1.0f)
                     p << " The slot is " << juce::String (std::abs (levelResidualDb), 1) << " dB "

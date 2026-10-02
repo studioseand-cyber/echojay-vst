@@ -2060,6 +2060,45 @@ void guardMain()
                "(16) ...and its line says the level was matched, not that it already was", said2);
     }
 
+    // ---- (17) MAKE-UP ABOVE 6 dB IS OVER-COMPRESSION, AND THE LINE SAYS SO (2 Oct 2026 ruling) -------------
+    {
+        std::printf ("\n-- (17) the hold made up more than 6 dB: the line names it, not \"matched\" --\n");
+        // Sean's 11:35 session, Tube-Tech CL 1B, profiles OFF: the hold wrote OUT +12.0 dB - the ceiling - and the
+        // closing line said "Set as dialled, level matched, Output +12.0 dB." The level WAS matched, so the line
+        // was not false; it was useless. A compressor needing 12 dB of make-up is pulling 12 dB down, and the
+        // sentence told him everything was fine. Ruled: above 6 dB of make-up the line says what it is taking off
+        // and to check the threshold.
+        auto lineFor = [] (float outDb, bool dynamics) -> juce::String
+        {
+            echojay::CalibLoop l;
+            echojay::CalibLoop::Config c;
+            c.plugin = "Tube-Tech CL 1B"; c.slot = 1;
+            c.purpose = echojay::CalibLoop::Purpose::buildHold;
+            c.dynamicsSlot = dynamics; c.mode = echojay::CalibLoop::Mode::Passive;
+            l.begin (c);
+            l.slotGainDb = outDb; l.levelTrimmedDb = outDb; l.levelHeld = true;
+            return l.completedLine();
+        };
+        const auto hot = lineFor (12.0f, true);
+        check (hot.contains ("too much, check the threshold"),
+               "(17) +12 dB of make-up: the line says it is taking too much off and names the cause  (RED as it "
+               "stood: \"level matched, Output +12.0 dB\" - true, and no use to anyone)", hot);
+        check (hot.contains ("about 12 dB off"),
+               "(17) ...and quotes the figure the compressor is actually taking off", hot);
+        check (! hot.containsIgnoreCase ("level matched"),
+               "(17) ...and does NOT also claim the level matched, which is what hid it", hot);
+        check (hot.contains ("ceiling"),
+               "(17) ...and says the trim is at its ceiling, so the real figure may be larger still", hot);
+        // THE OTHER DIRECTION, so this cannot fire on an ordinary build: a verifier proven one way is unfalsifiable.
+        const auto ok = lineFor (3.0f, true);
+        check (ok.containsIgnoreCase ("level matched") && ! ok.contains ("too much"),
+               "(17) ...while 3 dB of make-up is ordinary and still reports a plain match", ok);
+        // ...and it is a COMPRESSOR rule: a non-dynamics slot with a big trim is not over-compressing, it is staged.
+        const auto nd = lineFor (12.0f, false);
+        check (! nd.contains ("too much"),
+               "(17) ...and a NON-dynamics slot with the same +12 dB is not accused of compressing at all", nd);
+    }
+
     std::printf ("\n==== level_loop_guard: %s (%d assertion(s) failed) ====\n",
                  failures == 0 ? "GREEN" : "RED", failures);
 }
