@@ -256,7 +256,9 @@ inline Export exportCompProfile (const juce::var& f)
         for (const auto& x : *a) { const auto t = x.toString(); holdFailed[{ t.upToFirstOccurrenceOf ("@", false, false).getIntValue(), t.fromFirstOccurrenceOf ("@", false, false).upToFirstOccurrenceOf (":", false, false).getIntValue() }] = t.fromFirstOccurrenceOf (": ", false, false); }
     for (int i = 0; i < norms.size(); ++i)
     {
-        auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
+        // THE EXPORT IS AT 0.1 dB (ruled 3 Oct): the record's crossing is raw; it is rounded to 0.1 dB here, then converted
+        // to sine RMS - so what the server reads is exactly what every check below judges (the order checks, the pick, the L)
+        auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms (std::round ((double) v * 10.0) / 10.0))) : juce::var(); };
         const auto one = conv (inAt[i].getProperty ("1", {}));
         crossing.push_back (one.isVoid() ? std::nullopt : std::optional<double> ((double) inAt[i].getProperty ("1", {})));
         if (! one.isVoid()) ++withOne;
@@ -323,7 +325,7 @@ inline Export exportCompProfile (const juce::var& f)
     for (int i = 0; i < curve.size(); ++i)
     {
         const auto g = curve[i].getProperty ("in_at_gr_dbfs", {}); const bool shallow = shallowAt[(size_t) i];
-        auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
+        auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms (std::round ((double) v * 10.0) / 10.0))) : juce::var(); };
         for (int t : sweep::kGrTargets)
         {
             if (t >= sweep::kDeepFrom) { const auto v = g.getProperty (juce::String (t), {}); if ((v.isDouble() || v.isInt()) && (double) v > kSweepCeilingRmsDb - kTopSixDb) topSixBy[t].add (juce::String ((double) norms[i], 4)); }

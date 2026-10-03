@@ -1841,3 +1841,36 @@ measured curve: the L rule now counts a continuous pick only when bracketed (or 
 is a position's own point. SBC's 8..12 then PASS at their nearest points (gaps +0.6 … +9.8, recorded). The server's own
 rung-4 pick at such a level is the nearest position — an approximation the tone check must not rehearse as a
 measurement. Mutant (unbracketed accepted) red. `tonecheck-all-BEFORE-on-curve-rule.log` keeps the failing run.
+
+## 34. The hold test on raw crossings; the export at 0.1 dB is what every check judges (3 Oct, evening)
+
+**The bug (found by Kathy's read-only question).** `curveInAtGr` rounded every interpolated crossing to 0.1 dB when it wrote
+the record, and the hold test compared those rounded values: every hold-doubling delta was a multiple of 0.1 (so
+`deep_point_error_db` read 0.10 on all five products, a floor, not a measurement), and the 0.5 dB gate floated by ±0.05
+(raw 0.54 could pass, raw 0.46 could fail). The probe reads to 0.0001 dB; the resolution was lost in the derivation.
+
+**Fixed.** The record keeps the crossing unrounded; the hold test (shallow gate and deep nulling alike) compares raw values
+and `point_error_db` / `deep_point_error_db` are the raw worsts, reported to 0.01. **The export rounds the raw peak crossing
+to 0.1 dB, then converts** (so the exported shape and resolution are exactly what they were), and every order check (within,
+across, the shallow refusal, deep nulling), the pick replica and the tone-check L run on those exported values — we judge
+what Sean's server reads. The record's own informational monotonic flags compare at the export's 0.1 dB too, so sub-0.1
+noise is never an order break anywhere.
+
+**The grep for other rounding before a gate** (every `std::round` and `jlimit` in the derivation, and String precision fed
+back into numbers): the crossing rounding at the straddle (THE bug, fixed); `passThroughOffsetDb` rounded to 0.01 — after
+its gate (the gate compares `gmax − gmin > 0.02` raw); `tEquivalent` rounded to 0.1 — feeds `thresholdDbEquivalent` and the
+display-offset report, which is informational (spec 7's bar is "a TEST … never the definition"), not a gate; the record's
+output rounding of quality figures, reference gains, norms (1e-6), level dependence — all after their compares;
+`levelKey(L)` = `String(L, 2)` keys the per-level maps — the levels are whole dB, so exact; `point_error_db` to 0.01 — after
+the compare. Nothing else sits in front of a gate.
+
+**Pins.** Q8a (a derived record carries crossings off the 0.1 grid: 23 of 23 in the fixture), Q8b (raw 0.46 passes and is
+the figure; raw 0.54 fails — a rounding to 0.1 before the compare would pass it), Q8c (the shallow figure is the raw worst,
+0.54 not 0.5), M1b (two neighbours 0.03 dB apart in reverse order raw export equal and are NOT an order break); X2/X14's
+fixture tolerances re-stated for the export rule. Mutants red: the crossing rounded at the straddle (the old bug), the
+delta rounded before the gate, the order check on the raw record.
+
+**Live, the five re-derived (tc27 vs tc25):** every exported `in_at_gr` value identical (230 / 116 / 247 / 200 / 282), null
+patterns identical, accounts exact, flags true, tone checks unchanged (g = 2 and 9/9 deep PASS each; CL 1B dry). The new
+figures — `point_error_db` / `deep_point_error_db`: 7X-500 0.01 / 0.00, SBC 0.01 / 0.01, bx_opto **0.11** / 0.01, mpressor
+0.01 / 0.01, CL 1B **0.03** / 0.01 — the raw worsts, as predicted in §33's measurement. No verdict changed. 43.7 s for four.

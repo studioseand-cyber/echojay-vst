@@ -420,3 +420,11 @@ refuses the export outright rather than shipping a flag you would reject.
 four rehearsal units and CL 1B all carry 12 dB on most positions, no hold-test nulls, and every carried level passes its
 tone check (SBC's 8..12 at its own points, −17.8 … −8.6, since nothing on it gives 9 dB at −18.4). We will check the
 clamp wording against v1.10 when it lands.
+
+## 3 Oct (late): point_error_db and deep_point_error_db are now the raw hold-doubling worsts
+
+Our derivation had rounded each crossing to 0.1 dB before the hold test compared, so every profile reported 0.10 —
+a floor. Fixed in the follow-up build: the test runs on raw values (probe resolution 0.0001 dB) and the figures are the
+raw worsts to 0.01 (the five rehearsal units: 0.01 / 0.01 / 0.11 / 0.01 / 0.03 shallow, ≤ 0.01 deep). `in_at_gr_dbfs`
+is still exported at 0.1 dB; every exported value is byte-identical to the previous build, and nothing you read changes
+except those two quality figures.

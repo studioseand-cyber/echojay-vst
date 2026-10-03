@@ -4277,6 +4277,29 @@ void testSweepDerivation()
                          && dqq.deepNulled[0].contains (juce::String (v5first, 2) + " / hold-doubled " + juce::String (v5again, 2) + " / delta 0.80 dB")   // BOTH values, for the notes (v1.8)
                          && dqq.deepPointErrorDb && std::abs (*dqq.deepPointErrorDb - 0.2) < 0.01 && dqq.pointErrorDb && std::abs (*dqq.pointErrorDb) < 1e-9,
                        "quality Q8: a 5 dB point whose repeat moved 0.8 dB is nulled and listed; deep_point_error_db is the worst SURVIVING deep disagreement (0.20); point_error_db (1/2/3) untouched at 0");
+                // Q8a (ruled 3 Oct): the DERIVATION keeps the crossing unrounded - a derived record carries values off the 0.1 dB grid (a 0.1 rounding at the straddle is the old bug)
+                {
+                    int off = 0, n = 0; juce::String sample;
+                    for (const auto& r : tx.inAtGr) for (const auto& [t, v] : r.at) if (v.isDouble()) { ++n; const double x = (double) v * 10.0; if (std::abs (x - std::round (x)) > 1e-6) { ++off; if (sample.isEmpty()) sample = juce::String ((double) v, 4); } }
+                    check (n > 0 && off > 0, "quality Q8a: the derived in_at_gr crossings are unrounded (" + juce::String (off) + " of " + juce::String (n) + " off the 0.1 dB grid, e.g. " + sample + "); the export rounds, the hold test does not");
+                }
+                // THE HOLD GATE ON RAW VALUES (Q8b-Q8c, ruled 3 Oct): a raw delta of 0.46 passes and 0.54 fails; a rounding to 0.1 dB before
+                // the compare would call both 0.5 (a = -20.06 -> -20.1; b = -20.52 / -20.60 -> -20.5 / -20.6) and pass the 0.54 - the mutant
+                {
+                    Derived h1 = dp, h2 = dp; int hp = -1;
+                    for (size_t i = 0; i < h1.inAtGr.size() && hp < 0; ++i) if (h1.inAtGr[i].at.count (5) && h1.inAtGr[i].at.at (5).isDouble()) hp = (int) i;
+                    h1.inAtGr[(size_t) hp].at[5] = -20.06; h2.inAtGr[(size_t) hp].at[5] = -20.52;
+                    const auto qa = repeatQuality (h1, &h2);
+                    h2.inAtGr[(size_t) hp].at[5] = -20.60;
+                    const auto qb = repeatQuality (h1, &h2);
+                    check (hp >= 0 && qa.deepNullSet.count ({ hp, 5 }) == 0 && qa.deepPointErrorDb && std::abs (*qa.deepPointErrorDb - 0.46) < 1e-6 && qb.deepNullSet.count ({ hp, 5 }) == 1,
+                           "quality Q8b: the deep hold gate compares RAW crossings - a 0.46 dB delta passes (and is the figure, 0.46), a 0.54 fails; rounding to 0.1 before the compare would pass the 0.54");
+                    Derived s1 = tx, s2 = tx; int sp = -1;
+                    for (size_t i = 0; i < s1.inAtGr.size() && sp < 0; ++i) if (s1.inAtGr[i].at.count (2) && s1.inAtGr[i].at.at (2).isDouble()) sp = (int) i;
+                    s1.inAtGr[(size_t) sp].at[2] = -20.06; s2.inAtGr[(size_t) sp].at[2] = -20.60;
+                    const auto qs = repeatQuality (s1, &s2);
+                    check (sp >= 0 && qs.pointErrorDb && std::abs (*qs.pointErrorDb - 0.54) < 1e-6, "quality Q8c: the shallow point_error_db is the raw worst too (0.54 here, not 0.5)");
+                }
                 // the record: the nulled deep point is a gap in inAtGr itself, and the quality carries the deep figures
                 Plan pq; pq.thr = 0; pq.thrName = "Threshold"; pq.norms.resize (dp.inAtGr.size(), 0.5f); pq.makeProfile();
                 auto sv = composeThresholdSweep (dp, displayCheck (dp, "dB"), pq, {});
@@ -5319,7 +5342,7 @@ void testProfileExport()
         const auto curve = P.getProperty ("amount", {}).getProperty ("curve", {});
         const double effPeak = (double) rec.getProperty ("thresholdSweep", {}).getProperty ("thresholdEffective1dB", {})[0];
         const auto steps = P.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
-        check (curve.size() == 16 && std::abs ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0) - (effPeak - 3.0103)) < 0.006
+        check (curve.size() == 16 && std::abs ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0) - (std::round (effPeak * 10.0) / 10.0 - 3.0103)) < 0.006   // the raw crossing rounded to 0.1 dB at export (3 Oct), then -3.0103
                  && steps.size() == 3 && std::abs ((double) steps[0] - (-63.01)) < 0.006 && std::abs ((double) steps[1] - (-3.01)) < 0.006 && (double) steps[2] == 2.0
                  && P.getProperty ("measured", {}).getProperty ("level_ref", "") == "sine_rms_dbfs",
                "export X2 (LEVEL REFERENCE): every exported dBFS is our peak value minus 3.0103 - eff " + juce::String ((double) curve[0].getProperty ("eff_threshold_dbfs", 0.0), 2)
@@ -5332,7 +5355,7 @@ void testProfileExport()
         for (int i = 0; i < curve.size(); ++i) identical = identical && curve[i].getProperty ("eff_threshold_dbfs", {}).toString() == curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", {}).toString();
         lastThreeNull = curve[curve.size() - 1].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", {}).isVoid();
         check (g0.isObject() && g0.hasProperty ("1") && g0.hasProperty ("2") && g0.hasProperty ("3") && identical
-                 && std::abs ((double) g0.getProperty ("2", 0.0) - ((double) g0.getProperty ("1", 0.0) + 1.0 / 0.75)) < 0.02,
+                 && std::abs ((double) g0.getProperty ("2", 0.0) - ((double) g0.getProperty ("1", 0.0) + 1.0 / 0.75)) < 0.11,   // each point rounded to 0.1 dB at export: the pair can differ from 1.333 by up to 0.1
                "export X14 (v1.2): in_at_gr_dbfs {1,2,3} on every curve point and eff_threshold_dbfs == in_at_gr_dbfs[1], written identically");
         check (lastThreeNull, "export X15: not_reached in the record is null in the export, as his spec says");
         check (P.getProperty ("amount", {}).getProperty ("stepped", true).isBool() && ! (bool) P.getProperty ("amount", {}).getProperty ("stepped", true)
@@ -5834,6 +5857,13 @@ void testProfileExport()
         const auto fx2 = exportCompProfile (flat2);
         check (fx2.ok && (bool) fx2.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", false),
                "monotonic M1 (v1.4): equal neighbouring positions are allowed across positions");
+        // M1b (ruled 3 Oct): the order checks run on the EXPORTED values (0.1 dB) - two neighbours 0.03 dB apart in reverse order raw but equal at
+        // export are not an order break; a check on the raw record would refuse this export (the mutant)
+        auto near = record (16, true, false, "", "certified");
+        { auto arr = near.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); const double v4 = (double) arr[4].getProperty ("1", {}); arr[4].getDynamicObject()->setProperty ("1", v4 + 0.01); arr[5].getDynamicObject()->setProperty ("1", v4 - 0.02); }
+        const auto nx = exportCompProfile (near); const auto nc = nx.profile.getProperty ("amount", {}).getProperty ("curve", {});
+        check (nx.ok && std::abs ((double) nc[4].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", 0.0) - (double) nc[5].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", 1.0)) < 1e-9 && (bool) nx.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", false),
+               "monotonic M1b: neighbours 0.03 dB apart in reverse order raw export equal (0.1 dB) and are NOT an order break - the checks judge what the server reads (" + nx.refused + ")");
         auto dip = record (16, true, false, "", "certified");
         { auto arr = dip.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); arr[5].getDynamicObject()->setProperty ("1", (double) arr[3].getProperty ("1", {}) - 1.0); }
         const auto dx = exportCompProfile (dip);

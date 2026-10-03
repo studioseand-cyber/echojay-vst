@@ -984,7 +984,11 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
                     {
                         reached = true;
                         const double t = (T - *a) / (*b - *a);
-                        out = std::round ((lv[k] + t * (lv[k + 1] - lv[k])) * 10.0) / 10.0;
+                        // RAW (ruled 3 Oct): the crossing is kept unrounded in the record, so the hold test compares what was read
+                        // (the probe reads to 0.0001 dB); the EXPORT rounds to 0.1 dB, and every order check, the pick and the
+                        // tone-check L run on the exported values. A 0.1 dB rounding here had made every hold-test delta a
+                        // multiple of 0.1 and let the 0.5 dB gate float by +-0.05.
+                        out = lv[k] + t * (lv[k + 1] - lv[k]);
                         rec.widestGapDb = juce::jmax (rec.widestGapDb, lv[k + 1] - lv[k]);
                         // quality: a fall in the readings on either side of the straddle marks it non-monotonic
                         const bool fallBefore = k > 0 && gAt (k - 1) && *gAt (k - 1) > *a + kMonotonicTol;
@@ -1804,7 +1808,7 @@ inline RepeatQuality repeatQuality (const Derived& d1, const Derived* d2)
         for (int t : kGrTargets)
         {
             if (! m.count (t) || ! num (m.at (t))) continue;
-            const double v = (double) m.at (t);
+            const double v = std::round ((double) m.at (t) * 10.0) / 10.0;   // at the EXPORT's 0.1 dB resolution: sub-0.1 noise is never an order break (informational flag; the exporter's own check is the one that acts)
             if (prev && v <= prev->second) { q.withinMonotonic = false; q.violations.add ("position " + juce::String ((int) i) + ": " + juce::String (t) + " dB at " + juce::String (v, 1) + " below or equal to " + juce::String (prev->first) + " dB at " + juce::String (prev->second, 1)); }
             prev = std::make_pair (t, v);
         }
@@ -1812,7 +1816,7 @@ inline RepeatQuality repeatQuality (const Derived& d1, const Derived* d2)
     // across positions: per level, the values must move in one direction (ascending norm order); nulls skipped; equal neighbours count as neither
     for (int t : kGrTargets)
     {
-        std::vector<double> vals; for (const auto& m : pts) if (m.count (t) && num (m.at (t))) vals.push_back ((double) m.at (t));
+        std::vector<double> vals; for (const auto& m : pts) if (m.count (t) && num (m.at (t))) vals.push_back (std::round ((double) m.at (t) * 10.0) / 10.0);   // export resolution, as above
         if (vals.size() < 3) continue;
         int up = 0, down = 0;
         for (size_t k = 1; k < vals.size(); ++k) { if (vals[k] > vals[k - 1]) ++up; if (vals[k] < vals[k - 1]) ++down; }
