@@ -5406,7 +5406,7 @@ void testProfileExport()
             {
                 const auto l = line.trim(); if (! l.startsWith ("deep null ")) continue;
                 const int t = l.fromFirstOccurrenceOf ("deep null ", false, false).getIntValue();
-                auto list = l.fromLastOccurrenceOf (": positions ", false, false);
+                auto list = l.contains (": positions ") ? l.fromLastOccurrenceOf (": positions ", false, false) : l.fromLastOccurrenceOf (" across positions at ", false, false);
                 while (list.contains ("(")) list = list.upToFirstOccurrenceOf ("(", false, false) + list.fromFirstOccurrenceOf (")", false, false);   // details ride in parentheses, never commas
                 for (auto pos : juce::StringArray::fromTokens (list, ",", "")) { pos = pos.trim(); if (pos.isNotEmpty()) ++onLines[{ t, pos }]; }
             }
@@ -5458,17 +5458,20 @@ void testProfileExport()
                 check (em.ok && mc[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && ! mc[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && ! mc[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", 0.0).isVoid()
                          && mt.contains ("deep null 5 dB - breaks monotonic order: positions " + juce::String ((double) mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[6], 4)),
                        "export X33: a 5 dB point that does not rise above its position's 4 dB point is null before export (the 4 and 3 stay) and is on the 'breaks monotonic order' line");
-                check (mc[10].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && ! mc[10].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && ! mc[9].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && ! mc[11].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid()
-                         && mt.contains ("deep null 5 dB - breaks monotonic order: positions " + juce::String ((double) mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[6], 4) + " (measured") && mt.contains (", " + juce::String ((double) mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[10], 4) + " (measured"),
-                       "export X34: walking the 1 dB direction at 5 dB, the point that fails to continue (position 10, after position 9's jump) is null - its 4 stays, positions 9 and 11 keep their 5 - and it joins the 5 dB 'breaks monotonic order' line with its measured value (" + mt.fromFirstOccurrenceOf ("deep null 5", false, false).upToFirstOccurrenceOf ("deep null 5 dB - no", false, false) + ")");
+                // ACROSS POSITIONS THE WHOLE LEVEL GOES (ruled 3 Oct): position 9's jump breaks the 5 dB level across positions, so EVERY 5 dB point is
+                // null - position 10 (which a forward walk would blame) and positions 8/11 (which it would keep) alike - on one line naming every norm
+                juce::StringArray all5; { const auto pn = mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {}); for (int i = 0; i < pn.size(); ++i) if (! mc[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && i != 6) all5.add (juce::String ((double) pn[i], 4)); }
+                bool none5 = true; for (int i = 0; i < mc.size(); ++i) if (! mc[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid()) none5 = false;
+                check (none5 && ! mc[10].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && ! mc[8].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid()
+                         && mt.contains ("deep null 5 dB - breaks monotonic order across positions at " + all5.joinIntoString (", ")) && mt.contains ("deep null 5 dB - breaks monotonic order: positions 0.4000 (measured"),   // position 6's WITHIN break stays on the point line
+                       "export X34: an across-position break at 5 dB nulls the WHOLE 5 dB level (every position, the good points after the outlier included; the 4 dB points stay) on one line naming every norm; position 6's within break keeps its own point line (" + mt.fromFirstOccurrenceOf ("deep null 5 dB - breaks monotonic order across", false, false) + ")");
                 check (nullAccount (em.profile, why) && (bool) em.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", false) && (bool) em.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", false),
                        "export X35: the account stays exact with the sixth line, and the exported quality flags are true again (the server would have nulled the same points) (" + why + ")");
                 auto sh = juce::JSON::parse (juce::JSON::toString (deepRec)); auto ish = sh.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
                 ish[6].getDynamicObject()->setProperty ("2", (double) ish[6].getProperty ("1", {}) - 0.5);   // a SHALLOW break: 2 dB below 1 dB
                 const auto es = exportCompProfile (sh);
-                check (es.ok && ! es.profile.getProperty ("amount", {}).getProperty ("curve", {})[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("2", 0.0).isVoid() && ! (bool) es.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", true)
-                         && ! notesText (es.profile.getProperty ("notes", {})).contains ("breaks monotonic order"),
-                       "export X36: a 1/2/3 break is never nulled here - unchanged: the point stays, the quality flag says false, no account line (the derivation's nonmonotonic refusal is the shallow gate)");
+                check (! es.ok && es.refused.contains ("shallow in_at_gr order break") && es.refused.contains ("point 6: 2 dB not strictly above 1 dB"),
+                       "export X36: a 1/2/3 order break that survived the derivation REFUSES the export (needs_review, the violation named) - never exported with the flag false, which the server would reject (" + es.refused + ")");
             }
         }
     }
@@ -5627,7 +5630,7 @@ void testProfileExport()
                 const auto r3 = grAtLevel (pt3, -20.25);
                 check (r3.ok && std::abs (r3.gr - 3.0) < 1e-9 && r3.extrapolated, "pick R1b: with only 1-3 measured, a level past the 3 dB point reads 3 and says extrapolated - the read runs over whatever points the position carries");
                 // R2: a stepped unit whose nearest detent gives 2.6 at L expects 2.6 - a measured 2.6 passes, and it is NOT failed against 2.0 (0.6 out)
-                const auto stepU = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": true, "curve": [
+                const auto stepU = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": true, "curve": [
                     {"norm": 0.0, "display": "a", "in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "3": -23.0, "4": -21.0, "5": -19.5, "6": -18.5}},
                     {"norm": 1.0, "display": "b", "in_at_gr_dbfs": {"1": -24.0, "2": -20.0, "3": -17.0, "4": -15.0, "5": -13.5, "6": -12.5}}]}})json");
                 const auto pb = pickPosition (stepU, -18.2, 2.0);
@@ -5645,7 +5648,7 @@ void testProfileExport()
             // P10: THE CLAMP IS ON THE PICK, 12 dB. A soft unit: position A 1 dB at -24 / 2 dB at -20, position B 1 dB at -31 / 2 dB at -16.
             // For L = -18, g = 2 the pick sits halfway (t = 0.5): its own 1 dB point is -27.5, 9.5 dB below L - inside 12 (an 8 dB
             // clamp refuses it), while B's own 1 dB point is 13 dB below L (a neighbour-checking clamp drops B and loses the bracket).
-            const auto soft = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+            const auto soft = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
                 {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -24.0, "2": -20.0, "3": -17.0}},
                 {"norm": 0.4, "display": "b", "in_at_gr_dbfs": {"1": -31.0, "2": -16.0, "3": -12.0}},
                 {"norm": 0.9, "display": "c", "in_at_gr_dbfs": {"1": -8.0, "2": -5.0, "3": -4.0}}]}})json");
@@ -5666,35 +5669,40 @@ void testProfileExport()
             // in_at_gr[g] over the positions carrying g, then those values by distance from it, within the sweep's range; the first whose
             // section 6.4 pick passes the 12 dB clamp. Four positions, 1->2 spacing 10/10/10/16 dB: at the fixed -18 the pick sits between
             // C and D and its own 1 dB point is 14 dB below (refused); the median (-24) picks between B and C, 10 dB (fine).
-            const auto wide = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+            const auto wide = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
                 {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -40.0, "2": -30.0}},
                 {"norm": 0.4, "display": "b", "in_at_gr_dbfs": {"1": -36.0, "2": -26.0}},
                 {"norm": 0.6, "display": "c", "in_at_gr_dbfs": {"1": -32.0, "2": -22.0}},
                 {"norm": 0.8, "display": "d", "in_at_gr_dbfs": {"1": -32.0, "2": -16.0}}]}})json");
             const auto tl = toneLevelFor (wide, 2.0);
-            check (! pickPosition (wide, -18.0, 2.0).ok && tl.ok && std::abs (tl.L - (-24.0)) < 1e-9 && tl.tried == 1 && tl.pick.ok && std::abs (tl.pick.norm - 0.5) < 1e-9
-                   && tl.rule.contains ("median of in_at_gr[2.0]") && tl.rule.contains ("4 positions") && tl.rule.contains ("(-24.00)") && tl.rule.contains ("-63.01..-3.01"),
-                   "tone T7: the fixed -18 is refused by the clamp on this unit, the rule's L is the median (-24.00) and its pick passes - the level comes back TESTED, and the rule is stated with its numbers (" + tl.rule + ")");
+            // L_ref for an RMS unit (f 0) is -18.4: refused (the pick's 1 dB point 13.6 below); -16 (2.4 away) refused; -22 (3.6 away) passes -> L = -22, tried 3.
+            // The median (-24) is valid too but FARTHER from L_ref: a median-first rule answers -24 and goes red here (the control).
+            check (! pickPosition (wide, -18.4, 2.0).ok && tl.ok && std::abs (tl.Lref - (-18.4)) < 1e-9 && std::abs (tl.L - (-22.0)) < 1e-9 && std::abs (tl.gapDb - (-3.6)) < 1e-9 && tl.tried == 3 && tl.pick.ok && pickPosition (wide, -24.0, 2.0).ok
+                   && tl.rule.contains ("L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01)") && tl.rule.contains ("detector_f 0.00 = -18.40") && tl.rule.contains ("4 positions") && tl.rule.contains ("-63.01..-3.01"),
+                   "tone T7: L_ref (-18.4, the spec's vocal through f = 0) is refused by the clamp, the nearest valid candidate (-22, gap -3.6) answers - NOT the median (-24), which is valid but farther; L_ref, L and the gap are recorded and the rule stated (" + tl.rule + ")");
             {
-                // T8: g = 2 gets the same rule - the deep profile's 2 dB median is position 7/8's midpoint, not -18
+                // T8: g = 2 under the same rule on the deep profile (an exported profile, detector_f from the record): L is L_ref itself when its pick is valid
                 const auto t2 = toneLevelFor (deep, 2.0);
-                std::vector<double> v2; { const auto c2 = deep.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c2.size(); ++i) if (auto x = inAtGr (c2[i], 2.0)) v2.push_back (*x); }
-                std::sort (v2.begin(), v2.end()); const double med2 = (v2[v2.size() / 2 - 1] + v2[v2.size() / 2]) / 2.0;
-                check (t2.ok && std::abs (t2.L - med2) < 1e-9 && std::abs (med2 - (-18.0)) > 0.5 && std::abs (t2.pick.expectedGrDb - 2.0) < 1e-9,
-                       "tone T8: the same rule applies to g = 2 - the recorded L is the median of in_at_gr[2] (" + juce::String (med2, 2) + "), not the fixed -18");
+                const double fdeep = (double) deep.getProperty ("detector_f", 0.0), lref = toneLevelRef (fdeep);
+                check (t2.ok && std::abs (t2.Lref - lref) < 1e-9 && std::abs (t2.L - lref) < 1e-9 && std::abs (t2.gapDb) < 1e-9 && t2.tried == 1 && std::abs (t2.pick.expectedGrDb - 2.0) < 1e-9,
+                       "tone T8: the same rule applies to g = 2 - the recorded L is L_ref (" + juce::String (lref, 2) + " through detector_f " + juce::String (fdeep, 2) + ") when its pick is valid, gap 0, first try");
+                check (std::abs (toneLevelRef (0.0) - (-18.4)) < 1e-9 && std::abs (toneLevelRef (1.0) - (-9.2103)) < 1e-4 && std::abs (toneLevelRef (0.43) - (-14.4484)) < 1e-3,
+                       "tone T8b: L_ref is -18.4 for an RMS unit, -9.21 for a peak unit, -14.45 for CL 1B's f = 0.43 (the spec's example track through section 6.4 step 1)");
+                auto nof = juce::JSON::parse (juce::JSON::toString (wide)); nof.getDynamicObject()->removeProperty ("detector_f");
+                check (! toneLevelFor (nof, 2.0).ok && toneLevelFor (nof, 2.0).reason.contains ("no detector_f"), "tone T8c: without detector_f the level cannot be anchored and the rule says so - it never assumes RMS");
             }
             // T9: a candidate outside the sweep's measured range is never tried - the range here excludes the median, the next by distance answers
-            auto narrow = juce::JSON::parse (juce::JSON::toString (wide)); narrow.getProperty ("measured", {}).getDynamicObject()->setProperty ("steps_dbfs", juce::Array<juce::var> { -23.0, -3.01, 2 });
+            auto narrow = juce::JSON::parse (juce::JSON::toString (wide)); narrow.getProperty ("measured", {}).getDynamicObject()->setProperty ("steps_dbfs", juce::Array<juce::var> { -23.0, -19.0, 2 });
             const auto tn = toneLevelFor (narrow, 2.0);
-            check (tn.ok && std::abs (tn.L - (-22.0)) < 1e-9 && tn.tried == 1, "tone T9: the median (-24) and -26 lie outside the measured range (-23..-3) and are not tried; the nearest in range (-22) answers (" + juce::String (tn.L, 2) + ", tried " + juce::String (tn.tried) + ")");
+            check (tn.ok && std::abs (tn.L - (-22.0)) < 1e-9 && tn.tried == 1, "tone T9: L_ref (-18.4) and -16 lie outside the measured range (-23..-19) and are not tried; the nearest in range (-22) answers (" + juce::String (tn.L, 2) + ", tried " + juce::String (tn.tried) + ")");
             // T10: CLAMP GEOMETRY - the positions' 1->2 spacings are 14 / 15 / 16 dB (the SMALLEST is what is reported), so no L inside the range gives a pick inside the 12 dB clamp; the note says it is the unit, not a failed check, with the spacing
-            const auto geom = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+            const auto geom = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
                 {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -44.0, "2": -30.0}},
                 {"norm": 0.5, "display": "b", "in_at_gr_dbfs": {"1": -39.0, "2": -24.0}},
                 {"norm": 0.8, "display": "c", "in_at_gr_dbfs": {"1": -34.0, "2": -18.0}}]}})json");
             const auto tg = toneLevelFor (geom, 2.0);
             check (! tg.ok && tg.clampGeometry && std::abs (tg.spacingMinDb - 14.0) < 1e-9 && tg.tried == 4 && tg.reason.contains ("CLAMP GEOMETRY") && tg.reason.contains ("at least 14.0 dB at every position") && tg.reason.contains ("not a failed check"),
-                   "tone T10: with 1->g spacing at least 14 dB at every position (14/15/16) no L passes the clamp (4 tried: the median and the three values); the reason names CLAMP GEOMETRY with the spacing, the unit's property, never a failed check (" + tg.reason + ")");
+                   "tone T10: with 1->g spacing at least 14 dB at every position (14/15/16) no L passes the clamp (4 tried: L_ref and the three values); the reason names CLAMP GEOMETRY with the spacing, the unit's property, never a failed check (" + tg.reason + ")");
             // THE CLAMP FOR DEEP ASKS (C1-C4, v1.9, Sean's ruling 3 Oct): 12 up to g = 3, then 12 + 2 x (g - 3), linear; shallow picks unchanged
             check (std::abs (pickClampDb (2.0) - 12.0) < 1e-9 && std::abs (pickClampDb (3.0) - 12.0) < 1e-9 && std::abs (pickClampDb (3.5) - 13.0) < 1e-9 && std::abs (pickClampDb (4.0) - 14.0) < 1e-9
                    && std::abs (pickClampDb (5.0) - 16.0) < 1e-9 && std::abs (pickClampDb (6.0) - 18.0) < 1e-9 && std::abs (pickClampDb (1.0) - 12.0) < 1e-9 && std::abs (pickClampDb (2.5) - 12.0) < 1e-9,
@@ -5705,10 +5713,10 @@ void testProfileExport()
                 auto geom6 = juce::JSON::parse (juce::JSON::toString (geom));
                 { auto c6 = geom6.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c6.size(); ++i) { auto* o = c6[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject(); o->setProperty ("6", o->getProperty ("2")); o->setProperty ("2", juce::var()); } }
                 const auto t6 = toneLevelFor (geom6, 6.0), t2 = toneLevelFor (geom, 2.0);
-                check (! t2.ok && t2.clampGeometry && std::abs (t2.clampDb - 12.0) < 1e-9 && t6.ok && std::abs (t6.clampDb - 18.0) < 1e-9 && std::abs (t6.L - (-24.0)) < 1e-9 && t6.pick.ok && std::abs (t6.pick.clampDb - 18.0) < 1e-9 && t6.pick.expectedGrDb == 6.0,
-                       "clamp C2: 1->g spacing 14-16 dB is clamp geometry at g = 2 (limit 12, unchanged) and TESTED at g = 6 (limit 18): the median L -24 picks, expectation 6 (t2 ok " + juce::String ((int) t2.ok) + " geom " + juce::String ((int) t2.clampGeometry) + " clamp " + juce::String (t2.clampDb, 1) + "; t6 ok " + juce::String ((int) t6.ok) + " clamp " + juce::String (t6.clampDb, 1) + " L " + juce::String (t6.L, 2) + " pick clamp " + juce::String (t6.pick.clampDb, 1) + " exp " + juce::String (t6.pick.expectedGrDb, 2) + " " + t6.reason + ")");
+                check (! t2.ok && t2.clampGeometry && std::abs (t2.clampDb - 12.0) < 1e-9 && t6.ok && std::abs (t6.clampDb - 18.0) < 1e-9 && std::abs (t6.L - (-18.4)) < 1e-9 && t6.pick.ok && std::abs (t6.pick.clampDb - 18.0) < 1e-9 && t6.pick.expectedGrDb == 6.0,
+                       "clamp C2: 1->g spacing 14-16 dB is clamp geometry at g = 2 (limit 12, unchanged) and TESTED at g = 6 (limit 18): L_ref -18.4 picks (its 1 dB point 15.9 below), expectation 6 (t2 ok " + juce::String ((int) t2.ok) + " geom " + juce::String ((int) t2.clampGeometry) + " clamp " + juce::String (t2.clampDb, 1) + "; t6 ok " + juce::String ((int) t6.ok) + " clamp " + juce::String (t6.clampDb, 1) + " L " + juce::String (t6.L, 2) + " pick clamp " + juce::String (t6.pick.clampDb, 1) + " exp " + juce::String (t6.pick.expectedGrDb, 2) + " " + t6.reason + ")");
                 // C3: the limit is the one at the ASK, read off the pick's own 1 dB point as before - at g = 4 (limit 14) a pick 13.5 dB above its 1 dB point passes, 14.5 is refused
-                const auto g4 = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+                const auto g4 = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
                     {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -40.0, "2": -36.0, "3": -33.0, "4": -26.5}},
                     {"norm": 0.8, "display": "b", "in_at_gr_dbfs": {"1": -40.0, "2": -36.0, "3": -33.0, "4": -16.5}}]}})json");   // both 1 dB points -40, so the pick's own is -40 wherever it lands
                 const auto p4a = pickPosition (g4, -26.5, 4.0), p4b = pickPosition (g4, -25.5, 4.0);
@@ -5726,7 +5734,7 @@ void testProfileExport()
             check (! toneLevelFor (prof, 6.0).ok && ! toneLevelFor (prof, 6.0).clampGeometry && toneLevelFor (prof, 6.0).reason.contains ("no position carries 6.0 dB"),
                    "tone T10b: a level no position carries is not clamp geometry - the reason says no position carries it");
             // T11: a unit whose spacing passes the clamp but whose values straddle the clamp at the median: the first by distance that passes is taken, and the count of tries is recorded
-            check (tl.tried == 1 && tg.tried == 4, "tone T11: the tries are recorded (1 when the median passes, every candidate when none does)");
+            check (tl.tried == 3 && tg.tried == 4, "tone T11: the tries are recorded (3 here: L_ref, -16, then -22; every candidate when none passes)");
         }
     }
     {
@@ -5786,13 +5794,13 @@ void testProfileExport()
         auto dip = record (16, true, false, "", "certified");
         { auto arr = dip.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); arr[5].getDynamicObject()->setProperty ("1", (double) arr[3].getProperty ("1", {}) - 1.0); }
         const auto dx = exportCompProfile (dip);
-        check (dx.ok && ! (bool) dx.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", true),
-               "monotonic M2 (v1.4): a dip across positions fails the across check (and is said in the export, the server will reject)");
+        check (! dx.ok && dx.refused.contains ("shallow in_at_gr order break") && dx.refused.contains ("1 dB values rise"),
+               "monotonic M2 (v1.4, refusal since 3 Oct): a dip across positions at 1 dB REFUSES the export, the violation named (the server rejects it; a flag alone shipped a dead profile)");
         auto eq = record (16, true, false, "", "certified");
         { auto arr = eq.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {}); arr[4].getDynamicObject()->setProperty ("2", arr[4].getProperty ("1", {})); }
         const auto ex = exportCompProfile (eq);
-        check (ex.ok && ! (bool) ex.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", true),
-               "monotonic M3 (v1.4): within a position 1 < 2 < 3 is STRICT - an equal 2 dB point fails");
+        check (! ex.ok && ex.refused.contains ("shallow in_at_gr order break") && ex.refused.contains ("2 dB not strictly above 1 dB"),
+               "monotonic M3 (v1.4, refusal since 3 Oct): within a position 1 < 2 < 3 is STRICT - an equal 2 dB point REFUSES the export, named");
         auto over = record (16, true, false, "", "certified");
         auto* d2 = new juce::DynamicObject(); d2->setProperty ("fraction", 1.3); over.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("detector", juce::var (d2));
         const auto xo = exportCompProfile (over);

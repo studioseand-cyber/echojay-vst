@@ -403,3 +403,11 @@ naming the position and its measured value, so your load-time repair should find
 point is never touched. §6.3 step 1's borrow-the-point rule is in the pick replica: a 3.5 dB ask on a setting whose 4 dB
 point is null keeps the setting's own 3 dB measurement and borrows only the 4 dB point (pinned with your 0.75 dB figure
 reproduced). Tone checks use whole-number g, so no result changed — re-run and confirmed.
+
+## 3 Oct (afternoon): the tone check now rehearses your §6.4 step 1 level
+
+Each level is tested at L_ref = −18.4 + f × (−6.2 + 18.4 − 3.01) through the unit's detector_f — the level your server
+would ask at for the example track — or the nearest valid level to it, with L_ref, L and the gap recorded. All four
+rehearsal units test at L_ref itself, every level passing; CL 1B's 2 dB will test at −14.45. Also: an across-position
+deep break now nulls that whole level (your repair is within-position; this one is ours), and a shallow order break
+refuses the export outright rather than shipping a flag you would reject.

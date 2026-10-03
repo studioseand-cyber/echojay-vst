@@ -1761,3 +1761,40 @@ curve), P7c (the wholesale value picks a different setting), P7d (a shallow null
 wholesale re-read, a shallow bound borrowed. **Tone checks use whole-number g, so no result changes — confirmed live:**
 tc17's four re-run under this build against the v1.9-clamp run (tc19): identical L and pass on all 16 levels, GR identical
 to 0.00 dB. Traces `cert-traces/2026-10-03-tonelevel/tc21-v19-list-notes/`.
+
+## 32. Before the follow-up build (3 Oct, afternoon): L anchored on the typical vocal; the across rule nulls the level; a shallow break refuses
+
+**The tone-check L (item 1 of the earlier list, now built).** `profile::toneLevelRef (f) = -18.4 + f × (-6.2 + 18.4 - 3.01)` —
+the server's own §6.4 step 1 for the spec's example track through the unit's `detector_f` (RMS unit −18.4; peak unit −9.21;
+CL 1B at f 0.43: −14.45). The test L is the first VALID level (a pick that passes the clamp at g) among L_ref itself and then
+the positions' `in_at_gr[g]` values by distance from L_ref, within the sweep's range. Per level the tone check records
+`L_ref_dbfs`, `L_rms_dbfs` and `L_gap_db`; no `detector_f` → the level cannot be anchored and the rule says so (never RMS
+assumed). Pins T7 (L_ref refused, the nearest valid candidate answers, NOT the median which is valid but farther — the
+median-first control), T8/T8b/T8c, T9–T11 and C2/C5 re-derived; mutants red: median first, fixed −18, detector_f ignored.
+**Live, tc17's four (18.1 s): every one of the 16 levels tested AT its L_ref (gap 0.00), all PASS** — 7X-500 f 0.13 → −17.21
+(2.0/4.04/5.03/6.01); SBC f 0.00 → −18.40 (1.99/4.0/4.98/5.99); bx_opto f 0.63 → −12.61 (1.98/3.99/5.0/5.97); mpressor f 0.40 →
+−14.72 (1.99/4.0/5.0/5.99). **CL 1B dry run: 2 dB at −14.45** (not −37), and 4/5/6 at −14.45 too, pick norms 0.20–0.27, the 1 dB
+point 6.8/12.4/14.1/15.8 below — inside each clamp, first try. The resume marker is now `L_ref_dbfs`, so a tone check made
+under the median rule is redone by the follow-up. Traces `cert-traces/2026-10-03-tonelevel/tc22-lref/`.
+
+**CL 1B's deep nulls reconciled (item 2).** The record: 28 positions, 84 deep points, 75 numeric, `deepPointsCompared` 75,
+`deepPointsNulled` [] (empty), `deep_point_error_db` 0.10. The 9 nulls are the three all-null positions at norm 0.0000 /
+0.0667 / 0.1333 — `not_reached` at 1 dB (the knob at its quietest three positions never compresses by −3.01), so their 4/5/6
+are null too — every one on the `not reached by -3.01 dBFS (all-null position)` line. **Hold-test nulls: zero.** So the
+b6d2dc04 message ("deep points on 25 of 28 positions, nothing nulled") was right; my later "CL 1B has three hold-nulled deep
+points" (this session, before the account existed) was wrong — it conflated the three all-null positions with hold failures.
+The account is what settles it, and it was built after the wrong statement.
+
+**Across-position deep break: the whole level (item 2 of the list).** The forward walk is gone: an early outlier made it null
+every good point after it, and the server's repair is within-position only, so this is our rule — on an across-position
+break at a deep level the WHOLE level is null, one line `deep null <g> dB - breaks monotonic order across positions at
+<norms>` naming every position that carried it. Within-position stays point-level (the server's rule). Pins X34 (an early
+outlier nulls the level, not the good points — a forward-walk mutant red), X35 (account exact, both line shapes); mutants
+red: the walk, no across nulling.
+
+**A shallow order break is a refusal (item 3).** A 1/2/3 `in_at_gr` order break that survived the derivation refuses the
+export — `needs_review`, "shallow in_at_gr order break (the server rejects it): <violations>" — judged on the 1/2/3 levels
+only (every deep break was nulled above, so a deep flag never refuses). M2/M3 re-pinned as refusals, X36; the flag-only
+mutant red. Never seen on a real record (the derivation's `nonmonotonic` result catches these first).
+
+Suite 3238 checks green.

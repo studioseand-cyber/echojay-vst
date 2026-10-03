@@ -1,0 +1,5 @@
+TONE LEVELS for Tube-Tech CL 1B (nothing loaded; the rule only)
+  g 2.0: clamp 12.0 dB; L_ref -14.45; L -14.45 dBFS RMS (gap 0.00), pick norm 0.2025, its 1 dB point -21.25 (6.8 below L), expectation 2.00 dB, tried 1
+  g 4.0: clamp 14.0 dB; L_ref -14.45; L -14.45 dBFS RMS (gap 0.00), pick norm 0.2362, its 1 dB point -26.83 (12.4 below L), expectation 4.00 dB, tried 1
+  g 5.0: clamp 16.0 dB; L_ref -14.45; L -14.45 dBFS RMS (gap 0.00), pick norm 0.2515, its 1 dB point -28.55 (14.1 below L), expectation 5.00 dB, tried 1
+  g 6.0: clamp 18.0 dB; L_ref -14.45; L -14.45 dBFS RMS (gap 0.00), pick norm 0.2718, its 1 dB point -30.22 (15.8 below L), expectation 6.00 dB, tried 1

@@ -21,18 +21,20 @@ pick, then one check per deep level the profile carries (4, 5, 6), each to 0.5 d
 is nulled across all positions (the profile stands); the result is embedded as `tone_check` with
 `deep_levels[]` and `deep_levels_nulled[]`, and the row in `cert/outcomes.json` is rewritten.
 
-**The test level per level (3 Oct).** Each level g (2, 4, 5, 6) is checked at its own L, not at a fixed
-−18: L is the median of `in_at_gr[g]` over the positions that carry g, then those values by distance
-from the median, within the sweep's measured range; the first L whose §6.4 pick passes the 12 dB clamp
-is used. Every level records the L it was tested at (`L_rms_dbfs`) and the rule (`L_rule`). A level is
+**The test level per level (3 Oct).** Each level g (2, 4, 5, 6) is checked at the level the server would
+ask at for the spec's example track, through this unit's detector: L_ref = −18.4 + f × (−6.2 + 18.4 −
+3.01) with f = `detector_f` (an RMS unit −18.4, a peak unit −9.21, CL 1B −14.45); if the §6.4 pick at
+L_ref fails its clamp (12 dB up to 3 dB, then 12 + 2 × (g − 3)), the nearest valid level among the
+positions' `in_at_gr[g]` values is used instead. Every level records `L_ref_dbfs`, the L it was tested
+at (`L_rms_dbfs`), the gap and the rule (`L_rule`). A level is
 nulled across all positions only for one of two named reasons (`null_reason`): `failed_check_at_L` (the
 GR missed by more than 0.5 dB at the recorded L) or `no_valid_L_clamp_geometry` (the unit's own 1→g
 spacing is at least 12 dB at every position — `spacing_1_to_g_min_db` says how much — so no L inside
-the clamp exists; the unit's property, not a failed check). Lindell SBC: 4 and 5 dB come back PASS at
-−15.2 / −13.7 dBFS (they were nulled at the fixed −18); its 6 dB is clamp geometry at 14.1 dB.
+the clamp exists; the unit's property, not a failed check). On the four rehearsal units every level tests at
+L_ref itself and passes (Lindell SBC's 6 dB included, under the v1.9 clamp).
 
 - **Resumable:** run the same command again; a profile whose tone check already carries `spec: v1.7`,
-  its deep levels and `L_rule` is skipped; `--retry-licence` reaches only the `needs_licence` set (they
+  its deep levels and `L_ref_dbfs` is skipped; `--retry-licence` reaches only the `needs_licence` set (they
   have no result file).
 - **Licence — nothing known to need one is loaded (3 Oct).** A product the scan stopped, or one with a
   `needs_licence` row in this folder, is not loaded at all (the row says *known from the scan* / *known

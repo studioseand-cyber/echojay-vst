@@ -658,8 +658,8 @@ namespace
                 for (double g : levels)
                 {
                     const auto tl = ejmap::profile::toneLevelFor (profile, g);
-                    std::cout << "  g " << juce::String (g, 1) << ": clamp " << juce::String (tl.clampDb, 1) << " dB; "
-                              << (tl.ok ? "L " + juce::String (tl.L, 2) + " dBFS RMS, pick norm " + juce::String (tl.pick.norm, 4) + ", its 1 dB point " + juce::String (tl.pick.pickOneDb, 2) + " (" + juce::String (tl.L - tl.pick.pickOneDb, 1) + " below L), expectation " + juce::String (tl.pick.expectedGrDb, 2) + " dB, tried " + juce::String (tl.tried)
+                    std::cout << "  g " << juce::String (g, 1) << ": clamp " << juce::String (tl.clampDb, 1) << " dB; L_ref " << juce::String (tl.Lref, 2) << "; "
+                              << (tl.ok ? "L " + juce::String (tl.L, 2) + " dBFS RMS (gap " + juce::String (tl.gapDb, 2) + "), pick norm " + juce::String (tl.pick.norm, 4) + ", its 1 dB point " + juce::String (tl.pick.pickOneDb, 2) + " (" + juce::String (tl.L - tl.pick.pickOneDb, 1) + " below L), expectation " + juce::String (tl.pick.expectedGrDb, 2) + " dB, tried " + juce::String (tl.tried)
                                        : "NO VALID L: " + tl.reason) << std::endl;
                 }
                 return 0;

@@ -291,10 +291,12 @@ inline Export exportCompProfile (const juce::var& f)
             prev = v;
         }
     }
+    std::map<int, juce::StringArray> monoAcrossLevel;   // level -> every position's norm that carried it (the whole level nulled)
+    std::set<std::pair<int, int>> monoAcross;            // (position, level) nulled by the across rule: on the whole-level line, not the point line
     {
         int up = 0, down = 0; std::optional<double> last;
         for (int i = 0; i < curve.size(); ++i) if (auto v = numOf (curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", {}))) { if (last) { if (*v > *last) ++up; if (*v < *last) ++down; } last = v; }
-        const int dir = (up > 0 && down == 0) ? 1 : (down > 0 && up == 0) ? -1 : 0;   // the 1 dB direction across positions; undefined -> no across nulling
+        const int dir = (up > 0 && down == 0) ? 1 : (down > 0 && up == 0) ? -1 : 0;   // the 1 dB direction across positions; undefined -> no across rule
         if (dir != 0)
             for (int t : sweep::kGrTargets)
             {
@@ -302,15 +304,13 @@ inline Export exportCompProfile (const juce::var& f)
                 std::vector<std::pair<int, double>> pts;
                 for (int i = 0; i < curve.size(); ++i) if (auto v = numOf (curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), {}))) pts.push_back ({ i, *v * dir });
                 if (pts.size() < 2) continue;
-                // walking the positions in the 1 dB direction, a point that does not continue from the last kept point breaks the
-                // order and is null (the same reading as the server's within-position rule, applied across): deterministic, and the
-                // point named is the one that broke, never a neighbour re-judged after the fact
-                double lastKept = pts[0].second;
-                for (size_t k = 1; k < pts.size(); ++k)
-                {
-                    if (pts[k].second >= lastKept) { lastKept = pts[k].second; continue; }
-                    if (auto* g = curve[pts[k].first].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) { g->setProperty (juce::String (t), juce::var()); monoNulled.insert ({ pts[k].first, t }); }
-                }
+                // ACROSS POSITIONS THE WHOLE LEVEL GOES (ruled 3 Oct): a point-level rule here would, on an early outlier, null every
+                // good point after it; and the server's own repair is within-position only, so this is our rule and it nulls the
+                // level rather than judging which point broke. Within a position stays point-level above, matching the server.
+                bool broken = false; for (size_t k = 1; k < pts.size() && ! broken; ++k) if (pts[k].second < pts[k - 1].second) broken = true;
+                if (! broken) continue;
+                for (const auto& [i, unused] : pts)
+                    if (auto* g = curve[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) { g->setProperty (juce::String (t), juce::var()); monoAcross.insert ({ i, t }); monoAcrossLevel[t].add (juce::String ((double) curve[i].getProperty ("norm", 0.0), 4)); }
             }
     }
     // THE ACCOUNT (v1.8 notes): every deep null in the curve, by (level, reason), positions by norm
@@ -323,6 +323,7 @@ inline Export exportCompProfile (const juce::var& f)
             if (t < sweep::kDeepFrom || ! g.getProperty (juce::String (t), {}).isVoid()) continue;
             const auto raw = inAt[i].getProperty (juce::String (t), {}); const auto normTxt = juce::String ((double) norms[i], 4);
             const auto shallowWord = inAt[i].getProperty ("1", {}).toString();
+            if (monoAcross.count ({ i, t })) continue;   // on the whole-level line below
             if (monoNulled.count ({ i, t }))                    deepNullBy[{ t, "breaks monotonic order" }].add (normTxt + " (measured " + juce::String ((double) conv (raw), 2) + ")");
             else if (! shallow)                                 deepNullBy[{ t, shallowWord == "below_range" ? juce::String ("past at the quietest level (all-null position)") : shallowWord == "not_reached" ? juce::String ("not reached by -3.01 dBFS (all-null position)") : juce::String ("no shallow point (all-null position)") }]
                                                                     .add (normTxt + (conv (raw).isVoid() ? juce::String() : " (measured " + juce::String ((double) conv (raw), 2) + " - withheld: no shallow point)"));
@@ -517,7 +518,7 @@ inline Export exportCompProfile (const juce::var& f)
         qq->setProperty ("shape_disagreements", q.getProperty ("shapeDisagreements", 0));
         // The monotonic check is computed HERE from the exported points (not read from the record): within a position
         // 1 < 2 < 3, across positions the 1 dB values move one way. His server rejects a violation; we say it first.
-        bool within = true, across = true; juce::Array<juce::var> viol;
+        bool within = true, across = true, shallowBreak = false; juce::Array<juce::var> viol;
         // MONOTONIC (v1.4, extended v1.7 to every target): within a position strictly rising over the present targets 1..6,
         // nulls skipped; across positions one direction PER LEVEL, nulls skipped, equal neighbours allowed.
         auto numAt = [] (const juce::var& g, int t) -> std::optional<double> { const auto v = g.getProperty (juce::String (t), {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
@@ -528,7 +529,7 @@ inline Export exportCompProfile (const juce::var& f)
             for (int t : sweep::kGrTargets)
             {
                 const auto v = numAt (g, t); if (! v) continue;
-                if (prev && *v <= prev->second) { within = false; viol.add ("point " + juce::String (i) + ": " + juce::String (t) + " dB not strictly above " + juce::String (prev->first) + " dB"); }
+                if (prev && *v <= prev->second) { within = false; if (t < sweep::kDeepFrom) shallowBreak = true; viol.add ("point " + juce::String (i) + ": " + juce::String (t) + " dB not strictly above " + juce::String (prev->first) + " dB"); }
                 prev = std::make_pair (t, *v);
             }
         }
@@ -537,8 +538,12 @@ inline Export exportCompProfile (const juce::var& f)
             std::vector<double> vals; for (int i = 0; i < curve.size(); ++i) if (auto v = numAt (curve[i].getProperty ("in_at_gr_dbfs", {}), t)) vals.push_back (*v);
             if (vals.size() < 3) continue;
             int up = 0, down = 0; for (size_t k = 1; k < vals.size(); ++k) { if (vals[k] > vals[k - 1]) ++up; if (vals[k] < vals[k - 1]) ++down; }
-            if (up > 0 && down > 0) { across = false; viol.add (juce::String (t) + " dB values rise " + juce::String (up) + " and fall " + juce::String (down) + " times across positions"); }
+            if (up > 0 && down > 0) { across = false; if (t < sweep::kDeepFrom) shallowBreak = true; viol.add (juce::String (t) + " dB values rise " + juce::String (up) + " and fall " + juce::String (down) + " times across positions"); }
         }
+        // A SHALLOW ORDER BREAK IS A REFUSAL (ruled 3 Oct): a 1/2/3 in_at_gr order break that survived the derivation is refused
+        // here, needs_review with the violation named - the server rejects it, so an export with the flag false is dead on
+        // arrival. Judged on the 1/2/3 levels only (every deep break was nulled above; a deep flag never refuses).
+        if (shallowBreak) { juce::StringArray vs; for (const auto& x : viol) vs.add (x.toString()); return refuse ("shallow in_at_gr order break (the server rejects it): " + vs.joinIntoString ("; ")); }
         qq->setProperty ("monotonic_within_positions", within);
         qq->setProperty ("monotonic_across_positions", across);
         qq->setProperty ("violations", viol);
@@ -612,6 +617,8 @@ inline Export exportCompProfile (const juce::var& f)
         // ONE LINE PER (LEVEL, REASON), positions by norm (v1.8 notes, ruled 3 Oct): every deep null in the export is on exactly one of these lines
         for (const auto& [key, positions] : deepNullBy)
             noteLines.add ("deep null " + juce::String (key.first) + " dB - " + key.second + ": positions " + positions.joinIntoString (", "));
+        for (const auto& [t, norms] : monoAcrossLevel)
+            noteLines.add ("deep null " + juce::String (t) + " dB - breaks monotonic order across positions at " + norms.joinIntoString (", "));
     }
     notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured";
     flush();
@@ -787,50 +794,51 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     return p;
 }
 
-// THE TONE-CHECK LEVEL PER g (ruled 3 Oct): a level the clamp refuses at OUR test L is not a level that failed - that is
-// our choice of L. For each g the test L is chosen by a stated rule: the MEDIAN of in_at_gr[g] across the positions that
-// carry g, then the carried values in order of distance from the median, each within the sweep's measured range, the
-// first at which the section 6.4 pick exists and passes the clamp at g (pickClampDb). Only if no L within the measured range gives a
-// valid pick is the level untestable - and the reason says so, with the unit's own 1->g spacing when that is why (a
-// soft unit whose 1 dB point sits 14 dB below its 6 dB point can never pass the clamp at ANY L: clamp geometry, not
-// a failed check). The L used is recorded per level.
-struct ToneLevel { bool ok = false; double L = 0.0; Pick pick; juce::String rule, reason; int tried = 0; double spacingMinDb = 0.0; bool clampGeometry = false; double clampDb = 0.0; };
+// THE TONE-CHECK LEVEL PER g (ruled 3 Oct, anchored on the spec's typical vocal): the server's own section 6.4 step 1 for
+// the example track - L_ref = loud_rms + f x (loud_peak - loud_rms - 3.01) with loud_rms -18.4, loud_peak -6.2 and f the
+// unit's detector_f - so the check rehearses the level a real build would ask at (CL 1B, f 0.43: -14.45; an RMS unit:
+// -18.4; a peak unit: -9.21). The test L is the first VALID level (a section 6.4 pick that passes the clamp at g) among
+// L_ref itself and then the positions' in_at_gr[g] values in order of distance from L_ref, each within the sweep's
+// measured range. Only if none is valid is the level untestable, and the reason says so, with the unit's own 1->g spacing
+// when clamp geometry is why. L_ref, the L used and the gap are recorded per level.
+inline constexpr double kVocalLoudRmsDb = -18.4, kVocalLoudPeakDb = -6.2;    // the spec's example track (section 5 / 6.4 step 1)
+inline double toneLevelRef (double detectorF) { return kVocalLoudRmsDb + juce::jlimit (0.0, 1.0, detectorF) * (kVocalLoudPeakDb - kVocalLoudRmsDb - 3.0103); }
+struct ToneLevel { bool ok = false; double L = 0.0, Lref = 0.0, gapDb = 0.0; Pick pick; juce::String rule, reason; int tried = 0; double spacingMinDb = 0.0; bool clampGeometry = false; double clampDb = 0.0; };
 inline ToneLevel toneLevelFor (const juce::var& profile, double g)
 {
     ToneLevel tl; tl.clampDb = pickClampDb (g);
     const auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
     const auto steps = profile.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
     const double lo = steps.size() > 0 ? (double) steps[0] : -63.01, hi = steps.size() > 1 ? (double) steps[1] : -3.01;
+    const auto fv = profile.getProperty ("detector_f", {});
+    if (! (fv.isDouble() || fv.isInt())) { tl.reason = "no detector_f on the profile: the test level cannot be anchored (section 6.4 step 1 needs f)"; return tl; }
+    const double f = (double) fv;
+    tl.Lref = toneLevelRef (f);
     std::vector<double> vals; std::vector<double> spacing;
     for (int i = 0; i < curve.size(); ++i)
     {
         if (auto v = inAtGr (curve[i], g)) { vals.push_back (*v); if (auto one = inAtGr (curve[i], 1.0)) spacing.push_back (*v - *one); }
     }
     if (vals.empty()) { tl.reason = "no position carries " + juce::String (g, 1) + " dB"; return tl; }
-    std::sort (vals.begin(), vals.end());
-    const double median = vals.size() % 2 == 1 ? vals[vals.size() / 2] : (vals[vals.size() / 2 - 1] + vals[vals.size() / 2]) / 2.0;
     tl.spacingMinDb = spacing.empty() ? 0.0 : *std::min_element (spacing.begin(), spacing.end());
-    std::vector<double> order { median }; for (double v : vals) order.push_back (v);
-    std::stable_sort (order.begin() + 1, order.end(), [&] (double a, double b) { return std::abs (a - median) < std::abs (b - median); });
-    tl.rule = "L = the median of in_at_gr[" + juce::String (g, 1) + "] over the " + juce::String ((int) vals.size()) + " positions that carry it (" + juce::String (median, 2) + "), then those values by distance from it, within the measured range " + juce::String (lo, 2) + ".." + juce::String (hi, 2) + "; the first L whose section 6.4 pick passes the clamp at " + juce::String (g, 1) + " dB (" + juce::String (pickClampDb (g), 1) + " dB, v1.9)";
+    std::vector<double> order { tl.Lref }; for (double v : vals) order.push_back (v);
+    std::stable_sort (order.begin() + 1, order.end(), [&] (double a, double b) { return std::abs (a - tl.Lref) < std::abs (b - tl.Lref); });
+    tl.rule = "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f " + juce::String (f, 2) + " = " + juce::String (tl.Lref, 2) + " (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the " + juce::String ((int) vals.size()) + " positions' in_at_gr[" + juce::String (g, 1) + "] values by distance from it, within the measured range " + juce::String (lo, 2) + ".." + juce::String (hi, 2) + "; the first whose section 6.4 pick passes the clamp at " + juce::String (g, 1) + " dB (" + juce::String (tl.clampDb, 1) + " dB, v1.9)";
     juce::String lastRefusal;
     for (double L : order)
     {
         if (L < lo || L > hi) continue;
         ++tl.tried;
         auto pk = pickPosition (profile, L, g);
-        if (pk.ok) { tl.ok = true; tl.L = L; tl.pick = pk; return tl; }
+        if (pk.ok) { tl.ok = true; tl.L = L; tl.gapDb = L - tl.Lref; tl.pick = pk; return tl; }
         lastRefusal = pk.refused;
     }
     tl.clampGeometry = ! spacing.empty() && tl.spacingMinDb > tl.clampDb;
-    tl.reason = "no L within the measured range gives a pick inside the " + juce::String (tl.clampDb, 1) + " dB clamp (" + juce::String (tl.tried) + " L tried; last: " + lastRefusal + ")"
+    tl.reason = "no L within the measured range gives a pick inside the " + juce::String (tl.clampDb, 1) + " dB clamp (" + juce::String (tl.tried) + " L tried from L_ref " + juce::String (tl.Lref, 2) + "; last: " + lastRefusal + ")"
                 + (tl.clampGeometry ? "; CLAMP GEOMETRY: this unit's 1->" + juce::String (g, 1) + " dB spacing is at least " + juce::String (tl.spacingMinDb, 1) + " dB at every position, so the pick's own 1 dB point is beyond the " + juce::String (tl.clampDb, 1) + " dB clamp at any L - the unit, not our L, and not a failed check" : juce::String());
     return tl;
 }
 
-// THE DEEP LEVELS A PROFILE CARRIES (v1.7 section 8): every deep target with a numeric point on any position - each gets
-// its own tone check. A level that fails is NULL ACROSS ALL POSITIONS (the whole level comes out), and the profile's
-// pass is the g = 2 check alone: a failed deep level never fails the profile.
 inline std::vector<int> deepLevelsCarried (const juce::var& profile)
 {
     std::vector<int> out;
