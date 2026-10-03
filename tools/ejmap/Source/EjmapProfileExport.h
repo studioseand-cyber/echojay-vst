@@ -531,13 +531,18 @@ inline Export exportCompProfile (const juce::var& f)
 // HIS SECTION 6.4 (v1.7, as amended), as a pure function on an exported profile. For each amount position read
 // in_at_gr_dbfs[g], interpolating between ADJACENT points 1..6 for a fractional g (3.5 sits between 3 and 4); pick the
 // position whose value is nearest L, interpolating between positions for a continuous control, the nearest listed
-// detent for a stepped one; THE CLAMP (12 dB) APPLIES TO THE PICK - the interpolated pick's own in_at_gr["1"] against
+// detent for a stepped one; THE CLAMP (12 dB for g <= 3, widening above: pickClampDb) APPLIES TO THE PICK - the interpolated pick's own in_at_gr["1"] against
 // L - never to the candidate positions (checking the neighbours wrongly excluded valid in-between settings on soft-knee
 // units with sparse positions; 8 dB capped CL 1B at about 2.3 dB). THE DEEP-NULL RULE (6.3, deep levels only): a
 // position null at a deep level is filled by interpolating across the norm axis from the positions that carry it;
 // failing that, the deepest level the profile carries answers and the figure REPORTED is that level. At 1, 2 and 3 dB a
 // null is never filled: that position cannot serve that target. Nothing is extrapolated past what was measured.
-inline constexpr double kPickClampDb = 12.0;
+inline constexpr double kPickClampDb = 12.0;        // the clamp for a shallow ask (g <= 3): v1.5, unchanged
+// THE CLAMP FOR DEEP ASKS (v1.9, Sean's ruling 3 Oct): the clamp is a function of g - 12 dB up to g = 3, then
+// 12 + 2 x (g - 3), linear in between: 13 at 3.5, 14 at 4, 16 at 5, 18 at 6. The comparison is the same as before
+// (the pick's own interpolated 1 dB point against L); only the limit widens, and only above g = 3, so a shallow pick
+// is provably unchanged. Used by the pick replica and by the tone-check L rule.
+inline double pickClampDb (double g) { return g <= 3.0 ? kPickClampDb : kPickClampDb + 2.0 * (g - 3.0); }
 inline std::optional<double> inAtGr (const juce::var& point, double g)
 {
     const auto m = point.getProperty ("in_at_gr_dbfs", {});
@@ -583,6 +588,7 @@ struct Pick
     bool filledAcrossNorm = false;             // the pick used a position whose value at g was interpolated across the norm axis
     bool fellBackToMeasured = false;           // the profile carried no position at g: the deepest carried level answered
     double pickOneDb = 0.0;                    // the pick's own in_at_gr["1"] (interpolated), what the clamp read
+    double clampDb = 0.0;                      // the limit applied, pickClampDb (gEff): 12 for a shallow ask, wider above 3 dB (v1.9)
     juce::String note;
 };
 inline Pick pickPosition (const juce::var& profile, double L, double g)
@@ -648,7 +654,9 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     const double pickOne = p.i1 >= 0 ? a0 + (a1 - a0) * tt : a0;
     if (! o0 || (p.i1 >= 0 && ! o1)) p.note << (p.note.isEmpty() ? "" : "; ") << "a bracketing position's 1 dB point is below the sweep floor (" << juce::String (floorDb, 2) << "): the clamp read the floor as its upper bound";
     p.pickOneDb = pickOne;
-    if (L - pickOne > kPickClampDb) { p.refused = "the pick's own 1 dB point (" + juce::String (pickOne, 2) + ") is more than " + juce::String (kPickClampDb, 0) + " dB below L (" + juce::String (L, 2) + ")"; return p; }
+    const double clamp = pickClampDb (gEff);
+    p.clampDb = clamp;
+    if (L - pickOne > clamp) { p.refused = "the pick's own 1 dB point (" + juce::String (pickOne, 2) + ") is more than " + juce::String (clamp, 1) + " dB below L (" + juce::String (L, 2) + ") - the clamp at " + juce::String (gEff, 1) + " dB (v1.9: 12 up to 3 dB, then 12 + 2 x (g - 3))"; return p; }
     // A STEPPED PICK EXPECTS WHAT ITS DETENT GIVES AT L (v1.8 section 6.4 step 6), read back across all six points of that
     // detent - not g, which the detent only approximates. A continuous pick sits at L by construction, so g stands.
     if (p.stepped && ! pts[best].filled)
@@ -664,14 +672,14 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
 // THE TONE-CHECK LEVEL PER g (ruled 3 Oct): a level the clamp refuses at OUR test L is not a level that failed - that is
 // our choice of L. For each g the test L is chosen by a stated rule: the MEDIAN of in_at_gr[g] across the positions that
 // carry g, then the carried values in order of distance from the median, each within the sweep's measured range, the
-// first at which the section 6.4 pick exists and passes the 12 dB clamp. Only if no L within the measured range gives a
+// first at which the section 6.4 pick exists and passes the clamp at g (pickClampDb). Only if no L within the measured range gives a
 // valid pick is the level untestable - and the reason says so, with the unit's own 1->g spacing when that is why (a
-// soft unit whose 1 dB point sits 14 dB below its 6 dB point can never pass a 12 dB clamp at ANY L: clamp geometry, not
+// soft unit whose 1 dB point sits 14 dB below its 6 dB point can never pass the clamp at ANY L: clamp geometry, not
 // a failed check). The L used is recorded per level.
-struct ToneLevel { bool ok = false; double L = 0.0; Pick pick; juce::String rule, reason; int tried = 0; double spacingMinDb = 0.0; bool clampGeometry = false; };
+struct ToneLevel { bool ok = false; double L = 0.0; Pick pick; juce::String rule, reason; int tried = 0; double spacingMinDb = 0.0; bool clampGeometry = false; double clampDb = 0.0; };
 inline ToneLevel toneLevelFor (const juce::var& profile, double g)
 {
-    ToneLevel tl;
+    ToneLevel tl; tl.clampDb = pickClampDb (g);
     const auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
     const auto steps = profile.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
     const double lo = steps.size() > 0 ? (double) steps[0] : -63.01, hi = steps.size() > 1 ? (double) steps[1] : -3.01;
@@ -686,7 +694,7 @@ inline ToneLevel toneLevelFor (const juce::var& profile, double g)
     tl.spacingMinDb = spacing.empty() ? 0.0 : *std::min_element (spacing.begin(), spacing.end());
     std::vector<double> order { median }; for (double v : vals) order.push_back (v);
     std::stable_sort (order.begin() + 1, order.end(), [&] (double a, double b) { return std::abs (a - median) < std::abs (b - median); });
-    tl.rule = "L = the median of in_at_gr[" + juce::String (g, 1) + "] over the " + juce::String ((int) vals.size()) + " positions that carry it (" + juce::String (median, 2) + "), then those values by distance from it, within the measured range " + juce::String (lo, 2) + ".." + juce::String (hi, 2) + "; the first L whose section 6.4 pick passes the 12 dB clamp";
+    tl.rule = "L = the median of in_at_gr[" + juce::String (g, 1) + "] over the " + juce::String ((int) vals.size()) + " positions that carry it (" + juce::String (median, 2) + "), then those values by distance from it, within the measured range " + juce::String (lo, 2) + ".." + juce::String (hi, 2) + "; the first L whose section 6.4 pick passes the clamp at " + juce::String (g, 1) + " dB (" + juce::String (pickClampDb (g), 1) + " dB, v1.9)";
     juce::String lastRefusal;
     for (double L : order)
     {
@@ -696,9 +704,9 @@ inline ToneLevel toneLevelFor (const juce::var& profile, double g)
         if (pk.ok) { tl.ok = true; tl.L = L; tl.pick = pk; return tl; }
         lastRefusal = pk.refused;
     }
-    tl.clampGeometry = ! spacing.empty() && tl.spacingMinDb > kPickClampDb;
-    tl.reason = "no L within the measured range gives a pick inside the " + juce::String (kPickClampDb, 0) + " dB clamp (" + juce::String (tl.tried) + " L tried; last: " + lastRefusal + ")"
-                + (tl.clampGeometry ? "; CLAMP GEOMETRY: this unit's 1->" + juce::String (g, 1) + " dB spacing is at least " + juce::String (tl.spacingMinDb, 1) + " dB at every position, so the pick's own 1 dB point is beyond the clamp at any L - the unit, not our L, and not a failed check" : juce::String());
+    tl.clampGeometry = ! spacing.empty() && tl.spacingMinDb > tl.clampDb;
+    tl.reason = "no L within the measured range gives a pick inside the " + juce::String (tl.clampDb, 1) + " dB clamp (" + juce::String (tl.tried) + " L tried; last: " + lastRefusal + ")"
+                + (tl.clampGeometry ? "; CLAMP GEOMETRY: this unit's 1->" + juce::String (g, 1) + " dB spacing is at least " + juce::String (tl.spacingMinDb, 1) + " dB at every position, so the pick's own 1 dB point is beyond the " + juce::String (tl.clampDb, 1) + " dB clamp at any L - the unit, not our L, and not a failed check" : juce::String());
     return tl;
 }
 

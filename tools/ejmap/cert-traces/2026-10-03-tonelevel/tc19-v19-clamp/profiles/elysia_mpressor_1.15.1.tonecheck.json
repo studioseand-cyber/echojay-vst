@@ -1,0 +1,221 @@
+{
+  "product": "elysia mpressor",
+  "map_fp": "b3396255fdc18668cbadcdda4edac425fa4598506b60dbb11788a3eae9ed91d3",
+  "L_rms_dbfs": -22.609999999999999,
+  "L_peak_dbfs": -19.599700043360187,
+  "g_db": 2.0,
+  "L_rule": "L = the median of in_at_gr[2.0] over the 20 positions that carry it (-22.61), then those values by distance from it, within the measured range -63.01..-3.01; the first L whose section 6.4 pick passes the clamp at 2.0 dB (12.0 dB, v1.9)",
+  "pick": {
+    "norm": 0.416667,
+    "point": 10,
+    "point_next": 9,
+    "in_at_g": -23.510000000000002,
+    "stepped": false,
+    "pick_one_db": -24.259999999999998,
+    "clamp_db": 12.0,
+    "expected_gr_db": 2.0,
+    "filled_across_norm": false,
+    "fell_back_to_measured": false
+  },
+  "writes": [
+    {
+      "control": "Floor",
+      "index": 0,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Link",
+      "index": 1,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Active",
+      "index": 2,
+      "norm": 1.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "SC Extern",
+      "index": 4,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Attack",
+      "index": 5,
+      "norm": 0.5,
+      "set": "19.0 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Auto Fast",
+      "index": 6,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Release",
+      "index": 7,
+      "norm": 0.5,
+      "set": "117.5 ms",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Anti Log",
+      "index": 8,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "EQ Gain",
+      "index": 10,
+      "norm": 0.5,
+      "set": "0.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "EQ On",
+      "index": 11,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "EQ Freq",
+      "index": 12,
+      "norm": 0.5,
+      "set": "230.0 Hz",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "EQ Freq x10",
+      "index": 13,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "GR Limit",
+      "index": 14,
+      "norm": 0.5,
+      "set": "10.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "GR Limit On",
+      "index": 15,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain",
+      "index": 16,
+      "norm": 0.0,
+      "set": "0.0 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain Reduction",
+      "index": 17,
+      "norm": 0.0,
+      "set": "0.00 dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ratio",
+      "index": 9,
+      "norm": 0.363636,
+      "set": "2.8",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.04,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261003T084942.463+0100",
+  "ratio_norm_source": "ratio 2.8 written from profile.ratio.curve[0].norm 0.3636",
+  "spec": "v1.7",
+  "deep_levels": [
+    {
+      "g_db": 4.0,
+      "ran": true,
+      "gr_measured_db": 4.12,
+      "L_rms_dbfs": -21.210000000000001,
+      "L_rule": "L = the median of in_at_gr[4.0] over the 18 positions that carry it (-21.21), then those values by distance from it, within the measured range -63.01..-3.01; the first L whose section 6.4 pick passes the clamp at 4.0 dB (14.0 dB, v1.9)",
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4500005,
+        "point": 11,
+        "point_next": 10,
+        "in_at_g": -22.010000000000002,
+        "stepped": false,
+        "pick_one_db": -25.91,
+        "clamp_db": 14.0,
+        "expected_gr_db": 4.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null,
+      "spacing_1_to_g_min_db": 4.5
+    },
+    {
+      "g_db": 5.0,
+      "ran": true,
+      "gr_measured_db": 5.08,
+      "L_rms_dbfs": -19.66,
+      "L_rule": "L = the median of in_at_gr[5.0] over the 18 positions that carry it (-19.66), then those values by distance from it, within the measured range -63.01..-3.01; the first L whose section 6.4 pick passes the clamp at 5.0 dB (16.0 dB, v1.9)",
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4500005,
+        "point": 11,
+        "point_next": 10,
+        "in_at_g": -20.510000000000002,
+        "stepped": false,
+        "pick_one_db": -25.91,
+        "clamp_db": 16.0,
+        "expected_gr_db": 5.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null,
+      "spacing_1_to_g_min_db": 5.9
+    },
+    {
+      "g_db": 6.0,
+      "ran": true,
+      "gr_measured_db": 5.97,
+      "L_rms_dbfs": -18.91,
+      "L_rule": "L = the median of in_at_gr[6.0] over the 17 positions that carry it (-18.91), then those values by distance from it, within the measured range -63.01..-3.01; the first L whose section 6.4 pick passes the clamp at 6.0 dB (18.0 dB, v1.9)",
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.466667,
+        "point": 12,
+        "point_next": 11,
+        "in_at_g": -21.210000000000001,
+        "stepped": false,
+        "pick_one_db": -26.710000000000001,
+        "clamp_db": 18.0,
+        "expected_gr_db": 6.0,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false
+      },
+      "null_reason": null,
+      "spacing_1_to_g_min_db": 7.4
+    }
+  ],
+  "deep_levels_nulled": []
+}

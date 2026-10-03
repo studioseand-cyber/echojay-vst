@@ -378,3 +378,11 @@ instead of its 1 dB point); we have not changed §6.4 on our side.
 §6.4 step 2's reverse read (GR at a level across all six points, past the deepest flagged extrapolated) is in the pick
 replica; a stepped pick now expects what its detent gives at L (step 6). Pinned, with the 1–3-only read as a red mutant.
 No profile we have exported is stepped, so no existing tone-check verdict changes.
+
+## 3 Oct: the clamp for deep asks (v1.9, your ruling of 3 Oct) — built, SBC's 6 dB now tested
+
+12 dB up to g = 3, then 12 + 2 × (g − 3) (14/16/18 at 4/5/6, linear between), the same comparison, in both the pick
+replica and the tone-check L rule; pinned at 2/3/3.5/4/5/6 with a mutant proving nothing widens below 3. Lindell SBC's
+6 dB level: GR 5.98 at L −13.16 (its 1 dB point 14.1 below, inside 18) — tested, not nulled. CL 1B's rule L at 4/5/6:
+−31.61 / −29.81 / −28.01 (12.0 / 13.8 / 15.6 below its 1 dB point); the checks run when the iLok is with the Mac. We will
+check this wording against v1.9 when it arrives.

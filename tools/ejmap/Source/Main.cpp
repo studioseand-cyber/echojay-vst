@@ -648,6 +648,22 @@ namespace
                 juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
                 return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
             }
+            // --cert-tone-levels <profile.json>: the tone-check L the rule would use per level, nothing loaded (a dry read of the rule)
+            if (a == "--cert-tone-levels" && i + 1 < argc)
+            {
+                const auto profile = juce::JSON::parse (cwdFile (argAt (argc, argv, i + 1)).loadFileAsString());
+                if (! profile.isObject()) { std::cout << "not a profile" << std::endl; return 2; }
+                std::cout << "TONE LEVELS for " << profile.getProperty ("plugin", {}).getProperty ("name", "").toString() << " (nothing loaded; the rule only)" << std::endl;
+                std::vector<double> levels { 2.0 }; for (int t : ejmap::profile::deepLevelsCarried (profile)) levels.push_back ((double) t);
+                for (double g : levels)
+                {
+                    const auto tl = ejmap::profile::toneLevelFor (profile, g);
+                    std::cout << "  g " << juce::String (g, 1) << ": clamp " << juce::String (tl.clampDb, 1) << " dB; "
+                              << (tl.ok ? "L " + juce::String (tl.L, 2) + " dBFS RMS, pick norm " + juce::String (tl.pick.norm, 4) + ", its 1 dB point " + juce::String (tl.pick.pickOneDb, 2) + " (" + juce::String (tl.L - tl.pick.pickOneDb, 1) + " below L), expectation " + juce::String (tl.pick.expectedGrDb, 2) + " dB, tried " + juce::String (tl.tried)
+                                       : "NO VALID L: " + tl.reason) << std::endl;
+                }
+                return 0;
+            }
             // --cert-tone-check <profile.json> <record.json> [--out DIR] [--probe P] [--ejmap-ledger DIR] [--retry-licence] [--L x: override the per-level rule] [--g 2]
             if (a == "--cert-tone-check" && i + 2 < argc)
             {

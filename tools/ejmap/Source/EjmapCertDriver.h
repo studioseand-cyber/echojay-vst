@@ -2843,7 +2843,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         return lr;
     };
     auto pickVar = [] (const profile::Pick& pk) { auto* p = new juce::DynamicObject(); p->setProperty ("norm", pk.norm); p->setProperty ("point", pk.i0); if (pk.i1 >= 0) p->setProperty ("point_next", pk.i1);
-        p->setProperty ("in_at_g", pk.inAtG0); p->setProperty ("stepped", pk.stepped); p->setProperty ("pick_one_db", pk.pickOneDb); p->setProperty ("expected_gr_db", pk.expectedGrDb); if (pk.stepped) p->setProperty ("expected_extrapolated", pk.expectedExtrapolated);
+        p->setProperty ("in_at_g", pk.inAtG0); p->setProperty ("stepped", pk.stepped); p->setProperty ("pick_one_db", pk.pickOneDb); p->setProperty ("clamp_db", pk.clampDb); p->setProperty ("expected_gr_db", pk.expectedGrDb); if (pk.stepped) p->setProperty ("expected_extrapolated", pk.expectedExtrapolated);
         p->setProperty ("filled_across_norm", pk.filledAcrossNorm); p->setProperty ("fell_back_to_measured", pk.fellBackToMeasured); if (pk.note.isNotEmpty()) p->setProperty ("note", pk.note); return juce::var (p); };
 
     const auto main = checkAt (g, "");

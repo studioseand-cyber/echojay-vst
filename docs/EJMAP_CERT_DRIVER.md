@@ -1673,3 +1673,25 @@ control is PuigChild 660 (m) (`Input`, 21 detents) and it was swept on its conti
 other "stepped" hits are switches (Comp Off / Comp In / Comp/Limiter / Comp Bypass…), word-valued, never threshold
 candidates since Rule 1. So the old expectation never produced a verdict here; the new one is pinned for the first stepped
 unit that does export.
+
+## 29. The clamp for deep asks (v1.9, Sean's ruling 3 Oct — wording to be checked against v1.9 when it arrives)
+
+`profile::pickClampDb (g)`: 12 dB up to g = 3, then 12 + 2 × (g − 3), linear — 13 at 3.5, 14 at 4, 16 at 5, 18 at 6. The
+comparison is unchanged (the pick's own interpolated 1 dB point against L); only the limit widens, and only above 3, so a
+shallow pick is provably unchanged (mutant C-b, a widening that starts at g = 2, goes red on C1–C4). Used by the pick replica
+(`Pick::clampDb`, the refusal names the limit and the ruling) and by the tone-check L rule (`ToneLevel::clampDb`; clamp
+geometry is judged against the limit AT g — C5). Pins C1 (12/12/13/14/16/18), C2 (14–16 dB spacing: geometry at g = 2,
+TESTED at g = 6), C3 (at g = 4, 13.5 below passes and 14.5 is refused), C4 (3.5 → 13), C5. Mutants red: the constant 12
+(C1–C4), widening from g = 2 (C1–C4), the pick ignoring g (C2–C4), geometry still judged at 12 (C5).
+
+**tc17's four re-run (18.1 s, `cert-traces/2026-10-03-tonelevel/tc19-v19-clamp/`): 16 of 16 levels PASS**, nothing nulled.
+Lindell SBC's 6 dB level, clamp geometry under 12, is now **TESTED: GR 5.98 dB at L −13.16 dBFS RMS** (pick norm 0.6333,
+its 1 dB point 14.1 below L, inside 18); its 2/4/5 unchanged at −18.11/−15.21/−13.66 (1.99/4.01/4.99). bx_opto, 7X-500 and
+mpressor identical to §27 (their spacings were always inside 12).
+
+**CL 1B, the L the rule now picks** (`--cert-tone-levels`, a dry read of the rule, nothing loaded; the checks wait for the
+iLok on Sean's Mac): g 2 → −37.11 (clamp 12, 1 dB point 6.5 below); g 4 → −31.61 (clamp 14, 12.0 below); g 5 → −29.81
+(clamp 16, 13.8 below); g 6 → −28.01 (clamp 18, 15.6 below) — all at the median, first try, pick norm 0.5000 (Threshold
+−18.5 at ratio 6:1). Under the 12 dB clamp its 5 and 6 dB had no valid L (§27).
+
+`--cert-tone-levels <profile>` is the new dry command: the per-level L, limit, pick and expectation without a load.

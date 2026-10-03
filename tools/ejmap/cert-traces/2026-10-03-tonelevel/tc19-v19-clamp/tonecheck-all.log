@@ -1,0 +1,216 @@
+TONECHECK-ALL: ~/scratch/rehearsal/cert_tc19  iLok ABSENT
+
+=== tone checks: Lindell SBC
+RE-DERIVED from traces (nothing measured) - Lindell SBC -> AudioUnit_6f747363_1.0.3.rederived.json
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [13] Threshold unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [5] Link = 'Off', [10] Link HP = 'Off', [11] Link LP = 'Off'
+ratio: [8] ran at '4:1' -> 4 | auto make-up disabled: no
+default-threshold reference ('-1.61', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.01  -52.00 out-in -0.01  -50.00 out-in -0.02  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.02  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.07  -22.00 out-in -0.30  -20.00 out-in -0.68  -18.00 out-in -1.17  -16.00 out-in -1.73  -14.00 out-in -2.35  -12.00 out-in -3.06  -10.00 out-in -3.81  -8.00 out-in -4.59  -6.00 out-in -5.39  -4.00 out-in -6.17  -2.00 out-in -6.97  0.00 out-in -7.77  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 16
+write verify: 16 landed, 0 write_unlanded (skipped), in-stack read already matched on 16 of 16, pump slices total 16, longest confirm 2.5 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    10.00           0.01     0.01     0.58        -4.7          
+  1  0.0667    9.20            0.01     0.05     1.05        -6.1          
+  2  0.1333    8.40            0.01     0.28     1.58        -7.5          
+  3  0.2000    6.93            0.01     0.64     2.18        -8.9          
+  4  0.2667    4.78            0.01     1.07     2.83       -10.3          
+  5  0.3333    2.97            0.01     1.55     3.52       -11.8          
+  6  0.4000    1.31            0.01     2.11     4.25       -13.2          
+  7  0.4667    -0.49           0.02     2.71     5.00       -14.1          
+  8  0.5333    -2.73           0.13     3.38     5.75       -15.5          
+  9  0.6000    -4.85           0.42     4.09     6.52       -17.0          
+ 10  0.6667    -6.77           0.81     4.84     7.32       -18.5          
+ 11  0.7333    -8.75           1.29     5.61     8.13       -19.9          
+ 12  0.8000    -10.92          1.87     6.44     8.99       -21.5          
+ 13  0.8667    -13.62          2.54     7.31     9.89       -23.5          
+ 14  0.9333    -16.78          3.33     8.23    10.81       -25.6          
+ 15  1.0000    -20.00          4.23     9.21    11.81       -28.2          
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:15 -34.00:15 -32.00:14 -30.00:13 -28.00:12 -26.00:11 -24.00:10 -22.00:9 -20.00:8 -18.00:6 -16.00:5 -14.00:4 -12.00:3 -10.00:2 -8.00:1 -6.00:0 -4.00:0 -2.00:0 0.00:0
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f747363_1.0.3.rederived.json
+TONE: Lindell SBC - L -18.11 dBFS RMS (-15.10 peak), g 2.0; section 6 picks norm 0.5000 between points 8 and 7 (in_at_gr at g: -19.01 / -17.21; pick's 1 dB point -21.61); ratio 4:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell SBC - GR 1.99 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell SBC - L -15.21 dBFS RMS (-12.20 peak), g 4.0; section 6 picks norm 0.6000 between points 10 and 9 (in_at_gr at g: -17.11 / -15.21; pick's 1 dB point -24.41); ratio 4:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell SBC - GR 4.01 dB at L (target 4.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell SBC - L -13.66 dBFS RMS (-10.65 peak), g 5.0; section 6 picks norm 0.6333 between points 10 and 9 (in_at_gr at g: -14.61 / -12.71; pick's 1 dB point -25.36); ratio 4:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell SBC - GR 4.99 dB at L (target 5.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell SBC - L -13.16 dBFS RMS (-10.15 peak), g 6.0; section 6 picks norm 0.7000 between points 11 and 10 (in_at_gr at g: -14.11 / -12.21; pick's 1 dB point -27.26); ratio 4:1 written from profile.ratio.curve[0].norm 0.5000
+TONE: Lindell SBC - GR 5.98 dB at L (target 6.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell SBC - g 2.0 PASS; deep levels checked 3, nulled 0 -> Lindell_SBC_1.0.3.tonecheck.json
+  -> exported: profile exported with its tone check
+
+=== tone checks: bx_opto
+RE-DERIVED from traces (nothing measured) - bx_opto -> AudioUnit_417f7e74_1.10.1.rederived.json
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [2] Peak Reduction unit '' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+ratio: no control holds the ratio role | auto make-up disabled: no
+default-threshold reference ('0', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.01  -56.00 out-in -0.01  -54.00 out-in -0.02  -52.00 out-in -0.01  -50.00 out-in -0.01  -48.00 out-in -0.01  -46.00 out-in -0.01  -44.00 out-in -0.01  -42.00 out-in -0.01  -40.00 out-in -0.01  -38.00 out-in -0.02  -36.00 out-in -0.01  -34.00 out-in -0.01  -32.00 out-in -0.02  -30.00 out-in -0.01  -28.00 out-in -0.01  -26.00 out-in -0.01  -24.00 out-in -0.01  -22.00 out-in -0.01  -20.00 out-in -0.01  -18.00 out-in -0.01  -16.00 out-in -0.02  -14.00 out-in -0.01  -12.00 out-in -0.01  -10.00 out-in -0.01  -8.00 out-in -0.01  -6.00 out-in -0.01  -4.00 out-in -0.01  -2.00 out-in -0.01  0.00 out-in -0.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 0.00 0.00 0.00 0.00
+reference ladder: 4 position(s) below the first rung (23@-60 24@-60 25@-60 26@-60)
+writes landed by: instack 27
+write verify: 27 landed, 0 write_unlanded (skipped), in-stack read already matched on 27 of 27, pump slices total 27, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0              -0.00    -0.00    -0.00          --          
+  1  0.0667    6              -0.00    -0.00    -0.00          --          
+  2  0.1333    13             -0.00    -0.00    -0.00          --          
+  3  0.2000    20             -0.00    -0.00    -0.00          --          
+  4  0.2667    26             -0.00    -0.00     0.43          --          
+  5  0.3000    30             -0.00    -0.00     1.48          --          
+  6  0.3333    33             -0.00     0.04     2.70          --          
+  7  0.3667    36             -0.00     0.66     4.09          --          
+  8  0.4000    40             -0.00     1.74     5.58          --          
+  9  0.4333    43             -0.00     3.00     7.13          --          
+ 10  0.4667    46             -0.00     4.43     8.71          --          
+ 11  0.5000    50              0.00     5.94    10.31          --          
+ 12  0.5333    53              0.20     7.49    11.92          --          
+ 13  0.5667    56              1.14     9.08    13.52          --          
+ 14  0.6000    60              2.30    10.68    15.13          --          
+ 15  0.6333    63              3.65    12.29    16.72          --          
+ 16  0.6667    66              5.12    13.89    18.30          --          
+ 17  0.7000    70              6.65    15.50    19.87          --          
+ 18  0.7333    73              8.22    17.09    21.41          --          
+ 19  0.7667    76              9.82    18.66    22.93          --          
+ 20  0.8000    80             11.42    20.23    24.42          --          
+ 21  0.8333    83             13.03    21.77    25.90          --          
+ 22  0.8667    86             14.63    23.27    27.32          --          
+ 23  0.9000    90             16.24    24.77    28.73          --          
+ 24  0.9333    93             17.82    26.23    30.09          --          
+ 25  0.9667    96             19.39    27.65    31.40          --          
+ 26  1.0000    100            20.94    29.04    32.68          --          
+
+1 MAP:             certified (ratio unknown (no ratio control): no dB-equivalent map) | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:26 -50.00:25 -48.00:24 -46.00:23 -44.00:22 -42.00:21 -40.00:20 -38.00:19 -36.00:18 -34.00:17 -32.00:17 -30.00:16 -28.00:15 -26.00:14 -24.00:13 -22.00:12 -20.00:11 -18.00:10 -16.00:9 -14.00:8 -12.00:7 -10.00:6 -8.00:5 -6.00:5 -4.00:4 -2.00:4 0.00:3
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_417f7e74_1.10.1.rederived.json
+TONE: bx_opto - L -29.71 dBFS RMS (-26.70 peak), g 2.0; section 6 picks norm 0.6333 between points 16 and 15 (in_at_gr at g: -31.91 / -29.71; pick's 1 dB point -31.71); no ratio control in the profile (fixed ratio): nothing written
+TONE: bx_opto - GR 2.00 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: bx_opto - L -27.56 dBFS RMS (-24.55 peak), g 4.0; section 6 picks norm 0.6500 between points 16 and 15 (in_at_gr at g: -28.61 / -26.51; pick's 1 dB point -32.76); no ratio control in the profile (fixed ratio): nothing written
+TONE: bx_opto - GR 4.01 dB at L (target 4.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: bx_opto - L -26.11 dBFS RMS (-23.10 peak), g 5.0; section 6 picks norm 0.6500 between points 16 and 15 (in_at_gr at g: -27.21 / -25.01; pick's 1 dB point -32.76); no ratio control in the profile (fixed ratio): nothing written
+TONE: bx_opto - GR 4.99 dB at L (target 5.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: bx_opto - L -25.71 dBFS RMS (-22.70 peak), g 6.0; section 6 picks norm 0.6667 between points 17 and 16 (in_at_gr at g: -27.91 / -25.71; pick's 1 dB point -33.81); no ratio control in the profile (fixed ratio): nothing written
+TONE: bx_opto - GR 6.03 dB at L (target 6.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: bx_opto - g 2.0 PASS; deep levels checked 3, nulled 0 -> bx_opto_1.10.1.tonecheck.json
+  -> exported: profile exported with its tone check
+
+=== tone checks: Lindell 7X-500
+RE-DERIVED from traces (nothing measured) - Lindell 7X-500 -> AudioUnit_6f457232_1.2.2.rederived.json
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [0] Input unit '' (class input_as_threshold, flags input_as_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [9] Stereo Link = '50%', [12] Link ON = 'Off'
+ratio: [5] ran at '4:1' -> 4 | auto make-up disabled: no
+default-threshold reference ('3.0', spec 4.7 check only):  -60.00 out-in 1.81  -58.00 out-in 1.81  -56.00 out-in 1.81  -54.00 out-in 1.81  -52.00 out-in 1.81  -50.00 out-in 1.81  -48.00 out-in 1.81  -46.00 out-in 1.81  -44.00 out-in 1.81  -42.00 out-in 1.81  -40.00 out-in 1.81  -38.00 out-in 1.81  -36.00 out-in 1.81  -34.00 out-in 1.81  -32.00 out-in 1.80  -30.00 out-in 1.80  -28.00 out-in 1.80  -26.00 out-in 1.80  -24.00 out-in 1.80  -22.00 out-in 1.80  -20.00 out-in 1.78  -18.00 out-in 1.32  -16.00 out-in -0.08  -14.00 out-in -1.77  -12.00 out-in -3.54  -10.00 out-in -5.35  -8.00 out-in -7.16  -6.00 out-in -8.96  -4.00 out-in -10.74  -2.00 out-in -12.49  0.00 out-in -14.20  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): -- -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00 -0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 22
+write verify: 22 landed, 0 write_unlanded (skipped), in-stack read already matched on 22 of 22, pump slices total 22, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    0.0               --       --       --          --          
+  1  0.0667    0.7             0.00     0.01     0.12        -5.5          
+  2  0.0889    0.9             0.00     0.01     1.44        -8.3          
+  3  0.1111    1.1             0.00     0.02     3.03       -10.4          
+  4  0.1333    1.3             0.01     0.12     4.42       -12.1          
+  5  0.1667    1.7             0.01     1.05     6.16       -14.2          
+  6  0.2000    2.0             0.01     2.27     7.59       -15.7          
+  7  0.2667    2.7             0.01     4.44     9.85       -18.3          
+  8  0.3333    3.3             0.01     6.18    11.59       -20.2          
+  9  0.4000    4.0             0.01     7.61    12.99       -21.7          
+ 10  0.4667    4.7             0.02     8.82    14.15       -23.1          
+ 11  0.5333    5.3             0.13     9.87    15.15       -24.3          
+ 12  0.6000    6.0             0.50    10.79    16.03       -25.2          
+ 13  0.6167    6.2             1.77    12.42    17.57       -27.2          
+ 14  0.6333    6.3             3.03    13.75    18.81       -28.8          
+ 15  0.6667    6.7             5.17    15.83    20.74       -31.1          
+ 16  0.7000    7.0             6.87    17.42    22.20       -33.0          
+ 17  0.7333    7.3             8.27    18.69    23.37       -34.6          
+ 18  0.8000    8.0            10.49    20.65    25.18       -37.0          
+ 19  0.8667    8.7            12.19    22.14    26.55       -38.9          
+ 20  0.9333    9.3            13.57    23.32    27.64       -40.5          
+ 21  1.0000    10.0           14.72    24.31    28.55       -41.7          
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:21 -38.00:20 -36.00:19 -34.00:18 -32.00:17 -30.00:16 -28.00:15 -26.00:14 -24.00:12 -22.00:11 -20.00:9 -18.00:8 -16.00:7 -14.00:6 -12.00:5 -10.00:4 -8.00:3 -6.00:2 -4.00:1 -2.00:1 0.00:1
+2 engage drift:    null  (not a dB display)   (primary; displayLinear unset until the population decides)
+   offset IQR:      null
+3 displayOffsetDb: null
+fixture: AudioUnit_6f457232_1.2.2.rederived.json
+TONE: Lindell 7X-500 - L -23.91 dBFS RMS (-20.90 peak), g 2.0; section 6 picks norm 0.5333 between points 12 and 11 (in_at_gr at g: -24.91 / -23.91; pick's 1 dB point -25.21); ratio 4:1 written from profile.ratio.curve[0].norm 0.0000
+TONE: Lindell 7X-500 - GR 1.96 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 7X-500 - L -21.51 dBFS RMS (-18.50 peak), g 4.0; section 6 picks norm 0.5333 between points 12 and 11 (in_at_gr at g: -22.51 / -21.51; pick's 1 dB point -25.21); ratio 4:1 written from profile.ratio.curve[0].norm 0.0000
+TONE: Lindell 7X-500 - GR 4.01 dB at L (target 4.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 7X-500 - L -20.91 dBFS RMS (-17.90 peak), g 5.0; section 6 picks norm 0.5667 between points 12 and 11 (in_at_gr at g: -21.41 / -20.41; pick's 1 dB point -25.76); ratio 4:1 written from profile.ratio.curve[0].norm 0.0000
+TONE: Lindell 7X-500 - GR 5.01 dB at L (target 5.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 7X-500 - L -19.81 dBFS RMS (-16.80 peak), g 6.0; section 6 picks norm 0.5667 between points 12 and 11 (in_at_gr at g: -20.31 / -19.31; pick's 1 dB point -25.76); ratio 4:1 written from profile.ratio.curve[0].norm 0.0000
+TONE: Lindell 7X-500 - GR 6.00 dB at L (target 6.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: Lindell 7X-500 - g 2.0 PASS; deep levels checked 3, nulled 0 -> Lindell_7X-500_1.2.2.tonecheck.json
+  -> exported: profile exported with its tone check
+
+=== tone checks: elysia mpressor
+RE-DERIVED from traces (nothing measured) - elysia mpressor -> AudioUnit_49696d78_1.15.1.rederived.json
+host: EJ Map 0.1.0 / arm64 / 48k (native)
+threshold: [3] Threshold unit 'dB' (class single_threshold) | positions 16 (16 evenly spaced), one process each, levels quiet to loud
+links as instantiated (recorded, not written): [1] Link = 'On'
+ratio: [9] ran at '2.8' -> 2.8 | auto make-up disabled: no
+default-threshold reference ('16.0 dB', spec 4.7 check only):  -60.00 out-in -0.02  -58.00 out-in -0.02  -56.00 out-in -0.02  -54.00 out-in -0.02  -52.00 out-in -0.02  -50.00 out-in -0.02  -48.00 out-in -0.02  -46.00 out-in -0.02  -44.00 out-in -0.02  -42.00 out-in -0.02  -40.00 out-in -0.02  -38.00 out-in -0.02  -36.00 out-in -0.02  -34.00 out-in -0.02  -32.00 out-in -0.02  -30.00 out-in -0.02  -28.00 out-in -0.02  -26.00 out-in -0.02  -24.00 out-in -0.03  -22.00 out-in -0.03  -20.00 out-in -0.03  -18.00 out-in -0.03  -16.00 out-in -0.04  -14.00 out-in -0.04  -12.00 out-in -0.06  -10.00 out-in -0.08  -8.00 out-in -0.11  -6.00 out-in -0.16  -4.00 out-in -0.39  -2.00 out-in -1.54  0.00 out-in -3.01  (default gain is information only)
+linear reference: each position's own gain at its quiet rung's upper level, checked against the lower (must differ by 6 dB within 0.1): 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 -0.00 0.00 -0.00 0.00 0.00 0.00 -0.00 0.00 0.00 0.00 0.00
+reference ladder: 0 position(s) below the first rung
+writes landed by: instack 20
+write verify: 20 landed, 0 write_unlanded (skipped), in-stack read already matched on 20 of 20, pump slices total 20, longest confirm 2.6 ms, re-rendered 0
+hold doubled at positions: none
+still moving AFTER doubling (reading not used): none
+
+pos   norm      display        red@-24  red@-12  red@-6    T(peak)   T-display
+  0  0.0000    16.0 dB         0.00     0.04     0.13        -4.5    -20.50
+  1  0.0667    14.5 dB         0.00     0.04     0.22        -5.8    -20.30
+  2  0.1333    11.7 dB         0.00     0.04     1.55        -8.5    -20.20
+  3  0.1667    9.8 dB          0.00     0.04     2.71       -10.3    -20.10
+  4  0.2000    8.2 dB          0.00     0.17     3.76       -11.9    -20.10
+  5  0.2667    5.3 dB          0.00     1.70     5.64       -14.8    -20.10
+  6  0.3000    3.5 dB          0.00     2.83     6.81       -16.5    -20.00
+  7  0.3333    1.7 dB          0.00     4.00     7.97       -18.3    -20.00
+  8  0.3667    -0.2 dB         0.00     5.18     9.14       -20.1    -19.90
+  9  0.4000    -2.0 dB         0.00     6.40    10.32       -21.9    -19.90
+ 10  0.4333    -3.8 dB         0.14     7.55    11.49       -23.7    -19.90
+ 11  0.4667    -5.4 dB         0.82     8.55    12.54       -25.2    -19.80
+ 12  0.5333    -7.6 dB         2.22     9.96    13.93       -27.5    -19.90
+ 13  0.6000    -9.8 dB         3.63    11.37    15.33       -29.6    -19.80
+ 14  0.6667    -11.7 dB        4.82    12.61    16.53       -31.5    -19.80
+ 15  0.7333    -13.1 dB        5.77    13.53    17.47       -33.0    -19.90
+ 16  0.8000    -14.6 dB        6.74    14.47    18.46       -34.4    -19.80
+ 17  0.8667    -16.1 dB        7.67    15.40    19.38       -35.9    -19.80
+ 18  0.9333    -17.3 dB        8.43    16.17    20.14       -37.1    -19.80
+ 19  1.0000    -18.0 dB        8.90    16.64    20.61       -37.8    -19.80
+
+1 MAP:             certified | sense higher_is_harder | engage -60.00:none -58.00:none -56.00:none -54.00:none -52.00:none -50.00:none -48.00:none -46.00:none -44.00:none -42.00:none -40.00:none -38.00:none -36.00:18 -34.00:17 -32.00:15 -30.00:14 -28.00:13 -26.00:12 -24.00:11 -22.00:10 -20.00:9 -18.00:8 -16.00:7 -14.00:6 -12.00:5 -10.00:4 -8.00:3 -6.00:2 -4.00:1 -2.00:0 0.00:0
+2 engage drift:    0.98  -10.00:19.11  -12.00:19.22  -14.00:19.08  -16.00:19.13  -18.00:19.06  -2.00:19.63  -20.00:19.07  -22.00:19.09  -24.00:19.11  -26.00:19.09  -28.00:19.05  -30.00:19.04  -32.00:19.13  -34.00:19.00  -36.00:19.06  -38.00:null  -4.00:19.32  -40.00:null  -42.00:null  -44.00:null  -46.00:null  -48.00:null  -50.00:null  -52.00:null  -54.00:null  -56.00:null  -58.00:null  -6.00:19.41  -60.00:null  -8.00:19.15  0.00:19.98   (primary; displayLinear unset until the population decides)
+   offset IQR:      0.30 dB over 20 positions (min -20.50, max -19.80)
+3 displayOffsetDb: -19.90  (outside spec 7's 2 dB bar)
+fixture: AudioUnit_49696d78_1.15.1.rederived.json
+TONE: elysia mpressor - L -22.61 dBFS RMS (-19.60 peak), g 2.0; section 6 picks norm 0.4167 between points 10 and 9 (in_at_gr at g: -23.51 / -21.71; pick's 1 dB point -24.26); ratio 2.8 written from profile.ratio.curve[0].norm 0.3636
+TONE: elysia mpressor - GR 2.04 dB at L (target 2.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: elysia mpressor - L -21.21 dBFS RMS (-18.20 peak), g 4.0; section 6 picks norm 0.4500 between points 11 and 10 (in_at_gr at g: -22.01 / -20.41; pick's 1 dB point -25.91); ratio 2.8 written from profile.ratio.curve[0].norm 0.3636
+TONE: elysia mpressor - GR 4.12 dB at L (target 4.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: elysia mpressor - L -19.66 dBFS RMS (-16.65 peak), g 5.0; section 6 picks norm 0.4500 between points 11 and 10 (in_at_gr at g: -20.51 / -18.81; pick's 1 dB point -25.91); ratio 2.8 written from profile.ratio.curve[0].norm 0.3636
+TONE: elysia mpressor - GR 5.08 dB at L (target 5.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: elysia mpressor - L -18.91 dBFS RMS (-15.90 peak), g 6.0; section 6 picks norm 0.4667 between points 12 and 11 (in_at_gr at g: -21.21 / -18.91; pick's 1 dB point -26.71); ratio 2.8 written from profile.ratio.curve[0].norm 0.3636
+TONE: elysia mpressor - GR 5.97 dB at L (target 6.0, quiet check ok) -> PASS (within 0.5 dB)
+TONE: elysia mpressor - g 2.0 PASS; deep levels checked 3, nulled 0 -> elysia_mpressor_1.15.1.tonecheck.json
+  -> exported: profile exported with its tone check
+
+TONECHECK-ALL: 4 re-checked, 0 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+       18.12 real         9.79 user         0.94 sys
