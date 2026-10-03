@@ -1,0 +1,5 @@
+3 Oct 2026. tools/ejmap/packaging/export_traces.sh AudioUnit_517f614e_2.5.62 cert-traces/2026-10-02-batch10-profile/refined -> cl1b-traces.zip (record + processes.json + 62 raw captures, 657,857 bytes, 67 files; token file 0, home paths 0)
+Folder = copy of tc18 (four exported at v1.7 with L_rule) + unzip -n of the zip.
+a. --cert-tonecheck-all --ejmap-ledger ledger_empty:            "Tube-Tech CL 1B: needs licence at the scan, not loaded"; 0 re-checked, 4 skipped, 1 needs_licence
+b. record's version edited to 2.5.70, --retry-licence:          RE-DERIVED from traces; "TONE: Tube-Tech CL 1B - installed version 2.5.62 differs from the record's 2.5.70 (section 11 ...)"; row needs_review "section 11: the installed version is not the record's 2.5.70 ..."; 4 skipped by the resume; 1.31 s real
+(the unedited import with the iLok present cannot be measured here: the iLok is with Sean)

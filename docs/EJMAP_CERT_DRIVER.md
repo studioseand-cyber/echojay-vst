@@ -1591,3 +1591,62 @@ window, hang, crash — NEVER by a verdict the mapping workflow produced for its
 Tuners stay BLOCKED on the catalogue (section 24 of the reply doc): with category null they are not
 subjects; with category pitch they now are, map or no map — bx_crispytuner with its labelled stand-in
 category is the test of that.
+
+## 27. The test L per level, the known-licence skip, the section 11 guard (3 Oct, morning)
+
+Three rulings after the v1.7 build, all measured on the tc17 folder (the four rehearsal products) and
+on CL 1B with the iLok away.
+
+**1. A level the clamp refuses at OUR L is not a level that failed.** `profile::toneLevelFor (profile, g)`
+chooses the test L per level: the median of `in_at_gr[g]` over the positions carrying g, then those values
+by distance from the median, each within `measured.steps_dbfs[0..1]`; the first whose §6.4 pick passes the
+12 dB clamp is the L. The same rule applies to g = 2 (`--L` on the hand command overrides it). Per level the
+tone check records `L_rms_dbfs`, `L_rule` and, when nulled, `null_reason` ∈ {`failed_check_at_L`,
+`no_valid_L_clamp_geometry`, `no_valid_L`, `could_not_run`} plus `spacing_1_to_g_min_db`. The profile's
+notes carry the reason and the spacing. Re-run of the four (18.5 s): every level that has a valid L PASSES
+within 0.12 dB — SBC 4 dB at −15.21 (4.01), 5 dB at −13.66 (4.99), where the fixed −18 had nulled both;
+bx_opto / 7X-500 / mpressor 2, 4, 5, 6 all PASS at their medians (−29.7…−15.9).
+
+**The finding for Sean (§6.4 of the spec, not ours to change):** with the clamp on the pick's own 1 dB
+point, a level whose 1→g spacing is ≥ 12 dB at every position has NO valid L — not at −18, not anywhere
+in the range. Measured 1→g spacing (min / median, dB):
+
+| product | 1→2 | 1→4 | 1→5 | 1→6 |
+|---|---|---|---|---|
+| Lindell SBC | 3.5 / 3.6 | 9.1 / 9.2 | 11.6 / 11.7 | **14.1 at every position → no L** |
+| Tube-Tech CL 1B | 6.3 / 6.7 | 11.7 / 12.3 (some positions inside 12: an L may exist) | **13.5 / 14.1 → no L** | **15.3 / 15.9 → no L** |
+| bx_opto | 1.9 | 5.1 | 6.6 | 8.0 |
+| Lindell 7X-500 | 1.3 | 3.7 | 4.8 | 5.9 |
+| elysia mpressor | 1.5 | 4.5 | 5.9 | 7.4 |
+
+So "Lindell's 6 dB level must come back tested" cannot be met under the 12 dB clamp as written: the
+driver now says so by name (`no_valid_L_clamp_geometry`, 14.1 dB) instead of nulling it silently, and
+pins the rule (T7–T11: the fixed −18 refused while the median passes; g = 2 under the same rule; the
+range honoured; geometry named with the SMALLEST spacing; tries recorded). Ten mutants red (fixed −18
+instead of the rule, median not first, range ignored, geometry never named, max for min, both version
+guard mutants, both licence sources ignored, retry not honoured). For v1.8 Sean has a choice: a clamp
+relative to the level (e.g. 12 + (g − 1) dB, or on the pick's own (g−1) dB point), or a per-level clamp
+table; until then the deep levels of a soft-knee unit above ~10 dB spacing stay null with the reason.
+
+**2. Do not load a product the session knows needs a licence that is not present.** `loop::knownLicenceStop
+(scanStops, outcomes, product, retryLicence)` — the scan's licence stop in the ledger, or a `needs_licence`
+row in the cert folder — is asked by `runToneCheck`, `runDetector` and the tone-check-only mode before any
+load; exit 6 (`kToneLicenceKnownExit`), row `needs_licence` *known from the scan / this folder's outcomes*.
+CL 1B measured: known from the scan 1.0 s, no load (was: loaded, window, killed at 2.9 s); known from the
+folder 0.4 s; `--retry-licence` loads and the window watch kills it at 2.3 s (the only way past). The hand
+commands `--cert-tone-check` and `--cert-detector` now parse `--ejmap-ledger` and `--retry-licence` (they
+silently used the real ledger before — the first measurement here loaded CL 1B for exactly that reason).
+
+**3. Section 11.** `profile::versionMismatch (record, installed)` refuses a differing version AND an unknown
+one (a guard never guesses); exit 7 (`kToneVersionExit`), row `needs_review` with the §11 reason; in the
+detector too. Rehearsed on the CL 1B import with the record's version edited to 2.5.70: re-derived, refused
+before load, row written, the four finished products skipped by the resume (1.3 s).
+
+**The CL 1B import** for Sean's Mac: `tools/ejmap/packaging/export_traces.sh <stem> <traces dir> <zip>`
+packs the store's record (detector, pick carried over by the mode), the processes list and the raw
+captures into a `cert/`-shaped zip (refuses `config.json` or an unredacted home path); `unzip -n` over
+`~/Library/ejmap` on his side; the mode walks `fixtures/` by file, not by row paths (the earlier mode read
+the rows' absolute paths, which are another Mac's in a zipped-back folder — fixed), so an imported record
+is found. Section in `SEAN_MAC_TONECHECK.md`.
+
+Suite 3213 checks green; traces `cert-traces/2026-10-03-tonelevel/{tc18,cl1b-licence,cl1b-import}`.

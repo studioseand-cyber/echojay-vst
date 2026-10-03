@@ -357,3 +357,18 @@ its target — bx_opto 4.00 / 5.01 / 6.01, Lindell 7X-500 4.05 / 5.00 / 6.02, el
 6.02, Lindell SBC 4.00 / 4.99 and its 6 dB level **nulled**: at L = −18 the only settings reaching 6 dB
 have their 1 dB point 14 dB below L, the clamp refuses, the level cannot be confirmed and comes out of
 the profile (the profile stands at 1–5) — section 8 as written.
+
+## 3 Oct: the tone check's test level per level — and what the 12 dB clamp does to deep levels
+
+Each level is now tested at its own L (the median of `in_at_gr[g]` over the positions that carry g, then
+nearest values, within the sweep's range; first L whose §6.4 pick passes the clamp), recorded per level
+in `tone_check.deep_levels[].L_rms_dbfs` with `L_rule`. Result on the four rehearsal units: every level
+with a valid L passes within 0.12 dB, including Lindell SBC's 4 and 5 dB that a fixed −18 had nulled.
+
+One thing for v1.8, with numbers: the 12 dB clamp on the pick's own 1 dB point makes a level untestable
+at ANY L once the unit's 1→g spacing is ≥ 12 dB at every position. Lindell SBC 1→6: 14.1 dB everywhere.
+Tube-Tech CL 1B 1→5: 13.5–14.5; 1→6: 15.3–16.2 (1→4: 11.7–12.6, so some positions are inside). These are
+soft-knee / low-ratio units doing what they do; the profile now nulls such a level with the reason
+`no_valid_L_clamp_geometry` and the spacing, rather than silently. If you would like those levels
+tested, the clamp needs to grow with g (e.g. 12 + (g − 1) dB, or read the pick's own (g − 1) dB point
+instead of its 1 dB point); we have not changed §6.4 on our side.

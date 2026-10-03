@@ -648,15 +648,17 @@ namespace
                 juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
                 return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
             }
-            // --cert-tone-check <profile.json> <record.json> [--out DIR] [--probe P] [--L -18] [--g 2]
+            // --cert-tone-check <profile.json> <record.json> [--out DIR] [--probe P] [--ejmap-ledger DIR] [--retry-licence] [--L x: override the per-level rule] [--g 2]
             if (a == "--cert-tone-check" && i + 2 < argc)
             {
-                ejmap::cert::SweepOptions o; double L = -18.0, g = 2.0; juce::String cand;
+                ejmap::cert::SweepOptions o; double L = ejmap::cert::kToneLevelByRule, g = 2.0; juce::String cand;   // L per level by rule unless --L is given
                 for (int j = 1; j < argc; ++j)
                 {
                     const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
                     if      (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v);
                     else if (k == "--out"   && j + 1 < argc) o.out = cwdFile (v);
+                    else if (k == "--ejmap-ledger" && j + 1 < argc) o.ledger = cwdFile (v);
+                    else if (k == "--retry-licence") o.retryLicence = true;
                     else if (k == "--L"     && j + 1 < argc) L = v.getDoubleValue();
                     else if (k == "--g"     && j + 1 < argc) g = v.getDoubleValue();
                     else if (k == "--candidate" && j + 1 < argc) cand = v;
@@ -668,7 +670,8 @@ namespace
             {
                 ejmap::cert::SweepOptions o; juce::String cand;
                 for (int j = 1; j < argc; ++j) { const auto k = argAt (argc, argv, j); const auto v = argAt (argc, argv, j + 1);
-                    if (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v); else if (k == "--out" && j + 1 < argc) o.out = cwdFile (v); else if (k == "--candidate" && j + 1 < argc) cand = v; }
+                    if (k == "--probe" && j + 1 < argc) o.probe = cwdFile (v); else if (k == "--out" && j + 1 < argc) o.out = cwdFile (v); else if (k == "--candidate" && j + 1 < argc) cand = v;
+                    else if (k == "--ejmap-ledger" && j + 1 < argc) o.ledger = cwdFile (v); else if (k == "--retry-licence") o.retryLicence = true; }
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return ejmap::cert::runDetector (o, cwdFile (argAt (argc, argv, i + 1)), cand);
             }

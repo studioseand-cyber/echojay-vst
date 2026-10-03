@@ -273,6 +273,21 @@ inline std::optional<QuarantinedBundle> carriedLicenceStop (const std::vector<Qu
     }
     return std::nullopt;
 }
+
+// DO NOT LOAD A PRODUCT THE SESSION KNOWS NEEDS A LICENCE THAT IS NOT PRESENT (ruled 3 Oct, after CL 1B was loaded and killed
+// at 2.9 s by the tone check with the iLok away): the scan's licence stop in this ledger, or a needs_licence row already in
+// this cert folder, is the knowledge; the reason names its source. Empty = nothing known. --retry-licence is the only way past.
+inline juce::String knownLicenceStop (const std::vector<QuarantinedBundle>& scanStops, const juce::var& outcomes, const juce::String& product, bool retryLicence)
+{
+    if (retryLicence) return {};
+    if (const auto stop = carriedLicenceStop (scanStops, product); stop)
+        return "needs a licence (known from the scan: " + (stop->reason.isNotEmpty() ? stop->reason : stop->bundle) + "); not loaded";
+    if (const auto* a = outcomes.getArray())
+        for (const auto& r : *a)
+            if (r.getProperty ("state", "").toString() == "needs_licence" && productKeyName (r.getProperty ("product", "").toString()) == productKeyName (product))
+                return "needs a licence (known from this folder's outcomes: " + r.getProperty ("reason", "").toString().upToFirstOccurrenceOf (";", false, false) + "); not loaded";
+    return {};
+}
 inline Outcome outcomeCarriedLicence (const QuarantinedBundle& b)
 {
     Outcome o; o.state = "needs_licence";

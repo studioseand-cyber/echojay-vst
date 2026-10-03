@@ -1,0 +1,6 @@
+3 Oct 2026, iLok ABSENT, CL 1B 2.5.62 installed, build after 36397676 (this commit). --cert-tone-check on the v1.7 profile + store record.
+1. --ejmap-ledger ledger_empty (the rehearsal scan that stopped CL 1B):      "needs a licence (known from the scan: activation window at scan (PACEEdenExperience [pid 27670]); load killed at once, not retried); not loaded"  exit 6, 1.00 s real, NO LOAD
+1b. --cert-detector, same ledger:                                             "DETECTOR: Tube-Tech CL 1B - needs a licence (known from the scan: ...); not loaded"  exit 6
+2. --out cert_tc18 (its outcomes.json carries CL 1B needs_licence), real ledger: "needs a licence (known from this folder's outcomes: carried forward from the scan: activation window at scan (PACEEdenExperience [pid 27670])); not loaded"  exit 6, 0.43 s, NO LOAD
+3. --retry-licence, ledger_empty:                                             loads; "the probe SHOWED A WINDOW (PACEEdenExperience [pid 27200]) after 2.3 s; killed by the driver"  exit 5, 2.76 s
+Before this commit the hand command did not parse --ejmap-ledger / --retry-licence at all: the first attempt at (1) silently used the real ledger (4 Aug scan, iLok present then) and loaded CL 1B - window at 3.9 s, exit 5. That is the same shape as the 2.9 s kill that prompted the ruling.

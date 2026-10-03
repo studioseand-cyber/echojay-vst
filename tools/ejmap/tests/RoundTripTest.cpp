@@ -5448,6 +5448,11 @@ void testProfileExport()
         auto fixedP = juce::JSON::parse (juce::JSON::toString (ef.profile)); fixedP.getProperty ("ratio", {}).getDynamicObject()->setProperty ("control", juce::var()); fixedP.getProperty ("ratio", {}).getDynamicObject()->setProperty ("curve", juce::Array<juce::var>());
         juce::StringArray s3; juce::Array<juce::var> w3; juce::String n3;
         check (toneWrites (fixedP, full, s3, w3, n3).isEmpty() && s3.size() == 4 && n3.contains ("fixed"), "tone T3: a fixed-ratio profile writes no ratio and says so");
+        // SECTION 11 (T3b, 3 Oct): the installed version must be the record's; an unknown version on either side refuses too - a guard never guesses
+        check (versionMismatch ("2.5.62", "2.5.62").isEmpty() && versionMismatch (" 2.5.62", "2.5.62 ").isEmpty()
+               && versionMismatch ("2.5.62", "2.5.70").contains ("installed version 2.5.70 differs from the record's 2.5.62") && versionMismatch ("2.5.62", "2.5.70").contains ("section 11")
+               && versionMismatch ("2.5.62", "").contains ("installed version is unknown") && versionMismatch ("", "2.5.62").contains ("record's version is unknown"),
+               "tone T3b: the section 11 guard passes only an equal version, names both when they differ, and refuses an unknown version on either side");
     }
     const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
     check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
@@ -5531,6 +5536,43 @@ void testProfileExport()
             check (all5null && any4 && nc.size() == 16 && deepLevelsCarried (nulledP) == std::vector<int> { 4, 6 },
                    "tone T5: a failing deep level is null across ALL positions (the whole level comes out), the other levels and every position stay");
             check (toneExitCode (true, 3) == 0 && toneExitCode (false, 0) == 1, "tone T6: the profile's pass is the g = 2 check alone - three failed deep levels do not fail it, and a failed g = 2 does");
+            // THE TEST L PER LEVEL (T7-T11, ruled 3 Oct): a level the clamp refuses at OUR L is not a level that failed. L = the median of
+            // in_at_gr[g] over the positions carrying g, then those values by distance from it, within the sweep's range; the first whose
+            // section 6.4 pick passes the 12 dB clamp. Four positions, 1->2 spacing 10/10/10/16 dB: at the fixed -18 the pick sits between
+            // C and D and its own 1 dB point is 14 dB below (refused); the median (-24) picks between B and C, 10 dB (fine).
+            const auto wide = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+                {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -40.0, "2": -30.0}},
+                {"norm": 0.4, "display": "b", "in_at_gr_dbfs": {"1": -36.0, "2": -26.0}},
+                {"norm": 0.6, "display": "c", "in_at_gr_dbfs": {"1": -32.0, "2": -22.0}},
+                {"norm": 0.8, "display": "d", "in_at_gr_dbfs": {"1": -32.0, "2": -16.0}}]}})json");
+            const auto tl = toneLevelFor (wide, 2.0);
+            check (! pickPosition (wide, -18.0, 2.0).ok && tl.ok && std::abs (tl.L - (-24.0)) < 1e-9 && tl.tried == 1 && tl.pick.ok && std::abs (tl.pick.norm - 0.5) < 1e-9
+                   && tl.rule.contains ("median of in_at_gr[2.0]") && tl.rule.contains ("4 positions") && tl.rule.contains ("(-24.00)") && tl.rule.contains ("-63.01..-3.01"),
+                   "tone T7: the fixed -18 is refused by the clamp on this unit, the rule's L is the median (-24.00) and its pick passes - the level comes back TESTED, and the rule is stated with its numbers (" + tl.rule + ")");
+            {
+                // T8: g = 2 gets the same rule - the deep profile's 2 dB median is position 7/8's midpoint, not -18
+                const auto t2 = toneLevelFor (deep, 2.0);
+                std::vector<double> v2; { const auto c2 = deep.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c2.size(); ++i) if (auto x = inAtGr (c2[i], 2.0)) v2.push_back (*x); }
+                std::sort (v2.begin(), v2.end()); const double med2 = (v2[v2.size() / 2 - 1] + v2[v2.size() / 2]) / 2.0;
+                check (t2.ok && std::abs (t2.L - med2) < 1e-9 && std::abs (med2 - (-18.0)) > 0.5 && std::abs (t2.pick.expectedGrDb - 2.0) < 1e-9,
+                       "tone T8: the same rule applies to g = 2 - the recorded L is the median of in_at_gr[2] (" + juce::String (med2, 2) + "), not the fixed -18");
+            }
+            // T9: a candidate outside the sweep's measured range is never tried - the range here excludes the median, the next by distance answers
+            auto narrow = juce::JSON::parse (juce::JSON::toString (wide)); narrow.getProperty ("measured", {}).getDynamicObject()->setProperty ("steps_dbfs", juce::Array<juce::var> { -23.0, -3.01, 2 });
+            const auto tn = toneLevelFor (narrow, 2.0);
+            check (tn.ok && std::abs (tn.L - (-22.0)) < 1e-9 && tn.tried == 1, "tone T9: the median (-24) and -26 lie outside the measured range (-23..-3) and are not tried; the nearest in range (-22) answers (" + juce::String (tn.L, 2) + ", tried " + juce::String (tn.tried) + ")");
+            // T10: CLAMP GEOMETRY - the positions' 1->2 spacings are 14 / 15 / 16 dB (the SMALLEST is what is reported), so no L inside the range gives a pick inside the 12 dB clamp; the note says it is the unit, not a failed check, with the spacing
+            const auto geom = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+                {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -44.0, "2": -30.0}},
+                {"norm": 0.5, "display": "b", "in_at_gr_dbfs": {"1": -39.0, "2": -24.0}},
+                {"norm": 0.8, "display": "c", "in_at_gr_dbfs": {"1": -34.0, "2": -18.0}}]}})json");
+            const auto tg = toneLevelFor (geom, 2.0);
+            check (! tg.ok && tg.clampGeometry && std::abs (tg.spacingMinDb - 14.0) < 1e-9 && tg.tried == 4 && tg.reason.contains ("CLAMP GEOMETRY") && tg.reason.contains ("at least 14.0 dB at every position") && tg.reason.contains ("not a failed check"),
+                   "tone T10: with 1->g spacing at least 14 dB at every position (14/15/16) no L passes the clamp (4 tried: the median and the three values); the reason names CLAMP GEOMETRY with the spacing, the unit's property, never a failed check (" + tg.reason + ")");
+            check (! toneLevelFor (prof, 6.0).ok && ! toneLevelFor (prof, 6.0).clampGeometry && toneLevelFor (prof, 6.0).reason.contains ("no position carries 6.0 dB"),
+                   "tone T10b: a level no position carries is not clamp geometry - the reason says no position carries it");
+            // T11: a unit whose spacing passes the clamp but whose values straddle the clamp at the median: the first by distance that passes is taken, and the count of tries is recorded
+            check (tl.tried == 1 && tg.tried == 4, "tone T11: the tries are recorded (1 when the median passes, every candidate when none does)");
         }
     }
     {
@@ -5882,6 +5924,15 @@ void testLoopOutcomes()
         const auto ow = outcomeForRecord (winRef);
         check (ow.state == "needs_licence" && ow.reason.contains ("window at the probe's load") && ow.reason.contains ("PACE [pid 9]") && ! ow.exportPending,
                "loop L19: a window at the probe's load in the batch is needs_licence (the window watch guards batch loads: a licence can vanish between scan and batch)");
+        // KNOWN LICENCE, NOT LOADED (L19b-L19d, ruled 3 Oct): the tone check (and anything else that loads) asks before loading.
+        const auto rowsK = juce::JSON::parse (R"json([{"product": "Tube-Tech CL 1B", "state": "needs_licence", "reason": "needs_licence: window at the probe's load (PACE [pid 3]); the export stands"}, {"product": "bx_opto", "state": "exported", "reason": "x"}])json");
+        const auto k1 = knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6 (s)", false), k2 = knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", false);
+        check (k1.contains ("known from the scan") && k1.contains ("PACE [pid 1]") && k1.contains ("not loaded") && k2.contains ("known from this folder's outcomes") && k2.contains ("PACE [pid 3]") && ! k2.contains ("the export stands"),
+               "loop L19b: a product the scan stopped, or one with a needs_licence row in this folder, is known to need a licence and is not loaded; the reason names its source (" + k1 + " / " + k2 + ")");
+        check (knownLicenceStop (stops, rowsK, "bx_opto", false).isEmpty() && knownLicenceStop (stops, rowsK, "ANA2", false).isEmpty(),
+               "loop L19c: an exported product and a hang-quarantined bundle are not known licence stops: they load");
+        check (knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", true).isEmpty() && knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6", true).isEmpty(),
+               "loop L19d: --retry-licence is the only way past a known licence stop");
         // ONE ROW PER PRODUCT (L20-L21, ruled 2 Oct evening): a bundle's products that are subjects get no bundle row (their own row
         // carries the state); the others get one row each, keyed by product, linked to the bundle; the same product named by two
         // bundles (AU + VST3) gets one row.

@@ -628,6 +628,47 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     return p;
 }
 
+// THE TONE-CHECK LEVEL PER g (ruled 3 Oct): a level the clamp refuses at OUR test L is not a level that failed - that is
+// our choice of L. For each g the test L is chosen by a stated rule: the MEDIAN of in_at_gr[g] across the positions that
+// carry g, then the carried values in order of distance from the median, each within the sweep's measured range, the
+// first at which the section 6.4 pick exists and passes the 12 dB clamp. Only if no L within the measured range gives a
+// valid pick is the level untestable - and the reason says so, with the unit's own 1->g spacing when that is why (a
+// soft unit whose 1 dB point sits 14 dB below its 6 dB point can never pass a 12 dB clamp at ANY L: clamp geometry, not
+// a failed check). The L used is recorded per level.
+struct ToneLevel { bool ok = false; double L = 0.0; Pick pick; juce::String rule, reason; int tried = 0; double spacingMinDb = 0.0; bool clampGeometry = false; };
+inline ToneLevel toneLevelFor (const juce::var& profile, double g)
+{
+    ToneLevel tl;
+    const auto curve = profile.getProperty ("amount", {}).getProperty ("curve", {});
+    const auto steps = profile.getProperty ("measured", {}).getProperty ("steps_dbfs", {});
+    const double lo = steps.size() > 0 ? (double) steps[0] : -63.01, hi = steps.size() > 1 ? (double) steps[1] : -3.01;
+    std::vector<double> vals; std::vector<double> spacing;
+    for (int i = 0; i < curve.size(); ++i)
+    {
+        if (auto v = inAtGr (curve[i], g)) { vals.push_back (*v); if (auto one = inAtGr (curve[i], 1.0)) spacing.push_back (*v - *one); }
+    }
+    if (vals.empty()) { tl.reason = "no position carries " + juce::String (g, 1) + " dB"; return tl; }
+    std::sort (vals.begin(), vals.end());
+    const double median = vals.size() % 2 == 1 ? vals[vals.size() / 2] : (vals[vals.size() / 2 - 1] + vals[vals.size() / 2]) / 2.0;
+    tl.spacingMinDb = spacing.empty() ? 0.0 : *std::min_element (spacing.begin(), spacing.end());
+    std::vector<double> order { median }; for (double v : vals) order.push_back (v);
+    std::stable_sort (order.begin() + 1, order.end(), [&] (double a, double b) { return std::abs (a - median) < std::abs (b - median); });
+    tl.rule = "L = the median of in_at_gr[" + juce::String (g, 1) + "] over the " + juce::String ((int) vals.size()) + " positions that carry it (" + juce::String (median, 2) + "), then those values by distance from it, within the measured range " + juce::String (lo, 2) + ".." + juce::String (hi, 2) + "; the first L whose section 6.4 pick passes the 12 dB clamp";
+    juce::String lastRefusal;
+    for (double L : order)
+    {
+        if (L < lo || L > hi) continue;
+        ++tl.tried;
+        auto pk = pickPosition (profile, L, g);
+        if (pk.ok) { tl.ok = true; tl.L = L; tl.pick = pk; return tl; }
+        lastRefusal = pk.refused;
+    }
+    tl.clampGeometry = ! spacing.empty() && tl.spacingMinDb > kPickClampDb;
+    tl.reason = "no L within the measured range gives a pick inside the " + juce::String (kPickClampDb, 0) + " dB clamp (" + juce::String (tl.tried) + " L tried; last: " + lastRefusal + ")"
+                + (tl.clampGeometry ? "; CLAMP GEOMETRY: this unit's 1->" + juce::String (g, 1) + " dB spacing is at least " + juce::String (tl.spacingMinDb, 1) + " dB at every position, so the pick's own 1 dB point is beyond the clamp at any L - the unit, not our L, and not a failed check" : juce::String());
+    return tl;
+}
+
 // THE DEEP LEVELS A PROFILE CARRIES (v1.7 section 8): every deep target with a numeric point on any position - each gets
 // its own tone check. A level that fails is NULL ACROSS ALL POSITIONS (the whole level comes out), and the profile's
 // pass is the g = 2 check alone: a failed deep level never fails the profile.
@@ -648,6 +689,16 @@ inline void nullLevelAcrossPositions (juce::var& profile, int t)
     for (int i = 0; i < curve.size(); ++i) if (auto* g = curve[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) g->setProperty (juce::String (t), juce::var());
 }
 inline int toneExitCode (bool mainPass, int /*deepFailures*/) { return mainPass ? 0 : 1; }   // the deep levels never decide it
+
+// SECTION 11, VERSION MATCHING: a profile or a trace made at one version is not used for another. The installed
+// AudioUnit's version must equal the record's; otherwise the tone check refuses, naming both.
+inline juce::String versionMismatch (const juce::String& recordVersion, const juce::String& installedVersion)
+{
+    // A GUARD REFUSES; IT NEVER GUESSES: an unknown version on either side cannot be verified, so it refuses too.
+    if (recordVersion.trim().isEmpty() || installedVersion.trim().isEmpty())
+        return juce::String ("section 11: the ") + (recordVersion.trim().isEmpty() ? "record's" : "installed") + " version is unknown, so the record cannot be matched to the installed plugin";
+    return recordVersion.trim() == installedVersion.trim() ? juce::String() : "installed version " + installedVersion + " differs from the record's " + recordVersion + " (section 11: a profile is not used across versions)";
+}
 
 // THE TONE CHECK'S WRITES (2 Oct, ruled): exactly what the server will write - engage[], neutral[] and ratio.curve[0]
 // from the exported profile, by control NAME resolved through the record's controls - nothing from the record's own

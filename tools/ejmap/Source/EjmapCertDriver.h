@@ -2332,6 +2332,9 @@ inline int runCertTuner (const SweepOptions& opt);   // defined below (tuner cer
 // no row yet (a batch stopped and resumed, or records from an earlier binary), so a second invocation completes what
 // the first left and changes nothing else.
 inline constexpr int kToneWindowExit = 5;    // the probe showed a window during the tone check: needs_licence, not a failed check
+inline constexpr int kToneLicenceKnownExit = 6;   // the session already knew the product needs a licence that is not present: not loaded
+inline constexpr int kToneVersionExit = 7;        // section 11: the installed version is not the record's (or is unknown): not loaded
+inline constexpr double kToneLevelByRule = -999.0; // Lrms sentinel: the test L per level comes from profile::toneLevelFor
 inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, const juce::String& candidate);
 inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile, const juce::File& recordFile, double Lrms, double g, const juce::String& candidate);
 inline int runSweepCensus (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace, bool retryRefused, bool retryAll);
@@ -2390,7 +2393,7 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
             profilePath = profileFile.getFullPathName();
             const auto toneFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
             toneFile.deleteFile();                                                             // a result file is this call's or nobody's
-            const int trc = runToneCheck (opt, profileFile, recordFile, -18.0, 2.0, pick);
+            const int trc = runToneCheck (opt, profileFile, recordFile, kToneLevelByRule, 2.0, pick);
             // THE TONE CHECK RAN when it wrote its result; exit 1 is a FAILED check (a result on the profile), not a check
             // that could not run (exits 2-4 write nothing). Lindell 254E, 11:17: a failed check was read as "could not run".
             if (toneFile.existsAsFile())
@@ -2400,6 +2403,17 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
                 if (auto* po = prof.getDynamicObject()) { po->setProperty ("tone_check", juce::JSON::parse (toneFile.loadFileAsString())); profileFile.replaceWithText (juce::JSON::toString (prof) + "\n", false, false, "\n"); }
             }
             else toneWhy = "tone check exit " + juce::String (trc) + (toneFile.existsAsFile() ? juce::String() : " (no result file)");
+            if (trc == kToneVersionExit)
+            {
+                // SECTION 11: a record from another version (an imported trace set, or a plugin updated since the sweep) is never tone-checked against this install
+                loop::Outcome w; w.state = "needs_review"; w.reason = "section 11: the installed version is not the record's " + record.getProperty ("version", "").toString() + " (or is unknown) - the record is not this install's; not loaded, no tone check, the profile is not used across versions";
+                return loop::makeRow (identity, product, category, w, recordFile.getFullPathName(), profilePath, {}, nowStamp());
+            }
+            if (trc == kToneLicenceKnownExit)
+            {
+                loop::Outcome w; w.state = "needs_licence"; w.reason = "needs a licence the session knows is not present (the scan's stop or an earlier window): not loaded for the tone check; the export stands; --retry-licence re-checks it";
+                return loop::makeRow (identity, product, category, w, recordFile.getFullPathName(), profilePath, {}, nowStamp());
+            }
             if (trc == kToneWindowExit)
             {
                 // A WINDOW DURING THE TONE CHECK is the same evidence as at the scan or the sweep: needs_licence, not needs_review
@@ -2449,22 +2463,24 @@ inline int runToneCheckAll (SweepOptions opt)
     const auto scanStops = quarantinedBundles (opt.ledger);
     std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << std::endl;
     int done = 0, skipped = 0, licence = 0, failed = 0, noTraces = 0;
-    juce::Array<juce::var> rows; if (const auto* a = outcomes.getArray()) rows = *a;
-    for (const auto& row : rows)
+    // EVERY RECORD IN THE FOLDER'S fixtures/ that is a certified profile (or Rule 1-decided), by its own file - never a path
+    // from a row, which may have been written on another Mac (a zipped-back folder); imported traces (CL 1B, section 11) count.
+    for (const auto& recordFile : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
-        if (row.getProperty ("state", "").toString() != "exported") continue;
-        const auto product = row.getProperty ("product", "").toString();
+        if (recordFile.getFileName().endsWith (".defaults.json")) continue;
+        const auto rec0 = juce::JSON::parse (recordFile.loadFileAsString());
+        const auto product = rec0.getProperty ("product", "").toString();
         if (! opt.slice.isEmpty() && ! opt.slice.contains (product)) continue;
-        const juce::File recordFile (row.getProperty ("record", "").toString().replace ("~", juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName()));
-        const juce::File profileFile (row.getProperty ("profile", "").toString().replace ("~", juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName()));
-        if (! recordFile.existsAsFile()) { std::cout << "  " << product << ": record missing (" << recordFile.getFullPathName() << ")" << std::endl; continue; }
+        if (! loop::outcomeForRecord (rec0).exportPending && ! rec0.getProperty ("ruleDecided", {}).isObject()) continue;   // not a certified profile: nothing to tone-check
+        const auto stem0 = juce::File::createLegalFileName (product).replaceCharacter (' ', '_') + "_" + rec0.getProperty ("version", "").toString();
+        const auto profileFile = opt.out.getChildFile ("profiles").getChildFile (stem0 + ".json");
         const auto tcFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
         const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
-        if (! opt.retryLicence && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels")) { ++skipped; continue; }   // RESUME
+        if (tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_rule")) { ++skipped; continue; }   // RESUME (a needs_licence product has no result file, so --retry-licence reaches exactly that set)
         if (! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
         std::cout << "\n=== tone checks: " << product << std::endl;
         // 1. RE-DERIVE from the traces (the deep points), carrying over what the traces do not hold
-        const auto old = juce::JSON::parse (recordFile.loadFileAsString());
+        const auto old = rec0;
         const auto stem = recordFile.getFileNameWithoutExtension();
         const auto processesJson = opt.out.getChildFile (stem + ".sweep.processes.json"), rawDir = opt.out.getChildFile ("raw");
         if (processesJson.existsAsFile() && rawDir.isDirectory())
@@ -2480,7 +2496,7 @@ inline int runToneCheckAll (SweepOptions opt)
         }
         else { ++noTraces; std::cout << "  no traces for this record (" << processesJson.getFileName() << "): the existing points are used, no deep points can be derived" << std::endl; }
         // 2. RE-EXPORT and 3. the tone checks, through the batch's own finish step (detector kept, pick by Rule 1 where decided)
-        const auto newRow = finishRecord (opt, recordFile, row.getProperty ("category", "compressor").toString());
+        const auto newRow = finishRecord (opt, recordFile, rec0.getProperty ("category", "compressor").toString());
         outcomes = loop::mergeRow (outcomes, newRow); writeOutcomes();
         const auto st = newRow.getProperty ("state", "").toString();
         std::cout << "  -> " << st << ": " << newRow.getProperty ("reason", "").toString() << std::endl;
@@ -2767,6 +2783,12 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("TONE: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
     const auto& desc = hits[0].desc;
+    // SECTION 11: the installed version must be the record's
+    if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) { say ("TONE: " + product + " - " + vm); return kToneVersionExit; }
+    // DO NOT LOAD A PRODUCT THE SESSION KNOWS NEEDS A LICENCE THAT IS NOT PRESENT (ruled 3 Oct): the scan's licence stops
+    // in this ledger, or a needs_licence row in this cert folder; --retry-licence is the only way past.
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), product, opt.retryLicence); known.isNotEmpty())
+    { say ("TONE: " + product + " - " + known); return kToneLicenceKnownExit; }
     // THE WRITES (2 Oct): engage + neutral + ratio, every one from the exported profile, resolved to indices through the
     // record's controls (profile::toneWrites, pinned); then the section 6 pick. The check rehearses the server's writes.
     juce::StringArray sets; juce::Array<juce::var> writes; juce::String ratioNote;
@@ -2776,22 +2798,31 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (record.getProperty ("pickedCandidate", {}).isObject())
     { for (const auto& c : plan.candidates) if (c.index == (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) plan = plan.forCandidate (c); plan.candidates.clear(); }
     if (plan.thr < 0) { say ("TONE: the record has several threshold candidates; pass --candidate NAME"); return 4; }
-    const double Lpeak = Lrms + profile::kPeakToSineRmsDb;
     // the whole reference ladder below L, quiet to loud, so the picked position gets the same reference rule as the sweep
     juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
 
-    // ONE LEVEL (v1.7 section 8): the pick at g, the writes, one fresh process at L, the GR against g within 0.5 dB.
-    struct LevelResult { double g = 0; bool ran = false, pass = false, quietOk = false, window = false; std::optional<double> gr; profile::Pick pick; juce::String why; };
+    // ONE LEVEL (v1.7 section 8, L per level ruled 3 Oct): the test L for this g by profile::toneLevelFor (or the caller's
+    // override), the pick there, the writes, one fresh process at L, the GR against the pick's expected g within 0.5 dB.
+    struct LevelResult { double g = 0, Lrms = 0, Lpeak = 0; bool ran = false, pass = false, quietOk = false, window = false, noValidL = false, clampGeometry = false; std::optional<double> gr; profile::Pick pick; juce::String why, rule; double spacingMinDb = 0; };
     auto checkAt = [&] (double gg, const juce::String& tag) -> LevelResult
     {
         LevelResult lr; lr.g = gg;
-        lr.pick = profile::pickPosition (profile, Lrms, gg);
+        if (Lrms > kToneLevelByRule + 1.0) { lr.Lrms = Lrms; lr.pick = profile::pickPosition (profile, Lrms, gg); lr.rule = "L given by the caller (" + juce::String (Lrms, 2) + ")"; }
+        else
+        {
+            const auto tl = profile::toneLevelFor (profile, gg);
+            lr.rule = tl.rule; lr.spacingMinDb = tl.spacingMinDb;
+            if (! tl.ok) { lr.noValidL = true; lr.clampGeometry = tl.clampGeometry; lr.why = tl.reason; say ("TONE: " + product + " - " + juce::String (gg, 1) + " dB: " + lr.why); return lr; }
+            lr.Lrms = tl.L; lr.pick = tl.pick;
+        }
+        lr.Lpeak = lr.Lrms + profile::kPeakToSineRmsDb;
+        const double Lpeak = lr.Lpeak;
         if (! lr.pick.ok) { lr.why = "section 6 picks nothing at " + juce::String (gg, 1) + " dB: " + lr.pick.refused; say ("TONE: " + product + " - " + lr.why); return lr; }
         juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId),
                                  "--sweep", "thr=" + juce::String (plan.thr), "norms=" + juce::String (lr.pick.norm, 6),
                                  "levels=" + toneLevels + juce::String (Lpeak, 4), "hz=997", "hold=2.5", "discard=2.2", "win=0.3", "ref=0", "moving_db=0.1", "reset=0" };
         if (! sets.isEmpty()) args.add ("set=" + sets.joinIntoString (","));
-        say ("TONE: " + product + " - L " + juce::String (Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (gg, 1)
+        say ("TONE: " + product + " - L " + juce::String (lr.Lrms, 2) + " dBFS RMS (" + juce::String (Lpeak, 2) + " peak), g " + juce::String (gg, 1)
              + "; section 6 picks norm " + juce::String (lr.pick.norm, 4) + (lr.pick.i1 >= 0 ? " between points " + juce::String (lr.pick.i0) + " and " + juce::String (lr.pick.i1) : " at point " + juce::String (lr.pick.i0))
              + " (in_at_gr at g: " + juce::String (lr.pick.inAtG0, 2) + (lr.pick.i1 >= 0 ? " / " + juce::String (lr.pick.inAtG1, 2) : juce::String()) + "; pick's 1 dB point " + juce::String (lr.pick.pickOneDb, 2) + ")"
              + (lr.pick.note.isNotEmpty() ? "; " + lr.pick.note : juce::String()) + "; " + ratioNote);
@@ -2819,7 +2850,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (main.window) return kToneWindowExit;
     auto* o = new juce::DynamicObject();
     o->setProperty ("product", product); o->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", ""));
-    o->setProperty ("L_rms_dbfs", Lrms); o->setProperty ("L_peak_dbfs", Lpeak); o->setProperty ("g_db", g);
+    o->setProperty ("L_rms_dbfs", main.Lrms); o->setProperty ("L_peak_dbfs", main.Lpeak); o->setProperty ("g_db", g); o->setProperty ("L_rule", main.rule);
     o->setProperty ("pick", main.pick.ok ? pickVar (main.pick) : juce::var());
     o->setProperty ("writes", writes);
     o->setProperty ("writes_source", "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick");
@@ -2837,13 +2868,17 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         const auto lr = checkAt ((double) t, ".g" + juce::String (t));
         if (lr.window) return kToneWindowExit;
         auto* dl = new juce::DynamicObject(); dl->setProperty ("g_db", (double) t); dl->setProperty ("ran", lr.ran); dl->setProperty ("gr_measured_db", lr.gr ? juce::var (std::round (*lr.gr * 100.0) / 100.0) : juce::var());
+        dl->setProperty ("L_rms_dbfs", lr.ran || lr.pick.ok ? juce::var (lr.Lrms) : juce::var()); dl->setProperty ("L_rule", lr.rule);
         dl->setProperty ("quiet_check_ok", lr.quietOk); dl->setProperty ("pass_within_0_5_db", lr.pass); dl->setProperty ("pick", lr.pick.ok ? pickVar (lr.pick) : juce::var()); if (! lr.ran) dl->setProperty ("why_not_run", lr.why);
+        // WHY A LEVEL IS NULLED (ruled 3 Oct): a failed check at the recorded L, or no valid L inside the clamp (clamp geometry named)
+        dl->setProperty ("null_reason", lr.pass ? juce::var() : lr.ran ? juce::var ("failed_check_at_L") : lr.noValidL ? juce::var (lr.clampGeometry ? "no_valid_L_clamp_geometry" : "no_valid_L") : juce::var ("could_not_run"));
+        if (lr.spacingMinDb > 0.0) dl->setProperty ("spacing_1_to_g_min_db", std::round (lr.spacingMinDb * 10.0) / 10.0);
         deepArr.add (juce::var (dl));
         if (! lr.pass)
         {
             nulled.add ((double) t);
             profile::nullLevelAcrossPositions (profile, t);
-            say ("TONE: " + product + " - the " + juce::String (t) + " dB level " + (lr.ran ? "FAILED its tone check" : "could not be checked") + ": null across all positions (the profile stands)");
+            say ("TONE: " + product + " - the " + juce::String (t) + " dB level " + (lr.ran ? "FAILED its tone check at L " + juce::String (lr.Lrms, 2) : lr.noValidL ? (lr.clampGeometry ? "has no L inside the clamp (1->" + juce::String (t) + " spacing at least " + juce::String (lr.spacingMinDb, 1) + " dB: clamp geometry)" : "has no valid L in the measured range") : "could not be checked") + ": null across all positions (the profile stands)");
         }
     }
     o->setProperty ("deep_levels", deepArr); o->setProperty ("deep_levels_nulled", nulled);
@@ -2851,8 +2886,10 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     {
         if (auto* po = profile.getDynamicObject())
         {
-            juce::StringArray nl; for (const auto& n : nulled) nl.add (juce::String ((double) n, 0) + " dB");
-            po->setProperty ("notes", profile.getProperty ("notes", "").toString() + " deep levels nulled across all positions by the section 8 tone check (v1.7): " + nl.joinIntoString (", ") + ";");
+            juce::StringArray nl;
+            for (int k = 0; k < deepArr.size(); ++k) if (! (bool) deepArr[k].getProperty ("pass_within_0_5_db", false))
+                nl.add (juce::String ((double) deepArr[k].getProperty ("g_db", 0.0), 0) + " dB (" + deepArr[k].getProperty ("null_reason", "").toString() + (deepArr[k].hasProperty ("spacing_1_to_g_min_db") && deepArr[k].getProperty ("null_reason", "").toString().contains ("geometry") ? ", 1->g spacing " + juce::String ((double) deepArr[k].getProperty ("spacing_1_to_g_min_db", 0.0), 1) + " dB" : juce::String()) + ")");
+            po->setProperty ("notes", profile.getProperty ("notes", "").toString() + " deep levels nulled across all positions by the section 8 tone check (v1.7, L per level by rule): " + nl.joinIntoString (", ") + ";");
             profileFile.replaceWithText (juce::JSON::toString (profile) + "\n", false, false, "\n");
         }
     }
@@ -2888,6 +2925,10 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     std::vector<InstalledRecord> hits;
     for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
     if (hits.size() != 1) { say ("DETECTOR: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " component(s)"); return 2; }
+    // the same two guards as the tone check, before any load: section 11 and the known licence (ruled 3 Oct)
+    if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), hits[0].desc.version); vm.isNotEmpty()) { say ("DETECTOR: " + product + " - " + vm); return kToneVersionExit; }
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), product, opt.retryLicence); known.isNotEmpty())
+    { say ("DETECTOR: " + product + " - " + known); return kToneLicenceKnownExit; }
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("DETECTOR: no plan: " + plan.why); return 4; }
     if (candIndex >= 0) { for (const auto& c : plan.candidates) if (c.index == candIndex) plan = plan.forCandidate (c); plan.candidates.clear(); }

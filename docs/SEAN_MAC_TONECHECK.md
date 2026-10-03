@@ -1,4 +1,4 @@
-# The follow-up on Sean's Mac: deep points and the v1.7 tone checks, no sweeps (2 Oct 2026)
+# The follow-up on Sean's Mac: deep points and the v1.7 tone checks, no sweeps (2 Oct 2026; L per level, licence skip and CL 1B import 3 Oct)
 
 After the batch has run with the build from `36397676`, the deep points (4/5/6 dB, spec v1.7 §3) and
 the amended pick and tone check (§6.4, §8) need a newer build — but **no plugin needs re-sweeping**:
@@ -21,12 +21,53 @@ pick, then one check per deep level the profile carries (4, 5, 6), each to 0.5 d
 is nulled across all positions (the profile stands); the result is embedded as `tone_check` with
 `deep_levels[]` and `deep_levels_nulled[]`, and the row in `cert/outcomes.json` is rewritten.
 
-- **Resumable:** run the same command again; a profile whose tone check already carries `spec: v1.7`
-  and its deep levels is skipped.
-- **Licence:** a product the scan stopped is not loaded; a window during a check makes the row
-  `needs_licence` (the export stands); `--retry-licence` re-checks those when the licence is back.
+**The test level per level (3 Oct).** Each level g (2, 4, 5, 6) is checked at its own L, not at a fixed
+−18: L is the median of `in_at_gr[g]` over the positions that carry g, then those values by distance
+from the median, within the sweep's measured range; the first L whose §6.4 pick passes the 12 dB clamp
+is used. Every level records the L it was tested at (`L_rms_dbfs`) and the rule (`L_rule`). A level is
+nulled across all positions only for one of two named reasons (`null_reason`): `failed_check_at_L` (the
+GR missed by more than 0.5 dB at the recorded L) or `no_valid_L_clamp_geometry` (the unit's own 1→g
+spacing is at least 12 dB at every position — `spacing_1_to_g_min_db` says how much — so no L inside
+the clamp exists; the unit's property, not a failed check). Lindell SBC: 4 and 5 dB come back PASS at
+−15.2 / −13.7 dBFS (they were nulled at the fixed −18); its 6 dB is clamp geometry at 14.1 dB.
+
+- **Resumable:** run the same command again; a profile whose tone check already carries `spec: v1.7`,
+  its deep levels and `L_rule` is skipped; `--retry-licence` reaches only the `needs_licence` set (they
+  have no result file).
+- **Licence — nothing known to need one is loaded (3 Oct).** A product the scan stopped, or one with a
+  `needs_licence` row in this folder, is not loaded at all (the row says *known from the scan* / *known
+  from this folder's outcomes*); a window during a check makes the row `needs_licence` (the export
+  stands). `--retry-licence` is the only way past, when the licence is back.
+- **Section 11:** the installed version must be the record's; a record from another version (or an
+  unknown version) is `needs_review` with the §11 reason and is never loaded.
 - **No sweeps, nothing sent.** A record without traces (none expected from the batch) is tone-checked on
   its existing points and says so.
+
+## Tube-Tech CL 1B
+
+**If tonight's batch certifies CL 1B on Sean's Mac, his fresh record is the one that is used** — the
+follow-up re-derives and tone-checks it like every other exported product, and nothing from this repo
+is involved.
+
+If it does not (the iLok was away at his scan, so CL 1B is `needs_licence`; or the sweep refused), the
+committed traces from here can be brought into his tone-check folder — the record, its process list and
+the 62 raw captures, 650 KB — and the follow-up then re-derives and tone-checks CL 1B on his Mac from
+them, with the iLok present:
+
+```
+# on the building Mac, from the repo:
+tools/ejmap/packaging/export_traces.sh AudioUnit_517f614e_2.5.62     tools/ejmap/cert-traces/2026-10-02-batch10-profile/refined ~/Desktop/cl1b-traces.zip
+# on Sean's Mac, before the follow-up command (-n: never overwrites his own files):
+cd ~/Library/ejmap && unzip -n ~/Desktop/cl1b-traces.zip
+"$BIN" --cert-tonecheck-all --retry-licence 2>&1 | tee -a ~/Library/ejmap/cert/tonecheck.log
+```
+
+`--retry-licence` is needed only because his scan stopped CL 1B (a known licence stop is otherwise not
+loaded); with the iLok in, the check runs. **The §11 guard is in the binary:** the traces are of CL 1B
+**2.5.62**; if his installed CL 1B is any other version the row is `needs_review` with *installed
+version X differs from the record's 2.5.62 (section 11)* and nothing is loaded — rehearsed here on an
+edited record. If CL 1B is not installed at all, the log says it resolves to no component and the row is `needs_review`. The imported
+record is keyed by its identity, so his own CL 1B record (if any) is never overwritten (`unzip -n`).
 
 ## About how long
 
