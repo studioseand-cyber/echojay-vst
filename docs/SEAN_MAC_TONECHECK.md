@@ -6,14 +6,14 @@ the traces the batch kept in `~/Library/ejmap/cert` already hold every level at 
 mode re-derives each exported record from its traces, re-exports the profile with the deep points, and
 loads each certified plugin only for the tone checks. It is resumable and uses the same window watch.
 
-**The follow-up build is commit `0834ed76`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
-step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8/v1.9:
-the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
+**The follow-up build is commit `dcf7fb73`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8/v1.9/v1.10:
+targets 1..12 with the clamp to 30 and the saturation note, the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
 out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
-Rehearsed here as a packaged app (3 Oct 12:26, cdhash of the probe 7297f378…): pre-flight finds the probe beside the
-executable; CL 1B's dry run reads −14.45; the four rehearsal units re-check 16 of 16 levels PASS with no `--probe`.
+Rehearsed here as a packaged app (3 Oct, evening): pre-flight finds the probe beside the executable; CL 1B's dry run
+reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 40 levels PASS with no `--probe`.
 
-## What Sean runs (after the follow-up `ejmap.app` is built from `0834ed76` and packaged the same way)
+## What Sean runs (after the follow-up `ejmap.app` is built from `dcf7fb73` and packaged the same way)
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
@@ -82,8 +82,8 @@ record is keyed by its identity, so his own CL 1B record (if any) is never overw
 
 Measured here on 2 Oct on four exported products (traces from the rehearsal): **17 s in all** —
 re-derivation, export and four probe processes each (g = 2 plus 4/5/6; the probe renders offline, so a
-nine-hold tone process is about a second). Call it **5–10 s per exported product**: a run that exported
-60 products is about ten minutes. It can be stopped and resumed.
+nine-hold tone process is about a second). Call it **10–15 s per exported product** (ten tone processes each since v1.10): a run that
+exported 60 products is about fifteen minutes. It can be stopped and resumed.
 
 ## What he zips back
 
