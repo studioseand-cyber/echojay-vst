@@ -394,3 +394,12 @@ the reason from the record (not reached by −3.01; past at the quietest level; 
 values; the all-null position; the tone check's own two). One question: §3 says `notes` is a list of plain strings, your
 example still shows `""`, and our exporter writes one `"; "`-joined string. Which does your validator accept? Ours flips
 with one constant either way.
+
+## 3 Oct: v1.9 received — built against it
+
+pickClampDb matches §6.4 step 4 to the word. `notes` is now a list (one line each). A 4/5/6 point out of rising order
+(within its position, or across positions at its level) is nulled before export with a `breaks monotonic order` line
+naming the position and its measured value, so your load-time repair should find nothing from this build; a shallow
+point is never touched. §6.3 step 1's borrow-the-point rule is in the pick replica: a 3.5 dB ask on a setting whose 4 dB
+point is null keeps the setting's own 3 dB measurement and borrows only the 4 dB point (pinned with your 0.75 dB figure
+reproduced). Tone checks use whole-number g, so no result changed — re-run and confirmed.

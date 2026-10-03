@@ -1674,7 +1674,7 @@ other "stepped" hits are switches (Comp Off / Comp In / Comp/Limiter / Comp Bypa
 candidates since Rule 1. So the old expectation never produced a verdict here; the new one is pinned for the first stepped
 unit that does export.
 
-## 29. The clamp for deep asks (v1.9, Sean's ruling 3 Oct — wording to be checked against v1.9 when it arrives)
+## 29. The clamp for deep asks (v1.9 §6.4 step 4, Sean's ruling 3 Oct — wording CHECKED against v1.9 on arrival: it matches)
 
 `profile::pickClampDb (g)`: 12 dB up to g = 3, then 12 + 2 × (g − 3), linear — 13 at 3.5, 14 at 4, 16 at 5, 18 at 6. The
 comparison is unchanged (the pick's own interpolated 1 dB point against L); only the limit widens, and only above 3, so a
@@ -1726,3 +1726,38 @@ export the server will reject, flagged by us first. It has not happened on any r
 both flags true). Two ways to close it if Kathy wants: null the offending deep point (and account for it — a sixth reason
 line, "breaks monotonic order") so the shallow profile stands, or refuse the export as `needs_review`. The first matches
 v1.8's "accepted with nulls" spirit for deep points; a shallow (1/2/3) break should stay a refusal.
+
+## 31. v1.9 (copied to docs/COMP_PROFILE_SPEC_v1_9.md, 3 Oct): notes as a list; out-of-order deep points nulled before export; the borrow-the-point rule
+
+**pickClampDb against v1.9 §6.4 step 4:** "12 dB for an ask up to 3 dB, and then 12 + 2 × (g − 3): 14 dB at 4, 16 at 5,
+18 at 6, interpolated for a fractional ask … the refusal names the depth that applied" — matches `pickClampDb` and the
+refusal text exactly; no change, v1.9 cited in the code.
+
+**Notes as a list (v1.9 §3, Sean: his validator accepts either).** `kNotesAsList = true`: `notes` is a list of plain strings,
+one line each (the levels line split from "tone 997 Hz" so line 0 carries no "; "); the driver appends through `notesAppend`
+in the same shape. Pin X32; mutant (back to one string) red. Live: the five profiles carry 11–14 lines.
+
+**A deep point out of order is nulled before export (v1.9 §3 "nulled at load, not rejected"; Kathy's ruling: within its
+position, or across positions at its level).** Within a position, a 4/5/6 point that does not rise above the point below
+it is null. Across positions at a deep level, walking in the 1 dB direction, a point that does not continue from the last
+kept point is null — the point that broke, deterministic (an LIS was tried first and chose by tie on Sean-shaped data; the
+walk is the server's own within-position reading applied across). Each nulled point is on the sixth account line, `deep
+null <g> dB - breaks monotonic order: positions <norm> (measured <value>)`; the account stays exact (X35) and the exported
+monotonic flags come out true, since the server would null the same points. **A 1/2/3 point is never touched here** (X36):
+unchanged — the derivation's `nonmonotonic` refusal is the shallow gate; a shallow in_at_gr order break that survives it
+(never seen) is still exported with the quality flag false, as before. Pins X33–X36; mutants red: within not nulled,
+across not nulled, a shallow break nulled too, the sixth line missing. Across the five real profiles: 0 breaks (flags
+true/true before and after). v1.9 also nulls a point *above the sweep ceiling* at load; our derivation cannot produce one
+(the sweep tops at −3.01), so there is no exporter rule for it.
+
+**The borrow-the-point rule (v1.9 §6.3 step 1, "v1.8, clarified").** What the replica did before: `valuesAt(g)` read the
+fractional value per position, so a position with a null deep bound had no 3.5 value, and the fill pass then interpolated
+**the 3.5 value itself** across the norm axis from the neighbours — the wholesale re-read v1.9 forbids, discarding the
+position's own 3 dB measurement. Now the fill borrows the missing POINT (the bound level) from the positions either side
+and interpolates between the position's own measured lower point and the borrowed one; a whole-number ask is unchanged
+(the point is the level); a SHALLOW null bound is never borrowed (the position cannot serve the ask). Pins P7b (the own-3
+answer lands exactly on the position; the wholesale answer sits 0.75 dB away — Sean's figure, reproduced on the test
+curve), P7c (the wholesale value picks a different setting), P7d (a shallow null bound is skipped); mutants red: the
+wholesale re-read, a shallow bound borrowed. **Tone checks use whole-number g, so no result changes — confirmed live:**
+tc17's four re-run under this build against the v1.9-clamp run (tc19): identical L and pass on all 16 levels, GR identical
+to 0.00 dB. Traces `cert-traces/2026-10-03-tonelevel/tc21-v19-list-notes/`.

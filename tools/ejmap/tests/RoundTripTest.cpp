@@ -5342,8 +5342,8 @@ void testProfileExport()
         check (Q.isObject() && std::abs ((double) Q.getProperty ("point_error_db", 9.0) - 0.12) < 1e-6 && Q.getProperty ("method", "") == "hold 2.5 s vs 5 s"
                  && (bool) Q.getProperty ("monotonic_within_positions", false) && (bool) Q.getProperty ("monotonic_across_positions", false),
                "export X19 (v1.4): quality carries point_error_db from the hold-doubled repeat, its method, and the monotonic flags");
-        check (P.getProperty ("notes", "").toString().contains ("guards passed: tone_frac") && P.getProperty ("notes", "").toString().contains ("quiet-reference 6 dB")
-                 && P.getProperty ("notes", "").toString().contains ("ascending-only"),
+        check (notesText (P.getProperty ("notes", {})).contains ("guards passed: tone_frac") && notesText (P.getProperty ("notes", {})).contains ("quiet-reference 6 dB")
+                 && notesText (P.getProperty ("notes", {})).contains ("ascending-only"),
                "export X20 (v1.4): notes list the guards that passed - tone_frac, level dependence, quiet-reference 6 dB check, ascending-only");
         check (P.getProperty ("fit", {}).getProperty ("measured_point_quality", {}).isObject()
                  && (int) P.getProperty ("fit", {}).getProperty ("measured_point_quality", {}).getProperty ("points_with_1db", 0) == 16,
@@ -5367,7 +5367,7 @@ void testProfileExport()
         auto* red = soft.getProperty ("thresholdSweep", {}).getProperty ("reduction_db", {}).getDynamicObject();
         for (auto& prop : red->getProperties()) { auto col = prop.value; for (int i = 0; i < col.size(); ++i) col[i] = std::sqrt (juce::jmax (0.0, (double) col[i])) * 3.0; red->setProperty (prop.name, col); }
         const auto sx = exportCompProfile (soft);
-        check (sx.ok && sx.fitMaxErrorDb > 1.5 && sx.profile.getProperty ("notes", "").toString().contains ("NOT a gate"),
+        check (sx.ok && sx.fitMaxErrorDb > 1.5 && notesText (sx.profile.getProperty ("notes", {})).contains ("NOT a gate"),
                "export X18 (v1.2): a record his v1 model cannot fit (max error " + juce::String (sx.fitMaxErrorDb, 2) + " dB) still exports - fit is reported, never a gate");
     }
     check (! exportCompProfile (record (6, true, false, "", "certified")).ok, "export X9: fewer than 9 curve points refuses");
@@ -5389,7 +5389,7 @@ void testProfileExport()
                  && std::abs ((double) dc[1].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0) - ((double) dc[1].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", 0.0) + 1.4)) < 0.01,
                "export X25: every point carries keys 1..6, numbers converted like the shallow ones, null where not reached (" + ed.refused + ")");
         check (dc[0].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && dc[0].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && dc[0].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", 0.0).isVoid()
-                 && ed.profile.getProperty ("notes", "").toString().contains ("deep points nulled on positions with no shallow point: position 0"),
+                 && notesText (ed.profile.getProperty ("notes", {})).contains ("deep points nulled on positions with no shallow point: position 0"),
                "export X26: a position with no 1/2/3 value exports its deep points as null too - present, never dropped, and said in notes");
         check (std::abs ((double) ed.profile.getProperty ("quality", {}).getProperty ("deep_point_error_db", -1.0) - 0.4) < 1e-9 && (bool) ed.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", false),
                "export X27: deep_point_error_db is written from the record and the monotonic check runs over 1..6 (a rising 4/5 keeps it true)");
@@ -5439,6 +5439,37 @@ void testProfileExport()
             const auto ew = exportCompProfile (words); const auto wt = notesText (ew.profile.getProperty ("notes", {}));
             check (ew.ok && nullAccount (ew.profile, why) && wt.contains ("deep null 4 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000") && wt.contains ("deep null 4 dB - past at the quietest level (all-null position): positions 0.0667 (measured -23.01 - withheld: no shallow point)"),
                    "export X31: an all-null position is filed under the record's word at 1 dB - not reached (position 0) or past at the quietest (position 1, its measured deep points withheld) (" + why + " | " + wt.fromFirstOccurrenceOf ("deep null", false, false).upToFirstOccurrenceOf ("deep null 5", false, false) + ")");
+            // THE NOTES SHAPE (v1.9 section 3, X32): a list of plain strings, one line each, and the driver's append keeps the shape
+            {
+                const auto nv = er.profile.getProperty ("notes", {});
+                const auto appended = notesAppend (nv, "deep null 6 dB - tone check failed (GR 5.2 against 6.0 expected at L -14.0 dBFS RMS): positions 0.5000");
+                check (kNotesAsList && nv.isArray() && nv.size() > 5 && nv[0].isString() && nv[0].toString().startsWith ("levels converted") && ! nv[0].toString().contains (";")
+                         && appended.isArray() && appended.size() == nv.size() + 1 && appended[appended.size() - 1].toString().startsWith ("deep null 6 dB - tone check failed"),
+                       "export X32: notes is a list of plain strings (kNotesAsList), one line each with no '; ' inside, and notesAppend adds a line in the same shape (" + juce::String (nv.size()) + " lines)");
+            }
+            // A DEEP POINT OUT OF ORDER IS NULLED BEFORE EXPORT (v1.9; ruled 3 Oct, X33-X36): within its position, or across positions at its level;
+            // the sixth account line names it; the account stays exact; a 1/2/3 break is untouched (the quality flag, as before)
+            {
+                auto mono = juce::JSON::parse (juce::JSON::toString (deepRec)); auto im = mono.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
+                const double v3 = (double) im[6].getProperty ("3", {});
+                im[6].getDynamicObject()->setProperty ("5", v3 + 1.0);                                   // position 6: its 5 dB point below its 4 dB point (v3 + 1.4): within-position break
+                im[9].getDynamicObject()->setProperty ("5", (double) im[9].getProperty ("3", {}) + 5.0); // position 9's 5 dB point jumps above its 4 (within order kept) and above position 10's 5: walking the 1 dB direction, position 10's 5 is the point that fails to continue - an ACROSS-only break at 5 dB
+                const auto em = exportCompProfile (mono); const auto mc = em.profile.getProperty ("amount", {}).getProperty ("curve", {}); const auto mt = notesText (em.profile.getProperty ("notes", {}));
+                check (em.ok && mc[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && ! mc[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && ! mc[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", 0.0).isVoid()
+                         && mt.contains ("deep null 5 dB - breaks monotonic order: positions " + juce::String ((double) mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[6], 4)),
+                       "export X33: a 5 dB point that does not rise above its position's 4 dB point is null before export (the 4 and 3 stay) and is on the 'breaks monotonic order' line");
+                check (mc[10].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && ! mc[10].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0).isVoid() && ! mc[9].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid() && ! mc[11].getProperty ("in_at_gr_dbfs", {}).getProperty ("5", 0.0).isVoid()
+                         && mt.contains ("deep null 5 dB - breaks monotonic order: positions " + juce::String ((double) mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[6], 4) + " (measured") && mt.contains (", " + juce::String ((double) mono.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[10], 4) + " (measured"),
+                       "export X34: walking the 1 dB direction at 5 dB, the point that fails to continue (position 10, after position 9's jump) is null - its 4 stays, positions 9 and 11 keep their 5 - and it joins the 5 dB 'breaks monotonic order' line with its measured value (" + mt.fromFirstOccurrenceOf ("deep null 5", false, false).upToFirstOccurrenceOf ("deep null 5 dB - no", false, false) + ")");
+                check (nullAccount (em.profile, why) && (bool) em.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", false) && (bool) em.profile.getProperty ("quality", {}).getProperty ("monotonic_across_positions", false),
+                       "export X35: the account stays exact with the sixth line, and the exported quality flags are true again (the server would have nulled the same points) (" + why + ")");
+                auto sh = juce::JSON::parse (juce::JSON::toString (deepRec)); auto ish = sh.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
+                ish[6].getDynamicObject()->setProperty ("2", (double) ish[6].getProperty ("1", {}) - 0.5);   // a SHALLOW break: 2 dB below 1 dB
+                const auto es = exportCompProfile (sh);
+                check (es.ok && ! es.profile.getProperty ("amount", {}).getProperty ("curve", {})[6].getProperty ("in_at_gr_dbfs", {}).getProperty ("2", 0.0).isVoid() && ! (bool) es.profile.getProperty ("quality", {}).getProperty ("monotonic_within_positions", true)
+                         && ! notesText (es.profile.getProperty ("notes", {})).contains ("breaks monotonic order"),
+                       "export X36: a 1/2/3 break is never nulled here - unchanged: the point stays, the quality flag says false, no account line (the derivation's nonmonotonic refusal is the shallow gate)");
+            }
         }
     }
     {
@@ -5548,6 +5579,26 @@ void testProfileExport()
             const auto pk5 = pickPosition (gap, L5, 5.0);
             check (pk5.ok && (pk5.i0 == 8 || pk5.i1 == 8) && pk5.filledAcrossNorm && std::abs (pk5.expectedGrDb - 5.0) < 1e-9,
                    "pick P7: a deep level null on one position is filled across the norm axis from its neighbours and the pick is marked filledAcrossNorm (points " + juce::String (pk5.i0) + "/" + juce::String (pk5.i1) + ")");
+            // P7b-P7d (v1.9 section 6.3 step 1, "v1.8, clarified"): a FRACTIONAL ask borrows the missing POINT, not the level. Position 8's 4 dB
+            // point is nulled and its own 3 dB point moved 1.5 dB quieter than the parallel curve: a 3.5 ask must read between ITS OWN 3 dB value
+            // and the borrowed 4 dB value, so its answer differs from a wholesale re-read of 3.5 from the neighbours by 0.75 dB.
+            {
+                auto bp = juce::JSON::parse (juce::JSON::toString (deep)); auto c8 = bp.getProperty ("amount", {}).getProperty ("curve", {})[8].getProperty ("in_at_gr_dbfs", {}).getDynamicObject();
+                const double own3 = (double) c8->getProperty ("3") - 1.5; c8->setProperty ("3", own3); c8->setProperty ("4", juce::var());
+                const double n7 = (double) deep.getProperty ("amount", {}).getProperty ("curve", {})[7].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0), n9 = (double) deep.getProperty ("amount", {}).getProperty ("curve", {})[9].getProperty ("in_at_gr_dbfs", {}).getProperty ("4", 0.0);
+                const double borrowed4 = (n7 + n9) / 2.0, expectAt8 = own3 + (borrowed4 - own3) * 0.5;      // between its OWN 3 and the borrowed 4
+                const double wholesale = ((double) deep.getProperty ("amount", {}).getProperty ("curve", {})[7].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", 0.0) + n7) / 2.0 * 0.5
+                                       + ((double) deep.getProperty ("amount", {}).getProperty ("curve", {})[9].getProperty ("in_at_gr_dbfs", {}).getProperty ("3", 0.0) + n9) / 2.0 * 0.5;   // 3.5 re-read from the neighbours
+                const auto pb = pickPosition (bp, expectAt8, 3.5);
+                check (pb.ok && (pb.i0 == 8 || pb.i1 == 8) && std::abs (wholesale - expectAt8 - 0.75) < 1e-6 && std::abs (pb.norm - 8.0 / 15.0) < 1e-6 && pb.filledAcrossNorm,
+                       "pick P7b: a 3.5 dB ask on a position with a null 4 dB point keeps the position's OWN 3 dB value and borrows only the 4 dB point - L = that value lands exactly on position 8 (norm " + juce::String (pb.norm, 4) + "); a wholesale re-read of 3.5 from the neighbours would sit 0.75 dB away");
+                const auto pw = pickPosition (bp, wholesale, 3.5);
+                check (pw.ok && ! (pw.i1 < 0 && pw.i0 == 8) && std::abs (pw.norm - 8.0 / 15.0) > 1e-3, "pick P7c: the wholesale value does NOT land on position 8 (the mutant's answer is a different setting)");
+                // P7d: a SHALLOW null bound is never borrowed - position 8 with its 3 dB point null cannot serve a 3.5 ask; the fill does not invent it
+                auto sb = juce::JSON::parse (juce::JSON::toString (deep)); sb.getProperty ("amount", {}).getProperty ("curve", {})[8].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("3", juce::var());
+                const auto ps = pickPosition (sb, expectAt8, 3.5);
+                check (ps.ok && ps.i0 != 8 && ps.i1 != 8, "pick P7d: a position whose SHALLOW bound (3 dB) is null is skipped for a 3.5 ask - a shallow null is never borrowed");
+            }
             // P8: no position carries 6 dB -> the deepest carried level (5) answers, and the REPORTED figure is 5
             auto no6 = juce::JSON::parse (juce::JSON::toString (deep));
             { auto c6 = no6.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c6.size(); ++i) c6[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("6", juce::var()); }

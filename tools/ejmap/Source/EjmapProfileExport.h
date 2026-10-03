@@ -48,6 +48,7 @@
 #pragma once
 
 #include "EjmapSweep.h"
+#include <set>
 
 namespace ejmap::profile
 {
@@ -58,7 +59,7 @@ inline constexpr int    kMinCurvePoints = 9;
 // THE NOTES SHAPE (v1.8 section 3 says a list of plain strings; Sean's example still shows ""; which his validator accepts
 // is being asked): ONE constant decides, and every writer of notes goes through notesVar / notesAppend. Flip kNotesAsList
 // and nothing else changes.
-inline constexpr bool kNotesAsList = false;
+inline constexpr bool kNotesAsList = true;    // SWITCHED 3 Oct: Sean's validator accepts a string or a list (v1.9 section 3)
 inline juce::var notesVar (const juce::StringArray& lines)
 {
     if (! kNotesAsList) return lines.joinIntoString ("; ");
@@ -247,6 +248,8 @@ inline Export exportCompProfile (const juce::var& f)
     // values); the exporter's own withholding (deep points on a position with no shallow point) is the all-null case.
     std::map<std::pair<int, juce::String>, juce::StringArray> deepNullBy;   // (level, reason) -> "norm (detail)"
     std::map<std::pair<int, int>, juce::String> holdFailed;                 // (position, level) -> both values, from the record
+    std::vector<bool> shallowAt;                                            // per position: has a numeric 1/2/3 point
+    std::set<std::pair<int, int>> monoNulled;                               // (position, level) nulled here for breaking monotonic order (v1.9)
     if (const auto* a = sweepVar.getProperty ("quality", {}).getProperty ("deepPointsNulled", {}).getArray())
         for (const auto& x : *a) { const auto t = x.toString(); holdFailed[{ t.upToFirstOccurrenceOf ("@", false, false).getIntValue(), t.fromFirstOccurrenceOf ("@", false, false).upToFirstOccurrenceOf (":", false, false).getIntValue() }] = t.fromFirstOccurrenceOf (": ", false, false); }
     for (int i = 0; i < norms.size(); ++i)
@@ -267,23 +270,67 @@ inline Export exportCompProfile (const juce::var& f)
         for (int t : sweep::kGrTargets)
             g->setProperty (juce::String (t), (t >= sweep::kDeepFrom && ! shallow) ? juce::var() : conv (inAt[i].getProperty (juce::String (t), {})));
         if (! shallow) for (int t : sweep::kGrTargets) if (t >= sweep::kDeepFrom && ! conv (inAt[i].getProperty (juce::String (t), {})).isVoid()) deepOnlyNulled.add ("position " + juce::String (i) + " @" + juce::String (t));
+        shallowAt.push_back (shallow);
+        o->setProperty ("in_at_gr_dbfs", juce::var (g));
+        curve.add (juce::var (o));
+    }
+    // A DEEP POINT OUT OF ORDER IS NULLED BEFORE EXPORT (v1.9; Kathy's ruling 3 Oct: within its position, or across positions
+    // at its level). Within a position a 4/5/6 point that does not rise above the point below it is null; across positions, at
+    // a deep level, the points outside the longest run that follows the 1 dB direction are null. A 1/2/3 point is never touched
+    // here (a shallow break stays what it was: the derivation's nonmonotonic refusal, else the quality flag). Every point
+    // nulled here is on the "breaks monotonic order" account line below; the server would null the same point at load.
+    auto numOf = [] (const juce::var& v) -> std::optional<double> { return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
+    for (int i = 0; i < curve.size(); ++i)
+    {
+        auto* g = curve[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject(); if (g == nullptr) continue;
+        std::optional<double> prev;
         for (int t : sweep::kGrTargets)
         {
-            if (t < sweep::kDeepFrom || ! g->getProperty (juce::String (t)).isVoid()) continue;
+            const auto v = numOf (g->getProperty (juce::String (t))); if (! v) continue;
+            if (t >= sweep::kDeepFrom && prev && *v <= *prev) { g->setProperty (juce::String (t), juce::var()); monoNulled.insert ({ i, t }); continue; }
+            prev = v;
+        }
+    }
+    {
+        int up = 0, down = 0; std::optional<double> last;
+        for (int i = 0; i < curve.size(); ++i) if (auto v = numOf (curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty ("1", {}))) { if (last) { if (*v > *last) ++up; if (*v < *last) ++down; } last = v; }
+        const int dir = (up > 0 && down == 0) ? 1 : (down > 0 && up == 0) ? -1 : 0;   // the 1 dB direction across positions; undefined -> no across nulling
+        if (dir != 0)
+            for (int t : sweep::kGrTargets)
+            {
+                if (t < sweep::kDeepFrom) continue;
+                std::vector<std::pair<int, double>> pts;
+                for (int i = 0; i < curve.size(); ++i) if (auto v = numOf (curve[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), {}))) pts.push_back ({ i, *v * dir });
+                if (pts.size() < 2) continue;
+                // walking the positions in the 1 dB direction, a point that does not continue from the last kept point breaks the
+                // order and is null (the same reading as the server's within-position rule, applied across): deterministic, and the
+                // point named is the one that broke, never a neighbour re-judged after the fact
+                double lastKept = pts[0].second;
+                for (size_t k = 1; k < pts.size(); ++k)
+                {
+                    if (pts[k].second >= lastKept) { lastKept = pts[k].second; continue; }
+                    if (auto* g = curve[pts[k].first].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) { g->setProperty (juce::String (t), juce::var()); monoNulled.insert ({ pts[k].first, t }); }
+                }
+            }
+    }
+    // THE ACCOUNT (v1.8 notes): every deep null in the curve, by (level, reason), positions by norm
+    for (int i = 0; i < curve.size(); ++i)
+    {
+        const auto g = curve[i].getProperty ("in_at_gr_dbfs", {}); const bool shallow = shallowAt[(size_t) i];
+        auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
+        for (int t : sweep::kGrTargets)
+        {
+            if (t < sweep::kDeepFrom || ! g.getProperty (juce::String (t), {}).isVoid()) continue;
             const auto raw = inAt[i].getProperty (juce::String (t), {}); const auto normTxt = juce::String ((double) norms[i], 4);
-            // THE ALL-NULL POSITION says why its shallow points are null - the record's word at 1 dB - never a guessed cause
-            // (bx_opto's bottom three positions are not_reached: the knob does nothing there; a position past 3 dB at the quietest
-            // level is below_range). Deep points measured there are withheld (a position described only by deep points is a defect).
             const auto shallowWord = inAt[i].getProperty ("1", {}).toString();
-            if (! shallow)                                      deepNullBy[{ t, shallowWord == "below_range" ? juce::String ("past at the quietest level (all-null position)") : shallowWord == "not_reached" ? juce::String ("not reached by -3.01 dBFS (all-null position)") : juce::String ("no shallow point (all-null position)") }]
+            if (monoNulled.count ({ i, t }))                    deepNullBy[{ t, "breaks monotonic order" }].add (normTxt + " (measured " + juce::String ((double) conv (raw), 2) + ")");
+            else if (! shallow)                                 deepNullBy[{ t, shallowWord == "below_range" ? juce::String ("past at the quietest level (all-null position)") : shallowWord == "not_reached" ? juce::String ("not reached by -3.01 dBFS (all-null position)") : juce::String ("no shallow point (all-null position)") }]
                                                                     .add (normTxt + (conv (raw).isVoid() ? juce::String() : " (measured " + juce::String ((double) conv (raw), 2) + " - withheld: no shallow point)"));
             else if (raw.toString() == "not_reached")           deepNullBy[{ t, "not reached by -3.01 dBFS" }].add (normTxt);
             else if (raw.toString() == "below_range")           deepNullBy[{ t, "past at the quietest level" }].add (normTxt);
             else if (holdFailed.count ({ i, t }))               deepNullBy[{ t, "hold test failed" }].add (normTxt + " (" + holdFailed[{ i, t }] + ")");
             else                                                deepNullBy[{ t, "no rising straddle (gap or fall)" }].add (normTxt);
         }
-        o->setProperty ("in_at_gr_dbfs", juce::var (g));
-        curve.add (juce::var (o));
     }
     e.points = withOne;
     if (withOne < kMinCurvePoints) return refuse ("only " + juce::String (withOne) + " curve point(s) reach 1 dB inside the measured levels (his rule: at least " + juce::String (kMinCurvePoints) + ")");
@@ -527,8 +574,8 @@ inline Export exportCompProfile (const juce::var& f)
     // written in ONE shape chosen by kNotesAsList - the switch is that constant and nothing else.
     juce::StringArray noteLines; juce::String notes;
     auto flush = [&] { if (notes.trim().isNotEmpty()) noteLines.add (notes.trim().trimCharactersAtEnd (";").trim()); notes = {}; };
-    notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; ";
-    flush();
+    notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01)"; flush();
+    notes = "tone 997 Hz"; flush();
     {
         // v1.4: the guards that passed, by name, from the record. Each is a rule the derivation applied; a sweep that failed one
         // never certified, so a certified record passed them all - said here so the server can read it.
@@ -592,7 +639,7 @@ inline Export exportCompProfile (const juce::var& f)
 // failing that, the deepest level the profile carries answers and the figure REPORTED is that level. At 1, 2 and 3 dB a
 // null is never filled: that position cannot serve that target. Nothing is extrapolated past what was measured.
 inline constexpr double kPickClampDb = 12.0;        // the clamp for a shallow ask (g <= 3): v1.5, unchanged
-// THE CLAMP FOR DEEP ASKS (v1.9, Sean's ruling 3 Oct): the clamp is a function of g - 12 dB up to g = 3, then
+// THE CLAMP FOR DEEP ASKS (v1.9 section 6.4 step 4, Sean's ruling 3 Oct; the wording checked against v1.9): 12 dB up to g = 3, then
 // 12 + 2 x (g - 3), linear in between: 13 at 3.5, 14 at 4, 16 at 5, 18 at 6. The comparison is the same as before
 // (the pick's own interpolated 1 dB point against L); only the limit widens, and only above g = 3, so a shallow pick
 // is provably unchanged. Used by the pick replica and by the tone-check L rule.
@@ -668,17 +715,34 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     std::vector<bool> filled ((size_t) curve.size(), false);
     if (g > 3.0)
     {
-        // THE DEEP-NULL FILL (rule 1): across the norm axis, from the nearest positions that carry the level, never past them
+        // THE DEEP-NULL FILL (6.3 rule 1, v1.9 "v1.8, clarified"): what is borrowed is the missing POINT, never the level. Across
+        // the norm axis, from the nearest positions either side that carry that point, never past them. For a whole-number ask
+        // the point IS the level. For a FRACTIONAL ask whose deep bound is null on this position, the bound point is borrowed
+        // and the value is then interpolated between this position's OWN measured lower point and the borrowed one - re-reading
+        // the fractional level wholesale from the neighbours would discard a real measurement (0.75 dB on Sean's test curve).
+        // A SHALLOW null bound (1/2/3) is never borrowed: such a position cannot serve the ask (the v1.2 rule).
+        auto borrowPoint = [&] (int i, int t) -> std::optional<double>
+        {
+            int lo = -1, hi = -1;
+            for (int k = i - 1; k >= 0; --k) if (inAtGr (curve[k], (double) t)) { lo = k; break; }
+            for (int k = i + 1; k < curve.size(); ++k) if (inAtGr (curve[k], (double) t)) { hi = k; break; }
+            if (lo < 0 || hi < 0) return std::nullopt;
+            const double nl = (double) curve[lo].getProperty ("norm", 0.0), nh = (double) curve[hi].getProperty ("norm", 0.0), ni = (double) curve[i].getProperty ("norm", 0.0);
+            const double tt = nh == nl ? 0.0 : (ni - nl) / (nh - nl);
+            return *inAtGr (curve[lo], (double) t) + (*inAtGr (curve[hi], (double) t) - *inAtGr (curve[lo], (double) t)) * tt;
+        };
+        const int tLo = juce::jlimit (1, 6, (int) std::floor (gEff)), tHi = juce::jlimit (1, 6, tLo + 1);
+        const bool whole = std::abs (gEff - tLo) < 1e-9 || gEff >= 6.0;
         for (int i = 0; i < curve.size(); ++i)
         {
             if (v[(size_t) i]) continue;
-            int lo = -1, hi = -1;
-            for (int k = i - 1; k >= 0; --k) if (v[(size_t) k]) { lo = k; break; }
-            for (int k = i + 1; k < curve.size(); ++k) if (v[(size_t) k]) { hi = k; break; }
-            if (lo < 0 || hi < 0) continue;
-            const double nl = (double) curve[lo].getProperty ("norm", 0.0), nh = (double) curve[hi].getProperty ("norm", 0.0), ni = (double) curve[i].getProperty ("norm", 0.0);
-            const double t = nh == nl ? 0.0 : (ni - nl) / (nh - nl);
-            v[(size_t) i] = *v[(size_t) lo] + (*v[(size_t) hi] - *v[(size_t) lo]) * t; filled[(size_t) i] = true;
+            if (whole) { if (auto b = borrowPoint (i, tLo)) { v[(size_t) i] = *b; filled[(size_t) i] = true; } continue; }
+            auto a = inAtGr (curve[i], (double) tLo), b = inAtGr (curve[i], (double) tHi);
+            bool borrowed = false;
+            if (! a) { if (tLo >= sweep::kDeepFrom) { a = borrowPoint (i, tLo); borrowed = true; } }      // a shallow null bound is never borrowed
+            if (! b) { b = borrowPoint (i, tHi); borrowed = true; }
+            if (! a || ! b) continue;
+            v[(size_t) i] = *a + (*b - *a) * (gEff - tLo); filled[(size_t) i] = borrowed;
         }
     }
     struct Pt { int i; double norm, inAt; bool filled; };
