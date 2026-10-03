@@ -83,9 +83,13 @@ inline constexpr double kQuietTolDb   = 0.1;    // the two quiet levels must dif
 // ceil(gap / kRefineGapDb) segments, and the check runs again on the denser grid, up to kRefineRounds rounds or
 // kRefinePositionsMax positions in all. Same procedure for every added position (quiet ladder, hold-doubled repeat).
 // THE GR TARGETS (spec v1.7 section 3): the shallow points 1/2/3 dB every build uses and the TRUST GATE reads, and the
-// deep points 4/5/6 for the explicit "harder" ladder (informational gate). Same straddle, same words, no extrapolation,
+// deep points 4..kGrTargetMax for the explicit "harder" ladder (informational gate). Same straddle, same words, no extrapolation,
 // nothing above -3.01 dBFS RMS (0 dBFS peak is the sweep's ceiling). One constant, so nothing counts to 3 by hand.
-inline const std::vector<int> kGrTargets { 1, 2, 3, 4, 5, 6 };
+// THE TARGETS ARE ONE LIST (v1.10, 3 Oct): 1..kGrTargetMax, generated - every rule keyed on the levels (straddle, words, hold
+// test, deep_point_error_db, nulling, the account, the tone checks, the reverse read, the fractional borrow) walks THIS list
+// or reads kGrTargetMax; there is no second list anywhere. 1/2/3 stays the trust gate (kTrustTargets), unchanged.
+inline constexpr int    kGrTargetMax      = 12;
+inline const std::vector<int> kGrTargets = [] { std::vector<int> v; for (int t = 1; t <= kGrTargetMax; ++t) v.push_back (t); return v; }();
 inline const std::vector<int> kTrustTargets { 1, 2, 3 };
 inline constexpr int    kDeepFrom         = 4;      // targets at or above this are deep
 inline constexpr double kDeepHoldTolDb    = 0.5;    // a deep point whose hold-doubled repeat differs by more than this is null (v1.7)
@@ -1754,7 +1758,7 @@ struct RepeatQuality
     int repeats = 1, pointsCompared = 0, shapeDisagreements = 0;   // shape: one repeat numeric, the other not (1/2/3)
     juce::String method = "hold 2.5 s vs 5 s";
     std::optional<double> pointErrorDb;                              // THE TRUST GATE: worst over the 1/2/3 points (unchanged by v1.7)
-    // DEEP POINTS (v1.7): a 4/5/6 point whose repeat differs by more than kDeepHoldTolDb is NULL and listed; the worst
+    // DEEP POINTS (v1.7, 4..kGrTargetMax since v1.10): a deep point whose repeat differs by more than kDeepHoldTolDb is NULL and listed; the worst
     // over the SURVIVING deep points is deep_point_error_db - informational, never a gate.
     int deepPointsCompared = 0;
     std::optional<double> deepPointErrorDb;
@@ -1792,7 +1796,7 @@ inline RepeatQuality repeatQuality (const Derived& d1, const Derived* d2)
     // THE POINTS AS THE RECORD WILL CARRY THEM (deep nulls applied), for the monotonic checks
     std::vector<std::map<int, juce::var>> pts;
     for (size_t i = 0; i < d1.inAtGr.size(); ++i) { auto m = d1.inAtGr[i].at; for (int t : kGrTargets) if (q.deepNullSet.count ({ (int) i, t })) m[t] = juce::var(); pts.push_back (m); }
-    // within a position: strictly rising over every present target 1..6, nulls skipped
+    // within a position: strictly rising over every present target 1..kGrTargetMax, nulls skipped
     for (size_t i = 0; i < pts.size(); ++i)
     {
         const auto& m = pts[i];

@@ -1798,3 +1798,46 @@ only (every deep break was nulled above, so a deep flag never refuses). M2/M3 re
 mutant red. Never seen on a real record (the derivation's `nonmonotonic` result catches these first).
 
 Suite 3238 checks green.
+
+## 33. v1.10 (Sean's next ask, 3 Oct): targets 1..12, the clamp to 30, the saturation note — folded into the follow-up build
+
+**One list.** `sweep::kGrTargetMax = 12`; `kGrTargets` is generated 1..12 from it. Every rule keyed on the levels walks that
+list or reads the constant: the straddle derivation and its words, the hold test (0.5 dB) and `deep_point_error_db` over the
+survivors, within-position and whole-level across-position nulling, deep-only withholding, the null account, the tone
+checks at each carried level, the reverse read, the fractional borrow, `inAtGr`'s top clamp. 1/2/3 stays the trust gate
+(`kTrustTargets`, unchanged). **The grep for a second list** (every `6`, `"6"`, `1..6`, `{1..6}`, `{4,5,6}` in the four
+sources), each one reported: `kGrTargets {1..6}` (the list itself → generated); `inAtGr` `jlimit(1, 6)` and `g >= 6.0`
+(→ `kGrTargetMax`); `grAtLevel` `k <= 6` (→ `kGrTargets`); the borrow's `jlimit(1, 6)` / `gEff >= 6.0` (→ `kGrTargetMax`);
+the notes line "deep points 4/5/6" (→ built from `kDeepFrom..kGrTargetMax`); six comments saying 4/5/6 or 1..6 (reworded).
+Every other `6` is formatting precision (`juce::String (x, 6)`), the stepped-control bound (`steps <= 64`), the grid
+(`k <= 64`) or a readout index — not a level. Mutants that re-introduce a 6 at the list, the reverse read and `inAtGr` are
+red (Q7, X37, R1c).
+
+**The clamp** is unchanged in form — 12 to 3, then 12 + 2 × (g − 3) — pinned at 7/9/12 → 20/24/30 (C1b; a cap at 18 red).
+Wording to be checked against v1.10 when it lands.
+
+**The saturation note.** Per deep level, the positions whose exported point is above −9.01 dBFS RMS (the ceiling −3.01 less
+6) are listed: `deep <g> dB read in the top 6 dB of the sweep, where saturation also lowers level: positions <norms>`.
+Information only — pinned that the points stay numeric (X39; mutants: the note nulling the point, the threshold at 3 dB).
+
+**Live, re-derived from the traces (tc25; CL 1B from its refined traces as the import would):**
+
+| product | positions | deepest level carried | positions carrying 7 / 8 / 9 / 10 / 11 / 12 | hold nulls | dpe (over) | nulls accounted | tone checks |
+|---|---|---|---|---|---|---|---|
+| Lindell 7X-500 | 22 | 12 | 19 / 19 / 18 / 17 / 17 / 16 | 0 | 0.10 (167) | 31 / 31 | 2, 4..12 all PASS at L_ref −17.21 |
+| Lindell SBC | 16 | 12 | 9 / 8 / 7 / 6 / 5 / 4 (before the checks) | 0 | 0.10 (70) | 92 / 92 | 2, 4..7 PASS at −18.40; 8..12 PASS at −17.81 / −15.51 / −13.21 / −10.91 / −8.61 (gaps +0.6 … +9.8) |
+| bx_opto | 27 | 12 | 20 / 20 / 19 / 18 / 18 / 17 | 0 | 0.10 (177) | 66 / 66 | all PASS at −12.61 |
+| elysia mpressor | 20 | 12 | 16 / 16 / 15 / 14 / 14 / 13 | 0 | 0.10 (141) | 39 / 39 | all PASS at −14.72 |
+| Tube-Tech CL 1B | 28 | 12 | 24 / 24 / 23 / 22 / 21 / 21 | 0 | 0.10 (210) | 42 / 42 | dry run: every level 2, 4..12 at L_ref −14.45, first try (1 dB point 6.8 … 25.0 below, inside each clamp) |
+
+Every product carries 9 saturation lines (its deepest points are read near the top of the sweep, as expected). **Time:
+42.1 s for the four = 10.5 s per product** (was 18 s / 4.5 s at 1..6: ten probe processes per product instead of four).
+
+**Found by the live run and fixed before the build (T8d).** The first 1..12 run FAILED SBC's 9..12 at L_ref −18.4 — GR 7.77
+at every one — and nulled all four levels. SBC's 9..12 dB points sit at −9…−3 dBFS (the top of the sweep); at −18.4 no
+position gives 9 dB, so the pick at L_ref was merely the *nearest* position (unbracketed, the clamp passing) and the check
+compared 9 against what that position gives at a level 9 dB below its 9 dB point. A test level must sit on the level's
+measured curve: the L rule now counts a continuous pick only when bracketed (or exactly on a point); the next candidate
+is a position's own point. SBC's 8..12 then PASS at their nearest points (gaps +0.6 … +9.8, recorded). The server's own
+rung-4 pick at such a level is the nearest position — an approximation the tone check must not rehearse as a
+measurement. Mutant (unbracketed accepted) red. `tonecheck-all-BEFORE-on-curve-rule.log` keeps the failing run.

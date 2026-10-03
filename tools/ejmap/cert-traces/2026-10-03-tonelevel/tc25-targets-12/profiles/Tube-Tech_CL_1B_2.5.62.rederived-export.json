@@ -1,0 +1,674 @@
+{
+  "schema": "ej_comp_profile/1",
+  "plugin": {
+    "name": "Tube-Tech CL 1B",
+    "manufacturer": "Softube",
+    "format": "AudioUnit",
+    "plugin_id": "AudioUnit|517f614e|2.5.62",
+    "version": "2.5.62",
+    "map_fp": "ab70ea5337fe3b0637ccd409982989fb0815d65a8e0ec9bef2ef9c228dcb5561"
+  },
+  "measured": {
+    "tool": "EJ Maps 0.1.0 (feat/ejmap-cert)",
+    "date": "2026-10-02",
+    "sample_rate": 48000,
+    "signal": "sine 997 Hz, stepped",
+    "level_ref": "sine_rms_dbfs",
+    "steps_dbfs": [
+      -63.009999999999998,
+      -3.01,
+      2.0
+    ],
+    "hold_ms": 2500,
+    "read_window_ms": 300,
+    "host": "out_of_process",
+    "reference_ratio": 6.0
+  },
+  "topology": "threshold",
+  "engage": [],
+  "never_touch": [],
+  "neutral": [
+    {
+      "control": "Gain",
+      "set": "0.0",
+      "norm": 0.33,
+      "source": "instantiate"
+    },
+    {
+      "control": "Attack",
+      "set": "5.0",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Release",
+      "set": "5.0",
+      "norm": 0.5,
+      "source": "instantiate"
+    },
+    {
+      "control": "Select Attack Release",
+      "set": "Man",
+      "norm": 1.0,
+      "source": "instantiate"
+    },
+    {
+      "control": "Sidechain",
+      "set": "Int",
+      "norm": 0.0,
+      "source": "instantiate"
+    }
+  ],
+  "amount": {
+    "control": "Threshold",
+    "curve": [
+      {
+        "norm": 0.0,
+        "display": "Off",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.066667,
+        "display": "1.4",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.133333,
+        "display": "0.8",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": null,
+          "3": null,
+          "4": null,
+          "5": null,
+          "6": null,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "0.2",
+        "eff_threshold_dbfs": -20.710000000000001,
+        "in_at_gr_dbfs": {
+          "1": -20.710000000000001,
+          "2": -13.91,
+          "3": -10.109999999999999,
+          "4": -8.109999999999999,
+          "5": -6.21,
+          "6": -4.51,
+          "7": null,
+          "8": null,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.208333,
+        "display": "0.1",
+        "eff_threshold_dbfs": -22.510000000000002,
+        "in_at_gr_dbfs": {
+          "1": -22.510000000000002,
+          "2": -15.710000000000001,
+          "3": -12.01,
+          "4": -10.01,
+          "5": -8.109999999999999,
+          "6": -6.31,
+          "7": -4.61,
+          "8": -3.11,
+          "9": null,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.216667,
+        "display": "0.0",
+        "eff_threshold_dbfs": -24.010000000000002,
+        "in_at_gr_dbfs": {
+          "1": -24.010000000000002,
+          "2": -17.210000000000001,
+          "3": -13.51,
+          "4": -11.51,
+          "5": -9.710000000000001,
+          "6": -7.91,
+          "7": -6.21,
+          "8": -4.61,
+          "9": -3.11,
+          "10": null,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.233333,
+        "display": "-1.2",
+        "eff_threshold_dbfs": -26.510000000000002,
+        "in_at_gr_dbfs": {
+          "1": -26.510000000000002,
+          "2": -19.809999999999999,
+          "3": -16.109999999999999,
+          "4": -14.109999999999999,
+          "5": -12.31,
+          "6": -10.51,
+          "7": -8.81,
+          "8": -7.21,
+          "9": -5.71,
+          "10": -4.21,
+          "11": null,
+          "12": null
+        }
+      },
+      {
+        "norm": 0.25,
+        "display": "-2.7",
+        "eff_threshold_dbfs": -28.41,
+        "in_at_gr_dbfs": {
+          "1": -28.41,
+          "2": -21.809999999999999,
+          "3": -18.109999999999999,
+          "4": -16.109999999999999,
+          "5": -14.31,
+          "6": -12.51,
+          "7": -10.81,
+          "8": -9.31,
+          "9": -7.71,
+          "10": -6.31,
+          "11": -4.91,
+          "12": -3.41
+        }
+      },
+      {
+        "norm": 0.266667,
+        "display": "-4.2",
+        "eff_threshold_dbfs": -29.91,
+        "in_at_gr_dbfs": {
+          "1": -29.91,
+          "2": -23.210000000000001,
+          "3": -19.710000000000001,
+          "4": -17.710000000000001,
+          "5": -15.81,
+          "6": -14.109999999999999,
+          "7": -12.41,
+          "8": -10.81,
+          "9": -9.31,
+          "10": -7.81,
+          "11": -6.41,
+          "12": -5.01
+        }
+      },
+      {
+        "norm": 0.3,
+        "display": "-7.3",
+        "eff_threshold_dbfs": -31.91,
+        "in_at_gr_dbfs": {
+          "1": -31.91,
+          "2": -25.41,
+          "3": -21.91,
+          "4": -19.91,
+          "5": -18.109999999999999,
+          "6": -16.309999999999999,
+          "7": -14.609999999999999,
+          "8": -13.109999999999999,
+          "9": -11.51,
+          "10": -10.109999999999999,
+          "11": -8.710000000000001,
+          "12": -7.31
+        }
+      },
+      {
+        "norm": 0.333333,
+        "display": "-10.2",
+        "eff_threshold_dbfs": -34.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -34.009999999999998,
+          "2": -27.710000000000001,
+          "3": -24.210000000000001,
+          "4": -22.309999999999999,
+          "5": -20.510000000000002,
+          "6": -18.710000000000001,
+          "7": -17.010000000000002,
+          "8": -15.51,
+          "9": -14.01,
+          "10": -12.51,
+          "11": -11.109999999999999,
+          "12": -9.710000000000001
+        }
+      },
+      {
+        "norm": 0.366666,
+        "display": "-11.8",
+        "eff_threshold_dbfs": -37.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -37.409999999999997,
+          "2": -30.609999999999999,
+          "3": -26.809999999999999,
+          "4": -24.91,
+          "5": -23.109999999999999,
+          "6": -21.309999999999999,
+          "7": -19.609999999999999,
+          "8": -18.010000000000002,
+          "9": -16.510000000000002,
+          "10": -15.109999999999999,
+          "11": -13.609999999999999,
+          "12": -12.210000000000001
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "-13.5",
+        "eff_threshold_dbfs": -39.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -39.310000000000002,
+          "2": -32.609999999999999,
+          "3": -28.91,
+          "4": -27.010000000000002,
+          "5": -25.109999999999999,
+          "6": -23.309999999999999,
+          "7": -21.710000000000001,
+          "8": -20.109999999999999,
+          "9": -18.609999999999999,
+          "10": -17.109999999999999,
+          "11": -15.710000000000001,
+          "12": -14.31
+        }
+      },
+      {
+        "norm": 0.433334,
+        "display": "-15.2",
+        "eff_threshold_dbfs": -40.909999999999997,
+        "in_at_gr_dbfs": {
+          "1": -40.909999999999997,
+          "2": -34.310000000000002,
+          "3": -30.609999999999999,
+          "4": -28.710000000000001,
+          "5": -26.809999999999999,
+          "6": -25.010000000000002,
+          "7": -23.41,
+          "8": -21.809999999999999,
+          "9": -20.309999999999999,
+          "10": -18.809999999999999,
+          "11": -17.41,
+          "12": -16.010000000000002
+        }
+      },
+      {
+        "norm": 0.466667,
+        "display": "-16.8",
+        "eff_threshold_dbfs": -42.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -42.409999999999997,
+          "2": -35.810000000000002,
+          "3": -32.210000000000001,
+          "4": -30.309999999999999,
+          "5": -28.41,
+          "6": -26.710000000000001,
+          "7": -24.91,
+          "8": -23.41,
+          "9": -21.91,
+          "10": -20.41,
+          "11": -19.010000000000002,
+          "12": -17.609999999999999
+        }
+      },
+      {
+        "norm": 0.5,
+        "display": "-18.5",
+        "eff_threshold_dbfs": -43.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -43.609999999999999,
+          "2": -37.109999999999999,
+          "3": -33.710000000000001,
+          "4": -31.609999999999999,
+          "5": -29.809999999999999,
+          "6": -28.010000000000002,
+          "7": -26.309999999999999,
+          "8": -24.809999999999999,
+          "9": -23.309999999999999,
+          "10": -21.809999999999999,
+          "11": -20.41,
+          "12": -18.91
+        }
+      },
+      {
+        "norm": 0.533333,
+        "display": "-20.3",
+        "eff_threshold_dbfs": -45.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -45.409999999999997,
+          "2": -39.009999999999998,
+          "3": -35.710000000000001,
+          "4": -33.710000000000001,
+          "5": -31.809999999999999,
+          "6": -30.109999999999999,
+          "7": -28.41,
+          "8": -26.809999999999999,
+          "9": -25.309999999999999,
+          "10": -23.91,
+          "11": -22.41,
+          "12": -21.010000000000002
+        }
+      },
+      {
+        "norm": 0.555555,
+        "display": "-22.0",
+        "eff_threshold_dbfs": -48.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -48.409999999999997,
+          "2": -41.710000000000001,
+          "3": -38.009999999999998,
+          "4": -35.909999999999997,
+          "5": -34.109999999999999,
+          "6": -32.310000000000002,
+          "7": -30.609999999999999,
+          "8": -29.010000000000002,
+          "9": -27.510000000000002,
+          "10": -26.109999999999999,
+          "11": -24.609999999999999,
+          "12": -23.210000000000001
+        }
+      },
+      {
+        "norm": 0.577778,
+        "display": "-23.7",
+        "eff_threshold_dbfs": -50.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -50.310000000000002,
+          "2": -43.609999999999999,
+          "3": -39.909999999999997,
+          "4": -37.909999999999997,
+          "5": -36.109999999999999,
+          "6": -34.310000000000002,
+          "7": -32.609999999999999,
+          "8": -31.010000000000002,
+          "9": -29.510000000000002,
+          "10": -28.010000000000002,
+          "11": -26.609999999999999,
+          "12": -25.210000000000001
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "-25.4",
+        "eff_threshold_dbfs": -52.009999999999998,
+        "in_at_gr_dbfs": {
+          "1": -52.009999999999998,
+          "2": -45.310000000000002,
+          "3": -41.810000000000002,
+          "4": -39.710000000000001,
+          "5": -37.909999999999997,
+          "6": -36.109999999999999,
+          "7": -34.409999999999997,
+          "8": -32.810000000000002,
+          "9": -31.309999999999999,
+          "10": -29.91,
+          "11": -28.41,
+          "12": -27.010000000000002
+        }
+      },
+      {
+        "norm": 0.633334,
+        "display": "-27.9",
+        "eff_threshold_dbfs": -54.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -54.409999999999997,
+          "2": -47.810000000000002,
+          "3": -44.210000000000001,
+          "4": -42.310000000000002,
+          "5": -40.409999999999997,
+          "6": -38.710000000000001,
+          "7": -36.909999999999997,
+          "8": -35.409999999999997,
+          "9": -33.909999999999997,
+          "10": -32.409999999999997,
+          "11": -31.010000000000002,
+          "12": -29.609999999999999
+        }
+      },
+      {
+        "norm": 0.666667,
+        "display": "-30.2",
+        "eff_threshold_dbfs": -56.310000000000002,
+        "in_at_gr_dbfs": {
+          "1": -56.310000000000002,
+          "2": -49.909999999999997,
+          "3": -46.310000000000002,
+          "4": -44.409999999999997,
+          "5": -42.609999999999999,
+          "6": -40.810000000000002,
+          "7": -39.109999999999999,
+          "8": -37.609999999999999,
+          "9": -36.009999999999998,
+          "10": -34.609999999999999,
+          "11": -33.210000000000001,
+          "12": -31.809999999999999
+        }
+      },
+      {
+        "norm": 0.7,
+        "display": "-31.5",
+        "eff_threshold_dbfs": -57.810000000000002,
+        "in_at_gr_dbfs": {
+          "1": -57.810000000000002,
+          "2": -51.509999999999998,
+          "3": -48.109999999999999,
+          "4": -46.109999999999999,
+          "5": -44.310000000000002,
+          "6": -42.509999999999998,
+          "7": -40.810000000000002,
+          "8": -39.310000000000002,
+          "9": -37.810000000000002,
+          "10": -36.310000000000002,
+          "11": -34.909999999999997,
+          "12": -33.509999999999998
+        }
+      },
+      {
+        "norm": 0.733333,
+        "display": "-32.7",
+        "eff_threshold_dbfs": -60.409999999999997,
+        "in_at_gr_dbfs": {
+          "1": -60.409999999999997,
+          "2": -53.609999999999999,
+          "3": -49.909999999999997,
+          "4": -47.909999999999997,
+          "5": -46.009999999999998,
+          "6": -44.210000000000001,
+          "7": -42.509999999999998,
+          "8": -40.909999999999997,
+          "9": -39.409999999999997,
+          "10": -38.009999999999998,
+          "11": -36.609999999999999,
+          "12": -35.109999999999999
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "-35.2",
+        "eff_threshold_dbfs": -62.609999999999999,
+        "in_at_gr_dbfs": {
+          "1": -62.609999999999999,
+          "2": -55.909999999999997,
+          "3": -52.210000000000001,
+          "4": -50.210000000000001,
+          "5": -48.310000000000002,
+          "6": -46.509999999999998,
+          "7": -44.810000000000002,
+          "8": -43.310000000000002,
+          "9": -41.810000000000002,
+          "10": -40.310000000000002,
+          "11": -38.909999999999997,
+          "12": -37.509999999999998
+        }
+      },
+      {
+        "norm": 0.866667,
+        "display": "-37.7",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": -57.509999999999998,
+          "3": -53.909999999999997,
+          "4": -51.909999999999997,
+          "5": -50.009999999999998,
+          "6": -48.210000000000001,
+          "7": -46.609999999999999,
+          "8": -45.009999999999998,
+          "9": -43.509999999999998,
+          "10": -42.009999999999998,
+          "11": -40.609999999999999,
+          "12": -39.210000000000001
+        }
+      },
+      {
+        "norm": 0.933333,
+        "display": "-40.0",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": -58.509999999999998,
+          "3": -54.810000000000002,
+          "4": -52.909999999999997,
+          "5": -51.009999999999998,
+          "6": -49.210000000000001,
+          "7": -47.509999999999998,
+          "8": -46.009999999999998,
+          "9": -44.509999999999998,
+          "10": -43.009999999999998,
+          "11": -41.609999999999999,
+          "12": -40.210000000000001
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "-41.0",
+        "eff_threshold_dbfs": null,
+        "in_at_gr_dbfs": {
+          "1": null,
+          "2": -58.509999999999998,
+          "3": -54.810000000000002,
+          "4": -52.909999999999997,
+          "5": -51.009999999999998,
+          "6": -49.310000000000002,
+          "7": -47.609999999999999,
+          "8": -46.009999999999998,
+          "9": -44.509999999999998,
+          "10": -43.009999999999998,
+          "11": -41.609999999999999,
+          "12": -40.210000000000001
+        }
+      }
+    ],
+    "stepped": false
+  },
+  "ratio": {
+    "control": "Ratio",
+    "curve": [
+      {
+        "norm": 0.5,
+        "set": "6:1",
+        "value": 6.0,
+        "measured_ratio": 1.74,
+        "source": "instantiate"
+      }
+    ],
+    "fixed": null,
+    "knee_db": null
+  },
+  "static_gain_db": -0.7,
+  "detector_f": 0.43,
+  "detector_f_raw": 0.43,
+  "quality": {
+    "point_error_db": 0.1,
+    "deep_point_error_db": 0.1,
+    "method": "hold 2.5 s vs 5 s",
+    "points_compared": 72,
+    "shape_disagreements": 0,
+    "monotonic_within_positions": true,
+    "monotonic_across_positions": true,
+    "violations": []
+  },
+  "level_coupling": null,
+  "fit": {
+    "max_error_db": 2.76,
+    "points": 324,
+    "model": "threshold per position from the 1 dB crossing; ratio 1.5, knee 0.0 dB, grid-searched; nothing tuned",
+    "error_vs_2db_target": 1.38,
+    "measured_point_quality": {
+      "non_monotonic_straddles": 0,
+      "widest_gap_db": 2.0,
+      "points_with_1db": 22
+    }
+  },
+  "notes": [
+    "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01)",
+    "tone 997 Hz",
+    "guards passed: tone_frac (0 readings refused as not the tone), level dependence (not a gain law), quiet-reference 6 dB self-check (28 of 28 positions), ascending-only levels in each fresh process, still-moving rule",
+    "deep points 4..12 (v1.7, to 12 since v1.10): deep_point_error_db 0.10 dB over 210 surviving deep points, informational; deep points nulled by the hold-doubling test (over 0.5 dB): none",
+    "deep null 4 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 5 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 6 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 7 dB - not reached by -3.01 dBFS: positions 0.2000",
+    "deep null 7 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 8 dB - not reached by -3.01 dBFS: positions 0.2000",
+    "deep null 8 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 9 dB - not reached by -3.01 dBFS: positions 0.2000, 0.2083",
+    "deep null 9 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 10 dB - not reached by -3.01 dBFS: positions 0.2000, 0.2083, 0.2167",
+    "deep null 10 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 11 dB - not reached by -3.01 dBFS: positions 0.2000, 0.2083, 0.2167, 0.2333",
+    "deep null 11 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep null 12 dB - not reached by -3.01 dBFS: positions 0.2000, 0.2083, 0.2167, 0.2333",
+    "deep null 12 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000, 0.0667, 0.1333",
+    "deep 4 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2000",
+    "deep 5 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2000, 0.2083",
+    "deep 6 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2000, 0.2083, 0.2167",
+    "deep 7 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2083, 0.2167, 0.2333",
+    "deep 8 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2083, 0.2167, 0.2333",
+    "deep 9 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2167, 0.2333, 0.2500",
+    "deep 10 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2333, 0.2500, 0.2667",
+    "deep 11 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2500, 0.2667, 0.3000",
+    "deep 12 dB read in the top 6 dB of the sweep, where saturation also lowers level: positions 0.2500, 0.2667, 0.3000",
+    "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured",
+    "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate)",
+    "profile sweep, 31 levels ascending per fresh process, quiet reference per position (reference ladder: 17 position(s) referenced below -54/-48)",
+    "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points)",
+    "compressed as instantiated, no engage write needed"
+  ]
+}

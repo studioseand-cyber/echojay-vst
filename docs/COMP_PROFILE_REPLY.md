@@ -411,3 +411,12 @@ would ask at for the example track — or the nearest valid level to it, with L_
 rehearsal units test at L_ref itself, every level passing; CL 1B's 2 dB will test at −14.45. Also: an across-position
 deep break now nulls that whole level (your repair is within-position; this one is ours), and a shallow order break
 refuses the export outright rather than shipping a flag you would reject.
+
+## 3 Oct (evening): targets to 12, clamp to 30, the saturation note — in the follow-up build
+
+`in_at_gr_dbfs` keys 1..12 on every point (one generated list; 1/2/3 still the trust gate), the clamp line continued
+(20 at 7, 24 at 9, 30 at 12), and per deep level a `notes` line naming the positions read in the top 6 dB of the sweep
+(above −9.01 dBFS RMS) where saturation also lowers level — information only. Re-derived from the existing traces: the
+four rehearsal units and CL 1B all carry 12 dB on most positions, no hold-test nulls, and every carried level passes its
+tone check (SBC's 8..12 at its own points, −17.8 … −8.6, since nothing on it gives 9 dB at −18.4). We will check the
+clamp wording against v1.10 when it lands.

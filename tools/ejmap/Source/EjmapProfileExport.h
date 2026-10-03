@@ -56,6 +56,8 @@ namespace ejmap::profile
 inline constexpr double kPeakToSineRmsDb = 3.0102999566398120;   // 20 log10 sqrt 2
 inline constexpr double kTargetGrDb = 2.0;                        // his default target, the yardstick for fit error
 inline constexpr int    kMinCurvePoints = 9;
+inline constexpr double kSweepCeilingRmsDb = -3.0103;   // a full-scale sine, RMS: nothing above it can exist (section 3)
+inline constexpr double kTopSixDb          = 6.0;      // the top 6 dB of the sweep: a deep point read there gets the saturation note (v1.10)
 // THE NOTES SHAPE (v1.8 section 3 says a list of plain strings; Sean's example still shows ""; which his validator accepts
 // is being asked): ONE constant decides, and every writer of notes goes through notesVar / notesAppend. Flip kNotesAsList
 // and nothing else changes.
@@ -263,7 +265,7 @@ inline Export exportCompProfile (const juce::var& f)
         o->setProperty ("display", i < texts.size() ? texts[i] : juce::String());
         o->setProperty ("eff_threshold_dbfs", one);
         auto* g = new juce::DynamicObject();
-        // EVERY TARGET 1..6 (v1.7): a number or null; a position with NO shallow (1/2/3) value exports its deep points as
+        // EVERY TARGET 1..kGrTargetMax (v1.7; 12 since v1.10): a number or null; a position with NO shallow (1/2/3) value exports its deep points as
         // null too - a position described only by deep points is a defect (his section 3) - and is never dropped.
         bool shallow = false;
         for (int t : sweep::kTrustTargets) if (! conv (inAt[i].getProperty (juce::String (t), {})).isVoid()) shallow = true;
@@ -275,7 +277,7 @@ inline Export exportCompProfile (const juce::var& f)
         curve.add (juce::var (o));
     }
     // A DEEP POINT OUT OF ORDER IS NULLED BEFORE EXPORT (v1.9; Kathy's ruling 3 Oct: within its position, or across positions
-    // at its level). Within a position a 4/5/6 point that does not rise above the point below it is null; across positions, at
+    // at its level). Within a position a deep point that does not rise above the point below it is null; across positions, at
     // a deep level, the points outside the longest run that follows the 1 dB direction are null. A 1/2/3 point is never touched
     // here (a shallow break stays what it was: the derivation's nonmonotonic refusal, else the quality flag). Every point
     // nulled here is on the "breaks monotonic order" account line below; the server would null the same point at load.
@@ -313,13 +315,18 @@ inline Export exportCompProfile (const juce::var& f)
                     if (auto* g = curve[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()) { g->setProperty (juce::String (t), juce::var()); monoAcross.insert ({ i, t }); monoAcrossLevel[t].add (juce::String ((double) curve[i].getProperty ("norm", 0.0), 4)); }
             }
     }
-    // THE ACCOUNT (v1.8 notes): every deep null in the curve, by (level, reason), positions by norm
+    // THE ACCOUNT (v1.8 notes): every deep null in the curve, by (level, reason), positions by norm; and THE SATURATION NOTE
+    // (v1.10, ruled 3 Oct): a deep point read in the top 6 dB of the sweep (input above -9.01 dBFS RMS, the sweep's ceiling
+    // -3.01 less 6) is listed per level - information only, never a null: up there saturation also lowers level, so the GR
+    // read may be part clipping.
+    std::map<int, juce::StringArray> topSixBy;
     for (int i = 0; i < curve.size(); ++i)
     {
         const auto g = curve[i].getProperty ("in_at_gr_dbfs", {}); const bool shallow = shallowAt[(size_t) i];
         auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
         for (int t : sweep::kGrTargets)
         {
+            if (t >= sweep::kDeepFrom) { const auto v = g.getProperty (juce::String (t), {}); if ((v.isDouble() || v.isInt()) && (double) v > kSweepCeilingRmsDb - kTopSixDb) topSixBy[t].add (juce::String ((double) norms[i], 4)); }
             if (t < sweep::kDeepFrom || ! g.getProperty (juce::String (t), {}).isVoid()) continue;
             const auto raw = inAt[i].getProperty (juce::String (t), {}); const auto normTxt = juce::String ((double) norms[i], 4);
             const auto shallowWord = inAt[i].getProperty ("1", {}).toString();
@@ -519,7 +526,7 @@ inline Export exportCompProfile (const juce::var& f)
         // The monotonic check is computed HERE from the exported points (not read from the record): within a position
         // 1 < 2 < 3, across positions the 1 dB values move one way. His server rejects a violation; we say it first.
         bool within = true, across = true, shallowBreak = false; juce::Array<juce::var> viol;
-        // MONOTONIC (v1.4, extended v1.7 to every target): within a position strictly rising over the present targets 1..6,
+        // MONOTONIC (v1.4, extended v1.7 to every target): within a position strictly rising over the present targets 1..kGrTargetMax,
         // nulls skipped; across positions one direction PER LEVEL, nulls skipped, equal neighbours allowed.
         auto numAt = [] (const juce::var& g, int t) -> std::optional<double> { const auto v = g.getProperty (juce::String (t), {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
         for (int i = 0; i < curve.size(); ++i)
@@ -610,7 +617,7 @@ inline Export exportCompProfile (const juce::var& f)
         const auto q = sweepVar.getProperty ("quality", {});
         juce::StringArray dn; if (const auto* a = q.getProperty ("deepPointsNulled", {}).getArray()) for (const auto& x : *a) dn.add (x.toString());
         const auto dpe = q.getProperty ("deep_point_error_db", {});
-        notes << "deep points 4/5/6 (v1.7): deep_point_error_db " << ((dpe.isDouble() || dpe.isInt()) ? juce::String ((double) dpe, 2) + " dB over " + juce::String ((int) q.getProperty ("deepPointsCompared", 0)) + " surviving deep points" : juce::String ("none (no deep point measured twice)"))
+        notes << "deep points " << sweep::kDeepFrom << ".." << sweep::kGrTargetMax << " (v1.7, to 12 since v1.10): deep_point_error_db " << ((dpe.isDouble() || dpe.isInt()) ? juce::String ((double) dpe, 2) + " dB over " + juce::String ((int) q.getProperty ("deepPointsCompared", 0)) + " surviving deep points" : juce::String ("none (no deep point measured twice)"))
               << ", informational; deep points nulled by the hold-doubling test (over " << juce::String (sweep::kDeepHoldTolDb, 1) << " dB): " << (dn.isEmpty() ? juce::String ("none") : dn.joinIntoString (", "))
               << (deepOnlyNulled.isEmpty() ? juce::String() : "; deep points nulled on positions with no shallow point: " + deepOnlyNulled.joinIntoString (", "));
         flush();
@@ -619,6 +626,8 @@ inline Export exportCompProfile (const juce::var& f)
             noteLines.add ("deep null " + juce::String (key.first) + " dB - " + key.second + ": positions " + positions.joinIntoString (", "));
         for (const auto& [t, norms] : monoAcrossLevel)
             noteLines.add ("deep null " + juce::String (t) + " dB - breaks monotonic order across positions at " + norms.joinIntoString (", "));
+        for (const auto& [t, norms] : topSixBy)
+            noteLines.add ("deep " + juce::String (t) + " dB read in the top 6 dB of the sweep, where saturation also lowers level: positions " + norms.joinIntoString (", "));
     }
     notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured";
     flush();
@@ -637,7 +646,7 @@ inline Export exportCompProfile (const juce::var& f)
 
 //==============================================================================
 // HIS SECTION 6.4 (v1.7, as amended), as a pure function on an exported profile. For each amount position read
-// in_at_gr_dbfs[g], interpolating between ADJACENT points 1..6 for a fractional g (3.5 sits between 3 and 4); pick the
+// in_at_gr_dbfs[g], interpolating between ADJACENT points 1..kGrTargetMax for a fractional g (3.5 sits between 3 and 4); pick the
 // position whose value is nearest L, interpolating between positions for a continuous control, the nearest listed
 // detent for a stepped one; THE CLAMP (12 dB for g <= 3, widening above: pickClampDb) APPLIES TO THE PICK - the interpolated pick's own in_at_gr["1"] against
 // L - never to the candidate positions (checking the neighbours wrongly excluded valid in-between settings on soft-knee
@@ -648,23 +657,23 @@ inline Export exportCompProfile (const juce::var& f)
 inline constexpr double kPickClampDb = 12.0;        // the clamp for a shallow ask (g <= 3): v1.5, unchanged
 // THE CLAMP FOR DEEP ASKS (v1.9 section 6.4 step 4, Sean's ruling 3 Oct; the wording checked against v1.9): 12 dB up to g = 3, then
 // 12 + 2 x (g - 3), linear in between: 13 at 3.5, 14 at 4, 16 at 5, 18 at 6. The comparison is the same as before
-// (the pick's own interpolated 1 dB point against L); only the limit widens, and only above g = 3, so a shallow pick
+// (the pick's own interpolated 1 dB point against L): 20 at 7, 24 at 9, 30 at 12 (v1.10). Only the limit widens, and only above g = 3, so a shallow pick
 // is provably unchanged. Used by the pick replica and by the tone-check L rule.
 inline double pickClampDb (double g) { return g <= 3.0 ? kPickClampDb : kPickClampDb + 2.0 * (g - 3.0); }
 inline std::optional<double> inAtGr (const juce::var& point, double g)
 {
     const auto m = point.getProperty ("in_at_gr_dbfs", {});
     auto at = [&] (int k) -> std::optional<double> { const auto v = m.getProperty (juce::String (k), {}); return (v.isDouble() || v.isInt()) ? std::optional<double> ((double) v) : std::nullopt; };
-    const int lo = juce::jlimit (1, 6, (int) std::floor (g)), hi = juce::jlimit (1, 6, lo + 1);
+    const int lo = juce::jlimit (1, sweep::kGrTargetMax, (int) std::floor (g)), hi = juce::jlimit (1, sweep::kGrTargetMax, lo + 1);
     if (g <= 1.0) return at (1);
-    if (g >= 6.0) return at (6);
+    if (g >= (double) sweep::kGrTargetMax) return at (sweep::kGrTargetMax);
     if (std::abs (g - lo) < 1e-9) return at (lo);
     const auto a = at (lo), b = at (hi);
     if (! a || ! b) return std::nullopt;
     return *a + (*b - *a) * (g - lo);
 }
 // THE REVERSE READ (v1.8 section 6.4 step 2): the GR a position gives AT a level, interpolated across all of its numeric
-// points 1..6 (a level at its 5 dB point reports 5). Past its deepest point the figure is that deepest level, flagged
+// points 1..kGrTargetMax (a level at its 5 dB point reports 5). Past its deepest point the figure is that deepest level, flagged
 // extrapolated; below its shallowest point, that shallowest level, flagged the same way. A position with fewer than one
 // numeric point has no reverse read.
 struct GrAtLevel { bool ok = false; double gr = 0.0; bool extrapolated = false; int lo = 0, hi = 0; };
@@ -673,7 +682,7 @@ inline GrAtLevel grAtLevel (const juce::var& point, double L)
     GrAtLevel r;
     const auto m = point.getProperty ("in_at_gr_dbfs", {});
     std::vector<std::pair<int, double>> pts;                                   // (level, in_at) over the numeric points, level order
-    for (int k = 1; k <= 6; ++k) { const auto v = m.getProperty (juce::String (k), {}); if (v.isDouble() || v.isInt()) pts.push_back ({ k, (double) v }); }
+    for (int k : sweep::kGrTargets) { const auto v = m.getProperty (juce::String (k), {}); if (v.isDouble() || v.isInt()) pts.push_back ({ k, (double) v }); }
     if (pts.empty()) return r;
     r.ok = true;
     if (L >= pts.back().second)  { r.gr = pts.back().first;  r.lo = r.hi = pts.back().first;  r.extrapolated = L > pts.back().second + 1e-9;  return r; }
@@ -738,8 +747,8 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
             const double tt = nh == nl ? 0.0 : (ni - nl) / (nh - nl);
             return *inAtGr (curve[lo], (double) t) + (*inAtGr (curve[hi], (double) t) - *inAtGr (curve[lo], (double) t)) * tt;
         };
-        const int tLo = juce::jlimit (1, 6, (int) std::floor (gEff)), tHi = juce::jlimit (1, 6, tLo + 1);
-        const bool whole = std::abs (gEff - tLo) < 1e-9 || gEff >= 6.0;
+        const int tLo = juce::jlimit (1, sweep::kGrTargetMax, (int) std::floor (gEff)), tHi = juce::jlimit (1, sweep::kGrTargetMax, tLo + 1);
+        const bool whole = std::abs (gEff - tLo) < 1e-9 || gEff >= (double) sweep::kGrTargetMax;
         for (int i = 0; i < curve.size(); ++i)
         {
             if (v[(size_t) i]) continue;
@@ -830,8 +839,15 @@ inline ToneLevel toneLevelFor (const juce::var& profile, double g)
         if (L < lo || L > hi) continue;
         ++tl.tried;
         auto pk = pickPosition (profile, L, g);
-        if (pk.ok) { tl.ok = true; tl.L = L; tl.gapDb = L - tl.Lref; tl.pick = pk; return tl; }
-        lastRefusal = pk.refused;
+        // A TEST LEVEL MUST SIT ON THE LEVEL'S MEASURED CURVE (found live, 3 Oct, SBC at 9..12 dB): a continuous pick outside the
+        // range of the positions' in_at_gr[g] is the NEAREST position, not a position that gives g at L - the server's rung 4
+        // approximation, which a tone check must not rehearse as if it were a measurement (SBC: expected 9, read 7.77, at
+        // an L 9 dB below every 9 dB point). So for the L rule a continuous pick counts only when bracketed (or exactly on a
+        // point); the next candidate is a position's own point and is bracketed by construction. A stepped pick's expectation
+        // is its detent's reverse read, so it stands.
+        const bool onCurve = pk.ok && (pk.stepped || pk.i1 >= 0 || std::abs (L - pk.inAtG0) < 1e-6);
+        if (onCurve) { tl.ok = true; tl.L = L; tl.gapDb = L - tl.Lref; tl.pick = pk; return tl; }
+        lastRefusal = pk.ok ? "L " + juce::String (L, 2) + " is outside the positions' " + juce::String (g, 1) + " dB points (the pick would be the nearest position, not one that gives " + juce::String (g, 1) + " dB there)" : pk.refused;
     }
     tl.clampGeometry = ! spacing.empty() && tl.spacingMinDb > tl.clampDb;
     tl.reason = "no L within the measured range gives a pick inside the " + juce::String (tl.clampDb, 1) + " dB clamp (" + juce::String (tl.tried) + " L tried from L_ref " + juce::String (tl.Lref, 2) + "; last: " + lastRefusal + ")"

@@ -2448,7 +2448,7 @@ inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
 }
 
 // TONE-CHECK-ONLY MODE (v1.7, for the follow-up on a Mac that already ran the batch): from a cert folder's records and
-// traces, re-derive every exported record (the deep points 4/5/6 come out of the same traces), carry over what the traces
+// traces, re-derive every exported record (the deep points 4..12 come out of the same traces), carry over what the traces
 // do not hold, re-export, then load the plugin for the tone checks only - g = 2 with the v1.7 pick plus every deep level
 // the profile carries. No sweeps. Resumable: a profile whose tone check already carries spec v1.7 and its deep levels is
 // skipped. The same window watch: a window during the check is needs_licence; a product the scan stopped is not loaded.

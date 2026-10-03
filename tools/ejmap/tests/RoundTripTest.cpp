@@ -4265,8 +4265,8 @@ void testSweepDerivation()
                 check (! repeatQuality (zig, nullptr).acrossMonotonic, "quality Q6: 1 dB values that rise and fall across positions are an across-position violation");
                 // DEEP POINTS (v1.7, Q7-Q10): targets 1..6 from one constant; the trust gate stays 1/2/3; a deep point whose repeat
                 // differs by more than 0.5 dB is null and listed; deep_point_error_db is the worst over the SURVIVING deep points.
-                check (kGrTargets == std::vector<int> { 1, 2, 3, 4, 5, 6 } && kTrustTargets == std::vector<int> { 1, 2, 3 } && kDeepFrom == 4 && std::abs (kDeepHoldTolDb - 0.5) < 1e-9,
-                       "quality Q7: the targets are 1..6 from one constant, the trust gate 1/2/3, deep from 4, the deep hold tolerance 0.5 dB");
+                check (kGrTargetMax == 12 && kGrTargets == std::vector<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 } && kTrustTargets == std::vector<int> { 1, 2, 3 } && kDeepFrom == 4 && std::abs (kDeepHoldTolDb - 0.5) < 1e-9,
+                       "quality Q7 (v1.10): the targets are 1..12 generated from kGrTargetMax, the trust gate 1/2/3 unchanged, deep from 4, the deep hold tolerance 0.5 dB");
                 Derived dp = tx; for (auto& r : dp.inAtGr) if (r.at.count (3) && r.at.at (3).isDouble()) { const double v3 = (double) r.at.at (3); r.at[4] = v3 + 1.5; r.at[5] = v3 + 3.0; r.at[6] = v3 + 4.5; }
                 Derived dq = dp; bool bumped = false; int bumpedPos = -1;
                 for (size_t i = 0; i < dq.inAtGr.size() && ! bumped; ++i) if (dq.inAtGr[i].at.count (5) && dq.inAtGr[i].at.at (5).isDouble()) { dq.inAtGr[i].at[5] = (double) dq.inAtGr[i].at.at (5) + 0.8; bumped = true; bumpedPos = (int) i; }
@@ -5401,7 +5401,7 @@ void testProfileExport()
         {
             std::map<std::pair<int, juce::String>, int> inCurve, onLines;
             const auto cv = prof.getProperty ("amount", {}).getProperty ("curve", {});
-            for (int i = 0; i < cv.size(); ++i) for (int t = 4; t <= 6; ++t) if (cv[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), 0.0).isVoid()) ++inCurve[{ t, juce::String ((double) cv[i].getProperty ("norm", 0.0), 4) }];
+            for (int i = 0; i < cv.size(); ++i) for (int t : ejmap::sweep::kGrTargets) if (t >= ejmap::sweep::kDeepFrom && cv[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), 0.0).isVoid()) ++inCurve[{ t, juce::String ((double) cv[i].getProperty ("norm", 0.0), 4) }];
             for (const auto& line : juce::StringArray::fromTokens (notesText (prof.getProperty ("notes", {})), ";", ""))
             {
                 const auto l = line.trim(); if (! l.startsWith ("deep null ")) continue;
@@ -5472,6 +5472,31 @@ void testProfileExport()
                 const auto es = exportCompProfile (sh);
                 check (! es.ok && es.refused.contains ("shallow in_at_gr order break") && es.refused.contains ("point 6: 2 dB not strictly above 1 dB"),
                        "export X36: a 1/2/3 order break that survived the derivation REFUSES the export (needs_review, the violation named) - never exported with the flag false, which the server would reject (" + es.refused + ")");
+                // TARGETS TO 12 (v1.10, X37-X39): keys 1..12 on every exported point; a position carrying 7..12 exports them, the carried levels follow;
+                // THE SATURATION NOTE: a deep point read above -9.01 dBFS RMS (the top 6 dB) is listed per level, information only, never nulled
+                auto twelve = juce::JSON::parse (juce::JSON::toString (deepRec)); auto i12 = twelve.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
+                for (int i = 2; i <= 13; ++i) { auto* o = i12[i].getDynamicObject(); const double v6 = (double) i12[i].getProperty ("5", {}) + 1.4; o->setProperty ("6", v6); for (int t = 7; t <= 12; ++t) o->setProperty (juce::String (t), (i >= 8 || t <= 9) ? juce::var (v6 + 1.0 * (t - 6)) : juce::var()); }
+                const auto e12 = exportCompProfile (twelve); const auto c12 = e12.profile.getProperty ("amount", {}).getProperty ("curve", {}); const auto n12 = notesText (e12.profile.getProperty ("notes", {}));
+                bool keys12 = e12.ok; for (int i = 0; i < c12.size() && keys12; ++i) for (int t = 1; t <= 12; ++t) if (! c12[i].getProperty ("in_at_gr_dbfs", {}).hasProperty (juce::String (t))) keys12 = false;
+                check (keys12 && ! c12[13].getProperty ("in_at_gr_dbfs", {}).getProperty ("12", 0.0).isVoid() && c12[4].getProperty ("in_at_gr_dbfs", {}).getProperty ("10", 0.0).isVoid() && deepLevelsCarried (e12.profile) == std::vector<int> { 4, 5, 6, 7, 8, 9, 10, 11, 12 },
+                       "export X37 (v1.10): every point carries keys 1..12, a 12 dB point exports where measured, null where not, and the carried deep levels run 4..12 (" + e12.refused + ")");
+                check (nullAccount (e12.profile, why), "export X38 (v1.10): the account stays exact over 4..12 (" + why + ")");
+                // THE SATURATION NOTE, judged from the export itself: at each deep level the positions whose exported point is above -9.01 dBFS RMS
+                // must be on that level's line and no other position may be; a level with nothing up there has no line; the points stay numeric
+                {
+                    bool noteRight = true; juce::String detail;
+                    for (int t = 4; t <= 12; ++t)
+                    {
+                        juce::StringArray up; int numeric = 0;
+                        for (int i = 0; i < c12.size(); ++i) { const auto v = c12[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), {}); if (v.isDouble()) { ++numeric; if ((double) v > -9.0103) up.add (juce::String ((double) c12[i].getProperty ("norm", 0.0), 4)); } }
+                        const auto line = "deep " + juce::String (t) + " dB read in the top 6 dB of the sweep, where saturation also lowers level: positions ";
+                        const bool has = n12.contains (line);
+                        if (up.isEmpty() ? has : ! n12.contains (line + up.joinIntoString (", "))) { noteRight = false; detail << t << " dB: up [" << up.joinIntoString (", ") << "] has " << (int) has << "; "; }
+                        if (numeric == 0 && has) noteRight = false;
+                    }
+                    const bool some = n12.contains ("read in the top 6 dB"), none6 = ! notesText (e.profile.getProperty ("notes", {})).contains ("read in the top 6 dB");   // the shallow-only export: no deep point, so no line
+                    check (noteRight && some && none6, "export X39 (v1.10): per deep level the positions read above -9.01 dBFS RMS (and only those) are on the saturation line, which exists only when some are; the shallow-only profile (no deep point) has none; the points stay numeric (" + detail + ")");
+                }
             }
         }
     }
@@ -5629,6 +5654,12 @@ void testProfileExport()
                 auto pt3 = juce::JSON::parse (juce::JSON::toString (pt)); for (int k : { 4, 5, 6 }) pt3.getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty (juce::String (k), juce::var());
                 const auto r3 = grAtLevel (pt3, -20.25);
                 check (r3.ok && std::abs (r3.gr - 3.0) < 1e-9 && r3.extrapolated, "pick R1b: with only 1-3 measured, a level past the 3 dB point reads 3 and says extrapolated - the read runs over whatever points the position carries");
+                // R1c (v1.10): the read runs to 12 - a level at a position's 9 dB point reports 9, between 8 and 9 reports 8.5, past its 12 dB point 12 extrapolated; and the forward read interpolates 8.5 between 8 and 9
+                const auto pt12 = juce::JSON::parse (R"json({"in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "3": -23.0, "4": -21.0, "5": -19.5, "6": -18.5, "7": -17.5, "8": -16.5, "9": -15.5, "10": -14.5, "11": -13.5, "12": -12.5}})json");
+                const auto r9 = grAtLevel (pt12, -15.5), r85 = grAtLevel (pt12, -16.0), r13 = grAtLevel (pt12, -10.0);
+                check (r9.ok && std::abs (r9.gr - 9.0) < 1e-9 && ! r9.extrapolated && r85.ok && std::abs (r85.gr - 8.5) < 1e-9 && r13.ok && std::abs (r13.gr - 12.0) < 1e-9 && r13.extrapolated
+                         && inAtGr (pt12, 8.5) && std::abs (*inAtGr (pt12, 8.5) - (-16.0)) < 1e-9 && inAtGr (pt12, 12.0) && std::abs (*inAtGr (pt12, 12.0) - (-12.5)) < 1e-9 && inAtGr (pt12, 12.5) && std::abs (*inAtGr (pt12, 12.5) - (-12.5)) < 1e-9,
+                       "pick R1c (v1.10): the reverse read reports 9 at the 9 dB point, 8.5 halfway to 8, 12 extrapolated past the 12 dB point; the forward read gives -16.0 at 8.5 and the 12 dB point at and beyond 12 - no second list stops at 6");
                 // R2: a stepped unit whose nearest detent gives 2.6 at L expects 2.6 - a measured 2.6 passes, and it is NOT failed against 2.0 (0.6 out)
                 const auto stepU = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": true, "curve": [
                     {"norm": 0.0, "display": "a", "in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "3": -23.0, "4": -21.0, "5": -19.5, "6": -18.5}},
@@ -5688,6 +5719,16 @@ void testProfileExport()
                        "tone T8: the same rule applies to g = 2 - the recorded L is L_ref (" + juce::String (lref, 2) + " through detector_f " + juce::String (fdeep, 2) + ") when its pick is valid, gap 0, first try");
                 check (std::abs (toneLevelRef (0.0) - (-18.4)) < 1e-9 && std::abs (toneLevelRef (1.0) - (-9.2103)) < 1e-4 && std::abs (toneLevelRef (0.43) - (-14.4484)) < 1e-3,
                        "tone T8b: L_ref is -18.4 for an RMS unit, -9.21 for a peak unit, -14.45 for CL 1B's f = 0.43 (the spec's example track through section 6.4 step 1)");
+                // T8d (found live on SBC's 9..12 dB): when every position's g point sits above L_ref, the pick at L_ref is merely the nearest position
+                // and does not give g there - the L rule skips it and takes the nearest point on the curve (gap recorded); a rule that accepts the
+                // unbracketed pick tests the wrong thing (SBC: expected 9, read 7.77)
+                const auto high = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
+                    {"norm": 0.5, "display": "a", "in_at_gr_dbfs": {"1": -14.0, "2": -12.0, "3": -11.0, "9": -8.0}},
+                    {"norm": 0.8, "display": "b", "in_at_gr_dbfs": {"1": -13.0, "2": -11.0, "3": -10.0, "9": -6.0}},
+                    {"norm": 1.0, "display": "c", "in_at_gr_dbfs": {"1": -12.0, "2": -10.0, "3": -9.0, "9": -4.5}}]}})json");
+                const auto t9 = toneLevelFor (high, 9.0);
+                check (pickPosition (high, -18.4, 9.0).ok && pickPosition (high, -18.4, 9.0).i1 < 0 && t9.ok && std::abs (t9.L - (-8.0)) < 1e-9 && std::abs (t9.gapDb - 10.4) < 1e-9 && t9.tried == 2 && t9.pick.i0 == 0,
+                       "tone T8d: with every 9 dB point above L_ref (-18.4) the pick there is only the nearest position (unbracketed, clamp passes) - skipped; the nearest point on the curve (-8.0, position a, gap +10.4) is the test level");
                 auto nof = juce::JSON::parse (juce::JSON::toString (wide)); nof.getDynamicObject()->removeProperty ("detector_f");
                 check (! toneLevelFor (nof, 2.0).ok && toneLevelFor (nof, 2.0).reason.contains ("no detector_f"), "tone T8c: without detector_f the level cannot be anchored and the rule says so - it never assumes RMS");
             }
@@ -5707,6 +5748,8 @@ void testProfileExport()
             check (std::abs (pickClampDb (2.0) - 12.0) < 1e-9 && std::abs (pickClampDb (3.0) - 12.0) < 1e-9 && std::abs (pickClampDb (3.5) - 13.0) < 1e-9 && std::abs (pickClampDb (4.0) - 14.0) < 1e-9
                    && std::abs (pickClampDb (5.0) - 16.0) < 1e-9 && std::abs (pickClampDb (6.0) - 18.0) < 1e-9 && std::abs (pickClampDb (1.0) - 12.0) < 1e-9 && std::abs (pickClampDb (2.5) - 12.0) < 1e-9,
                    "clamp C1: the limit at g = 2, 3, 3.5, 4, 5, 6 is 12, 12, 13, 14, 16, 18 (and 12 at 1 and 2.5: nothing widens below 3)");
+            check (std::abs (pickClampDb (7.0) - 20.0) < 1e-9 && std::abs (pickClampDb (9.0) - 24.0) < 1e-9 && std::abs (pickClampDb (12.0) - 30.0) < 1e-9 && std::abs (pickClampDb (10.5) - 27.0) < 1e-9,
+                   "clamp C1b (v1.10): the same line continues - 20 at 7, 24 at 9, 30 at 12 (27 at 10.5)");
             {
                 // C2: the geometry profile (1->2 spacing 14/15/16) at g = 2 is still refused (12 dB) - the default build is unchanged - while the same
                 // spacings at g = 6 (limit 18) pass: SBC-shaped units come back TESTED at their deep levels
