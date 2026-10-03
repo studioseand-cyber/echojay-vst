@@ -1874,3 +1874,26 @@ delta rounded before the gate, the order check on the raw record.
 patterns identical, accounts exact, flags true, tone checks unchanged (g = 2 and 9/9 deep PASS each; CL 1B dry). The new
 figures — `point_error_db` / `deep_point_error_db`: 7X-500 0.01 / 0.00, SBC 0.01 / 0.01, bx_opto **0.11** / 0.01, mpressor
 0.01 / 0.01, CL 1B **0.03** / 0.01 — the raw worsts, as predicted in §33's measurement. No verdict changed. 43.7 s for four.
+
+## 35. v2.1 (copied to docs/COMP_PROFILE_SPEC_v2_1.md): the clamp is the pick's own spacing + 3 dB past 3 dB (3 Oct, late)
+
+`profile::pickAllowanceDb (g, pickSpacingDb)`: at 3 dB or under the flat 12 (unchanged); past 3 dB the PICKED position's own
+measured spacing from its 1 dB point to g, plus 3 dB — the pick's g point and 1 dB point both interpolated with the pick's
+own t, so an interior continuous pick agrees by construction (L − pickOne = spacing < spacing + 3). Same comparison; the
+refusal names the allowance it used ("this pick's own 1->9.0 dB spacing 24.5 + 3 dB"). `12 + 2 × (g − 3)` is gone from the
+sources and the tests; clamp geometry (a unit spaced wider than a fixed clamp) cannot occur and its reason class is gone
+too. The on-curve rule for the tone-check L stays (it is what stopped SBC's 9 dB false failure and is independent of the
+clamp). **The estimated branch is not built** — said in the code: the tone check never picks an estimated point (§6.3 never
+extrapolates, the L rule only tests on the curve).
+
+Pins A1 (a 3.06 dB/dB unit's interior picks at 9 and 12: allowed, spacing 24.48 / 33.66 → allowance 27.48 / 36.66, where
+the old line's 24 / 30 refused both), A2 (an interior continuous pick at any g > 3 passes, 24 cases), A3 (a stepped detent
+3.5 dB louder than its own 9 dB point refused naming the allowance; 2.5 above, or below, passes), A4 (flat 12 at g = 2 and 3,
+the soft unit's refused pick at −14 unchanged), A5 (the fallback level's own spacing), A6 (the L rule records the allowance);
+T10 re-stated (flat 12 at 2 dB still bites). Mutants red: the old line past 3 dB (5 pins), spacing + 3 applied at g ≤ 3
+(7), margin 5 dB (4), spacing never computed (13).
+
+**Live (tc29 vs tc27):** L moved on 0 of 40 levels, verdicts changed on 0; every allowance now the pick's own spacing + 3
+(7X-500 6.7 … 15.7 at 4 … 12; SBC 12.2 … 31.3; bx_opto 8.1 … 19.3; mpressor 7.7 … 20.1). CL 1B dry run: every level at
+L_ref −14.45, allowances 15.4 … 28.0 against 12.4 … 25.0 below — its 12 dB pick, which the v1.9 line (30) only just
+allowed, now has 3 dB of margin by construction. 41.7 s for four.

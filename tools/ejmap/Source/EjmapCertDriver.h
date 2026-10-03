@@ -2803,7 +2803,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 
     // ONE LEVEL (v1.7 section 8, L per level ruled 3 Oct): the test L for this g by profile::toneLevelFor (or the caller's
     // override), the pick there, the writes, one fresh process at L, the GR against the pick's expected g within 0.5 dB.
-    struct LevelResult { double g = 0, Lrms = 0, Lpeak = 0, Lref = 0, gapDb = 0; bool ran = false, pass = false, quietOk = false, window = false, noValidL = false, clampGeometry = false; std::optional<double> gr; profile::Pick pick; juce::String why, rule; double spacingMinDb = 0; };
+    struct LevelResult { double g = 0, Lrms = 0, Lpeak = 0, Lref = 0, gapDb = 0; bool ran = false, pass = false, quietOk = false, window = false, noValidL = false; std::optional<double> gr; profile::Pick pick; juce::String why, rule; };
     auto checkAt = [&] (double gg, const juce::String& tag) -> LevelResult
     {
         LevelResult lr; lr.g = gg;
@@ -2811,8 +2811,8 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         else
         {
             const auto tl = profile::toneLevelFor (profile, gg);
-            lr.rule = tl.rule; lr.spacingMinDb = tl.spacingMinDb; lr.Lref = tl.Lref; lr.gapDb = tl.gapDb;
-            if (! tl.ok) { lr.noValidL = true; lr.clampGeometry = tl.clampGeometry; lr.why = tl.reason; say ("TONE: " + product + " - " + juce::String (gg, 1) + " dB: " + lr.why); return lr; }
+            lr.rule = tl.rule; lr.Lref = tl.Lref; lr.gapDb = tl.gapDb;
+            if (! tl.ok) { lr.noValidL = true; lr.why = tl.reason; say ("TONE: " + product + " - " + juce::String (gg, 1) + " dB: " + lr.why); return lr; }
             lr.Lrms = tl.L; lr.pick = tl.pick;
         }
         lr.Lpeak = lr.Lrms + profile::kPeakToSineRmsDb;
@@ -2870,9 +2870,8 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         auto* dl = new juce::DynamicObject(); dl->setProperty ("g_db", (double) t); dl->setProperty ("ran", lr.ran); dl->setProperty ("gr_measured_db", lr.gr ? juce::var (std::round (*lr.gr * 100.0) / 100.0) : juce::var());
         dl->setProperty ("L_rms_dbfs", lr.ran || lr.pick.ok ? juce::var (lr.Lrms) : juce::var()); dl->setProperty ("L_rule", lr.rule); dl->setProperty ("L_ref_dbfs", lr.Lref); dl->setProperty ("L_gap_db", lr.ran || lr.pick.ok ? juce::var (std::round (lr.gapDb * 100.0) / 100.0) : juce::var());
         dl->setProperty ("quiet_check_ok", lr.quietOk); dl->setProperty ("pass_within_0_5_db", lr.pass); dl->setProperty ("pick", lr.pick.ok ? pickVar (lr.pick) : juce::var()); if (! lr.ran) dl->setProperty ("why_not_run", lr.why);
-        // WHY A LEVEL IS NULLED (ruled 3 Oct): a failed check at the recorded L, or no valid L inside the clamp (clamp geometry named)
-        dl->setProperty ("null_reason", lr.pass ? juce::var() : lr.ran ? juce::var ("failed_check_at_L") : lr.noValidL ? juce::var (lr.clampGeometry ? "no_valid_L_clamp_geometry" : "no_valid_L") : juce::var ("could_not_run"));
-        if (lr.spacingMinDb > 0.0) dl->setProperty ("spacing_1_to_g_min_db", std::round (lr.spacingMinDb * 10.0) / 10.0);
+        // WHY A LEVEL IS NULLED (ruled 3 Oct): a failed check at the recorded L, or no valid L on the curve
+        dl->setProperty ("null_reason", lr.pass ? juce::var() : lr.ran ? juce::var ("failed_check_at_L") : lr.noValidL ? juce::var ("no_valid_L") : juce::var ("could_not_run"));
         deepArr.add (juce::var (dl));
         if (! lr.pass)
         {
@@ -2880,11 +2879,11 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
             // THE NOTE LINE (v1.8 notes, ruled 3 Oct): one per (level, reason), the positions that carried the level by norm
             juce::StringArray carried; { const auto cv = profile.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < cv.size(); ++i) if (profile::inAtGr (cv[i], (double) t)) carried.add (juce::String ((double) cv[i].getProperty ("norm", 0.0), 4)); }
             const juce::String why = lr.ran ? "tone check failed (GR " + (lr.gr ? juce::String (*lr.gr, 2) : juce::String ("unreadable")) + " dB against " + juce::String (lr.pick.expectedGrDb, 2) + " expected at L " + juce::String (lr.Lrms, 2) + " dBFS RMS)"
-                                   : lr.noValidL ? "tone level untestable (no valid L in the measured range" + (lr.clampGeometry ? ", 1->" + juce::String (t) + " dB spacing at least " + juce::String (lr.spacingMinDb, 1) + " dB at every position: clamp geometry" : juce::String()) + ")"
+                                   : lr.noValidL ? juce::String ("tone level untestable (no valid L in the measured range)")
                                    : "tone check could not run (" + lr.why + ")";
             toneNullLines.add ("deep null " + juce::String (t) + " dB - " + why + ": positions " + carried.joinIntoString (", "));
             profile::nullLevelAcrossPositions (profile, t);
-            say ("TONE: " + product + " - the " + juce::String (t) + " dB level " + (lr.ran ? "FAILED its tone check at L " + juce::String (lr.Lrms, 2) : lr.noValidL ? (lr.clampGeometry ? "has no L inside the clamp (1->" + juce::String (t) + " spacing at least " + juce::String (lr.spacingMinDb, 1) + " dB: clamp geometry)" : "has no valid L in the measured range") : "could not be checked") + ": null across all positions (the profile stands)");
+            say ("TONE: " + product + " - the " + juce::String (t) + " dB level " + (lr.ran ? "FAILED its tone check at L " + juce::String (lr.Lrms, 2) : lr.noValidL ? juce::String ("has no valid L in the measured range") : juce::String ("could not be checked")) + ": null across all positions (the profile stands)");
         }
     }
     o->setProperty ("deep_levels", deepArr); o->setProperty ("deep_levels_nulled", nulled);

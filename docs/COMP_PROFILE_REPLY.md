@@ -428,3 +428,10 @@ a floor. Fixed in the follow-up build: the test runs on raw values (probe resolu
 raw worsts to 0.01 (the five rehearsal units: 0.01 / 0.01 / 0.11 / 0.01 / 0.03 shallow, ≤ 0.01 deep). `in_at_gr_dbfs`
 is still exported at 0.1 dB; every exported value is byte-identical to the previous build, and nothing you read changes
 except those two quality figures.
+
+## 3 Oct (late): v2.1's allowance mirrored
+
+Past 3 dB the clamp is the picked position's own 1→g spacing plus 3 dB, interpolated like the pick; the flat 12 stays
+for 3 dB and under; the refusal names the allowance. The old line is gone. The estimated-spacing branch is not built on
+our side: the tone check never picks an estimated point. Re-run: no L moved, no verdict changed on the five; CL 1B's 12 dB
+pick now carries its 3 dB margin by construction (25.0 below against 28.0).

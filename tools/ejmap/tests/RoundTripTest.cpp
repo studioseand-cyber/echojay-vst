@@ -5765,42 +5765,43 @@ void testProfileExport()
                 {"norm": 0.5, "display": "b", "in_at_gr_dbfs": {"1": -39.0, "2": -24.0}},
                 {"norm": 0.8, "display": "c", "in_at_gr_dbfs": {"1": -34.0, "2": -18.0}}]}})json");
             const auto tg = toneLevelFor (geom, 2.0);
-            check (! tg.ok && tg.clampGeometry && std::abs (tg.spacingMinDb - 14.0) < 1e-9 && tg.tried == 4 && tg.reason.contains ("CLAMP GEOMETRY") && tg.reason.contains ("at least 14.0 dB at every position") && tg.reason.contains ("not a failed check"),
-                   "tone T10: with 1->g spacing at least 14 dB at every position (14/15/16) no L passes the clamp (4 tried: L_ref and the three values); the reason names CLAMP GEOMETRY with the spacing, the unit's property, never a failed check (" + tg.reason + ")");
-            // THE CLAMP FOR DEEP ASKS (C1-C4, v1.9, Sean's ruling 3 Oct): 12 up to g = 3, then 12 + 2 x (g - 3), linear; shallow picks unchanged
-            check (std::abs (pickClampDb (2.0) - 12.0) < 1e-9 && std::abs (pickClampDb (3.0) - 12.0) < 1e-9 && std::abs (pickClampDb (3.5) - 13.0) < 1e-9 && std::abs (pickClampDb (4.0) - 14.0) < 1e-9
-                   && std::abs (pickClampDb (5.0) - 16.0) < 1e-9 && std::abs (pickClampDb (6.0) - 18.0) < 1e-9 && std::abs (pickClampDb (1.0) - 12.0) < 1e-9 && std::abs (pickClampDb (2.5) - 12.0) < 1e-9,
-                   "clamp C1: the limit at g = 2, 3, 3.5, 4, 5, 6 is 12, 12, 13, 14, 16, 18 (and 12 at 1 and 2.5: nothing widens below 3)");
-            check (std::abs (pickClampDb (7.0) - 20.0) < 1e-9 && std::abs (pickClampDb (9.0) - 24.0) < 1e-9 && std::abs (pickClampDb (12.0) - 30.0) < 1e-9 && std::abs (pickClampDb (10.5) - 27.0) < 1e-9,
-                   "clamp C1b (v1.10): the same line continues - 20 at 7, 24 at 9, 30 at 12 (27 at 10.5)");
-            {
-                // C2: the geometry profile (1->2 spacing 14/15/16) at g = 2 is still refused (12 dB) - the default build is unchanged - while the same
-                // spacings at g = 6 (limit 18) pass: SBC-shaped units come back TESTED at their deep levels
-                auto geom6 = juce::JSON::parse (juce::JSON::toString (geom));
-                { auto c6 = geom6.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c6.size(); ++i) { auto* o = c6[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject(); o->setProperty ("6", o->getProperty ("2")); o->setProperty ("2", juce::var()); } }
-                const auto t6 = toneLevelFor (geom6, 6.0), t2 = toneLevelFor (geom, 2.0);
-                check (! t2.ok && t2.clampGeometry && std::abs (t2.clampDb - 12.0) < 1e-9 && t6.ok && std::abs (t6.clampDb - 18.0) < 1e-9 && std::abs (t6.L - (-18.4)) < 1e-9 && t6.pick.ok && std::abs (t6.pick.clampDb - 18.0) < 1e-9 && t6.pick.expectedGrDb == 6.0,
-                       "clamp C2: 1->g spacing 14-16 dB is clamp geometry at g = 2 (limit 12, unchanged) and TESTED at g = 6 (limit 18): L_ref -18.4 picks (its 1 dB point 15.9 below), expectation 6 (t2 ok " + juce::String ((int) t2.ok) + " geom " + juce::String ((int) t2.clampGeometry) + " clamp " + juce::String (t2.clampDb, 1) + "; t6 ok " + juce::String ((int) t6.ok) + " clamp " + juce::String (t6.clampDb, 1) + " L " + juce::String (t6.L, 2) + " pick clamp " + juce::String (t6.pick.clampDb, 1) + " exp " + juce::String (t6.pick.expectedGrDb, 2) + " " + t6.reason + ")");
-                // C3: the limit is the one at the ASK, read off the pick's own 1 dB point as before - at g = 4 (limit 14) a pick 13.5 dB above its 1 dB point passes, 14.5 is refused
-                const auto g4 = juce::JSON::parse (R"json({"detector_f": 0.0, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false, "curve": [
-                    {"norm": 0.2, "display": "a", "in_at_gr_dbfs": {"1": -40.0, "2": -36.0, "3": -33.0, "4": -26.5}},
-                    {"norm": 0.8, "display": "b", "in_at_gr_dbfs": {"1": -40.0, "2": -36.0, "3": -33.0, "4": -16.5}}]}})json");   // both 1 dB points -40, so the pick's own is -40 wherever it lands
-                const auto p4a = pickPosition (g4, -26.5, 4.0), p4b = pickPosition (g4, -25.5, 4.0);
-                check (p4a.ok && std::abs (p4a.clampDb - 14.0) < 1e-9 && std::abs (-26.5 - p4a.pickOneDb - 13.5) < 1e-9 && ! p4b.ok && p4b.refused.contains ("14.0 dB below L") && p4b.refused.contains ("v1.9"),
-                       "clamp C3: at g = 4 the limit is 14 on the pick's own 1 dB point - 13.5 below passes, 14.5 is refused and the refusal names the limit and the ruling (" + p4b.refused + ")");
-                // C4: a fractional ask between 3 and 4 gets the linear limit (13 at 3.5), and the fallback level (gEff) sets it when nothing carried g
-                const auto p35 = pickPosition (g4, -29.75, 3.5);
-                check (p35.ok && std::abs (p35.clampDb - 13.0) < 1e-9, "clamp C4: a 3.5 dB ask is clamped at 13 (linear between 12 at 3 and 14 at 4)");
-                // C5: 'clamp geometry' is judged against the limit AT g - 14-16 dB spacing at g = 6 (limit 18) is not geometry; with every candidate outside the range the level is untestable for the range, not the unit
-                auto geom6n = juce::JSON::parse (juce::JSON::toString (geom6)); geom6n.getProperty ("measured", {}).getDynamicObject()->setProperty ("steps_dbfs", juce::Array<juce::var> { -10.0, -3.01, 2 });
-                const auto t6n = toneLevelFor (geom6n, 6.0);
-                check (! t6n.ok && ! t6n.clampGeometry && t6n.tried == 0 && std::abs (t6n.spacingMinDb - 14.0) < 1e-9 && ! t6n.reason.contains ("CLAMP GEOMETRY"),
-                       "clamp C5: with no candidate in range at g = 6 the level is untestable but NOT clamp geometry (spacing 14 is inside the 18 dB limit at 6)");
-            }
-            check (! toneLevelFor (prof, 6.0).ok && ! toneLevelFor (prof, 6.0).clampGeometry && toneLevelFor (prof, 6.0).reason.contains ("no position carries 6.0 dB"),
-                   "tone T10b: a level no position carries is not clamp geometry - the reason says no position carries it");
-            // T11: a unit whose spacing passes the clamp but whose values straddle the clamp at the median: the first by distance that passes is taken, and the count of tries is recorded
+            // T10 (v2.1: the flat 12 at g = 2 still bites): 1->2 spacings 14 / 15 / 16 dB, so no L on the curve passes at 2 dB; the reason says no valid L and names the flat allowance, never a failed check
+            check (! tg.ok && tg.tried == 4 && tg.reason.contains ("no L within the measured range gives a valid pick") && tg.reason.contains ("the flat 12 dB") && ! tg.reason.contains ("failed"),
+                   "tone T10: at g = 2 the flat 12 dB still applies - with 1->2 spacing 14-16 dB no L on the curve passes (4 tried: L_ref and the three values); the reason names the flat allowance, never a failed check (" + tg.reason + ")");
+            check (! toneLevelFor (prof, 6.0).ok && toneLevelFor (prof, 6.0).reason.contains ("no position carries 6.0 dB"), "tone T10b: a level no position carries says so");
             check (tl.tried == 3 && tg.tried == 4, "tone T11: the tries are recorded (3 here: L_ref, -16, then -22; every candidate when none passes)");
+            // THE ALLOWANCE (v2.1 section 6.4 step 4, A1-A6): past 3 dB it is the pick's OWN 1->g spacing + 3 dB; at 3 dB or under the flat 12
+            {
+                // A1: a CL 1B-shaped unit, 3.06 dB of input per dB of GR (1->9 = 24.48 dB, 1->12 = 33.66 dB): interior continuous picks at 9 and 12 are allowed; the old line (24 at 9, 30 at 12) refused both
+                juce::Array<juce::var> cl; for (int i = 0; i < 6; ++i) { auto* o = new juce::DynamicObject(); o->setProperty ("norm", i / 5.0); o->setProperty ("display", juce::String (i)); auto* g = new juce::DynamicObject(); const double one = -50.0 + 4.0 * i; for (int t = 1; t <= 12; ++t) g->setProperty (juce::String (t), one + 3.06 * (t - 1)); o->setProperty ("in_at_gr_dbfs", juce::var (g)); cl.add (juce::var (o)); }
+                auto clp = juce::JSON::parse (R"json({"detector_f": 0.43, "measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": false}})json"); clp.getProperty ("amount", {}).getDynamicObject()->setProperty ("curve", cl);
+                const auto p9 = pickPosition (clp, -16.0, 9.0), p12 = pickPosition (clp, -8.0, 12.0);
+                check (p9.ok && p9.i1 >= 0 && std::abs (p9.pickSpacingDb - 24.48) < 1e-6 && std::abs (p9.clampDb - 27.48) < 1e-6 && p12.ok && p12.i1 >= 0 && std::abs (p12.pickSpacingDb - 33.66) < 1e-6 && std::abs (p12.clampDb - 36.66) < 1e-6,
+                       "clamp A1 (v2.1): a 3.06 dB/dB unit's interior picks at 9 dB (spacing 24.48, allowance 27.48) and 12 dB (33.66 / 36.66) are allowed - the old 12 + 2 x (g - 3) (24 / 30) refused both (" + p9.refused + p12.refused + ")");
+                // A2: an interior continuous pick at any g > 3 passes by construction (L - pickOne == its spacing < spacing + 3)
+                bool allPass = true; juce::String why2;
+                for (double g : { 3.5, 4.0, 5.0, 7.0, 10.5, 12.0 }) for (double L : { -40.0, -30.0, -20.0, -12.0 }) { const auto pk = pickPosition (clp, L, g); if (pk.i1 >= 0 && ! pk.ok) { allPass = false; why2 << g << "@" << L << " "; } }
+                check (allPass, "clamp A2: an interior continuous pick at any g > 3 always passes - its own 1 dB point sits exactly its spacing below L (" + why2 + ")");
+                // A3: a STEPPED detent more than 3 dB louder than its own g point is refused, naming the allowance; one within 3 dB passes. Detents' 9 dB points: -25.52 .. -5.52 in 4 dB steps.
+                auto st = juce::JSON::parse (juce::JSON::toString (clp)); st.getProperty ("amount", {}).getDynamicObject()->setProperty ("stepped", true);
+                const auto sIn = pickPosition (st, -11.0, 9.0);                  // nearest detent's 9 dB point -9.52: the level sits 1.48 BELOW it (quieter): passes
+                auto far = juce::JSON::parse (juce::JSON::toString (st)); { juce::Array<juce::var> two; two.add (cl[0]); two.add (cl[5]); far.getProperty ("amount", {}).getDynamicObject()->setProperty ("curve", two); }
+                const auto sOut = pickPosition (far, -3.0, 9.0), sOut2 = pickPosition (far, -2.0, 9.0);   // detent 5's 9 dB point -5.52: L 2.52 above passes; 3.52 above is refused
+                check (sIn.ok && sIn.stepped && std::abs (sIn.clampDb - 27.48) < 1e-6 && sOut.ok && ! sOut2.ok && sOut2.refused.contains ("allowance at 9.0 dB is this pick's own 1->9.0 dB spacing 24.5 + 3 dB") && sOut2.refused.contains ("more than 27.5 dB below L"),
+                       "clamp A3: a stepped detent within 3 dB of where the level sits passes (2.5 above, or below); one more than 3 dB louder than its own 9 dB point (3.5 above) is refused, naming the allowance (" + sOut2.refused + ")");
+                // A4: g = 2 and 3 use the flat 12 regardless of spacing
+                const auto f2 = pickPosition (soft, -18.0, 2.0), f3 = pickPosition (clp, -30.0, 3.0);
+                check (f2.ok && std::abs (f2.clampDb - 12.0) < 1e-9 && std::abs (f2.pickSpacingDb) < 1e-9 && f3.ok && std::abs (f3.clampDb - 12.0) < 1e-9 && ! pickPosition (soft, -14.0, 2.0).ok && pickPosition (soft, -14.0, 2.0).refused.contains ("the flat 12 dB"),
+                       "clamp A4: at g = 2 and 3 the allowance is the flat 12 dB whatever the spacing (a mutant applying spacing + 3 there goes red: the soft unit's refused pick at -14 would pass)");
+                // A5: the fallback level (deepest carried) sets the spacing when nothing carries g
+                auto no12 = juce::JSON::parse (juce::JSON::toString (clp)); { auto c = no12.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < c.size(); ++i) c[i].getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty ("12", juce::var()); }
+                const auto pf = pickPosition (no12, -8.0, 12.0);
+                check (pf.ok && pf.fellBackToMeasured && std::abs (pf.expectedGrDb - 11.0) < 1e-9 && std::abs (pf.pickSpacingDb - 30.6) < 1e-6 && std::abs (pf.clampDb - 33.6) < 1e-6,
+                       "clamp A5: when nothing carries 12 the deepest level (11) answers and the allowance is that level's own spacing + 3");
+                // A6: the tone-check L rule records the allowance of the pick it chose
+                const auto t12 = toneLevelFor (clp, 12.0);
+                check (t12.ok && std::abs (t12.clampDb - 36.66) < 1e-6, "clamp A6: the L rule records the allowance of the pick it chose (36.66 at 12 dB on the 3.06 dB/dB unit)");
+            }
         }
     }
     {
