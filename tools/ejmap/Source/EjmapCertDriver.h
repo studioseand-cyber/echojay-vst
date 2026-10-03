@@ -2862,7 +2862,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     o->setProperty ("ratio_norm_source", ratioNote); o->setProperty ("spec", "v1.7");
     // THE DEEP LEVELS (v1.7 section 8): every deep level the profile carries on any position, same tolerance; a level that
     // FAILS is null across ALL positions of the exported profile and never fails the profile.
-    juce::Array<juce::var> deepArr, nulled;
+    juce::Array<juce::var> deepArr, nulled; juce::StringArray toneNullLines;
     for (int t : profile::deepLevelsCarried (profile))
     {
         const auto lr = checkAt ((double) t, ".g" + juce::String (t));
@@ -2877,6 +2877,12 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         if (! lr.pass)
         {
             nulled.add ((double) t);
+            // THE NOTE LINE (v1.8 notes, ruled 3 Oct): one per (level, reason), the positions that carried the level by norm
+            juce::StringArray carried; { const auto cv = profile.getProperty ("amount", {}).getProperty ("curve", {}); for (int i = 0; i < cv.size(); ++i) if (profile::inAtGr (cv[i], (double) t)) carried.add (juce::String ((double) cv[i].getProperty ("norm", 0.0), 4)); }
+            const juce::String why = lr.ran ? "tone check failed (GR " + (lr.gr ? juce::String (*lr.gr, 2) : juce::String ("unreadable")) + " dB against " + juce::String (lr.pick.expectedGrDb, 2) + " expected at L " + juce::String (lr.Lrms, 2) + " dBFS RMS)"
+                                   : lr.noValidL ? "tone level untestable (no valid L in the measured range" + (lr.clampGeometry ? ", 1->" + juce::String (t) + " dB spacing at least " + juce::String (lr.spacingMinDb, 1) + " dB at every position: clamp geometry" : juce::String()) + ")"
+                                   : "tone check could not run (" + lr.why + ")";
+            toneNullLines.add ("deep null " + juce::String (t) + " dB - " + why + ": positions " + carried.joinIntoString (", "));
             profile::nullLevelAcrossPositions (profile, t);
             say ("TONE: " + product + " - the " + juce::String (t) + " dB level " + (lr.ran ? "FAILED its tone check at L " + juce::String (lr.Lrms, 2) : lr.noValidL ? (lr.clampGeometry ? "has no L inside the clamp (1->" + juce::String (t) + " spacing at least " + juce::String (lr.spacingMinDb, 1) + " dB: clamp geometry)" : "has no valid L in the measured range") : "could not be checked") + ": null across all positions (the profile stands)");
         }
@@ -2886,10 +2892,9 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     {
         if (auto* po = profile.getDynamicObject())
         {
-            juce::StringArray nl;
-            for (int k = 0; k < deepArr.size(); ++k) if (! (bool) deepArr[k].getProperty ("pass_within_0_5_db", false))
-                nl.add (juce::String ((double) deepArr[k].getProperty ("g_db", 0.0), 0) + " dB (" + deepArr[k].getProperty ("null_reason", "").toString() + (deepArr[k].hasProperty ("spacing_1_to_g_min_db") && deepArr[k].getProperty ("null_reason", "").toString().contains ("geometry") ? ", 1->g spacing " + juce::String ((double) deepArr[k].getProperty ("spacing_1_to_g_min_db", 0.0), 1) + " dB" : juce::String()) + ")");
-            po->setProperty ("notes", profile.getProperty ("notes", "").toString() + " deep levels nulled across all positions by the section 8 tone check (v1.7, L per level by rule): " + nl.joinIntoString (", ") + ";");
+            auto n = profile.getProperty ("notes", {});
+            for (const auto& line : toneNullLines) n = profile::notesAppend (n, line);
+            po->setProperty ("notes", n);
             profileFile.replaceWithText (juce::JSON::toString (profile) + "\n", false, false, "\n");
         }
     }

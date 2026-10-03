@@ -386,3 +386,11 @@ replica and the tone-check L rule; pinned at 2/3/3.5/4/5/6 with a mutant proving
 6 dB level: GR 5.98 at L −13.16 (its 1 dB point 14.1 below, inside 18) — tested, not nulled. CL 1B's rule L at 4/5/6:
 −31.61 / −29.81 / −28.01 (12.0 / 13.8 / 15.6 below its 1 dB point); the checks run when the iLok is with the Mac. We will
 check this wording against v1.9 when it arrives.
+
+## 3 Oct: notes — every deep null accounted for; the shape question
+
+Every deep null in an export is now on exactly one `notes` line, `deep null <g> dB - <reason>: positions <norms>`, with
+the reason from the record (not reached by −3.01; past at the quietest level; no rising straddle; hold test failed, both
+values; the all-null position; the tone check's own two). One question: §3 says `notes` is a list of plain strings, your
+example still shows `""`, and our exporter writes one `"; "`-joined string. Which does your validator accept? Ours flips
+with one constant either way.

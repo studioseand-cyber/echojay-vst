@@ -1695,3 +1695,34 @@ iLok on Sean's Mac): g 2 → −37.11 (clamp 12, 1 dB point 6.5 below); g 4 → 
 −18.5 at ratio 6:1). Under the 12 dB clamp its 5 and 6 dB had no valid L (§27).
 
 `--cert-tone-levels <profile>` is the new dry command: the per-level L, limit, pick and expectation without a load.
+
+## 30. v1.8 notes: every deep null accounted for, one line per (level, reason); the notes shape behind one constant (3 Oct)
+
+**The account.** The exporter files every deep null (4/5/6) in the curve under exactly one line `deep null <g> dB - <reason>:
+positions <norms>` (details in parentheses, never commas), from the record's own words, never a guessed cause:
+`not reached by -3.01 dBFS` (the derivation's `not_reached`); `past at the quietest level` (`below_range`); `no rising
+straddle (gap or fall)` (a plain null with no other explanation); `hold test failed` with BOTH values (the record's
+`quality.deepPointsNulled` now reads `i@t: first / hold-doubled second / delta`); and the all-null position, filed under
+its own word at 1 dB — `not reached … (all-null position)` (bx_opto's bottom three: the knob does nothing there) or `past at
+the quietest level (all-null position)`, with any deep point measured there shown as withheld. The tone check appends its
+own two: `tone check failed (GR x against y expected at L z)` and `tone level untestable (no valid L in the measured range,
+1→g spacing … clamp geometry)`, positions = those that carried the level before the null. Pins X28 (set equality: the
+(level, norm) pairs on the lines == the deep nulls in the curve, each once), X29/X29b (one of every reason, named), X30
+(the control: a dropped line is caught), X31 (the all-null word), Q8 (both hold values). Mutants red: gap nulls not listed,
+hold failures filed as gaps, the all-null position unlisted, the lines never written, the hold test recording one value.
+Live: CL 1B (9 nulls), 7X-500 (5), SBC (13), bx_opto (16), mpressor (7) — 50 of 50 accounted, every one `not reached` (no
+hold failure in these five; the hold path is exercised by X29). Traces `cert-traces/2026-10-03-tonelevel/tc20-null-account/`.
+
+**The shape.** Notes are built as lines (`noteLines`) and written through `profile::notesVar`; the driver appends through
+`profile::notesAppend`; readers use `profile::notesText`. `kNotesAsList = false` keeps today's one `"; "`-joined string
+(Sean's example still shows `""`); flipping that constant writes v1.8 §3's list of plain strings and nothing else changes.
+Not switched: Kathy is asking Sean which shape his validator accepts.
+
+**Item 4, report only — a deep point that breaks monotonic order.** The exporter does NOT refuse: it exports the profile with
+`quality.monotonic_within_positions` / `monotonic_across_positions` false and the violation named in `quality.violations`
+("point i: 5 dB not strictly above 4 dB"; "4 dB values rise n and fall m times across positions"); the batch row is still
+`exported`, and the tone check still runs. The spec says the server "rejects non-monotonic points", so today that is an
+export the server will reject, flagged by us first. It has not happened on any record we hold (every exported profile has
+both flags true). Two ways to close it if Kathy wants: null the offending deep point (and account for it — a sixth reason
+line, "breaks monotonic order") so the shallow profile stands, or refuse the export as `needs_review`. The first matches
+v1.8's "accepted with nulls" spirit for deep points; a shallow (1/2/3) break should stay a refusal.

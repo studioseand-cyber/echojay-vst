@@ -1782,7 +1782,7 @@ inline RepeatQuality repeatQuality (const Derived& d1, const Derived* d2)
                 else if (num (a) && num (b))
                 {
                     const double delta = std::abs ((double) a - (double) b);
-                    if (delta > kDeepHoldTolDb) { q.deepNullSet.insert ({ (int) i, t }); q.deepNulled.add (juce::String ((int) i) + "@" + juce::String (t) + ": " + juce::String (delta, 2) + " dB"); }
+                    if (delta > kDeepHoldTolDb) { q.deepNullSet.insert ({ (int) i, t }); q.deepNulled.add (juce::String ((int) i) + "@" + juce::String (t) + ": " + juce::String ((double) a, 2) + " / hold-doubled " + juce::String ((double) b, 2) + " / delta " + juce::String (delta, 2) + " dB"); }   // BOTH values (v1.8 notes)
                     else { ++q.deepPointsCompared; worstDeep = juce::jmax (worstDeep, delta); }
                 }
             }

@@ -55,6 +55,26 @@ namespace ejmap::profile
 inline constexpr double kPeakToSineRmsDb = 3.0102999566398120;   // 20 log10 sqrt 2
 inline constexpr double kTargetGrDb = 2.0;                        // his default target, the yardstick for fit error
 inline constexpr int    kMinCurvePoints = 9;
+// THE NOTES SHAPE (v1.8 section 3 says a list of plain strings; Sean's example still shows ""; which his validator accepts
+// is being asked): ONE constant decides, and every writer of notes goes through notesVar / notesAppend. Flip kNotesAsList
+// and nothing else changes.
+inline constexpr bool kNotesAsList = false;
+inline juce::var notesVar (const juce::StringArray& lines)
+{
+    if (! kNotesAsList) return lines.joinIntoString ("; ");
+    juce::Array<juce::var> a; for (const auto& l : lines) a.add (l); return a;
+}
+inline juce::var notesAppend (const juce::var& notes, const juce::String& line)   // one more line, in the profile's own shape
+{
+    if (const auto* a = notes.getArray()) { auto copy = *a; copy.add (line); return copy; }
+    const auto cur = notes.toString().trim();
+    return cur.isEmpty() ? juce::var (line) : juce::var (cur + "; " + line);
+}
+inline juce::String notesText (const juce::var& notes)                           // either shape, as one searchable string
+{
+    if (const auto* a = notes.getArray()) { juce::StringArray l; for (const auto& x : *a) l.add (x.toString()); return l.joinIntoString ("; "); }
+    return notes.toString();
+}
 
 inline double toSineRms (double peakDbfs) { return peakDbfs - kPeakToSineRmsDb; }
 
@@ -222,6 +242,13 @@ inline Export exportCompProfile (const juce::var& f)
     if (! inAt.isArray() || inAt.size() != norms.size()) return refuse ("no in_at_gr on this record (re-derive it)");
     const auto texts = [&] { juce::StringArray t; const auto arr = sweepVar.getProperty ("positionTexts", {}); for (int i = 0; i < arr.size(); ++i) t.add (arr[i].toString()); return t; }();
     juce::Array<juce::var> curve; std::vector<std::optional<double>> crossing; int withOne = 0; juce::StringArray deepOnlyNulled;
+    // EVERY DEEP NULL ACCOUNTED FOR (v1.8 notes, ruled 3 Oct): per (level, reason) the positions by norm. The record keeps
+    // the derivation's words (not_reached / below_range / null) and the hold test's failures (quality.deepPointsNulled, both
+    // values); the exporter's own withholding (deep points on a position with no shallow point) is the all-null case.
+    std::map<std::pair<int, juce::String>, juce::StringArray> deepNullBy;   // (level, reason) -> "norm (detail)"
+    std::map<std::pair<int, int>, juce::String> holdFailed;                 // (position, level) -> both values, from the record
+    if (const auto* a = sweepVar.getProperty ("quality", {}).getProperty ("deepPointsNulled", {}).getArray())
+        for (const auto& x : *a) { const auto t = x.toString(); holdFailed[{ t.upToFirstOccurrenceOf ("@", false, false).getIntValue(), t.fromFirstOccurrenceOf ("@", false, false).upToFirstOccurrenceOf (":", false, false).getIntValue() }] = t.fromFirstOccurrenceOf (": ", false, false); }
     for (int i = 0; i < norms.size(); ++i)
     {
         auto conv = [&] (const juce::var& v) -> juce::var { return (v.isDouble() || v.isInt()) ? juce::var (r2 (toSineRms ((double) v))) : juce::var(); };
@@ -240,6 +267,21 @@ inline Export exportCompProfile (const juce::var& f)
         for (int t : sweep::kGrTargets)
             g->setProperty (juce::String (t), (t >= sweep::kDeepFrom && ! shallow) ? juce::var() : conv (inAt[i].getProperty (juce::String (t), {})));
         if (! shallow) for (int t : sweep::kGrTargets) if (t >= sweep::kDeepFrom && ! conv (inAt[i].getProperty (juce::String (t), {})).isVoid()) deepOnlyNulled.add ("position " + juce::String (i) + " @" + juce::String (t));
+        for (int t : sweep::kGrTargets)
+        {
+            if (t < sweep::kDeepFrom || ! g->getProperty (juce::String (t)).isVoid()) continue;
+            const auto raw = inAt[i].getProperty (juce::String (t), {}); const auto normTxt = juce::String ((double) norms[i], 4);
+            // THE ALL-NULL POSITION says why its shallow points are null - the record's word at 1 dB - never a guessed cause
+            // (bx_opto's bottom three positions are not_reached: the knob does nothing there; a position past 3 dB at the quietest
+            // level is below_range). Deep points measured there are withheld (a position described only by deep points is a defect).
+            const auto shallowWord = inAt[i].getProperty ("1", {}).toString();
+            if (! shallow)                                      deepNullBy[{ t, shallowWord == "below_range" ? juce::String ("past at the quietest level (all-null position)") : shallowWord == "not_reached" ? juce::String ("not reached by -3.01 dBFS (all-null position)") : juce::String ("no shallow point (all-null position)") }]
+                                                                    .add (normTxt + (conv (raw).isVoid() ? juce::String() : " (measured " + juce::String ((double) conv (raw), 2) + " - withheld: no shallow point)"));
+            else if (raw.toString() == "not_reached")           deepNullBy[{ t, "not reached by -3.01 dBFS" }].add (normTxt);
+            else if (raw.toString() == "below_range")           deepNullBy[{ t, "past at the quietest level" }].add (normTxt);
+            else if (holdFailed.count ({ i, t }))               deepNullBy[{ t, "hold test failed" }].add (normTxt + " (" + holdFailed[{ i, t }] + ")");
+            else                                                deepNullBy[{ t, "no rising straddle (gap or fall)" }].add (normTxt);
+        }
         o->setProperty ("in_at_gr_dbfs", juce::var (g));
         curve.add (juce::var (o));
     }
@@ -481,7 +523,12 @@ inline Export exportCompProfile (const juce::var& f)
         ft->setProperty ("measured_point_quality", juce::var (mq));
         P->setProperty ("fit", juce::var (ft));
     }
-    juce::String notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; ";
+    // NOTES ARE LINES (v1.8 section 3 says a list of plain strings; Sean's example still shows ""). Built as lines here and
+    // written in ONE shape chosen by kNotesAsList - the switch is that constant and nothing else.
+    juce::StringArray noteLines; juce::String notes;
+    auto flush = [&] { if (notes.trim().isNotEmpty()) noteLines.add (notes.trim().trimCharactersAtEnd (";").trim()); notes = {}; };
+    notes = "levels converted from peak dBFS (EJ Map's convention) to sine RMS by -3.01 dB (a full-scale 997 Hz sine exports as -3.01); tone 997 Hz; ";
+    flush();
     {
         // v1.4: the guards that passed, by name, from the record. Each is a rule the derivation applied; a sweep that failed one
         // never certified, so a certified record passed them all - said here so the server can read it.
@@ -489,6 +536,7 @@ inline Export exportCompProfile (const juce::var& f)
         notes << "guards passed: tone_frac (" << (nt.isArray() ? juce::String (nt.size()) : juce::String ("0")) << " readings refused as not the tone), "
               << "level dependence (not a gain law), quiet-reference 6 dB self-check (" << juce::String ((int) quietGains.size()) << " of " << juce::String (norms.size()) << " positions), "
               << "ascending-only levels in each fresh process, still-moving rule; ";
+        flush();
     }
     if (const auto rd = f.getProperty ("ruleDecided", {}); rd.isObject())
     {
@@ -503,7 +551,7 @@ inline Export exportCompProfile (const juce::var& f)
         const auto gr = rd.getProperty ("defaultsGr_db", {});
         notes << "; defaults reference with every control at its instantiate value: GR " << ((gr.isDouble() || gr.isInt()) ? juce::String ((double) gr, 2) + " dB" : juce::String ("not measured"))
               << ((bool) rd.getProperty ("activeAtDefaults", false) ? " - above the 1 dB sense bar: a stage is active at the defaults and is IN this curve (which one: not measured individually)" : " - below the 1 dB sense bar");
-        notes << "; ";
+        flush();
     }
     {
         // DEEP POINTS (v1.7): what was nulled and why, so a gap reads as a decision
@@ -512,16 +560,22 @@ inline Export exportCompProfile (const juce::var& f)
         const auto dpe = q.getProperty ("deep_point_error_db", {});
         notes << "deep points 4/5/6 (v1.7): deep_point_error_db " << ((dpe.isDouble() || dpe.isInt()) ? juce::String ((double) dpe, 2) + " dB over " + juce::String ((int) q.getProperty ("deepPointsCompared", 0)) + " surviving deep points" : juce::String ("none (no deep point measured twice)"))
               << ", informational; deep points nulled by the hold-doubling test (over " << juce::String (sweep::kDeepHoldTolDb, 1) << " dB): " << (dn.isEmpty() ? juce::String ("none") : dn.joinIntoString (", "))
-              << (deepOnlyNulled.isEmpty() ? juce::String() : "; deep points nulled on positions with no shallow point: " + deepOnlyNulled.joinIntoString (", ")) << "; ";
+              << (deepOnlyNulled.isEmpty() ? juce::String() : "; deep points nulled on positions with no shallow point: " + deepOnlyNulled.joinIntoString (", "));
+        flush();
+        // ONE LINE PER (LEVEL, REASON), positions by norm (v1.8 notes, ruled 3 Oct): every deep null in the export is on exactly one of these lines
+        for (const auto& [key, positions] : deepNullBy)
+            noteLines.add ("deep null " + juce::String (key.first) + " dB - " + key.second + ": positions " + positions.joinIntoString (", "));
     }
-    notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured; "
-          << "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate); ";
+    notes << "ratio.curve[0].measured_ratio is implied from level dependence (the GR-vs-level slope at the ratio the sweep ran at), not a ratio sweep; knee_db null: no knee was measured";
+    flush();
+    notes << "neutral lists every control except the amount, the ratio, readouts/meters, the engage writes and never_touch, at the value it was measured at (source: precondition or instantiate)";
+    flush();
     notes << "profile sweep, " << (int) levels.size() << " levels ascending per fresh process, quiet reference per position";
     { const int desc = (int) lr.getProperty ("descended", 0); if (desc > 0) notes << " (reference ladder: " << desc << " position(s) referenced below -54/-48)"; }
-    notes << "; ";
-    if (fit.maxErrorDb > 1.5) notes << "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points); ";
-    if (! sweepVar.getProperty ("engageWrites", {}).isObject()) notes << "compressed as instantiated, no engage write needed; ";
-    P->setProperty ("notes", notes.trim());
+    flush();
+    if (fit.maxErrorDb > 1.5) { notes << "fit.max_error_db over 1.5 against the v1 model: NOT a gate in v1.2 (section 6 matches measured points)"; flush(); }
+    if (! sweepVar.getProperty ("engageWrites", {}).isObject()) { notes << "compressed as instantiated, no engage write needed"; flush(); }
+    P->setProperty ("notes", notesVar (noteLines));
     e.profile = juce::var (P);
     e.ok = true;
     return e;

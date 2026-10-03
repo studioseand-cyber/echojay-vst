@@ -4272,7 +4272,9 @@ void testSweepDerivation()
                 for (size_t i = 0; i < dq.inAtGr.size() && ! bumped; ++i) if (dq.inAtGr[i].at.count (5) && dq.inAtGr[i].at.at (5).isDouble()) { dq.inAtGr[i].at[5] = (double) dq.inAtGr[i].at.at (5) + 0.8; bumped = true; bumpedPos = (int) i; }
                 for (auto& r : dq.inAtGr) if (r.at.count (4) && r.at.at (4).isDouble()) r.at[4] = (double) r.at.at (4) + 0.2;      // the 4 dB points move 0.2: survive, and set the figure
                 const auto dqq = repeatQuality (dp, &dq);
+                const auto v5first = (double) dp.inAtGr[(size_t) juce::jmax (0, bumpedPos)].at.at (5), v5again = v5first + 0.8;
                 check (bumped && dqq.deepNullSet.count ({ bumpedPos, 5 }) == 1 && dqq.deepNulled.size() == 1 && dqq.deepNulled[0].startsWith (juce::String (bumpedPos) + "@5")
+                         && dqq.deepNulled[0].contains (juce::String (v5first, 2) + " / hold-doubled " + juce::String (v5again, 2) + " / delta 0.80 dB")   // BOTH values, for the notes (v1.8)
                          && dqq.deepPointErrorDb && std::abs (*dqq.deepPointErrorDb - 0.2) < 0.01 && dqq.pointErrorDb && std::abs (*dqq.pointErrorDb) < 1e-9,
                        "quality Q8: a 5 dB point whose repeat moved 0.8 dB is nulled and listed; deep_point_error_db is the worst SURVIVING deep disagreement (0.20); point_error_db (1/2/3) untouched at 0");
                 // the record: the nulled deep point is a gap in inAtGr itself, and the quality carries the deep figures
@@ -5393,6 +5395,51 @@ void testProfileExport()
                "export X27: deep_point_error_db is written from the record and the monotonic check runs over 1..6 (a rising 4/5 keeps it true)");
         auto deepBig = juce::JSON::parse (juce::JSON::toString (deepRec)); deepBig.getProperty ("thresholdSweep", {}).getProperty ("quality", {}).getDynamicObject()->setProperty ("deep_point_error_db", 3.0);
         check (exportCompProfile (deepBig).ok, "export X27b: a large deep_point_error_db never refuses the profile (informational)");
+        // EVERY DEEP NULL ACCOUNTED FOR (v1.8 notes, ruled 3 Oct, X28-X30): one "deep null <g> dB - <reason>: positions <norms>" line per
+        // (level, reason); the set of (level, norm) on those lines equals the set of deep nulls in the curve, each exactly once.
+        auto nullAccount = [] (const juce::var& prof, juce::String& why) -> bool
+        {
+            std::map<std::pair<int, juce::String>, int> inCurve, onLines;
+            const auto cv = prof.getProperty ("amount", {}).getProperty ("curve", {});
+            for (int i = 0; i < cv.size(); ++i) for (int t = 4; t <= 6; ++t) if (cv[i].getProperty ("in_at_gr_dbfs", {}).getProperty (juce::String (t), 0.0).isVoid()) ++inCurve[{ t, juce::String ((double) cv[i].getProperty ("norm", 0.0), 4) }];
+            for (const auto& line : juce::StringArray::fromTokens (notesText (prof.getProperty ("notes", {})), ";", ""))
+            {
+                const auto l = line.trim(); if (! l.startsWith ("deep null ")) continue;
+                const int t = l.fromFirstOccurrenceOf ("deep null ", false, false).getIntValue();
+                auto list = l.fromLastOccurrenceOf (": positions ", false, false);
+                while (list.contains ("(")) list = list.upToFirstOccurrenceOf ("(", false, false) + list.fromFirstOccurrenceOf (")", false, false);   // details ride in parentheses, never commas
+                for (auto pos : juce::StringArray::fromTokens (list, ",", "")) { pos = pos.trim(); if (pos.isNotEmpty()) ++onLines[{ t, pos }]; }
+            }
+            if (inCurve == onLines) return true;
+            juce::StringArray a, b; for (const auto& [k, n] : inCurve) a.add (juce::String (k.first) + "@" + k.second + "x" + juce::String (n)); for (const auto& [k, n] : onLines) b.add (juce::String (k.first) + "@" + k.second + "x" + juce::String (n));
+            why = "curve nulls [" + a.joinIntoString (" ") + "] vs lines [" + b.joinIntoString (" ") + "]"; return false;
+        };
+        juce::String why;
+        check (nullAccount (ed.profile, why), "export X28: every deep null in the exported curve is on exactly one 'deep null' note line (" + why + ")");
+        {
+            // X29: one of each reason - not_reached (6 everywhere here), the all-null position (0), a hold-test failure (position 3 @4, both values), a gap null (position 5 @5), past at the quietest (position 2 @4 below_range)
+            auto rr = juce::JSON::parse (juce::JSON::toString (deepRec));
+            auto ia2 = rr.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
+            ia2[3].getDynamicObject()->setProperty ("4", juce::var()); ia2[5].getDynamicObject()->setProperty ("5", juce::var()); ia2[2].getDynamicObject()->setProperty ("4", "below_range"); ia2[7].getDynamicObject()->setProperty ("6", "not_reached");
+            rr.getProperty ("thresholdSweep", {}).getProperty ("quality", {}).getDynamicObject()->setProperty ("deepPointsNulled", juce::Array<juce::var> { "3@4: -20.10 / hold-doubled -19.40 / delta 0.70 dB" });
+            const auto er = exportCompProfile (rr); const auto nt = notesText (er.profile.getProperty ("notes", {}));
+            check (er.ok && nullAccount (er.profile, why), "export X29: with every reason present each deep null is on exactly one line (" + why + ")");
+            const auto n3 = juce::String ((double) ia2.size() > 3 ? (double) rr.getProperty ("thresholdSweep", {}).getProperty ("positionNorms", {})[3] : 0.0, 4);
+            check (nt.contains ("deep null 6 dB - not reached by -3.01 dBFS: positions 0.4667") && nt.contains ("deep null 4 dB - hold test failed: positions " + n3 + " (-20.10 / hold-doubled -19.40 / delta 0.70 dB)")
+                     && nt.contains ("deep null 5 dB - no rising straddle (gap or fall): positions ") && nt.contains ("deep null 4 dB - past at the quietest level: positions ")
+                     && nt.contains ("deep null 4 dB - no shallow point (all-null position): positions 0.0000 (measured -43.01 - withheld: no shallow point)"),
+                   "export X29b: the reasons are named - not reached by -3.01, hold test failed with BOTH values, no rising straddle, past at the quietest level, and the all-null position with the withheld measurement (" + nt.fromFirstOccurrenceOf ("deep null", false, false) + ")");
+            // X30: a null that no reason explains cannot exist - the account is a set equality, so a line dropped (simulated by editing notes) is caught
+            auto broken = juce::JSON::parse (juce::JSON::toString (er.profile)); broken.getDynamicObject()->setProperty ("notes", notesText (er.profile.getProperty ("notes", {})).replace ("deep null 5 dB", "deep nul 5 dB"));
+            check (! nullAccount (broken, why), "export X30: the account is a set equality - a missing line is caught (control for X28/X29)");
+            // X31: the all-null position's line carries the record's own word at 1 dB - not_reached (the knob does nothing there) or below_range (past at the quietest) - never an asserted cause
+            auto words = juce::JSON::parse (juce::JSON::toString (rr)); auto ia3 = words.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {});
+            for (auto k : { "1", "2", "3" }) ia3[0].getDynamicObject()->setProperty (k, "not_reached");
+            for (auto k : { "1", "2", "3" }) ia3[1].getDynamicObject()->setProperty (k, "below_range"); for (auto k : { "4", "5", "6" }) ia3[1].getDynamicObject()->setProperty (k, -20.0);
+            const auto ew = exportCompProfile (words); const auto wt = notesText (ew.profile.getProperty ("notes", {}));
+            check (ew.ok && nullAccount (ew.profile, why) && wt.contains ("deep null 4 dB - not reached by -3.01 dBFS (all-null position): positions 0.0000") && wt.contains ("deep null 4 dB - past at the quietest level (all-null position): positions 0.0667 (measured -23.01 - withheld: no shallow point)"),
+                   "export X31: an all-null position is filed under the record's word at 1 dB - not reached (position 0) or past at the quietest (position 1, its measured deep points withheld) (" + why + " | " + wt.fromFirstOccurrenceOf ("deep null", false, false).upToFirstOccurrenceOf ("deep null 5", false, false) + ")");
+        }
     }
     {
         // RATIO (2 Oct, ruled): an adjustable ratio never exports as fixed; its one curve point carries the norm the sweep
