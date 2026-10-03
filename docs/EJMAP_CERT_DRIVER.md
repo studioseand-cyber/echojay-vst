@@ -1650,3 +1650,26 @@ the rows' absolute paths, which are another Mac's in a zipped-back folder — fi
 is found. Section in `SEAN_MAC_TONECHECK.md`.
 
 Suite 3213 checks green; traces `cert-traces/2026-10-03-tonelevel/{tc18,cl1b-licence,cl1b-import}`.
+
+## 28. v1.8 (Sean's spec, copied to docs/COMP_PROFILE_SPEC_v1_8.md, 3 Oct): the reverse read
+
+**§6.4 step 2, the reverse read.** `profile::grAtLevel (point, L)`: the GR a position gives AT a level, interpolated
+across all of its numeric points 1..6 (a level at its 5 dB point reports 5); past its deepest point the figure is that
+deepest level, flagged `extrapolated` (below its shallowest point the same, the other way). A STEPPED pick now expects what
+its chosen detent gives at L (§6.4 step 6) — `Pick::expectedGrDb` from the reverse read on that detent, `expectedExtrapolated`
+beside it, the note says between which points it read — where before it expected g, which the detent only approximates.
+A continuous pick sits at L by construction, so g stands (pinned: R4, and the mutant that reverse-reads a continuous pick
+goes red on P6/T8). Pins P9 (re-derived: the nearest detent at the asked 4.5 is position 10, and at L it gives 3.76), R1
+(5 at the 5 dB point; 4.5 halfway; past the end flagged; no points → none), R1b (1–3 only: 3, extrapolated), R2 (a detent
+giving 2.6 at L expects 2.6 — passes, not failed by 0.6 against 2.0), R3 (between the 4 and 5 points: 4.5, the deep points
+read). Mutants red: the read over 1–3 only (Sean's bug) → P9/R1/R3/R4; stepped expects g → P9/R2/R3/R4; past-the-end not
+flagged → R1/R1b/R4; continuous reverse-read → P6/R4/T8.
+
+**Would anything already exported have failed under the old expectation?** No, and the reason is that nothing exported is
+stepped: the 33 exported profiles we hold (11 products: XLA-3, Bettermaker, EMO-D5, 254E, 7X-500, SBC, CL 1B, bx_opto,
+townhouse, alpha mix, mpressor, across repo exports, tc18, the unbroken rehearsal and the batch traces) all carry
+`amount.stepped: false`; tc17's four are continuous. The store's only certified record with a stepped threshold-like
+control is PuigChild 660 (m) (`Input`, 21 detents) and it was swept on its continuous `Threshold`, never on `Input`; the
+other "stepped" hits are switches (Comp Off / Comp In / Comp/Limiter / Comp Bypass…), word-valued, never threshold
+candidates since Rule 1. So the old expectation never produced a verdict here; the new one is pinned for the first stepped
+unit that does export.

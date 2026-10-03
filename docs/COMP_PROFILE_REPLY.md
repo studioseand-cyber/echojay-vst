@@ -372,3 +372,9 @@ soft-knee / low-ratio units doing what they do; the profile now nulls such a lev
 `no_valid_L_clamp_geometry` and the spacing, rather than silently. If you would like those levels
 tested, the clamp needs to grow with g (e.g. 12 + (g − 1) dB, or read the pick's own (g − 1) dB point
 instead of its 1 dB point); we have not changed §6.4 on our side.
+
+## 3 Oct: v1.8 received — the reverse read is built
+
+§6.4 step 2's reverse read (GR at a level across all six points, past the deepest flagged extrapolated) is in the pick
+replica; a stepped pick now expects what its detent gives at L (step 6). Pinned, with the 1–3-only read as a red mutant.
+No profile we have exported is stepped, so no existing tone-check verdict changes.

@@ -5515,7 +5515,35 @@ void testProfileExport()
             // P9: stepped - only listed detents, even at a deep level; the clamp on that detent's own 1 dB point
             auto st = juce::JSON::parse (juce::JSON::toString (deep)); st.getProperty ("amount", {}).getDynamicObject()->setProperty ("stepped", true);
             const auto pks = pickPosition (st, -18.0, 4.5);
-            check (pks.ok && pks.i1 < 0 && std::abs (pks.expectedGrDb - 4.5) < 1e-9, "pick P9: a stepped control gets the nearest listed detent at a fractional deep g, never an interpolated norm");
+            // the nearest detent at 4.5 dB is position 10 (its 4.5 point -17.01, 0.99 from L; position 9's is 1.01 away); at L = -18 that detent gives (-18 - T10) * 0.75 = 3.7575 dB (v1.8 reverse read), the expectation
+            check (pks.ok && pks.i1 < 0 && pks.i0 == 10 && std::abs (pks.expectedGrDb - 3.7575) < 1e-3 && ! pks.expectedExtrapolated && pks.note.contains ("reverse read between its 3 and 4 dB points"),
+                   "pick P9: a stepped control gets the nearest listed detent at a fractional deep g, never an interpolated norm, and expects what THAT detent gives at L (3.76, read between its 3 and 4 dB points), not the 4.5 asked for (" + juce::String (pks.expectedGrDb, 4) + ")");
+            // THE REVERSE READ (v1.8 section 6.4 step 2, R1-R4): the GR a position gives AT a level, across all six points
+            {
+                const auto pt = juce::JSON::parse (R"json({"in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "3": -23.0, "4": -21.0, "5": -19.5, "6": -18.5}})json");
+                const auto r5 = grAtLevel (pt, -19.5), r45 = grAtLevel (pt, -20.25), rPast = grAtLevel (pt, -10.0), rBelow = grAtLevel (pt, -40.0), rNone = grAtLevel (juce::JSON::parse (R"json({"in_at_gr_dbfs": {"1": null}})json"), -20.0);
+                check (r5.ok && std::abs (r5.gr - 5.0) < 1e-9 && ! r5.extrapolated && r45.ok && std::abs (r45.gr - 4.5) < 1e-9 && r45.lo == 4 && r45.hi == 5
+                       && rPast.ok && std::abs (rPast.gr - 6.0) < 1e-9 && rPast.extrapolated && rBelow.ok && std::abs (rBelow.gr - 1.0) < 1e-9 && rBelow.extrapolated && ! rNone.ok,
+                       "pick R1: the reverse read at a position's 5 dB point reports 5, halfway between its 4 and 5 points 4.5, past its deepest point the deepest level FLAGGED extrapolated, below its shallowest the same, and a position with no numeric point has none");
+                auto pt3 = juce::JSON::parse (juce::JSON::toString (pt)); for (int k : { 4, 5, 6 }) pt3.getProperty ("in_at_gr_dbfs", {}).getDynamicObject()->setProperty (juce::String (k), juce::var());
+                const auto r3 = grAtLevel (pt3, -20.25);
+                check (r3.ok && std::abs (r3.gr - 3.0) < 1e-9 && r3.extrapolated, "pick R1b: with only 1-3 measured, a level past the 3 dB point reads 3 and says extrapolated - the read runs over whatever points the position carries");
+                // R2: a stepped unit whose nearest detent gives 2.6 at L expects 2.6 - a measured 2.6 passes, and it is NOT failed against 2.0 (0.6 out)
+                const auto stepU = juce::JSON::parse (R"json({"measured": {"steps_dbfs": [-63.01, -3.01, 2]}, "amount": {"stepped": true, "curve": [
+                    {"norm": 0.0, "display": "a", "in_at_gr_dbfs": {"1": -30.0, "2": -26.0, "3": -23.0, "4": -21.0, "5": -19.5, "6": -18.5}},
+                    {"norm": 1.0, "display": "b", "in_at_gr_dbfs": {"1": -24.0, "2": -20.0, "3": -17.0, "4": -15.0, "5": -13.5, "6": -12.5}}]}})json");
+                const auto pb = pickPosition (stepU, -18.2, 2.0);
+                check (pb.ok && pb.stepped && pb.i0 == 1 && pb.i1 < 0 && std::abs (pb.expectedGrDb - 2.6) < 1e-9 && ! pb.expectedExtrapolated && std::abs (2.6 - pb.expectedGrDb) <= 0.5 && std::abs (2.6 - 2.0) > 0.5,
+                       "pick R2: the nearest detent (b) gives 2.6 dB at L = -18.2 (between its 2 and 3 dB points): the expectation is 2.6, so a measured 2.6 passes the 0.5 dB check instead of failing by 0.6 against the 2.0 asked for (" + juce::String (pb.expectedGrDb, 3) + ")");
+                // R3: the read uses the DEEP points - at a level between the detent's 4 and 5 dB points the expectation is 4.5, which a 1-3 read would call 3 (extrapolated)
+                const auto p45 = pickPosition (stepU, -14.25, 4.0);
+                check (p45.ok && p45.i0 == 1 && std::abs (p45.expectedGrDb - 4.5) < 1e-9 && ! p45.expectedExtrapolated, "pick R3: at a level between the detent's 4 and 5 dB points the expectation is 4.5 - read across all six points, not 1-3 (" + juce::String (p45.expectedGrDb, 3) + ")");
+                // R4: a continuous pick sits at L by construction: the expectation stays g; a stepped pick past the detent's deepest point expects the deepest level, flagged
+                auto cont = juce::JSON::parse (juce::JSON::toString (stepU)); cont.getProperty ("amount", {}).getDynamicObject()->setProperty ("stepped", false);
+                const auto pc = pickPosition (cont, -18.2, 2.0), pPast = pickPosition (stepU, -12.0, 6.0);   // L = -12: past b's 6 dB point (-12.5); b's 1 dB point 12.0 below, inside every clamp
+                check (pc.ok && ! pc.stepped && std::abs (pc.expectedGrDb - 2.0) < 1e-9 && ! pc.expectedExtrapolated && pPast.ok && pPast.stepped && std::abs (pPast.expectedGrDb - 6.0) < 1e-9 && pPast.expectedExtrapolated && pPast.note.contains ("extrapolated"),
+                       "pick R4: a continuous pick expects g (it sits at L); a stepped pick past its detent's deepest point expects that deepest level and says extrapolated");
+            }
             // P10: THE CLAMP IS ON THE PICK, 12 dB. A soft unit: position A 1 dB at -24 / 2 dB at -20, position B 1 dB at -31 / 2 dB at -16.
             // For L = -18, g = 2 the pick sits halfway (t = 0.5): its own 1 dB point is -27.5, 9.5 dB below L - inside 12 (an 8 dB
             // clamp refuses it), while B's own 1 dB point is 13 dB below L (a neighbour-checking clamp drops B and loses the bracket).

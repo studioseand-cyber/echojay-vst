@@ -550,10 +550,35 @@ inline std::optional<double> inAtGr (const juce::var& point, double g)
     if (! a || ! b) return std::nullopt;
     return *a + (*b - *a) * (g - lo);
 }
+// THE REVERSE READ (v1.8 section 6.4 step 2): the GR a position gives AT a level, interpolated across all of its numeric
+// points 1..6 (a level at its 5 dB point reports 5). Past its deepest point the figure is that deepest level, flagged
+// extrapolated; below its shallowest point, that shallowest level, flagged the same way. A position with fewer than one
+// numeric point has no reverse read.
+struct GrAtLevel { bool ok = false; double gr = 0.0; bool extrapolated = false; int lo = 0, hi = 0; };
+inline GrAtLevel grAtLevel (const juce::var& point, double L)
+{
+    GrAtLevel r;
+    const auto m = point.getProperty ("in_at_gr_dbfs", {});
+    std::vector<std::pair<int, double>> pts;                                   // (level, in_at) over the numeric points, level order
+    for (int k = 1; k <= 6; ++k) { const auto v = m.getProperty (juce::String (k), {}); if (v.isDouble() || v.isInt()) pts.push_back ({ k, (double) v }); }
+    if (pts.empty()) return r;
+    r.ok = true;
+    if (L >= pts.back().second)  { r.gr = pts.back().first;  r.lo = r.hi = pts.back().first;  r.extrapolated = L > pts.back().second + 1e-9;  return r; }
+    if (L <= pts.front().second) { r.gr = pts.front().first; r.lo = r.hi = pts.front().first; r.extrapolated = L < pts.front().second - 1e-9; return r; }
+    for (size_t k = 0; k + 1 < pts.size(); ++k)
+        if (pts[k].second <= L && L <= pts[k + 1].second)
+        {
+            const double t = pts[k + 1].second == pts[k].second ? 0.0 : (L - pts[k].second) / (pts[k + 1].second - pts[k].second);
+            r.gr = pts[k].first + t * (pts[k + 1].first - pts[k].first); r.lo = pts[k].first; r.hi = pts[k + 1].first; return r;
+        }
+    r.gr = pts.back().first; r.lo = r.hi = pts.back().first; r.extrapolated = true;   // non-monotonic points: the deepest answers, flagged
+    return r;
+}
 struct Pick
 {
     bool ok = false; juce::String refused; double norm = 0.0;
-    double expectedGrDb = 0.0;                 // g, or the deepest measured level when the deep-null rule fell back (reported, never claimed)
+    double expectedGrDb = 0.0;                 // g; the GR the chosen DETENT gives at L for a stepped pick (reverse read); the deepest measured level when the deep-null rule fell back
+    bool expectedExtrapolated = false;         // the stepped reverse read ran past the detent's deepest (or shallowest) point
     int i0 = -1, i1 = -1; double inAtG0 = 0, inAtG1 = 0; bool stepped = false;
     bool filledAcrossNorm = false;             // the pick used a position whose value at g was interpolated across the norm axis
     bool fellBackToMeasured = false;           // the profile carried no position at g: the deepest carried level answered
@@ -624,6 +649,14 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     if (! o0 || (p.i1 >= 0 && ! o1)) p.note << (p.note.isEmpty() ? "" : "; ") << "a bracketing position's 1 dB point is below the sweep floor (" << juce::String (floorDb, 2) << "): the clamp read the floor as its upper bound";
     p.pickOneDb = pickOne;
     if (L - pickOne > kPickClampDb) { p.refused = "the pick's own 1 dB point (" + juce::String (pickOne, 2) + ") is more than " + juce::String (kPickClampDb, 0) + " dB below L (" + juce::String (L, 2) + ")"; return p; }
+    // A STEPPED PICK EXPECTS WHAT ITS DETENT GIVES AT L (v1.8 section 6.4 step 6), read back across all six points of that
+    // detent - not g, which the detent only approximates. A continuous pick sits at L by construction, so g stands.
+    if (p.stepped && ! pts[best].filled)
+        if (const auto rr = grAtLevel (curve[p.i0], L); rr.ok)
+        {
+            p.expectedGrDb = rr.gr; p.expectedExtrapolated = rr.extrapolated;
+            p.note << (p.note.isEmpty() ? "" : "; ") << "stepped: the nearest detent gives " << juce::String (rr.gr, 2) << " dB at L (reverse read between its " << rr.lo << " and " << rr.hi << " dB points" << (rr.extrapolated ? ", extrapolated past its deepest point" : "") << "), and that is the expectation";
+        }
     p.ok = true;
     return p;
 }
