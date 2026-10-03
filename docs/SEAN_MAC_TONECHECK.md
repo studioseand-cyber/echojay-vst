@@ -6,7 +6,14 @@ the traces the batch kept in `~/Library/ejmap/cert` already hold every level at 
 mode re-derives each exported record from its traces, re-exports the profile with the deep points, and
 loads each certified plugin only for the tone checks. It is resumable and uses the same window watch.
 
-## What Sean runs (after a newer `ejmap.app` is built and packaged the same way)
+**The follow-up build is commit `0834ed76`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8/v1.9:
+the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
+out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
+Rehearsed here as a packaged app (3 Oct 12:26, cdhash of the probe 7297f378…): pre-flight finds the probe beside the
+executable; CL 1B's dry run reads −14.45; the four rehearsal units re-check 16 of 16 levels PASS with no `--probe`.
+
+## What Sean runs (after the follow-up `ejmap.app` is built from `0834ed76` and packaged the same way)
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap

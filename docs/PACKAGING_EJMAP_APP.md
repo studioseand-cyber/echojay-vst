@@ -1,4 +1,4 @@
-# Packaging EJ Map the way a stranger gets it — ONE-TIME steps (2 Oct 2026)
+# Packaging EJ Map the way a stranger gets it — ONE-TIME steps (2 Oct 2026; the follow-up build 3 Oct)
 
 These steps are done ONCE on the Mac that builds (Sean's, with his Developer ID). They are not mapper
 steps: the mapper (`docs/SEAN_MAC_RUNBOOK.md`) uses only the finished `ejmap.app`.
@@ -12,7 +12,10 @@ probe's signature.
 
 ```
 REPO=~/src/echojay-vst            # wherever the checkout is
-git -C "$REPO" fetch && git -C "$REPO" checkout 36397676     # branch feat/ejmap-cert, the build commit for Sean's Mac (2 Oct); later commits are docs
+# TWO BUILDS, TWO COMMITS - never mix them:
+#   the BATCH build (Sean's run, 2 Oct):   36397676   - what the runbook's batch ran on; keep this app as it is
+#   the FOLLOW-UP build (tone checks, 3 Oct): 0834ed76 - docs/SEAN_MAC_TONECHECK.md; v1.9 rules, no sweeps, re-derives from the batch's traces
+git -C "$REPO" fetch && git -C "$REPO" checkout 0834ed76     # branch feat/ejmap-cert; the commit after it is this documentation
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
