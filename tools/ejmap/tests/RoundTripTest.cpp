@@ -72,6 +72,7 @@
 #include "EjmapPitch.h"
 #include "EjmapTunerProfile.h"
 #include "EjmapGainCal.h"
+#include "EjmapTiming.h"
 #include <functional>
 #include "EjmapCertDriver.h"
 
@@ -6946,6 +6947,52 @@ void testGainCal()
     check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "0.0", 0.0 }, { 0.5, "Mid", 3.0 }, { 1.0, "Max", 6.0 } }), -40.0) })).verdict == "few_numeric_points", "gaincal G12: one numeric label among words is too few to judge");
 }
 
+/** COMPRESSOR TIMING (EjmapTiming.h, roadmap 2.3 PROTOTYPE, 5 Oct B2): synthetic exponential bursts with the rule's own numbers, and two of
+    Lindell SBC's 5 Oct traces read through the follow-up's own parser (with an unread-file control). */
+void testTiming()
+{
+    using namespace ejmap::timing;
+    // a synthetic burst: 1 s pre at gain 0, 2 s loud with GR 6 dB reached as 1 - exp(-t/tauA), 3 s post recovering as exp(-t/tauR); 5 ms windows; latency none
+    auto synth = [] (double tauAMs, double tauRMs, double stepDb, double holdS = 2.0, double postS = 3.0) {
+        juce::String out = "burst\tproto\t1\tquiet\t-36.00\tloud\t-20.00\tpre_s\t1.000\thold_s\t" + juce::String (holdS, 3) + "\tpost_s\t" + juce::String (postS, 3) + "\thz\t997.000\twin_ms\t5.00\nconfig\tmain_in\t2\tmain_out\t2\tlatency\t0\n";
+        for (double t = 2.5; t < (1.0 + holdS + postS) * 1000.0; t += 5.0)
+        {
+            const char* seg = t < 1000.0 ? "pre" : t < (1.0 + holdS) * 1000.0 ? "loud" : "post";
+            const double in = t < 1000.0 || t >= (1.0 + holdS) * 1000.0 ? -39.01 : -23.01;
+            double gain = 0.0;
+            if (t >= 1000.0 && t < (1.0 + holdS) * 1000.0) gain = -stepDb * (1.0 - std::exp (-(t - 1000.0) / tauAMs));
+            else if (t >= (1.0 + holdS) * 1000.0) gain = -stepDb * std::exp (-(t - (1.0 + holdS) * 1000.0) / tauRMs);
+            out << "bwin\tt_ms\t" << juce::String (t, 2) << "\tseg\t" << seg << "\tin_db\t" << juce::String (in, 3) << "\tout_db\t" << juce::String (in + gain, 3) << "\n";
+        }
+        return out; };
+    const auto a = derive (parseBurst (synth (50.0, 300.0, 6.0)));
+    check (a.result == "measured" && std::abs (a.stepDb - 6.0) < 0.05 && a.attackMs && std::abs (*a.attackMs - 50.0) < 6.0 && a.releaseMs && std::abs (*a.releaseMs - 300.0) < 8.0,
+           "timing K1: an exponential with tau 50 / 300 ms reads attack " + juce::String (a.attackMs.value_or (0), 1) + " and release " + juce::String (a.releaseMs.value_or (0), 1) + " (63 % = one time constant)");
+    const auto fast = derive (parseBurst (synth (0.5, 300.0, 6.0)));
+    check (fast.result == "measured" && ! fast.attackMs && fast.attackBoundMs && *fast.attackBoundMs <= 10.0, "timing K2: an attack inside the first window is a bound, never a number");
+    const auto slow = derive (parseBurst (synth (50.0, 5000.0, 6.0)));
+    check (slow.result == "bound" && ! slow.releaseMs && slow.releaseBoundMs && *slow.releaseBoundMs > 2900.0, "timing K3: a release not recovered inside the post segment is a bound (longer than)");
+    const auto small = derive (parseBurst (synth (50.0, 300.0, 1.0)));
+    check (small.result == "refused" && small.reason.contains ("only 1.00 dB"), "timing K4: a 1 dB step times nothing (refused, named)");
+    const auto unsettled = derive (parseBurst (synth (1500.0, 300.0, 6.0, 2.0)));
+    check (unsettled.result == "refused" && unsettled.reason.contains ("had not settled before the step down"), "timing K5: a gain still moving at the end of the hold refuses (hold too short), never a number");
+    // the 5 Oct traces: SBC Release 3.000 -> 2066 ms, Attack 0.03 ms -> inside the first window
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-05-timing");
+    const auto r3 = derive (parseBurst (dir.getChildFile ("sbc_release_3s.txt").loadFileAsString()));
+    check (r3.result == "measured" && r3.releaseMs && std::abs (*r3.releaseMs - 2066.3) < 1.0 && std::abs (r3.stepDb - 4.28) < 0.02, "timing K6: Lindell SBC Release 3.000 reads 2066 ms from its trace (" + juce::String (r3.releaseMs.value_or (0), 1) + ")");
+    const auto a0 = derive (parseBurst (dir.getChildFile ("sbc_attack_0p03ms.txt").loadFileAsString()));
+    check (a0.result == "measured" && ! a0.attackMs && a0.attackBoundMs, "timing K7: SBC Attack 0.03 ms is a bound (inside the first window)");
+    check (! parseBurst (dir.getChildFile ("no_such_trace.txt").loadFileAsString()).ok, "timing K8: an absent trace parses to nothing (the control for K6/K7)");
+    // a window straddling a step is skipped: a +16 dB spike at the step-down window must not read as recovery
+    {
+        auto lines = juce::StringArray::fromLines (synth (50.0, 300.0, 6.0)); int spiked = 0;
+        for (auto& l : lines) if (l.startsWith ("bwin\tt_ms\t3002.50\t")) { l = "bwin\tt_ms\t3002.50\tseg\tpost\tin_db\t-39.010\tout_db\t-23.010"; ++spiked; }
+        const auto sp = derive (parseBurst (lines.joinIntoString ("\n")));
+        check (spiked == 1, "timing K9a: the spike was injected into the step-down window");
+        check (sp.result == "measured" && sp.releaseMs && std::abs (*sp.releaseMs - 300.0) < 8.0, "timing K9: a spike in the window straddling the step is ignored (the latency artefact)");
+    }
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -7020,6 +7067,7 @@ int main (int, char**)
     testTunerV01();
     testSteppedExport();
     testGainCal();
+    testTiming();
     testLoopOutcomes();
     testCategoriesMerge();
 

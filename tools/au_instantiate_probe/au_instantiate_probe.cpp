@@ -17,6 +17,7 @@
 #include "probe_write.h"                     // feat/ejmap-cert: --write-test (the whole mode lives there)
 #include "probe_sweep.h"                     // feat/ejmap-cert: --sweep, spec section 4 (the whole mode lives there)
 #include "probe_pitch.h"                     // feat/ejmap-cert: --sweep-pitch, spec section 5 (tuners), 1 Oct
+#include "probe_burst.h"                     // feat/ejmap-cert: --burst, compressor timing PROTOTYPE (roadmap 2.3), 5 Oct
 #include <set>
 #include <vector>
 #include <cstdio>
@@ -87,7 +88,8 @@ int main (int argc, char** argv)
     const bool sweep      = argc >= 5 && juce::String (argv[4]) == "--sweep";        // key=value arguments, probe_sweep.h
     const bool textAtNorms = argc >= 7 && juce::String (argv[4]) == "--text-at-norms"; // <index> <n0,n1,...>, probe_sweep.h
     const bool sweepPitch = argc >= 5 && juce::String (argv[4]) == "--sweep-pitch";   // key=value arguments, probe_pitch.h
-    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch;
+    const bool burst      = argc >= 5 && juce::String (argv[4]) == "--burst";        // key=value arguments, probe_burst.h (PROTOTYPE)
+    const bool listMode = listParams || listSteps || sampleText || sampleAll || textAt || renderTest || writeTest || sweep || textAtNorms || sweepPitch || burst;
     const juce::File marker = (argc >= 5 && ! listMode) ? juce::File (juce::String::fromUTF8 (argv[4])) : juce::File();
     std::fflush (stdout);
 
@@ -135,6 +137,13 @@ int main (int argc, char** argv)
             for (auto& t : juce::StringArray::fromTokens (juce::String::fromUTF8 (argv[6]), ",", "")) ns.push_back ((float) t.getDoubleValue());
             ejprobe::configureAndPrepare (*inst, {});
             ejprobe::runTextAtNorms (*inst, atoi (argv[5]), ns);
+            std::fflush (stdout); std::_Exit (0);
+        }
+        if (burst)
+        {
+            ejprobe::BurstSpec spec; juce::String why;
+            if (! ejprobe::parseBurstArgs (argc, argv, 5, spec, why)) { std::printf ("refused %s\n", why.toRawUTF8()); std::fflush (stdout); std::_Exit (3); }
+            ejprobe::runBurst (*inst, spec);
             std::fflush (stdout); std::_Exit (0);
         }
         if (sweepPitch)

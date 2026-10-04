@@ -52,6 +52,7 @@
 #include "EjmapLoop.h"
 #include "EjmapSidechainCheck.h"
 #include "EjmapGainCal.h"
+#include "EjmapTiming.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -2712,6 +2713,113 @@ inline int runGainCal (const SweepOptions& opt)
     o->setProperty ("measuredAt", nowStamp()); o->setProperty ("controls", controls);
     outDir.getChildFile (stem + ".gaincal.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("GAINCAL: -> " + outDir.getChildFile (stem + ".gaincal.json").getFullPathName());
+    return measured > 0 ? 0 : 4;
+}
+
+// COMPRESSOR TIMING (roadmap 2.3; PROTOTYPE, 5 Oct overnight B2; derivation in EjmapTiming.h, burst in probe_burst.h).
+// From the product's record in <out>/fixtures (its amount control, writes and 1 dB points): the position whose 1 dB point
+// (peak) is nearest kTimingAnchorDb is the setting; quiet = that point - 6, loud = + 10 (capped at -3 dBFS). One burst per
+// attack position (release as instantiated) and per release position (attack as instantiated), 8 evenly spaced or the
+// declared detents; then the release at instantiate from a 0.3 s burst against a 3 s one for program dependence.
+inline constexpr double kTimingAnchorDb = -30.0;
+inline int runTiming (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("TIMING: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("TIMING: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("TIMING: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto recordFile = latestRecordFor (opt.out.getChildFile ("fixtures"), opt.product);
+    auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    if (! record.isObject()) { say ("TIMING: no record for " + opt.product + " in " + opt.out.getChildFile ("fixtures").getFullPathName() + " (sweep it first)"); return 2; }
+    if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) { say ("TIMING: " + vm); return 2; }
+    // the single view: a decided pick, else the single sweep
+    juce::String why; const auto pick = record.getProperty ("pickedCandidate", {}).getProperty ("name", "").toString();
+    if (pick.isNotEmpty()) { auto v = profile::candidateAsSingle (record, pick, why); if (! v.isVoid()) record = v; }
+    const auto sw = record.getProperty ("thresholdSweep", {});
+    if (! sw.isObject() || sw.getProperty ("result", "").toString() != "certified") { say ("TIMING: the record's sweep is not certified (" + sw.getProperty ("result", "").toString() + "): nothing to time against"); return 4; }
+    auto plan = sweep::planFromFixture (record);
+    if (! plan.ok || plan.thr < 0) { say ("TIMING: the record has no single amount control: " + plan.why); return 4; }
+    // the setting: the position whose 1 dB point is nearest the anchor
+    const auto norms = sw.getProperty ("positionNorms", {}); const auto inAt = sw.getProperty ("inAtGr", {});
+    int best = -1; double bestOne = 0.0;
+    for (int i = 0; i < norms.size() && i < inAt.size(); ++i) { const auto one = inAt[i].getProperty ("1", {}); if (! (one.isDouble() || one.isInt())) continue; if (best < 0 || std::abs ((double) one - kTimingAnchorDb) < std::abs (bestOne - kTimingAnchorDb)) { best = i; bestOne = (double) one; } }
+    if (best < 0) { say ("TIMING: no position reaches 1 dB"); return 4; }
+    const double quiet = bestOne - 6.0, loud = juce::jmin (-3.0, bestOne + 10.0);
+    juce::StringArray sets; for (const auto& [i, n] : sidechaincheck::recordWrites (sw)) sets.add (juce::String (i) + ":" + juce::String (n, 6));
+    sets.add (juce::String (plan.thr) + ":" + juce::String ((double) norms[best], 6));
+    say ("TIMING: " + opt.product + " " + desc.version + ": amount [" + juce::String (plan.thr) + "] " + plan.thrName + " at norm " + juce::String ((double) norms[best], 3) + " (1 dB point " + juce::String (bestOne, 2) + " dBFS peak); burst " + juce::String (quiet, 1) + " -> " + juce::String (loud, 1));
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("timing"); outDir.createDirectory();
+    const auto stem = recordFile.getFileNameWithoutExtension();
+    auto burst = [&] (const juce::String& tag, const juce::StringArray& extraSets, double holdS, double postS) -> std::pair<timing::Timing, ChildResult>
+    {
+        juce::StringArray all = sets; all.addArray (extraSets);
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--burst", "quiet=" + juce::String (quiet, 2), "loud=" + juce::String (loud, 2),
+                                 "pre=1.0", "hold=" + juce::String (holdS, 2), "post=" + juce::String (postS, 2), "hz=997", "win_ms=5", "set=" + all.joinIntoString (",") };
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".timing." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        return { timing::derive (timing::parseBurst (r.cleanExit() ? r.out : juce::String ("refused " + r.describe()))), r };
+    };
+    // the roles: attack and release controls
+    std::vector<roles::NamedControl> named;
+    if (const auto* cs = record.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), false });
+    const auto cl = roles::classify (named, roles::Category::compressor);
+    juce::Array<juce::var> controls; int measured = 0;
+    for (const auto& r : cl.controls)
+    {
+        if (r.role != "attack" && r.role != "release") continue;
+        const auto ctl = sweep::findControl (record, r.index);
+        juce::StringArray cn; juce::String positionsBy = "even8";
+        if (sweep::isSteppedControl (ctl)) { positionsBy = "declared"; const int n = (int) ctl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) cn.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
+        else
+        {
+            // DECLARED CONTINUOUS: the control is written at 33 norms and the distinct values it READS BACK are its positions - a
+            // snapping control (7X-500's Fast / Medium / Slow, 254E's 100mS / 400mS / 800mS / 1.5S / Auto) gives its detents, a
+            // true continuous one gives all 33 and eight evenly spaced positions are used
+            juce::StringArray gs; for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
+            const auto tg = runChild ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", juce::String (r.index), gs.joinIntoString (",") }, opt.timeoutMs);
+            const auto det = pitch::detentsFromTextGrid (pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String()));
+            if (! det.empty() && (int) det.size() < 33) { positionsBy = "landing"; for (const auto& [n, tx] : det) cn.add (juce::String (n, 6)); }
+            else for (int k = 0; k < 8; ++k) cn.add (juce::String ((float) k / 7.0f, 6));
+        }
+        auto* co = new juce::DynamicObject(); co->setProperty ("index", r.index); co->setProperty ("control", r.name); co->setProperty ("role", r.role); co->setProperty ("positionsBy", positionsBy);
+        juce::Array<juce::var> positions;
+        for (int k = 0; k < cn.size(); ++k)
+        {
+            auto [t, cr] = burst (r.role + juce::String (r.index) + ".p" + juce::String (k).paddedLeft ('0', 2), { juce::String (r.index) + ":" + cn[k] }, r.role == "attack" ? 2.0 : 2.0, r.role == "release" ? 4.0 : 2.0);
+            if (cr.kind == ChildResult::Kind::uiShown) { say ("TIMING: a window appeared; stopping"); return 5; }
+            juce::String display; for (const auto& line : juce::StringArray::fromLines (cr.out)) { const auto f = juce::StringArray::fromTokens (line, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == r.index) { const int tx = f.indexOf ("text"); if (tx >= 0 && tx + 1 < f.size()) display = f[tx + 1]; } }
+            auto pv = timing::toVar (t); pv.getDynamicObject()->setProperty ("norm", cn[k].getDoubleValue()); pv.getDynamicObject()->setProperty ("display", display);
+            positions.add (pv);
+            if (t.result == "measured" || t.result == "bound") ++measured;
+            say ("  " + r.role + " [" + juce::String (r.index) + "] " + r.name + " = " + display + ": " + t.result + (t.attackMs ? " attack " + juce::String (*t.attackMs, 1) + " ms" : t.attackBoundMs ? " attack < " + juce::String (*t.attackBoundMs, 1) + " ms" : juce::String()) + (t.releaseMs ? " release " + juce::String (*t.releaseMs, 1) + " ms" : t.releaseBoundMs ? " release > " + juce::String (*t.releaseBoundMs, 0) + " ms" : juce::String()) + " (GR step " + juce::String (t.stepDb, 2) + ")" + (t.result == "refused" ? " - " + t.reason : juce::String()));
+        }
+        co->setProperty ("positions", positions); controls.add (juce::var (co));
+    }
+    // program dependence: the release at instantiate, short burst vs long burst
+    auto* pd = new juce::DynamicObject();
+    {
+        auto [shortT, r1] = burst ("pd.short", {}, 0.3, 4.0);
+        auto [longT, r2] = burst ("pd.long", {}, 3.0, 4.0);
+        pd->setProperty ("short_burst", timing::toVar (shortT)); pd->setProperty ("long_burst", timing::toVar (longT));
+        if (shortT.releaseMs && longT.releaseMs && *shortT.releaseMs > 1.0)
+        {
+            const double ratio = *longT.releaseMs / *shortT.releaseMs; pd->setProperty ("release_ratio_long_over_short", std::round (ratio * 100.0) / 100.0);
+            pd->setProperty ("program_dependent", ratio > timing::kProgramDependentRatio || ratio < 1.0 / timing::kProgramDependentRatio);
+            say ("  program dependence: release after 0.3 s " + juce::String (*shortT.releaseMs, 0) + " ms, after 3 s " + juce::String (*longT.releaseMs, 0) + " ms (ratio " + juce::String (ratio, 2) + ")" + ((bool) pd->getProperty ("program_dependent") ? " - PROGRAM-DEPENDENT" : ""));
+        }
+        else { pd->setProperty ("program_dependent", juce::var()); say ("  program dependence: not decided (" + (shortT.result == "measured" ? longT.reason : shortT.reason) + ")"); }
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_timing_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.3, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", record.getProperty ("identity", {}));
+    o->setProperty ("amount_control", plan.thrName); o->setProperty ("amount_norm", (double) norms[best]); o->setProperty ("one_db_point_dbfs_peak", bestOne);
+    o->setProperty ("quiet_dbfs", quiet); o->setProperty ("loud_dbfs", loud); o->setProperty ("method", "997 Hz sine, 1 s at quiet, step to loud, step back; gain per 5 ms window; attack = 63 % of the GR step, release = 63 % recovery");
+    o->setProperty ("controls", controls); o->setProperty ("program_dependence", juce::var (pd)); o->setProperty ("measuredAt", nowStamp());
+    outDir.getChildFile (stem + ".timing.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("TIMING: -> " + outDir.getChildFile (stem + ".timing.json").getFullPathName());
     return measured > 0 ? 0 : 4;
 }
 
