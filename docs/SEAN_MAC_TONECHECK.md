@@ -7,15 +7,16 @@ re-derives each exported record from its traces, re-exports the profile with the
 certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
 same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
-**The follow-up build is commit `891c3156`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+**The follow-up build is commit `17ebf114`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
 step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
-out-of-scope states, the review pick, the range re-sample, the repeat repair; round 2: input-drive and one-knob amount controls, stepped by evidence; round 3: multiband names, picks on stereo units, the re-sweeps it decides itself):
+out-of-scope states, the review pick, the range re-sample, the repeat repair; round 2: input-drive and one-knob amount controls, stepped by evidence; round 3: multiband names, picks on stereo units, the re-sweeps it decides itself; the 4/5 Oct night: the sidechain left unconnected with the evidence-based re-sweep, `inert`, tuner plan v2 with the v0.1 measurements, Sean's stepped rule):
 targets 1..12 with the clamp to 30 and the saturation note, the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
 out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
-Rehearsed here as a packaged app (3 Oct evening; again 4 Oct evening on `891c3156`, probe cdhash 7297f378, unchanged since 3 Oct): pre-flight finds the probe beside the
-executable; CL 1B's dry run reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 40 levels PASS with no
-`--probe`; the projection over your zip from the packaged app matches the build tree (14 re-sweeps, same list); one live
-re-sweep (NEOLD V76U73 here) went through the batch's own path and its row was rewritten from the new sweep.
+Rehearsed here as a packaged app (3 Oct evening; 4 Oct evening; again 5 Oct early on `17ebf114`, a NEW probe - the sidechain
+change is in it): pre-flight finds the probe beside the executable; the four rehearsal units re-check 40 of 40 levels PASS with no
+`--probe`, their landing reads and sidechain readings running live inside the same command; the projection over your zip from the
+packaged app matches the build tree (20 re-sweeps, same list); C1 comp (s) swept under the OLD app was read, re-swept and exported
+by the new one; NEOLD V76U73 was filed `inert` from its existing record in 3 s.
 
 ## What this follow-up does to your 3 Oct run (projected from your zip, 4 Oct)
 
@@ -39,7 +40,10 @@ connected sidechain`). A crash or a window under the new probe is written on the
 processing never runs: output unchanged by every control including Power`, never `flat`. NEOLD V76U73 is one on Kathy's Mac;
 the cause is not decided (a licence state is suspected), only what was measured is said.
 
-**Re-swept by this command, decided from your records (projected 4 Oct, 14 products, ≈ 45–60 min on top).** A row is
+**Re-swept by this command, decided from your records (projected 5 Oct on `17ebf114`: 20 products — the 14 below plus the six
+tuners Auto-Tune Pro / Artist / EFX / EFX+ / Access and bx_crispytuner, re-measured under tuner plan v2; plus whatever the
+sidechain reading of 48 records (~3 s each) and the landing reads (~2 s each) add — ≈ 1 h 30 – 1 h 45 in all on top of the
+re-derives, 13 detector loads and tone checks).** A row is
 re-swept only when the plan this build makes for it differs from the plan its record was swept under: 11 that the batch
 build refused at plan now have an amount control (MV2 (m)/(s) High Level, Rubber Band Compressor V2 Tension, OneKnob
 Pressure (m)/(s) Pressure, RVox (m)/(s) Compression, Mike-E Comp Drive, bx_opto Pedal Density, NEOLD V76U73 Gain, Mixland
@@ -49,7 +53,7 @@ product(s)`), re-derives and tone-checks everything else, then sweeps those thro
 them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
 `--retry-refused` line above covers those.
 
-## What Sean runs (after the follow-up `ejmap.app` is built from `891c3156` and packaged the same way)
+## What Sean runs (after the follow-up `ejmap.app` is built from `17ebf114` and packaged the same way)
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
