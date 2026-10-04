@@ -38,18 +38,31 @@ inline const char* const kStates[] = { "exported", "recorded", "refused", "held"
 // OUT-OF-SCOPE STATES (ruled 4 Oct, ON): a multiband (band-numbered threshold candidates, or Low AND Mid AND High threshold
 // candidates by literal word) is "multiband: profiling not built yet"; a product with more than two channels (Logic's
 // "(N->N)" in the name, N > 2 - the Spherix units) is "surround: not profiled". Neither is needs_review: nobody reviews them.
+// BAND WORDS (widened 4 Oct for DynOne3 and OTT): "Band N"; Low AND Mid AND High; the band words LF / LMF / MF / HMF / HF (two
+// or more distinct, whatever channel or position prefix sits before them - DynOne3's "C HMF", "LR MF", "S HF"); and the
+// single letters L AND M AND H all present (OTT's "Thresh L / M / H"). A genuine L/R pair never has an M alongside an H, and
+// "L/M" + "R/S" (DPR-402, dbx-160) is split on the slash into L, M, R, S - no H, so not a multiband: pinned.
 inline juce::String multibandBands (const juce::var& cands)
 {
-    juce::StringArray bands; bool low = false, mid = false, high = false;
+    juce::StringArray bands, bandWords; bool low = false, mid = false, high = false, l = false, m = false, h = false;
+    static const juce::StringArray kBandWords { "lf", "lmf", "mf", "hmf", "hf" };
     for (int i = 0; i < cands.size(); ++i)
     {
         const auto n = cands[i].getProperty ("name", "").toString();
-        const auto tokens = juce::StringArray::fromTokens (n.replaceCharacters ("()-:", "    "), " ", "");
+        const auto tokens = juce::StringArray::fromTokens (n.replaceCharacters ("()-:/", "     "), " ", "");
         for (int k = 0; k + 1 < tokens.size(); ++k) if (tokens[k].equalsIgnoreCase ("band") && tokens[k + 1].containsOnly ("0123456789") && tokens[k + 1].isNotEmpty()) bands.addIfNotAlreadyThere ("Band " + tokens[k + 1]);
-        for (const auto& t : tokens) { if (t.equalsIgnoreCase ("low")) low = true; if (t.equalsIgnoreCase ("mid")) mid = true; if (t.equalsIgnoreCase ("high")) high = true; }
+        for (const auto& t : tokens)
+        {
+            const auto lt = t.toLowerCase();
+            if (lt == "low") low = true; if (lt == "mid") mid = true; if (lt == "high") high = true;
+            if (lt == "l") l = true; if (lt == "m") m = true; if (lt == "h") h = true;
+            if (kBandWords.contains (lt)) bandWords.addIfNotAlreadyThere (t.toUpperCase());
+        }
     }
     if (bands.size() >= 2) return bands.joinIntoString (", ");
     if (low && mid && high) return "Low, Mid, High";
+    if (bandWords.size() >= 2) return bandWords.joinIntoString (", ");
+    if (l && m && h) return "L, M, H";
     return {};
 }
 inline int surroundChannels (const juce::String& product)
@@ -133,6 +146,13 @@ inline Outcome outcomeForRecord (const juce::var& record)
                     const auto sw = cands[i].getProperty ("thresholdSweep", {});
                     if (sw.getProperty ("result", "").toString() == "certified" && profileGrade (sw)) { o.exportPending = true; o.state = "needs_review"; o.reason = "export pending (Rule 1 pick)"; return o; }
                 }
+        }
+        // FLAT ON EVERY CANDIDATE (ruled 4 Oct, dbx-160 (s) and kHs Dynamics): nothing to pick from - filed with the flat-results
+        // investigation, in the same words as a single-sweep flat, not as a review item
+        {
+            bool allFlat = cands.size() > 0; juce::String flatWhy;
+            for (int i = 0; i < cands.size(); ++i) { const auto sw = cands[i].getProperty ("thresholdSweep", {}); if (sw.getProperty ("result", "").toString() != "flat") allFlat = false; else if (flatWhy.isEmpty()) flatWhy = sw.getProperty ("reason", "").toString(); }
+            if (allFlat) { o.state = "needs_review"; o.reason = "sweep result flat on every candidate (" + juce::String (cands.size()) + "): " + flatWhy + " - the flat-results investigation, nothing to pick"; return o; }
         }
         o.state = "needs_review";
         o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): no rule decides it, nobody picks";

@@ -6380,6 +6380,16 @@ void testLoopOutcomes()
                    "loop L19i: Low + Mid + High by literal word, and '(Band N' in parentheses, are multiband too");
             check (outcomeForRecord (rec ("kHs Dynamics", candsOf ({ "Low Threshold", "High Threshold" }))).state == "needs_review" && outcomeForRecord (rec ("MaxxVolume (s)", candsOf ({ "Low Level Thresh", "High Level Thresh" }))).state == "needs_review",
                    "loop L19j: Low + High without Mid (kHs Dynamics, MaxxVolume) is NOT called multiband - it stays needs_review");
+            // L19j2-L19j4 (widened 4 Oct): band words with channel/position prefixes (DynOne3), single-letter L/M/H all present (OTT); a genuine L/R pair and L/M + R/S are not multiband
+            check (outcomeForRecord (rec ("DynOne3", candsOf ({ "C HMF Threshold", "LR MF Threshold", "S HF Threshold", "C LF Threshold" }))).reason.startsWith ("multiband: profiling not built yet (HMF, MF, HF, LF")
+                     && outcomeForRecord (rec ("OTT", candsOf ({ "Thresh L", "Thresh M", "Thresh H" }))).reason.startsWith ("multiband: profiling not built yet (L, M, H"),
+                   "loop L19j2: DynOne3's C/LR/S-prefixed LF/LMF/MF/HMF/HF and OTT's Thresh L/M/H are multibands");
+            check (outcomeForRecord (rec ("Vertigo VSC-2", candsOf ({ "Threshold L", "Threshold R" }))).state != "multiband" && outcomeForRecord (rec ("DPR-402 (s)", candsOf ({ "Threshold L/M", "Threshold R/S" }))).state != "multiband" && outcomeForRecord (rec ("x", candsOf ({ "Thresh L", "Thresh H" }))).state != "multiband",
+                   "loop L19j3: a genuine L/R pair, L/M + R/S, and L + H without M are never swallowed by the L/M/H rule");
+            auto flatRec = rec ("dbx-160 (s)", candsOf ({ "Threshold L/M", "Threshold R/S" })); { auto c = flatRec.getProperty ("thresholdCandidates", {}); for (int k = 0; k < c.size(); ++k) { auto* sw = new juce::DynamicObject(); sw->setProperty ("result", "flat"); sw->setProperty ("reason", "passthrough: output equals input within 0.01 dB at every reading"); c[k].getDynamicObject()->setProperty ("thresholdSweep", juce::var (sw)); } }
+            const auto of = outcomeForRecord (flatRec);
+            check (of.state == "needs_review" && of.reason.startsWith ("sweep result flat on every candidate (2): passthrough") && ! of.reason.contains ("threshold candidates"),
+                   "loop L19j4: every candidate flat (dbx-160 (s), kHs Dynamics) is filed with the flat-results investigation, in the flat words, not as 'N threshold candidates' (" + of.reason + ")");
             const auto sp = outcomeForRecord (rec ("Spherix Compressor (10->10)", candsOf ({ "Threshold 1", "Threshold 2" })));
             check (sp.state == "surround" && sp.reason.startsWith ("surround: not profiled (10 channels") && outcomeForRecord (rec ("C6 (s)", juce::var())).state != "surround" && surroundChannels ("Spherix Compressor (12->12)") == 12 && surroundChannels ("H-Comp (s)") == 0 && surroundChannels ("Some Comp (2->2)") == 0,
                    "loop L19k: Logic's (N->N) with N > 2 is 'surround: not profiled (N channels)'; a stereo name is not (" + sp.reason + ")");
