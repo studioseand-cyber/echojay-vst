@@ -91,3 +91,8 @@ exported 60 products is about fifteen minutes. It can be stopped and resumed.
 Exactly as before: `cd ~/Library/ejmap && zip -rq ~/Desktop/ejmap-tonecheck-$(hostname -s)-$(date +%Y%m%d).zip cert`
 — `cert/` only, never `config.json`. The profiles, their `.tonecheck.json`, the re-derived records and
 `outcomes.json` are all inside.
+
+**Corrected control data (4 Oct).** For every loaded product whose sampled range left a gap (an end that prints a word,
+a missing end sample, or an instantiate value outside the sampled ends), the follow-up reads the control at 21 norms and
+writes `cert/controls/<identity>.controls.json` — the full taper and the corrected range. It is in the zip you send back;
+nothing is published from EJ Map. It adds roughly 15 s per such control.

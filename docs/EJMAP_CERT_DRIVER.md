@@ -1924,3 +1924,16 @@ missing", "the instantiate point lies outside the sampled ends" — so no consum
 interpolation. Without an instantiate text the rule is exactly what it was (R7d: the 1,783-control reproduction stands).
 Pins R7 (CL 1B Gain: min 0, max 31, at_instantiate {0.33, 0.0}, both gaps named), R7b, R7c, R7d; mutants red (not folded;
 never flagged). The re-sample (21 norms in the tone-check session) is the next section.
+
+**The re-sample (built, §36 continued).** In the tone-check session every control of a loaded product whose range is partial
+(`range_partial` or `endsNotNumeric`) is read by the probe at 21 evenly spaced norms (0, 0.05 … 1) plus its own
+instantiate norm (`--text-at-norms`, one process per control); `profile::foldResample` folds every parsed sample into the
+corrected range and keeps the words as named positions with their norms; the result is written to
+`cert/controls/<identity>.controls.json` (identity, product, version, map_fp, per control `range_before`, `samples[]`,
+`range_resampled {min, max, numeric_samples, of, named_positions[]}`) for Kathy to pass to Sean — nothing published. Pin R8
+(CL 1B Gain's shape: 0.33 reads "0.0", the range includes it, "Off" a named position). Live on the four rehearsal units
+(`cert-traces/2026-10-03-tonelevel/tc31-range-resample/`): Lindell SBC SC HPF 90..400 → **20.2..400** (Off at 0), Link
+70..100 → **50..100**, Ratio 1.5..4 → **1.5..10** with Inf named at 0.95/1.0 (the old range had borrowed the middle "4:1"
+as its top!); Lindell 7X-500 SC High Pass Filter 100..300 confirmed, OFF over the bottom half named. The session took
+101 s for the four (was 42): about 15 s per re-sampled control on these units. CL 1B's own Gain re-sample waits for a Mac
+with the iLok.

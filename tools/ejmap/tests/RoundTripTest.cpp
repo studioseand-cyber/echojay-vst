@@ -3765,6 +3765,18 @@ void testFixtureRangeRule()
            "range R7c: an empty end sample is 'an end sample is missing' (and, unparsed, also a word end); the range borrows the middle as before");
     check (! has (derive ("Off", "8.5", "31.0").range, "at_instantiate") && num (derive ("Off", "8.5", "31.0").range, "min") == 8.5,
            "range R7d: without an instantiate text the rule is exactly what it was (the 1,783-control reproduction stands)");
+    // 8. THE RE-SAMPLE FOLD (ruled 4 Oct): CL 1B's Gain read at 21 norms plus its instantiate norm - 0.33 reads "0.0", the range includes it, "Off" is a named position
+    {
+        const auto gain = juce::JSON::parse (R"json({"index": 0, "name": "Gain", "range": {"min": 8.5, "max": 31.0, "endsNotNumeric": ["0.000"]}, "defaultOnInstantiate": {"normalised": 0.33, "display": "0.0"}})json");
+        std::vector<ejmap::profile::ResampleRow> rows;
+        for (double n : ejmap::profile::resampleNorms()) { ejmap::profile::ResampleRow r; r.norm = n; r.text = n < 0.05 ? "Off" : juce::String (n < 0.33 ? -10.0 + 30.0 * n : (n - 0.33) / 0.67 * 31.0, 1); r.value = n < 0.05 ? std::nullopt : std::optional<double> (r.text.getDoubleValue()); rows.push_back (r); }
+        { ejmap::profile::ResampleRow r; r.norm = 0.33; r.text = "0.0"; r.value = 0.0; rows.push_back (r); }
+        const auto f = ejmap::profile::foldResample (gain, rows); const auto rr = f.getProperty ("range_resampled", {});
+        bool at33 = false; for (const auto& x : *f.getProperty ("samples", {}).getArray()) if (std::abs ((double) x.getProperty ("norm", 0.0) - 0.33) < 1e-9 && x.getProperty ("text", "").toString() == "0.0") at33 = true;
+        check (at33 && num (rr, "min") <= 0.0 && num (rr, "max") == 31.0 && (int) rr.getProperty ("numeric_samples", 0) == 21 && (int) rr.getProperty ("of", 0) == 22
+                 && rr.getProperty ("named_positions", {}).size() == 1 && rr.getProperty ("named_positions", {})[0].getProperty ("text", "") == "Off" && ejmap::profile::resampleNorms().size() == 21,
+               "range R8: the re-sample reads 0.33 as '0.0', the corrected range includes 0.0 (min " + juce::String (num (rr, "min"), 2) + ", max 31), 21 of 22 samples numeric, 'Off' kept as a named position at norm 0");
+    }
     // 5. the linearity tolerance, bracketed by the data (0.476% true, 2.17% false)
     check ((bool) derive ("0.0", "5.2", "10.5").range.getProperty ("linear", false),
            "range: Distressor 0 / 5.2 / 10.5 (0.476% off the midpoint) is linear");

@@ -60,6 +60,34 @@ inline constexpr int    kMinCurvePoints = 9;
 // RANGE GAPS (read-only census, 4 Oct; B counted them from the server's map data): per control, two classes -
 //   (a) an END prints a word (range.endsNotNumeric present), (b) an END SAMPLE is missing (displayAt lacks 0.000 or 1.000,
 //   or that text is empty). A consumer that resolves a display to a norm across either gap lands on the wrong end.
+// THE RANGE RE-SAMPLE (ruled 4 Oct): for a control whose range is partial, the follow-up reads its text at 21 evenly spaced
+// norms (0, 0.05 .. 1) in the tone-check session - the full taper - and the corrected control data goes to the cert folder
+// (cert/controls/<identity>.controls.json) for Kathy to pass to Sean. Nothing is published from EJ Map. foldResample is the
+// pure part: samples in, the corrected range out (every parsed sample folds in; the words are kept as named positions).
+inline const std::vector<double>& resampleNorms() { static const std::vector<double> n = [] { std::vector<double> v; for (int k = 0; k <= 20; ++k) v.push_back (k / 20.0); return v; }(); return n; }
+struct ResampleRow { double norm = 0.0; juce::String text; std::optional<double> value; };
+inline juce::var foldResample (const juce::var& control, const std::vector<ResampleRow>& rows)
+{
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("index", control.getProperty ("index", -1)); o->setProperty ("name", control.getProperty ("name", ""));
+    o->setProperty ("range_before", control.getProperty ("range", {}));
+    juce::Array<juce::var> samples, words; std::optional<double> mn, mx; int numeric = 0;
+    for (const auto& r : rows)
+    {
+        auto* x = new juce::DynamicObject(); x->setProperty ("norm", r.norm); x->setProperty ("text", r.text); x->setProperty ("value", r.value ? juce::var (*r.value) : juce::var());
+        samples.add (juce::var (x));
+        if (r.value) { ++numeric; mn = mn ? juce::jmin (*mn, *r.value) : *r.value; mx = mx ? juce::jmax (*mx, *r.value) : *r.value; }
+        else if (r.text.trim().isNotEmpty()) { auto* w = new juce::DynamicObject(); w->setProperty ("norm", r.norm); w->setProperty ("text", r.text); words.add (juce::var (w)); }
+    }
+    o->setProperty ("samples", samples);
+    auto* rg = new juce::DynamicObject();
+    if (mn) { rg->setProperty ("min", *mn); rg->setProperty ("max", *mx); }
+    rg->setProperty ("numeric_samples", numeric); rg->setProperty ("of", (int) rows.size());
+    rg->setProperty ("named_positions", words);
+    rg->setProperty ("note", "re-sampled at 21 evenly spaced norms in the follow-up's tone-check session (4 Oct); every parsed sample folds into min/max; words are kept as named positions; resolve a display to a norm from `samples`, never by interpolation across a word");
+    o->setProperty ("range_resampled", juce::var (rg));
+    return juce::var (o);
+}
 struct RangeGap { juce::String product, control, role; int index = -1; bool wordEnd = false, missingEnd = false; juce::String at0, at1, instantiate; double instNorm = 0.0; bool instOutside = false; };
 inline std::vector<RangeGap> rangeGaps (const juce::var& record)
 {

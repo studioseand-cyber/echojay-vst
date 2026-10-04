@@ -1,0 +1,7 @@
+TONECHECK-ALL: ~/scratch/rehearsal/cert_tc31  iLok ABSENT
+RESAMPLE: [0] SC HPF read at 21 norms: 20.199999999999999..400.0
+RESAMPLE: [5] Link read at 21 norms: 50.0..100.0
+RESAMPLE: [8] Ratio read at 21 norms: 1.5..10.0
+RESAMPLE: [6] SC High Pass Filter read at 21 norms: 100.0..300.0
+TONECHECK-ALL: 4 re-checked, 0 already at v1.7 (skipped), 0 needs_licence, 0 not exported now, 0 without traces
+      101.06 real        51.83 user         2.37 sys

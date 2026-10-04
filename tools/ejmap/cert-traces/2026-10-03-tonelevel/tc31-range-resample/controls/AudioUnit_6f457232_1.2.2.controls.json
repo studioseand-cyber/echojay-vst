@@ -1,0 +1,182 @@
+{
+  "identity": "AudioUnit|6f457232|1.2.2",
+  "product": "Lindell 7X-500",
+  "version": "1.2.2",
+  "map_fp": "5da42046bed73462a7d0c3b576c6ebcef0c555cdd787ee11484254db5c6d59a2",
+  "resampledAt": "20261004T140940",
+  "note": "corrected control data for the server (range re-sampled at 21 norms where the three samples left a gap); nothing was published from EJ Map - Kathy passes this to Sean",
+  "controls": [
+    {
+      "index": 6,
+      "name": "SC High Pass Filter",
+      "range_before": {
+        "min": 100.0,
+        "max": 300.0,
+        "at0": null,
+        "at0_5": 100.0,
+        "at1": 300.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "samples": [
+        {
+          "norm": 0.0,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.05,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.1,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.15,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.2,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.25,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.3,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.35,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.4,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.45,
+          "text": "OFF",
+          "value": null
+        },
+        {
+          "norm": 0.5,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.55,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.6,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.65,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.7,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.75,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.8,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.85,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.9,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 0.95,
+          "text": "100Hz",
+          "value": 100.0
+        },
+        {
+          "norm": 1.0,
+          "text": "300Hz",
+          "value": 300.0
+        }
+      ],
+      "range_resampled": {
+        "min": 100.0,
+        "max": 300.0,
+        "numeric_samples": 11,
+        "of": 21,
+        "named_positions": [
+          {
+            "norm": 0.0,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.05,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.1,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.15,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.2,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.25,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.3,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.35,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.4,
+            "text": "OFF"
+          },
+          {
+            "norm": 0.45,
+            "text": "OFF"
+          }
+        ],
+        "note": "re-sampled at 21 evenly spaced norms in the follow-up's tone-check session (4 Oct); every parsed sample folds into min/max; words are kept as named positions; resolve a display to a norm from `samples`, never by interpolation across a word"
+      }
+    }
+  ]
+}

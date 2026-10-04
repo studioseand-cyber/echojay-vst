@@ -2852,6 +2852,39 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 
     const auto main = checkAt (g, "");
     if (main.window) return kToneWindowExit;
+    // THE RANGE RE-SAMPLE (ruled 4 Oct): this product is loaded in this session anyway, so every control whose range is partial
+    // is read at 21 norms now (one probe process per control, seconds) and the corrected control data written to cert/controls/.
+    {
+        juce::Array<juce::var> corrected; int ran = 0;
+        if (const auto* cs = record.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
+            {
+                if (! c.getProperty ("range", {}).hasProperty ("range_partial") && ! c.getProperty ("range", {}).hasProperty ("endsNotNumeric")) continue;
+                juce::StringArray gs; for (double n : profile::resampleNorms()) gs.add (juce::String (n, 2));
+                { const auto dn = c.getProperty ("defaultOnInstantiate", {}).getProperty ("normalised", {}); if (dn.isDouble() && ! gs.contains (juce::String ((double) dn, 2))) gs.add (juce::String ((double) dn, 3)); }   // the instantiate point itself, so its text is read too
+                const auto r = runChild ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", c.getProperty ("index", -1).toString(), gs.joinIntoString (",") }, opt.timeoutMs);
+                ++ran;
+                if (r.kind == ChildResult::Kind::uiShown) return kToneWindowExit;
+                if (! r.cleanExit()) { say ("RESAMPLE: [" + c.getProperty ("index", -1).toString() + "] " + c.getProperty ("name", "").toString() + " - the probe " + r.describe()); continue; }
+                std::vector<profile::ResampleRow> rows;
+                for (const auto& line : juce::StringArray::fromLines (r.out))
+                {
+                    const auto f = juce::StringArray::fromTokens (line, "\t", "");
+                    if (f.size() >= 3 && f[0] == "at" && f.indexOf ("text") >= 0) { profile::ResampleRow row; row.norm = f[1].getDoubleValue(); row.text = f[f.indexOf ("text") + 1]; if (auto v = fixtureunit::leadingNumber (row.text)) row.value = v->value; rows.push_back (row); }
+                }
+                corrected.add (profile::foldResample (c, rows));
+                say ("RESAMPLE: [" + c.getProperty ("index", -1).toString() + "] " + c.getProperty ("name", "").toString() + " read at " + juce::String ((int) rows.size()) + " norms: " + juce::JSON::toString (corrected[corrected.size() - 1].getProperty ("range_resampled", {}).getProperty ("min", {})) + ".." + juce::JSON::toString (corrected[corrected.size() - 1].getProperty ("range_resampled", {}).getProperty ("max", {})));
+            }
+        if (ran > 0)
+        {
+            auto dir = opt.out.getChildFile ("controls"); dir.createDirectory();
+            auto* o = new juce::DynamicObject();
+            o->setProperty ("identity", record.getProperty ("identity", "")); o->setProperty ("product", product); o->setProperty ("version", record.getProperty ("version", "")); o->setProperty ("map_fp", record.getProperty ("map_fp", ""));
+            o->setProperty ("resampledAt", nowStamp()); o->setProperty ("note", "corrected control data for the server (range re-sampled at 21 norms where the three samples left a gap); nothing was published from EJ Map - Kathy passes this to Sean");
+            o->setProperty ("controls", corrected);
+            dir.getChildFile (recordFile.getFileNameWithoutExtension() + ".controls.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+        }
+    }
     auto* o = new juce::DynamicObject();
     o->setProperty ("product", product); o->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", ""));
     o->setProperty ("L_rms_dbfs", main.Lrms); o->setProperty ("L_peak_dbfs", main.Lpeak); o->setProperty ("g_db", g); o->setProperty ("L_rule", main.rule); o->setProperty ("L_ref_dbfs", main.Lref); o->setProperty ("L_gap_db", std::round (main.gapDb * 100.0) / 100.0);

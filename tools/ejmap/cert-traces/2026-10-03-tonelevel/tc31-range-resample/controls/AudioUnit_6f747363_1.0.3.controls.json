@@ -1,0 +1,426 @@
+{
+  "identity": "AudioUnit|6f747363|1.0.3",
+  "product": "Lindell SBC",
+  "version": "1.0.3",
+  "map_fp": "afdb3916a60b69fd8638f3c9a20080df2d91d4216912b2b7ef535c0b6de2282c",
+  "resampledAt": "20261004T140901",
+  "note": "corrected control data for the server (range re-sampled at 21 norms where the three samples left a gap); nothing was published from EJ Map - Kathy passes this to Sean",
+  "controls": [
+    {
+      "index": 0,
+      "name": "SC HPF",
+      "range_before": {
+        "min": 90.0,
+        "max": 400.0,
+        "at0": null,
+        "at0_5": 90.0,
+        "at1": 400.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "samples": [
+        {
+          "norm": 0.0,
+          "text": "Off",
+          "value": null
+        },
+        {
+          "norm": 0.05,
+          "text": "20.2 Hz",
+          "value": 20.199999999999999
+        },
+        {
+          "norm": 0.1,
+          "text": "21.4 Hz",
+          "value": 21.399999999999999
+        },
+        {
+          "norm": 0.15,
+          "text": "23.7 Hz",
+          "value": 23.699999999999999
+        },
+        {
+          "norm": 0.2,
+          "text": "27.5 Hz",
+          "value": 27.5
+        },
+        {
+          "norm": 0.25,
+          "text": "32.9 Hz",
+          "value": 32.899999999999999
+        },
+        {
+          "norm": 0.3,
+          "text": "40.1 Hz",
+          "value": 40.100000000000001
+        },
+        {
+          "norm": 0.35,
+          "text": "49.3 Hz",
+          "value": 49.299999999999997
+        },
+        {
+          "norm": 0.4,
+          "text": "60.6 Hz",
+          "value": 60.600000000000001
+        },
+        {
+          "norm": 0.45,
+          "text": "74.1 Hz",
+          "value": 74.099999999999994
+        },
+        {
+          "norm": 0.5,
+          "text": "90.0 Hz",
+          "value": 90.0
+        },
+        {
+          "norm": 0.55,
+          "text": "108.3 Hz",
+          "value": 108.299999999999997
+        },
+        {
+          "norm": 0.6,
+          "text": "129.2 Hz",
+          "value": 129.199999999999989
+        },
+        {
+          "norm": 0.65,
+          "text": "152.8 Hz",
+          "value": 152.800000000000011
+        },
+        {
+          "norm": 0.7,
+          "text": "179.1 Hz",
+          "value": 179.099999999999994
+        },
+        {
+          "norm": 0.75,
+          "text": "208.3 Hz",
+          "value": 208.300000000000011
+        },
+        {
+          "norm": 0.8,
+          "text": "240.4 Hz",
+          "value": 240.400000000000006
+        },
+        {
+          "norm": 0.85,
+          "text": "275.6 Hz",
+          "value": 275.600000000000023
+        },
+        {
+          "norm": 0.9,
+          "text": "313.8 Hz",
+          "value": 313.800000000000011
+        },
+        {
+          "norm": 0.95,
+          "text": "355.3 Hz",
+          "value": 355.300000000000011
+        },
+        {
+          "norm": 1.0,
+          "text": "400.0 Hz",
+          "value": 400.0
+        }
+      ],
+      "range_resampled": {
+        "min": 20.199999999999999,
+        "max": 400.0,
+        "numeric_samples": 20,
+        "of": 21,
+        "named_positions": [
+          {
+            "norm": 0.0,
+            "text": "Off"
+          }
+        ],
+        "note": "re-sampled at 21 evenly spaced norms in the follow-up's tone-check session (4 Oct); every parsed sample folds into min/max; words are kept as named positions; resolve a display to a norm from `samples`, never by interpolation across a word"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Link",
+      "range_before": {
+        "min": 70.0,
+        "max": 100.0,
+        "at0": null,
+        "at0_5": 70.0,
+        "at1": 100.0,
+        "inverted": false,
+        "endsNotNumeric": [
+          "0.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "samples": [
+        {
+          "norm": 0.0,
+          "text": "Off",
+          "value": null
+        },
+        {
+          "norm": 0.05,
+          "text": "Off",
+          "value": null
+        },
+        {
+          "norm": 0.1,
+          "text": "50 %",
+          "value": 50.0
+        },
+        {
+          "norm": 0.15,
+          "text": "50 %",
+          "value": 50.0
+        },
+        {
+          "norm": 0.2,
+          "text": "50 %",
+          "value": 50.0
+        },
+        {
+          "norm": 0.25,
+          "text": "60 %",
+          "value": 60.0
+        },
+        {
+          "norm": 0.3,
+          "text": "60 %",
+          "value": 60.0
+        },
+        {
+          "norm": 0.35,
+          "text": "60 %",
+          "value": 60.0
+        },
+        {
+          "norm": 0.4,
+          "text": "60 %",
+          "value": 60.0
+        },
+        {
+          "norm": 0.45,
+          "text": "70 %",
+          "value": 70.0
+        },
+        {
+          "norm": 0.5,
+          "text": "70 %",
+          "value": 70.0
+        },
+        {
+          "norm": 0.55,
+          "text": "70 %",
+          "value": 70.0
+        },
+        {
+          "norm": 0.6,
+          "text": "80 %",
+          "value": 80.0
+        },
+        {
+          "norm": 0.65,
+          "text": "80 %",
+          "value": 80.0
+        },
+        {
+          "norm": 0.7,
+          "text": "80 %",
+          "value": 80.0
+        },
+        {
+          "norm": 0.75,
+          "text": "80 %",
+          "value": 80.0
+        },
+        {
+          "norm": 0.8,
+          "text": "90 %",
+          "value": 90.0
+        },
+        {
+          "norm": 0.85,
+          "text": "90 %",
+          "value": 90.0
+        },
+        {
+          "norm": 0.9,
+          "text": "90 %",
+          "value": 90.0
+        },
+        {
+          "norm": 0.95,
+          "text": "100 %",
+          "value": 100.0
+        },
+        {
+          "norm": 1.0,
+          "text": "100 %",
+          "value": 100.0
+        }
+      ],
+      "range_resampled": {
+        "min": 50.0,
+        "max": 100.0,
+        "numeric_samples": 19,
+        "of": 21,
+        "named_positions": [
+          {
+            "norm": 0.0,
+            "text": "Off"
+          },
+          {
+            "norm": 0.05,
+            "text": "Off"
+          }
+        ],
+        "note": "re-sampled at 21 evenly spaced norms in the follow-up's tone-check session (4 Oct); every parsed sample folds into min/max; words are kept as named positions; resolve a display to a norm from `samples`, never by interpolation across a word"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Ratio",
+      "range_before": {
+        "min": 1.5,
+        "max": 4.0,
+        "at0": 1.5,
+        "at0_5": 4.0,
+        "at1": null,
+        "inverted": false,
+        "endsNotNumeric": [
+          "1.000"
+        ],
+        "note": "one or more sampled points print a word, not a number; the range is taken from the points that parsed"
+      },
+      "samples": [
+        {
+          "norm": 0.0,
+          "text": "1.5:1",
+          "value": 1.5
+        },
+        {
+          "norm": 0.05,
+          "text": "1.5:1",
+          "value": 1.5
+        },
+        {
+          "norm": 0.1,
+          "text": "2:1",
+          "value": 2.0
+        },
+        {
+          "norm": 0.15,
+          "text": "2:1",
+          "value": 2.0
+        },
+        {
+          "norm": 0.2,
+          "text": "2:1",
+          "value": 2.0
+        },
+        {
+          "norm": 0.25,
+          "text": "3:1",
+          "value": 3.0
+        },
+        {
+          "norm": 0.3,
+          "text": "3:1",
+          "value": 3.0
+        },
+        {
+          "norm": 0.35,
+          "text": "3:1",
+          "value": 3.0
+        },
+        {
+          "norm": 0.4,
+          "text": "3:1",
+          "value": 3.0
+        },
+        {
+          "norm": 0.45,
+          "text": "4:1",
+          "value": 4.0
+        },
+        {
+          "norm": 0.5,
+          "text": "4:1",
+          "value": 4.0
+        },
+        {
+          "norm": 0.55,
+          "text": "4:1",
+          "value": 4.0
+        },
+        {
+          "norm": 0.6,
+          "text": "6:1",
+          "value": 6.0
+        },
+        {
+          "norm": 0.65,
+          "text": "6:1",
+          "value": 6.0
+        },
+        {
+          "norm": 0.7,
+          "text": "6:1",
+          "value": 6.0
+        },
+        {
+          "norm": 0.75,
+          "text": "6:1",
+          "value": 6.0
+        },
+        {
+          "norm": 0.8,
+          "text": "10:1",
+          "value": 10.0
+        },
+        {
+          "norm": 0.85,
+          "text": "10:1",
+          "value": 10.0
+        },
+        {
+          "norm": 0.9,
+          "text": "10:1",
+          "value": 10.0
+        },
+        {
+          "norm": 0.95,
+          "text": "Inf",
+          "value": null
+        },
+        {
+          "norm": 1.0,
+          "text": "Inf",
+          "value": null
+        }
+      ],
+      "range_resampled": {
+        "min": 1.5,
+        "max": 10.0,
+        "numeric_samples": 19,
+        "of": 21,
+        "named_positions": [
+          {
+            "norm": 0.95,
+            "text": "Inf"
+          },
+          {
+            "norm": 1.0,
+            "text": "Inf"
+          }
+        ],
+        "note": "re-sampled at 21 evenly spaced norms in the follow-up's tone-check session (4 Oct); every parsed sample folds into min/max; words are kept as named positions; resolve a display to a norm from `samples`, never by interpolation across a word"
+      }
+    }
+  ]
+}
