@@ -71,6 +71,7 @@
 #include "EjmapSidechainCheck.h"
 #include "EjmapPitch.h"
 #include "EjmapTunerProfile.h"
+#include "EjmapGainCal.h"
 #include <functional>
 #include "EjmapCertDriver.h"
 
@@ -6904,6 +6905,47 @@ void testSteppedExport()
     }
 }
 
+/** GAIN / OUTPUT CALIBRATION (EjmapGainCal.h, roadmap 2.1 PROTOTYPE, 5 Oct B1): the derivation on probe-shaped text and the 4/5 Oct cases. */
+void testGainCal()
+{
+    using namespace ejmap::gaincal;
+    auto run = [] (double level, const std::vector<std::tuple<double, const char*, double>>& pts) {   // norm, display, out-in
+        juce::String out = "sweep\tproto\t1\tthr\t3\n";
+        int k = 0; for (const auto& [n, d, g] : pts) { out << "pos\t" << k << "\tnorm\t" << juce::String (n, 6) << "\tconfirm_ms\t2.0\tslices\t1\tinstack_match\t1\tgetValue\t" << juce::String (n, 6) << "\tlanded_by\tinstack\trender_blocks\t0\ttext_ms\t1\treads\t2\ttext\t" << d << "\n";
+                                                       out << "hold\t" << k << "\t" << juce::String (level, 2) << "\tlevel_db\t" << juce::String (level - 3.0103 + g, 4) << "\tin_rms_db\t" << juce::String (level - 3.0103, 4) << "\ttone_frac\t1.0\n"; ++k; }
+        return out; };
+    // bx_opto's Output Gain: whole-dB labels, 1.2 dB steps: 4.79 at "5 dB" is the label's rounding, not an error
+    std::vector<std::tuple<double, const char*, double>> opto { { 0.0, "0 dB", 0.0 }, { 0.2, "5 dB", 4.79 }, { 0.4, "10 dB", 9.59 }, { 0.6, "14 dB", 14.39 }, { 0.8, "19 dB", 19.19 }, { 1.0, "24 dB", 23.99 } };
+    const auto rows = mergeLevels ({ parseLevelRun (run (-20.0, opto), -20.0), parseLevelRun (run (-40.0, opto), -40.0) });
+    check (rows.size() == 6 && rows[1].measuredDb.size() == 2 && std::abs (rows[1].measuredDb.at (-20.0) - 4.79) < 1e-3, "gaincal G1: the two levels merge by norm, out - in per level");
+    const auto c = judge (rows, "dB");
+    check (c.verdict == "display_matches" && std::abs (c.worstOffDb - 0.41) < 0.02 && std::abs (c.barDb - 0.5) < 1e-9 && ! c.levelDependent, "gaincal G2: whole-dB labels judged at half a dB (bx_opto: 0.41 off, matches) - " + c.note);
+    check (displayResolution ("5 dB") == 1.0 && displayResolution ("6.00") == 0.01 && std::abs (displayResolution ("4.8") - 0.1) < 1e-9, "gaincal G3: the label's resolution from its decimals");
+    check (displayDb ("+6.0 dB") && *displayDb ("+6.0 dB") == 6.0 && displayDb ("-10.00") && ! displayDb ("Off") && ! displayDb ("Max"), "gaincal G4: numeric labels parse, words do not");
+    // SBC's Output Gain: unit-less "6.00" that the output tracks IS a dB label
+    std::vector<std::tuple<double, const char*, double>> sbc { { 0.0, "-10.00", -10.01 }, { 0.5, "0.00", -0.01 }, { 1.0, "10.00", 9.99 } };
+    const auto cs = judge (mergeLevels ({ parseLevelRun (run (-40.0, sbc), -40.0) }), "");
+    check (cs.verdict == "display_matches" && cs.hasZeroPoint && std::abs (cs.barDb - 0.1) < 1e-9, "gaincal G5: a unit-less label the output tracks matches (relative to its own 0.00 point)");
+    // Solid Bus Comp's Output: the unit sits 2.35 dB above unity at "0.00" and the labels track RELATIVE to that point
+    std::vector<std::tuple<double, const char*, double>> sbcOut { { 0.0, "-6.00", -3.65 }, { 0.5, "0.00", 2.35 }, { 1.0, "6.00", 8.35 } };
+    const auto co = judge (mergeLevels ({ parseLevelRun (run (-40.0, sbcOut), -40.0) }), "dB");
+    check (co.verdict == "display_matches" && std::abs (co.zeroRefDb - 2.35) < 1e-6 && co.worstOffDb < 1e-6, "gaincal G5b: a label is judged relative to the control's own 0.00 point (Solid Bus Comp's Output sits 2.35 dB above unity there)");
+    // U2A's Gain: 0..100 %, output 0..35 dB: a scale, not a dB label
+    std::vector<std::tuple<double, const char*, double>> u2a { { 0.0, "0.0", 0.18 }, { 0.5, "50.0", 12.0 }, { 1.0, "100.0", 34.59 } };
+    check (judge (mergeLevels ({ parseLevelRun (run (-40.0, u2a), -40.0) }), "%").verdict == "not_db_scale", "gaincal G6: a percentage scale the output does not track is listed, not judged");
+    // a dB label the output does not track: display_off (Solid Bus Comp's Makeup 1.00 dB off)
+    std::vector<std::tuple<double, const char*, double>> sbc2 { { 0.0, "0.00", 0.0 }, { 0.5, "6.00", 5.0 }, { 1.0, "12.00", 11.0 } };
+    check (judge (mergeLevels ({ parseLevelRun (run (-40.0, sbc2), -40.0) }), "dB").verdict == "display_off", "gaincal G7: a dB label the output misses by 1 dB is display_off");
+    // level dependence: SBC's "Gain" drives the compressor at -20
+    const auto dep = judge (mergeLevels ({ parseLevelRun (run (-20.0, { { 0.0, "0.00", 0.0 }, { 0.5, "12.00", 6.3 }, { 1.0, "24.00", 12.4 } }), -20.0), parseLevelRun (run (-40.0, { { 0.0, "0.00", 0.0 }, { 0.5, "12.00", 10.2 }, { 1.0, "24.00", 19.6 } }), -40.0) }), "dB");
+    check (dep.levelDependent && dep.worstLevelDepDb > 7.0 && dep.verdict == "display_off", "gaincal G8: two levels disagreeing by 7 dB is level-dependent (an input gain inside the compression path)");
+    // no effect, silence, words
+    check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "0", 0.0 }, { 0.5, "50", 0.01 }, { 1.0, "100", 0.0 } }), -40.0) })).verdict == "no_effect", "gaincal G9: a control that moves nothing is no_effect (Virtual Gain, EQ Gain)");
+    check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "0", -806.0 }, { 1.0, "10", -800.0 } }), -40.0) })).verdict == "unreadable", "gaincal G10: silence is not a reading (7X-500's Output with its Input at minimum)");
+    check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "Off", 0.0 }, { 0.5, "Mid", 3.0 }, { 1.0, "Max", 6.0 } }), -40.0) })).verdict == "words", "gaincal G11: word labels are listed, not judged");
+    check (judge (mergeLevels ({ parseLevelRun (run (-40.0, { { 0.0, "0.0", 0.0 }, { 0.5, "Mid", 3.0 }, { 1.0, "Max", 6.0 } }), -40.0) })).verdict == "few_numeric_points", "gaincal G12: one numeric label among words is too few to judge");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -6977,6 +7019,7 @@ int main (int, char**)
     testTunerPlanV2();
     testTunerV01();
     testSteppedExport();
+    testGainCal();
     testLoopOutcomes();
     testCategoriesMerge();
 

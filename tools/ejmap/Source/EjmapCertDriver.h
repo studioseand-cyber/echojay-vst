@@ -51,6 +51,7 @@
 #include "EjmapProfileExport.h"
 #include "EjmapLoop.h"
 #include "EjmapSidechainCheck.h"
+#include "EjmapGainCal.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -2639,6 +2640,79 @@ inline LandingRead readAmountLanding (const SweepOptions& opt, const juce::Plugi
     record.getDynamicObject()->setProperty ("amountLanding", juce::var (ev));
     recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
     return lr;
+}
+
+// GAIN / OUTPUT CALIBRATION (roadmap 2.1; PROTOTYPE, 5 Oct overnight B1; the derivation in EjmapGainCal.h). One product:
+// its gain-role controls (output, makeup, input when not the amount control, and names answering trim / gain / level) each
+// at 21 norms, -20 then -40 dBFS, everything else as instantiated; writes cert/gaincal/<identity>.gaincal.json. Nothing
+// exported, nothing published. Returns 0 when at least one control was measured.
+inline int runGainCal (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("GAINCAL: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("GAINCAL: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("GAINCAL: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("gaincal"); outDir.createDirectory();
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".gaincal." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        return r;
+    };
+    // the controls, from the plugin itself (list-params + text-at), roled with the compressor lexicon
+    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("GAINCAL: --list-params " + lp.describe()); return 1; }
+    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("GAINCAL: --text-at " + ta.describe()); return 1; }
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto plan = sweep::planFromFixture (base);
+    std::vector<roles::NamedControl> named;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), false });
+    const auto cl = roles::classify (named, roles::Category::compressor);
+    struct Target { int index; juce::String name, role; };
+    std::vector<Target> targets;
+    for (const auto& r : cl.controls)
+    {
+        if (r.index == plan.thr) continue;                                              // the amount control is the sweep's business
+        bool cand = false; for (const auto& c : plan.candidates) if (c.index == r.index) cand = true; if (cand) continue;
+        const auto ctl = sweep::findControl (base, r.index);
+        if (sweep::wordValued (ctl) || (int) ctl.getProperty ("numSteps", 0) == 2) continue;
+        if (r.reason.startsWith ("veto")) continue;                                      // "EQ Gain" (filter), "Gain Reduction" (meter): the roles' vetoes stand
+        if (r.role == "output" || r.role == "makeup" || r.role == "input") targets.push_back ({ r.index, r.name, r.role });
+        else if (r.role.isEmpty() && (nametokens::controlAnswersTerm (r.name, "trim") || nametokens::controlAnswersTerm (r.name, "gain") || nametokens::controlAnswersTerm (r.name, "level")) && ! sweep::neverTouchName (r.name))
+            targets.push_back ({ r.index, r.name, "gain" });
+    }
+    say ("GAINCAL: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " gain-role control(s)" + (plan.thr >= 0 ? " (amount [" + juce::String (plan.thr) + "] " + plan.thrName + " excluded)" : juce::String()));
+    juce::StringArray norms; for (int k = 0; k < gaincal::kNorms; ++k) norms.add (juce::String ((float) k / (float) (gaincal::kNorms - 1), 6));
+    juce::Array<juce::var> controls; int measured = 0;
+    for (const auto& t : targets)
+    {
+        std::vector<std::vector<gaincal::Reading>> runs;
+        for (double L : gaincal::kLevelsDbfs)
+        {
+            const auto r = run ("c" + juce::String (t.index) + ".L" + juce::String ((int) -L), { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=" + juce::String ((int) L), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+            if (r.kind == ChildResult::Kind::uiShown) { say ("GAINCAL: a window appeared on [" + juce::String (t.index) + "] " + t.name + "; stopping"); return 5; }
+            runs.push_back (gaincal::parseLevelRun (r.cleanExit() ? r.out : juce::String(), L));
+        }
+        const auto rows = gaincal::mergeLevels (runs);
+        const auto c = gaincal::judge (rows, sweep::findControl (base, t.index).getProperty ("unit", "").toString());
+        if (c.measuredPoints > 0) ++measured;
+        say ("  [" + juce::String (t.index) + "] " + t.name + " (" + t.role + "): " + c.verdict + " - " + c.note);
+        controls.add (gaincal::toVar (t.index, t.name, t.role, rows, c));
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_gaincal_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.1, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("signal", "997 Hz sine at -20 and -40 dBFS peak, 1.5 s hold, 21 norms per control, everything else as instantiated");
+    o->setProperty ("measuredAt", nowStamp()); o->setProperty ("controls", controls);
+    outDir.getChildFile (stem + ".gaincal.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("GAINCAL: -> " + outDir.getChildFile (stem + ".gaincal.json").getFullPathName());
+    return measured > 0 ? 0 : 4;
 }
 
 // THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio
