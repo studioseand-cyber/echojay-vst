@@ -2138,9 +2138,70 @@ when the profile is not already stepped.
 | product / candidate | 1 dB positions | why | from the traces? | needs |
 |---|---|---|---|---|
 | UnFairchild L / R Threshold | 5 of 16 | every second position reads `not_reached`: numeric at 0.2 / 0.4 / 0.6 / 0.8 / 1.0, `not_reached` between — the shape of a **6-detent control declared continuous** (writes between detents land where nothing compresses); refinement never fired because it needs two adjacent numeric 2 dB points and none are adjacent | no — refinement is new processes | a re-run: the follow-up's 41-norm landing read (§45) will show the detents first; **but a 6-detent control can never give nine 1 dB positions — spec §3's "at least 9" refuses it by construction** (for Sean: a stepped amount with N < 9 detents needs its own minimum) |
-| Pro Audio DSP DSM V3 Threshold 1 (the master) | 8 of 19 | refined to 19 positions, but 11 are `not_reached` (the upper range never compresses the tone); the eight reachable values are 1.5–4.0 dB apart — one more refinement in the 4.0 dB gap gives the ninth | no | a re-run with one more refinement round (or the gap bar at 2.5 dB) |
+| Pro Audio DSP DSM V3 Threshold 1 (a TRIM — §46 first called it the master; the master-over-trims pick is [15] `Threshold`, 18 of 24 positions reach 1 dB after one round, so DSM V3 needs no re-run) | 8 of 19 | refined to 19 positions, but 11 are `not_reached`; the eight reachable values are 1.5–4.0 dB apart | — | nothing: not the amount |
 | DSM V3 Threshold 2 / 3 | 2 / 1 | trims (master-over-trims picks Threshold 1): 14–15 `not_reached` | — | nothing: not the amount |
 | Maag MAGNUM-K Limiter Threshold 1 / 2 | 3 of 4 | a 4-step limiter stage; the compressor's Threshold is the pickable candidate | — | nothing: not the amount |
 
-Nothing here can be recovered from the traces: refinement means new sweep processes. UnFairchild and DSM V3 are re-runs;
-UnFairchild additionally needs a ruling on the minimum for coarse stepped controls.
+Nothing here can be recovered from the traces: refinement means new sweep processes. UnFairchild is a re-run (§47 decides
+it without anyone naming it); UnFairchild additionally needs a ruling on the minimum for coarse stepped controls.
+
+## 47. The follow-up decides its own re-sweeps (4 Oct, round 3 item 3)
+
+`--cert-tonecheck-all` was "re-derive and tone-check, no sweeps". Round 2 changed what the batch build would have swept
+(input-drive and one-knob amount controls, digit switches out of the candidate set, refinement on 1 dB gaps), so some of
+Sean's rows need a sweep this time. Nobody names a product: **a row whose plan under this build differs from the plan its
+record was swept under is re-swept; everything else is re-derived and tone-checked.**
+
+`loop::planDiffers (record, planFromFixture (record))` returns `{resweep, why}` from the record alone:
+
+| the record | re-swept when | the row's why |
+|---|---|---|
+| a tuner, or no `controls` | never | — |
+| `thresholdRefusal` at stage `plan` | this build's plan is `ok` | "refused at plan under the batch build (reason); this build plans [i] Name" |
+| any other refusal (reference, window, budget) | never here: `--retry-refused` / `--retry-licence` own those | — |
+| candidates record, DECIDED (`pickedCandidate` + `ruleDecided`) | the pick is no longer one of this build's candidates (Rule 1 keeps only the candidate it swept, so set equality would re-sweep every Rule-1 record) | "the picked candidate [i] is no longer one this build plans [..]" |
+| candidates record, undecided | the candidate set differs from this build's (MaxxVolume: swept [0,4,8,9], now [0,4] — the dropped switches would otherwise linger and block a pair rule) | "the candidate set changed: swept [..], this build plans [..]" |
+| single sweep | the amount control differs (`sweptControl.index`, else `thresholdPick`, else `gridRefinement`/`roleFlag` on older records), or its flags do | "the plan changed: swept [i], this build plans [j]" |
+| any certified sweep (the pick's, for candidates) | fewer than 9 positions reach 1 dB AND a 2 dB or 1 dB gap over `kRefineGapDb` (3) remains AND rounds < `kRefineRounds` (4) AND the control is not stepped (declared, or by evidence: `amountLanding` for that control) — a round cannot add a position between detents | "only N positions reach 1 dB and a 2 dB gap of X dB remains after R round(s)" |
+
+The sweep now records what it was planned with: `thresholdSweep.sweptControl {index, name, flags, refineRounds}` (and
+`roleFlag`), so the next build can compare without re-planning the old build. `refineGrid` also refines on a 1 dB gap
+(it keyed on 2 dB gaps only; a position whose 2 dB is never reached contributed nothing).
+
+**Order inside the command.** The decision runs on each product's LATEST record BEFORE the re-derive loop, and a product
+on the list is skipped by that loop (its stale sweep is never tone-checked or exported minutes before its replacement).
+A measured pick decided by the re-derive (UnFairchild's linked pair) is checked again on the fresh record; if it needs a
+round, it joins the list and its tone check is skipped. After the loop every listed product goes through the batch's own
+per-product sweep (`SweepOptions::resweepProducts` forces it onto the worklist whatever its row says, `retryAll`), then
+`finishRecord` (detector, export, tone check) and the row. `--derive-only` prints the list and runs nothing.
+
+**A sweep that lands ends the refusal** (found by the live rehearsal): the base a re-sweep composes from is the refused
+record itself, and a record carrying both `thresholdRefusal` and `thresholdSweep` filed as refused (V76U73: swept 250 s,
+row "refused at plan"). `sweep::refusalEndedBySweep` now removes the refusal at both compose sites (single, candidates).
+The batch's `--retry-refused` composed from the same base and had the same latent fault.
+
+**Projected over Sean's zip (`--derive-only`, 18 s): 14 products.** 11 refused at plan now plan an amount control —
+MV2 (m)/(s) `High Level`, Rubber Band Compressor V2 `Tension`, OneKnob Pressure (m)/(s) `Pressure`, RVox (m)/(s)
+`Compression`, Empirical Labs Mike-E Comp `Drive`, bx_opto Pedal `Density`, NEOLD V76U73 `Gain`, Mixland Vac Attack
+(2 candidates, L/R Reduction); MaxxVolume (m)/(s) candidate set [0,4,8,9] → [0,4]; UnFairchild after its measured pick
+(5 positions reach 1 dB, 2 dB gap 5.3 dB, 0 rounds). DSM V3 is NOT on it (its pick `Threshold` has 18 1 dB positions).
+Not on it, by design: the 5 false-licence refusals (stage reference) and OneKnob Pumper (m)/(s) (refused by name) —
+`--cert-sweep-all --profile --retry-refused` once, as the tone-check doc already says. Time on Sean's Mac: a single
+sweep ~2–4 min (V76U73 here: 250 s with five engage candidates tried), a two-candidate record ~4–8 min, UnFairchild's
+pair with a refinement round ~6–10 min: ≈ 45–60 min of re-sweeps on top of the ~15 min of re-derives, 13 detector loads
+and tone checks.
+
+**Rehearsed live** on a copy of the rehearsal folder (`--slice` NEOLD V76U73): decided before the loop, swept through the
+batch's path, finished, row rewritten. V76U73 on this Mac measured pass-through at every Gain position (−0.07 dB, all
+five engage candidates flat) — a lead (the same shape as the four classic Waves AUs, §43), not chased; Sean's Mac never
+swept it.
+
+**UnFairchild and the stepped guard.** Sean's record carries no landing evidence (the batch never read it), so its first
+follow-up re-sweep is the honest refinement round; the tone-check session's 41-norm landing read then writes `amountLanding`
+(6 detents), and from then on the refinement check is silent for it — without the guard a 6-detent control would be
+re-swept on every run until `kRefineRounds` (a filter that creates its own work). What a stepped-by-evidence control whose
+swept positions are NOT its detents needs (a sweep AT the detents; the export says `stepped_by_evidence_unresolved`) is not
+built: logged as a lead.
+
+Pins L19q–L19u5 and P1b/P1c; mutants M1–M8 (refusal path, refinement check, decided pick, control change, 1 dB gap,
+tuner guard, refusal survives the sweep, stepped guard) all red.

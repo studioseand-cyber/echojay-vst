@@ -1275,7 +1275,7 @@ inline Discovery discoverCandidates (const DiscoveryInputs& in, const std::vecto
 // stays in the fixture until the re-run replaces it.
 struct StorePartition { std::vector<Subject> toSweep; int recorded = 0, refused = 0, permanent = 0; };
 inline bool refusalAtWindow (const juce::var& fixture) { return refusalRecorded (fixture) && fixture.getProperty ("thresholdRefusal", {}).getProperty ("stage", "").toString() == "window"; }
-inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused, bool retryAll = false, bool licenceOnly = false)
+inline StorePartition partitionStore (const std::vector<Subject>& fromStore, bool retryRefused, bool retryAll = false, bool licenceOnly = false, const juce::StringArray* force = nullptr)
 {
     StorePartition p;
     for (const auto& s : fromStore)
@@ -1284,7 +1284,9 @@ inline StorePartition partitionStore (const std::vector<Subject>& fromStore, boo
         if (refusal) ++p.refused;
         if (permanent) ++p.permanent;
         // --retry-licence (ruled 2 Oct): only the refusals a licence window caused come back
-        const bool retry = retryRefused && refusal && (licenceOnly ? refusalAtWindow (s.pushed) : (retryAll || ! permanent));
+        // THE FOLLOW-UP'S OWN RE-SWEEP SET (ruled 4 Oct): a product whose plan under this build differs from the plan it was
+        // swept under is forced back onto the worklist, record or refusal alike (EjmapLoop.h planDiffers)
+        const bool retry = (retryRefused && refusal && (licenceOnly ? refusalAtWindow (s.pushed) : (retryAll || ! permanent))) || (force != nullptr && force->contains (s.product));
         if (sweepRecorded (s.pushed) && ! retry) ++p.recorded;
         else p.toSweep.push_back (s);
     }
@@ -1293,7 +1295,7 @@ inline StorePartition partitionStore (const std::vector<Subject>& fromStore, boo
 
 inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const juce::File& ledgerRoot, bool includePace,
                                            juce::StringArray& report, bool retryRefused = false, bool retryAll = false,
-                                           std::vector<UnmappedProduct>* unmappedOut = nullptr, bool licenceOnly = false)
+                                           std::vector<UnmappedProduct>* unmappedOut = nullptr, bool licenceOnly = false, const juce::StringArray* force = nullptr)
 {
     std::vector<Subject> fromStore;
     if (fixturesDir.isDirectory()) fromStore = loadFixtures (fixturesDir);
@@ -1304,7 +1306,7 @@ inline std::vector<Subject> buildWorklist (const juce::File& fixturesDir, const 
         fixtureKeys.insert (s.uid + "|" + s.version);
         storeUids.insert (s.uid);
     }
-    const auto part = partitionStore (fromStore, retryRefused, retryAll, licenceOnly);
+    const auto part = partitionStore (fromStore, retryRefused, retryAll, licenceOnly, force);
     std::vector<Subject> out = part.toSweep;
     const int certified = part.recorded;
 
@@ -1386,6 +1388,7 @@ struct SweepOptions
     juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
     bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
+    juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
     juce::String mapState;                           // INFORMATION for the record (ruled 2 Oct): set by the batch from the subject; the tuner path has no Subject of its own
 };
 
@@ -1729,6 +1732,7 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         rv->setProperty ("verdicts", verdicts);                 // every candidate's result in one place, same index/name keys
         o->setProperty ("thresholdReview", juce::var (rv));
         o->setProperty ("thresholdCandidates", arr);
+        sweep::refusalEndedBySweep (f);
     }
     sweep::stampSchema (f, kSchemaCompressor);
     fixtureOut.replaceWithText (juce::JSON::toString (f) + "\n", false, false, "\n");
@@ -1747,7 +1751,7 @@ inline int runCertSweep (const SweepOptions& opt)
     const juce::String date = juce::Time::getCurrentTime().formatted ("%Y-%m-%d");
 
     juce::StringArray wl;
-    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll);
+    auto subjects = buildWorklist (opt.fixtures, opt.ledger, opt.includePace, wl, opt.retryRefused, opt.retryAll, nullptr, false, &opt.resweepProducts);
     const Subject* sp = nullptr;
     for (const auto& x : subjects) if (x.product == opt.product) { sp = &x; break; }
     if (sp == nullptr) { say ("SWEEP: '" + opt.product + "' is not on the worklist (" + wl.joinIntoString ("; ") + ")"); return 2; }
@@ -2049,7 +2053,11 @@ inline int runCertSweep (const SweepOptions& opt)
         {
             const auto d = sweep::derive (sweep::mergeProcesses (r, ps), q.testLevels(), q.ratioIndex, q.quietReference);
             std::vector<juce::var> two; for (const auto& g : d.inAtGr) two.push_back (g.at.count (2) ? g.at.at (2) : juce::var());
-            const auto added = sweep::refineNorms (d.norms, two, sweep::kRefineGapDb, sweep::kRefinePositionsMax);
+            // THE 1 dB CURVE TOO (4 Oct, DSM V3): where the 2 dB point is not reached the 1 dB gaps still count - the export needs nine
+            // 1 dB positions, and a unit whose top range never reaches 2 dB (DSM V3: 8 of 19) can only get them from the 1 dB gaps
+            std::vector<juce::var> one; for (const auto& g : d.inAtGr) one.push_back (g.at.count (1) ? g.at.at (1) : juce::var());
+            auto added = sweep::refineNorms (d.norms, two, sweep::kRefineGapDb, sweep::kRefinePositionsMax);
+            for (float n : sweep::refineNorms (d.norms, one, sweep::kRefineGapDb, sweep::kRefinePositionsMax)) { bool dup = false; for (float x : added) dup = dup || std::abs (x - n) < 1e-6f; if (! dup) added.push_back (n); }
             if (added.empty()) break;
             std::cout << "  grid refinement round " << round << ": " << (int) added.size() << " position(s) added where adjacent 2 dB points differ by more than "
                       << sweep::kRefineGapDb << " dB" << std::endl;
@@ -2563,6 +2571,27 @@ inline int runToneCheckAll (SweepOptions opt)
     const auto reviewPicks = juce::JSON::parse (opt.out.getChildFile ("review_picks.json").loadFileAsString());
     std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << (reviewPicks.isArray() ? "  review picks " + juce::String (reviewPicks.size()) : juce::String ("  no review_picks.json")) << std::endl;
     int done = 0, skipped = 0, licence = 0, failed = 0, noTraces = 0;
+    // THE RE-SWEEP PASS (ruled 4 Oct): every record whose plan under this build differs from the plan it was swept under is
+    // re-swept, through the batch's own per-product sweep, then finished (export + tone check) like any other; Sean never
+    // names a product. In --derive-only the list is projected and nothing runs. Licence rows are --retry-licence's, not this.
+    // Decided BEFORE the re-derive loop so a stale sweep is never tone-checked (or exported) minutes before its replacement.
+    // Only a product's LATEST record speaks for it (an older record of a product that was later swept is history).
+    juce::StringArray resweep; juce::StringArray resweepWhys;
+    {
+        juce::StringArray products;
+        for (const auto& recordFile : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+            if (! recordFile.getFileName().endsWith (".defaults.json")) products.addIfNotAlreadyThere (juce::JSON::parse (recordFile.loadFileAsString()).getProperty ("product", "").toString());
+        for (const auto& product : products)
+        {
+            if (product.isEmpty() || (! opt.slice.isEmpty() && ! opt.slice.contains (product))) continue;
+            const auto r = juce::JSON::parse (latestRecordFor (fixturesDir, product).loadFileAsString());
+            if (loop::outcomeForRecord (r).state == "needs_licence") continue;
+            const auto d = loop::planDiffers (r, sweep::planFromFixture (r));
+            if (d.resweep) { resweep.add (product); resweepWhys.add (product + ": " + d.why); }
+        }
+    }
+    std::cout << "RE-SWEEP (the plan under this build differs from the plan the record was swept under): " << resweep.size() << " product(s) before the re-derive (a measured pick that still needs refinement joins after its re-derive)" << std::endl;
+    for (const auto& w : resweepWhys) std::cout << "  " << w << std::endl;
     // EVERY RECORD IN THE FOLDER'S fixtures/ that is a certified profile (or Rule 1-decided), by its own file - never a path
     // from a row, which may have been written on another Mac (a zipped-back folder); imported traces (CL 1B, section 11) count.
     for (const auto& recordFile : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
@@ -2571,6 +2600,7 @@ inline int runToneCheckAll (SweepOptions opt)
         auto rec0 = juce::JSON::parse (recordFile.loadFileAsString());
         const auto product = rec0.getProperty ("product", "").toString();
         if (! opt.slice.isEmpty() && ! opt.slice.contains (product)) continue;
+        if (resweep.contains (product)) continue;   // its sweep is stale under this build: re-swept and finished below, not tone-checked here
         {
             // THE REVIEW PICK (ruled 4 Oct): applied to the record on disk before anything else reads it, so the re-derive carries it
             auto withPick = rec0; const auto what = loop::applyReviewPick (withPick, reviewPicks);
@@ -2609,12 +2639,38 @@ inline int runToneCheckAll (SweepOptions opt)
             const auto now = juce::JSON::parse (recordFile.loadFileAsString());
             if (! now.getProperty ("pickedCandidate", {}).isObject()) { std::cout << "  -> " << loop::outcomeForRecord (now).state << ": " << loop::outcomeForRecord (now).reason << std::endl; continue; }   // no rule decided: its row is re-filed below
         }
+        // THE PICK THE RE-DERIVE JUST DECIDED may itself need a refinement round (UnFairchild: a linked pair whose leader reaches
+        // 1 dB at 5 positions): the plan check runs again on the fresh record, and a re-sweep replaces the tone check
+        {
+            const auto now = juce::JSON::parse (recordFile.loadFileAsString());
+            if (const auto d = loop::planDiffers (now, sweep::planFromFixture (now)); d.resweep)
+            { resweep.add (product); resweepWhys.add (product + ": " + d.why); std::cout << "  -> re-sweep (after the re-derive): " << d.why << std::endl; continue; }
+        }
         // 2. RE-EXPORT and 3. the tone checks, through the batch's own finish step (detector kept, pick by Rule 1 where decided)
         const auto newRow = finishRecord (opt, recordFile, rec0.getProperty ("category", "compressor").toString());
         outcomes = loop::mergeRow (outcomes, newRow); writeOutcomes();
         const auto st = newRow.getProperty ("state", "").toString();
         std::cout << "  -> " << st << ": " << newRow.getProperty ("reason", "").toString() << std::endl;
         if (st == "exported" || newRow.getProperty ("reason", "").toString().startsWith ("export written (derive-only")) ++done; else if (st == "needs_licence") ++licence; else ++failed;
+    }
+    {
+        std::cout << "\nRE-SWEEP: " << resweep.size() << " product(s)" << (opt.deriveOnly ? " (derive-only: projected, not run)" : "") << std::endl;
+        for (const auto& w : resweepWhys) std::cout << "  " << w << std::endl;
+        if (! resweep.isEmpty() && ! opt.deriveOnly)
+        {
+            SweepOptions so = opt; so.resweepProducts = resweep; so.profile = true; so.retryRefused = true; so.retryAll = true;
+            int k = 0;
+            for (const auto& product : resweep)
+            {
+                std::cout << "\n=== re-sweep [" << ++k << "/" << resweep.size() << "] " << product << std::endl;
+                so.product = product;
+                const auto t0 = juce::Time::getMillisecondCounterHiRes();
+                const int rc = runCertSweep (so);
+                std::cout << "  wall " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 0) << " s, exit " << rc << std::endl;
+                const auto rec = latestRecordFor (fixturesDir, product);
+                if (rec.existsAsFile()) { const auto row = finishRecord (opt, rec, "compressor"); outcomes = loop::mergeRow (outcomes, row); writeOutcomes(); std::cout << "  -> " << row.getProperty ("state", "").toString() << ": " << row.getProperty ("reason", "").toString() << std::endl; }
+            }
+        }
     }
     // EVERY OTHER RECORD gets its row re-filed under the current rules too (licence, multiband, surround, candidate rules need a pick):
     // the projection for a zipped-back folder is the whole outcomes.json, not just the exports

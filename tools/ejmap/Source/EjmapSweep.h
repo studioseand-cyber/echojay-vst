@@ -1621,6 +1621,9 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         s->setProperty ("thresholdPick", juce::var (pk));
     }
     s->setProperty ("autoMakeupDisabled", p.autoMakeupDisabled);
+    // WHAT WAS SWEPT, always (4 Oct): the control, its flags and the refinement rounds - what the follow-up compares its own
+    // plan against to decide whether this record must be re-swept (EjmapLoop.h planDiffers)
+    { auto* sc = new juce::DynamicObject(); sc->setProperty ("index", p.thr); sc->setProperty ("name", p.thrName); sc->setProperty ("flags", p.thrFlags.joinIntoString (",")); sc->setProperty ("refineRounds", p.refineRounds); s->setProperty ("sweptControl", juce::var (sc)); }
     // EVERY PRECONDITION THE PLAN WROTE (ratio raise, auto make-up off, the neutral set), with the text it read back as:
     // what the sweep actually ran at, never what was asked for.
     {
@@ -1836,10 +1839,17 @@ inline constexpr const char* kSchemaCompressor = "ej_cert_compressor/1";
 inline constexpr const char* kSchemaTuner      = "ej_cert_tuner/1";
 inline void stampSchema (juce::var& f, const char* schema) { if (auto* o = f.getDynamicObject()) if (! o->hasProperty ("schema")) o->setProperty ("schema", schema); }
 
+// A SWEEP THAT LANDS ENDS THE REFUSAL (found 4 Oct by the follow-up's re-sweep rehearsal): the base a re-sweep composes
+// from is the refused record itself, and a record carrying both a thresholdRefusal and a thresholdSweep files as REFUSED
+// (the refusal is read first) - V76U73 was swept for 250 s and its row still said "refused at plan". The same base reaches
+// --retry-refused. The refusal is a note about a sweep that did not happen; once one has, it goes.
+inline void refusalEndedBySweep (juce::var& f) { if (auto* o = f.getDynamicObject()) o->removeProperty ("thresholdRefusal"); }
+
 inline juce::var composeFixture (const juce::var& base, const juce::var& thresholdSweep)
 {
     auto f = stripPrivate (juce::JSON::parse (juce::JSON::toString (base)));   // a deep copy
     if (auto* o = f.getDynamicObject()) o->setProperty ("thresholdSweep", stripPrivate (thresholdSweep));
+    refusalEndedBySweep (f);
     stampSchema (f, kSchemaCompressor);
     return f;
 }

@@ -28,6 +28,7 @@
 */
 #pragma once
 #include <juce_core/juce_core.h>
+#include "EjmapSweep.h"
 #include <optional>
 #include <cstring>
 
@@ -407,6 +408,83 @@ inline juce::String applyReviewPick (juce::var& record, const juce::var& picks) 
         return "review pick applied: '" + want + "' by " + by + " on " + date;
     }
     return "review pick names '" + want + "', which is not one of this record's candidates: nothing picked";
+}
+
+// RE-SWEEP OR RE-DERIVE (ruled 4 Oct): the follow-up decides this itself - a record whose plan UNDER THIS BUILD differs from the
+// plan it was swept under is re-swept; everything else is re-derived from its traces and tone-checked. Sean never names a
+// product. Differences that count: the record was refused at plan and now plans (the input-drive / one-knob products); the
+// amount control or its flags changed; the candidate set changed (a switch dropped, an amount pair found); a certified
+// single sweep whose reachable 2 dB curve still has a gap over the refinement bar after the rounds it took (DSM V3). A record
+// with no controls, a tuner, or a refusal that still refuses, never re-sweeps. Licence rows are the --retry-licence set.
+struct PlanDiff { bool resweep = false; juce::String why; };
+inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
+{
+    PlanDiff d;
+    if (! record.getProperty ("controls", {}).isArray() || record.getProperty ("schema", "").toString() == "ej_cert_tuner/1") return d;
+    auto listOf = [] (const sweep::Plan& p) { juce::StringArray a; if (p.thr >= 0) a.add (juce::String (p.thr)); for (const auto& c : p.candidates) a.add (juce::String (c.index)); a.sort (false); return a.joinIntoString (","); };
+    if (const auto ref = record.getProperty ("thresholdRefusal", {}); ref.isObject())
+    {
+        const bool atPlan = ref.getProperty ("stage", "").toString() == "plan";
+        if (atPlan && now.ok) { d.resweep = true; d.why = "refused at plan under the batch build (" + ref.getProperty ("reason", "").toString().upToFirstOccurrenceOf (";", false, false) + "); this build plans " + (now.thr >= 0 ? "[" + juce::String (now.thr) + "] " + now.thrName : juce::String ((int) now.candidates.size()) + " candidates"); }
+        return d;   // any other refusal: --retry-refused / --retry-licence decide, not the plan
+    }
+    if (! now.ok) return d;
+    // the plan the record was swept under
+    juce::String sweptList, sweptFlags; int rounds = 0; juce::var sw = record.getProperty ("thresholdSweep", {});
+    // a certified sweep that could still refine: fewer than 9 positions reach 1 dB and a reachable 2 dB gap is still over the bar, rounds left
+    // A STEPPED CONTROL HAS NO POSITION BETWEEN ITS DETENTS: declared stepped, or stepped by evidence (amountLanding from the
+    // tone-check session's landing read), a round adds nothing - without this a 6-detent UnFairchild would be re-swept on
+    // every run until kRefineRounds (a filter that creates its own work)
+    auto steppedControl = [&] (int idx)
+    {
+        if (idx >= 0 && sweep::isSteppedControl (sweep::findControl (record, idx))) return true;
+        const auto ev = record.getProperty ("amountLanding", {});
+        return ev.isObject() && (int) ev.getProperty ("control", -1) == idx && (int) ev.getProperty ("detents", 0) >= 2;
+    };
+    auto refinementCheck = [&] (const juce::var& sv, int roundsTaken)
+    {
+        if (! sv.isObject() || sv.getProperty ("result", "").toString() != "certified" || roundsTaken >= sweep::kRefineRounds) return;
+        const int idx = (int) sv.getProperty ("sweptControl", {}).getProperty ("index", (int) sv.getProperty ("thresholdPick", {}).getProperty ("index", now.thr));
+        if (steppedControl (idx)) return;
+        const auto norms = sv.getProperty ("positionNorms", {}); const auto ia = sv.getProperty ("inAtGr", {});
+        int withOne = 0; std::vector<double> twos, ones;
+        for (int i = 0; i < ia.size() && i < norms.size(); ++i) { const auto one = ia[i].getProperty ("1", {}); if (one.isDouble() || one.isInt()) { ++withOne; ones.push_back ((double) one); } const auto two = ia[i].getProperty ("2", {}); if (two.isDouble() || two.isInt()) twos.push_back ((double) two); }
+        auto worstGap = [] (std::vector<double> v) { std::sort (v.begin(), v.end()); double w = 0.0; for (size_t k = 1; k < v.size(); ++k) w = juce::jmax (w, v[k] - v[k - 1]); return w; };
+        const double worst2 = worstGap (twos), worst1 = worstGap (ones);
+        if (withOne < 9 && (worst2 > sweep::kRefineGapDb || worst1 > sweep::kRefineGapDb))
+        { d.resweep = true; d.why = "only " + juce::String (withOne) + " positions reach 1 dB and a " + (worst2 > sweep::kRefineGapDb ? "2 dB gap of " + juce::String (worst2, 1) : "1 dB gap of " + juce::String (worst1, 1)) + " dB remains after " + juce::String (roundsTaken) + " refinement round(s): a round on that gap adds positions"; }
+    };
+    // a candidates record (Rule 1, a measured rule, or a review pick): the plan's candidate set against the record's; the
+    // picked candidate's sweep is the one the refinement check reads
+    if (! sw.isObject()) if (const auto* cs = record.getProperty ("thresholdCandidates", {}).getArray())
+    {
+        juce::StringArray a; for (const auto& c : *cs) a.add (juce::String ((int) c.getProperty ("index", -1))); a.sort (false);
+        const auto nowList = listOf (now);
+        const int picked = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+        // a decided record (Rule 1 keeps only the candidate it swept): the pick must still be one of this build's candidates (or its single amount)
+        if (picked >= 0 && record.getProperty ("ruleDecided", {}).isObject())
+        {
+            bool still = now.thr == picked; for (const auto& c : now.candidates) still = still || c.index == picked;
+            if (! still) { d.resweep = true; d.why = "the picked candidate [" + juce::String (picked) + "] is no longer one this build plans [" + nowList + "]"; return d; }
+        }
+        else if (nowList != a.joinIntoString (",")) { d.resweep = true; d.why = "the candidate set changed: swept [" + a.joinIntoString (",") + "], this build plans [" + nowList + "]"; return d; }
+        for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == picked) { const auto cv = c.getProperty ("thresholdSweep", {}); refinementCheck (cv, (int) cv.getProperty ("sweptControl", {}).getProperty ("refineRounds", (int) cv.getProperty ("gridRefinement", {}).getProperty ("rounds", 0))); }
+        return d;
+    }
+    if (sw.isObject())
+    {
+        const auto sc = sw.getProperty ("sweptControl", {});
+        if (sc.isObject()) { sweptList = juce::String ((int) sc.getProperty ("index", -1)); sweptFlags = sc.getProperty ("flags", "").toString(); rounds = (int) sc.getProperty ("refineRounds", 0); }
+        else if (sw.getProperty ("thresholdPick", {}).isObject()) sweptList = juce::String ((int) sw.getProperty ("thresholdPick", {}).getProperty ("index", -1));
+        else { rounds = (int) sw.getProperty ("gridRefinement", {}).getProperty ("rounds", 0); if (sw.getProperty ("roleFlag", "").toString().isNotEmpty()) sweptFlags = sw.getProperty ("roleFlag", "").toString(); }
+    }
+    const auto nowList = listOf (now);
+    if (sweptList.isNotEmpty() && nowList != sweptList)
+    { d.resweep = true; d.why = "the plan changed: swept [" + sweptList + "], this build plans [" + nowList + "]" + (now.pickNote.isNotEmpty() ? " (" + now.pickNote.upToFirstOccurrenceOf (";", false, false) + ")" : juce::String()); return d; }
+    if (sweptFlags.isNotEmpty() && now.thr >= 0 && now.thrFlags.joinIntoString (",") != sweptFlags && now.thrFlags.joinIntoString (",").isNotEmpty())
+    { d.resweep = true; d.why = "the amount control's flags changed: swept as '" + sweptFlags + "', this build '" + now.thrFlags.joinIntoString (",") + "'"; return d; }
+    refinementCheck (sw, rounds);
+    return d;
 }
 
 inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var fresh)

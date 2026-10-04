@@ -1,10 +1,11 @@
-# The follow-up on Sean's Mac: deep points and the v1.7 tone checks, no sweeps (2 Oct 2026; L per level, licence skip and CL 1B import 3 Oct)
+# The follow-up on Sean's Mac: deep points, the tone checks, and the re-sweeps it decides itself (2 Oct 2026; L per level, licence skip and CL 1B import 3 Oct; re-sweeps 4 Oct)
 
 After the batch has run with the build from `36397676`, the deep points (4/5/6 dB, spec v1.7 §3) and
-the amended pick and tone check (§6.4, §8) need a newer build — but **no plugin needs re-sweeping**:
-the traces the batch kept in `~/Library/ejmap/cert` already hold every level at every position. This
-mode re-derives each exported record from its traces, re-exports the profile with the deep points, and
-loads each certified plugin only for the tone checks. It is resumable and uses the same window watch.
+the amended pick and tone check (§6.4, §8) need a newer build. For most rows **nothing is re-swept**: the
+traces the batch kept in `~/Library/ejmap/cert` already hold every level at every position, so this mode
+re-derives each exported record from its traces, re-exports the profile with the deep points, and loads each
+certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
+same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
 **The follow-up build is commit `97b0bfb1`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
 step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
@@ -16,13 +17,23 @@ reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 
 
 ## What this follow-up does to your 3 Oct run (projected from your zip, 4 Oct)
 
-Re-derived from your traces, nothing re-swept: your 43 exports get the deep points and the new tone checks; 15 products that
+Re-derived from your traces: your 43 exports get the deep points and the new tone checks; 15 products that
 were "N threshold candidates" are decided by measurement (10 linked pairs, PuigChild 670 (s) leader/follower, Ozone 12
 Vintage Main over Aux, Kiive XTComp and DSM V3 master over trims — each needs one detector load, which this mode does) and
 API-2500 (m)/(s) get their lost repeat back; 15 are filed `multiband: profiling not built yet`, 8 `needs_licence`
 (7 Melda + Pro-C 3: silent on every candidate), 2 `surround`; 25 stay in review, 11 of them waiting for a pick in
 `cert/review_picks.json` (the sheet is `cert/review_sheet.txt`). H-Comp (m)/(s) and three others were refused for a false
 licence flag: run `"$BIN" --cert-sweep-all --profile --retry-refused` once after this mode to re-sweep them.
+
+**Re-swept by this command, decided from your records (projected 4 Oct, 14 products, ≈ 45–60 min on top).** A row is
+re-swept only when the plan this build makes for it differs from the plan its record was swept under: 11 that the batch
+build refused at plan now have an amount control (MV2 (m)/(s) High Level, Rubber Band Compressor V2 Tension, OneKnob
+Pressure (m)/(s) Pressure, RVox (m)/(s) Compression, Mike-E Comp Drive, bx_opto Pedal Density, NEOLD V76U73 Gain, Mixland
+Vac Attack L/R Reduction); MaxxVolume (m)/(s) lose two switch candidates; UnFairchild's measured pick reaches 1 dB at only
+5 positions and gets its refinement round. The command prints the list and each row's reason first (`RE-SWEEP: N
+product(s)`), re-derives and tone-checks everything else, then sweeps those through the batch's own path and finishes
+them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
+`--retry-refused` line above covers those.
 
 ## What Sean runs (after the follow-up `ejmap.app` is built from `97b0bfb1` and packaged the same way)
 

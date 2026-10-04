@@ -4707,6 +4707,15 @@ void testSweepPrivacyAndPlan()
     const auto text = juce::JSON::toString (f);
     check (! text.contains ("tester_id") && ! text.contains ("machine_id") && text.contains ("\"keep\""),
            "sweep P1: the fixture writer drops tester_id and machine_id wherever they appear, and nothing else");
+    {
+        // A SWEEP THAT LANDS ENDS THE REFUSAL (4 Oct, found by the re-sweep rehearsal: V76U73 swept for 250 s and still filed refused)
+        auto refused = juce::JSON::parse (R"json({"product": "v", "controls": [{"index": 3}], "thresholdRefusal": {"stage": "plan", "reason": "not swept"}})json");
+        auto* sw = new juce::DynamicObject(); sw->setProperty ("result", "flat");
+        const auto after = composeFixture (refused, juce::var (sw));
+        check (! after.hasProperty ("thresholdRefusal") && after.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() == "flat" && refused.hasProperty ("thresholdRefusal"),
+               "sweep P1b: composing a sweep onto a refused record removes the refusal (the base is untouched), so the row reads the sweep");
+        check (ejmap::loop::outcomeForRecord (after).state != "refused", "sweep P1c: the re-swept record no longer files as refused");
+    }
 
     auto control = [] (int idx, const char* name, int steps, bool discrete, double defNorm, const char* defText, const char* unit) {
         auto* c = new juce::DynamicObject();
@@ -6356,6 +6365,39 @@ void testLoopOutcomes()
                "loop L19c: an exported product and a hang-quarantined bundle are not known licence stops: they load");
         check (knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", true).isEmpty() && knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6", true).isEmpty(),
                "loop L19d: --retry-licence is the only way past a known licence stop");
+        // RE-SWEEP OR RE-DERIVE (L19q-L19u, ruled 4 Oct): the follow-up decides from the plan under this build against the plan the record was swept under
+        {
+            using ejmap::sweep::Plan;
+            auto rvoxRec = juce::JSON::parse (R"json({"product": "RVox (s)", "controls": [{"index": 0, "name": "Compression", "unit": "dB", "numSteps": 2147483647, "range": {"min": -36.0, "max": 0.0}, "displayAt": {"0.000": "-36.0", "0.500": "-18.0", "1.000": "0.0"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0"}}],
+                                                      "thresholdRefusal": {"stage": "plan", "reason": "not swept: 0 controls hold the threshold role (class amount_only); deferred"}})json");
+            const auto d1 = planDiffers (rvoxRec, ejmap::sweep::planFromFixture (rvoxRec));
+            check (d1.resweep && d1.why.contains ("refused at plan under the batch build") && d1.why.contains ("this build plans [0] Compression"), "loop L19q: a record refused at plan that now plans is re-swept, the row saying why (" + d1.why + ")");
+            auto licRef = juce::JSON::parse (juce::JSON::toString (rvoxRec)); licRef.getProperty ("thresholdRefusal", {}).getDynamicObject()->setProperty ("stage", "reference");
+            check (! planDiffers (licRef, ejmap::sweep::planFromFixture (licRef)).resweep, "loop L19r: a refusal at any other stage is --retry-refused's business, not the plan's");
+            // a decided record whose pick is still one of this build's candidates: no re-sweep (EMO-D5 under Rule 1 keeps only the candidate it swept)
+            Plan nowP; nowP.ok = true; nowP.thr = -1; for (int i : { 1, 16, 30 }) nowP.candidates.push_back ({ i, "c" + juce::String (i), {}, false });
+            auto emo = juce::JSON::parse (R"json({"product": "EMO-D5 (s)", "controls": [{"index": 16, "name": "Comp Thresh"}], "thresholdCandidates": [{"index": 16, "name": "Comp Thresh", "thresholdSweep": {"result": "certified", "sweptControl": {"index": 16, "refineRounds": 1}, "positionNorms": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], "inAtGr": [{"1": -30, "2": -28}, {"1": -28, "2": -26}, {"1": -26, "2": -24}, {"1": -24, "2": -22}, {"1": -22, "2": -20}, {"1": -20, "2": -18}, {"1": -18, "2": -16}, {"1": -16, "2": -14}, {"1": -14, "2": -12}]}}], "pickedCandidate": {"index": 16}, "ruleDecided": {"rule": "R1"}})json");
+            check (! planDiffers (emo, nowP).resweep, "loop L19s: a Rule-1 record whose pick is still one of this build's candidates is NOT re-swept");
+            Plan nowQ = nowP; nowQ.candidates.clear(); nowQ.candidates.push_back ({ 1, "c1", {}, false }); nowQ.candidates.push_back ({ 30, "c30", {}, false });
+            check (planDiffers (emo, nowQ).resweep && planDiffers (emo, nowQ).why.contains ("no longer one this build plans"), "loop L19s2: when the pick is no longer plannable the record is re-swept");
+            // a single sweep whose amount control changed, and one whose 1 dB coverage is short with a gap over the bar
+            auto single = juce::JSON::parse (R"json({"product": "x", "controls": [{"index": 7}], "thresholdSweep": {"result": "certified", "sweptControl": {"index": 7, "name": "Threshold", "flags": "", "refineRounds": 0}, "positionNorms": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9], "inAtGr": [{"1": -30, "2": -28}, {"1": -28, "2": -26}, {"1": -26, "2": -24}, {"1": -24, "2": -22}, {"1": -22, "2": -20}, {"1": -20, "2": -18}, {"1": -18, "2": -16}, {"1": -16, "2": -14}, {"1": -14, "2": -12}]}})json");
+            Plan single7; single7.ok = true; single7.thr = 7; Plan single9 = single7; single9.thr = 9;
+            check (! planDiffers (single, single7).resweep, "loop L19t: the same amount control with nine 1 dB positions 2 dB apart: no re-sweep");
+            check (planDiffers (single, single9).resweep && planDiffers (single, single9).why.contains ("swept [7], this build plans [9]"), "loop L19t2: a different amount control under this build is re-swept");
+            auto few = juce::JSON::parse (R"json({"product": "UnFairchild", "controls": [{"index": 7}], "thresholdSweep": {"result": "certified", "sweptControl": {"index": 7, "flags": "", "refineRounds": 0}, "positionNorms": [0.2, 0.4, 0.6, 0.8, 1.0, 0.3], "inAtGr": [{"1": -10, "2": -6}, {"1": -15, "2": -11.5}, {"1": -20, "2": -16.6}, {"1": -25, "2": -21.6}, {"1": -30, "2": -26.4}, {"1": "not_reached", "2": "not_reached"}]}})json");
+            check (planDiffers (few, single7).resweep && planDiffers (few, single7).why.contains ("only 5 positions reach 1 dB"), "loop L19u: five 1 dB positions with 2 dB gaps over the bar and rounds left is re-swept (UnFairchild)");
+            // the same five points once the landing read has said 6 detents: no position between detents exists, no re-sweep
+            auto fewStepped = juce::JSON::parse (juce::JSON::toString (few)); fewStepped.getDynamicObject()->setProperty ("amountLanding", juce::JSON::parse (R"json({"control": 7, "detents": 6})json"));
+            check (! planDiffers (fewStepped, single7).resweep, "loop L19u4: a control stepped by evidence is never re-swept for refinement (a round cannot add a position between detents)");
+            auto fewDeclared = juce::JSON::parse (juce::JSON::toString (few)); { auto* c0 = fewDeclared.getProperty ("controls", {})[0].getDynamicObject(); c0->setProperty ("numSteps", 6); c0->setProperty ("discrete", true); }
+            check (! planDiffers (fewDeclared, single7).resweep, "loop L19u5: nor is a control declared stepped");
+            // a 1 dB gap over the bar with the 2 dB points tight (DSM V3's shape: 2 dB reached at two adjacent positions only)
+            auto oneGap = juce::JSON::parse (R"json({"product": "d", "controls": [{"index": 7}], "thresholdSweep": {"result": "certified", "sweptControl": {"index": 7, "flags": "", "refineRounds": 1}, "positionNorms": [0.2, 0.4, 0.6, 0.8], "inAtGr": [{"1": -10, "2": -11}, {"1": -14, "2": -12.5}, {"1": -18, "2": "not_reached"}, {"1": -22, "2": "not_reached"}]}})json");
+            check (planDiffers (oneGap, single7).resweep && planDiffers (oneGap, single7).why.contains ("1 dB gap of 4.0"), "loop L19u3: a 1 dB gap over the bar re-sweeps even when every reachable 2 dB gap is within it");
+            auto tuner = juce::JSON::parse (R"json({"product": "t", "schema": "ej_cert_tuner/1", "controls": [], "thresholdRefusal": {"stage": "plan", "reason": "x"}})json");
+            check (! planDiffers (tuner, single7).resweep && ! planDiffers (juce::JSON::parse (R"json({"product": "n"})json"), single7).resweep, "loop L19u2: a tuner or a record without controls never re-sweeps");
+        }
         // THE REVIEW PICK (L19m-L19p, ruled 4 Oct): an entry in review_picks.json naming a certified candidate decides; nothing without an entry; an uncertified name picks nothing and says why
         {
             const auto recJ = juce::JSON::parse (R"json({"product": "Shadow Hills Mastering Compressor", "thresholdCandidates": [{"index": 2, "name": "Optical Threshold 1", "thresholdSweep": {"result": "certified", "hold_s": 2.5, "tone": {"levels_dbfs": [-60, -40, -20, -10, 0]}}}, {"index": 14, "name": "Optical Threshold 2", "thresholdSweep": {"result": "certified", "hold_s": 2.5, "tone": {"levels_dbfs": [-60, -40, -20, -10, 0]}}}, {"index": 5, "name": "Discrete Threshold 1", "thresholdSweep": {"result": "flat"}}]})json");
