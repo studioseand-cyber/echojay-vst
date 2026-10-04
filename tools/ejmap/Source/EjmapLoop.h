@@ -33,7 +33,32 @@
 
 namespace ejmap::loop
 {
-inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence" };
+inline const char* const kStates[] = { "exported", "recorded", "refused", "held", "needs_review", "quarantined_at_scan", "needs_licence", "multiband", "surround" };
+
+// OUT-OF-SCOPE STATES (ruled 4 Oct, ON): a multiband (band-numbered threshold candidates, or Low AND Mid AND High threshold
+// candidates by literal word) is "multiband: profiling not built yet"; a product with more than two channels (Logic's
+// "(N->N)" in the name, N > 2 - the Spherix units) is "surround: not profiled". Neither is needs_review: nobody reviews them.
+inline juce::String multibandBands (const juce::var& cands)
+{
+    juce::StringArray bands; bool low = false, mid = false, high = false;
+    for (int i = 0; i < cands.size(); ++i)
+    {
+        const auto n = cands[i].getProperty ("name", "").toString();
+        const auto tokens = juce::StringArray::fromTokens (n.replaceCharacters ("()-:", "    "), " ", "");
+        for (int k = 0; k + 1 < tokens.size(); ++k) if (tokens[k].equalsIgnoreCase ("band") && tokens[k + 1].containsOnly ("0123456789") && tokens[k + 1].isNotEmpty()) bands.addIfNotAlreadyThere ("Band " + tokens[k + 1]);
+        for (const auto& t : tokens) { if (t.equalsIgnoreCase ("low")) low = true; if (t.equalsIgnoreCase ("mid")) mid = true; if (t.equalsIgnoreCase ("high")) high = true; }
+    }
+    if (bands.size() >= 2) return bands.joinIntoString (", ");
+    if (low && mid && high) return "Low, Mid, High";
+    return {};
+}
+inline int surroundChannels (const juce::String& product)
+{
+    const auto m = product.fromLastOccurrenceOf ("(", false, false).upToFirstOccurrenceOf (")", false, false);   // "10->10"
+    if (! m.contains ("->")) return 0;
+    const int out = m.fromFirstOccurrenceOf ("->", false, false).trim().getIntValue();
+    return out > 2 ? out : 0;
+}
 inline bool isState (const juce::String& s) { for (auto* k : kStates) if (s == k) return true; return false; }
 
 struct Outcome
@@ -75,20 +100,11 @@ inline Outcome outcomeForRecord (const juce::var& record)
         if (pc.isArray() && pc.size() > 0) { o.state = "recorded"; o.reason = juce::String (pc.size()) + " pitch candidate(s) recorded"; return o; }
         o.state = "needs_review"; o.reason = "tuner record with no pitch candidates"; return o;
     }
+    if (const int ch = surroundChannels (record.getProperty ("product", "").toString()); ch > 2)
+    { o.state = "surround"; o.reason = "surround: not profiled (" + juce::String (ch) + " channels; the profile is a stereo contract)"; return o; }
     if (const auto cands = record.getProperty ("thresholdCandidates", {}); cands.isArray())
     {
-        // RULE 1 (ruled 2 Oct, evening): a record whose comp-worded candidate certified alone carries pickedCandidate +
-        // ruleDecided; it goes on through the single view (candidateAsSingle) like any certified profile-grade record.
-        const auto pick = record.getProperty ("pickedCandidate", {});
-        if (pick.isObject() && record.getProperty ("ruleDecided", {}).isObject())
-        {
-            for (int i = 0; i < cands.size(); ++i)
-                if ((int) cands[i].getProperty ("index", -2) == (int) pick.getProperty ("index", -1))
-                {
-                    const auto sw = cands[i].getProperty ("thresholdSweep", {});
-                    if (sw.getProperty ("result", "").toString() == "certified" && profileGrade (sw)) { o.exportPending = true; o.state = "needs_review"; o.reason = "export pending (Rule 1 pick)"; return o; }
-                }
-        }
+        // LICENCE FIRST (ruled 4 Oct): a product that produced no tone on any candidate is a licence row before it is anything else
         // LICENCE, NOT CHANNEL STRIP (ruled 4 Oct): when EVERY candidate's verdict is licence_suspect the product produced no tone
         // on any stage - the row is needs_licence with the reason, never "N threshold candidates" (Sean's run: 7 Melda + Pro-C 3)
         if (const auto verdicts = record.getProperty ("thresholdReview", {}).getProperty ("verdicts", {}); verdicts.isArray() && verdicts.size() > 0)
@@ -101,6 +117,22 @@ inline Outcome outcomeForRecord (const juce::var& record)
                 o.reason = "licence suspected: " + (why.isNotEmpty() ? why : juce::String ("every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record)")) + "; " + juce::String (cands.size()) + " candidate(s), none produced the tone; --retry-licence re-checks it";
                 return o;
             }
+        }
+        // a Rule-1 or measured-rule pick goes through first (a decided record is never out of scope by its band names)
+        const bool decided = record.getProperty ("pickedCandidate", {}).isObject() && record.getProperty ("ruleDecided", {}).isObject();
+        if (! decided) if (const auto bands = multibandBands (cands); bands.isNotEmpty())
+        { o.state = "multiband"; o.reason = "multiband: profiling not built yet (" + bands + "; " + juce::String (cands.size()) + " threshold candidates)"; return o; }
+        // RULE 1 (ruled 2 Oct, evening): a record whose comp-worded candidate certified alone carries pickedCandidate +
+        // ruleDecided; it goes on through the single view (candidateAsSingle) like any certified profile-grade record.
+        const auto pick = record.getProperty ("pickedCandidate", {});
+        if (pick.isObject() && record.getProperty ("ruleDecided", {}).isObject())
+        {
+            for (int i = 0; i < cands.size(); ++i)
+                if ((int) cands[i].getProperty ("index", -2) == (int) pick.getProperty ("index", -1))
+                {
+                    const auto sw = cands[i].getProperty ("thresholdSweep", {});
+                    if (sw.getProperty ("result", "").toString() == "certified" && profileGrade (sw)) { o.exportPending = true; o.state = "needs_review"; o.reason = "export pending (Rule 1 pick)"; return o; }
+                }
         }
         o.state = "needs_review";
         o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): no rule decides it, nobody picks";
@@ -336,7 +368,7 @@ inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var f
     return fresh;
 }
 
-struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, rows = 0; };
+struct Counts { int exported = 0, recorded = 0, refused = 0, held = 0, needsReview = 0, quarantined = 0, needsLicence = 0, multiband = 0, surround = 0, rows = 0; };
 inline Counts count (const juce::var& outcomes)
 {
     Counts c;
@@ -347,6 +379,7 @@ inline Counts count (const juce::var& outcomes)
             const auto s = r.getProperty ("state", "").toString();
             if (s == "exported") ++c.exported; else if (s == "recorded") ++c.recorded; else if (s == "refused") ++c.refused;
             else if (s == "held") ++c.held; else if (s == "needs_review") ++c.needsReview; else if (s == "quarantined_at_scan") ++c.quarantined; else if (s == "needs_licence") ++c.needsLicence;
+            else if (s == "multiband") ++c.multiband; else if (s == "surround") ++c.surround;
         }
     return c;
 }

@@ -1,0 +1,138 @@
+multiband	MO-TT	multiband: profiling not built yet (Low, Mid, High; 6 threshold candidates)
+needs_licence	MTurboCompMB	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 7 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_licence	MDynamicsMBLarge	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 22 candidate(s), none produced the tone; --retry-licence re-checks it
+multiband	C6-SideChain (m)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)
+needs_review	MaxxVolume (m)	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	Auto-Tune Vocal Compressor	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+multiband	SSL G3 MultiBusComp	multiband: profiling not built yet (Low, Mid, High; 3 threshold candidates)
+needs_review	CLA-2A (m)	export pending
+needs_review	Vertigo VSC-2	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	PuigChild 660 (m)	export pending
+multiband	LinMB (s)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5; 5 threshold candidates)
+needs_review	VBC FG-Red	export pending
+needs_review	VComp (m)	sweep result flat: no two positions differ by more than 1 dB at any test level
+needs_review	C1 comp-sc (s)	export pending
+needs_review	DynOne3	15 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	Renaissance Axx (m)	export pending
+needs_review	NEOLD U2A	sweep result flat: no two positions differ by more than 1 dB at any test level
+needs_review	Lindell SBC	export pending
+needs_review	Shadow Hills Mastering Compressor	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+multiband	C4 (s)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4; 4 threshold candidates)
+needs_review	DPR-402 (m)	export pending
+needs_review	bx_opto	export pending
+needs_review	Shadow Hills Class A Mastering Comp	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	EMO-D5 (s)	export pending (Rule 1 pick)
+surround	Spherix Compressor (12->12)	surround: not profiled (12 channels; the profile is a stereo contract)
+needs_review	C1 comp-gate (m)	export pending
+refused	MTurboComp	stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -10.00 is 47.9% the input's tone; output at -2.00 is 0.0% the input's tone; output at -20.00 is 40.9% the input's tone; output at -22.00 is 0.0% the input's tone; output at -42.00 is 0.0% the input's tone; output at 0.00 is 0.0% the input's tone; 
+needs_review	Millennia TCL-2	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+multiband	Drawmer 1973	multiband: profiling not built yet (Low, Mid, High; 6 threshold candidates)
+needs_review	C1 comp (m)	sweep result flat: no two positions differ by more than 1 dB at any test level
+refused	MV2 (m)	stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+refused	Rubber Band Compressor V2	stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+needs_review	CLA-3A (m)	export pending
+needs_licence	MSpectralDynamics	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 3 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_review	Lindell 7X-500	export pending
+recorded	Auto-Tune Artist	1 pitch candidate(s) recorded
+needs_review	SSLComp (s)	sweep result flat: passthrough: output equals input within 0.01 dB at every reading
+refused	OneKnob Pressure (m)	stage plan: not swept: 0 controls hold the threshold role (class input_as_threshold); deferred to review after the sweep
+recorded	Auto-Tune Pro	1 pitch candidate(s) recorded
+needs_review	Tube-Tech CL 1B	export pending
+needs_review	SSL Native X-ValveComp v6	export pending
+recorded	bx_crispytuner	1 pitch candidate(s) recorded
+needs_review	SSL Native Bus Compressor 2	export pending
+needs_review	Kiive XTComp	3 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	elysia mpressor	export pending
+needs_review	bx_townhouse Buss Compressor	export pending
+refused	Mixland Vac Attack	stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+needs_review	API-2500 (m)	export pending
+needs_review	CLA-76 (s)	export pending
+needs_review	VBC Rack	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	Bettermaker Bus Compressor DSP	export pending
+needs_review	Solid Bus Comp	export pending
+needs_review	UnFairchild	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	Abbey Road RS124 (s)	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+refused	MModernCompressor	stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -24.00 is 0.0% the input's tone; output at -60.00 is 0.0% the input's tone; output at -66.00 is 0.0% the input's tone; output at -72.00 is 1.7% the input's tone; output at 0.00 is 44.9% the input's tone; 
+needs_review	RCompressor (m)	sweep result flat: passthrough: output equals input within 0.01 dB at every reading
+needs_review	SSL Blitzer	export pending
+refused	H-Comp (m)	stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -84.00 is 36.7% the input's tone; output at -90.00 is 12.6% the input's tone; 
+needs_review	MixWave DW Fearn VT-7	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+refused	OneKnob Pumper (s)	stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+refused	RVox (s)	stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+needs_licence	MSpectralDynamicsMini	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 3 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_review	dbx-160 (s)	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_licence	Pro-C 3	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 3 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_review	kHs Compressor	export pending
+needs_review	Purple Audio MC 77	sweep result nonmonotonic: reduction falls by more than 0.5 dB walking from the softer end (position 25 at -16.00)
+recorded	Auto-Tune EFX+	1 pitch candidate(s) recorded
+multiband	C6 (m)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)
+needs_review	Ozone 12 Vintage Compressor	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+recorded	Auto-Tune Access	1 pitch candidate(s) recorded
+needs_review	Kramer PIE (s)	export pending
+needs_review	kHs Dynamics	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	VComp (s)	sweep result flat: no two positions differ by more than 1 dB at any test level
+multiband	Lindell 354E	multiband: profiling not built yet (Low, Mid, High; 3 threshold candidates)
+multiband	LinMB (m)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5; 5 threshold candidates)
+needs_review	DPR-402 (s)	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+refused	Empirical Labs Mike-E Comp	stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+multiband	C4 (m)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4; 4 threshold candidates)
+needs_review	SSL Native X-Comp v6	export pending
+needs_review	Renaissance Axx (s)	export pending
+needs_review	VBC FG-MU	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	C1 comp-sc (m)	export pending
+needs_review	MaxxVolume (s)	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+refused	bx_opto Pedal	stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+multiband	C6-SideChain (s)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)
+recorded	Auto-Tune EFX	1 pitch candidate(s) recorded
+needs_review	Lindell 254E	export pending
+needs_review	PuigChild 670 (s)	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	CLA-2A (s)	export pending
+needs_review	AMEK Mastering Compressor	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	CLA-3A (s)	export pending
+needs_licence	MDrumLeveler	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 2 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_review	Unfiltered Audio Zip	export pending
+refused	Low Control	stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -10.00 is 48.4% the input's tone; output at -20.00 is 40.9% the input's tone; output at -46.00 is 19.6% the input's tone; 
+needs_review	C1 comp (s)	sweep result flat: no two positions differ by more than 1 dB at any test level
+multiband	Ozone 12 Dynamics	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4; 16 threshold candidates)
+needs_review	C1 comp-gate (s)	export pending
+needs_review	EMO-D5 (m)	export pending (Rule 1 pick)
+needs_licence	MDynamicsMB	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 22 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_review	SPL IRON	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+multiband	Lindell MBC	multiband: profiling not built yet (Low, Mid, High; 3 threshold candidates)
+refused	MV2 (s)	stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+needs_review	CLA-76 (m)	export pending
+needs_review	U73b Compressor	export pending
+needs_review	API-2500 (s)	export pending
+surround	Spherix Compressor (10->10)	surround: not profiled (10 channels; the profile is a stereo contract)
+needs_review	SSL LMC+	export pending
+needs_licence	MDynamics	licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 4 candidate(s), none produced the tone; --retry-licence re-checks it
+needs_review	OTT	3 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	Abbey Road RS124 (m)	export pending
+needs_review	MCompressor	export pending
+needs_review	elysia alpha master	2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	NEOLD U17	sweep result flat: passthrough: output equals input plus a constant -0.01 dB within 0.01 dB at every reading
+needs_review	Pro Audio DSP DSM V3	4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	SSL Fusion HF Compressor	sweep result flat: no two positions differ by more than 1 dB at any test level
+refused	OneKnob Pressure (s)	stage plan: not swept: 0 controls hold the threshold role (class input_as_threshold); deferred to review after the sweep
+needs_review	SSLComp (m)	sweep result flat: passthrough: output equals input within 0.01 dB at every reading
+needs_review	elysia alpha mix	export pending
+multiband	Pro-MB	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)
+needs_review	TBTECH Cenozoix Compressor	export pending
+multiband	C6 (s)	multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)
+needs_review	VBC FG-Grey	export pending
+needs_review	dbx-160 (m)	sweep result flat: passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading
+needs_review	Kramer PIE (m)	export pending
+refused	OneKnob Pumper (m)	stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+refused	H-Comp (s)	stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -84.00 is 36.8% the input's tone; output at -90.00 is 12.4% the input's tone; 
+needs_review	RCompressor (s)	sweep result flat: passthrough: output equals input within 0.01 dB at every reading
+needs_review	Maag MAGNUM-K	6 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+needs_review	Acme Opticom XLA-3	export pending
+refused	NEOLD V76U73	stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+needs_review	Solid Dynamics	export pending (Rule 1 pick)
+refused	RVox (m)	stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+STATES: multiband 15
+STATES: needs_licence 8
+STATES: needs_review 83
+STATES: recorded 6
+STATES: refused 18
+STATES: surround 2

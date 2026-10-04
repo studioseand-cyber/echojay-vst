@@ -142,6 +142,8 @@ bundle the scan stopped or quarantined. Every row has exactly one state:
 | `needs_review` | measured, but a rule is missing or the result is not profile-grade (several threshold candidates; a flat sweep; an export the exporter refused) | the row's reason, then the record |
 | `needs_licence` | an activation / licence window — at the scan (carried forward, not loaded again) or at the probe's load in the batch; re-checked only by `--retry-licence` (scan: `--scan --retry-licence`; batch: `--cert-sweep-all --profile --retry-licence`) | `~/Library/ejmap/licence-stops.json`, the row |
 | `quarantined_at_scan` | the scan quarantined the bundle (a stall or a crash); the row names its products and category | `~/Library/ejmap/quarantine.json` |
+| `multiband` | "multiband: profiling not built yet" — band-numbered or Low/Mid/High threshold candidates (ruled 4 Oct); not a review item | the row |
+| `surround` | "surround: not profiled" — more than two channels (Logic's `(N->N)`, N > 2); the profile is a stereo contract | the row |
 
 Every row also carries `map`: `local map` / `server map state N` / `server map at a different build` /
 `none` — information, never a gate. A carried-forward licence product has a product row AND the scan's

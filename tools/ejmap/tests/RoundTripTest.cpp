@@ -6298,6 +6298,24 @@ void testLoopOutcomes()
                "loop L19c: an exported product and a hang-quarantined bundle are not known licence stops: they load");
         check (knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", true).isEmpty() && knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6", true).isEmpty(),
                "loop L19d: --retry-licence is the only way past a known licence stop");
+        // OUT-OF-SCOPE STATES, ON (L19h-L19k, ruled 4 Oct): multiband by band-numbered or Low+Mid+High names; surround by Logic's (N->N), N > 2; neither needs_review; a decided record is never out of scope
+        {
+            auto candsOf = [] (std::initializer_list<const char*> names) { juce::Array<juce::var> a; int i = 0; for (auto* n : names) { auto* o = new juce::DynamicObject(); o->setProperty ("index", i++); o->setProperty ("name", n); o->setProperty ("thresholdSweep", juce::var()); a.add (juce::var (o)); } return juce::var (a); };
+            auto rec = [&] (const juce::String& product, const juce::var& cands) { auto* o = new juce::DynamicObject(); o->setProperty ("product", product); o->setProperty ("thresholdCandidates", cands); return juce::var (o); };
+            const auto c6 = outcomeForRecord (rec ("C6 (s)", candsOf ({ "Band 1 Threshold", "Band 2 Threshold", "Band 3 Threshold" })));
+            check (c6.state == "multiband" && c6.reason.startsWith ("multiband: profiling not built yet (Band 1, Band 2, Band 3; 3 threshold candidates)"), "loop L19h: band-numbered threshold candidates are 'multiband: profiling not built yet', not needs_review (" + c6.reason + ")");
+            check (outcomeForRecord (rec ("Lindell 354E", candsOf ({ "Low Threshold", "Mid Threshold", "High Threshold" }))).state == "multiband" && outcomeForRecord (rec ("MDynamicsMB", candsOf ({ "Threshold (Band 1)", "Threshold (Band 2 - Gate)" }))).state == "multiband",
+                   "loop L19i: Low + Mid + High by literal word, and '(Band N' in parentheses, are multiband too");
+            check (outcomeForRecord (rec ("kHs Dynamics", candsOf ({ "Low Threshold", "High Threshold" }))).state == "needs_review" && outcomeForRecord (rec ("MaxxVolume (s)", candsOf ({ "Low Level Thresh", "High Level Thresh" }))).state == "needs_review",
+                   "loop L19j: Low + High without Mid (kHs Dynamics, MaxxVolume) is NOT called multiband - it stays needs_review");
+            const auto sp = outcomeForRecord (rec ("Spherix Compressor (10->10)", candsOf ({ "Threshold 1", "Threshold 2" })));
+            check (sp.state == "surround" && sp.reason.startsWith ("surround: not profiled (10 channels") && outcomeForRecord (rec ("C6 (s)", juce::var())).state != "surround" && surroundChannels ("Spherix Compressor (12->12)") == 12 && surroundChannels ("H-Comp (s)") == 0,
+                   "loop L19k: Logic's (N->N) with N > 2 is 'surround: not profiled (N channels)'; a stereo name is not (" + sp.reason + ")");
+            auto decided = rec ("C6 (s)", candsOf ({ "Band 1 Threshold", "Band 2 Threshold" })); { auto* pk = new juce::DynamicObject(); pk->setProperty ("index", 0); pk->setProperty ("name", "Band 1 Threshold"); decided.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk)); auto* rd = new juce::DynamicObject(); rd->setProperty ("rule", "review_pick"); decided.getDynamicObject()->setProperty ("ruleDecided", juce::var (rd)); }
+            check (outcomeForRecord (decided).state != "multiband", "loop L19k2: a record with a pick (a rule or a review pick) is never filed as multiband by its names");
+            auto mbLic = rec ("MDynamicsMB", candsOf ({ "Threshold (Band 1)", "Threshold (Band 2)" })); { juce::Array<juce::var> v; for (int k = 0; k < 2; ++k) { auto* o = new juce::DynamicObject(); o->setProperty ("index", k); o->setProperty ("result", "licence_suspect"); v.add (juce::var (o)); } auto* rv = new juce::DynamicObject(); rv->setProperty ("verdicts", v); mbLic.getDynamicObject()->setProperty ("thresholdReview", juce::var (rv)); }
+            check (outcomeForRecord (mbLic).state == "needs_licence", "loop L19k3: a multiband whose every candidate is licence_suspect is a LICENCE row first (MDynamicsMB in Sean's run) - nothing was measured to call it anything else");
+        }
         // A FAILED TONE CHECK IS needs_review (L19g, ruled 4 Oct): never exported; the reason carries GR vs g
         {
             const auto failed = juce::JSON::parse (R"json({"pass_within_0_5_db": false, "gr_measured_db": 1.02, "g_db": 2.0, "quiet_check_ok": true})json");

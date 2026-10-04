@@ -2009,3 +2009,18 @@ unreadable". **Lead, not chased:** a control whose sweep writes consistently sna
 that grid — its `positionLandedBy` / landing evidence is in the record; the fix is a derivation rule with its own pins.
 FG-Grey is not installed here; its live re-test waits for Sean's follow-up run (expected to pass: the old 1.02 was read at
 −18, 6.6 dB below where its 2 dB points sit).
+
+## 40. Out-of-scope states, ON (4 Oct): multiband and surround
+
+`outcomeForRecord` files, before the candidates rule: **surround** — Logic's `(N->N)` in the product name with N > 2 →
+"surround: not profiled (N channels; the profile is a stereo contract)"; **multiband** — threshold candidates that are
+band-numbered ("Band N", "(Band N") or carry Low AND Mid AND High by literal word → "multiband: profiling not built yet
+(<bands>; N threshold candidates)". A licence row comes first (nothing measured), and a decided record (Rule 1, a measured
+rule, a review pick) is never filed by its names. Neither state is needs_review; both are counted in the batch summary and
+in `--cert-states <dir>` (a read-only census of what every record would be filed as now). **Sean's zip:** 15 multiband —
+C4 (m)/(s), C6 (m)/(s), C6-SideChain (m)/(s), Drawmer 1973, Lindell 354E, Lindell MBC, LinMB (m)/(s), MO-TT, Ozone 12
+Dynamics, Pro-MB, SSL G3 MultiBusComp — plus the three Melda multibands (MDynamicsMB, MDynamicsMBLarge, MTurboCompMB) that
+are licence rows first (every candidate silent), which makes Kathy's 18; 2 surround (the Spherix units). Not multiband by
+the literal rule and still in review: kHs Dynamics and MaxxVolume (Low/High without Mid — level stages, not bands) and
+DynOne3 (C LF / MF / HMF… names, no Band number and no literal Low/Mid/High). Pins L19h–L19k3; mutants red (never filed;
+Low + High enough; two channels as surround).

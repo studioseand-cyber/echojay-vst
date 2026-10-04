@@ -648,6 +648,20 @@ namespace
                 juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
                 return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
             }
+            // --cert-states <dir of records>: what state outcomeForRecord gives every record now (read-only; the projected outcome for a zipped-back folder)
+            if (a == "--cert-states" && i + 1 < argc)
+            {
+                const auto dir = cwdFile (argAt (argc, argv, i + 1)); std::map<juce::String, int> n;
+                for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.json"))
+                {
+                    if (f.getFileName().endsWith (".defaults.json")) continue;
+                    const auto r = juce::JSON::parse (f.loadFileAsString()); if (! r.isObject() || ! r.hasProperty ("product")) continue;
+                    const auto o = ejmap::loop::outcomeForRecord (r); ++n[o.state];
+                    std::cout << o.state << "\t" << r.getProperty ("product", "").toString() << "\t" << o.reason << std::endl;
+                }
+                for (const auto& [k, v] : n) std::cout << "STATES: " << k << " " << v << std::endl;
+                return 0;
+            }
             // --cert-range-gaps <dir of records> [--csv]: the range-gap census (read-only): per control with a word end or a missing end sample, its role
             if (a == "--cert-range-gaps" && i + 1 < argc)
             {
