@@ -1,0 +1,371 @@
+{
+  "product": "Lindell 254E",
+  "map_fp": "1ba7ad6d8695f5024617abe840d84d772132756aa1da00a5eda84f9634de3c76",
+  "L_rms_dbfs": -10.772549,
+  "L_peak_dbfs": -7.762249043360187,
+  "g_db": 2.0,
+  "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 16 positions' in_at_gr[2.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+  "gr_per_channel_db": [
+    2.14,
+    2.14
+  ],
+  "L_ref_dbfs": -10.772549,
+  "L_gap_db": 0.0,
+  "pick": {
+    "norm": 1.0,
+    "point": 15,
+    "in_at_g": -11.01,
+    "stepped": true,
+    "pick_one_db": -12.210000000000001,
+    "clamp_db": 12.0,
+    "expected_gr_db": 2.131917222222222,
+    "expected_extrapolated": false,
+    "filled_across_norm": false,
+    "fell_back_to_measured": false,
+    "note": "stepped: the nearest detent gives 2.13 dB at L (reverse read between its 2 and 3 dB points), and that is the expectation"
+  },
+  "writes": [
+    {
+      "control": "Mix",
+      "index": 0,
+      "norm": 1.0,
+      "set": "100%",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "HPF",
+      "index": 1,
+      "norm": 0.0,
+      "set": "20Hz",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limit",
+      "index": 2,
+      "norm": 0.0,
+      "set": "Off",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Compress",
+      "index": 3,
+      "norm": 1.0,
+      "set": "Fast",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Gain",
+      "index": 5,
+      "norm": 0.1,
+      "set": "2dB",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Compress Recovery",
+      "index": 8,
+      "norm": 1.0,
+      "set": "Auto",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limit Level",
+      "index": 9,
+      "norm": 0.5,
+      "set": "8.0dBu",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Limit Recovery",
+      "index": 10,
+      "norm": 1.0,
+      "set": "Auto",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ext SideChain",
+      "index": 12,
+      "norm": 0.0,
+      "set": "On",
+      "why": "neutral[] from the profile"
+    },
+    {
+      "control": "Ratio",
+      "index": 6,
+      "norm": 0.5,
+      "set": "3:1",
+      "why": "ratio.curve[0] from the profile"
+    }
+  ],
+  "writes_source": "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick",
+  "quiet_check_ok": true,
+  "gr_measured_db": 2.14,
+  "pass_within_0_5_db": true,
+  "probe": "e3db6a2a42ce59531d5fc5795f1d6b63a73c05e7",
+  "measuredAt": "20261004T154844.528+0100",
+  "ratio_norm_source": "ratio 3:1 written from profile.ratio.curve[0].norm 0.5000",
+  "spec": "v1.7",
+  "deep_levels": [
+    {
+      "g_db": 4.0,
+      "ran": true,
+      "gr_measured_db": 3.86,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 16 positions' in_at_gr[4.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        3.86,
+        3.86
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.866667,
+        "point": 13,
+        "in_at_g": -10.41,
+        "stepped": true,
+        "pick_one_db": -16.210000000000001,
+        "clamp_db": 8.800000000000001,
+        "expected_gr_db": 3.870518214285715,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 3.87 dB at L (reverse read between its 3 and 4 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 5.0,
+      "ran": true,
+      "gr_measured_db": 4.54,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 16 positions' in_at_gr[5.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        4.54,
+        4.54
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.8,
+        "point": 12,
+        "in_at_g": -9.81,
+        "stepped": true,
+        "pick_one_db": -18.210000000000001,
+        "clamp_db": 11.4,
+        "expected_gr_db": 4.629788846153846,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 4.63 dB at L (reverse read between its 4 and 5 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 6.0,
+      "ran": true,
+      "gr_measured_db": 5.45,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 15 positions' in_at_gr[6.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        5.45,
+        5.45
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.733333,
+        "point": 11,
+        "in_at_g": -9.81,
+        "stepped": true,
+        "pick_one_db": -20.210000000000001,
+        "clamp_db": 13.4,
+        "expected_gr_db": 5.5187255,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 5.52 dB at L (reverse read between its 5 and 6 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 7.0,
+      "ran": true,
+      "gr_measured_db": 6.52,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 14 positions' in_at_gr[7.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        6.52,
+        6.52
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.666667,
+        "point": 10,
+        "in_at_g": -10.01,
+        "stepped": true,
+        "pick_one_db": -22.210000000000001,
+        "clamp_db": 15.200000000000001,
+        "expected_gr_db": 6.576361666666667,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 6.58 dB at L (reverse read between its 6 and 7 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 8.0,
+      "ran": true,
+      "gr_measured_db": 7.7,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 13 positions' in_at_gr[8.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        7.7,
+        7.7
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.6,
+        "point": 9,
+        "in_at_g": -10.41,
+        "stepped": true,
+        "pick_one_db": -24.210000000000001,
+        "clamp_db": 16.800000000000001,
+        "expected_gr_db": 7.773406875,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 7.77 dB at L (reverse read between its 7 and 8 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 9.0,
+      "ran": true,
+      "gr_measured_db": 8.970000000000001,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[9.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        8.970000000000001,
+        8.970000000000001
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.533333,
+        "point": 8,
+        "in_at_g": -10.81,
+        "stepped": true,
+        "pick_one_db": -26.210000000000001,
+        "clamp_db": 18.399999999999999,
+        "expected_gr_db": 9.024967333333334,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 9.02 dB at L (reverse read between its 9 and 10 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 10.0,
+      "ran": true,
+      "gr_measured_db": 10.300000000000001,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 12 positions' in_at_gr[10.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        10.300000000000001,
+        10.300000000000001
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.466667,
+        "point": 7,
+        "in_at_g": -11.31,
+        "stepped": true,
+        "pick_one_db": -28.210000000000001,
+        "clamp_db": 19.899999999999999,
+        "expected_gr_db": 10.358300666666667,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 10.36 dB at L (reverse read between its 10 and 11 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 11.0,
+      "ran": true,
+      "gr_measured_db": 10.300000000000001,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 11 positions' in_at_gr[11.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        10.300000000000001,
+        10.300000000000001
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.466667,
+        "point": 7,
+        "in_at_g": -9.81,
+        "stepped": true,
+        "pick_one_db": -28.210000000000001,
+        "clamp_db": 21.399999999999999,
+        "expected_gr_db": 10.358300666666667,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 10.36 dB at L (reverse read between its 10 and 11 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    },
+    {
+      "g_db": 12.0,
+      "ran": true,
+      "gr_measured_db": 11.68,
+      "L_rms_dbfs": -10.772549,
+      "L_rule": "L_ref = -18.4 + f x (-6.2 + 18.4 - 3.01) with detector_f 0.83 = -10.77 (the spec's typical vocal through this unit's detector, section 6.4 step 1); then L_ref itself and the 10 positions' in_at_gr[12.0] values by distance from it, within the measured range -63.01..-3.01; the first whose section 6.4 pick passes its allowance (v2.1: the flat 12 dB at 3 dB or under, the pick's own 1->g spacing + 3 dB above)",
+      "gr_per_channel_db": [
+        11.68,
+        11.68
+      ],
+      "L_ref_dbfs": -10.772549,
+      "L_gap_db": 0.0,
+      "quiet_check_ok": true,
+      "pass_within_0_5_db": true,
+      "pick": {
+        "norm": 0.4,
+        "point": 6,
+        "in_at_g": -10.41,
+        "stepped": true,
+        "pick_one_db": -30.210000000000001,
+        "clamp_db": 22.800000000000001,
+        "expected_gr_db": 11.741036428571428,
+        "expected_extrapolated": false,
+        "filled_across_norm": false,
+        "fell_back_to_measured": false,
+        "note": "stepped: the nearest detent gives 11.74 dB at L (reverse read between its 11 and 12 dB points), and that is the expectation"
+      },
+      "null_reason": null
+    }
+  ],
+  "deep_levels_nulled": []
+}

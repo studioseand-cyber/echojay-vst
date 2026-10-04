@@ -3766,6 +3766,22 @@ void testFixtureRangeRule()
            "range R7c: an empty end sample is 'an end sample is missing' (and, unparsed, also a word end); the range borrows the middle as before");
     check (! has (derive ("Off", "8.5", "31.0").range, "at_instantiate") && num (derive ("Off", "8.5", "31.0").range, "min") == 8.5,
            "range R7d: without an instantiate text the rule is exactly what it was (the 1,783-control reproduction stands)");
+    // 9. STEPPED BY EVIDENCE (ruled 4 Oct, Lindell 254E's numbers): writes at 41 norms land only on k/15 -> 16 detents; on-grid writes alone prove nothing
+    {
+        using ejmap::profile::LandingRow; using ejmap::profile::detentsFromLanding; using ejmap::profile::positionsAreDetents;
+        std::vector<LandingRow> rows; for (int k = 0; k <= 40; ++k) { LandingRow r; r.norm = k / 40.0; r.getValue = std::round (r.norm * 15.0) / 15.0; rows.push_back (r); }   // 254E: 0.534581 -> 0.533333, 0.854582 -> 0.866667
+        const auto n = detentsFromLanding (rows);
+        check (n && *n == 16, "range R9 (254E): writes at k/40 landing on k/15 are 16 detents by evidence (" + juce::String (n ? *n : 0) + ")");
+        std::vector<LandingRow> onGrid; for (int k = 0; k <= 15; ++k) { LandingRow r; r.norm = k / 15.0; r.getValue = r.norm; onGrid.push_back (r); }
+        check (! detentsFromLanding (onGrid), "range R9b: 16 writes that each land exactly where written are NOT evidence of stepping (254E's own sweep sat on its detents)");
+        std::vector<LandingRow> cont; for (int k = 0; k <= 40; ++k) { LandingRow r; r.norm = k / 40.0; r.getValue = r.norm + (k % 3 == 0 ? 0.00003 : 0.0); cont.push_back (r); }
+        check (! detentsFromLanding (cont), "range R9c: writes landing within 1e-4 of where written are continuous");
+        std::vector<LandingRow> coarse; for (int k = 0; k <= 40; ++k) { LandingRow r; r.norm = k / 40.0; r.getValue = std::round (r.norm * 2.0) / 2.0; coarse.push_back (r); }
+        check (detentsFromLanding (coarse) && *detentsFromLanding (coarse) == 3, "range R9d: landing only on 0 / 0.5 / 1 is 3 detents");
+        juce::Array<juce::var> cv; for (int k = 0; k < 16; ++k) { auto* o = new juce::DynamicObject(); o->setProperty ("norm", k / 15.0); cv.add (juce::var (o)); }
+        juce::Array<juce::var> cv15 = cv; cv15.remove (3);
+        check (positionsAreDetents (juce::var (cv), 16) && ! positionsAreDetents (juce::var (cv15), 16), "range R9e: the swept positions must be exactly the detents for the export to mark the control stepped");
+    }
     // 8. THE RE-SAMPLE FOLD (ruled 4 Oct): CL 1B's Gain read at 21 norms plus its instantiate norm - 0.33 reads "0.0", the range includes it, "Off" is a named position
     {
         const auto gain = juce::JSON::parse (R"json({"index": 0, "name": "Gain", "range": {"min": 8.5, "max": 31.0, "endsNotNumeric": ["0.000"]}, "defaultOnInstantiate": {"normalised": 0.33, "display": "0.0"}})json");
@@ -5688,6 +5704,17 @@ void testProfileExport()
     const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
     check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
            "export X12: input-as-threshold is input_drive with level_coupling from the per-position quiet gain");
+    {
+        // X12c (ruled 4 Oct): the record's write-landing evidence makes a continuous-declared amount control stepped in the export when its 16 positions are the 16 detents
+        auto ev = record (16, true, false, "", "certified"); auto* evo = new juce::DynamicObject(); evo->setProperty ("control", 7); evo->setProperty ("detents", 16); ev.getDynamicObject()->setProperty ("amountLanding", juce::var (evo));
+        auto plan0 = ejmap::sweep::planFromFixture (record (16, true, false, "", "certified")); evo->setProperty ("control", plan0.thr);
+        const auto ex = exportCompProfile (ev); const auto am = ex.profile.getProperty ("amount", {});
+        check (ex.ok && (bool) am.getProperty ("stepped", false) && am.getProperty ("stepped_by_evidence", "").toString().contains ("16 values (k/15)"),
+               "export X12c: amountLanding {detents 16} on a continuous-declared amount control with 16 positions at k/15 exports stepped: true, saying why (" + ex.refused + ")");
+        evo->setProperty ("detents", 15);
+        const auto ex2 = exportCompProfile (ev);
+        check (ex2.ok && ! (bool) ex2.profile.getProperty ("amount", {}).getProperty ("stepped", true) && ex2.profile.getProperty ("amount", {}).hasProperty ("stepped_by_evidence_unresolved"), "export X12d: when the swept positions are not the detents the export stays continuous and says a re-sweep on the detents is needed");
+    }
     const auto amt = exportCompProfile (record (16, true, false, "amount_as_threshold", "certified"));
     check (amt.ok && amt.profile.getProperty ("topology", "") == "input_drive" && amt.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
            "export X12b (ruled 4 Oct): an amount_as_threshold sweep (RVox's Compression, a OneKnob) exports as input_drive with level_coupling, exactly like input_as_threshold");

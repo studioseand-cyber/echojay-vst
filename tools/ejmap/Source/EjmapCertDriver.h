@@ -2930,6 +2930,37 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     if (record.getProperty ("pickedCandidate", {}).isObject())
     { const int want = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1); std::optional<sweep::Plan::Candidate> pc; for (const auto& c : plan.candidates) if (c.index == want) pc = c; if (pc) plan = plan.forCandidate (*pc); plan.candidates.clear(); }   // copy first: the assignment destroys the vector being walked
     if (plan.thr < 0) { say ("TONE: the record has several threshold candidates; pass --candidate NAME"); return 4; }
+    // STEPPED BY EVIDENCE (ruled 4 Oct, Lindell 254E): before any level, the amount control is written at 41 norms (k/40) in
+    // one probe process and where each write LANDED is read back; writes that land only on N values make it stepped with
+    // those N detents - the evidence goes on the record (amountLanding), the profile is re-exported stepped when the swept
+    // positions are those detents, and the levels below then pick detents. On-grid writes alone prove nothing.
+    if (! profile.getProperty ("amount", {}).getProperty ("stepped", false))
+    {
+        juce::StringArray gs; for (int k = 0; k <= 40; ++k) gs.add (juce::String (k / 40.0, 4));
+        const auto r = runChild ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", juce::String (plan.thr), gs.joinIntoString (",") }, opt.timeoutMs);
+        if (r.kind == ChildResult::Kind::uiShown) return kToneWindowExit;
+        std::vector<profile::LandingRow> rows;
+        if (r.cleanExit())
+            for (const auto& line : juce::StringArray::fromLines (r.out))
+            {
+                const auto f = juce::StringArray::fromTokens (line, "\t", "");
+                if (f.size() < 5 || f[0] != "at" || f.indexOf ("getValue") < 0) continue;
+                profile::LandingRow row; row.norm = f[1].getDoubleValue(); row.getValue = f[f.indexOf ("getValue") + 1].getDoubleValue(); row.landed = f[2] == "landed"; rows.push_back (row);
+            }
+        if (const auto n = profile::detentsFromLanding (rows))
+        {
+            auto* ev = new juce::DynamicObject(); ev->setProperty ("control", plan.thr); ev->setProperty ("detents", *n); ev->setProperty ("readAt", nowStamp());
+            juce::Array<juce::var> sm; for (const auto& row : rows) { auto* o = new juce::DynamicObject(); o->setProperty ("norm", row.norm); o->setProperty ("getValue", row.getValue); sm.add (juce::var (o)); } ev->setProperty ("samples", sm);
+            ev->setProperty ("note", "declared continuous; writes land only on " + juce::String (*n) + " values (k/" + juce::String (*n - 1) + ") - stepped by evidence (ruled 4 Oct)");
+            record.getDynamicObject()->setProperty ("amountLanding", juce::var (ev));
+            recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+            const auto e2 = profile::exportCompProfile (candidate.isNotEmpty() ? profile::candidateAsSingle (record, candidate, ratioNote) : record);
+            if (e2.ok) { profile = e2.profile; profileFile.replaceWithText (juce::JSON::toString (profile) + "\n", false, false, "\n"); }
+            say ("TONE: " + product + " - [" + juce::String (plan.thr) + "] " + plan.thrName + " is STEPPED BY EVIDENCE: " + juce::String (*n) + " detents (k/" + juce::String (*n - 1) + "); profile re-exported "
+                 + (profile.getProperty ("amount", {}).getProperty ("stepped", false) ? juce::String ("stepped - the levels below pick detents") : juce::String ("still continuous: the swept positions are not those detents (a re-sweep on the detents would make it stepped)")));
+        }
+        else say ("TONE: " + product + " - [" + juce::String (plan.thr) + "] " + plan.thrName + " landing at 41 norms: " + (rows.empty() ? juce::String ("not read") : juce::String ("continuous (every write landed where it was written)")));
+    }
     // the whole reference ladder below L, quiet to loud, so the picked position gets the same reference rule as the sweep
     juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
 

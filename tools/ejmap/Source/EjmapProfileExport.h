@@ -88,6 +88,33 @@ inline juce::var foldResample (const juce::var& control, const std::vector<Resam
     o->setProperty ("range_resampled", juce::var (rg));
     return juce::var (o);
 }
+// STEPPED BY EVIDENCE (ruled 4 Oct, Lindell 254E): a control declared continuous whose writes land only on N values is stepped
+// with those N detents. The evidence is the probe's write landing - (norm written, getValue landed) - from a text-at-norms
+// grid of the amount control (41 norms, k/40) read in the tone-check session, and from the sweep's own captures. The rule:
+// at least one write landed somewhere other than where it was written (beyond 1e-4), and every landed value sits on one
+// uniform grid k/(N-1), 2 <= N <= 64, within 1e-4 -> N detents. On-grid writes alone are not evidence (254E's 16-position
+// sweep sat exactly on its 1/15 detents and never showed it). The record keeps the evidence (amountLanding) and the export
+// writes amount.stepped true when the swept positions are those detents; otherwise it says the detents need a re-sweep.
+struct LandingRow { double norm = 0.0, getValue = 0.0; bool landed = true; };
+inline std::optional<int> detentsFromLanding (const std::vector<LandingRow>& rows)
+{
+    bool moved = false; std::vector<double> landed;
+    for (const auto& r : rows) { landed.push_back (r.getValue); if (std::abs (r.getValue - r.norm) > 1e-4) moved = true; }
+    if (! moved || landed.size() < 3) return std::nullopt;
+    for (int n = 2; n <= 64; ++n)
+    {
+        bool all = true;
+        for (double v : landed) { const double k = std::round (v * (n - 1)); if (std::abs (v - k / (n - 1)) > 1e-4) { all = false; break; } }
+        if (all) return n;
+    }
+    return std::nullopt;
+}
+inline bool positionsAreDetents (const juce::var& curve, int detents)
+{
+    if (curve.size() != detents) return false;
+    for (int i = 0; i < curve.size(); ++i) { const double n = (double) curve[i].getProperty ("norm", -1.0); if (std::abs (n - std::round (n * (detents - 1)) / (detents - 1)) > 1e-4) return false; }
+    return true;
+}
 struct RangeGap { juce::String product, control, role; int index = -1; bool wordEnd = false, missingEnd = false; juce::String at0, at1, instantiate; double instNorm = 0.0; bool instOutside = false; };
 inline std::vector<RangeGap> rangeGaps (const juce::var& record)
 {
@@ -520,9 +547,16 @@ inline Export exportCompProfile (const juce::var& f)
         a->setProperty ("control", plan.thrName);
         a->setProperty ("curve", curve);
         const auto ctl = sweep::findControl (f, plan.thr);
-        const bool stepped = sweep::isSteppedControl (ctl);
+        bool stepped = sweep::isSteppedControl (ctl);
         if (stepped && curve.size() != (int) ctl.getProperty ("numSteps", 0))
             return refuse ("a stepped amount control must list every detent: " + juce::String ((int) ctl.getProperty ("numSteps", 0)) + " detents, " + juce::String (curve.size()) + " points");
+        // STEPPED BY EVIDENCE (4 Oct): the record's write-landing evidence for the amount control decides over the declaration
+        if (const auto ev = f.getProperty ("amountLanding", {}); ev.isObject() && (int) ev.getProperty ("control", -1) == plan.thr && (int) ev.getProperty ("detents", 0) >= 2)
+        {
+            const int n = (int) ev.getProperty ("detents", 0);
+            if (! stepped && positionsAreDetents (curve, n)) { stepped = true; a->setProperty ("stepped_by_evidence", "declared continuous; its writes land only on " + juce::String (n) + " values (k/" + juce::String (n - 1) + "), measured from the probe's write landing; the " + juce::String (n) + " swept positions are those detents"); }
+            else if (! stepped) a->setProperty ("stepped_by_evidence_unresolved", "declared continuous; its writes land only on " + juce::String (n) + " values, but the swept positions are not those detents - exported continuous; a re-sweep on the detents would make it stepped");
+        }
         a->setProperty ("stepped", stepped);
         P->setProperty ("amount", juce::var (a));
     }

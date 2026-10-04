@@ -2116,3 +2116,19 @@ Pins A1 (RVox), A2 (Mike-E), A3 (Pumper refused), A4 (Vac Attack pair), X12b (ex
 is the dry command. **What the zip would export without re-measuring: nothing from these 13** — they were refused before
 any sweep, so all 11 that now plan need a re-run (`--retry-refused` after the follow-up build; the two Pumpers stay refused,
 with the new reason).
+
+## 45. Stepped by evidence (4 Oct, Lindell 254E)
+
+A control declared continuous whose writes land only on N values is stepped with those N detents. **Evidence, not
+declaration:** before any level, the tone check writes the amount control at 41 norms (k/40) in one probe process and reads
+where each write landed (`at … getValue`); `profile::detentsFromLanding` says stepped when at least one write landed
+somewhere other than where it was written (beyond 1e-4) and every landed value sits on one uniform grid k/(N−1), 2 ≤ N ≤ 64.
+On-grid writes alone are not evidence — 254E's own 16-position sweep sat exactly on its 1/15 detents and never showed it
+(R9b). The evidence goes on the record (`amountLanding {control, detents, samples[], note}`), the export marks `amount.stepped:
+true` with `stepped_by_evidence` when the swept positions are exactly those detents (else `stepped_by_evidence_unresolved`:
+continuous, "a re-sweep on the detents would make it stepped"), and the levels then pick detents with the reverse-read
+expectation. **Live on 254E here:** 16 detents (35 of 41 writes moved, e.g. 0.5346 → 0.5333, 0.8546 → 0.8667), profile
+re-exported stepped, **g = 2 and all nine deep levels PASS** (2.14 vs 2.1 … 11.68 vs 11.7) where before eight levels could
+not land. Pins R9–R9e, X12c/X12d; mutants red (on-grid writes as evidence; a loose grid fit; the export ignoring the
+evidence). Traces `cert-traces/2026-10-04-sean-zip/254e-stepped-by-evidence/`. Cost: one probe process per product (~15 s)
+when the profile is not already stepped.
