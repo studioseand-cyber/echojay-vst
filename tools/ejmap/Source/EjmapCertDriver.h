@@ -54,6 +54,7 @@
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
 #include "EjmapLimiter.h"
+#include "EjmapEq.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -2924,6 +2925,121 @@ inline int runLimiter (const SweepOptions& opt)
     outDir.getChildFile (stem + ".limiter.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("LIMITER: -> " + outDir.getChildFile (stem + ".limiter.json").getFullPathName());
     return 0;
+}
+
+// EQ RESPONSE (roadmap 2.2; PROTOTYPE, 5 Oct overnight B4; derivation and band grouping in EjmapEq.h, multitone in probe_response.h).
+// Per band: the gain control at 7 norms (freq and Q as instantiated); the frequency control at 7 norms with the gain at the
+// position nearest +6 dB (else its top); each Q position at that gain. Every response is read against the band's baseline
+// (everything as instantiated) and derived to centre / gain / bandwidth, against the labels.
+inline int runEq (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("EQ: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("EQ: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("EQ: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("eq"); outDir.createDirectory();
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".eq." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        return r;
+    };
+    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("EQ: --list-params " + lp.describe()); return 1; }
+    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("EQ: --text-at " + ta.describe()); return 1; }
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    std::vector<std::pair<int, juce::String>> controls;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) controls.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", "").toString() });
+    const auto bands = eq::bandsFrom (controls);
+    say ("EQ: " + opt.product + " " + desc.version + ": " + juce::String ((int) bands.size()) + " band(s) by name");
+    if (bands.empty()) { juce::StringArray names; for (const auto& [i, n] : controls) names.add (n); say ("  controls: " + names.joinIntoString (", ")); return 4; }
+    auto normsFor = [&] (int idx, int n) {
+        const auto ctl = sweep::findControl (base, idx); juce::StringArray out;
+        if (sweep::isSteppedControl (ctl)) { const int st = (int) ctl.getProperty ("numSteps", 0); for (int k = 0; k < st; ++k) out.add (juce::String ((float) k / (float) juce::jmax (1, st - 1), 6)); }
+        else for (int k = 0; k < n; ++k) out.add (juce::String ((float) k / (float) (n - 1), 6));
+        return out; };
+    auto response = [&] (const juce::String& tag, int ctl, const juce::StringArray& norms, const juce::StringArray& sets)
+    {
+        juce::StringArray a { "--response", "ctl=" + juce::String (ctl), "norms=" + norms.joinIntoString (","), "tones=121", "lo=20", "hi=20000", "db=-12", "hold=1.0", "discard=0.5" };
+        if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+        const auto r = run (tag, a);
+        return std::make_pair (eq::parseResponse (r.cleanExit() ? r.out : juce::String ("refused " + r.describe())), r);
+    };
+    auto bandVar = [] (const eq::Band& b) { auto* o = new juce::DynamicObject(); o->setProperty ("result", b.result); if (b.reason.isNotEmpty()) o->setProperty ("reason", b.reason); o->setProperty ("shape", b.shape);
+        if (b.result == "measured" || b.result == "shelf") { o->setProperty ("centre_hz", std::round (b.centreHz * 10.0) / 10.0); o->setProperty ("gain_db", std::round (b.gainDb * 100.0) / 100.0); }
+        if (b.result == "shelf" && b.cornerHz > 0.0) o->setProperty ("corner_hz", std::round (b.cornerHz * 10.0) / 10.0);
+        if (b.result == "measured") { o->setProperty ("bandwidth_oct", std::round (b.bandwidthOct * 1000.0) / 1000.0); o->setProperty ("low_3db_hz", std::round (b.lowHz * 10.0) / 10.0); o->setProperty ("high_3db_hz", std::round (b.highHz * 10.0) / 10.0); }
+        o->setProperty ("tones", b.tonesUsed); return juce::var (o); };
+    juce::Array<juce::var> bandRows; int measured = 0;
+    for (const auto& band : bands)
+    {
+        const int gIdx = band.gains.front(), fIdx = band.freqs.front();
+        const auto tag = "b" + juce::String (gIdx);
+        say ("  band '" + band.key + "': gain [" + juce::String (gIdx) + "] " + band.gainNames.front() + ", freq [" + juce::String (fIdx) + "] " + band.freqNames.front() + (band.qs.empty() ? juce::String() : ", q [" + juce::String (band.qs.front()) + "] " + band.qNames.front()));
+        // baseline: the gain control at its instantiate norm (one position) = everything as instantiated
+        auto [baseR, br] = response (tag + ".base", gIdx, { "current" }, {});   // the control at its instantiate value, no write
+        if (br.kind == ChildResult::Kind::uiShown) { say ("EQ: a window appeared; stopping"); return 5; }
+        if (! baseR.ok || baseR.positions.empty() || baseR.positions[0].tones.size() < 8) { say ("    baseline failed (" + (baseR.refused.isNotEmpty() ? baseR.refused : br.describe()) + ")"); continue; }
+        const auto& baseline = baseR.positions[0];
+        auto* bo = new juce::DynamicObject(); bo->setProperty ("band", band.key); bo->setProperty ("gain_control", band.gainNames.front()); bo->setProperty ("freq_control", band.freqNames.front()); if (! band.qs.empty()) bo->setProperty ("q_control", band.qNames.front());
+        // GAIN sweep
+        juce::Array<juce::var> gainRows; float boostNorm = -1.0f; double boostDb = 0.0; std::optional<double> bestBoostDist;
+        { auto [gr, r] = response (tag + ".gain", gIdx, normsFor (gIdx, 7), {});
+          for (const auto& p : gr.positions)
+          {
+              const auto b = eq::deriveBand (eq::deviation (p, baseline));
+              auto v = bandVar (b); v.getDynamicObject()->setProperty ("norm", p.norm); v.getDynamicObject()->setProperty ("display", p.text);
+              if (const auto lab = eq::labelNumber (p.text)) { v.getDynamicObject()->setProperty ("label_db", *lab); if (b.result == "measured" || b.result == "shelf") v.getDynamicObject()->setProperty ("gain_off_db", std::round ((b.gainDb - *lab) * 100.0) / 100.0); if (! bestBoostDist || std::abs (*lab - 6.0) < *bestBoostDist) { bestBoostDist = std::abs (*lab - 6.0); boostNorm = p.norm; boostDb = *lab; } }
+              gainRows.add (v); if (b.result == "measured" || b.result == "shelf") ++measured;
+              say ("    gain " + p.text + ": " + b.result + (b.result == "measured" || b.result == "shelf" ? " centre " + juce::String (b.centreHz, 0) + " Hz, gain " + juce::String (b.gainDb, 2) + " dB" + (b.result == "measured" ? ", bw " + juce::String (b.bandwidthOct, 2) + " oct" : " (" + b.shape + ")") : " - " + b.reason));
+          }
+          if (boostNorm < 0.0f && ! gr.positions.empty()) { boostNorm = gr.positions.back().norm; }
+        }
+        bo->setProperty ("gain_sweep", gainRows);
+        // FREQ sweep at the boost
+        juce::Array<juce::var> freqRows;
+        if (boostNorm >= 0.0f)
+        {
+            auto [fr, r] = response (tag + ".freq", fIdx, normsFor (fIdx, 7), { juce::String (gIdx) + ":" + juce::String (boostNorm, 6) });
+            for (const auto& p : fr.positions)
+            {
+                const auto b = eq::deriveBand (eq::deviation (p, baseline));
+                auto v = bandVar (b); v.getDynamicObject()->setProperty ("norm", p.norm); v.getDynamicObject()->setProperty ("display", p.text);
+                if (const auto lab = eq::labelNumber (p.text)) { v.getDynamicObject()->setProperty ("label_hz", *lab); if ((b.result == "measured" || (b.result == "shelf" && b.cornerHz > 0.0)) && *lab > 0.0) v.getDynamicObject()->setProperty ("centre_off_oct", std::round (std::log2 ((b.result == "shelf" ? b.cornerHz : b.centreHz) / *lab) * 1000.0) / 1000.0); }
+                freqRows.add (v); if (b.result == "measured" || b.result == "shelf") ++measured;
+                say ("    freq " + p.text + " (gain at " + juce::String (boostDb, 1) + "): " + b.result + (b.result == "measured" ? " centre " + juce::String (b.centreHz, 0) + " Hz, gain " + juce::String (b.gainDb, 2) + ", bw " + juce::String (b.bandwidthOct, 2) + " oct" : b.result == "shelf" ? " " + b.shape + (b.cornerHz > 0.0 ? " corner " + juce::String (b.cornerHz, 0) + " Hz" : juce::String()) + ", plateau " + juce::String (b.gainDb, 2) : " - " + b.reason));
+            }
+        }
+        bo->setProperty ("freq_sweep", freqRows); bo->setProperty ("boost_norm", boostNorm); bo->setProperty ("boost_label_db", boostDb);
+        // Q positions at the boost
+        juce::Array<juce::var> qRows;
+        if (! band.qs.empty() && boostNorm >= 0.0f)
+        {
+            auto [qr, r] = response (tag + ".q", band.qs.front(), normsFor (band.qs.front(), 5), { juce::String (gIdx) + ":" + juce::String (boostNorm, 6) });
+            for (const auto& p : qr.positions)
+            {
+                const auto b = eq::deriveBand (eq::deviation (p, baseline));
+                auto v = bandVar (b); v.getDynamicObject()->setProperty ("norm", p.norm); v.getDynamicObject()->setProperty ("display", p.text); qRows.add (v);
+                say ("    q " + p.text + ": " + b.result + (b.result == "measured" ? " bw " + juce::String (b.bandwidthOct, 2) + " oct (centre " + juce::String (b.centreHz, 0) + ", gain " + juce::String (b.gainDb, 2) + ")" : b.result == "shelf" ? " (" + b.shape + ")" : " - " + b.reason));
+            }
+        }
+        bo->setProperty ("q_sweep", qRows);
+        bandRows.add (juce::var (bo));
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_eq_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.2, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("method", "121-tone log multitone 20 Hz-20 kHz at -12 dBFS peak, 1 s hold, 0.5 s discard; deviation against the band's baseline; centre = largest deviation (parabolic in log f), bandwidth = -3 dB span; the grid is 1/12 octave: a centre is known to about 3 %, a bandwidth to about 0.1 octave");
+    o->setProperty ("bands", bandRows); o->setProperty ("measuredAt", nowStamp());
+    outDir.getChildFile (stem + ".eq.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("EQ: -> " + outDir.getChildFile (stem + ".eq.json").getFullPathName());
+    return measured > 0 ? 0 : 4;
 }
 
 // THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio

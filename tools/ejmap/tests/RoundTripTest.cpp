@@ -74,6 +74,7 @@
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
 #include "EjmapLimiter.h"
+#include "EjmapEq.h"
 #include <functional>
 #include "EjmapCertDriver.h"
 
@@ -7019,6 +7020,45 @@ void testLimiter()
     check (! judge ({ res (-1.0, -0.85, -0.85) }).holdsSample && judge ({ res (-1.0, -0.9, -0.9) }).holdsSample, "limiter L9: the bar is 0.1 dB above the label (0.15 over fails, 0.10 holds)");
 }
 
+/** EQ RESPONSE (EjmapEq.h, roadmap 2.2 PROTOTYPE, 5 Oct B4): a synthetic peaking band and a shelf on the 61-tone grid; the band grouping on real names. */
+void testEq()
+{
+    using namespace ejmap::eq;
+    auto grid = [] { std::vector<double> hz; for (int k = 0; k < 121; ++k) hz.push_back (20.0 * std::pow (1000.0, k / 120.0)); return hz; }();   // the mode's grid: 1/12 octave
+    auto pos = [&] (std::function<double (double)> gainAt) { Position p; p.k = 0; p.landed = true; for (double f : grid) { Tone t; t.hz = f; t.inDb = -30.0; t.outDb = -30.0 + gainAt (f); p.tones.push_back (t); } return p; };
+    const auto base = pos ([] (double) { return 0.0; });
+    // a peaking band: +6 dB at 1 kHz, bandwidth 1 octave (a Gaussian in log f whose half-power... -3 dB points at +-0.5 oct)
+    auto peakAt = [] (double f0, double g, double bwOct) { return [=] (double f) { const double x = std::log2 (f / f0) / (bwOct / 2.0); return g * std::pow (2.0, -x * x) ; }; };   // 2^-x^2: at x = +-1 the gain is g/2 (-3 dB of a 6 dB peak... in dB terms g*0.5)
+    {
+        // in dB terms the -3 dB points of a +6 dB peak are at +3 dB: our shape gives g/2 = 3 dB at x = +-1, i.e. +-bw/2 -> bandwidth = bwOct
+        const auto b = deriveBand (deviation (pos (peakAt (1000.0, 6.0, 1.0)), base));
+        check (b.result == "measured" && b.shape == "peak" && std::abs (b.centreHz - 1000.0) < 25.0 && std::abs (b.gainDb - 6.0) < 0.1 && std::abs (b.bandwidthOct - 1.0) < 0.1,
+               "eq E1: a +6 dB peak at 1 kHz, 1 octave wide: centre " + juce::String (b.centreHz, 0) + ", gain " + juce::String (b.gainDb, 2) + ", bw " + juce::String (b.bandwidthOct, 2));
+        // a centre half a grid step off a tone (1030 Hz; the tones sit at 1002 and 1061): the parabolic refinement puts it within 1.5 %
+        const auto m = deriveBand (deviation (pos (peakAt (1030.0, 6.0, 1.0)), base));
+        check (m.result == "measured" && std::abs (m.centreHz - 1030.0) < 15.0, "eq E1b: a centre between two tones is refined to within 1.5 % (" + juce::String (m.centreHz, 1) + ")");
+        const auto c = deriveBand (deviation (pos (peakAt (3000.0, -6.0, 0.5)), base));   // a 6 dB peak: its -3 dB points ARE its half-gain points, so the shape's width is the bandwidth
+        check (c.result == "measured" && std::abs (c.centreHz - 3000.0) < 100.0 && std::abs (c.gainDb + 6.0) < 0.3 && std::abs (c.bandwidthOct - 0.5) < 0.1, "eq E2: a -6 dB cut at 3 kHz, half an octave, read to the 1/12-octave grid (gain within 0.3, bw within 0.1 oct): " + juce::String (c.centreHz, 0) + " / " + juce::String (c.gainDb, 2) + " / " + juce::String (c.bandwidthOct, 2));
+    }
+    {
+        // a low shelf: +4 dB below 100 Hz, half the plateau at the corner (first-order shelf shape)
+        auto shelf = [] (double f) { return 4.0 / (1.0 + std::pow (f / 100.0, 2.0)); };
+        const auto b = deriveBand (deviation (pos (shelf), base));
+        check (b.result == "shelf" && b.shape == "low_shelf" && std::abs (b.gainDb - 4.0) < 0.2 && std::abs (b.cornerHz - 100.0) < 10.0, "eq E3: a +4 dB low shelf (this first-order shape reads 3.85 at 20 Hz): plateau " + juce::String (b.gainDb, 2) + ", corner " + juce::String (b.cornerHz, 0) + " Hz (half the plateau)");
+        auto hshelf = [] (double f) { return -6.0 / (1.0 + std::pow (4000.0 / f, 2.0)); };   // a 4 kHz corner: the plateau is reached inside the grid (an 8 kHz one is not by 20 kHz, and its half-plateau corner reads 13 % low - a grid fact, said in the proposal)
+        const auto h = deriveBand (deviation (pos (hshelf), base));
+        check (h.result == "shelf" && h.shape == "high_shelf" && std::abs (h.gainDb + 6.0) < 0.3 && std::abs (h.cornerHz - 4000.0) < 400.0, "eq E4: a -6 dB high shelf at 4 kHz, corner within 10 %: " + juce::String (h.cornerHz, 0));
+    }
+    check (deriveBand (deviation (pos ([] (double) { return 0.2; }), base)).result == "flat", "eq E5: a 0.2 dB deviation everywhere is flat (the control did nothing here)");
+    check (labelNumber ("1.52k Hz") && std::abs (*labelNumber ("1.52k Hz") - 1520.0) < 1e-6 && labelNumber ("+4.0 dB") && *labelNumber ("+4.0 dB") == 4.0 && labelNumber ("370.0 Hz") && *labelNumber ("370.0 Hz") == 370.0 && ! labelNumber ("Off"), "eq E6: labels parse (k = x1000 for frequencies, not for dB)");
+    // the bands from real names
+    const auto bands = bandsFrom ({ { 52, "EQ Band HF 1 Gain" }, { 53, "EQ Band HF 1 Q" }, { 54, "EQ Band HF 1 Frequency" }, { 5, "Low boost" }, { 6, "Low frequency" }, { 1, "Hi attenuation" }, { 3, "Hi frequency" }, { 4, "Hi bandwidth" }, { 99, "Output Gain" }, { 7, "High Shelf Level 1" }, { 8, "High Shelf Frequency 1" } });
+    juce::StringArray keys; for (const auto& b : bands) keys.add (b.key);
+    check (bands.size() == 4 && keys.contains ("EQ Band HF 1") && keys.contains ("Low") && keys.contains ("Hi") && keys.contains ("High Shelf 1") && ! keys.contains ("Output"), "eq E7: bands by shared key with a gain and a frequency; a lone Output Gain is no band (" + keys.joinIntoString (",") + ")");
+    for (const auto& b : bands) if (b.key == "EQ Band HF 1") check (b.gains == std::vector<int> { 52 } && b.freqs == std::vector<int> { 54 } && b.qs == std::vector<int> { 53 }, "eq E8: gain / freq / q by token (bx_digital's HF 1)");
+    for (const auto& b : bands) if (b.key == "Hi") check (b.gains == std::vector<int> { 1 } && b.qs == std::vector<int> { 4 }, "eq E9: Pultec 'attenuation' is a gain, 'bandwidth' a Q");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -7095,6 +7135,7 @@ int main (int, char**)
     testGainCal();
     testTiming();
     testLimiter();
+    testEq();
     testLoopOutcomes();
     testCategoriesMerge();
 
