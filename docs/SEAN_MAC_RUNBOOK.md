@@ -100,6 +100,7 @@ as ever and takes about 5 s per product — never Send:
 ## 4. The batch (unattended; hours — see the cost table at the end)
 
 ```
+mkdir -p ~/Library/ejmap/cert                     # tee needs the folder before the batch creates it (Sean's 3 Oct run had no batch.log for this reason)
 caffeinate -i "$BIN" --cert-sweep-all --profile 2>&1 | tee -a ~/Library/ejmap/cert/batch.log
 ```
 

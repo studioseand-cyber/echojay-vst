@@ -18,6 +18,7 @@ reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
 "$BIN" --cert-preflight
+mkdir -p ~/Library/ejmap/cert                     # the folder exists after the batch; harmless, and tee needs it
 caffeinate -i "$BIN" --cert-tonecheck-all 2>&1 | tee -a ~/Library/ejmap/cert/tonecheck.log
 ```
 
