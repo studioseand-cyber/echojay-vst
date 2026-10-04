@@ -5974,6 +5974,18 @@ void testProfileSweepPlan()
                "roles Z1: Zip's 'Auto Threshold' (Disabled / Enabled) is dropped as word-valued and Threshold is the single candidate (" + zp.why + ")");
         check (wordValued (zip.getProperty ("controls", {})[0]) && ! wordValued (zip.getProperty ("controls", {})[1]) && ! wordValued (juce::JSON::parse (R"({"name": "x"})")),
                "roles Z2: word-valued means every sampled text is a word with no digit; '-inf dB' and 'Off' are a level's own words; no sample is not judged");
+        // Z3 (ruled 4 Oct, Pro-C 3 from Sean's run): a 2-step control printing 0 / 0 / 1 is a switch, never a threshold candidate - Threshold is the single candidate; a 2-step control printing two LEVELS is not a switch
+        const auto proc = juce::JSON::parse (R"json({"controls": [
+            {"index": 1, "name": "Threshold", "unit": "dB", "numSteps": 2147483647, "discrete": false, "displayAt": {"0.000": "-60.00 dB", "0.500": "-30.00 dB", "1.000": "0.00 dB"}, "defaultOnInstantiate": {"normalised": 0.733, "display": "-16.00 dB"}},
+            {"index": 2, "name": "Auto Threshold", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "0", "0.500": "0", "1.000": "1"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0"}},
+            {"index": 3, "name": "Lock Auto Threshold", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "0", "0.500": "0", "1.000": "1"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0"}},
+            {"index": 4, "name": "Ratio", "numSteps": 2147483647, "displayAt": {"0.000": "1:1", "0.500": "4:1", "1.000": "20:1"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "4:1"}}]})json");
+        const auto pp = planFromFixture (proc);
+        check (pp.ok && pp.thr == 1 && pp.candidates.empty() && pp.wordValuedDropped == juce::StringArray { "Auto Threshold", "Lock Auto Threshold" },
+               "roles Z3: Pro-C 3's 'Auto Threshold' and 'Lock Auto Threshold' (2 steps, 0 / 0 / 1) are digit-valued switches, dropped; Threshold is the single candidate (" + pp.why + ")");
+        const auto twoLevels = juce::JSON::parse (R"json({"index": 9, "name": "Threshold Hi/Lo", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "-20 dB", "0.500": "-20 dB", "1.000": "0 dB"}})json");
+        check (digitSwitch (proc.getProperty ("controls", {})[1]) && ! digitSwitch (twoLevels) && ! wordValued (twoLevels) && ! digitSwitch (proc.getProperty ("controls", {})[0]),
+               "roles Z3b: a two-step control printing two LEVELS (-20 dB / 0 dB) is not a digit switch and stays a candidate; a continuous control printing digits is not one either");
     }
     {
         // GRID REFINEMENT (2 Oct): CL 1B's 2 dB points, positions 0-5 (null, null, null, -13.91, -23.21, -27.71): the

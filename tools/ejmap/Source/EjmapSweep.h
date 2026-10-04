@@ -271,8 +271,20 @@ inline std::optional<float> chooseRatioRaise (const std::vector<GridPoint>& grid
 
 // WORD-VALUED: every sampled display text is a word with no digit in it (Disabled / Enabled, In / Out, Fix / Man);
 // a threshold prints levels. The defaults sample's displayAt is the evidence; a control with no sample is not judged.
+// A DIGIT-VALUED SWITCH (ruled 4 Oct, Pro-C 3's "Auto Threshold" / "Lock Auto Threshold": 2 steps, displayAt 0 / 0 / 1): a
+// two-step control whose sampled texts are all 0 or 1 is a switch printed as digits, never a threshold - the Zip rule for
+// words, extended to the digits a switch can print. A two-step control that prints two LEVELS (e.g. -20 dB / 0 dB) is not it.
+inline bool digitSwitch (const juce::var& c)
+{
+    if ((int) c.getProperty ("numSteps", 0) != 2) return false;
+    const auto* o = c.getProperty ("displayAt", {}).getDynamicObject();
+    if (o == nullptr || o->getProperties().size() == 0) return false;
+    for (const auto& kv : o->getProperties()) { const auto t = kv.value.toString().trim(); if (t != "0" && t != "1") return false; }
+    return true;
+}
 inline bool wordValued (const juce::var& c)
 {
+    if (digitSwitch (c)) return true;
     const auto da = c.getProperty ("displayAt", {});
     const auto* o = da.getDynamicObject();
     if (o == nullptr || o->getProperties().size() == 0) return false;
