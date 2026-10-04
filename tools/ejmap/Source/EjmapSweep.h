@@ -282,9 +282,21 @@ inline bool digitSwitch (const juce::var& c)
     for (const auto& kv : o->getProperties()) { const auto t = kv.value.toString().trim(); if (t != "0" && t != "1") return false; }
     return true;
 }
+// A SWITCH BY NAME OR BY ITS TWO WORDS (ruled 4 Oct, MaxxVolume's "High Level Thresh On" / "Low Level Thresh On"): a two-step
+// control whose name ends in "On" or "Enable", or whose sampled texts are all On / Off, is a switch, never a threshold.
+inline bool switchControl (const juce::var& c)
+{
+    if ((int) c.getProperty ("numSteps", 0) != 2) return false;
+    const auto name = c.getProperty ("name", "").toString().trim().toLowerCase();
+    if (name.endsWith (" on") || name.endsWith (" enable") || name.endsWith (" enabled")) return true;
+    const auto* o = c.getProperty ("displayAt", {}).getDynamicObject();
+    if (o == nullptr || o->getProperties().size() == 0) return false;
+    for (const auto& kv : o->getProperties()) { const auto t = kv.value.toString().trim().toLowerCase(); if (t != "on" && t != "off") return false; }
+    return true;
+}
 inline bool wordValued (const juce::var& c)
 {
-    if (digitSwitch (c)) return true;
+    if (digitSwitch (c) || switchControl (c)) return true;
     const auto da = c.getProperty ("displayAt", {});
     const auto* o = da.getDynamicObject();
     if (o == nullptr || o->getProperties().size() == 0) return false;

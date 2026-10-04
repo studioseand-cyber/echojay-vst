@@ -4754,8 +4754,8 @@ void testSweepRatioAndPicks()
     // THE PICKS, from the pushed fixtures themselves (echojay-saas 2454c0a), by range and step count - never by name.
     const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/tests/fixtures/sweep/plan");
     const auto xla = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_62485258_1.10.1.json").loadFileAsString()));
-    check (xla.ok && xla.thr == 3 && xla.pickNote.contains ("only continuous"),
-           "pick K1: Acme Opticom XLA-3 sweeps [3] Input Gain (continuous), not [6] Input Pad (two steps)");
+    check (xla.ok && xla.thr == 3 && xla.candidates.empty() && xla.wordValuedDropped == juce::StringArray { "Input Pad" },
+           "pick K1: Acme Opticom XLA-3 sweeps [3] Input Gain, not [6] Input Pad - since 4 Oct the Pad (two steps, Off / Off / On) is dropped as a switch before the pick, the same answer by the switch rule");
     const auto mc = planFromFixture (juce::JSON::parse (dir.getChildFile ("AudioUnit_73462d29_1.5.1.json").loadFileAsString()));
     check (mc.ok && mc.thr == 15 && mc.channel == "L" && mc.linkStates.joinIntoString ("|").contains ("Link = 'Std'"),
            "pick K2: Purple Audio MC 77 sweeps [15] Input L (channel A, spec 4.7) and records its Link as instantiated ('Std')");
@@ -6086,6 +6086,20 @@ void testProfileSweepPlan()
         check (pp.ok && pp.thr == 1 && pp.candidates.empty() && pp.wordValuedDropped == juce::StringArray { "Auto Threshold", "Lock Auto Threshold" },
                "roles Z3: Pro-C 3's 'Auto Threshold' and 'Lock Auto Threshold' (2 steps, 0 / 0 / 1) are digit-valued switches, dropped; Threshold is the single candidate (" + pp.why + ")");
         const auto twoLevels = juce::JSON::parse (R"json({"index": 9, "name": "Threshold Hi/Lo", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "-20 dB", "0.500": "-20 dB", "1.000": "0 dB"}})json");
+        // Z4 (ruled 4 Oct, MaxxVolume (s) from Sean's run): a 2-step control named "... On" or printing Off / Off / On is a switch, never a candidate; the two real thresholds remain
+        const auto maxx = juce::JSON::parse (R"json({"controls": [
+            {"index": 0, "name": "Low Level Thresh", "unit": "dB", "numSteps": 2147483647, "displayAt": {"0.000": "-96.0", "0.500": "-30.0", "1.000": "0.0"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "-30.0"}},
+            {"index": 4, "name": "High Level Thresh", "unit": "dB", "numSteps": 2147483647, "displayAt": {"0.000": "-48.0", "0.500": "-15.0", "1.000": "0.0"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "-15.0"}},
+            {"index": 8, "name": "High Level Thresh On", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "On"}},
+            {"index": 9, "name": "Low Level Thresh On", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "On"}}]})json");
+        const auto mp = planFromFixture (maxx);
+        check (mp.wordValuedDropped == juce::StringArray { "High Level Thresh On", "Low Level Thresh On" } && mp.candidates.size() == 2,
+               "roles Z4 (MaxxVolume): 'High Level Thresh On' / 'Low Level Thresh On' (2 steps, Off / Off / On) are switches, dropped; the two thresholds remain candidates (" + juce::String ((int) mp.candidates.size()) + ")");
+        check (switchControl (juce::JSON::parse (R"json({"name": "Comp Enable", "numSteps": 2, "displayAt": {"0.000": "0.0 dB", "0.500": "0.0 dB", "1.000": "6.0 dB"}})json"))
+                 && switchControl (juce::JSON::parse (R"json({"name": "Mode", "numSteps": 2, "displayAt": {"0.000": "off", "0.500": "off", "1.000": "ON"}})json"))
+                 && ! switchControl (juce::JSON::parse (R"json({"name": "Threshold On Axis", "numSteps": 2, "displayAt": {"0.000": "-20 dB", "0.500": "-20 dB", "1.000": "0 dB"}})json"))
+                 && ! switchControl (juce::JSON::parse (R"json({"name": "Comp On", "numSteps": 2147483647, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}})json")),
+               "roles Z4b: '... Enable' by name and On/Off by value are switches; a name that merely contains 'On' is not; a continuous control is never a switch (two steps is part of the rule)");
         const auto contDigits = juce::JSON::parse (R"json({"index": 9, "name": "Threshold Mix", "numSteps": 2147483647, "discrete": false, "displayAt": {"0.000": "0", "0.500": "0", "1.000": "1"}})json");
         check (digitSwitch (proc.getProperty ("controls", {})[1]) && ! digitSwitch (twoLevels) && ! wordValued (twoLevels) && ! digitSwitch (proc.getProperty ("controls", {})[0]) && ! digitSwitch (contDigits),
                "roles Z3b: a two-step control printing two LEVELS (-20 dB / 0 dB) is not a digit switch and stays a candidate; a CONTINUOUS control that happens to print 0 / 0 / 1 is not one either (two steps is part of the rule)");
