@@ -122,11 +122,21 @@ inline Outcome outcomeForRecord (const juce::var& record)
 
 // AFTER THE EXPORT AND THE TONE CHECK. exported only when the file was written AND the tone check ran (pass or fail is
 // a result, recorded on the profile); otherwise needs_review with the exporter's or the tone check's refusal.
-inline Outcome outcomeAfterExport (bool exportOk, const juce::String& exportWhy, bool toneRan, const juce::String& toneWhy)
+// A FAILED TONE CHECK IS needs_review (ruled 4 Oct, Lindell 254E and VBC FG-Grey in Sean's run): the profile stays on disk
+// with its tone_check block, but the row never says exported - the server would act on a profile the check contradicts.
+inline Outcome outcomeAfterExport (bool exportOk, const juce::String& exportWhy, bool toneRan, const juce::String& toneWhy, const juce::var& toneResult = {})
 {
     Outcome o;
     if (! exportOk) { o.state = "needs_review"; o.reason = "export refused: " + exportWhy; return o; }
     if (! toneRan)  { o.state = "needs_review"; o.reason = "exported, but the tone check could not run: " + toneWhy; return o; }
+    if (toneResult.isObject() && ! (bool) toneResult.getProperty ("pass_within_0_5_db", false))
+    {
+        const auto gr = toneResult.getProperty ("gr_measured_db", {});
+        o.state = "needs_review";
+        o.reason = "tone check failed: " + ((gr.isDouble() || gr.isInt()) ? juce::String ((double) gr, 2) : juce::String ("unreadable")) + " vs " + juce::String ((double) toneResult.getProperty ("g_db", 2.0), 1)
+                 + ((bool) toneResult.getProperty ("quiet_check_ok", true) ? juce::String() : juce::String (" (the quiet-reference check failed too)")) + "; the profile is written but not exported";
+        return o;
+    }
     o.state = "exported"; o.reason = "profile exported with its tone check";
     return o;
 }

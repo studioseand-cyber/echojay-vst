@@ -2477,7 +2477,7 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
                 return loop::makeRow (identity, product, category, w, recordFile.getFullPathName(), profilePath, {}, nowStamp());
             }
         }
-        o = loop::outcomeAfterExport (e.ok, e.refused, toneRan, toneWhy);
+        o = loop::outcomeAfterExport (e.ok, e.refused, toneRan, toneWhy, toneRan ? juce::JSON::parse (juce::File (tonePath).loadFileAsString()) : juce::var());
     }
     return loop::makeRow (identity, product, category, o, recordFile.getFullPathName(), profilePath, tonePath, nowStamp());
 }
@@ -2887,6 +2887,16 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         raw.getChildFile (profileFile.getFileNameWithoutExtension() + ".tonecheck" + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
         if (r.kind == ChildResult::Kind::uiShown) { lr.window = true; lr.why = "the probe " + r.describe(); say ("TONE: " + lr.why); return lr; }
         if (! r.cleanExit()) { lr.why = "the probe " + r.describe(); say ("TONE: " + lr.why); return lr; }
+        // A WRITE THAT DID NOT LAND IS NOT A FAILED CHECK (found 4 Oct on Lindell 254E: its continuous-declared Threshold snaps to
+        // 1/15 steps, so an interpolated pick between detents never lands and the process renders nothing): said by name, with the
+        // value the control snapped to, so the record reads "pick between the unit's real detents", not "quiet check failed"
+        for (const auto& line : juce::StringArray::fromLines (r.out))
+            if (line.startsWith ("pos\t") && line.contains ("write_unlanded"))
+            {
+                const auto f = juce::StringArray::fromTokens (line, "\t", ""); const int k = f.indexOf ("getValue");
+                lr.why = "the amount write did not land: norm " + juce::String (lr.pick.norm, 4) + " snapped to " + (k >= 0 && k + 1 < f.size() ? f[k + 1] : juce::String ("?")) + " (a control declared continuous that steps - the pick fell between its real detents; no reading)";
+                say ("TONE: " + product + " - " + lr.why); return lr;
+            }
         lr.ran = true;
         sweep::ProcessOut po { r.out, true, r.describe(), (float) lr.pick.norm };
         const auto d = sweep::derive (sweep::mergeProcesses ({ juce::String(), true, "none", -1.0f }, { po }), { Lpeak }, plan.ratioIndex, true);

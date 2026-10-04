@@ -6284,6 +6284,15 @@ void testLoopOutcomes()
                "loop L19c: an exported product and a hang-quarantined bundle are not known licence stops: they load");
         check (knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", true).isEmpty() && knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6", true).isEmpty(),
                "loop L19d: --retry-licence is the only way past a known licence stop");
+        // A FAILED TONE CHECK IS needs_review (L19g, ruled 4 Oct): never exported; the reason carries GR vs g
+        {
+            const auto failed = juce::JSON::parse (R"json({"pass_within_0_5_db": false, "gr_measured_db": 1.02, "g_db": 2.0, "quiet_check_ok": true})json");
+            const auto of = outcomeAfterExport (true, {}, true, {}, failed);
+            check (of.state == "needs_review" && of.reason == "tone check failed: 1.02 vs 2.0; the profile is written but not exported", "loop L19g: a failed tone check (VBC FG-Grey's 1.02 vs 2) is needs_review 'tone check failed: <GR> vs <g>', never exported (" + of.reason + ")");
+            const auto unread = juce::JSON::parse (R"json({"pass_within_0_5_db": false, "gr_measured_db": null, "g_db": 2.0, "quiet_check_ok": false})json");
+            check (outcomeAfterExport (true, {}, true, {}, unread).reason.startsWith ("tone check failed: unreadable vs 2.0 (the quiet-reference check failed too)"), "loop L19g2: an unreadable check (Lindell 254E) says so, with the quiet check");
+            check (outcomeAfterExport (true, {}, true, {}, juce::JSON::parse (R"json({"pass_within_0_5_db": true, "gr_measured_db": 1.99, "g_db": 2.0})json")).state == "exported", "loop L19g3: a passing check is exported");
+        }
         // LICENCE, NOT CHANNEL STRIP (L19e-L19f, ruled 4 Oct): every candidate licence_suspect -> needs_licence with the reason; a mixed set stays a channel strip
         {
             const auto allSus = juce::JSON::parse (R"json({"product": "Pro-C 3", "thresholdReview": {"verdicts": [{"index": 1, "name": "Threshold", "result": "licence_suspect"}, {"index": 2, "name": "Auto Threshold", "result": "licence_suspect"}]},

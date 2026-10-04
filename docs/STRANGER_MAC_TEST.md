@@ -26,8 +26,8 @@ licence-free slice) is scored against the same items first (section C).
 ## B. What is NOT a pass criterion (so nobody argues it later)
 
 - How many products export. A library of refusals with honest reasons passes; one silent drop fails.
-- Whether a tone check passes. A failed tone check is recorded on an `exported` profile; it is a
-  result, not a defect of the process.
+- Whether a tone check passes. A failed tone check is recorded on the profile and the row is `needs_review`
+  ("tone check failed: <GR> vs <g>", ruled 4 Oct — never `exported`); it is a result, not a defect of the process.
 - Channel strips. Until the candidate rule (item 2 of the 2 Oct plan) lands, a product with several
   threshold candidates ends as `needs_review` with the candidate list — a pass state.
 - PACE products on a Mac without the iLok: `held (licence)` at the batch, or `needs_licence` at the

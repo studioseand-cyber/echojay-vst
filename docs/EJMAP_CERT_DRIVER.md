@@ -1989,3 +1989,23 @@ read identical to 0.01 dB (e.g. SBC g = 2 → 1.99 / 1.99), 40 of 40 PASS.
 
 Pins P1–P6, M1–M3, X1/X1b; mutants red (pair by name alone, curves not compared, master need not certify, a certified second
 counted as leader, Low/High as a channel pair).
+
+## 39. A failed tone check is needs_review (4 Oct); Lindell 254E and VBC FG-Grey re-tested
+
+`outcomeAfterExport` now reads the tone-check result: a check that fails or cannot read is `needs_review` "tone check failed:
+<GR> vs <g>" (the quiet-check failure named when it is the cause); the profile file stays on disk with its `tone_check`
+block but the row never says exported. Pins L19g/L19g2/L19g3; STRANGER_MAC_TEST.md §B re-stated.
+
+**Re-test under the current pick.** Sean's checks ran at the fixed −18: 254E (f 0.83) GR unreadable, quiet check failed, at
+norm 0.767; FG-Grey (f 0.76) GR 1.02 at norm 0.291. Dry run now: 254E L_ref −10.77, the g = 2 pick at L_ref is unbracketed
+so the nearest on-curve point −11.01 (norm 1.0) is the test level; FG-Grey L_ref −11.42, pick norm 0.152, bracketed. **254E
+is installed here at Sean's version, so it was run live: g = 2 PASSES — 1.98 dB at −11.01.** Its deep levels then showed a
+new finding: 8 of 9 did not read at all because **the amount write did not land** — 254E's Threshold is declared continuous
+but snaps to 1/15 steps (the capture says `write_unlanded getValue 0.866667` for the pick 0.8546), so any interpolated pick
+between its real detents renders nothing; only the 9 dB pick (0.5346 ≈ 8/15) landed and passed (8.97). The sweep never saw
+this because its 16 evenly spaced positions ARE the detents. The tone check now says so by name ("the amount write did not
+land: norm 0.8546 snapped to 0.866667 … a control declared continuous that steps") instead of "quiet check FAILED / GR
+unreadable". **Lead, not chased:** a control whose sweep writes consistently snap to a grid should be exported `stepped` with
+that grid — its `positionLandedBy` / landing evidence is in the record; the fix is a derivation rule with its own pins.
+FG-Grey is not installed here; its live re-test waits for Sean's follow-up run (expected to pass: the old 1.02 was read at
+−18, 6.6 dB below where its 2 dB points sit).
