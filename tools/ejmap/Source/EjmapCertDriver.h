@@ -50,6 +50,7 @@
 #include "EjmapPitch.h"
 #include "EjmapProfileExport.h"
 #include "EjmapLoop.h"
+#include "EjmapSidechainCheck.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -1740,6 +1741,35 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
     std::cout << rep << std::flush;
 }
 
+// THE INERT CHECK'S PROCESSES (ruled 4 Oct; the candidates and the verdict in EjmapSweep.h): a control reading with the
+// plan's writes alone, then one process per candidate with that one write added, each at one position and -6 dBFS peak,
+// 1.5 s hold. The runner is the caller's (the batch's runProbe with its ledger, or the follow-up's runChild).
+struct InertRun { bool ran = false, inert = false; juce::String reason; std::vector<sweep::Plan::InertTry> tried; double controlDb = -999.0; };
+inline InertRun runInertCheck (const juce::var& fixture, int thr, float norm, const juce::StringArray& sets,
+                               const std::function<ChildResult (const juce::String& tag, const juce::StringArray& args)>& run)
+{
+    InertRun ir;
+    auto args = [&] (const juce::StringArray& extra) {
+        juce::StringArray a { "--sweep", "thr=" + juce::String (thr), "norms=" + juce::String (norm, 6), "levels=-6", "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" };
+        juce::StringArray all = sets; all.addArray (extra); if (! all.isEmpty()) a.add ("set=" + all.joinIntoString (",")); return a; };
+    auto reading = [] (const ChildResult& r) -> std::optional<double> {
+        if (! r.cleanExit()) return {}; const auto t = sidechaincheck::parseTrace (r.out); if (! t.ok || ! t.holdDb.count (-6.0)) return {}; return t.holdDb.at (-6.0); };
+    ir.tried = sweep::inertCandidates (fixture, thr);
+    if (ir.tried.empty()) { ir.reason = "inert check: no power switch or gain-type control to try"; return ir; }
+    const auto ctl = run ("inert-ctl", args ({}));
+    const auto c = reading (ctl);
+    if (! c) { ir.reason = "inert check: the control process gave no reading (" + ctl.describe() + ")"; return ir; }
+    ir.controlDb = *c; ir.ran = true;
+    for (auto& t : ir.tried)
+    {
+        const auto r = run ("inert-" + juce::String (t.index), args ({ juce::String (t.index) + ":" + juce::String (t.norm, 6) }));
+        if (const auto v = reading (r)) { t.ran = true; t.afterDb = *v; } else t.note = r.describe();
+        if (r.kind == ChildResult::Kind::uiShown) break;
+    }
+    ir.inert = sweep::inertVerdict (ir.controlDb, ir.tried, ir.reason);
+    return ir;
+}
+
 inline int runCertSweep (const SweepOptions& opt)
 {
     auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
@@ -2019,7 +2049,19 @@ inline int runCertSweep (const SweepOptions& opt)
         if (sweep::engageSignature (first) && q.engage.empty())
         {
             q = engageSearch (q, prefix);
-            if (q.engage.empty()) return q;                                      // stays pass-through; the tried list rides the fixture
+            if (q.engage.empty())                                                // stays pass-through; the tried list rides the fixture
+            {
+                // THE INERT CHECK (4 Oct): does ANY control move the output? V76U73 here read byte-identical output with
+                // Mode, Gain, Makeup +24, Trim +18 and Power Off - "flat" was the wrong word for a product whose processing never runs
+                if (! windowSeen && ! overBudget())
+                {
+                    juce::StringArray planSets; for (auto [i, v] : q.sets) planSets.add (juce::String (i) + ":" + juce::String (v, 6));
+                    const auto ir = runInertCheck (base, q.thr, q.norms.front(), planSets, [&] (const juce::String& tag, const juce::StringArray& a) { return runProbe (stem, prefix + tag, a, -1.0f); });
+                    q.inertTried = ir.tried; q.inertControlDb = ir.controlDb; q.inert = ir.inert; q.inertReason = ir.reason;
+                    std::cout << "  inert check: " << ir.reason << std::endl;
+                }
+                return q;
+            }
             std::cout << "  engage verified: " << q.engage.front().name << " -> " << q.engage.front().norm << "; full sweep with the write" << std::endl;
             sweepFor (q, "e" + juce::String (q.engage.front().index) + "." + prefix, r, ps);
             if (windowSeen || overBudget()) return q;
@@ -2560,6 +2602,137 @@ inline void printReviewSheet (const juce::File& fixturesDir, std::ostream& out)
     out << "\nREVIEW SHEET: " << products << " product(s) in review with candidates; to pick, add to cert/review_picks.json: {\"product\": \"<name>\", \"candidate\": \"<candidate name>\", \"by\": \"<initials>\", \"date\": \"<YYYY-MM-DD>\"}" << std::endl;
 }
 
+// THE ONE READING UNDER THE NEW SIDECHAIN POLICY (ruled 4 Oct; the rule and the pure parts in EjmapSidechainCheck.h).
+// Reads the record's own position traces in cert/raw, repeats one of them at one loud level through the probe as it now
+// is, compares, and writes `sidechainPolicyCheck` on the record so the next run does not repeat it. Returns whether the
+// product is in the set at all, and whether it must be re-swept.
+// THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio
+// through at its defaults, with no inert check yet, gets the check's processes now; inert -> the record's result and reason
+// change, nothing else. Returns what happened, empty when the record is not that shape.
+inline juce::String inertCheckOnRecord (const SweepOptions& opt, const juce::File& recordFile, bool deriveOnly)
+{
+    auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    auto sw = record.getProperty ("thresholdSweep", {});
+    // any flat single sweep with no engage write found (V76U73's main sweep says flat without the passThroughAtDefaults flag,
+    // which only its quick engage sweeps carried), not yet checked
+    if (! sw.isObject() || sw.getProperty ("result", "").toString() != "flat" || (bool) sw.getProperty ("engageWrites", {}).getProperty ("found", false) || sw.hasProperty ("inertCheck")) return {};
+    const auto product = record.getProperty ("product", "").toString();
+    if (deriveOnly) return "would run the inert check (flat, no engage write found, not yet checked)";
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    if (hits.size() != 1) return "inert check not run: '" + product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)";
+    const auto& desc = hits[0].desc;
+    if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) return "inert check not run: " + vm;
+    int thr = (int) sw.getProperty ("sweptControl", {}).getProperty ("index", (int) sw.getProperty ("thresholdPick", {}).getProperty ("index", -1));
+    if (thr < 0) { const auto plan = sweep::planFromFixture (record); thr = plan.thr; }
+    if (thr < 0) return "inert check not run: the record names no swept control";
+    const auto norms = sw.getProperty ("positionNorms", {}); const float norm = norms.size() > 0 ? (float) (double) norms[0] : 0.0f;
+    juce::StringArray sets; for (const auto& [i, n] : sidechaincheck::recordWrites (sw)) sets.add (juce::String (i) + ":" + juce::String (n, 6));
+    const auto stem = recordFile.getFileNameWithoutExtension();
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+    const auto ir = runInertCheck (record, thr, norm, sets, [&] (const juce::String& tag, const juce::StringArray& a)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (a);
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".followup." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        return r;
+    });
+    auto* so = sw.getDynamicObject();
+    auto* ic = new juce::DynamicObject(); ic->setProperty ("inert", ir.inert); ic->setProperty ("control_db", ir.controlDb); ic->setProperty ("reason", ir.reason); ic->setProperty ("readAt", juce::Time::getCurrentTime().toISO8601 (false));
+    juce::Array<juce::var> tried;
+    for (const auto& t : ir.tried) { auto* o = new juce::DynamicObject(); o->setProperty ("index", t.index); o->setProperty ("control", t.name); o->setProperty ("norm", t.norm); o->setProperty ("from", t.fromDisplay);
+                                     if (t.ran) o->setProperty ("after_db", t.afterDb); else o->setProperty ("not_run", t.note); tried.add (juce::var (o)); }
+    ic->setProperty ("tried", tried);
+    so->setProperty ("inertCheck", juce::var (ic));
+    if (ir.inert) { so->setProperty ("result", "inert"); so->setProperty ("reason", ir.reason); }
+    record.getDynamicObject()->setProperty ("thresholdSweep", sw);
+    recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+    return (ir.inert ? "INERT: " : "inert check: ") + ir.reason;
+}
+
+struct SidechainCheckResult { bool inSet = false, resweep = false, ran = false; juce::String why; };
+inline SidechainCheckResult sidechainPolicyCheck (const SweepOptions& opt, const juce::File& recordFile, bool deriveOnly)
+{
+    using namespace sidechaincheck;
+    SidechainCheckResult res;
+    auto record = juce::JSON::parse (recordFile.loadFileAsString());
+    const auto product = record.getProperty ("product", "").toString();
+    if (record.getProperty ("schema", "").toString() == sweep::kSchemaTuner) return res;
+    // the sweep view and the trace prefix: a single sweep, or the decided / first certified / first candidate
+    juce::var view = record.getProperty ("thresholdSweep", {}); juce::String prefix, candidateName;
+    if (! view.isObject()) if (const auto* cs = record.getProperty ("thresholdCandidates", {}).getArray(); cs != nullptr && ! cs->isEmpty())
+    {
+        const int picked = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+        const juce::var* chosen = nullptr;
+        for (const auto& c : *cs) if ((int) c.getProperty ("index", -1) == picked) chosen = &c;
+        if (chosen == nullptr) for (const auto& c : *cs) if (chosen == nullptr && c.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() == "certified") chosen = &c;
+        if (chosen == nullptr) chosen = &cs->getReference (0);
+        view = chosen->getProperty ("thresholdSweep", {}); prefix = ".c" + juce::String ((int) chosen->getProperty ("index", -1)) + "."; candidateName = chosen->getProperty ("name", "").toString();
+    }
+    if (! view.isObject()) return res;
+    // already decided for this policy on an earlier run
+    if (const auto prev = record.getProperty ("sidechainPolicyCheck", {}); prev.isObject() && prev.getProperty ("policyNow", "").toString() == kPolicyNow)
+    { res.inSet = true; res.resweep = prev.getProperty ("verdict", "").toString() == "resweep"; res.why = prev.getProperty ("why", "").toString() + " (from an earlier run)"; return res; }
+    // the record's own evidence first (a record swept under the new policy, or with no second bus, is not in the set)
+    if (const auto sc = view.getProperty ("sidechain", {}); sc.isObject())
+    {
+        if (sc.getProperty ("policy", "").toString() == kPolicyNow) return res;
+        if (sc.getProperty ("extraInputBuses", {}).size() == 0) return res;
+    }
+    // the traces
+    const auto stem = recordFile.getFileNameWithoutExtension();
+    std::vector<Trace> traces; std::vector<juce::File> files;
+    for (const auto& f : opt.out.getChildFile ("raw").findChildFiles (juce::File::findFiles, false, stem + ".sweep.*pos*.1.txt"))
+    {
+        const auto tag = f.getFileName().fromFirstOccurrenceOf (".sweep.", false, false);
+        if (tag.startsWith ("r2.")) continue;
+        if (prefix.isNotEmpty() && ! (".sweep." + tag).contains (prefix)) continue;
+        if (prefix.isEmpty() && tag.matchesWildcard ("c*.pos*", true)) continue;   // a candidate's trace never speaks for a single sweep
+        traces.push_back (parseTrace (f.loadFileAsString())); files.push_back (f);
+    }
+    const auto pick = pickReading (traces, recordWrites (view));
+    if (! pick.ok)
+    {
+        const bool noTrace = pick.why.startsWith ("no position trace") || pick.why.startsWith ("no trace ran");
+        if (! noTrace) return res;                                                  // not in the set, by its own traces
+        res.inSet = true; res.why = "sidechain policy: unknown - " + pick.why; return res;
+    }
+    res.inSet = true;
+    const auto& t = traces[pick.trace];
+    if (deriveOnly) { res.why = "would read norm " + juce::String (t.norm, 3) + " at " + juce::String (pick.level, 0) + " dBFS (record: " + juce::String (pick.beforeDb, 2) + " dB) under " + kPolicyNow; return res; }
+    // the one process
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == product) hits.push_back (r);
+    auto note = [&] (const juce::String& verdict, const juce::String& why, std::optional<double> after)
+    {
+        auto* o = new juce::DynamicObject();
+        o->setProperty ("policyBefore", t.policy); o->setProperty ("policyNow", kPolicyNow); o->setProperty ("extraInputBuses", t.extraBusNames.joinIntoString (", "));
+        if (candidateName.isNotEmpty()) o->setProperty ("candidate", candidateName);
+        o->setProperty ("norm", t.norm); o->setProperty ("level_dbfs", pick.level); o->setProperty ("before_db", pick.beforeDb);
+        if (after) { o->setProperty ("after_db", *after); o->setProperty ("delta_db", *after - pick.beforeDb); }
+        o->setProperty ("trace", files[pick.trace].getFileName()); o->setProperty ("verdict", verdict); o->setProperty ("why", why);
+        o->setProperty ("readAt", juce::Time::getCurrentTime().toISO8601 (false));
+        record.getDynamicObject()->setProperty ("sidechainPolicyCheck", juce::var (o));
+        recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+        res.why = why; res.ran = true;
+    };
+    if (hits.size() != 1) { note ("not_run", "sidechain policy: not read - '" + product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)", {}); return res; }
+    const auto& desc = hits[0].desc;
+    if (const auto vm = profile::versionMismatch (record.getProperty ("version", "").toString(), desc.version); vm.isNotEmpty()) { note ("not_run", "sidechain policy: not read - " + vm, {}); return res; }
+    juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) };
+    args.addArray (argsFor (t, pick.level));
+    const auto r = runChild (args, opt.timeoutMs);
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory();
+    raw.getChildFile (stem + ".sidechaincheck.1.txt").replaceWithText (r.out, false, false, "\n");
+    if (r.kind == ChildResult::Kind::uiShown) { note ("window", "sidechain policy: a window appeared under the new policy (" + r.describe() + "); record kept, not re-swept", {}); return res; }
+    if (! r.cleanExit()) { note ("crashed", "sidechain policy: the probe " + r.describe() + " under the new policy; record kept, not re-swept, said here", {}); return res; }
+    const auto after = parseTrace (r.out);
+    if (! after.ok || ! after.holdDb.count (pick.level)) { note ("not_run", "sidechain policy: the process printed no reading at " + juce::String (pick.level, 0) + " dBFS; record kept", {}); return res; }
+    if (after.policy != kPolicyNow) { note ("not_run", "sidechain policy: the probe ran under '" + after.policy + "', not " + kPolicyNow + " - is the follow-up probe installed?", {}); return res; }
+    const auto v = verdict (pick.beforeDb, after.holdDb.at (pick.level), t.norm, pick.level);
+    note (v.verdict, v.why, after.holdDb.at (pick.level));
+    res.resweep = v.resweep;
+    return res;
+}
+
 inline int runToneCheckAll (SweepOptions opt)
 {
     const auto fixturesDir = opt.out.getChildFile ("fixtures");
@@ -2576,7 +2749,7 @@ inline int runToneCheckAll (SweepOptions opt)
     // names a product. In --derive-only the list is projected and nothing runs. Licence rows are --retry-licence's, not this.
     // Decided BEFORE the re-derive loop so a stale sweep is never tone-checked (or exported) minutes before its replacement.
     // Only a product's LATEST record speaks for it (an older record of a product that was later swept is history).
-    juce::StringArray resweep; juce::StringArray resweepWhys;
+    juce::StringArray resweep; juce::StringArray resweepWhys; int scChecked = 0;
     {
         juce::StringArray products;
         for (const auto& recordFile : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
@@ -2587,9 +2760,17 @@ inline int runToneCheckAll (SweepOptions opt)
             const auto r = juce::JSON::parse (latestRecordFor (fixturesDir, product).loadFileAsString());
             if (loop::outcomeForRecord (r).state == "needs_licence") continue;
             const auto d = loop::planDiffers (r, sweep::planFromFixture (r));
-            if (d.resweep) { resweep.add (product); resweepWhys.add (product + ": " + d.why); }
+            if (d.resweep) { resweep.add (product); resweepWhys.add (product + ": " + d.why); continue; }
+            // THE SIDECHAIN POLICY (4 Oct): one reading under the new policy against the record's own, for every record swept
+            // under the old policy that declares a second input bus; the re-sweep is by that evidence, never by assumption
+            const auto sc = sidechainPolicyCheck (opt, latestRecordFor (fixturesDir, product), opt.deriveOnly);
+            if (sc.inSet) { ++scChecked; std::cout << "  " << product << ": " << sc.why << std::endl; }
+            if (sc.resweep) { resweep.add (product); resweepWhys.add (product + ": " + sc.why); continue; }
+            // THE INERT CHECK (4 Oct): a flat record that passes audio through at its defaults is asked whether anything moves its output
+            if (const auto w = inertCheckOnRecord (opt, latestRecordFor (fixturesDir, product), opt.deriveOnly); w.isNotEmpty()) std::cout << "  " << product << ": " << w << std::endl;
         }
     }
+    std::cout << "SIDECHAIN POLICY CHECK: " << scChecked << " product(s) swept under " << sidechaincheck::kPolicyOld << " with a second input bus" << (opt.deriveOnly ? " (derive-only: nothing read)" : "") << std::endl;
     std::cout << "RE-SWEEP (the plan under this build differs from the plan the record was swept under): " << resweep.size() << " product(s) before the re-derive (a measured pick that still needs refinement joins after its re-derive)" << std::endl;
     for (const auto& w : resweepWhys) std::cout << "  " << w << std::endl;
     // EVERY RECORD IN THE FOLDER'S fixtures/ that is a certified profile (or Rule 1-decided), by its own file - never a path

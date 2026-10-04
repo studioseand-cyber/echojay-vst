@@ -1,0 +1,36 @@
+probe: "NEOLD V76U73" | AudioUnit:Effects/aufx,NeV7,Neol | uid=61755f23 | arch=arm64 | format=AudioUnit
+
+sweep	proto	1	thr	3	name	Gain	positions	1	levels	1
+spec	hz	997.000	hold_s	1.500	discard_s	0.750	win_s	0.250	ref_s	0.000	moving_db	0.100	amplitude	peak_at_level	reset_per_hold	0	signal	sine	hz2	0.000
+stage	configure
+policy	sidechain	unconnected	enable_all_buses	ok
+bus	render	in	0	Stereo In	2	Stereo	enabled
+bus	render	out	0	Stereo Out	2	Stereo	enabled
+stage	prepare
+config	main_in	2	main_out	2	latency	32
+param	0	0.000000	Attack Time	Fast
+param	1	0.000000	Bank	A
+param	2	1.000000	Mix	100.0
+param	3	0.454545	Gain	58
+param	4	0.000000	Low Cut	Flat
+param	5	1.000000	Detector	Stereo
+param	6	0.000000	Linear	Off
+param	7	0.000000	High Cut	Flat
+param	8	0.500000	Meter Mode	GR
+param	9	0.000000	Makeup Gain	0.0
+param	10	0.500000	Mode	Bypass
+param	11	1.000000	GR Meter	1.0000
+param	12	0.000000	VU Meter	0.0000
+param	13	1.000000	Power	On
+param	14	0.400000	Release Time	1.2
+param	15	0.000000	SC Filter	Off
+param	16	0.500000	Send	0.0
+param	17	0.500000	Trim	0.0
+set	2	1.000000	confirm_ms	2.6	getValue	1.000000	landed_by	instack	render_blocks	0	text	100.0
+set	9	0.000000	confirm_ms	2.6	getValue	0.000000	landed_by	instack	render_blocks	0	text	0.0
+stage	position
+pos	0	norm	1.000000	confirm_ms	2.55	slices	1	instack_match	1	getValue	1.000000	landed_by	instack	render_blocks	0	text_ms	22.4	reads	2	text	76
+hold	0	-6.00	level_db	-9.0877	in_rms_db	-9.0103	tone_frac	1.0000	ch	-9.0877,-9.0877	doubled	0	last_move_db	0.0035	final_move_db	0.0035	win	-9.1015,-9.0865,-9.0901,-9.0865,-9.0901,-9.0865	nonfinite	0
+reread	0	steady
+timing	wall_ms	100.8	audio_s	1.500
+stage	done

@@ -27,6 +27,18 @@ API-2500 (m)/(s) get their lost repeat back; 15 are filed `multiband: profiling 
 `cert/review_picks.json` (the sheet is `cert/review_sheet.txt`). H-Comp (m)/(s) and three others were refused for a false
 licence flag: run `"$BIN" --cert-sweep-all --profile --retry-refused` once after this mode to re-sweep them.
 
+**The sidechain (4 Oct, Kathy's ruling).** The probe used to CONNECT every sidechain input and feed it silence; WaveShell
+keys from a connected sidechain, which is why C1 comp, RCompressor, SSLComp, dbx-160 and VComp read 0 dB GR on your Mac
+(filed `flat`). The follow-up probe leaves those inputs UNCONNECTED, as Logic does with no sidechain source. The command
+does not assume who that changes: for every product swept under the old policy that declares a second input bus (about 60
+of your records), it repeats ONE of the record's own position processes at one loud level under the new probe (~2–3 s
+each) and compares: within 0.1 dB the record is kept (`sidechain policy: no effect`); otherwise it is re-swept (`keys from a
+connected sidechain`). A crash or a window under the new probe is written on the row and the run carries on.
+
+**`inert` (4 Oct).** A product whose output no control moves — not even Power, Makeup or Trim — is filed `sweep result inert:
+processing never runs: output unchanged by every control including Power`, never `flat`. NEOLD V76U73 is one on Kathy's Mac;
+the cause is not decided (a licence state is suspected), only what was measured is said.
+
 **Re-swept by this command, decided from your records (projected 4 Oct, 14 products, ≈ 45–60 min on top).** A row is
 re-swept only when the plan this build makes for it differs from the plan its record was swept under: 11 that the batch
 build refused at plan now have an amount control (MV2 (m)/(s) High Level, Rubber Band Compressor V2 Tension, OneKnob

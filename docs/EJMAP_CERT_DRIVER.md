@@ -316,6 +316,10 @@ The probe prints a `policy sidechain enabled_silent` line and one `sidechain`
 line per non-main input bus, as measured after configure. The fixture writer
 must carry that state on every certification record.
 
+**Superseded 4 Oct (section 48): the policy is now `unconnected`.** The bus stays declared and enabled, nothing is fed
+to it, and the render callback JUCE installs on it is removed after `prepareToPlay`, as in Logic with no sidechain
+source. The record carries it as `thresholdSweep.sidechain {policy, extraInputBuses[]}` (it did not before).
+
 The reason is a known risk. A compressor that defaults to EXTERNAL sidechain
 keying keys off silence and never compresses, so its sweep reads flat at every
 position and level. That lands in the existing `flat` result, which is correct,
@@ -2205,3 +2209,53 @@ built: logged as a lead.
 
 Pins L19q–L19u5 and P1b/P1c; mutants M1–M8 (refusal path, refinement check, decided pick, control change, 1 dB gap,
 tuner guard, refusal survives the sweep, stepped guard) all red.
+
+## 48. The sidechain is left unconnected; the follow-up re-sweeps by evidence; `inert` is its own result (4 Oct, Kathy's ruling)
+
+**What was found.** Every pass-through Waves unit in Sean's zip (C1 comp m/s, RCompressor m/s, SSLComp m/s, dbx-160 m,
+VComp m/s) declares a `Side-Chain Input Bus`; C1 comp-sc, which compressed, declares none. JUCE's AU host installs a
+render callback on EVERY input element, so under the 28 Sep policy the sidechain was CONNECTED and silent, and WaveShell
+keys from a connected sidechain. Logic leaves an unassigned sidechain unconnected (the plugin's pull fails, it keys
+internally). Measured here, one probe process each, Threshold at its hardest, −6 dBFS: transport/tempo (a), BypassEffect
+read 0 and forced (b), OfflineRender on/off (d), 500 ms warm-up (e), mono→stereo (f, refused) changed nothing; disabling
+the bus (c) is refused by the AU wrapper; feeding it the tone (c2) or removing its callback (c3) made C1 comp read
+10.46 dB GR and RComp 54 dB (50:1). EMO-D5 (Waves, same bus, keys internally), Lindell SBC (Sidechain), elysia mpressor
+(Input #2), bx_opto and 7X-500 read identically to 0.0001 dB either way. Traces: `cert-traces/2026-10-04-sidechain/`.
+
+**A1 — the probe (c3).** `configureAndPrepare`: after `prepareToPlay`, `AudioUnitSetProperty (kAudioUnitProperty_SetRenderCallback,
+Input, b, {nullptr})` for every input bus b ≥ 1; policy line `sidechain unconnected`; one `sidechain` line per bus says
+`unconnected`. AudioUnit only (a VST3 keeps `enabled_silent`). `parseSweep` reads the policy and `bus render in` lines,
+and `composeThresholdSweep` writes `thresholdSweep.sidechain {policy, extraInputBuses[{index, name, channels}]}`.
+
+**A2 — the evidence-based re-sweep** (`EjmapSidechainCheck.h`, pure; `sidechainPolicyCheck` in the driver; run in the
+follow-up's decision pass right after `planDiffers`). For every product whose latest record was swept under
+`enabled_silent` AND declares a second input bus — by the record's `sidechain` field, else by its own position traces —
+the follow-up picks ONE of the record's traces (the record's writes, the loudest level at or below −6 dBFS, the
+position reading lowest there), repeats that exact process under the new probe, and compares the hold at that level:
+|Δ| ≤ 0.1 dB (at the probe's 4-decimal resolution) → keep, "sidechain policy: no effect (norm … at … dBFS: a → b dB)";
+otherwise → re-sweep, "keys from a connected sidechain (…)". No second bus, or already swept unconnected → not in the
+set. No trace → "unknown", said, never guessed. A window or a crash under the new policy → recorded on the record and
+the row ("record kept, not re-swept, said here"), the batch carries on. The result is written as
+`sidechainPolicyCheck {policyBefore, policyNow, candidate?, norm, level_dbfs, before_db, after_db, delta_db, trace,
+verdict, why, readAt}` so a later run reuses it. Candidates records compare on the decided pick (else the first
+certified, else the first). Cost: one process per product (~2–3 s).
+
+Rehearsed live: C1 comp (s) swept under the OLD packaged app (flat, no `sidechain` field — Sean's records' shape), then
+the follow-up under the new build: SBC / mpressor / EMO-D5 "no effect"; C1 comp (s) −9.01 → −9.54 at norm 1.0 →
+re-swept → certified (sense lower_is_harder, 1 dB reached from −48) → exported with its tone check; 7m33 in all.
+
+**A3 — `inert`** (`inertCandidates` / `inertVerdict` in EjmapSweep.h, `runInertCheck` in the driver). When the engage
+search leaves a sweep pass-through, every control that MUST move the output if the product processes at all is written
+once — power/bypass/on two-state switches to their other value (first), gain-type controls (makeup, output, trim, gain,
+input, level, volume, drive; never the threshold, never a word-valued control) to the end farther from instantiate, at
+most 6 — and one reading taken each against a control process (same writes, no extra), one position, −6 dBFS, 1.5 s.
+None moves it by more than 0.1 dB → `result: "inert"`, `reason: "processing never runs: output unchanged by every control
+including Power (…)"` ("… tried (no power switch declared)" when there is none); any one moves it → the result stays what
+it was and the check's reason names which. The record carries `thresholdSweep.inertCheck`. The follow-up runs the same
+check on any existing single-sweep record filed `flat` with no engage write found and no check yet (V76U73 here: 3 s,
+Power/Makeup/Trim all 0.00 dB → inert). The row reads `sweep result inert: processing never runs …`, never `flat`.
+V76U73's cause is NOT decided here (a Plugin Alliance licence state is suspected; `pa.license` is opaque) — the result
+says only what was measured.
+
+Pins S1–S14 (the five 4 Oct traces through the follow-up's own parser; the pick; the arguments; the bar; the
+controls), I1–I9 (V76U73's control list and readings); mutants M9–M16 all red. Suite 3363.

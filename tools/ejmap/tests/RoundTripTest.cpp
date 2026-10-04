@@ -68,6 +68,7 @@
 #include "EjmapRoles.h"
 #include "EjmapRoleSemantics.h"
 #include "EjmapSweep.h"
+#include "EjmapSidechainCheck.h"
 #include <functional>
 #include "EjmapCertDriver.h"
 
@@ -6602,6 +6603,105 @@ void testLevelDependence()
     check (gc.result == "certified" && gc.levelFlat.isEmpty(), "level G8 (control): a real compressor on a grid too coarse for form A certifies - its pairs and its engaged positions have slope");
 }
 
+/** THE SIDECHAIN POLICY CHECK (EjmapSidechainCheck.h, ruled 4 Oct): the five measurements of 4 Oct on this Mac, read from
+    their traces through the same parser the follow-up uses; the pick; the arguments; and the verdict. A control proves
+    each file-read pin reads the file. */
+void testSidechainCheck()
+{
+    using namespace ejmap::sidechaincheck;
+    const auto dir = juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-04-sidechain");
+    auto trace = [&] (const char* name) { return parseTrace (dir.getChildFile (name).loadFileAsString()); };
+    struct Unit { const char* stem; double level; double before, after; bool resweep; };
+    const Unit units[] = { { "c1comp_s",        -6.0,  -9.0102, -19.4687, true  },     // Waves C1 comp (s): keys from the connected bus
+                           { "rcompressor_s",   -6.0,  -9.0111, -63.0425, true  },     // Waves RCompressor (s), 50:1
+                           { "emod5_s",         -6.0, -36.8077, -36.8077, false },     // Waves EMO-D5 (s): same bus, keys internally
+                           { "lindell_sbc",     -6.0, -20.8373, -20.8373, false },     // declares a Sidechain bus
+                           { "elysia_mpressor", -6.0, -29.6403, -29.6403, false } };   // declares Input #2
+    for (const auto& u : units)
+    {
+        const auto before = trace ((juce::String (u.stem) + ".enabled_silent.txt").toRawUTF8());
+        const auto after  = trace ((juce::String (u.stem) + ".unconnected.txt").toRawUTF8());
+        check (before.ok && before.policy == "enabled_silent" && before.extraInputBuses == 1 && before.holdDb.count (u.level) && std::abs (before.holdDb.at (u.level) - u.before) < 1e-4,
+               juce::String ("sidechain S1 ") + u.stem + ": the enabled_silent trace parses (policy, one extra bus, the hold at -6)");
+        check (after.ok && after.policy == "unconnected" && after.extraInputBuses == 1 && std::abs (after.holdDb.at (u.level) - u.after) < 1e-4,
+               juce::String ("sidechain S2 ") + u.stem + ": the unconnected trace parses");
+        const auto v = verdict (before.holdDb.at (u.level), after.holdDb.at (u.level), before.norm, u.level);
+        check (v.resweep == u.resweep && v.why.startsWith (u.resweep ? "keys from a connected sidechain" : "sidechain policy: no effect"),
+               juce::String ("sidechain S3 ") + u.stem + ": " + (u.resweep ? "re-swept" : "kept") + " (" + v.why + ")");
+        // the one reading the follow-up would take: this trace, at -6, with the trace's own writes
+        const auto pick = pickReading ({ before }, before.sets);
+        check (pick.ok && pick.trace == 0 && pick.level == u.level && std::abs (pick.beforeDb - u.before) < 1e-4, juce::String ("sidechain S4 ") + u.stem + ": the pick is this trace at -6 dBFS");
+        const auto args = argsFor (before, u.level);
+        check (args[0] == "--sweep" && args.contains ("thr=" + juce::String (before.thr)) && args.contains ("levels=-6") && args.contains ("ref=0")
+                 && args.contains ("norms=" + juce::String (before.norm, 6)) && (before.sets.empty() || args[args.size() - 1].startsWith ("set=")),
+               juce::String ("sidechain S5 ") + u.stem + ": the arguments repeat the trace's process at the one level");
+    }
+    // CONTROLS: an unread file parses to nothing, and a trace without the policy line or the bus is not in the set
+    check (! parseTrace ("").ok && ! parseTrace (dir.getChildFile ("no_such_file.txt").loadFileAsString()).ok, "sidechain S6: an absent file yields no trace (the control for S1/S2)");
+    {
+        auto t = trace ("c1comp_s.enabled_silent.txt");
+        auto noBus = t; noBus.extraInputBuses = 0;
+        check (! pickReading ({ noBus }, t.sets).ok && pickReading ({ noBus }, t.sets).why.contains ("no input bus past the main one"), "sidechain S7: a product with no second input bus is not in the set");
+        auto newPolicy = t; newPolicy.policy = kPolicyNow;
+        check (! pickReading ({ newPolicy }, t.sets).ok && pickReading ({ newPolicy }, t.sets).why.contains ("not swept under enabled_silent"), "sidechain S8: a record already swept unconnected is not in the set");
+        check (! pickReading ({ t }, {}).ok && pickReading ({ t }, {}).why.contains ("record's writes"), "sidechain S9: a trace that ran with other writes than the record's is not compared (the writes are part of the reading)");
+        check (! pickReading ({}, t.sets).ok && pickReading ({}, t.sets).why.contains ("no position trace"), "sidechain S10: no trace -> unknown, said, never guessed");
+        // the loud level and the lowest reading: two traces at the same level, the lower output wins; a -12 only trace loses to -6
+        auto a = t, b = t; a.holdDb = { { -6.0, -9.0 }, { -12.0, -15.0 } }; b.holdDb = { { -6.0, -19.0 } };
+        const auto pk = pickReading ({ a, b }, t.sets);
+        check (pk.ok && pk.trace == 1 && pk.level == -6.0 && pk.beforeDb == -19.0, "sidechain S11: the pick is the loudest level at or below -6 and the position reading lowest there");
+        auto c = t; c.holdDb = { { 0.0, -3.0 } };
+        check (pickReading ({ c }, t.sets).ok == false, "sidechain S12: a trace with holds only above -6 dBFS offers no reading");
+    }
+    check (std::abs (verdict (-20.0, -20.1, 0.5, -6).deltaDb + 0.1) < 1e-9 && ! verdict (-20.0, -20.1, 0.5, -6).resweep && verdict (-20.0, -20.11, 0.5, -6).resweep,
+           "sidechain S13: the bar is 0.1 dB inclusive");
+    // the record's writes: preconditions + engage writes
+    const auto view = juce::JSON::parse (R"json({"preconditions": [{"index": 28, "norm": 1.0}, {"index": 41, "norm": 0.5}], "engageWrites": {"writes": [{"index": 15, "norm": 1.0}]}})json");
+    const auto w = recordWrites (view);
+    check (w.size() == 3 && sameWrites (w, { { 15, 1.0 }, { 28, 1.0 }, { 41, 0.5 } }) && ! sameWrites (w, { { 28, 1.0 }, { 41, 0.5 } }), "sidechain S14: the record's writes are its preconditions plus its engage writes, order-free");
+}
+
+/** THE INERT CHECK (EjmapSweep.h inertCandidates / inertVerdict, ruled 4 Oct): NEOLD V76U73's control list and its
+    4 Oct readings - byte-identical output under Mode, Gain, Makeup +24, Trim +18 and Power Off. */
+void testInertCheck()
+{
+    using namespace ejmap::sweep;
+    const auto v76 = juce::JSON::parse (R"json({"product": "NEOLD V76U73", "controls": [
+        {"index": 0, "name": "Attack Time", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "Fast", "1.000": "Slow"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "Fast"}},
+        {"index": 2, "name": "Mix", "unit": "%", "numSteps": 2147483647, "displayAt": {"0.000": "0.0", "1.000": "100.0"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "100.0"}},
+        {"index": 3, "name": "Gain", "unit": "dB", "numSteps": 2147483647, "displayAt": {"0.000": "43", "1.000": "76"}, "defaultOnInstantiate": {"normalised": 0.454545, "display": "58"}},
+        {"index": 9, "name": "Makeup Gain", "unit": "dB", "numSteps": 2147483647, "displayAt": {"0.000": "0.0", "1.000": "24.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
+        {"index": 10, "name": "Mode", "numSteps": 2147483647, "displayAt": {"0.000": "Compress", "0.500": "Bypass", "1.000": "Limit"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "Bypass"}},
+        {"index": 13, "name": "Power", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "Off", "1.000": "On"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "On"}},
+        {"index": 17, "name": "Trim", "unit": "dB", "numSteps": 2147483647, "displayAt": {"0.000": "-18.0", "1.000": "18.0"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "0.0"}}]})json");
+    auto tried = inertCandidates (v76, 3);
+    juce::StringArray names; for (const auto& t : tried) names.add (t.name + "@" + juce::String (t.norm, 1));
+    check (names.size() == 3 && names[0] == "Power@0.0" && names.contains ("Makeup Gain@1.0") && names.contains ("Trim@0.0"),
+           "inert I1: V76U73's candidates are Power (to Off, first), Makeup Gain (to its far end) and Trim - not the threshold Gain, not Mode (word-valued), not Mix (" + names.joinIntoString (",") + ")");
+    // the 4 Oct readings: control -9.0877, every write -9.0877
+    for (auto& t : tried) { t.ran = true; t.afterDb = -9.0877; }
+    juce::String why;
+    check (inertVerdict (-9.0877, tried, why) && why.startsWith ("processing never runs: output unchanged by every control including Power"), "inert I2: unchanged by Power, Makeup and Trim -> inert, the ruling's words (" + why + ")");
+    auto moved = tried; moved[1].afterDb = 14.9;   // Makeup +24 would do this on a product that processes
+    check (! inertVerdict (-9.0877, moved, why) && why.startsWith ("the product processes: 1 of 3"), "inert I3: one control moving the output -> not inert, the row names it");
+    auto edge = tried; edge[2].afterDb = -9.0877 - 0.1;
+    check (inertVerdict (-9.0877, edge, why), "inert I4: a 0.1 dB difference is within the bar");
+    auto none = tried; for (auto& t : none) t.ran = false;
+    check (! inertVerdict (-9.0877, none, why) && why.contains ("no control could be tried"), "inert I5: nothing ran -> not inert (a guard refuses, never guesses)");
+    auto noPower = juce::JSON::parse (juce::JSON::toString (v76)); { auto* cs = noPower.getProperty ("controls", {}).getArray(); for (int i = cs->size(); --i >= 0;) if ((int) (*cs)[i].getProperty ("index", -1) == 13) cs->remove (i); }
+    auto t2 = inertCandidates (noPower, 3); for (auto& t : t2) { t.ran = true; t.afterDb = -9.0877; }
+    check (inertVerdict (-9.0877, t2, why) && why.contains ("(no power switch declared)") && ! why.contains ("including Power"), "inert I6: without a power switch the reason says so instead of claiming Power");
+    check (inertCandidates (juce::JSON::parse (R"json({"controls": [{"index": 3, "name": "Gain"}]})json"), 3).empty(), "inert I7: the threshold itself is never a candidate");
+    // the record: result inert overrides flat and carries the check
+    Plan p; p.thr = 3; p.thrName = "Gain"; p.inert = true; p.inertReason = why; p.inertTried = t2; p.inertControlDb = -9.0877;
+    Derived d; d.result = "flat"; d.reason = "no two positions differ"; d.passThroughAtDefaults = true;
+    const auto rec = composeThresholdSweep (d, {}, p, {});
+    check (rec.getProperty ("result", "").toString() == "inert" && rec.getProperty ("reason", "").toString() == why && rec.getProperty ("inertCheck", {}).getProperty ("tried", {}).size() == 2,
+           "inert I8: the record says inert with the check's reason, never flat");
+    check (ejmap::loop::outcomeForRecord (juce::JSON::parse (R"json({"product": "v", "controls": [], "thresholdSweep": {"result": "inert", "reason": "processing never runs: x"}})json")).reason.startsWith ("sweep result inert: processing never runs"),
+           "inert I9: the row carries the reason under its own result word");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -6670,6 +6770,8 @@ int main (int, char**)
     testProfileSweepPlan();
     testSleptProcessRetry();
     testLevelDependence();
+    testSidechainCheck();
+    testInertCheck();
     testLoopOutcomes();
     testCategoriesMerge();
 

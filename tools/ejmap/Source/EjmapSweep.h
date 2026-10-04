@@ -143,6 +143,11 @@ struct Plan
     struct EngageWrite { int index = -1; juce::String name; float norm = 0.0f; juce::String fromDisplay; };
     std::vector<EngageWrite> engage;
     juce::StringArray engageTried;           // every candidate tried and refused, "name -> norm: verdict"
+    // THE INERT CHECK (ruled 4 Oct, NEOLD V76U73): a product that stays pass-through after the engage search gets every control
+    // that MUST change the output written once (power/bypass to its other value, gain-type controls to their far end) and one
+    // reading each; unchanged by all of them -> result "inert", with its own reason, never "flat" (one label hid two causes)
+    struct InertTry { int index = -1; juce::String name; float norm = 0.0f; juce::String fromDisplay; double afterDb = -999.0; bool ran = false; juce::String note; };
+    std::vector<InertTry> inertTried; double inertControlDb = -999.0; bool inert = false; juce::String inertReason;
     // THE PROFILE SWEEP (COMP_PROFILE_SPEC v1.1 section 4, built 1 Oct): -60..0 dBFS peak in 2 dB steps, ASCENDING inside
     // every fresh per-position process (loud-to-quiet contaminates through release - arm B), 2.5 s hold, last 300 ms read,
     // and the per-position quiet reference on EVERY product (-54 and -48 are steps of the grid). Nothing else changes.
@@ -338,6 +343,59 @@ inline bool neverTouchName (const juce::String& n)
         if (nametokens::controlAnswersTerm (n, t)) return true;
     return false;
 }
+// THE INERT CHECK'S CANDIDATES (4 Oct): the controls whose write MUST move the output if the product processes at all -
+// a power / bypass / on switch (two steps) written to its other value, and every gain-type control (makeup, make-up,
+// output, out, trim, gain, input, level, volume, drive - not the threshold itself) written to the end farther from where
+// it instantiated. The name picks what to try; the MEASUREMENT decides (inertVerdict). Bounded to kInertMaxTries.
+inline constexpr int kInertMaxTries = 6;
+inline constexpr double kInertSameDb = 0.1;
+inline bool inertPowerName (const juce::String& n)
+{
+    for (const char* t : { "power", "bypass", "byp", "on", "active", "engage", "enable", "in" }) if (nametokens::controlAnswersTerm (n, t)) return true;
+    return false;
+}
+inline bool inertGainName (const juce::String& n)
+{
+    for (const char* t : { "makeup", "make-up", "make up", "output", "out", "trim", "gain", "input", "level", "volume", "drive" }) if (nametokens::controlAnswersTerm (n, t)) return true;
+    return false;
+}
+inline std::vector<Plan::InertTry> inertCandidates (const juce::var& fixture, int thresholdIndex)
+{
+    std::vector<Plan::InertTry> power, gain;
+    if (const auto* cs = fixture.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const int idx = (int) c.getProperty ("index", -1); if (idx < 0 || idx == thresholdIndex) continue;
+            const auto name = c.getProperty ("name", "").toString();
+            const auto def = c.getProperty ("defaultOnInstantiate", {});
+            const float at = (float) def.getProperty ("normalised", 0.0);
+            Plan::InertTry t; t.index = idx; t.name = name; t.fromDisplay = def.getProperty ("display", "").toString();
+            if ((int) c.getProperty ("numSteps", 0) == 2 && inertPowerName (name)) { t.norm = at >= 0.5f ? 0.0f : 1.0f; power.push_back (t); }
+            else if (! wordValued (c) && (int) c.getProperty ("numSteps", 0) != 2 && inertGainName (name)) { t.norm = at >= 0.5f ? 0.0f : 1.0f; gain.push_back (t); }
+        }
+    std::vector<Plan::InertTry> out = power;                                     // the switches first: "including Power"
+    for (const auto& g : gain) if ((int) out.size() < kInertMaxTries) out.push_back (g);
+    if ((int) out.size() > kInertMaxTries) out.resize ((size_t) kInertMaxTries);
+    return out;
+}
+// The verdict: inert when at least one control was tried and NONE moved the output by more than kInertSameDb from the
+// control reading. The reason names what was tried; "including Power" only when a power-type switch was among them.
+inline bool inertVerdict (double controlDb, const std::vector<Plan::InertTry>& tried, juce::String& reason)
+{
+    int ran = 0, moved = 0; bool power = false; juce::StringArray names;
+    for (const auto& t : tried)
+    {
+        if (! t.ran) continue; ++ran;
+        if (std::abs (t.afterDb - controlDb) > kInertSameDb) ++moved;
+        if (inertPowerName (t.name)) power = true;
+        names.add (t.name + " -> " + juce::String (t.norm, 1) + " (from '" + t.fromDisplay + "'): " + juce::String (t.afterDb - controlDb, 2) + " dB");
+    }
+    if (ran == 0) { reason = "inert check: no control could be tried"; return false; }
+    if (moved > 0) { reason = "the product processes: " + juce::String (moved) + " of " + juce::String (ran) + " control write(s) moved the output (" + names.joinIntoString ("; ") + ")"; return false; }
+    reason = "processing never runs: output unchanged by every control" + juce::String (power ? " including Power" : " tried (no power switch declared)") + " (" + names.joinIntoString ("; ") + ")";
+    return true;
+}
+
 inline std::vector<Plan::EngageWrite> engageCandidates (const juce::var& fixture, const juce::String& thresholdName)
 {
     struct Ranked { Plan::EngageWrite w; int rank; bool affine; };
@@ -552,6 +610,12 @@ struct Measured
     std::map<int, juce::String> setTexts;        // precondition writes, the text READ BACK after each (probe "set" lines)
     double holdS = 0.0, winS = 0.0;              // the probe's hold and read window, from its spec line
     juce::String setConflict;                    // processes that read a precondition back differently
+    // THE SIDECHAIN POLICY THE PROCESS RAN UNDER (4 Oct): "enabled_silent" (28 Sep - 4 Oct) or "unconnected", from the
+    // probe's policy line; and every input bus past the main one as the probe printed it at render time. The record
+    // carries both, so the follow-up can tell a sweep under the old policy from one under this without the raw traces.
+    juce::String sidechainPolicy;
+    struct InputBus { int index = 0; juce::String name; int channels = 0; };
+    std::vector<InputBus> extraInputBuses;
 };
 
 inline juce::String levelKey (double L) { return juce::String (L, 2); }
@@ -571,6 +635,8 @@ inline Measured parseSweep (const juce::String& out)
         if (f.isEmpty()) continue;
         const auto& t = f[0];
         if (t == "sweep") m.ok = true;
+        else if (t == "policy" && f.size() > 2 && f[1] == "sidechain") m.sidechainPolicy = f[2];
+        else if (t == "bus" && f.size() > 5 && f[1] == "render" && f[2] == "in" && f[3].getIntValue() > 0) m.extraInputBuses.push_back ({ f[3].getIntValue(), f[4], f[5].getIntValue() });
         else if (t == "spec") { m.movingDb = kv (f, 1, "moving_db").getDoubleValue(); m.resetPerHold = kv (f, 1, "reset_per_hold") == "1";
                                 m.holdS = kv (f, 1, "hold_s").getDoubleValue(); m.winS = kv (f, 1, "win_s").getDoubleValue(); }
         else if (t == "param" && f.size() >= 5) m.params[f[1].getIntValue()] = { f[3], f[4] };
@@ -648,6 +714,7 @@ inline Measured mergeProcesses (const ProcessOut& reference, const std::vector<P
         }
         p.k = (int) k;
         m.positions.push_back (p);
+        if (m.sidechainPolicy.isEmpty() && one.sidechainPolicy.isNotEmpty()) { m.sidechainPolicy = one.sidechainPolicy; m.extraInputBuses = one.extraInputBuses; }
         // EVERY PROCESS READS ITS PRECONDITIONS BACK; they must all have read the same thing. Only a process that went on
         // to measure its position counts: one that REFUSED (set_unlanded) read nothing that was measured with. 29 Sep:
         // RCompressor (s) position 5, a bridged process across a dark wake, read the ratio as 0 and refused, and its
@@ -703,6 +770,7 @@ struct Derived
     std::optional<double> passThroughOffsetDb;      // the constant the output sits at above the input when passThroughAtDefaults
     juce::StringArray notTone;                      // "position@level" holds refused because the output was not the input's tone
     std::optional<double> flatSpanDb;               // the largest reduction span across ALL positions at any level (the flat test's number)
+    juce::String sidechainPolicy; std::vector<Measured::InputBus> extraInputBuses;   // carried from Measured (4 Oct)
     std::optional<double> responseDb;               // the largest measured reduction against the reference (what a reference error is compared with)
     std::optional<double> refErrorDb, refErrorFrac; // the reference error that was judged, and its fraction of the response
     std::vector<double> levels;                     // the TEST levels, ascending (quiet reference levels are separate)
@@ -898,6 +966,7 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     d.levels = levelsIn;
     d.quietReference = quietReference;
     d.setTexts = m.setTexts;
+    d.sidechainPolicy = m.sidechainPolicy; d.extraInputBuses = m.extraInputBuses;
     d.holdS = m.holdS; d.winS = m.winS;
     std::sort (d.levels.begin(), d.levels.end());
     if (! m.ok) { d.reason = m.refused.isNotEmpty() ? "probe refused: " + m.refused : "no sweep output"; return d; }
@@ -1638,6 +1707,16 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         }
         s->setProperty ("preconditions", pre);
     }
+    // THE SIDECHAIN POLICY (4 Oct): what the processes ran under and which input buses past the main one the plugin
+    // declared - the follow-up's evidence-based re-sweep reads this (EjmapCertDriver.h sidechainPolicyCheck)
+    if (d.sidechainPolicy.isNotEmpty())
+    {
+        auto* sc = new juce::DynamicObject(); sc->setProperty ("policy", d.sidechainPolicy);
+        juce::Array<juce::var> buses;
+        for (const auto& b : d.extraInputBuses) { auto* o = new juce::DynamicObject(); o->setProperty ("index", b.index); o->setProperty ("name", b.name); o->setProperty ("channels", b.channels); buses.add (juce::var (o)); }
+        sc->setProperty ("extraInputBuses", buses);
+        s->setProperty ("sidechain", juce::var (sc));
+    }
     s->setProperty ("positions", (int) d.norms.size());
     juce::Array<juce::var> norms;
     for (float x : d.norms) norms.add (std::round (x * 1e6) / 1e6);
@@ -1774,7 +1853,16 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
         ld->setProperty ("rule", "dg/dL per position over the outer test levels; the median is over adjacent in-band level pairs; textbook predicts 1 - 1/R; a position inside the band at every level and flat across them refuses");
         s->setProperty ("levelDependence", juce::var (ld));
     }
-    s->setProperty ("result", d.result);
+    s->setProperty ("result", p.inert ? juce::String ("inert") : d.result);
+    if (p.inert || ! p.inertTried.empty())
+    {
+        auto* ic = new juce::DynamicObject(); ic->setProperty ("inert", p.inert); ic->setProperty ("control_db", p.inertControlDb);
+        juce::Array<juce::var> tried;
+        for (const auto& t : p.inertTried) { auto* o = new juce::DynamicObject(); o->setProperty ("index", t.index); o->setProperty ("control", t.name); o->setProperty ("norm", t.norm); o->setProperty ("from", t.fromDisplay);
+                                             if (t.ran) o->setProperty ("after_db", t.afterDb); else o->setProperty ("not_run", t.note); tried.add (juce::var (o)); }
+        ic->setProperty ("tried", tried); ic->setProperty ("reason", p.inertReason);
+        s->setProperty ("inertCheck", juce::var (ic));
+    }
     // PASS-THROUGH AT DEFAULTS IS ITS OWN RECORDED OUTCOME (ruled 30 Sep): a flat that says nothing about band coverage
     // or the threshold, only that the product does nothing as instantiated (MaxxVolume, EMO-D5, DynOne3, C1 comp,
     // RCompressor). A precondition gap, named so the server half never re-derives it from the reason string.
@@ -1806,7 +1894,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     // reduction span across ALL positions at any level.
     { juce::Array<juce::var> nt; for (const auto& x : d.notTone) nt.add (x); s->setProperty ("notToneReadings", nt); }
     if (d.flatSpanDb) s->setProperty ("flatSpan_db", std::round (*d.flatSpanDb * 100.0) / 100.0);
-    if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
+    if (p.inert) s->setProperty ("reason", p.inertReason); else if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
     if (d.roleFlag.isNotEmpty()) s->setProperty ("roleFlag", d.roleFlag);
     else if (p.thrFlags.contains ("input_as_threshold") || p.thrFlags.contains ("amount_as_threshold")) s->setProperty ("roleFlag", p.thrFlags.joinIntoString (","));   // the record says what its amount control is (4 Oct), so the export never re-derives it
     // THE DISPLAY, AS NUMBERS, beside the map's result and never folded into it. displayLinear is unset on purpose.

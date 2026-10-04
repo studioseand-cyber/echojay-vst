@@ -11,6 +11,7 @@
 // few process blocks (alive/silent/passthrough). A hang on a licensing dialog
 // is the caller's job to time out and kill — this program never dismisses one.
 #include <CoreFoundation/CoreFoundation.h>   // before JUCE: MacTypes Point
+#include <AudioToolbox/AudioToolbox.h>       // before JUCE (its AudioBuffer collides after): the raw AU property call in probe_render.h
 #include <JuceHeader.h>
 #include "probe_render.h"                    // feat/ejmap-cert: --render-test (the whole mode lives there)
 #include "probe_write.h"                     // feat/ejmap-cert: --write-test (the whole mode lives there)

@@ -18,10 +18,17 @@
 // Level conventions, verdicts and anything else that only needs re-computing belong to EJ Map, so changing them never
 // costs a rebuild and a re-sign of this binary.
 //
-// SIDECHAIN POLICY: ENABLED, FED SILENCE, for every certification render (ruled 28 Sep 2026). Every bus the
-// plugin declares stays enabled at its declared layout, and every input channel outside the main bus is zero.
+// SIDECHAIN POLICY: UNCONNECTED (ruled 4 Oct 2026; was ENABLED, FED SILENCE from 28 Sep). Every bus the plugin
+// declares stays enabled at its declared layout, no bus is disabled, nothing is fed into a sidechain - and after
+// prepareToPlay the render callback JUCE installs on every input element past the main one is REMOVED, so the
+// plugin's pull on that element fails with kAudioUnitErr_NoConnection exactly as it does in Logic with no sidechain
+// source assigned. Measured 4 Oct: WaveShell keys from a CONNECTED sidechain, silent or not - C1 comp, RCompressor,
+// SSLComp, dbx-160 and VComp read 0 dB GR under enabled_silent (the risk the 28 Sep note recorded, filed as `flat` on
+// Sean's Mac) and 10.46 dB / 54 dB (C1 comp, RComp 50:1) unconnected; EMO-D5 (Waves, same bus, keys internally),
+// Lindell SBC, elysia mpressor, bx_opto and 7X-500 read identically to 0.0001 dB either way. The 28 Sep reasoning below
+// stays as the record of why the bus is never DISABLED.
 //   - Disabling a declared bus measures a configuration the plugin never ships in. A DAW instantiates the sidechain
-//     bus whether or not anything is routed to it.
+//     bus whether or not anything is routed to it (and the AU wrapper refuses to disable Waves' bus anyway).
 //   - It is the conservative choice: the harness stops altering the declared layout.
 //   - It is the AMEK hypothesis. The first version of this mode called setPlayConfigDetails, and JUCE's
 //     setPlayConfigDetails ends in an UNCONDITIONAL disableNonMainBuses() ("if the user is using this method then
@@ -31,10 +38,10 @@
 //     so nothing in a release build. EJ Map's PluginHost uses the same sequence, so its M9 renders also ran with
 //     sidechains off wherever the plugin allowed it.
 // So configure = enableAllBuses + setRateAndBufferSizeDetails (rate and block only, no bus changes) + prepareToPlay.
-// THE RISK, recorded rather than hidden: a compressor that defaults to EXTERNAL sidechain keying keys off silence and
-// never compresses, so a sweep reads flat at every position and level. That lands in the existing `flat` result, not
-// a new one, but it must be readable as such. The "sidechain" lines below state the state as measured, and the fixture
-// must carry it, so a flat result is not blamed on the threshold.
+// THE RISK the 28 Sep note recorded - "a compressor that defaults to EXTERNAL sidechain keying keys off silence and
+// never compresses, so a sweep reads flat" - is what happened (five Waves units), which is why the element is now left
+// unconnected. The "policy" and "sidechain" lines below state the state as measured, and the fixture carries them
+// (thresholdSweep.sidechain), so the follow-up can tell a record swept under the old policy from one swept under this.
 //
 // The stimulus is EJ Map's renderSine, unchanged: 997 Hz at -12 dBFS, 0.5 s of silence first, then 2 s of tone, with
 // the first 0.25 s of tone discarded from the level readings. It drives the MAIN input bus only; every other input
@@ -109,16 +116,33 @@ inline void configureAndPrepare (juce::AudioPluginInstance& p, const RenderSpec&
     // NOT setPlayConfigDetails: it ends in an unconditional disableNonMainBuses(). See SIDECHAIN POLICY above.
     const bool allEnabled = p.enableAllBuses();
     p.setRateAndBufferSizeDetails (s.sampleRate, s.block);
-    std::printf ("policy\tsidechain\tenabled_silent\tenable_all_buses\t%s\n", allEnabled ? "ok" : "refused");
+    const bool isAU = p.getPluginDescription().pluginFormatName == "AudioUnit";
+    std::printf ("policy\tsidechain\t%s\tenable_all_buses\t%s\n", isAU ? "unconnected" : "enabled_silent", allEnabled ? "ok" : "refused");
     printBuses (p, "render");
-    for (int b = 1; b < p.getBusCount (true); ++b)
-        if (auto* bus = p.getBus (true, b))
-            std::printf ("sidechain\t%d\t%s\t%d\t%s\t%s\n", b, clean (bus->getName()).toRawUTF8(),
-                         bus->getNumberOfChannels(), bus->isEnabled() ? "enabled" : "disabled",
-                         bus->isEnabled() && bus->getNumberOfChannels() > 0 ? "silent" : "absent");
+    if (! isAU)
+        for (int b = 1; b < p.getBusCount (true); ++b)
+            if (auto* bus = p.getBus (true, b))
+                std::printf ("sidechain\t%d\t%s\t%d\t%s\t%s\n", b, clean (bus->getName()).toRawUTF8(),
+                             bus->getNumberOfChannels(), bus->isEnabled() ? "enabled" : "disabled",
+                             bus->isEnabled() && bus->getNumberOfChannels() > 0 ? "silent" : "absent");
 
     stage ("prepare");
     p.prepareToPlay (s.sampleRate, s.block);
+    // UNCONNECTED (4 Oct): JUCE's AU host sets kAudioUnitProperty_SetRenderCallback on EVERY input element inside
+    // prepareToPlay; Logic sets it only on the main element until a sidechain source is chosen. Removing it on the
+    // elements past the main one restores the DAW's state: the element stays declared and enabled, nothing is written
+    // to it, and the plugin's pull on it fails as it does in Logic. AudioUnit only (a VST3's sidechain is the format's
+    // own business and is left as it was: enabled, silent).
+    if (p.getPluginDescription().pluginFormatName == "AudioUnit")
+        if (auto au = (AudioUnit) p.getPlatformSpecificData())
+            for (int b = 1; b < p.getBusCount (true); ++b)
+            {
+                AURenderCallbackStruct none { nullptr, nullptr };
+                const auto rc = AudioUnitSetProperty (au, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, (UInt32) b, &none, sizeof none);
+                if (auto* bus = p.getBus (true, b))
+                    std::printf ("sidechain\t%d\t%s\t%d\t%s\t%s\n", b, clean (bus->getName()).toRawUTF8(), bus->getNumberOfChannels(),
+                                 bus->isEnabled() ? "enabled" : "disabled", rc == noErr ? "unconnected" : ("still_connected rc " + juce::String ((int) rc)).toRawUTF8());
+            }
 }
 
 // The number of main-bus input channels the stimulus drives (0 when there is no enabled main input).
