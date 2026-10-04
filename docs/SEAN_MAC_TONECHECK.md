@@ -7,13 +7,15 @@ re-derives each exported record from its traces, re-exports the profile with the
 certified plugin only for the tone checks. **The rows whose plan changed under this build are re-swept by the
 same command, which decides that itself** (below); you never name a product. It is resumable and uses the same window watch.
 
-**The follow-up build is commit `97b0bfb1`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+**The follow-up build is commit `891c3156`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
 step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
-out-of-scope states, the review pick, the range re-sample, the repeat repair):
+out-of-scope states, the review pick, the range re-sample, the repeat repair; round 2: input-drive and one-knob amount controls, stepped by evidence; round 3: multiband names, picks on stereo units, the re-sweeps it decides itself):
 targets 1..12 with the clamp to 30 and the saturation note, the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
 out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
-Rehearsed here as a packaged app (3 Oct, evening): pre-flight finds the probe beside the executable; CL 1B's dry run
-reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 40 levels PASS with no `--probe`.
+Rehearsed here as a packaged app (3 Oct evening; again 4 Oct evening on `891c3156`, probe cdhash 7297f378, unchanged since 3 Oct): pre-flight finds the probe beside the
+executable; CL 1B's dry run reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 40 levels PASS with no
+`--probe`; the projection over your zip from the packaged app matches the build tree (14 re-sweeps, same list); one live
+re-sweep (NEOLD V76U73 here) went through the batch's own path and its row was rewritten from the new sweep.
 
 ## What this follow-up does to your 3 Oct run (projected from your zip, 4 Oct)
 
@@ -35,7 +37,7 @@ product(s)`), re-derives and tone-checks everything else, then sweeps those thro
 them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
 `--retry-refused` line above covers those.
 
-## What Sean runs (after the follow-up `ejmap.app` is built from `97b0bfb1` and packaged the same way)
+## What Sean runs (after the follow-up `ejmap.app` is built from `891c3156` and packaged the same way)
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
