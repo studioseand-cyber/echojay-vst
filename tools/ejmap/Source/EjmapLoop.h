@@ -353,6 +353,41 @@ inline Outcome outcomeCarriedLicence (const QuarantinedBundle& b)
 // CARRY-OVER ON RE-DERIVATION (v1.7 tone-check-only mode): a re-derivation rebuilds the sweep from the traces, and the
 // traces do not hold what later steps wrote INTO the record - the detector (its own processes), Rule 1's decision, the
 // pick, the map state, the manufacturer. Those ride over from the old record; the sweep's measured fields do not.
+// THE ONE-TIME REVIEW PICK (ruled 4 Oct): cert/review_picks.json - [{"product", "candidate", "by", "date", "note"}] - is where
+// Kathy records a pick she made from the candidates' curves. A picked candidate whose sweep certified becomes
+// pickedCandidate + ruleDecided {rule: "review_pick", by, date} and goes on exactly like a Rule-1 pick (re-derived,
+// exported, tone-checked), the notes naming the pick and who made it. NOTHING IS EVER PICKED WITHOUT AN ENTRY, and an entry
+// that names an uncertified candidate (or no candidate) picks nothing and says why on the row.
+inline juce::var reviewPickFor (const juce::var& picks, const juce::String& product)
+{
+    if (const auto* a = picks.getArray()) for (const auto& p : *a) if (p.getProperty ("product", "").toString() == product) return p;
+    return {};
+}
+inline juce::String applyReviewPick (juce::var& record, const juce::var& picks)   // returns what happened, empty when no entry applies
+{
+    const auto cands = record.getProperty ("thresholdCandidates", {});
+    if (! cands.isArray() || record.getProperty ("pickedCandidate", {}).isObject()) return {};
+    const auto pick = reviewPickFor (picks, record.getProperty ("product", "").toString());
+    if (! pick.isObject()) return {};
+    const auto want = pick.getProperty ("candidate", "").toString(), by = pick.getProperty ("by", "").toString(), date = pick.getProperty ("date", "").toString();
+    if (want.isEmpty() || by.isEmpty() || date.isEmpty()) return "review pick entry incomplete (needs candidate, by, date): nothing picked";
+    for (int i = 0; i < cands.size(); ++i)
+    {
+        if (cands[i].getProperty ("name", "").toString() != want) continue;
+        const auto res = cands[i].getProperty ("thresholdSweep", {}).getProperty ("result", "").toString();
+        if (res != "certified") return "review pick names '" + want + "' but its sweep is " + (res.isEmpty() ? juce::String ("absent") : res) + ": nothing picked";
+        auto* pk = new juce::DynamicObject(); pk->setProperty ("index", cands[i].getProperty ("index", -1)); pk->setProperty ("name", want);
+        pk->setProperty ("note", "review pick by " + by + " on " + date + " (cert/review_picks.json)");
+        auto* rd = new juce::DynamicObject(); rd->setProperty ("rule", "review_pick"); rd->setProperty ("by", by); rd->setProperty ("date", date);
+        rd->setProperty ("ruleText", "picked by " + by + " on " + date + " from the candidates' 2 dB curves and verdicts (review_picks.json)" + (pick.getProperty ("note", "").toString().isNotEmpty() ? ": " + pick.getProperty ("note", "").toString() : juce::String()));
+        auto* pv = new juce::DynamicObject(); pv->setProperty ("index", cands[i].getProperty ("index", -1)); pv->setProperty ("name", want); rd->setProperty ("pick", juce::var (pv));
+        juce::Array<juce::var> others; for (int k = 0; k < cands.size(); ++k) if (k != i) others.add (cands[k].getProperty ("name", "")); rd->setProperty ("trims", others);
+        record.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk)); record.getDynamicObject()->setProperty ("ruleDecided", juce::var (rd));
+        return "review pick applied: '" + want + "' by " + by + " on " + date;
+    }
+    return "review pick names '" + want + "', which is not one of this record's candidates: nothing picked";
+}
+
 inline juce::var carryOverAfterRederive (const juce::var& oldRecord, juce::var fresh)
 {
     auto* o = fresh.getDynamicObject(); if (o == nullptr) return fresh;

@@ -1,0 +1,144 @@
+
+REVIEW MaxxVolume (m) (15.0.70)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [0] Low Level Thresh: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:-60.5 0.36:-58.0 0.38:-55.5 0.39:-54.2 0.40:-52.2 0.42:-49.9 0.44:-47.7 0.47:-45.4 0.49:-43.1 0.51:-40.2 0.53:-38.1 0.56:-36.1 0.58:-34.1 0.60:-32.0 0.62:-29.9 0.64:-27.3 0.67:-25.4 0.70:-22.5 0.73:-19.5 0.76:-17.5 0.78:-15.4 0.80:-13.1 0.82:-10.9 0.84:-8.4 0.87:-5.8 0.93:not_reached 1.00:not_reached
+  [4] High Level Thresh: certified  2 dB curve (norm:dBFS RMS) 0.00:-62.1 0.03:-59.6 0.07:-57.1 0.10:-54.6 0.13:-51.7 0.17:-49.3 0.20:-47.1 0.23:-44.8 0.27:-42.7 0.30:-40.0 0.33:-37.9 0.37:-35.9 0.40:-33.9 0.43:-31.9 0.47:-29.1 0.50:-27.3 0.53:-25.5 0.57:-23.5 0.60:-21.5 0.63:-19.5 0.67:-17.5 0.70:-15.3 0.73:-12.9 0.77:-10.5 0.80:-7.7 0.87:not_reached 0.93:not_reached 1.00:not_reached
+  [8] High Level Thresh On: flat  2 dB curve (norm:dBFS RMS) 
+  [9] Low Level Thresh On: unreadable  2 dB curve (norm:dBFS RMS) 
+
+REVIEW Auto-Tune Vocal Compressor (1.5.0)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [18] Mod Comp 1 Thresh dB: certified  2 dB curve (norm:dBFS RMS) 0.00:-60.3 0.03:-58.3 0.07:-56.2 0.10:-54.3 0.13:-52.3 0.17:-50.3 0.20:-48.3 0.23:-46.3 0.27:-44.2 0.30:-42.3 0.33:-40.3 0.37:-38.3 0.40:-36.3 0.43:-34.3 0.47:-32.3 0.50:-30.3 0.53:-28.3 0.57:-26.3 0.60:-24.3 0.63:-22.3 0.67:-20.3 0.70:-18.3 0.73:-16.3 0.77:-14.3 0.80:-12.3 0.83:-10.3 0.87:-8.3 0.90:-6.3 0.93:-4.3 1.00:not_reached
+  [30] Mod Comp 2 Thresh dB: flat  2 dB curve (norm:dBFS RMS) 
+  [46] Opt B Comp 1 Threshold dB: flat  2 dB curve (norm:dBFS RMS) 
+  [52] Opt B Comp 2 Threshold dB: flat  2 dB curve (norm:dBFS RMS) 
+
+REVIEW Vertigo VSC-2 (1.15.1)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [4] Threshold A: certified  2 dB curve (norm:dBFS RMS) 0.00:-41.1 0.03:-39.5 0.07:-37.9 0.13:-35.2 0.20:-32.7 0.27:-30.5 0.33:-28.4 0.40:-26.3 0.47:-24.2 0.53:-22.1 0.60:-19.8 0.67:-17.3 0.73:-14.4 0.77:-12.8 0.80:-11.0 0.83:-9.0 0.87:-6.7 0.93:not_reached 1.00:not_reached
+  [11] Threshold B: certified  2 dB curve (norm:dBFS RMS) 0.00:-41.1 0.03:-39.5 0.07:-37.9 0.13:-35.2 0.20:-32.7 0.27:-30.5 0.33:-28.4 0.40:-26.3 0.47:-24.2 0.53:-22.1 0.60:-19.8 0.67:-17.3 0.73:-14.4 0.77:-12.8 0.80:-11.0 0.83:-9.0 0.87:-6.7 0.93:not_reached 1.00:not_reached
+
+REVIEW DynOne3 (3.12.3)  - 15 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [0] C HMF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [3] LR MF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [20] S HF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [21] C LF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [26] C MF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [30] S HMF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [47] S LF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [50] S MF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [55] C LMF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [56] LR HMF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [78] S LMF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [81] LR HF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [103] C HF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [107] LR LMF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [111] LR LF Threshold: flat  2 dB curve (norm:dBFS RMS) 
+
+REVIEW Shadow Hills Mastering Compressor (1.5.1)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [2] Optical Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:-4.8 0.22:-7.2 0.26:-9.5 0.30:-11.6 0.35:-13.7 0.39:-15.8 0.43:-17.8 0.48:-18.8 0.52:-19.8 0.57:-20.7 0.61:-21.7 0.65:-22.6 0.70:-23.6 0.74:-24.5 0.78:-25.5 0.83:-26.4 0.87:-27.4 0.91:-28.4 0.96:-29.4 1.00:-30.3
+  [5] Discrete Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:-3.4 0.17:-6.2 0.22:-8.9 0.26:-11.6 0.30:-14.3 0.35:-17.0 0.39:-19.6 0.43:-22.3 0.48:-24.9 0.52:-27.6 0.57:-30.3 0.61:-32.9 0.65:-35.6 0.70:-38.3 0.74:-41.0 0.78:-43.7 0.83:-46.5 0.87:-49.2 0.91:-52.0 0.96:-54.8 1.00:-57.7
+  [14] Optical Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:not_reached 0.22:not_reached 0.26:-3.5 0.30:-5.6 0.35:-7.7 0.39:-9.7 0.43:-11.7 0.48:-12.7 0.52:-13.6 0.57:-14.6 0.61:-15.5 0.65:-16.4 0.70:-17.3 0.74:-18.2 0.78:-19.1 0.83:-19.9 0.87:-20.8 0.91:-21.6 0.96:-22.4 1.00:-23.1
+  [17] Discrete Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:not_reached 0.22:not_reached 0.26:-4.5 0.30:-7.1 0.35:-9.8 0.39:-12.5 0.43:-15.1 0.48:-17.8 0.52:-20.4 0.57:-23.1 0.61:-25.8 0.65:-28.4 0.70:-31.1 0.74:-33.8 0.78:-36.5 0.83:-39.3 0.87:-42.0 0.91:-44.8 0.96:-47.7 1.00:-50.5
+
+REVIEW Shadow Hills Class A Mastering Comp (1.4.1)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [17] Optical Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:not_reached 0.22:-3.1 0.26:-5.3 0.30:-7.5 0.35:-9.6 0.39:-11.7 0.43:-13.7 0.48:-14.7 0.52:-15.6 0.57:-16.6 0.61:-17.6 0.65:-18.5 0.70:-19.4 0.74:-20.4 0.78:-21.4 0.83:-22.3 0.87:-23.3 0.91:-24.3 0.96:-25.3 1.00:-26.2
+  [20] Discrete Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:not_reached 0.22:not_reached 0.26:-4.5 0.30:-7.5 0.35:-10.4 0.39:-13.4 0.43:-16.3 0.48:-19.1 0.52:-22.0 0.57:-24.9 0.61:-27.5 0.65:-30.0 0.70:-32.9 0.72:not_reached 0.74:-36.2 0.76:not_reached 0.78:-39.6 0.80:not_reached 0.83:-43.4 0.85:not_reached 0.87:-46.6 0.89:not_reached 0.91:-50.0 0.96:-53.0 0.98:not_reached 1.00:-56.5
+  [29] Optical Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:not_reached 0.22:not_reached 0.26:not_reached 0.30:not_reached 0.35:-4.7 0.39:-6.7 0.43:-8.7 0.48:-9.7 0.52:-10.6 0.57:-11.6 0.61:-12.5 0.65:-13.4 0.70:-14.3 0.74:-15.3 0.78:-16.1 0.83:-17.1 0.87:-17.9 0.91:-18.8 0.96:-19.6 1.00:-20.4
+  [32] Discrete Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.04:not_reached 0.09:not_reached 0.13:not_reached 0.17:not_reached 0.22:not_reached 0.26:not_reached 0.30:not_reached 0.35:not_reached 0.39:-4.4 0.43:-7.3 0.48:-10.0 0.52:-12.9 0.57:-15.9 0.61:-18.4 0.65:-20.9 0.70:-23.8 0.72:not_reached 0.74:-27.1 0.76:not_reached 0.78:-30.5 0.80:not_reached 0.83:-34.3 0.85:not_reached 0.87:-37.5 0.89:not_reached 0.91:-40.9 0.96:-43.6 0.98:not_reached 1.00:-47.4
+
+REVIEW EMO-D5 (s) (15.0.70)  - export pending (Rule 1 pick)
+  [16] Comp Thresh: certified  2 dB curve (norm:dBFS RMS) 0.00:-48.1 0.03:-46.5 0.07:-44.9 0.10:-43.1 0.13:-41.6 0.17:-40.1 0.20:-38.5 0.23:-36.8 0.27:-35.3 0.30:-33.7 0.33:-32.1 0.37:-30.5 0.40:-28.8 0.43:-27.3 0.47:-25.7 0.50:-24.1 0.53:-22.5 0.57:-20.8 0.60:-19.3 0.63:-17.7 0.67:-16.1 0.70:-14.5 0.73:-12.8 0.77:-11.3 0.80:-9.7 0.83:-8.1 0.87:-6.5 0.90:-4.8 0.93:-3.3 1.00:not_reached
+
+REVIEW Millennia TCL-2 (1.11.1)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [6] Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:not_reached 0.47:-4.3 0.53:-5.1 0.60:-8.0 0.63:-9.9 0.67:-11.6 0.70:-13.2 0.73:-14.9 0.77:-16.6 0.80:-18.1 0.83:-19.7 0.87:-21.2 0.90:-23.1 0.93:-24.7 1.00:-25.8
+  [15] Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:not_reached 0.47:-4.3 0.53:-5.1 0.60:-8.0 0.63:-9.9 0.67:-11.6 0.70:-13.2 0.73:-14.9 0.77:-16.6 0.80:-18.1 0.83:-19.7 0.87:-21.2 0.90:-23.1 0.93:-24.7 1.00:-25.8
+
+REVIEW Kiive XTComp (1.0.0)  - 3 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [0] Input Right: certified  2 dB curve (norm:dBFS RMS) 0.00:-10.1 0.07:-10.9 0.13:-12.2 0.20:-13.8 0.27:-15.5 0.33:-17.5 0.40:-19.5 0.47:-21.6 0.53:-23.8 0.60:-26.0 0.67:-28.4 0.73:-30.8 0.80:-33.2 0.87:-35.8 0.93:-38.3 1.00:-40.8
+  [1] INPUT: certified  2 dB curve (norm:dBFS RMS) 0.00:-4.6 0.07:-7.0 0.13:-9.4 0.20:-11.8 0.27:-14.2 0.33:-16.6 0.40:-19.0 0.47:-21.5 0.53:-23.9 0.60:-26.3 0.67:-28.6 0.73:-31.0 0.80:-33.5 0.87:-35.9 0.93:-38.3 1.00:-40.6
+  [14] Input Left: certified  2 dB curve (norm:dBFS RMS) 0.00:-10.1 0.07:-10.9 0.13:-12.2 0.20:-13.8 0.27:-15.5 0.33:-17.5 0.40:-19.5 0.47:-21.6 0.53:-23.8 0.60:-26.0 0.67:-28.4 0.73:-30.8 0.80:-33.2 0.87:-35.8 0.93:-38.3 1.00:-40.8
+
+REVIEW VBC Rack (1.3.5)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [2] Red Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [16] Grey Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [22] MU Threshold Left: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:-4.5 0.33:-6.3 0.40:-8.3 0.47:-10.7 0.53:-13.5 0.57:-15.0 0.60:-16.7 0.63:-18.4 0.67:-20.2 0.70:-22.0 0.73:-23.8 0.77:-25.6 0.80:-27.4 0.83:-29.2 0.87:-31.6 0.90:-33.5 0.93:-35.4 0.97:-37.4 1.00:-39.2
+  [24] MU Threshold Right: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:-4.5 0.33:-6.3 0.40:-8.3 0.47:-10.7 0.53:-13.5 0.57:-15.0 0.60:-16.7 0.63:-18.4 0.67:-20.2 0.70:-22.0 0.73:-23.8 0.77:-25.6 0.80:-27.4 0.83:-29.2 0.87:-31.6 0.90:-33.5 0.93:-35.4 0.97:-37.4 1.00:-39.2
+
+REVIEW UnFairchild (1.0.4)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [7] L Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:-9.1 0.27:not_reached 0.33:not_reached 0.40:-14.5 0.47:not_reached 0.53:not_reached 0.60:-19.6 0.67:not_reached 0.73:not_reached 0.80:-24.6 0.87:not_reached 0.93:not_reached 1.00:-29.4
+  [12] R Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:-9.1 0.27:not_reached 0.33:not_reached 0.40:-14.5 0.47:not_reached 0.53:not_reached 0.60:-19.6 0.67:not_reached 0.73:not_reached 0.80:-24.6 0.87:not_reached 0.93:not_reached 1.00:-29.4
+
+REVIEW Abbey Road RS124 (s) (15.0.70)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [0] Input Control: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:-15.7 0.14:-16.9 0.16:-19.4 0.18:-21.9 0.20:-24.4 0.23:-26.6 0.25:-28.2 0.27:-29.7 0.30:-31.9 0.33:-32.8 0.40:-34.9 0.47:-37.0 0.50:-37.9 0.53:-40.3 0.55:-41.9 0.57:-43.5 0.60:-45.9 0.63:-47.4 0.67:-49.4 0.70:-50.9 0.73:-52.6 0.77:-54.7 0.80:-56.4 0.87:-58.5 0.93:-59.6 1.00:-59.9
+  [8] Input Control R: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:-15.7 0.14:-16.9 0.16:-19.4 0.18:-21.9 0.20:-24.4 0.23:-26.6 0.25:-28.2 0.27:-29.7 0.30:-31.9 0.33:-32.8 0.40:-34.9 0.47:-37.0 0.50:-37.9 0.53:-40.3 0.55:-41.9 0.57:-43.5 0.60:-45.9 0.63:-47.4 0.67:-49.4 0.70:-50.9 0.73:-52.6 0.77:-54.7 0.80:-56.4 0.87:-58.5 0.93:-59.6 1.00:-59.9
+
+REVIEW MixWave DW Fearn VT-7 (1.0.1)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [1] Left Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:-8.5 0.17:-11.2 0.20:-13.8 0.23:-16.1 0.27:-18.4 0.30:-20.6 0.33:-22.7 0.37:-24.8 0.40:-26.8 0.47:-28.7 0.53:-30.5 0.60:-32.1 0.67:-33.6 0.73:-34.9 0.80:-36.1 0.87:-37.2 0.93:-38.2 1.00:-39.1
+  [6] Right Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:-8.5 0.17:-11.2 0.20:-13.8 0.23:-16.1 0.27:-18.4 0.30:-20.6 0.33:-22.7 0.37:-24.8 0.40:-26.8 0.47:-28.7 0.53:-30.5 0.60:-32.1 0.67:-33.6 0.73:-34.9 0.80:-36.1 0.87:-37.2 0.93:-38.2 1.00:-39.1
+
+REVIEW dbx-160 (s) (15.0.70)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [2] Threshold L/M: flat  2 dB curve (norm:dBFS RMS) 
+  [3] Threshold R/S: flat  2 dB curve (norm:dBFS RMS) 
+
+REVIEW Ozone 12 Vintage Compressor (12.0.0)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [8] VCOMP: Stereo/Main Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:-54.4 0.03:-52.4 0.07:-50.4 0.10:-48.4 0.13:-46.4 0.17:-44.4 0.20:-42.4 0.23:-40.4 0.27:-38.4 0.30:-36.4 0.33:-34.4 0.37:-32.4 0.40:-30.4 0.43:-28.4 0.47:-26.4 0.50:-24.4 0.53:-22.4 0.57:-20.4 0.60:-18.4 0.63:-16.4 0.67:-14.4 0.70:-12.4 0.73:-10.4 0.77:-8.4 0.80:-6.4 0.87:not_reached 0.93:not_reached 1.00:not_reached
+  [21] VCOMP: Aux Threshold: flat  2 dB curve (norm:dBFS RMS) 
+
+REVIEW kHs Dynamics (2.1.0)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [2] Low Threshold: flat  2 dB curve (norm:dBFS RMS) 
+  [4] High Threshold: flat  2 dB curve (norm:dBFS RMS) 
+
+REVIEW DPR-402 (s) (15.0.70)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [6] Threshold L/M: certified  2 dB curve (norm:dBFS RMS) 0.00:-51.6 0.07:-51.2 0.13:-49.1 0.20:-46.3 0.22:-44.7 0.23:-43.2 0.27:-41.0 0.30:-39.0 0.33:-36.3 0.37:-34.2 0.40:-32.1 0.43:-30.1 0.47:-28.3 0.50:-26.4 0.53:-24.7 0.57:-23.2 0.60:-21.6 0.63:-20.2 0.67:-18.6 0.73:-15.7 0.77:-14.1 0.80:-12.1 0.83:-10.1 0.87:-7.8 0.93:not_reached 1.00:not_reached
+  [7] Threshold R/S: certified  2 dB curve (norm:dBFS RMS) 0.00:-51.6 0.07:-51.2 0.13:-49.1 0.20:-46.3 0.22:-44.7 0.23:-43.2 0.27:-41.0 0.30:-39.0 0.33:-36.3 0.37:-34.2 0.40:-32.1 0.43:-30.1 0.47:-28.3 0.50:-26.4 0.53:-24.7 0.57:-23.2 0.60:-21.6 0.63:-20.2 0.67:-18.6 0.73:-15.7 0.77:-14.1 0.80:-12.1 0.83:-10.1 0.87:-7.8 0.93:not_reached 1.00:not_reached
+
+REVIEW VBC FG-MU (1.3.5)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [5] Threshold Left: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:-4.5 0.47:-7.4 0.50:-9.0 0.53:-10.8 0.57:-12.5 0.60:-14.4 0.63:-16.2 0.67:-18.2 0.70:-20.1 0.73:-22.0 0.77:-23.9 0.80:-25.8 0.83:-27.7 0.87:-29.5 0.90:-32.0 0.93:-34.0 0.97:-35.9 1.00:-37.8
+  [7] Threshold Right: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:-4.5 0.47:-7.4 0.50:-9.0 0.53:-10.8 0.57:-12.5 0.60:-14.4 0.63:-16.2 0.67:-18.2 0.70:-20.1 0.73:-22.0 0.77:-23.9 0.80:-25.8 0.83:-27.7 0.87:-29.5 0.90:-32.0 0.93:-34.0 0.97:-35.9 1.00:-37.8
+
+REVIEW MaxxVolume (s) (15.0.70)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [0] Low Level Thresh: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:-60.5 0.36:-58.0 0.38:-55.5 0.39:-54.2 0.40:-52.2 0.42:-49.9 0.44:-47.7 0.47:-45.4 0.49:-43.1 0.51:-40.2 0.53:-38.1 0.56:-36.1 0.58:-34.1 0.60:-32.0 0.62:-29.9 0.64:-27.3 0.67:-25.4 0.70:-22.5 0.73:-19.5 0.76:-17.5 0.78:-15.4 0.80:-13.1 0.82:-10.9 0.84:-8.4 0.87:-5.8 0.93:not_reached 1.00:not_reached
+  [4] High Level Thresh: certified  2 dB curve (norm:dBFS RMS) 0.00:-62.1 0.03:-59.6 0.07:-57.1 0.10:-54.6 0.13:-51.7 0.17:-49.3 0.20:-47.1 0.23:-44.8 0.27:-42.7 0.30:-40.0 0.33:-37.9 0.37:-35.9 0.40:-33.9 0.43:-31.9 0.47:-29.1 0.50:-27.3 0.53:-25.5 0.57:-23.5 0.60:-21.5 0.63:-19.5 0.67:-17.5 0.70:-15.3 0.73:-12.9 0.77:-10.5 0.80:-7.7 0.87:not_reached 0.93:not_reached 1.00:not_reached
+  [8] High Level Thresh On: flat  2 dB curve (norm:dBFS RMS) 
+  [9] Low Level Thresh On: unreadable  2 dB curve (norm:dBFS RMS) 
+
+REVIEW PuigChild 670 (s) (15.0.70)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [4] Left Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:-6.2 0.15:-8.0 0.17:-9.4 0.20:-11.1 0.23:-12.6 0.27:-14.3 0.33:-16.3 0.40:-18.2 0.47:-19.7 0.53:-20.8 0.60:-22.0 0.67:-23.0 0.73:-23.9 0.80:-24.7 0.87:-25.4 0.93:-26.1 1.00:-26.7
+  [8] Right Threshold: flat  2 dB curve (norm:dBFS RMS) 
+
+REVIEW AMEK Mastering Compressor (1.1.1)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [20] Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:-8.9 0.03:-10.5 0.07:-12.0 0.13:-14.9 0.20:-17.6 0.27:-20.3 0.33:-23.0 0.40:-25.4 0.47:-27.9 0.53:-30.3 0.60:-32.6 0.67:-35.2 0.73:-37.4 0.80:-39.8 0.87:-42.2 0.93:-43.7 1.00:-43.7
+  [39] Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:-8.9 0.03:-10.5 0.07:-12.0 0.13:-14.9 0.20:-17.6 0.27:-20.3 0.33:-23.0 0.40:-25.4 0.47:-27.9 0.53:-30.3 0.60:-32.6 0.67:-35.2 0.73:-37.4 0.80:-39.8 0.87:-42.2 0.93:-43.7 1.00:-43.7
+
+REVIEW EMO-D5 (m) (15.0.70)  - export pending (Rule 1 pick)
+  [16] Comp Thresh: certified  2 dB curve (norm:dBFS RMS) 0.00:-48.1 0.03:-46.5 0.07:-44.9 0.10:-43.1 0.13:-41.6 0.17:-40.1 0.20:-38.5 0.23:-36.8 0.27:-35.3 0.30:-33.7 0.33:-32.1 0.37:-30.5 0.40:-28.8 0.43:-27.3 0.47:-25.7 0.50:-24.1 0.53:-22.5 0.57:-20.8 0.60:-19.3 0.63:-17.7 0.67:-16.1 0.70:-14.5 0.73:-12.8 0.77:-11.3 0.80:-9.7 0.83:-8.1 0.87:-6.5 0.90:-4.8 0.93:-3.3 1.00:not_reached
+
+REVIEW SPL IRON (1.6.1)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [22] Threshold L: certified  2 dB curve (norm:dBFS RMS) 0.00:-4.7 0.03:-4.7 0.05:-4.8 0.07:-4.9 0.10:-5.1 0.12:-5.4 0.15:-5.7 0.17:-6.1 0.20:-6.6 0.23:-7.6 0.25:-8.8 0.28:-10.2 0.30:-11.8 0.33:-12.9 0.35:-14.3 0.38:-15.3 0.40:-16.2 0.42:-17.0 0.45:-17.9 0.47:-18.5 0.50:-19.2 0.53:-20.0 0.55:-20.5 0.57:-21.2 0.60:-21.9 0.62:-22.4 0.65:-23.0 0.68:-23.6 0.70:-24.2 0.72:-24.7 0.75:-25.2 0.78:-25.8 0.80:-26.1 0.82:-26.4 0.85:-26.6 0.88:-26.7 0.90:-26.7 0.93:-26.8 0.95:-26.8 0.97:-26.9 1.00:-26.9
+  [34] Threshold R: certified  2 dB curve (norm:dBFS RMS) 0.00:-4.7 0.03:-4.7 0.05:-4.8 0.07:-4.9 0.10:-5.1 0.12:-5.4 0.15:-5.7 0.17:-6.1 0.20:-6.6 0.23:-7.6 0.25:-8.8 0.28:-10.2 0.30:-11.8 0.33:-12.9 0.35:-14.3 0.38:-15.3 0.40:-16.2 0.42:-17.0 0.45:-17.9 0.47:-18.5 0.50:-19.2 0.53:-20.0 0.55:-20.5 0.57:-21.2 0.60:-21.9 0.62:-22.4 0.65:-23.0 0.68:-23.6 0.70:-24.2 0.72:-24.7 0.75:-25.2 0.78:-25.8 0.80:-26.1 0.82:-26.4 0.85:-26.6 0.88:-26.7 0.90:-26.7 0.93:-26.8 0.95:-26.8 0.97:-26.9 1.00:-26.9
+
+REVIEW OTT (1.3.7)  - 3 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [5] Thresh L: unreadable  2 dB curve (norm:dBFS RMS) 
+  [6] Thresh M: nonmonotonic  2 dB curve (norm:dBFS RMS) 0.00:-59.8 0.07:-59.1 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:not_reached 0.47:not_reached 0.53:not_reached 0.60:not_reached 0.67:not_reached 0.73:below_range 0.80:below_range 0.87:below_range 0.93:below_range 1.00:below_range
+  [7] Thresh H: unreadable  2 dB curve (norm:dBFS RMS) 
+
+REVIEW elysia alpha master (1.17.1)  - 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [3] Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:-3.4 0.40:-5.9 0.43:-7.4 0.47:-8.9 0.53:-11.8 0.60:-14.2 0.67:-16.4 0.73:-18.5 0.80:-20.8 0.87:-23.0 0.93:-24.6 1.00:-25.3
+  [24] Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:-3.4 0.40:-5.9 0.43:-7.4 0.47:-8.9 0.53:-11.8 0.60:-14.2 0.67:-16.4 0.73:-18.5 0.80:-20.8 0.87:-23.0 0.93:-24.6 1.00:-25.3
+
+REVIEW Pro Audio DSP DSM V3 (3.6.1)  - 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [4] Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:-17.1 0.02:-15.5 0.03:-14.0 0.07:-11.1 0.10:-8.6 0.13:-6.3 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:not_reached 0.47:not_reached 0.53:not_reached 0.60:not_reached 0.67:not_reached 0.73:not_reached 0.80:not_reached 0.87:not_reached 0.93:not_reached 1.00:not_reached
+  [8] Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:-5.7 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:not_reached 0.47:not_reached 0.53:not_reached 0.60:not_reached 0.67:not_reached 0.73:not_reached 0.80:not_reached 0.87:not_reached 0.93:not_reached 1.00:not_reached
+  [12] Threshold 3: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.07:not_reached 0.13:not_reached 0.20:not_reached 0.27:not_reached 0.33:not_reached 0.40:not_reached 0.47:not_reached 0.53:not_reached 0.60:not_reached 0.67:not_reached 0.73:not_reached 0.80:not_reached 0.87:not_reached 0.93:not_reached 1.00:not_reached
+  [15] Threshold: certified  2 dB curve (norm:dBFS RMS) 0.00:-46.0 0.03:-43.6 0.07:-41.1 0.10:-38.8 0.13:-36.4 0.17:-34.0 0.20:-31.6 0.23:-29.2 0.27:-26.8 0.30:-24.4 0.33:-22.0 0.37:-19.6 0.40:-17.2 0.43:-14.8 0.47:-12.4 0.50:-10.0 0.53:-7.6 0.60:not_reached 0.67:not_reached 0.73:not_reached 0.80:not_reached 0.87:not_reached 0.93:not_reached 1.00:not_reached
+
+REVIEW Maag MAGNUM-K (1.6.1)  - 6 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  [6] Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.05:not_reached 0.10:not_reached 0.15:not_reached 0.20:not_reached 0.25:not_reached 0.30:not_reached 0.35:not_reached 0.40:not_reached 0.45:not_reached 0.50:not_reached 0.55:not_reached 0.60:not_reached 0.65:not_reached 0.70:-4.3 0.75:-6.3 0.80:-8.0 0.85:-9.5 0.90:-10.4 0.95:-10.6 1.00:-10.6
+  [10] K Comp Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.05:not_reached 0.10:not_reached 0.15:not_reached 0.20:not_reached 0.25:not_reached 0.30:not_reached 0.35:not_reached 0.40:not_reached 0.45:not_reached 0.50:not_reached 0.55:not_reached 0.60:not_reached 0.65:not_reached 0.70:not_reached 0.75:not_reached 0.80:not_reached 0.85:not_reached 0.90:not_reached 0.95:not_reached 1.00:not_reached
+  [16] Limiter Threshold 1: certified  2 dB curve (norm:dBFS RMS) 0.00:-8.6 0.33:-5.8 0.67:not_reached 1.00:not_reached
+  [28] Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.05:not_reached 0.10:not_reached 0.15:not_reached 0.20:not_reached 0.25:not_reached 0.30:not_reached 0.35:not_reached 0.40:not_reached 0.45:not_reached 0.50:not_reached 0.55:not_reached 0.60:not_reached 0.65:not_reached 0.70:-4.3 0.75:-6.3 0.80:-8.0 0.85:-9.5 0.90:-10.4 0.95:-10.6 1.00:-10.6
+  [32] K Comp Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:not_reached 0.05:not_reached 0.10:not_reached 0.15:not_reached 0.20:not_reached 0.25:not_reached 0.30:not_reached 0.35:not_reached 0.40:not_reached 0.45:not_reached 0.50:not_reached 0.55:not_reached 0.60:not_reached 0.65:not_reached 0.70:not_reached 0.75:not_reached 0.80:not_reached 0.85:not_reached 0.90:not_reached 0.95:not_reached 1.00:not_reached
+  [38] Limiter Threshold 2: certified  2 dB curve (norm:dBFS RMS) 0.00:-8.6 0.33:-5.8 0.67:not_reached 1.00:not_reached
+
+REVIEW Solid Dynamics (1.4.5)  - export pending (Rule 1 pick)
+  [1] Threshold Comp: certified  2 dB curve (norm:dBFS RMS) 0.00:-3.1 0.07:-5.1 0.13:-7.1 0.20:-9.1 0.27:-11.1 0.33:-13.1 0.40:-15.1 0.47:-17.1 0.53:-19.1 0.60:-21.1 0.67:-23.1 0.73:-25.1 0.80:-27.1 0.87:-29.1 0.93:-31.1 1.00:-33.1
+
+REVIEW SHEET: 28 product(s) in review with candidates; to pick, add to cert/review_picks.json: {"product": "<name>", "candidate": "<candidate name>", "by": "<initials>", "date": "<YYYY-MM-DD>"}

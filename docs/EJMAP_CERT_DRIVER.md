@@ -2024,3 +2024,17 @@ are licence rows first (every candidate silent), which makes Kathy's 18; 2 surro
 the literal rule and still in review: kHs Dynamics and MaxxVolume (Low/High without Mid — level stages, not bands) and
 DynOne3 (C LF / MF / HMF… names, no Band number and no literal Low/Mid/High). Pins L19h–L19k3; mutants red (never filed;
 Low + High enough; two channels as surround).
+
+## 41. The one-time review pick (4 Oct): cert/review_picks.json and the review sheet
+
+`cert/review_picks.json` is a list of `{"product", "candidate", "by", "date", "note"}`. `loop::applyReviewPick` runs on a
+candidates record before anything reads it — in the tone-check mode (then the re-derive carries the pick) and in the batch's
+finish pass: an entry naming a candidate whose sweep certified writes `pickedCandidate` + `ruleDecided {rule: review_pick,
+by, date, pick, trims, ruleText "picked by KD on 2026-10-04 from the candidates' 2 dB curves…"}`, and the record goes on
+like a Rule-1 pick (re-derived, exported, tone-checked, notes naming the pick and who made it). **Nothing is ever picked
+without an entry**; an entry naming an uncertified candidate, an unknown candidate, or lacking initials/date picks nothing
+and the log says why. Pins L19m–L19p; mutants red (a missing entry picking the first certified candidate; an uncertified
+pick accepted). **The review sheet** — `--cert-review-sheet <cert dir>`, and written by the tone-check mode as
+`cert/review_sheet.txt` after the rules have run — lists every remaining needs_review record's candidates with their
+verdicts and 2 dB curves (norm:dBFS RMS), so picks are made from data. Sean's zip before the rules: 28 products
+(`cert-traces/2026-10-04-sean-zip/review-sheet-before-rules.txt`).

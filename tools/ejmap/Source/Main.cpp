@@ -648,6 +648,8 @@ namespace
                 juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
                 return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
             }
+            // --cert-review-sheet <cert dir>: every needs_review record's candidates with their verdicts and 2 dB curves (read-only)
+            if (a == "--cert-review-sheet" && i + 1 < argc) { ejmap::cert::printReviewSheet (cwdFile (argAt (argc, argv, i + 1)).getChildFile ("fixtures"), std::cout); return 0; }
             // --cert-states <dir of records>: what state outcomeForRecord gives every record now (read-only; the projected outcome for a zipped-back folder)
             if (a == "--cert-states" && i + 1 < argc)
             {

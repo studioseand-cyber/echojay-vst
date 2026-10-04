@@ -68,6 +68,7 @@
 #include <unistd.h>
 #include <map>
 #include <set>
+#include <fstream>
 #include <vector>
 #include <iostream>
 
@@ -2426,6 +2427,7 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
     auto record = juce::JSON::parse (recordFile.loadFileAsString());
     const auto identity = record.getProperty ("identity", recordFile.getFileNameWithoutExtension()).toString();
     const auto product = record.getProperty ("product", "").toString();
+    { const auto what = loop::applyReviewPick (record, juce::JSON::parse (opt.out.getChildFile ("review_picks.json").loadFileAsString())); if (what.isNotEmpty()) { std::cout << "  " << what << std::endl; if (what.startsWith ("review pick applied")) recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n"); } }
     auto o = loop::outcomeForRecord (record);
     juce::String profilePath, tonePath;
     if (o.exportPending)
@@ -2508,6 +2510,34 @@ inline int runPreflight (const SweepOptions& opt, const juce::File& executable)
 // do not hold, re-export, then load the plugin for the tone checks only - g = 2 with the v1.7 pick plus every deep level
 // the profile carries. No sweeps. Resumable: a profile whose tone check already carries spec v1.7 and its deep levels is
 // skipped. The same window watch: a window during the check is needs_licence; a product the scan stopped is not loaded.
+// THE REVIEW SHEET (ruled 4 Oct): for every record still needs_review with candidates, each candidate's verdict and its 2 dB
+// curve (norm -> in_at_gr["2"], sine RMS), so a review pick can be made from data and written to cert/review_picks.json.
+inline void printReviewSheet (const juce::File& fixturesDir, std::ostream& out)
+{
+    int products = 0;
+    for (const auto& f : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (f.getFileName().endsWith (".defaults.json")) continue;
+        const auto r = juce::JSON::parse (f.loadFileAsString()); const auto cands = r.getProperty ("thresholdCandidates", {});
+        if (! cands.isArray() || loop::outcomeForRecord (r).state != "needs_review") continue;
+        ++products;
+        out << "\nREVIEW " << r.getProperty ("product", "").toString() << " (" << r.getProperty ("version", "").toString() << ")  - " << loop::outcomeForRecord (r).reason << "\n";
+        for (int i = 0; i < cands.size(); ++i)
+        {
+            const auto c = cands[i]; const auto sw = c.getProperty ("thresholdSweep", {});
+            out << "  [" << (int) c.getProperty ("index", -1) << "] " << c.getProperty ("name", "").toString() << ": " << (sw.isObject() ? sw.getProperty ("result", "").toString() : juce::String ("licence_suspect"));
+            if (sw.isObject())
+            {
+                juce::StringArray pts; const auto norms = sw.getProperty ("positionNorms", {}); const auto ia = sw.getProperty ("inAtGr", {});
+                for (int k = 0; k < norms.size() && k < ia.size(); ++k) { const auto v = ia[k].getProperty ("2", {}); pts.add (juce::String ((double) norms[k], 2) + ":" + ((v.isDouble() || v.isInt()) ? juce::String ((double) v - 3.0103, 1) : v.toString())); }
+                out << "  2 dB curve (norm:dBFS RMS) " << pts.joinIntoString (" ");
+            }
+            out << "\n";
+        }
+    }
+    out << "\nREVIEW SHEET: " << products << " product(s) in review with candidates; to pick, add to cert/review_picks.json: {\"product\": \"<name>\", \"candidate\": \"<candidate name>\", \"by\": \"<initials>\", \"date\": \"<YYYY-MM-DD>\"}" << std::endl;
+}
+
 inline int runToneCheckAll (SweepOptions opt)
 {
     const auto fixturesDir = opt.out.getChildFile ("fixtures");
@@ -2517,16 +2547,22 @@ inline int runToneCheckAll (SweepOptions opt)
     const auto id = checkProbe (opt.probe, {}, {});
     if (! id.ok) { std::cout << "TONECHECK-ALL: ABORTED BEFORE ANY PLUGIN - " << id.why << std::endl; return 3; }
     const auto scanStops = quarantinedBundles (opt.ledger);
-    std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << std::endl;
+    const auto reviewPicks = juce::JSON::parse (opt.out.getChildFile ("review_picks.json").loadFileAsString());
+    std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << (reviewPicks.isArray() ? "  review picks " + juce::String (reviewPicks.size()) : juce::String ("  no review_picks.json")) << std::endl;
     int done = 0, skipped = 0, licence = 0, failed = 0, noTraces = 0;
     // EVERY RECORD IN THE FOLDER'S fixtures/ that is a certified profile (or Rule 1-decided), by its own file - never a path
     // from a row, which may have been written on another Mac (a zipped-back folder); imported traces (CL 1B, section 11) count.
     for (const auto& recordFile : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
     {
         if (recordFile.getFileName().endsWith (".defaults.json")) continue;
-        const auto rec0 = juce::JSON::parse (recordFile.loadFileAsString());
+        auto rec0 = juce::JSON::parse (recordFile.loadFileAsString());
         const auto product = rec0.getProperty ("product", "").toString();
         if (! opt.slice.isEmpty() && ! opt.slice.contains (product)) continue;
+        {
+            // THE REVIEW PICK (ruled 4 Oct): applied to the record on disk before anything else reads it, so the re-derive carries it
+            auto withPick = rec0; const auto what = loop::applyReviewPick (withPick, reviewPicks);
+            if (what.isNotEmpty()) { std::cout << "  " << product << ": " << what << std::endl; if (what.startsWith ("review pick applied")) { recordFile.replaceWithText (juce::JSON::toString (withPick) + "\n", false, false, "\n"); rec0 = withPick; } }
+        }
         if (! loop::outcomeForRecord (rec0).exportPending && ! rec0.getProperty ("ruleDecided", {}).isObject()) continue;   // not a certified profile: nothing to tone-check
         const auto stem0 = juce::File::createLegalFileName (product).replaceCharacter (' ', '_') + "_" + rec0.getProperty ("version", "").toString();
         const auto profileFile = opt.out.getChildFile ("profiles").getChildFile (stem0 + ".json");
@@ -2559,6 +2595,8 @@ inline int runToneCheckAll (SweepOptions opt)
         if (st == "exported") ++done; else if (st == "needs_licence") ++licence; else ++failed;
     }
     std::cout << "\nTONECHECK-ALL: " << done << " re-checked, " << skipped << " already at v1.7 (skipped), " << licence << " needs_licence, " << failed << " not exported now, " << noTraces << " without traces" << std::endl;
+    { std::ofstream sheet (opt.out.getChildFile ("review_sheet.txt").getFullPathName().toStdString()); printReviewSheet (fixturesDir, sheet); }
+    std::cout << "review sheet: " << opt.out.getChildFile ("review_sheet.txt").getFullPathName() << std::endl;
     return 0;
 }
 

@@ -6298,6 +6298,20 @@ void testLoopOutcomes()
                "loop L19c: an exported product and a hang-quarantined bundle are not known licence stops: they load");
         check (knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", true).isEmpty() && knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6", true).isEmpty(),
                "loop L19d: --retry-licence is the only way past a known licence stop");
+        // THE REVIEW PICK (L19m-L19p, ruled 4 Oct): an entry in review_picks.json naming a certified candidate decides; nothing without an entry; an uncertified name picks nothing and says why
+        {
+            const auto recJ = juce::JSON::parse (R"json({"product": "Shadow Hills Mastering Compressor", "thresholdCandidates": [{"index": 2, "name": "Optical Threshold 1", "thresholdSweep": {"result": "certified", "hold_s": 2.5, "tone": {"levels_dbfs": [-60, -40, -20, -10, 0]}}}, {"index": 14, "name": "Optical Threshold 2", "thresholdSweep": {"result": "certified", "hold_s": 2.5, "tone": {"levels_dbfs": [-60, -40, -20, -10, 0]}}}, {"index": 5, "name": "Discrete Threshold 1", "thresholdSweep": {"result": "flat"}}]})json");
+            const auto picks = juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Optical Threshold 1", "by": "KD", "date": "2026-10-04", "note": "optical stage, channel 1 drives both"}])json");
+            auto r1 = juce::JSON::parse (juce::JSON::toString (recJ)); const auto w1 = applyReviewPick (r1, picks);
+            check (w1.startsWith ("review pick applied") && (int) r1.getProperty ("pickedCandidate", {}).getProperty ("index", -1) == 2 && r1.getProperty ("ruleDecided", {}).getProperty ("rule", "") == "review_pick"
+                     && r1.getProperty ("ruleDecided", {}).getProperty ("by", "") == "KD" && r1.getProperty ("ruleDecided", {}).getProperty ("ruleText", "").toString().contains ("picked by KD on 2026-10-04") && r1.getProperty ("ruleDecided", {}).getProperty ("trims", {}).size() == 2
+                     && outcomeForRecord (r1).exportPending,
+                   "loop L19m: a review pick naming a certified candidate writes pickedCandidate + ruleDecided {review_pick, by, date}, the others as trims, and the record goes on as export pending (" + w1 + ")");
+            auto r2 = juce::JSON::parse (juce::JSON::toString (recJ)); check (applyReviewPick (r2, juce::var()).isEmpty() && ! r2.hasProperty ("pickedCandidate") && outcomeForRecord (r2).state == "needs_review", "loop L19n: without an entry nothing is ever picked");
+            auto r3 = juce::JSON::parse (juce::JSON::toString (recJ)); const auto w3 = applyReviewPick (r3, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Discrete Threshold 1", "by": "KD", "date": "2026-10-04"}])json"));
+            check (w3.contains ("but its sweep is flat: nothing picked") && ! r3.hasProperty ("pickedCandidate"), "loop L19o: an entry naming an uncertified candidate picks nothing and says why (" + w3 + ")");
+            auto r4 = juce::JSON::parse (juce::JSON::toString (recJ)); check (applyReviewPick (r4, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Optical Threshold 1"}])json")).contains ("incomplete") && ! r4.hasProperty ("pickedCandidate"), "loop L19p: an entry without initials and a date is incomplete and picks nothing");
+        }
         // OUT-OF-SCOPE STATES, ON (L19h-L19k, ruled 4 Oct): multiband by band-numbered or Low+Mid+High names; surround by Logic's (N->N), N > 2; neither needs_review; a decided record is never out of scope
         {
             auto candsOf = [] (std::initializer_list<const char*> names) { juce::Array<juce::var> a; int i = 0; for (auto* n : names) { auto* o = new juce::DynamicObject(); o->setProperty ("index", i++); o->setProperty ("name", n); o->setProperty ("thresholdSweep", juce::var()); a.add (juce::var (o)); } return juce::var (a); };
@@ -6309,7 +6323,7 @@ void testLoopOutcomes()
             check (outcomeForRecord (rec ("kHs Dynamics", candsOf ({ "Low Threshold", "High Threshold" }))).state == "needs_review" && outcomeForRecord (rec ("MaxxVolume (s)", candsOf ({ "Low Level Thresh", "High Level Thresh" }))).state == "needs_review",
                    "loop L19j: Low + High without Mid (kHs Dynamics, MaxxVolume) is NOT called multiband - it stays needs_review");
             const auto sp = outcomeForRecord (rec ("Spherix Compressor (10->10)", candsOf ({ "Threshold 1", "Threshold 2" })));
-            check (sp.state == "surround" && sp.reason.startsWith ("surround: not profiled (10 channels") && outcomeForRecord (rec ("C6 (s)", juce::var())).state != "surround" && surroundChannels ("Spherix Compressor (12->12)") == 12 && surroundChannels ("H-Comp (s)") == 0,
+            check (sp.state == "surround" && sp.reason.startsWith ("surround: not profiled (10 channels") && outcomeForRecord (rec ("C6 (s)", juce::var())).state != "surround" && surroundChannels ("Spherix Compressor (12->12)") == 12 && surroundChannels ("H-Comp (s)") == 0 && surroundChannels ("Some Comp (2->2)") == 0,
                    "loop L19k: Logic's (N->N) with N > 2 is 'surround: not profiled (N channels)'; a stereo name is not (" + sp.reason + ")");
             auto decided = rec ("C6 (s)", candsOf ({ "Band 1 Threshold", "Band 2 Threshold" })); { auto* pk = new juce::DynamicObject(); pk->setProperty ("index", 0); pk->setProperty ("name", "Band 1 Threshold"); decided.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk)); auto* rd = new juce::DynamicObject(); rd->setProperty ("rule", "review_pick"); decided.getDynamicObject()->setProperty ("ruleDecided", juce::var (rd)); }
             check (outcomeForRecord (decided).state != "multiband", "loop L19k2: a record with a pick (a rule or a review pick) is never filed as multiband by its names");
