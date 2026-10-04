@@ -6169,6 +6169,20 @@ void testLoopOutcomes()
                "loop L19c: an exported product and a hang-quarantined bundle are not known licence stops: they load");
         check (knownLicenceStop (stops, rowsK, "Tube-Tech CL 1B", true).isEmpty() && knownLicenceStop (stops, rowsK, "SSL Native Drumstrip v6", true).isEmpty(),
                "loop L19d: --retry-licence is the only way past a known licence stop");
+        // LICENCE, NOT CHANNEL STRIP (L19e-L19f, ruled 4 Oct): every candidate licence_suspect -> needs_licence with the reason; a mixed set stays a channel strip
+        {
+            const auto allSus = juce::JSON::parse (R"json({"product": "Pro-C 3", "thresholdReview": {"verdicts": [{"index": 1, "name": "Threshold", "result": "licence_suspect"}, {"index": 2, "name": "Auto Threshold", "result": "licence_suspect"}]},
+                                                           "thresholdCandidates": [{"index": 1, "name": "Threshold", "thresholdSweep": null, "licenceSuspectReason": "the output is silent at every level"}, {"index": 2, "name": "Auto Threshold", "thresholdSweep": null}]})json");
+            const auto oa = outcomeForRecord (allSus);
+            check (oa.state == "needs_licence" && oa.reason.startsWith ("licence suspected: the output is silent at every level") && oa.reason.contains ("2 candidate(s)") && ! oa.reason.contains ("threshold candidates"),
+                   "loop L19e: a candidates record whose every verdict is licence_suspect is needs_licence 'licence suspected: <reason>', never 'N threshold candidates' (" + oa.reason + ")");
+            auto old = juce::JSON::parse (juce::JSON::toString (allSus)); old.getProperty ("thresholdCandidates", {})[0].getDynamicObject()->removeProperty ("licenceSuspectReason");
+            const auto oo = outcomeForRecord (old);
+            check (oo.state == "needs_licence" && oo.reason.contains ("the reason text is not on this record"), "loop L19e2: a record from before the reason was kept (Sean's 3 Oct run) is still needs_licence and says the reason is missing");
+            auto mixed = juce::JSON::parse (juce::JSON::toString (allSus)); mixed.getProperty ("thresholdReview", {}).getProperty ("verdicts", {})[1].getDynamicObject()->setProperty ("result", "certified");
+            const auto om = outcomeForRecord (mixed);
+            check (om.state == "needs_review" && om.reason.contains ("2 threshold candidates"), "loop L19f: one certified candidate beside a licence_suspect one is a channel strip (needs_review), not a licence row");
+        }
         // ONE ROW PER PRODUCT (L20-L21, ruled 2 Oct evening): a bundle's products that are subjects get no bundle row (their own row
         // carries the state); the others get one row each, keyed by product, linked to the bundle; the same product named by two
         // bundles (AU + VST3) gets one row.

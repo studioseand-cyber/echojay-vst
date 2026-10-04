@@ -89,6 +89,19 @@ inline Outcome outcomeForRecord (const juce::var& record)
                     if (sw.getProperty ("result", "").toString() == "certified" && profileGrade (sw)) { o.exportPending = true; o.state = "needs_review"; o.reason = "export pending (Rule 1 pick)"; return o; }
                 }
         }
+        // LICENCE, NOT CHANNEL STRIP (ruled 4 Oct): when EVERY candidate's verdict is licence_suspect the product produced no tone
+        // on any stage - the row is needs_licence with the reason, never "N threshold candidates" (Sean's run: 7 Melda + Pro-C 3)
+        if (const auto verdicts = record.getProperty ("thresholdReview", {}).getProperty ("verdicts", {}); verdicts.isArray() && verdicts.size() > 0)
+        {
+            bool allSuspect = true; for (int i = 0; i < verdicts.size(); ++i) if (verdicts[i].getProperty ("result", "").toString() != "licence_suspect") allSuspect = false;
+            if (allSuspect)
+            {
+                juce::String why; for (int i = 0; i < cands.size() && why.isEmpty(); ++i) why = cands[i].getProperty ("licenceSuspectReason", "").toString();
+                o.state = "needs_licence";
+                o.reason = "licence suspected: " + (why.isNotEmpty() ? why : juce::String ("every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record)")) + "; " + juce::String (cands.size()) + " candidate(s), none produced the tone; --retry-licence re-checks it";
+                return o;
+            }
+        }
         o.state = "needs_review";
         o.reason = juce::String (cands.size()) + " threshold candidates (a channel strip or multiband): no rule decides it, nobody picks";
         return o;

@@ -1627,6 +1627,9 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
         c->setProperty ("index", q.thr); c->setProperty ("name", q.thrName);
         juce::Array<juce::var> fl; for (auto& x : q.thrFlags) fl.add (x); c->setProperty ("flags", fl);
         c->setProperty ("thresholdSweep", one.written ? sweep::stripPrivate (one.sweepVar) : juce::var());
+        // WHY A CANDIDATE IS LICENCE-SUSPECT is on the candidate (ruled 4 Oct): the reference note - silent at every level,
+        // non-finite, or not the tone - so the row can say "licence suspected: <reason>" rather than count the candidates
+        if (! one.written) c->setProperty ("licenceSuspectReason", one.d.referenceNote.trim().trimCharactersAtEnd (";"));
         // A FLAT CANDIDATE IS EVIDENCE, NOT A DEFECT (ruled 30 Sep): 997 Hz excites one band, so a band that does not
         // cover it shows nothing. Said on the candidate, so thresholdReview does not read as a dead end. A PASS-THROUGH
         // flat is NOT that evidence: the product did nothing as instantiated, so the tone says nothing about its bands.
