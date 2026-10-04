@@ -69,6 +69,8 @@
 #include "EjmapRoleSemantics.h"
 #include "EjmapSweep.h"
 #include "EjmapSidechainCheck.h"
+#include "EjmapPitch.h"
+#include "EjmapTunerProfile.h"
 #include <functional>
 #include "EjmapCertDriver.h"
 
@@ -6397,7 +6399,7 @@ void testLoopOutcomes()
             auto oneGap = juce::JSON::parse (R"json({"product": "d", "controls": [{"index": 7}], "thresholdSweep": {"result": "certified", "sweptControl": {"index": 7, "flags": "", "refineRounds": 1}, "positionNorms": [0.2, 0.4, 0.6, 0.8], "inAtGr": [{"1": -10, "2": -11}, {"1": -14, "2": -12.5}, {"1": -18, "2": "not_reached"}, {"1": -22, "2": "not_reached"}]}})json");
             check (planDiffers (oneGap, single7).resweep && planDiffers (oneGap, single7).why.contains ("1 dB gap of 4.0"), "loop L19u3: a 1 dB gap over the bar re-sweeps even when every reachable 2 dB gap is within it");
             auto tuner = juce::JSON::parse (R"json({"product": "t", "schema": "ej_cert_tuner/1", "controls": [], "thresholdRefusal": {"stage": "plan", "reason": "x"}})json");
-            check (! planDiffers (tuner, single7).resweep && ! planDiffers (juce::JSON::parse (R"json({"product": "n"})json"), single7).resweep, "loop L19u2: a tuner or a record without controls never re-sweeps");
+            check (! planDiffers (tuner, single7).resweep && ! planDiffers (juce::JSON::parse (R"json({"product": "n"})json"), single7).resweep, "loop L19u2: a tuner with nothing measured, or a record without controls, never re-sweeps");
         }
         // THE REVIEW PICK (L19m-L19p, ruled 4 Oct): an entry in review_picks.json naming a certified candidate decides; nothing without an entry; an uncertified name picks nothing and says why
         {
@@ -6702,6 +6704,206 @@ void testInertCheck()
            "inert I9: the row carries the reason under its own result word");
 }
 
+/** THE TUNER PLAN v2 (EjmapPitch.h, 4 Oct A4): detents by evidence from the text grid, the adaptive speed half period. */
+void testTunerPlanV2()
+{
+    using namespace ejmap::pitch;
+    // Auto-Tune Access's Retune Speed: declared continuous, reads Slow / Medium / Fast, lands on three values only
+    const juce::String grid = "at\t0.000000\tlanded\tgetValue\t0.000000\tconfirm_ms\t3.0\tlanded_by\tinstack\ttext\tSlow\n"
+                              "at\t0.031250\tunlanded\tgetValue\t0.000000\tconfirm_ms\t-1.0\tlanded_by\tunlanded\ttext\tSlow\n"
+                              "at\t0.500000\tlanded\tgetValue\t0.500000\tconfirm_ms\t3.1\tlanded_by\tinstack\ttext\tMedium\n"
+                              "at\t0.531250\tunlanded\tgetValue\t0.500000\tconfirm_ms\t-1.0\tlanded_by\tunlanded\ttext\tMedium\n"
+                              "at\t1.000000\tlanded\tgetValue\t1.000000\tconfirm_ms\t2.9\tlanded_by\tinstack\ttext\tFast\n";
+    const auto rows = parseTextGrid (grid);
+    const auto det = detentsFromTextGrid (rows);
+    check (rows.size() == 5 && det.size() == 3 && det[0].second == "Slow" && det[1].first == 0.5f && det[2].second == "Fast", "tuner T1: three detents from the read-back values; a between write that reads back the detent it snapped to adds nothing");
+    check (detentsFromTextGrid (parseTextGrid ("at\t0.000000\tlanded\tgetValue\t0.000000\tconfirm_ms\t3.0\tlanded_by\tinstack\ttext\tSlow\n")).empty(), "tuner T2: one detent is nothing to sweep (empty, the caller says so)");
+    // Auto-Tune Access's Key (4 Oct, live): 33 writes, only 4 "landed" at the asked norm, but every read-back is one of 12 detents
+    {
+        juce::String keyGrid; const char* keys[] = { "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+        for (int k = 0; k <= 32; ++k) { const double asked = k / 32.0; const int d = (int) std::round (asked * 11.0); const double got = d / 11.0;
+                                        keyGrid << "at\t" << juce::String (asked, 6) << "\t" << (std::abs (got - asked) < 0.005 ? "landed" : "unlanded") << "\tgetValue\t" << juce::String (got, 6) << "\tconfirm_ms\t1.0\tlanded_by\tpump\ttext\t" << keys[d] << "\n"; }
+        const auto kd = detentsFromTextGrid (parseTextGrid (keyGrid));
+        check (kd.size() == 12 && kd[1].second == "Db" && std::abs (kd[1].first - 1.0f / 11.0f) < 1e-4f && kd[11].second == "B", "tuner T2b: a 12-key control snapping writes to k/11 yields its 12 detents from the read-backs (the landed flag would give 4)");
+    }
+    check (textsAreWords (juce::JSON::parse (R"json({"displayAt": {"0.000": "Slow", "0.500": "Medium", "1.000": "Fast"}})json"))
+             && ! textsAreWords (juce::JSON::parse (R"json({"displayAt": {"0.000": "400", "0.500": "50", "1.000": "0"}})json")), "tuner T3: Slow/Medium/Fast are words, 400/50/0 are numbers (eight positions stay)");
+    // the adaptive half period: a position unsettled at 1 s and settled at 2 s reads from the 2 s run and says so
+    auto win = [] (double tMs, double target, double outC) { Window w; w.tMs = tMs; w.inC = target; w.inConf = 1.0; w.outC = outC; w.outConf = 1.0; w.outDb = -20.0; w.target = target; return w; };
+    auto squareRun = [&] (double halfPeriodS, double tauMs, int halfPeriods, bool present)
+    {
+        PitchMeasured m; m.ok = true; m.cents = 30.0; m.rateHz = 0.5 / halfPeriodS;
+        PitchPosition p; p.k = present ? 0 : -1; p.norm = 0.0f; p.landed = present;
+        const double hop = 50.0, half = halfPeriodS * 1000.0;
+        for (int e = 0; e < halfPeriods && present; ++e)
+        {
+            const double target = (e % 2) ? 30.0 : -30.0;
+            for (double t = 0.0; t < half; t += hop) p.windows.push_back (win (e * half + t, target, target * juce::jmax (0.0, 1.0 - t / tauMs)));   // the output walks toward 0 (corrected) from the step, reaching it at tauMs
+        }
+        m.positions.push_back (p);
+        return SpeedRun { halfPeriodS, m };
+    };
+    const auto slow1 = squareRun (1.0, 1200.0, 6, true);    // corrected only at 1.2 s: not settled inside a 1 s half period
+    const auto slow2 = squareRun (2.0, 1200.0, 6, true);    // settled inside 2 s
+    const auto r1 = deriveSpeed (slow1.vib.positions[0], 30.0, slow1.vib.rateHz);
+    check (r1.result == "refused" && r1.reason.contains ("had not settled before the next flip"), "tuner T4: a correction that completes at 1.2 s does not settle inside a 1 s half period (" + r1.reason + ")");
+    const auto pk = pickSpeed ({ slow1, slow2 }, 0);
+    check (pk.fromRun && pk.halfPeriodS == 2.0 && pk.result.result == "measured", "tuner T5: the speed is read from the 2 s run, and the pick says 2 s (" + pk.result.result + ": " + pk.result.reason + ")");
+    check (unsettledPositions ({ slow1 }, 1).size() == 1 && unsettledPositions ({ slow1, slow2 }, 1).empty(), "tuner T6: the unsettled set drives the next run and empties once settled");
+    const auto fast1 = squareRun (1.0, 300.0, 6, true);
+    check (pickSpeed ({ fast1, slow2 }, 0).halfPeriodS == 1.0, "tuner T7: a position settled at 1 s is never re-read from a longer run");
+    // a position absent from a partial run is skipped, never read as "write did not land"
+    const auto absent2 = squareRun (2.0, 1200.0, 6, false);
+    const auto pk2 = pickSpeed ({ slow1, absent2 }, 0);
+    check (pk2.halfPeriodS == 1.0 && pk2.result.reason.contains ("had not settled"), "tuner T8: a run that lacks the position is skipped (the 1 s refusal stands)");
+    // the record: half_period_s per position and the half periods tried on the generator
+    const auto rec = composePitchSweep (PitchMeasured{}, std::vector<SpeedRun> { slow1, slow2 }, -1, {});
+    check ((double) rec.getProperty ("positions", {})[0].getProperty ("speed", {}).getProperty ("half_period_s", 0.0) == 2.0 && rec.getProperty ("generator", {}).getProperty ("speed_half_periods_s", {}).size() == 2,
+           "tuner T9: the record says which half period each position's speed came from, and which were tried");
+    // planDiffers: a tuner measured under plan v1 is re-measured; under v2 it is not
+    const auto v1 = juce::JSON::parse (R"json({"product": "t", "schema": "ej_cert_tuner/1", "controls": [], "pitchCandidates": [{"index": 1}]})json");
+    const auto v2 = juce::JSON::parse (R"json({"product": "t", "schema": "ej_cert_tuner/1", "controls": [], "pitchCandidates": [{"index": 1}], "pitchPlan": {"version": 2}})json");
+    ejmap::sweep::Plan none;
+    check (ejmap::loop::planDiffers (v1, none).resweep && ejmap::loop::planDiffers (v1, none).why.contains ("tuner procedure changed") && ! ejmap::loop::planDiffers (v2, none).resweep,
+           "tuner T10: planDiffers re-measures a tuner recorded under plan v1 and leaves a v2 record alone");
+}
+
+/** THE v0.1 TUNER MEASUREMENTS AND THE DRAFT EXPORTER (EjmapPitch.h deriveShortNotes / toleranceFrom, EjmapTunerProfile.h; 4 Oct A5, a PROPOSAL). */
+void testTunerV01()
+{
+    using namespace ejmap::pitch;
+    auto win = [] (double tMs, double outC, bool loud) { Window w; w.tMs = tMs; w.inC = 30.0; w.inConf = loud ? 1.0 : 0.0; w.outC = outC; w.outConf = loud ? 1.0 : 0.3; w.outDb = loud ? -20.0 : -90.0; w.target = 30.0; return w; };
+    // short notes: 200 ms notes (4 windows of 50 ms) and 100 ms gaps (2 silent windows); the output on each note walks 30 -> 12 (second half ~12-15)
+    PitchPosition notes; notes.k = 0; notes.landed = true;
+    for (int n = 0; n < 6; ++n) { const double t0 = n * 300.0; notes.windows.push_back (win (t0, 30.0, true)); notes.windows.push_back (win (t0 + 50, 22.0, true)); notes.windows.push_back (win (t0 + 100, 15.0, true)); notes.windows.push_back (win (t0 + 150, 12.0, true));
+                                  notes.windows.push_back (win (t0 + 200, -9999.0, false)); notes.windows.push_back (win (t0 + 250, -9999.0, false)); }
+    const auto sn = deriveShortNotes (notes, 30.0);
+    check (sn.result == "measured" && sn.windowsUsed == 6 && std::abs (sn.residualCents - 13.5) < 1e-6 && std::abs (sn.strength - 0.55) < 1e-6, "tuner V1: six short notes, residual = the median of each note's second half (13.5), strength 0.55 (" + sn.reason + ")");
+    PitchPosition two = notes; two.windows.resize (12);
+    check (deriveShortNotes (two, 30.0).result == "refused" && deriveShortNotes (two, 30.0).reason.contains ("fewer than 3 readable notes"), "tuner V2: two notes are not enough (a guard, not a number)");
+    // tolerance: strengths at 5/10/20/30/50 cents
+    // Auto-Tune Pro at Flex-Tune 86 (4 Oct): 5 -> 1.00, 10 -> 0.63, 20 -> 0.24, 30 -> 0.10, 40 -> 0.04, 45 -> 0.02: the window is 10 cents
+    const auto t1 = toleranceFrom ({ { 5.0, 1.002 }, { 10.0, 0.631 }, { 20.0, 0.236 }, { 30.0, 0.104 }, { 40.0, 0.037 }, { 45.0, 0.015 } });
+    check (t1.ok && ! t1.over && ! t1.none && t1.cents == 10.0 && t1.reason.contains ("up to 10 cents are corrected"), "tuner V3: the flex window is the LARGEST detune still corrected to at least half (10 cents at Flex-Tune 86)");
+    const auto t2 = toleranceFrom ({ { 5.0, 0.0 }, { 45.0, 0.0 } });
+    check (t2.ok && t2.none && t2.reason.contains ("nothing corrected, not even 5"), "tuner V4: Flex-Tune 100 corrects nothing, said as such (50 is never a rung: it is the midpoint between two notes)");
+    const auto t3 = toleranceFrom ({ { 5.0, 1.0 }, { 45.0, 1.0 } });
+    check (t3.ok && t3.over && t3.cents == 45.0, "tuner V4b: Flex-Tune 0 corrects everything up to the ladder's top: over_45");
+    check (! toleranceFrom ({}).ok, "tuner V5: no detune measured -> no tolerance");
+    check (std::find (kFlexDetunesCents.begin(), kFlexDetunesCents.end(), 50.0) == kFlexDetunesCents.end() && kFlexDetunesCents.back() == 45.0, "tuner V5b: the detune ladder never asks 50 cents (the midpoint between two chromatic notes, corrected UP on Pro and Artist)");
+    // the exporter on an Auto-Tune-shaped record: speed from the moving transition, direction in display terms, strength null, notes for every null
+    const auto rec = juce::JSON::parse (R"json({"schema": "ej_cert_tuner/1", "product": "AT", "manufacturer": "Antares", "identity": "AudioUnit|1|1.0", "version": "1.0", "pitchPlan": {"version": 2},
+        "controls": [{"index": 4, "name": "Retune Speed"}, {"index": 7, "name": "Bypass", "defaultOnInstantiate": {"display": "Off", "normalised": 0.0}}, {"index": 9, "name": "Formant", "defaultOnInstantiate": {"display": "Off", "normalised": 0.0}}],
+        "pitchCandidates": [{"index": 4, "name": "Retune Speed", "measuredAt": "20261004T120000", "detentsBy": "even8", "generator": {"latency_samples": 2670}, "positions": [
+            {"norm": 0.0, "display": "400", "strength": {"result": "measured", "strength": 0.994}, "speed": {"result": "measured", "duration_ms": 1099, "half_period_s": 2.0, "edge_durations_ms": [1090, 1108]}},
+            {"norm": 0.5, "display": "50", "strength": {"result": "measured", "strength": 1.0}, "speed": {"result": "refused", "reason": "edges disagree"}},
+            {"norm": 1.0, "display": "0", "strength": {"result": "measured", "strength": 1.0}, "speed": {"result": "bound", "faster_than_ms": 21.4}}]}],
+        "pitchExtras": {"flex": [{"index": 5, "name": "Flex-Tune", "positions": [{"norm": 0.0, "display": "0", "window_cents": "over_45", "strength_by_detune": {"5": 0.9}}, {"norm": 1.0, "display": "100", "window_cents": "none", "strength_by_detune": {"50": 0.1}}]}],
+                        "humanize": [], "readbacks": {"1": {"index": 1, "name": "Key", "kind": "key", "values": {"C": 0.0, "C#": 0.0909}}, "2": {"index": 2, "name": "Scale", "kind": "scale", "values": {"Major": 0.0, "Chromatic": 1.0}}}}})json");
+    const auto e = ejmap::tunerprofile::exportTunerProfileDraft (rec);
+    const auto sp = e.profile.getProperty ("speed", {});
+    check (e.ok && e.profile.getProperty ("schema", "").toString() == "ej_tuner_profile/1" && e.profile.getProperty ("status", "").toString().startsWith ("PROPOSAL v0.1 - not for publication"), "tuner V6: the draft says what it is");
+    check (sp.getProperty ("control", "").toString() == "Retune Speed" && sp.getProperty ("direction", "").toString() == "lower_is_harder" && sp.getProperty ("curve", {}).size() == 3
+             && sp.getProperty ("curve", {})[1].getProperty ("transition_ms", 1).isVoid() && (double) sp.getProperty ("curve", {})[2].getProperty ("faster_than_ms", 0.0) == 21.4,
+           "tuner V7: speed = the moving candidate; lower_is_harder read from the display (400 slow, 0 fast); a refused position is null, a bound carries faster_than_ms");
+    check (e.profile.getProperty ("strength", 1).isVoid() && e.notes.joinIntoString ("|").contains ("strength null") && e.notes.joinIntoString ("|").contains ("speed null at norm 0.5"), "tuner V8: strength null (1.0 throughout) with a note; the null speed point has its note");
+    check (e.profile.getProperty ("flex", {}).getProperty ("curve", {}).size() == 2 && e.profile.getProperty ("humanize", 1).isVoid() && (double) e.profile.getProperty ("key", {}).getProperty ("values", {}).getProperty ("C#", 0.0) == 0.0909
+             && e.profile.getProperty ("scale", {}).getProperty ("values", {}).hasProperty ("Chromatic"), "tuner V9: flex, key and scale carried from the extras; humanize null (no such control)");
+    check (e.profile.getProperty ("never_touch", {}).size() == 1 && e.profile.getProperty ("never_touch", {})[0].toString() == "Bypass" && e.profile.getProperty ("neutral", {}).size() == 1, "tuner V10: Bypass is never_touch, Formant is neutral as instantiated, the swept control is neither");
+    check (! ejmap::tunerprofile::exportTunerProfileDraft (juce::JSON::parse (R"json({"schema": "ej_cert_compressor/1"})json")).ok, "tuner V11: a compressor record is refused");
+    // crispytuner's shape: Amount moves both speed and strength -> the strength field is null with the note that the speed control carries it
+    const auto crispy = juce::JSON::parse (R"json({"schema": "ej_cert_tuner/1", "product": "bx", "pitchCandidates": [{"index": 12, "name": "Amount", "positions": [
+        {"norm": 0.0, "display": "0", "strength": {"result": "measured", "strength": 0.0}, "speed": {"result": "measured", "duration_ms": 170}},
+        {"norm": 1.0, "display": "100", "strength": {"result": "measured", "strength": 1.07}, "speed": {"result": "measured", "duration_ms": 45}}]}]})json");
+    const auto ec = ejmap::tunerprofile::exportTunerProfileDraft (crispy);
+    check (ec.ok && ec.profile.getProperty ("speed", {}).getProperty ("control", "").toString() == "Amount" && ec.profile.getProperty ("speed", {}).getProperty ("direction", "").toString() == "higher_is_harder"
+             && ec.profile.getProperty ("strength", 1).isVoid() && ec.notes.joinIntoString ("|").contains ("is also the strength control"), "tuner V12: crispytuner's Amount is speed (higher_is_harder) and strength at once; said in a note");
+}
+
+/** SEAN'S STEPPED RULE (agreed 4 Oct; A6b): (1) stepped: true with the detent norms as read back, the curve lists only detents;
+    (2) every measured detent gets the 0.5 dB hold test; (3) no estimation between detents, past the last detent is at_control_limit;
+    (4) fewer than 3 detents reaching 1 dB is not publishable. Lindell 254E (16 detents, its own record) and a 6-detent UnFairchild shape. */
+void testSteppedExport()
+{
+    using namespace ejmap::profile;
+    const auto rec254 = juce::JSON::parse (juce::File (EJMAP_REPO_ROOT).getChildFile ("tools/ejmap/cert-traces/2026-10-04-stepped/lindell_254e_record.json").loadFileAsString());
+    check (rec254.isObject() && (int) rec254.getProperty ("amountLanding", {}).getProperty ("detents", 0) == 16, "stepped Z0: the 254E record is read (16 detents by the landing read of 4 Oct)");
+    const auto e = exportCompProfile (rec254);
+    const auto amount = e.profile.getProperty ("amount", {});
+    const auto curve = amount.getProperty ("curve", {});
+    check (e.ok && (bool) amount.getProperty ("stepped", false) && amount.hasProperty ("stepped_by_evidence") && curve.size() == 16, "stepped Z1 (cond. 1): 254E exports stepped: true with its 16 detents (" + e.refused + ")");
+    {
+        bool onReadBack = true; const auto rb = detentNormsReadBack (rec254.getProperty ("amountLanding", {}));
+        for (int i = 0; i < curve.size(); ++i) { const double n = (double) curve[i].getProperty ("norm", -1.0); bool hit = false; for (double v : rb) if (std::abs (v - n) < 1e-6) hit = true; onReadBack = onReadBack && hit; }
+        check (rb.size() == 16 && onReadBack, "stepped Z2 (cond. 1): every curve norm is a value the plugin READ BACK, not an asked norm");
+    }
+    {
+        // (2) the hold test: the record's own deep_point_error / quality carries the 0.5 dB hold test per point; a point that fails it is null with the reason
+        const auto q = e.profile.getProperty ("quality", {});
+        check (q.hasProperty ("point_error_db") && (double) q.getProperty ("point_error_db", 9.0) <= 0.5, "stepped Z3 (cond. 2): the hold test ran on the detents (point_error_db " + q.getProperty ("point_error_db", {}).toString() + " within 0.5)");
+        auto bad = juce::JSON::parse (juce::JSON::toString (rec254));
+        // the hold test's verdict lives on the record (quality.deepPointsNulled, written when the sweep compared its 2.5 s and 5 s
+        // holds): a detent whose 4 dB point failed it by 0.8 dB must be null in the export, with the reason, the profile still exported
+        // (the sweep nulls the point in the record's inAtGr when the two holds disagree by more than 0.5 dB, and accounts for it in deepPointsNulled)
+        { juce::Array<juce::var> nulled; nulled.add ("3@4: -24.00 / hold-doubled -23.20 / delta 0.80 dB"); bad.getProperty ("thresholdSweep", {}).getProperty ("quality", {}).getDynamicObject()->setProperty ("deepPointsNulled", nulled);
+          bad.getProperty ("thresholdSweep", {}).getProperty ("inAtGr", {})[3].getDynamicObject()->setProperty ("4", juce::var()); }
+        const auto eb = exportCompProfile (bad);
+        const auto p3 = eb.profile.getProperty ("amount", {}).getProperty ("curve", {})[3].getProperty ("in_at_gr_dbfs", {});
+        check (eb.ok && p3.getProperty ("4", 1).isVoid() && juce::JSON::toString (eb.profile.getProperty ("notes", {})).contains ("hold test failed"), "stepped Z4 (cond. 2): a detent whose 4 dB point fails the 0.5 dB hold test is null with the reason, the profile stands (ok " + juce::String ((int) eb.ok) + ", p3.4 void " + juce::String ((int) p3.getProperty ("4", 1).isVoid()) + ", notes " + juce::JSON::toString (eb.profile.getProperty ("notes", {})).substring (0, 300) + ")");
+    }
+    {
+        // (3) the pick on a stepped profile: nearest detent, never an estimate; past the last detent -> at_control_limit
+        const auto pk = pickPosition (e.profile, -40.0, 2.0);
+        check (pk.ok && pk.stepped && pk.i1 < 0 && ! pk.atControlLimit, "stepped Z5 (cond. 3): a pick inside the detents is one detent, never interpolated");
+        double lo = 0.0, hi = -200.0;
+        for (int i = 0; i < curve.size(); ++i) if (const auto v = inAtGr (curve[i], 2.0)) { lo = juce::jmin (lo, *v); hi = juce::jmax (hi, *v); }
+        const auto past = pickPosition (e.profile, hi + 6.0, 2.0);
+        check (past.ok && past.atControlLimit && past.note.contains ("at_control_limit") && std::abs (past.inAtG0 - hi) < 1e-9, "stepped Z6 (cond. 3): an ask past the last detent is at_control_limit and the end detent answers");
+        const auto before = pickPosition (e.profile, lo - 6.0, 2.0);
+        check (before.ok && before.atControlLimit && std::abs (before.inAtG0 - lo) < 1e-9, "stepped Z7 (cond. 3): and past the first detent likewise");
+    }
+    // (4) a 6-detent UnFairchild shape: 5 detents reach 1 dB -> publishable with those 5; 2 -> not publishable, reason named
+    auto six = juce::JSON::parse (juce::JSON::toString (rec254));
+    {
+        auto* o = six.getDynamicObject(); o->setProperty ("product", "UnFairchild-shaped");
+        auto sw = six.getProperty ("thresholdSweep", {}); auto* so = sw.getDynamicObject();
+        juce::Array<juce::var> norms, inAt, texts, rep; juce::Array<juce::var> samples;
+        for (int k = 0; k < 6; ++k)
+        {
+            const double n = k / 5.0; norms.add (n); texts.add (juce::String (k * 2));
+            auto* p = new juce::DynamicObject(); auto* r = new juce::DynamicObject();
+            if (k == 0) { for (const char* g : { "1", "2", "3" }) { p->setProperty (g, "not_reached"); r->setProperty (g, "not_reached"); } }
+            else { const double base = -4.0 - 5.0 * k; p->setProperty ("1", base); p->setProperty ("2", base + 3.1); p->setProperty ("3", base + 5.0); r->setProperty ("1", base + 0.02); r->setProperty ("2", base + 3.12); r->setProperty ("3", base + 5.01); }
+            inAt.add (juce::var (p)); rep.add (juce::var (r));
+        }
+        for (int k = 0; k <= 40; ++k) { auto* sm = new juce::DynamicObject(); const double asked = k / 40.0; sm->setProperty ("norm", asked); sm->setProperty ("getValue", std::round (asked * 5.0) / 5.0); samples.add (juce::var (sm)); }
+        so->setProperty ("positionNorms", norms); so->setProperty ("positionTexts", texts); so->setProperty ("inAtGr", inAt); so->setProperty ("inAtGrRepeat", rep);
+        so->setProperty ("thresholdDbEquivalent", juce::var()); so->removeProperty ("reduction_db"); so->removeProperty ("inAtGrQuality");
+        auto* ev = new juce::DynamicObject(); ev->setProperty ("control", (int) six.getProperty ("amountLanding", {}).getProperty ("control", -1)); ev->setProperty ("detents", 6); ev->setProperty ("samples", samples);
+        o->setProperty ("amountLanding", juce::var (ev)); o->setProperty ("thresholdSweep", sw);
+    }
+    const auto e6 = exportCompProfile (six);
+    check (e6.ok && (bool) e6.profile.getProperty ("amount", {}).getProperty ("stepped", false) && e6.points == 5,
+           "stepped Z8 (cond. 4): six detents of which five reach 1 dB export stepped with five points (the nine-point rule does not apply) - " + e6.refused);
+    {
+        auto two = juce::JSON::parse (juce::JSON::toString (six));
+        auto sw = two.getProperty ("thresholdSweep", {}); auto inAt = sw.getProperty ("inAtGr", {});
+        for (int k = 1; k <= 3; ++k) if (auto* p = inAt[k].getDynamicObject()) for (const char* g : { "1", "2", "3" }) p->setProperty (g, "not_reached");
+        const auto e2 = exportCompProfile (two);
+        check (! e2.ok && e2.refused.contains ("only 2 detent(s) reach 1 dB") && e2.refused.contains ("at least 3"), "stepped Z9 (cond. 4): two detents reaching 1 dB is not publishable, the reason names the rule (" + e2.refused + ")");
+    }
+    // the plan sweeps a control with landing evidence at its read-back detents; a record swept elsewhere is re-swept
+    {
+        const auto plan = ejmap::sweep::planFromFixture (six);
+        check (plan.ok && plan.stepped && plan.norms.size() == 6 && std::abs (plan.norms[1] - 0.2f) < 1e-5f, "stepped Z10: the plan for a control with landing evidence sweeps its 6 read-back detents and nothing between");
+        auto elsewhere = juce::JSON::parse (juce::JSON::toString (six));
+        { juce::Array<juce::var> n16; for (int k = 0; k < 16; ++k) n16.add (k / 15.0); elsewhere.getProperty ("thresholdSweep", {}).getDynamicObject()->setProperty ("positionNorms", n16); }
+        const auto d = ejmap::loop::planDiffers (elsewhere, plan);
+        check (d.resweep && d.why.contains ("holds 6 detents"), "stepped Z11: a record swept at 16 positions over 6 detents is re-swept at the detents (" + d.why + ")");
+        check (! ejmap::loop::planDiffers (six, plan).resweep, "stepped Z12: a record swept at the detents is not re-swept for that");
+    }
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -6772,6 +6974,9 @@ int main (int, char**)
     testLevelDependence();
     testSidechainCheck();
     testInertCheck();
+    testTunerPlanV2();
+    testTunerV01();
+    testSteppedExport();
     testLoopOutcomes();
     testCategoriesMerge();
 

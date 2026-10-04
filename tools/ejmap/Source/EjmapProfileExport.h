@@ -56,6 +56,7 @@ namespace ejmap::profile
 inline constexpr double kPeakToSineRmsDb = 3.0102999566398120;   // 20 log10 sqrt 2
 inline constexpr double kTargetGrDb = 2.0;                        // his default target, the yardstick for fit error
 inline constexpr int    kMinCurvePoints = 9;
+inline constexpr int    kMinSteppedPoints = 3;     // SEAN'S RULE (4 Oct): a stepped control lists every detent; fewer than 3 reaching 1 dB is not publishable
 
 // RANGE GAPS (read-only census, 4 Oct; B counted them from the server's map data): per control, two classes -
 //   (a) an END prints a word (range.endsNotNumeric present), (b) an END SAMPLE is missing (displayAt lacks 0.000 or 1.000,
@@ -108,6 +109,16 @@ inline std::optional<int> detentsFromLanding (const std::vector<LandingRow>& row
         if (all) return n;
     }
     return std::nullopt;
+}
+// THE DETENT NORMS AS READ BACK (Sean's condition 1, 4 Oct): the distinct getValue values the landing read saw, which is where
+// the plugin actually holds the control; an exported stepped curve carries THESE norms, never the asked ones.
+inline std::vector<double> detentNormsReadBack (const juce::var& landing)
+{
+    std::vector<double> out;
+    if (const auto* rows = landing.getProperty ("samples", {}).getArray())
+        for (const auto& r : *rows) { const double v = std::round ((double) r.getProperty ("getValue", 0.0) * 1e4) / 1e4; bool seen = false; for (double o : out) if (std::abs (o - v) < 1e-4) seen = true; if (! seen) out.push_back (v); }
+    std::sort (out.begin(), out.end());
+    return out;
 }
 inline bool positionsAreDetents (const juce::var& curve, int detents)
 {
@@ -431,7 +442,13 @@ inline Export exportCompProfile (const juce::var& f)
         }
     }
     e.points = withOne;
-    if (withOne < kMinCurvePoints) return refuse ("only " + juce::String (withOne) + " curve point(s) reach 1 dB inside the measured levels (his rule: at least " + juce::String (kMinCurvePoints) + ")");
+    // STEPPED (Sean's four conditions, agreed 4 Oct): decided here, before the gate, from the declaration or the landing evidence
+    const auto ctlForGate = sweep::findControl (f, plan.thr);
+    bool steppedForGate = sweep::isSteppedControl (ctlForGate);
+    if (const auto ev = f.getProperty ("amountLanding", {}); ! steppedForGate && ev.isObject() && (int) ev.getProperty ("control", -1) == plan.thr && (int) ev.getProperty ("detents", 0) >= 2 && positionsAreDetents (curve, (int) ev.getProperty ("detents", 0)))
+        steppedForGate = true;
+    if (steppedForGate) { if (withOne < kMinSteppedPoints) return refuse ("only " + juce::String (withOne) + " detent(s) reach 1 dB inside the measured levels (stepped: every detent is listed, at least " + juce::String (kMinSteppedPoints) + " must reach 1 dB - Sean's rule, 4 Oct)"); }
+    else if (withOne < kMinCurvePoints) return refuse ("only " + juce::String (withOne) + " curve point(s) reach 1 dB inside the measured levels (his rule: at least " + juce::String (kMinCurvePoints) + ")");
 
     // THE FIT, on the readable in-band readings.
     std::vector<double> levels; { const auto lv = sweepVar.getProperty ("tone", {}).getProperty ("levels_dbfs", {}); for (int k = 0; k < lv.size(); ++k) levels.push_back ((double) lv[k]); }
@@ -554,6 +571,15 @@ inline Export exportCompProfile (const juce::var& f)
         if (const auto ev = f.getProperty ("amountLanding", {}); ev.isObject() && (int) ev.getProperty ("control", -1) == plan.thr && (int) ev.getProperty ("detents", 0) >= 2)
         {
             const int n = (int) ev.getProperty ("detents", 0);
+            if (! stepped && positionsAreDetents (curve, n))
+            {
+                // condition 1: the curve's norms are the detents AS READ BACK, each swept position snapped to the read-back nearest it
+                const auto rb = detentNormsReadBack (ev);
+                if ((int) rb.size() == n)
+                    for (int i = 0; i < curve.size(); ++i)
+                        if (auto* o = curve[i].getDynamicObject()) { const double asked = (double) o->getProperty ("norm"); double best = rb[0]; for (double v : rb) if (std::abs (v - asked) < std::abs (best - asked)) best = v; o->setProperty ("norm", best); }
+                a->setProperty ("curve", curve);
+            }
             if (! stepped && positionsAreDetents (curve, n)) { stepped = true; a->setProperty ("stepped_by_evidence", "declared continuous; its writes land only on " + juce::String (n) + " values (k/" + juce::String (n - 1) + "), measured from the probe's write landing; the " + juce::String (n) + " swept positions are those detents"); }
             else if (! stepped) a->setProperty ("stepped_by_evidence_unresolved", "declared continuous; its writes land only on " + juce::String (n) + " values, but the swept positions are not those detents - exported continuous; a re-sweep on the detents would make it stepped");
         }
@@ -814,6 +840,7 @@ struct Pick
     double expectedGrDb = 0.0;                 // g; the GR the chosen DETENT gives at L for a stepped pick (reverse read); the deepest measured level when the deep-null rule fell back
     bool expectedExtrapolated = false;         // the stepped reverse read ran past the detent's deepest (or shallowest) point
     int i0 = -1, i1 = -1; double inAtG0 = 0, inAtG1 = 0; bool stepped = false;
+    bool atControlLimit = false;               // stepped (Sean's condition 3): L lies past the last detent on that side; the end detent answers, never an estimate
     bool filledAcrossNorm = false;             // the pick used a position whose value at g was interpolated across the norm axis
     bool fellBackToMeasured = false;           // the profile carried no position at g: the deepest carried level answered
     double pickOneDb = 0.0;                    // the pick's own in_at_gr["1"] (interpolated), what the clamp read
@@ -882,6 +909,13 @@ inline Pick pickPosition (const juce::var& profile, double L, double g)
     size_t best = 0; for (size_t k = 1; k < pts.size(); ++k) if (std::abs (pts[k].inAt - L) < std::abs (pts[best].inAt - L)) best = k;
     p.i0 = pts[best].i; p.inAtG0 = pts[best].inAt; p.norm = pts[best].norm; p.expectedGrDb = gEff; p.filledAcrossNorm = pts[best].filled;
     double tt = 0.0;
+    if (p.stepped && (L < pts.front().inAt - 1e-9 || L > pts.back().inAt + 1e-9))
+    {
+        // condition 3: no estimation between detents, and an ask past the last detent is at_control_limit
+        best = L < pts.front().inAt ? 0 : pts.size() - 1;
+        p.i0 = pts[best].i; p.inAtG0 = pts[best].inAt; p.norm = pts[best].norm; p.filledAcrossNorm = pts[best].filled; p.atControlLimit = true;
+        p.note << (p.note.isEmpty() ? "" : "; ") << "at_control_limit: L " << juce::String (L, 2) << " lies past the " << (best == 0 ? "first" : "last") << " detent (" << juce::String (pts[best].inAt, 2) << "); that detent answers";
+    }
     if (! p.stepped)
         for (size_t k = 0; k + 1 < pts.size(); ++k)
             if ((pts[k].inAt <= L && L <= pts[k + 1].inAt) || (pts[k + 1].inAt <= L && L <= pts[k].inAt))

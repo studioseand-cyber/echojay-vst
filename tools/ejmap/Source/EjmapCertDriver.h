@@ -2606,6 +2606,41 @@ inline void printReviewSheet (const juce::File& fixturesDir, std::ostream& out)
 // Reads the record's own position traces in cert/raw, repeats one of them at one loud level through the probe as it now
 // is, compares, and writes `sidechainPolicyCheck` on the record so the next run does not repeat it. Returns whether the
 // product is in the set at all, and whether it must be re-swept.
+// THE LANDING READ (ruled 4 Oct, Lindell 254E; factored 5 Oct for Sean's stepped rule): the amount control written at 41 norms
+// (k/40) in one probe process, each write's read-back recorded; writes that land only on N values make the control stepped
+// with those N detents - `amountLanding` on the record. On-grid writes alone prove nothing (detentsFromLanding). Run once
+// per record; the follow-up runs it in its decision pass so a re-sweep lands on the detents the first time.
+struct LandingRead { bool ran = false, window = false; std::optional<int> detents; juce::String note; };
+inline LandingRead readAmountLanding (const SweepOptions& opt, const juce::PluginDescription& desc, juce::var& record, const juce::File& recordFile, int thr)
+{
+    LandingRead lr;
+    juce::StringArray gs; for (int k = 0; k <= 40; ++k) gs.add (juce::String (k / 40.0, 4));
+    const auto r = runChild ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", juce::String (thr), gs.joinIntoString (",") }, opt.timeoutMs);
+    if (r.kind == ChildResult::Kind::uiShown) { lr.window = true; lr.note = "a window appeared"; return lr; }
+    std::vector<profile::LandingRow> rows;
+    if (r.cleanExit())
+        for (const auto& line : juce::StringArray::fromLines (r.out))
+        {
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            if (f.size() < 5 || f[0] != "at" || f.indexOf ("getValue") < 0) continue;
+            profile::LandingRow row; row.norm = f[1].getDoubleValue(); row.getValue = f[f.indexOf ("getValue") + 1].getDoubleValue(); row.landed = f[2] == "landed"; rows.push_back (row);
+        }
+    lr.ran = ! rows.empty();
+    if (! lr.ran) { lr.note = "not read (" + r.describe() + ")"; return lr; }
+    auto* ev = new juce::DynamicObject(); ev->setProperty ("control", thr); ev->setProperty ("readAt", nowStamp());
+    juce::Array<juce::var> sm; for (const auto& row : rows) { auto* o = new juce::DynamicObject(); o->setProperty ("norm", row.norm); o->setProperty ("getValue", row.getValue); sm.add (juce::var (o)); } ev->setProperty ("samples", sm);
+    if (const auto n = profile::detentsFromLanding (rows))
+    {
+        lr.detents = n; ev->setProperty ("detents", *n);
+        ev->setProperty ("note", "declared continuous; writes land only on " + juce::String (*n) + " values (k/" + juce::String (*n - 1) + ") - stepped by evidence (ruled 4 Oct)");
+        lr.note = "stepped by evidence: " + juce::String (*n) + " detents";
+    }
+    else { ev->setProperty ("detents", 0); ev->setProperty ("note", "continuous: every write landed where it was written (41 norms)"); lr.note = "continuous (every write landed where it was written)"; }
+    record.getDynamicObject()->setProperty ("amountLanding", juce::var (ev));
+    recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
+    return lr;
+}
+
 // THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio
 // through at its defaults, with no inert check yet, gets the check's processes now; inert -> the record's result and reason
 // change, nothing else. Returns what happened, empty when the record is not that shape.
@@ -2757,8 +2792,26 @@ inline int runToneCheckAll (SweepOptions opt)
         for (const auto& product : products)
         {
             if (product.isEmpty() || (! opt.slice.isEmpty() && ! opt.slice.contains (product))) continue;
-            const auto r = juce::JSON::parse (latestRecordFor (fixturesDir, product).loadFileAsString());
+            auto r = juce::JSON::parse (latestRecordFor (fixturesDir, product).loadFileAsString());
             if (loop::outcomeForRecord (r).state == "needs_licence") continue;
+            // THE LANDING READ FIRST (Sean's stepped rule, 4 Oct): a continuous-declared amount control is read at 41 norms once,
+            // so the plan below sweeps a stepped control at its detents the first time, never at sixteen positions over six
+            if (! opt.deriveOnly && ! r.hasProperty ("amountLanding") && r.getProperty ("schema", "").toString() != kSchemaTuner)
+            {
+                auto plan0 = sweep::planFromFixture (r);
+                if (r.getProperty ("pickedCandidate", {}).isObject()) { const int want = (int) r.getProperty ("pickedCandidate", {}).getProperty ("index", -1); for (const auto& c : plan0.candidates) if (c.index == want) { auto cc = c; plan0 = plan0.forCandidate (cc); break; } }
+                if (plan0.ok && plan0.thr >= 0 && ! sweep::isSteppedControl (sweep::findControl (r, plan0.thr)))
+                {
+                    std::vector<InstalledRecord> hits; for (const auto& ir : installedAudioUnits()) if (ir.desc.name == product) hits.push_back (ir);
+                    if (hits.size() == 1 && profile::versionMismatch (r.getProperty ("version", "").toString(), hits[0].desc.version).isEmpty())
+                    {
+                        const auto recF = latestRecordFor (fixturesDir, product);
+                        const auto lr = readAmountLanding (opt, hits[0].desc, r, recF, plan0.thr);
+                        if (lr.ran) std::cout << "  " << product << ": landing [" << plan0.thr << "] " << plan0.thrName << ": " << lr.note << std::endl;
+                        r = juce::JSON::parse (recF.loadFileAsString());
+                    }
+                }
+            }
             const auto d = loop::planDiffers (r, sweep::planFromFixture (r));
             if (d.resweep) { resweep.add (product); resweepWhys.add (product + ": " + d.why); continue; }
             // THE SIDECHAIN POLICY (4 Oct): one reading under the new policy against the record's own, for every record swept
@@ -2846,10 +2899,11 @@ inline int runToneCheckAll (SweepOptions opt)
                 std::cout << "\n=== re-sweep [" << ++k << "/" << resweep.size() << "] " << product << std::endl;
                 so.product = product;
                 const auto t0 = juce::Time::getMillisecondCounterHiRes();
-                const int rc = runCertSweep (so);
+                const bool tunerRecord = juce::JSON::parse (latestRecordFor (fixturesDir, product).loadFileAsString()).getProperty ("schema", "").toString() == kSchemaTuner;
+                const int rc = tunerRecord ? runCertTuner (so) : runCertSweep (so);
                 std::cout << "  wall " << juce::String ((juce::Time::getMillisecondCounterHiRes() - t0) / 1000.0, 0) << " s, exit " << rc << std::endl;
                 const auto rec = latestRecordFor (fixturesDir, product);
-                if (rec.existsAsFile()) { const auto row = finishRecord (opt, rec, "compressor"); outcomes = loop::mergeRow (outcomes, row); writeOutcomes(); std::cout << "  -> " << row.getProperty ("state", "").toString() << ": " << row.getProperty ("reason", "").toString() << std::endl; }
+                if (rec.existsAsFile()) { const auto row = finishRecord (opt, rec, tunerRecord ? "pitch" : "compressor"); outcomes = loop::mergeRow (outcomes, row); writeOutcomes(); std::cout << "  -> " << row.getProperty ("state", "").toString() << ": " << row.getProperty ("reason", "").toString() << std::endl; }
             }
         }
     }
@@ -3062,35 +3116,177 @@ inline int runCertTuner (const SweepOptions& opt)
     say ("TUNER: " + s.product + " " + s.version + ": " + juce::String ((int) strength.size()) + " strength candidate(s)"
          + (keyIndex >= 0 ? ", key/scale [" + juce::String (keyIndex) + "] as instantiated '" + keyText + "'" : juce::String (", no key/scale control roled")));
     juce::Array<juce::var> cands; int measuredAny = 0;
+    juce::Array<juce::var> planCands;                 // THE PLAN THE RECORD WAS MEASURED UNDER (pitchPlan v2): planDiffers reads it
     if (strength.empty()) say ("TUNER: no control holds the strength role: nothing to sweep (recorded)");
     for (const auto* c : strength)
     {
         if (windowSeen) break;
         const auto ctrl = sweep::findControl (base, c->index);
-        juce::StringArray norms;
-        if (sweep::isSteppedControl (ctrl)) { const int n = (int) ctrl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) norms.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
-        else for (int k = 0; k < 8; ++k) norms.add (juce::String ((float) k / 7.0f, 6));
         const juce::String ctl = juce::String (c->index);
+        juce::StringArray norms, detentTexts; juce::String detentsBy;
+        if (sweep::isSteppedControl (ctrl)) { detentsBy = "declared"; const int n = (int) ctrl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) norms.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
+        else if (pitch::textsAreWords (ctrl))
+        {
+            // DETENTS BY EVIDENCE (4 Oct): a word-valued control is measured where its writes land, nowhere else
+            juce::StringArray gs; for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
+            const auto tg = runProbe ("c" + ctl + ".textgrid", { "--text-at-norms", ctl, gs.joinIntoString (",") });
+            const auto detents = pitch::detentsFromTextGrid (pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String()));
+            if (detents.empty()) { detentsBy = "text_grid_unreadable"; for (int k = 0; k < 8; ++k) norms.add (juce::String ((float) k / 7.0f, 6)); say ("  [" + ctl + "] " + c->name + ": word-valued but its text grid gave no detents (" + tg.describe() + "); eight positions"); }
+            else { detentsBy = "text"; for (const auto& [n, t] : detents) { norms.add (juce::String (n, 6)); detentTexts.add (t); } say ("  [" + ctl + "] " + c->name + ": " + juce::String ((int) detents.size()) + " detents by text (" + detentTexts.joinIntoString (" / ") + ")"); }
+        }
+        else { detentsBy = "even8"; for (int k = 0; k < 8; ++k) norms.add (juce::String ((float) k / 7.0f, 6)); }
         auto st = runProbe ("c" + ctl + ".static",  { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=static",  "note=220", "cents=30", "hold=4", "db=-18" });
-        auto vb = runProbe ("c" + ctl + ".vibrato", { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=vibrato", "shape=square", "rate=0.5", "note=220", "cents=30", "hold=6", "db=-18" });
         const auto ms = pitch::parsePitch (st.cleanExit() ? st.out : juce::String ("refused " + st.describe()));
-        const auto mv = pitch::parsePitch (vb.cleanExit() ? vb.out : juce::String ("refused " + vb.describe()));
-        auto rec = pitch::composePitchSweep (ms, mv, keyIndex, keyText);
+        // THE ADAPTIVE HALF PERIOD (4 Oct): 1 s for every position; the still-unsettled positions again at 2 s, then 4 s.
+        // Every run keeps the FULL norms list so position indices line up; the later runs render only the unsettled norms
+        // and the others are absent from them (pickSpeed skips a run that lacks the position).
+        std::vector<pitch::SpeedRun> runs; juce::StringArray halfPeriodsTried;
+        for (double hp : pitch::kSpeedHalfPeriodsS)
+        {
+            if (windowSeen) break;
+            juce::StringArray runNorms = norms;
+            if (! runs.empty())
+            {
+                const auto still = pitch::unsettledPositions (runs, (size_t) norms.size());
+                if (still.empty()) break;
+                runNorms.clear(); for (size_t i : still) runNorms.add (norms[(int) i]);
+            }
+            const double rate = 0.5 / hp, hold = 6.0 * hp;
+            const auto tag = "c" + ctl + ".vibrato" + (hp == 1.0 ? juce::String() : "-hp" + juce::String (hp, 0));
+            auto vb = runProbe (tag, { "--sweep-pitch", "ctl=" + ctl, "norms=" + runNorms.joinIntoString (","), "gen=vibrato", "shape=square", "rate=" + juce::String (rate, 4), "note=220", "cents=30", "hold=" + juce::String (hold, 0), "db=-18" });
+            auto mv = pitch::parsePitch (vb.cleanExit() ? vb.out : juce::String ("refused " + vb.describe()));
+            halfPeriodsTried.add (juce::String (hp, 0) + " s");
+            if (! runs.empty() && mv.ok)
+            {
+                // re-seat the partial run's positions at their indices in the full list
+                std::vector<pitch::PitchPosition> full ((size_t) norms.size());
+                for (const auto& pp : mv.positions) for (int i = 0; i < norms.size(); ++i) if (std::abs (norms[i].getFloatValue() - pp.norm) < 1e-5f) full[(size_t) i] = pp;
+                for (size_t i = 0; i < full.size(); ++i) if (full[i].k < 0) full[i].landed = false;    // absent from this run
+                // a position absent from this run must not read as "write did not land": mark it so pickSpeed skips it
+                mv.positions = full;
+                for (size_t i = 0; i < mv.positions.size(); ++i) if (mv.positions[i].k < 0) mv.positions[i].windows.clear();
+            }
+            runs.push_back ({ hp, mv });
+            if (! mv.ok) break;
+        }
+        auto rec = pitch::composePitchSweep (ms, runs, keyIndex, keyText);
         if (auto* o = rec.getDynamicObject())
         {
             o->setProperty ("index", c->index); o->setProperty ("name", c->name);
             if (! ms.ok) o->setProperty ("staticRefused", ms.refused);
-            if (! mv.ok) o->setProperty ("vibratoRefused", mv.refused);
+            if (! runs.empty() && ! runs.front().vib.ok) o->setProperty ("vibratoRefused", runs.front().vib.refused);
+            o->setProperty ("detentsBy", detentsBy); if (! detentTexts.isEmpty()) { juce::Array<juce::var> dt; for (const auto& t : detentTexts) dt.add (t); o->setProperty ("detentTexts", dt); }
+            o->setProperty ("speedHalfPeriodsTried", halfPeriodsTried.joinIntoString (", "));
         }
+        { auto* pc = new juce::DynamicObject(); pc->setProperty ("index", c->index); pc->setProperty ("name", c->name); pc->setProperty ("detentsBy", detentsBy);
+          juce::Array<juce::var> nv; for (const auto& n : norms) nv.add (n.getDoubleValue()); pc->setProperty ("norms", nv); planCands.add (juce::var (pc)); }
         measuredAny += (int) rec.getProperty ("strengthMeasured", 0) + (int) rec.getProperty ("speedMeasured", 0);
         say ("  [" + ctl + "] " + c->name + ": strength measured at " + rec.getProperty ("strengthMeasured", 0).toString() + " position(s), speed at " + rec.getProperty ("speedMeasured", 0).toString());
         cands.add (rec);
+    }
+    // THE v0.1 MEASUREMENTS (docs/TUNER_PROFILE_SPEC_v0_1.md section 4, A5, a PROPOSAL): flex tolerance, humanize, key/scale read-backs
+    auto* extras = new juce::DynamicObject();
+    {
+        // the same position rule as the strength candidates: declared detents, text-grid detents for a word-valued control, else eight
+        auto normsFor = [&] (const juce::var& ctrl) {
+            juce::StringArray norms;
+            const juce::String ctl = juce::String ((int) ctrl.getProperty ("index", -1));
+            if (sweep::isSteppedControl (ctrl)) { const int n = (int) ctrl.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) norms.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
+            else if (pitch::textsAreWords (ctrl))
+            {
+                juce::StringArray gs; for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
+                const auto tg = runProbe ("x" + ctl + ".textgrid", { "--text-at-norms", ctl, gs.joinIntoString (",") });
+                for (const auto& [n, t] : pitch::detentsFromTextGrid (pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String()))) norms.add (juce::String (n, 6));
+                if (norms.isEmpty()) for (int k = 0; k < 8; ++k) norms.add (juce::String ((float) k / 7.0f, 6));
+            }
+            else for (int k = 0; k < 8; ++k) norms.add (juce::String ((float) k / 7.0f, 6));
+            return norms; };
+        juce::Array<juce::var> flex, humanize; auto* readbacks = new juce::DynamicObject();
+        if (const auto* cs = base.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
+            {
+                if (windowSeen) break;
+                const int idx = (int) c.getProperty ("index", -1); const auto name = c.getProperty ("name", "").toString(); const juce::String ctl = juce::String (idx);
+                bool isStrength = false; for (const auto* sc : strength) if (sc->index == idx) isStrength = true;
+                if (pitch::flexName (name) && ! isStrength)
+                {
+                    const auto norms = normsFor (c);
+                    std::map<double, pitch::PitchMeasured> runs;
+                    for (double d : pitch::kFlexDetunesCents)
+                    {
+                        if (windowSeen) break;
+                        auto r = runProbe ("f" + ctl + ".static-" + juce::String (d, 0), { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=static", "note=220", "cents=" + juce::String (d, 0), "hold=4", "db=-18" });
+                        runs[d] = pitch::parsePitch (r.cleanExit() ? r.out : juce::String ("refused " + r.describe()));
+                    }
+                    auto* fo = new juce::DynamicObject(); fo->setProperty ("index", idx); fo->setProperty ("name", name);
+                    juce::Array<juce::var> positions;
+                    for (int k = 0; k < norms.size(); ++k)
+                    {
+                        auto* po = new juce::DynamicObject(); po->setProperty ("norm", norms[k].getDoubleValue());
+                        std::map<double, double> strengthBy; auto* by = new juce::DynamicObject(); juce::String display;
+                        for (const auto& [d, m] : runs)
+                            if (m.ok && (size_t) k < m.positions.size())
+                            {
+                                if (display.isEmpty()) display = m.positions[(size_t) k].text;
+                                const auto sr = pitch::deriveStrength (m.positions[(size_t) k], d);
+                                if (sr.result == "measured") { strengthBy[d] = sr.strength; by->setProperty (juce::String (d, 0), sr.strength); } else by->setProperty (juce::String (d, 0), "refused: " + sr.reason);
+                            }
+                        po->setProperty ("display", display); po->setProperty ("strength_by_detune", juce::var (by));
+                        const auto tol = pitch::toleranceFrom (strengthBy);
+                        if (tol.ok) po->setProperty ("window_cents", tol.none ? juce::var ("none") : tol.over ? juce::var ("over_" + juce::String (tol.cents, 0)) : juce::var (tol.cents));
+                        po->setProperty ("window_note", tol.reason);
+                        positions.add (juce::var (po));
+                    }
+                    fo->setProperty ("positions", positions); flex.add (juce::var (fo));
+                    say ("  flex [" + ctl + "] " + name + ": window measured at " + juce::String (norms.size()) + " position(s) x " + juce::String ((int) pitch::kFlexDetunesCents.size()) + " detunes");
+                }
+                else if (pitch::humanizeName (name) && ! isStrength)
+                {
+                    const auto norms = normsFor (c);
+                    auto held = runProbe ("h" + ctl + ".held",  { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=static", "note=220", "cents=30", "hold=4", "db=-18" });
+                    auto shrt = runProbe ("h" + ctl + ".notes", { "--sweep-pitch", "ctl=" + ctl, "norms=" + norms.joinIntoString (","), "gen=notes", "note=220", "cents=30", "hold=4", "note_ms=200", "gap_ms=100", "db=-18" });
+                    const auto mh = pitch::parsePitch (held.cleanExit() ? held.out : juce::String ("refused " + held.describe()));
+                    const auto mn = pitch::parsePitch (shrt.cleanExit() ? shrt.out : juce::String ("refused " + shrt.describe()));
+                    auto* ho = new juce::DynamicObject(); ho->setProperty ("index", idx); ho->setProperty ("name", name);
+                    juce::Array<juce::var> positions;
+                    for (int k = 0; k < norms.size(); ++k)
+                    {
+                        auto* po = new juce::DynamicObject(); po->setProperty ("norm", norms[k].getDoubleValue());
+                        if (mh.ok && (size_t) k < mh.positions.size()) { po->setProperty ("display", mh.positions[(size_t) k].text); const auto sr = pitch::deriveStrength (mh.positions[(size_t) k], 30.0); po->setProperty ("held_note_correction", sr.result == "measured" ? juce::var (sr.strength) : juce::var ("refused: " + sr.reason)); }
+                        if (mn.ok && (size_t) k < mn.positions.size()) { const auto sn = pitch::deriveShortNotes (mn.positions[(size_t) k], 30.0); po->setProperty ("short_note_correction", sn.result == "measured" ? juce::var (sn.strength) : juce::var ("refused: " + sn.reason)); po->setProperty ("short_notes", sn.windowsUsed); }
+                        if (po->getProperty ("held_note_correction").isDouble() && po->getProperty ("short_note_correction").isDouble() && (double) po->getProperty ("short_note_correction") > 0.05)
+                            po->setProperty ("held_over_short", std::round ((double) po->getProperty ("held_note_correction") / (double) po->getProperty ("short_note_correction") * 1000.0) / 1000.0);
+                        positions.add (juce::var (po));
+                    }
+                    ho->setProperty ("positions", positions); humanize.add (juce::var (ho));
+                    say ("  humanize [" + ctl + "] " + name + ": held vs short notes at " + juce::String (norms.size()) + " position(s)");
+                }
+                else if ((pitch::keyName (name) || pitch::scaleName (name)) && ! nametokens::controlAnswersTerm (name, "learn") && ! nametokens::controlAnswersTerm (name, "midi"))   // not 'Learn Scale from MIDI'
+                {
+                    juce::StringArray gs;
+                    if (sweep::isSteppedControl (c)) { const int n = (int) c.getProperty ("numSteps", 0); for (int k = 0; k < n; ++k) gs.add (juce::String ((float) k / (float) juce::jmax (1, n - 1), 6)); }
+                    else for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
+                    const auto tg = runProbe ("k" + ctl + ".textgrid", { "--text-at-norms", ctl, gs.joinIntoString (",") });
+                    auto* ro = new juce::DynamicObject(); ro->setProperty ("index", idx); ro->setProperty ("name", name); ro->setProperty ("kind", pitch::scaleName (name) ? "scale" : "key");
+                    auto* values = new juce::DynamicObject(); int n = 0;
+                    for (const auto& [norm, text] : pitch::detentsFromTextGrid (pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String()))) { values->setProperty (text, norm); ++n; }
+                    ro->setProperty ("values", juce::var (values)); ro->setProperty ("count", n);
+                    if (n == 0) ro->setProperty ("note", "no landed text read back (" + tg.describe() + ")");
+                    readbacks->setProperty (juce::String (idx), juce::var (ro));
+                    say ("  readback [" + ctl + "] " + name + ": " + juce::String (n) + " value(s)");
+                }
+            }
+        extras->setProperty ("flex", flex); extras->setProperty ("humanize", humanize); extras->setProperty ("readbacks", juce::var (readbacks));
+        extras->setProperty ("spec", "TUNER_PROFILE_SPEC_v0_1 section 4 - PROPOSAL, not for publication");
     }
     opt.out.getChildFile (stem + ".processes.json").replaceWithText (juce::JSON::toString (juce::var (processes)) + "\n", false, false, "\n");
     auto f = sweep::stripPrivate (base);
     if (auto* o = f.getDynamicObject())
     {
         o->setProperty ("pitchCandidates", cands);
+        o->setProperty ("pitchExtras", juce::var (extras));
+        { auto* pp = new juce::DynamicObject(); pp->setProperty ("version", pitch::kPitchPlanVersion); pp->setProperty ("candidates", planCands);
+          juce::Array<juce::var> hp; for (double h : pitch::kSpeedHalfPeriodsS) hp.add (h); pp->setProperty ("speedHalfPeriodsS", hp); o->setProperty ("pitchPlan", juce::var (pp)); }
         auto* rv = new juce::DynamicObject();
         rv->setProperty ("candidates", cands.size()); rv->setProperty ("measured", measuredAny);
         rv->setProperty ("windowSeen", windowSeen);
@@ -3171,32 +3367,18 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     // one probe process and where each write LANDED is read back; writes that land only on N values make it stepped with
     // those N detents - the evidence goes on the record (amountLanding), the profile is re-exported stepped when the swept
     // positions are those detents, and the levels below then pick detents. On-grid writes alone prove nothing.
-    if (! profile.getProperty ("amount", {}).getProperty ("stepped", false))
+    if (! profile.getProperty ("amount", {}).getProperty ("stepped", false) && ! record.hasProperty ("amountLanding"))
     {
-        juce::StringArray gs; for (int k = 0; k <= 40; ++k) gs.add (juce::String (k / 40.0, 4));
-        const auto r = runChild ({ opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId), "--text-at-norms", juce::String (plan.thr), gs.joinIntoString (",") }, opt.timeoutMs);
-        if (r.kind == ChildResult::Kind::uiShown) return kToneWindowExit;
-        std::vector<profile::LandingRow> rows;
-        if (r.cleanExit())
-            for (const auto& line : juce::StringArray::fromLines (r.out))
-            {
-                const auto f = juce::StringArray::fromTokens (line, "\t", "");
-                if (f.size() < 5 || f[0] != "at" || f.indexOf ("getValue") < 0) continue;
-                profile::LandingRow row; row.norm = f[1].getDoubleValue(); row.getValue = f[f.indexOf ("getValue") + 1].getDoubleValue(); row.landed = f[2] == "landed"; rows.push_back (row);
-            }
-        if (const auto n = profile::detentsFromLanding (rows))
+        const auto lr = readAmountLanding (opt, desc, record, recordFile, plan.thr);
+        if (lr.window) return kToneWindowExit;
+        if (lr.detents)
         {
-            auto* ev = new juce::DynamicObject(); ev->setProperty ("control", plan.thr); ev->setProperty ("detents", *n); ev->setProperty ("readAt", nowStamp());
-            juce::Array<juce::var> sm; for (const auto& row : rows) { auto* o = new juce::DynamicObject(); o->setProperty ("norm", row.norm); o->setProperty ("getValue", row.getValue); sm.add (juce::var (o)); } ev->setProperty ("samples", sm);
-            ev->setProperty ("note", "declared continuous; writes land only on " + juce::String (*n) + " values (k/" + juce::String (*n - 1) + ") - stepped by evidence (ruled 4 Oct)");
-            record.getDynamicObject()->setProperty ("amountLanding", juce::var (ev));
-            recordFile.replaceWithText (juce::JSON::toString (record) + "\n", false, false, "\n");
             const auto e2 = profile::exportCompProfile (candidate.isNotEmpty() ? profile::candidateAsSingle (record, candidate, ratioNote) : record);
             if (e2.ok) { profile = e2.profile; profileFile.replaceWithText (juce::JSON::toString (profile) + "\n", false, false, "\n"); }
-            say ("TONE: " + product + " - [" + juce::String (plan.thr) + "] " + plan.thrName + " is STEPPED BY EVIDENCE: " + juce::String (*n) + " detents (k/" + juce::String (*n - 1) + "); profile re-exported "
-                 + (profile.getProperty ("amount", {}).getProperty ("stepped", false) ? juce::String ("stepped - the levels below pick detents") : juce::String ("still continuous: the swept positions are not those detents (a re-sweep on the detents would make it stepped)")));
+            say ("TONE: " + product + " - [" + juce::String (plan.thr) + "] " + plan.thrName + " is STEPPED BY EVIDENCE: " + juce::String (*lr.detents) + " detents (k/" + juce::String (*lr.detents - 1) + "); profile re-exported "
+                 + (profile.getProperty ("amount", {}).getProperty ("stepped", false) ? juce::String ("stepped - the levels below pick detents") : juce::String ("still continuous: the swept positions are not those detents (the follow-up re-sweeps it at the detents)")));
         }
-        else say ("TONE: " + product + " - [" + juce::String (plan.thr) + "] " + plan.thrName + " landing at 41 norms: " + (rows.empty() ? juce::String ("not read") : juce::String ("continuous (every write landed where it was written)")));
+        else say ("TONE: " + product + " - [" + juce::String (plan.thr) + "] " + plan.thrName + " landing at 41 norms: " + lr.note);
     }
     // the whole reference ladder below L, quiet to loud, so the picked position gets the same reference rule as the sweep
     juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }

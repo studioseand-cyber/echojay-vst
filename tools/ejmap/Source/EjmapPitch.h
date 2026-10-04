@@ -194,9 +194,159 @@ inline SpeedResult deriveSpeed (const PitchPosition& p, double detune, double ra
     return r;
 }
 
+// THE TUNER PLAN, version 2 (4 Oct, overnight A4). Two fixes from Sean's 3 Oct run:
+//   DETENTS BY EVIDENCE. Auto-Tune Access's Retune Speed is declared continuous but reads Slow / Medium / Fast and lands
+//   only on three values: six of its eight evenly spaced writes "did not land". A word-valued control is measured at its
+//   detents only: the probe reads its text at a 33-norm grid; every LANDED row whose getValue read back is a distinct value
+//   with a distinct text is a detent. Numeric continuous controls keep the eight evenly spaced positions; declared stepped
+//   controls their declared detents.
+//   AN ADAPTIVE SPEED HALF-PERIOD. Artist and EFX never settled inside the 1 s half period (7 and 6 of 8 positions refused
+//   "had not settled before the next flip"). The vibrato runs at 1 s, and for the positions still unsettled again at 2 s,
+//   then 4 s; a position's speed is read from the SHORTEST half period at which it settled, and the record says which.
+inline constexpr int kPitchPlanVersion = 2;
+inline const std::vector<double> kSpeedHalfPeriodsS { 1.0, 2.0, 4.0 };
+
+struct TextGridRow { double norm = 0.0, getValue = 0.0; bool landed = false; juce::String text; };
+inline std::vector<TextGridRow> parseTextGrid (const juce::String& out)
+{
+    std::vector<TextGridRow> rows;
+    for (const auto& line : juce::StringArray::fromLines (out))
+    {
+        const auto f = juce::StringArray::fromTokens (line, "\t", "");
+        if (f.size() < 3 || f[0] != "at") continue;
+        TextGridRow r; r.norm = f[1].getDoubleValue(); r.landed = f[2] == "landed";
+        const int gv = f.indexOf ("getValue"), tx = f.indexOf ("text");
+        if (gv >= 0 && gv + 1 < f.size()) r.getValue = f[gv + 1].getDoubleValue();
+        if (tx >= 0 && tx + 1 < f.size()) r.text = f[tx + 1];
+        rows.push_back (r);
+    }
+    return rows;
+}
+// The detents a word-valued control holds: distinct (getValue READ BACK, text) pairs over every row, in norm order. The
+// probe's "landed" flag means "at the asked norm"; a snapping control answers a write between detents with the detent it
+// moved to (Auto-Tune's Key: asked 0.0625, read back 0.0909 "Db"), and that read-back IS the detent. Fewer than 2 ->
+// empty (nothing to sweep between), and the caller says so.
+inline std::vector<std::pair<float, juce::String>> detentsFromTextGrid (const std::vector<TextGridRow>& rows)
+{
+    std::vector<std::pair<float, juce::String>> out;
+    for (const auto& r : rows)
+    {
+        if (r.text.isEmpty()) continue;
+        const float v = (float) (std::round (r.getValue * 1e4) / 1e4);
+        bool seen = false; for (const auto& [n, t] : out) if (std::abs (n - v) < 1e-4f || t == r.text) seen = true;
+        if (! seen) out.push_back ({ v, r.text });
+    }
+    std::sort (out.begin(), out.end(), [] (const auto& a, const auto& b) { return a.first < b.first; });
+    return out.size() >= 2 ? out : std::vector<std::pair<float, juce::String>>{};
+}
+inline bool textsAreWords (const juce::var& control)
+{
+    int numeric = 0, words = 0;
+    if (const auto* d = control.getProperty ("displayAt", {}).getDynamicObject())
+        for (const auto& kv : d->getProperties()) { const auto t = kv.value.toString().trim(); if (t.isEmpty()) continue; if (t.retainCharacters ("0123456789.-+").isNotEmpty() && t.containsAnyOf ("0123456789")) ++numeric; else ++words; }
+    return words > 0 && numeric == 0;
+}
+
+// ONE VIBRATO RUN at one half period: the measured positions and the half period they were measured at.
+struct SpeedRun { double halfPeriodS = 1.0; PitchMeasured vib; };
+// Per position, the speed from the shortest half period at which the output settled; the last run's refusal otherwise.
+struct SpeedPick { SpeedResult result; double halfPeriodS = 0.0; bool fromRun = false; };
+inline SpeedPick pickSpeed (const std::vector<SpeedRun>& runs, size_t positionIndex)
+{
+    SpeedPick pk;
+    for (const auto& run : runs)
+    {
+        if (positionIndex >= run.vib.positions.size() || run.vib.positions[positionIndex].k < 0) continue;   // absent from this (partial) run
+        const auto r = deriveSpeed (run.vib.positions[positionIndex], run.vib.cents, run.vib.rateHz);
+        pk.result = r; pk.halfPeriodS = run.halfPeriodS; pk.fromRun = true;
+        if (! (r.result == "refused" && r.reason.contains ("had not settled before the next flip"))) return pk;
+    }
+    return pk;
+}
+// Which positions (by index) are still unsettled after the runs so far.
+inline std::vector<size_t> unsettledPositions (const std::vector<SpeedRun>& runs, size_t positions)
+{
+    std::vector<size_t> out;
+    for (size_t i = 0; i < positions; ++i) { const auto pk = pickSpeed (runs, i); if (pk.fromRun && pk.result.result == "refused" && pk.result.reason.contains ("had not settled before the next flip")) out.push_back (i); }
+    return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// THE v0.1 TUNER MEASUREMENTS (docs/TUNER_PROFILE_SPEC_v0_1.md section 4; built 4 Oct overnight, A5; a PROPOSAL):
+//   FLEX-TUNE / TOLERANCE: static detunes of 5, 10, 20, 30 and 50 cents at every position of a flex-type control; the
+//     tolerance is the smallest detune the unit corrects (strength >= kCorrectedStrength); none up to 50 -> "over_50".
+//   HUMANIZE: at every position of a humanize-type control, a held note (the static 30-cent run, >= 2 s) against short
+//     notes (gen=notes, 200 ms notes, 100 ms gaps, the same detune); held_note_correction = strength on the held note,
+//     short_note_correction = strength over the short notes' second halves; the ratio says what Humanize keeps.
+//   KEY AND SCALE: every landed text of the key and scale controls with the norm it read back at.
+// Plan-time lexicon for the two optional controls, here and not in EjmapRoles (the roles file is pinned to the server).
+inline constexpr double kCorrectedStrength = 0.5;
+// 50 cents is NOT a rung: it is the midpoint between two chromatic notes, and the tuner corrects it UP (+100 cents from the
+// note, measured 4 Oct on Pro and Artist: 'residual 100.0 cents is not between the input and the note'). 40 and 45 instead.
+inline const std::vector<double> kFlexDetunesCents { 5.0, 10.0, 20.0, 30.0, 40.0, 45.0 };
+inline bool flexName (const juce::String& n)     { for (const char* t : { "flex", "flex-tune", "tolerance" }) if (nametokens::controlAnswersTerm (n, t)) return true; return false; }
+inline bool humanizeName (const juce::String& n) { for (const char* t : { "humanize", "humanise", "humanization" }) if (nametokens::controlAnswersTerm (n, t)) return true; return false; }
+inline bool scaleName (const juce::String& n)    { return nametokens::controlAnswersTerm (n, "scale"); }
+inline bool keyName (const juce::String& n)      { return nametokens::controlAnswersTerm (n, "key"); }
+
+// SHORT NOTES: the readable windows form notes separated by silence; each note's second half gives a residual; the median
+// over the notes is the short-note residual. Same input guard as the static strength.
+inline StrengthResult deriveShortNotes (const PitchPosition& p, double detune)
+{
+    StrengthResult r;
+    if (! p.landed) { r.reason = "write did not land"; return r; }
+    if (p.windows.size() < 8) { r.reason = "fewer than 8 windows"; return r; }
+    std::vector<double> ins; for (const auto& w : p.windows) if (w.inConf >= kMinConf && w.inC > -9000.0 && w.outDb > kSilentDb) ins.push_back (w.inC);
+    if (ins.size() < 4) { r.reason = "the input's pitch was not detected on the notes (detector or routing)"; return r; }
+    r.inputCents = medianOf (ins);
+    if (std::abs (r.inputCents - detune) > kInputTolCents) { r.reason = "the detector read the input at " + juce::String (r.inputCents, 1) + " cents, not the generated " + juce::String (detune, 1); return r; }
+    std::vector<std::vector<double>> notes; bool inNote = false;
+    for (const auto& w : p.windows)
+    {
+        if (readable (w)) { if (! inNote) { notes.push_back ({}); inNote = true; } notes.back().push_back (w.outC); }
+        else inNote = false;
+    }
+    std::vector<double> residuals;
+    for (const auto& n : notes) if (n.size() >= 4) { std::vector<double> tail (n.begin() + (long) (n.size() / 2), n.end()); residuals.push_back (medianOf (tail)); }
+    if (residuals.size() < 3) { r.reason = "fewer than 3 readable notes (" + juce::String ((int) residuals.size()) + ")"; return r; }
+    r.windowsUsed = (int) residuals.size();
+    r.residualCents = medianOf (residuals); r.steadyIqr = iqrOf (residuals);
+    if (std::abs (detune) < 1.0) { r.reason = "no detune to correct"; return r; }
+    r.strength = std::round ((1.0 - r.residualCents / detune) * 1000.0) / 1000.0;
+    if (r.strength < -0.2 || r.strength > 1.2) { r.reason = "residual " + juce::String (r.residualCents, 1) + " cents is not between the input and the note"; return r; }
+    r.result = "measured";
+    return r;
+}
+// THE FLEX WINDOW from the strengths at the detunes (detune -> strength, measured ones only). Measured 4 Oct on Auto-Tune Pro:
+// Flex-Tune corrects notes NEAR the target and leaves far-off notes alone - at 86, 5 cents -> 1.00, 10 -> 0.63, 20 -> 0.24,
+// 30 -> 0.10 - so the statistic the spec drafted ("the smallest detune corrected") is 5 at every position but 100 and says
+// nothing; the window is the LARGEST detune still corrected to at least half. `over` = everything up to the ladder's top was
+// corrected (window at least that wide); `none` = nothing was, not even the smallest detune.
+struct Tolerance { bool ok = false; juce::String reason; double cents = 0.0; bool over = false, none = false; };
+inline Tolerance toleranceFrom (const std::map<double, double>& strengthByDetune)
+{
+    Tolerance t;
+    if (strengthByDetune.empty()) { t.reason = "no detune measured"; return t; }
+    t.ok = true;
+    double widest = -1.0;
+    for (const auto& [d, st] : strengthByDetune) if (st >= kCorrectedStrength) widest = juce::jmax (widest, d);
+    if (widest < 0.0) { t.none = true; t.cents = 0.0; t.reason = "nothing corrected, not even " + juce::String (strengthByDetune.begin()->first, 0) + " cents"; return t; }
+    t.cents = widest;
+    if (std::abs (widest - strengthByDetune.rbegin()->first) < 1e-9) { t.over = true; t.reason = "everything corrected up to " + juce::String (widest, 0) + " cents (the ladder's top)"; return t; }
+    t.reason = "detunes up to " + juce::String (widest, 0) + " cents are corrected to at least half; beyond, left alone (strength " + juce::String (strengthByDetune.at (widest), 2) + " at " + juce::String (widest, 0) + ")";
+    return t;
+}
+
 // THE FIXTURE RECORD for one swept control: positions with both numbers where measured, refusals where not.
+// Several vibrato runs (the adaptive half period) merge per position through pickSpeed; one run is the 1 Oct shape.
+inline juce::var composePitchSweep (const PitchMeasured& stat, const std::vector<SpeedRun>& vibs, int keyIndex, const juce::String& keyText);
 inline juce::var composePitchSweep (const PitchMeasured& stat, const PitchMeasured& vib, int keyIndex, const juce::String& keyText)
 {
+    return composePitchSweep (stat, std::vector<SpeedRun> { { vib.rateHz > 0.0 ? 500.0 / vib.rateHz / 1000.0 : 0.0, vib } }, keyIndex, keyText);
+}
+inline juce::var composePitchSweep (const PitchMeasured& stat, const std::vector<SpeedRun>& vibs, int keyIndex, const juce::String& keyText)
+{
+    const PitchMeasured& vib = vibs.empty() ? stat : vibs.front().vib;   // the generator description comes from the first run
     auto* s = new juce::DynamicObject();
     s->setProperty ("measuredAt", juce::Time::getCurrentTime().toISO8601 (false));
     s->setProperty ("control", stat.ok ? stat.ctl : vib.ctl);
@@ -204,12 +354,14 @@ inline juce::var composePitchSweep (const PitchMeasured& stat, const PitchMeasur
     auto* gen = new juce::DynamicObject();
     gen->setProperty ("note_hz", stat.ok ? stat.noteHz : vib.noteHz);
     gen->setProperty ("detune_cents", stat.ok ? stat.cents : vib.cents);
-    gen->setProperty ("vibrato", vib.ok ? vib.shape + " " + juce::String (vib.rateHz, 2) + " Hz" : juce::String ("not run"));
+    gen->setProperty ("vibrato", vib.ok && ! vibs.empty() ? vib.shape + " " + juce::String (vib.rateHz, 2) + " Hz" : juce::String ("not run"));
+    { juce::Array<juce::var> hp; for (const auto& r : vibs) hp.add (r.halfPeriodS); gen->setProperty ("speed_half_periods_s", hp); }
     gen->setProperty ("latency_samples", stat.ok ? stat.latency : vib.latency);
     s->setProperty ("generator", juce::var (gen));
     if (keyIndex >= 0) { auto* k = new juce::DynamicObject(); k->setProperty ("index", keyIndex); k->setProperty ("asInstantiated", keyText); k->setProperty ("note", "A3, in every major scale and chromatic: no write needed"); s->setProperty ("keyScale", juce::var (k)); }
     juce::Array<juce::var> positions;
-    const size_t n = juce::jmax (stat.positions.size(), vib.positions.size());
+    size_t vibPositions = 0; for (const auto& r : vibs) vibPositions = juce::jmax (vibPositions, r.vib.positions.size());
+    const size_t n = juce::jmax (stat.positions.size(), vibPositions);
     int strengthMeasured = 0, speedMeasured = 0;
     for (size_t i = 0; i < n; ++i)
     {
@@ -224,12 +376,14 @@ inline juce::var composePitchSweep (const PitchMeasured& stat, const PitchMeasur
             st->setProperty ("steady_iqr_cents", std::round (sr.steadyIqr * 10.0) / 10.0); st->setProperty ("windows", sr.windowsUsed);
             o->setProperty ("strength", juce::var (st));
         }
-        if (i < vib.positions.size())
+        if (i < vibPositions)
         {
-            const auto& p = vib.positions[i]; if (! o->hasProperty ("norm")) { o->setProperty ("norm", p.norm); o->setProperty ("display", p.text); }
-            const auto sp = deriveSpeed (p, vib.cents, vib.rateHz);
+            const auto pk = pickSpeed (vibs, i);
+            for (const auto& r : vibs) if (i < r.vib.positions.size() && ! o->hasProperty ("norm")) { o->setProperty ("norm", r.vib.positions[i].norm); o->setProperty ("display", r.vib.positions[i].text); }
+            const auto& sp = pk.result;
             auto* sd = new juce::DynamicObject();
             sd->setProperty ("result", sp.result);
+            if (pk.fromRun) sd->setProperty ("half_period_s", pk.halfPeriodS);
             if (sp.result == "measured") { sd->setProperty ("duration_ms", sp.durationMs); ++speedMeasured; }
             else if (sp.result == "bound") sd->setProperty ("faster_than_ms", sp.boundMs);
             if (sp.reason.isNotEmpty()) sd->setProperty ("reason", sp.reason);

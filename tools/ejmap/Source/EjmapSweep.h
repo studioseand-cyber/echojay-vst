@@ -321,6 +321,20 @@ inline bool isSteppedControl (const juce::var& c)
     return (bool) c.getProperty ("discrete", false) && steps >= 2 && steps <= 64;
 }
 
+// THE DETENTS A CONTROL HOLDS, from the record's landing evidence (amountLanding, read at 41 norms in the follow-up): the
+// distinct getValue read-backs for that control, sorted. Empty when there is no evidence for it. A plan for a control
+// with evidence sweeps THOSE norms and nothing between them (Sean's stepped rule, 4 Oct).
+inline std::vector<float> landingDetentNorms (const juce::var& fixture, int controlIndex)
+{
+    std::vector<float> out;
+    const auto ev = fixture.getProperty ("amountLanding", {});
+    if (! ev.isObject() || (int) ev.getProperty ("control", -1) != controlIndex || (int) ev.getProperty ("detents", 0) < 2) return out;
+    if (const auto* rows = ev.getProperty ("samples", {}).getArray())
+        for (const auto& r : *rows) { const float v = (float) (std::round ((double) r.getProperty ("getValue", 0.0) * 1e4) / 1e4); bool seen = false; for (float o : out) if (std::abs (o - v) < 1e-4f) seen = true; if (! seen) out.push_back (v); }
+    std::sort (out.begin(), out.end());
+    if ((int) out.size() != (int) ev.getProperty ("detents", 0)) out.clear();   // the samples must agree with the count the evidence claims
+    return out;
+}
 // The candidate's own unit and positions, from the fixture's control.
 inline void applyCandidateControl (Plan& p, const juce::var& fixture)
 {
@@ -328,6 +342,7 @@ inline void applyCandidateControl (Plan& p, const juce::var& fixture)
     p.thrUnit = tc.getProperty ("unit", {}).toString();
     p.norms = positionsFor (tc);
     p.stepped = p.norms.size() != 16 || (bool) tc.getProperty ("discrete", false);
+    if (const auto det = landingDetentNorms (fixture, p.thr); ! det.empty()) { p.norms = det; p.stepped = true; p.pickNote << (p.pickNote.isEmpty() ? "" : "; ") << "stepped by evidence: swept at its " << (int) det.size() << " detents as read back"; }
 }
 
 // ENGAGE CANDIDATES (1 Oct). Which controls might be the switch a product needs before it compresses. Two sources, as
@@ -539,6 +554,7 @@ inline Plan planFromFixture (const juce::var& fixture)
         p.thrUnit = tc.getProperty ("unit", {}).toString();
         p.norms = positionsFor (tc);
         p.stepped = p.norms.size() != 16 || (bool) tc.getProperty ("discrete", false);
+        if (const auto det = landingDetentNorms (fixture, p.thr); ! det.empty()) { p.norms = det; p.stepped = true; p.pickNote << (p.pickNote.isEmpty() ? "" : "; ") << "stepped by evidence: swept at its " << (int) det.size() << " detents as read back"; }
     }
 
     if (ratio.size() == 1) p.ratioIndex = ratio[0]->index;

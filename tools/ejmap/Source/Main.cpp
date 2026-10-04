@@ -20,6 +20,7 @@
 #include "EjmapSupervisor.h"
 #include "EjmapMarks.h"
 #include "EjmapCertDriver.h"
+#include "EjmapTunerProfile.h"
 
 #include <map>
 #include <csignal>
@@ -693,6 +694,17 @@ namespace
                 return 0;
             }
             // --cert-tone-levels <profile.json>: the tone-check L the rule would use per level, nothing loaded (a dry read of the rule)
+            // --tuner-profile-draft <record> <out.json>: the ej_tuner_profile/1 PROPOSAL exporter (4 Oct A5) - nothing loaded, nothing published
+            if (a == "--tuner-profile-draft" && i + 2 < argc)
+            {
+                const auto record = juce::JSON::parse (cwdFile (argAt (argc, argv, i + 1)).loadFileAsString());
+                const auto e = ejmap::tunerprofile::exportTunerProfileDraft (record);
+                if (! e.ok) { std::cout << "TUNER PROFILE DRAFT refused: " << e.refused << std::endl; return 2; }
+                cwdFile (argAt (argc, argv, i + 2)).replaceWithText (juce::JSON::toString (e.profile) + "\n", false, false, "\n");
+                std::cout << "TUNER PROFILE DRAFT (" << ejmap::tunerprofile::kStatus << ") for " << record.getProperty ("product", "").toString() << " -> " << argAt (argc, argv, i + 2) << std::endl;
+                for (const auto& n : e.notes) std::cout << "  note: " << n << std::endl;
+                return 0;
+            }
             if (a == "--cert-tone-levels" && i + 1 < argc)
             {
                 const auto profile = juce::JSON::parse (cwdFile (argAt (argc, argv, i + 1)).loadFileAsString());

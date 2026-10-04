@@ -420,7 +420,16 @@ struct PlanDiff { bool resweep = false; juce::String why; };
 inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
 {
     PlanDiff d;
-    if (! record.getProperty ("controls", {}).isArray() || record.getProperty ("schema", "").toString() == "ej_cert_tuner/1") return d;
+    if (! record.getProperty ("controls", {}).isArray()) return d;
+    // A TUNER (4 Oct, A4): re-measured when it was measured under an older tuner procedure (no pitchPlan, or an earlier
+    // version): detents by evidence and the adaptive speed half period are plan changes the record cannot show otherwise
+    if (record.getProperty ("schema", "").toString() == "ej_cert_tuner/1")
+    {
+        if (! record.hasProperty ("pitchCandidates")) return d;                        // nothing was measured: a refusal or an identity-only record
+        const int v = (int) record.getProperty ("pitchPlan", {}).getProperty ("version", 1);
+        if (v < 2) { d.resweep = true; d.why = "the tuner procedure changed (plan v" + juce::String (v) + " -> v2: detents by evidence, speed half period 1/2/4 s)"; }
+        return d;
+    }
     auto listOf = [] (const sweep::Plan& p) { juce::StringArray a; if (p.thr >= 0) a.add (juce::String (p.thr)); for (const auto& c : p.candidates) a.add (juce::String (c.index)); a.sort (false); return a.joinIntoString (","); };
     if (const auto ref = record.getProperty ("thresholdRefusal", {}); ref.isObject())
     {
@@ -441,8 +450,24 @@ inline PlanDiff planDiffers (const juce::var& record, const sweep::Plan& now)
         const auto ev = record.getProperty ("amountLanding", {});
         return ev.isObject() && (int) ev.getProperty ("control", -1) == idx && (int) ev.getProperty ("detents", 0) >= 2;
     };
+    // SWEPT AT THE DETENTS (Sean's condition 1, 4 Oct): a control the landing evidence shows stepped must have been swept at
+    // exactly those read-back detents; a sweep at other positions (16 evenly spaced over a 6-detent UnFairchild) is re-swept
+    auto detentCheck = [&] (const juce::var& sv) -> bool
+    {
+        if (! sv.isObject()) return false;
+        const int idx = (int) sv.getProperty ("sweptControl", {}).getProperty ("index", (int) sv.getProperty ("thresholdPick", {}).getProperty ("index", now.thr));
+        const auto det = sweep::landingDetentNorms (record, idx);
+        if (det.empty()) return false;
+        const auto norms = sv.getProperty ("positionNorms", {});
+        bool same = norms.size() == (int) det.size();
+        for (int i = 0; same && i < norms.size(); ++i) { bool hit = false; for (float d : det) if (std::abs ((double) norms[i] - d) < 1e-4) hit = true; same = hit; }
+        if (same) return false;
+        d.resweep = true; d.why = "swept at " + juce::String (norms.size()) + " position(s) but the control holds " + juce::String ((int) det.size()) + " detents (the landing read): re-swept at the detents as read back";
+        return true;
+    };
     auto refinementCheck = [&] (const juce::var& sv, int roundsTaken)
     {
+        if (detentCheck (sv)) return;
         if (! sv.isObject() || sv.getProperty ("result", "").toString() != "certified" || roundsTaken >= sweep::kRefineRounds) return;
         const int idx = (int) sv.getProperty ("sweptControl", {}).getProperty ("index", (int) sv.getProperty ("thresholdPick", {}).getProperty ("index", now.thr));
         if (steppedControl (idx)) return;

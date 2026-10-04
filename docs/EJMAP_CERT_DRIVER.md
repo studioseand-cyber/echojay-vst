@@ -2259,3 +2259,72 @@ says only what was measured.
 
 Pins S1–S14 (the five 4 Oct traces through the follow-up's own parser; the pick; the arguments; the bar; the
 controls), I1–I9 (V76U73's control list and readings); mutants M9–M16 all red. Suite 3363.
+
+## 49. Tuners: plan v2 (detents by evidence, adaptive speed half period) and the v0.1 measurements (4 Oct overnight, A4/A5)
+
+**A4 — plan v2** (`pitch::kPitchPlanVersion = 2`; the record carries `pitchPlan {version, candidates[{index, name,
+detentsBy, norms}], speedHalfPeriodsS}`; `planDiffers` re-measures any tuner record below v2):
+- *Detents by evidence.* A strength candidate declared continuous whose texts are words (Auto-Tune Access's Retune Speed:
+  Slow / Medium / Fast) is read at a 33-norm text grid first; the detents are the distinct (getValue READ BACK, text)
+  pairs — not the probe's "landed" flag, which means "at the asked norm": a snapping control answers a write between
+  detents with the detent it moved to (Access's Key: asked 0.0625, read back 0.0909 "Db"), and that read-back is the
+  detent (12 keys from 33 writes of which only 4 "landed"). Declared stepped controls keep their declared detents;
+  numeric continuous controls the eight evenly spaced positions. `detentsBy` on the candidate says which.
+- *Adaptive speed half period.* The square vibrato runs at a 1 s half period (rate 0.5, hold 6 s) for every position;
+  the positions whose speed refuses "had not settled before the next flip" run again at 2 s (hold 12), then 4 s
+  (hold 24), the later runs rendering only those positions. `pickSpeed` reads each position from the SHORTEST half
+  period at which it settled; `speed.half_period_s` says which; `generator.speed_half_periods_s` lists the runs.
+- Live (this Mac, `cert_tun2`, 2m54 for five units): Access 3 detents, Slow 245 ms and Medium 117 ms (both needed
+  4 s), Fast a bound (< 21.4 ms); Pro 400 → 1099 ms at 2 s, 226..6 → 565..48 ms at 1 s, 0 a bound (Sean's numbers
+  held); EFX+ as Pro; Artist 400..69 → 1339..256 ms at 4 s, **36 / 17 / 6 still unsettled at 4 s** (a lead: a slow
+  drift or oscillation, not a time constant — the record says so); **Auto-Tune EFX 9.0.1 refuses at defaults here**
+  (`--list-params` exit 3; Sean's 9.5.0 measured) — a lead, not chased.
+- Pins T1–T10 (incl. the live Key grid), mutants M17/M17b/M18–M20 red.
+
+**A5 — the v0.1 measurements** (docs/TUNER_PROFILE_SPEC_v0_1.md §4; `pitchExtras` on the record; a PROPOSAL):
+- *Flex-Tune / window*: static detunes at every position of a flex-type control, strength each. The spec drafted "the
+  smallest detune corrected"; measured, that is 5 cents at every Flex-Tune position but 100 and says nothing. Flex-Tune
+  corrects notes NEAR the target and leaves far-off notes alone — Pro at 86: 5 → 1.00, 10 → 0.63, 20 → 0.24, 30 → 0.10 —
+  so the statistic is the **window**: the largest detune still corrected to at least half (`window_cents`; `over_45` when
+  everything up to the ladder's top is corrected, `none` when nothing is, as at 100). The ladder is **5 / 10 / 20 / 30 /
+  40 / 45 cents — never 50**: 50 is the midpoint between two chromatic notes and Pro and Artist corrected it UP
+  ("residual 100.0 cents is not between the input and the note").
+- *Humanize*: at every position, the held note (static 30 cents, 4 s) against short notes (`gen=notes`, 200 ms on,
+  100 ms off, the same detune; the probe's new generator with 5 ms raised-cosine edges); `held_note_correction`,
+  `short_note_correction` (median over the notes' second halves, ≥ 3 notes) and `held_over_short`.
+- *Key and scale read-backs*: every (text → norm) of the key and scale controls from the text grid ("Learn Scale from
+  MIDI" excluded by name).
+- Live (Pro, Artist; `cert_tun3`/`tun4`): Flex-Tune 0 → everything up to 45 corrected, 86 → window 10 cents, 100 →
+  nothing corrected; **Humanize changes steady-state strength by ~3 % only (1.0 held vs 0.966–0.979 short)** — it acts on the
+  TIMING of held notes, which this measure cannot see; the honest proposal is a transition-time measure on held vs
+  short notes (section 11 question). Key: 12 values, Scale: 13 (Major, Minor, Greek Chr, …), Modern Scale: 7.
+- *The draft exporter* `--tuner-profile-draft <record> <out.json>` (`EjmapTunerProfile.h`): `ej_tuner_profile/1`
+  with `status: "PROPOSAL v0.1 - not for publication"`; `speed` = the candidate whose transition moves (ratio ≥ 1.5),
+  `direction` in the spec's display words (lower_is_harder for Auto-Tune, read from the measurement), null + note per
+  unmeasured point, `faster_than_ms` for a bound, `measured_half_period_s` per point; `strength` only when a candidate's
+  static strength moves ≥ 0.2 (crispytuner's Amount is both: said in a note); flex / humanize / key / scale from the
+  extras or null with a reason (`flex.curve[].window_cents`); `neutral` as instantiated, `never_touch` bypass/power; `quality.transition_spread_ms`.
+  Nothing in the batch, the follow-up or the send path calls it.
+- Pins V1–V12, mutants M21–M24 red.
+
+## 50. Sean's stepped rule, built (agreed 4 Oct; A6b)
+
+For `stepped: true` — declared, or by the landing evidence — the four conditions, each pinned (Z0–Z12) with a mutant:
+1. The curve lists ONLY detents, with the norms **as read back from the plugin** (`detentNormsReadBack`: the distinct
+   `getValue` values of the 41-norm landing read; each swept position is snapped to the read-back nearest it). The plan
+   itself now sweeps a control with landing evidence at those detents and nothing between (`landingDetentNorms` in
+   `planFromFixture` / `applyCandidateControl`), and `planDiffers` re-sweeps a record swept elsewhere ("swept at 16
+   position(s) but the control holds 6 detents"). The follow-up runs the landing read FIRST in its decision pass (one
+   process per continuous-declared amount control, ~2 s), so a 6-detent UnFairchild is re-swept at its six detents the
+   first time, not at sixteen positions and then again.
+2. Every measured detent gets the 0.5 dB hold test — unchanged machinery (the hold-doubled repeat nulls a point whose two
+   holds disagree by over 0.5 dB and accounts for it in `quality.deepPointsNulled`; the 1/2/3 points gate on
+   `point_error_db`); pinned on a stepped profile.
+3. No estimation between detents (the pick is one detent), and an ask past the first or last detent is
+   `at_control_limit`: `Pick.atControlLimit`, the end detent answers, the note says so.
+4. Fewer than 3 detents reaching 1 dB is not publishable: `kMinSteppedPoints = 3` replaces the 9-point gate for stepped
+   controls ("only N detent(s) reach 1 dB … at least 3 must reach 1 dB - Sean's rule, 4 Oct"). UnFairchild's five
+   therefore export.
+Fixture: Lindell 254E's own record with its 16-detent landing read (`cert-traces/2026-10-04-stepped/`); a 6-detent
+UnFairchild-shaped record built from it. `COMP_PROFILE_REPLY.md` carries the note "agreed by Sean 4 Oct, for the spec".
+

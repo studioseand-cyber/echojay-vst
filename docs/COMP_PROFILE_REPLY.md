@@ -480,3 +480,17 @@ the measured levels (his rule: at least 9)". If you accept, the export for `step
 "every reachable detent, at least 3", pinned with UnFairchild's five points as the fixture and a 2-detent control as the
 refusal case. Nothing changes for a continuous control.
 
+## 4 Oct (night): the stepped rule — agreed by Sean 4 Oct, for the spec
+
+Built as agreed, for `stepped: true` (declared, or by the landing evidence): (1) the curve lists only detents, with the
+norms as read back from the plugin; (2) every measured detent gets the 0.5 dB hold test; (3) no estimation between detents,
+and an ask past the first or last detent is `at_control_limit` (the end detent answers, said in the note); (4) fewer than 3
+detents reaching 1 dB is not publishable (`needs_review`, "only N detent(s) reach 1 dB … at least 3 must reach 1 dB").
+"At least 9" stays for continuous controls. Pinned on Lindell 254E (16 detents, its own landing read) and a 6-detent
+UnFairchild shape (5 reach 1 dB → exported with five points; 2 → refused by name); mutants red. UnFairchild's record from
+your 3 Oct run is re-swept at its six detents by the follow-up (the landing read runs first), then exports.
+
+For the spec (v2.2 text): §3 `amount.curve`: "one point per measured position, at least 9; for `stepped: true`, one point
+per detent that reaches 1 dB, at least 3, norms as read back"; §6.4 step 3: "for `stepped: true`, the nearest listed detent;
+an ask beyond the first or last detent is `at_control_limit` and that detent is used".
+

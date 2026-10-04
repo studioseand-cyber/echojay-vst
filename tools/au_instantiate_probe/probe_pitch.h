@@ -2,7 +2,8 @@
   probe_pitch.h - TUNER CERTIFICATION (spec section 5), the probe half. Built 1 Oct 2026 on the sweep harness.
 
   --sweep-pitch key=value...   ctl=<index> norms=<csv> [sets=i:n,...] gen=static|vibrato [shape=square|sine]
-                               [note=220] [cents=30] [rate=0.5] [hold=4] [db=-18] [win=2048] [hop=512]
+                               [note=220] [cents=30] [rate=0.5] [hold=4] [db=-18] [win=2048] [hop=512] [note_ms=200] [gap_ms=100]
+//   gen=notes (4 Oct): the static detune on short notes of note_ms with gap_ms of silence between (Humanize: a held note against short ones)
 
   THE MEASUREMENT: a sine whose pitch is the nominal note detuned by `cents`, rendered through the plugin at each
   position of the swept control; the OUTPUT's pitch is detected per window, in cents from the nominal note, beside
@@ -41,6 +42,7 @@ struct PitchSpec
     juce::String gen = "static", shape = "square";
     double noteHz = 220.0, cents = 30.0, rateHz = 0.5, holdS = 4.0, dbfs = -18.0;
     int win = 2048, hop = 512;
+    double noteMs = 200.0, gapMs = 100.0;    // gen=notes (4 Oct, Humanize): short notes at the static detune, silence between
 };
 
 inline bool parsePitchArgs (int argc, char* argv[], int from, PitchSpec& s, juce::String& why)
@@ -58,6 +60,8 @@ inline bool parsePitchArgs (int argc, char* argv[], int from, PitchSpec& s, juce
         else if (k == "note")  s.noteHz = v.getDoubleValue();
         else if (k == "cents") s.cents = v.getDoubleValue();
         else if (k == "rate")  s.rateHz = v.getDoubleValue();
+        else if (k == "note_ms") s.noteMs = v.getDoubleValue();
+        else if (k == "gap_ms")  s.gapMs = v.getDoubleValue();
         else if (k == "hold")  s.holdS = v.getDoubleValue();
         else if (k == "db")    s.dbfs = v.getDoubleValue();
         else if (k == "win")   s.win = v.getIntValue();
@@ -65,7 +69,8 @@ inline bool parsePitchArgs (int argc, char* argv[], int from, PitchSpec& s, juce
         else { why = "unknown key " + k; return false; }
     }
     if (s.ctl < 0 || s.norms.empty()) { why = "ctl and norms are required"; return false; }
-    if (s.gen != "static" && s.gen != "vibrato") { why = "gen must be static or vibrato"; return false; }
+    if (s.gen != "static" && s.gen != "vibrato" && s.gen != "notes") { why = "gen must be static, vibrato or notes"; return false; }
+    if (s.gen == "notes" && (s.noteMs < 20.0 || s.gapMs < 0.0)) { why = "note_ms under 20 or gap_ms negative"; return false; }
     if (s.noteHz <= 20.0 || s.holdS <= 0.0 || s.win < 256 || s.hop < 1) { why = "note, hold, win or hop out of range"; return false; }
     return true;
 }
@@ -73,10 +78,23 @@ inline bool parsePitchArgs (int argc, char* argv[], int from, PitchSpec& s, juce
 // The detuning, in cents, at time t for this generator. Square vibrato starts at +cents and flips every half period.
 inline double detuneAt (const PitchSpec& s, double t)
 {
-    if (s.gen == "static") return s.cents;
+    if (s.gen == "static" || s.gen == "notes") return s.cents;
     if (s.shape == "sine") return s.cents * std::sin (juce::MathConstants<double>::twoPi * s.rateHz * t);
     const double half = 0.5 / s.rateHz;
     return ((long long) std::floor (t / half)) % 2 == 0 ? s.cents : -s.cents;
+}
+
+// The amplitude envelope: 1 for static and vibrato; for notes, on for note_ms then off for gap_ms, with 5 ms raised-cosine
+// edges so the gate itself puts no click through the tuner's detector.
+inline double envelopeAt (const PitchSpec& s, double t)
+{
+    if (s.gen != "notes") return 1.0;
+    const double period = (s.noteMs + s.gapMs) / 1000.0, on = s.noteMs / 1000.0, fade = 0.005;
+    const double u = std::fmod (t, period);
+    if (u >= on) return 0.0;
+    if (u < fade) return 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * u / fade);
+    if (u > on - fade) return 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * (on - u) / fade);
+    return 1.0;
 }
 
 struct PitchReading { double cents = 0.0, conf = 0.0, db = -999.0; bool ok = false; };
@@ -128,9 +146,9 @@ inline void runPitchSweep (juce::AudioPluginInstance& p, const PitchSpec& s, con
     auto ps = p.getParameters();
     if (! juce::isPositiveAndBelow (s.ctl, ps.size()) || ps[s.ctl] == nullptr)
     { std::printf ("refused no parameter at index %d (%d parameters)\n", s.ctl, ps.size()); return; }
-    std::printf ("pitch\tproto\t1\tctl\t%d\tname\t%s\tpositions\t%d\tgen\t%s\tshape\t%s\tnote_hz\t%.3f\tcents\t%.2f\trate_hz\t%.3f\thold_s\t%.3f\tdb\t%.2f\n",
+    std::printf ("pitch\tproto\t1\tctl\t%d\tname\t%s\tpositions\t%d\tgen\t%s\tshape\t%s\tnote_hz\t%.3f\tcents\t%.2f\trate_hz\t%.3f\thold_s\t%.3f\tdb\t%.2f\tnote_ms\t%.1f\tgap_ms\t%.1f\n",
                  s.ctl, clean (ps[s.ctl]->getName (128)).toRawUTF8(), (int) s.norms.size(), s.gen.toRawUTF8(), s.shape.toRawUTF8(),
-                 s.noteHz, s.cents, s.rateHz, s.holdS, s.dbfs);
+                 s.noteHz, s.cents, s.rateHz, s.holdS, s.dbfs, s.noteMs, s.gapMs);
     configureAndPrepare (p, rs);
     SweepRenderer r (p, rs.sampleRate, rs.block, s.noteHz);
     std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\tsr\t%.0f\twin\t%d\thop\t%d\n", r.mainIn, r.mainOut, p.getLatencySamples(), rs.sampleRate, s.win, s.hop);
@@ -174,7 +192,7 @@ inline void runPitchSweep (juce::AudioPluginInstance& p, const PitchSpec& s, con
             {
                 const long long t = done + n;
                 const double hz = s.noteHz * std::pow (2.0, detuneAt (s, (double) t / sr) / 1200.0);
-                const float v = (float) (amp * std::sin (phase));
+                const float v = (float) (amp * envelopeAt (s, (double) t / sr) * std::sin (phase));
                 phase += juce::MathConstants<double>::twoPi * hz / sr;
                 if (phase > juce::MathConstants<double>::twoPi) phase -= juce::MathConstants<double>::twoPi;
                 for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, n, v);
