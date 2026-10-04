@@ -648,6 +648,25 @@ namespace
                 juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
                 return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
             }
+            // --cert-range-gaps <dir of records> [--csv]: the range-gap census (read-only): per control with a word end or a missing end sample, its role
+            if (a == "--cert-range-gaps" && i + 1 < argc)
+            {
+                const auto dir = cwdFile (argAt (argc, argv, i + 1)); int recs = 0, wordN = 0, missN = 0, roleWord = 0, roleMiss = 0; std::set<juce::String> prodsW, prodsM;
+                for (const auto& f : dir.findChildFiles (juce::File::findFiles, false, "*.json"))
+                {
+                    if (f.getFileName().endsWith (".defaults.json")) continue;
+                    const auto r = juce::JSON::parse (f.loadFileAsString()); if (! r.getProperty ("controls", {}).isArray()) continue; ++recs;
+                    for (const auto& g : ejmap::profile::rangeGaps (r))
+                    {
+                        if (g.wordEnd) { ++wordN; prodsW.insert (g.product); if (g.role.isNotEmpty()) ++roleWord; }
+                        if (g.missingEnd) { ++missN; prodsM.insert (g.product); if (g.role.isNotEmpty()) ++roleMiss; }
+                        std::cout << (g.wordEnd ? "WORD-END  " : "          ") << (g.missingEnd ? "MISSING-END  " : "             ") << g.product << " | [" << g.index << "] " << g.control << " | role " << (g.role.isEmpty() ? "-" : g.role)
+                                  << " | at0 '" << g.at0 << "' at1 '" << g.at1 << "' | instantiate '" << g.instantiate << "' @" << juce::String (g.instNorm, 3) << (g.instOutside ? " OUTSIDE the parsed range" : "") << std::endl;
+                    }
+                }
+                std::cout << "RANGE GAPS: " << recs << " records; (a) word end: " << wordN << " controls across " << (int) prodsW.size() << " products, " << roleWord << " in a role; (b) missing end sample: " << missN << " controls across " << (int) prodsM.size() << " products, " << roleMiss << " in a role" << std::endl;
+                return 0;
+            }
             // --cert-tone-levels <profile.json>: the tone-check L the rule would use per level, nothing loaded (a dry read of the rule)
             if (a == "--cert-tone-levels" && i + 1 < argc)
             {

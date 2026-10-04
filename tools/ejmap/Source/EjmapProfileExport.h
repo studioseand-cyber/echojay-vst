@@ -56,6 +56,34 @@ namespace ejmap::profile
 inline constexpr double kPeakToSineRmsDb = 3.0102999566398120;   // 20 log10 sqrt 2
 inline constexpr double kTargetGrDb = 2.0;                        // his default target, the yardstick for fit error
 inline constexpr int    kMinCurvePoints = 9;
+
+// RANGE GAPS (read-only census, 4 Oct; B counted them from the server's map data): per control, two classes -
+//   (a) an END prints a word (range.endsNotNumeric present), (b) an END SAMPLE is missing (displayAt lacks 0.000 or 1.000,
+//   or that text is empty). A consumer that resolves a display to a norm across either gap lands on the wrong end.
+struct RangeGap { juce::String product, control, role; int index = -1; bool wordEnd = false, missingEnd = false; juce::String at0, at1, instantiate; double instNorm = 0.0; bool instOutside = false; };
+inline std::vector<RangeGap> rangeGaps (const juce::var& record)
+{
+    std::vector<RangeGap> out;
+    const auto controls = record.getProperty ("controls", {});
+    std::vector<roles::NamedControl> named;
+    for (int i = 0; i < controls.size(); ++i) { const auto c = controls[i]; named.push_back ({ (int) c.getProperty ("index", -1), c.getProperty ("name", {}).toString(), c.getProperty ("readout", false).isBool() && (bool) c.getProperty ("readout", false) }); }
+    const auto cl = roles::classify (named, roles::Category::compressor);
+    std::map<int, juce::String> roleOf; for (const auto& r : cl.controls) if (r.role.isNotEmpty()) roleOf[r.index] = r.role;
+    for (int i = 0; i < controls.size(); ++i)
+    {
+        const auto c = controls[i]; RangeGap g;
+        g.product = record.getProperty ("product", "").toString(); g.control = c.getProperty ("name", "").toString(); g.index = (int) c.getProperty ("index", -1);
+        g.role = roleOf.count (g.index) ? roleOf[g.index] : juce::String();
+        const auto da = c.getProperty ("displayAt", {});
+        g.at0 = da.getProperty ("0.000", "").toString(); g.at1 = da.getProperty ("1.000", "").toString();
+        g.missingEnd = ! da.hasProperty ("0.000") || ! da.hasProperty ("1.000") || g.at0.trim().isEmpty() || g.at1.trim().isEmpty();
+        g.wordEnd = c.getProperty ("range", {}).hasProperty ("endsNotNumeric");
+        const auto d = c.getProperty ("defaultOnInstantiate", {}); g.instantiate = d.getProperty ("display", "").toString(); g.instNorm = (double) d.getProperty ("normalised", 0.0);
+        if (auto v = fixtureunit::leadingNumber (g.instantiate)) { const auto rg = c.getProperty ("range", {}); if (rg.hasProperty ("min")) g.instOutside = v->value < (double) rg.getProperty ("min", 0.0) - 1e-9 || v->value > (double) rg.getProperty ("max", 0.0) + 1e-9; }
+        if (g.wordEnd || g.missingEnd) out.push_back (g);
+    }
+    return out;
+}
 inline constexpr double kSweepCeilingRmsDb = -3.0103;   // a full-scale sine, RMS: nothing above it can exist (section 3)
 inline constexpr double kTopSixDb          = 6.0;      // the top 6 dB of the sweep: a deep point read there gets the saturation note (v1.10)
 // THE NOTES SHAPE (v1.8 section 3 says a list of plain strings; Sean's example still shows ""; which his validator accepts

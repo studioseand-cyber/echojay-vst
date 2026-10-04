@@ -53,27 +53,48 @@ struct Derived
     juce::String direction;   // "ascending" | "descending" | "flat" | "named positions"
 };
 
+// RANGE PARTIAL (ruled 4 Oct, after CL 1B's Gain "Off / 8.5 / 31.0" with "0.0" at instantiate 0.33): the three samples can miss
+// a whole half of a control. Every parsed sample now folds into min/max - the instantiate point included (`at_instantiate`
+// records it) - and `range_partial` names why the range may still not be the whole control: an end prints a word, an end
+// sample is missing, or the instantiate point fell outside the sampled ends. A consumer must never resolve a display to a
+// norm across such a gap by interpolation; the follow-up's re-sample (21 norms) is what fills it.
+inline const char* kPartialWordEnd    = "an end prints a word";
+inline const char* kPartialMissingEnd = "an end sample is missing";
+inline const char* kPartialInstOut    = "the instantiate point lies outside the sampled ends";
+
 inline Derived derive (const juce::String& at0Text, const juce::String& atHalfText, const juce::String& at1Text,
-                       double linearTolerance = 0.01)
+                       double linearTolerance = 0.01, const juce::String& instantiateText = {}, double instantiateNorm = -1.0)
 {
     using fixtureunit::leadingNumber;
     const auto a = leadingNumber (at0Text), m = leadingNumber (atHalfText), b = leadingNumber (at1Text);
+    const auto inst = instantiateText.isNotEmpty() ? leadingNumber (instantiateText) : std::nullopt;
     const int parsed = (a ? 1 : 0) + (m ? 1 : 0) + (b ? 1 : 0);
 
     Derived d;
     auto* o = new juce::DynamicObject();
     d.range = juce::var (o);
+    juce::StringArray partial;
+    if (at0Text.trim().isEmpty() || at1Text.trim().isEmpty()) partial.add (kPartialMissingEnd);
     if (parsed < 2)
     {
         o->setProperty ("status", "text is not numeric");
+        if (! partial.isEmpty()) o->setProperty ("range_partial", partial.joinIntoString ("; "));
         d.direction = "named positions";
         return d;
     }
     const double lo = a ? a->value : m->value;           // a missing end borrows the middle
     const double hi = b ? b->value : m->value;
     auto num = [] (const std::optional<fixtureunit::LeadingNumber>& x) { return x ? juce::var (x->value) : juce::var(); };
-    o->setProperty ("min", juce::jmin (lo, hi));
-    o->setProperty ("max", juce::jmax (lo, hi));
+    double mn = juce::jmin (lo, hi), mx = juce::jmax (lo, hi);
+    if (inst)
+    {
+        if (inst->value < mn - 1e-9 || inst->value > mx + 1e-9) partial.add (kPartialInstOut);
+        mn = juce::jmin (mn, inst->value); mx = juce::jmax (mx, inst->value);
+        auto* ai = new juce::DynamicObject(); ai->setProperty ("norm", instantiateNorm); ai->setProperty ("value", inst->value); o->setProperty ("at_instantiate", juce::var (ai));
+    }
+    if (! a || ! b) partial.add (kPartialWordEnd);
+    o->setProperty ("min", mn);
+    o->setProperty ("max", mx);
     o->setProperty ("at0", num (a));
     o->setProperty ("at0_5", num (m));
     o->setProperty ("at1", num (b));
@@ -98,6 +119,7 @@ inline Derived derive (const juce::String& at0Text, const juce::String& atHalfTe
         o->setProperty ("linear", linear);
     }
     d.direction = lo == hi ? "flat" : (lo > hi ? "descending" : "ascending");
+    if (! partial.isEmpty()) o->setProperty ("range_partial", partial.joinIntoString ("; "));
     return d;
 }
 

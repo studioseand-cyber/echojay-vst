@@ -1,0 +1,454 @@
+WORD-END               MTurboCompMB | [422] Level crossover value | role - | at0 'silence' at1 '0.00 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [17] Ratio (Band 1) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMBLarge | [25] Ratio (Band 2) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMBLarge | [33] Ratio (Band 3) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMBLarge | [41] Ratio (Band 4) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMBLarge | [48] RMS length (Detector) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [49] Look-ahead (Detector) | role - | at0 'Off' at1 '100 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [71] Level crossover value | role - | at0 'silence' at1 '0.00 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [106] RMS length (Band 1 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [107] Look-ahead (Band 1 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [109] Minimal (Band 1 - Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [110] Maximal (Band 1 - Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [118] Bottom (Band 1 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [121] Ratio (Band 1 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMBLarge | [123] Range (Band 1 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [126] Ratio (Band 1 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [128] Range (Band 1 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [141] RMS length (Band 2 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [142] Look-ahead (Band 2 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [144] Minimal (Band 2 - Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [145] Maximal (Band 2 - Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [153] Bottom (Band 2 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [156] Ratio (Band 2 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMBLarge | [158] Range (Band 2 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [161] Ratio (Band 2 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [163] Range (Band 2 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [176] RMS length (Band 3 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [177] Look-ahead (Band 3 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [179] Minimal (Band 3 - Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [180] Maximal (Band 3 - Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [188] Bottom (Band 3 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [191] Ratio (Band 3 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMBLarge | [193] Range (Band 3 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [196] Ratio (Band 3 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [198] Range (Band 3 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [211] RMS length (Band 4 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [212] Look-ahead (Band 4 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [214] Minimal (Band 4 - Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [215] Maximal (Band 4 - Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [223] Bottom (Band 4 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [226] Ratio (Band 4 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMBLarge | [228] Range (Band 4 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [231] Ratio (Band 4 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [233] Range (Band 4 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [246] RMS length (Band 5 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [247] Look-ahead (Band 5 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [249] Minimal (Band 5 - Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [250] Maximal (Band 5 - Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [258] Bottom (Band 5 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [261] Ratio (Band 5 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [263] Range (Band 5 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [266] Ratio (Band 5 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [268] Range (Band 5 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [281] RMS length (Band 6 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMBLarge | [282] Look-ahead (Band 6 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [284] Minimal (Band 6 - Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMBLarge | [285] Maximal (Band 6 - Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [293] Bottom (Band 6 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMBLarge | [296] Ratio (Band 6 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [298] Range (Band 6 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMBLarge | [301] Ratio (Band 6 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMBLarge | [303] Range (Band 6 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               SSL G3 MultiBusComp | [12] Mid Attack | role attack | at0 '.1 ms' at1 '30 ms' | instantiate '10 ms' @0.800
+WORD-END               SSL G3 MultiBusComp | [29] Low Attack | role attack | at0 '.1 ms' at1 '30 ms' | instantiate '10 ms' @0.800
+WORD-END               SSL G3 MultiBusComp | [38] High Attack | role attack | at0 '.1 ms' at1 '30 ms' | instantiate '10 ms' @0.800
+WORD-END               CLA-2A (m) | [4] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               Vertigo VSC-2 | [7] Release A | role release | at0 '0.1 s' at1 'Auto' | instantiate '0.6 s' @0.400
+WORD-END               Vertigo VSC-2 | [14] Release B | role release | at0 '0.1 s' at1 'Auto' | instantiate '0.6 s' @0.400
+WORD-END               LinMB (s) | [1] Adaptivity Level | role - | at0 'Off' at1 '12.00' | instantiate 'Off' @0.000
+WORD-END               VBC FG-Red | [8] HPF | role - | at0 'Off' at1 '150Hz' | instantiate 'Off' @0.000
+WORD-END               VComp (m) | [3] Analog | role - | at0 'OFF' at1 '100%' | instantiate 'OFF' @0.000
+WORD-END               VComp (m) | [7] Release Limiter | role release | at0 '100ms' at1 'AUTO' | instantiate 'AUTO' @1.000
+WORD-END               VComp (m) | [10] Release Compressor | role release | at0 '400ms' at1 'AUTO' | instantiate 'AUTO' @1.000
+WORD-END               DynOne3 | [9] S MF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [10] S HMF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [16] C HMF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [29] LR LMF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [33] S HF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [36] C LF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [37] LR LF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [41] Out Gain | role output | at0 '-Inf dB' at1 '12.0' | instantiate '0.0' @0.750
+WORD-END               DynOne3 | [51] C MF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [54] LR MF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [69] LR HMF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [70] C HF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [73] LR HF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [77] S LMF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [82] C LMF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               DynOne3 | [83] In Gain | role input | at0 '-Inf dB' at1 '12.0' | instantiate '0.0' @0.750
+WORD-END               DynOne3 | [100] S LF Volume | role - | at0 '-Inf dB' at1 '12.0' | instantiate '-Inf dB' @0.000
+WORD-END               Lindell SBC | [0] SC HPF | role - | at0 'Off' at1 '400.0 Hz' | instantiate 'Off' @0.000
+WORD-END               Lindell SBC | [5] Link | role - | at0 'Off' at1 '100 %' | instantiate 'Off' @0.000
+WORD-END               Lindell SBC | [8] Ratio | role ratio | at0 '1.5:1' at1 'Inf' | instantiate '4:1' @0.500
+WORD-END               Shadow Hills Mastering Compressor | [6] Discrete Ratio 1 | role ratio | at0 '1.2:1' at1 'Flood' | instantiate '3:1' @0.400
+WORD-END               Shadow Hills Mastering Compressor | [8] Discrete Recover 1 | role release | at0 '0.1 s' at1 'Dual' | instantiate '0.1 s' @0.000
+WORD-END               Shadow Hills Mastering Compressor | [18] Discrete Ratio 2 | role ratio | at0 '1.2:1' at1 'Flood' | instantiate '3:1' @0.400
+WORD-END               Shadow Hills Mastering Compressor | [20] Discrete Recover 2 | role release | at0 '0.1 s' at1 'Dual' | instantiate '0.1 s' @0.000
+WORD-END               Shadow Hills Mastering Compressor | [30] VU Reference Level | role - | at0 '-oo dB' at1 '0.0 dB' | instantiate '-14.0 dB' @0.200 OUTSIDE the parsed range
+WORD-END               Shadow Hills Mastering Compressor | [31] VU Meter 1 | role - | at0 '-oo VU' at1 '3.43 VU' | instantiate '0.00 VU' @0.673
+WORD-END               Shadow Hills Mastering Compressor | [32] VU Meter 2 | role - | at0 '-oo VU' at1 '3.43 VU' | instantiate '0.00 VU' @0.673
+WORD-END               DPR-402 (m) | [2] Threshold | role threshold | at0 '-50.0 dB' at1 'Out' | instantiate 'Out' @1.000
+WORD-END               DPR-402 (m) | [8] Peak Lim | role - | at0 '-16.0 dB' at1 'Out' | instantiate 'Out' @1.000
+WORD-END               DPR-402 (m) | [10] Noise | role - | at0 'Off' at1 '100.0' | instantiate 'Off' @0.000
+          MISSING-END  bx_opto | [9]  | role - | at0 '' at1 '' | instantiate '' @1.000
+WORD-END               Shadow Hills Class A Mastering Comp | [3] Monomaker Freq | role - | at0 'Off' at1 '2.0 kHz' | instantiate 'Off' @0.000
+WORD-END               Shadow Hills Class A Mastering Comp | [15] VU Reference Level | role - | at0 '-oo dB' at1 '0.0 dB' | instantiate '-14.0 dB' @0.200 OUTSIDE the parsed range
+WORD-END               Shadow Hills Class A Mastering Comp | [21] Discrete Ratio 1 | role ratio | at0 '1.2:1' at1 'Flood' | instantiate '3:1' @0.400
+WORD-END               Shadow Hills Class A Mastering Comp | [23] Discrete Recover 1 | role release | at0 '0.1 s' at1 'Dual' | instantiate '0.1 s' @0.000
+WORD-END               Shadow Hills Class A Mastering Comp | [33] Discrete Ratio 2 | role ratio | at0 '1.2:1' at1 'Flood' | instantiate '3:1' @0.400
+WORD-END               Shadow Hills Class A Mastering Comp | [35] Discrete Recover 2 | role release | at0 '0.1 s' at1 'Dual' | instantiate '0.1 s' @0.000
+          MISSING-END  Shadow Hills Class A Mastering Comp | [40] VU Meter L | role - | at0 '' at1 '' | instantiate '' @0.631
+          MISSING-END  Shadow Hills Class A Mastering Comp | [41] VU Meter R | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Shadow Hills Class A Mastering Comp | [42] GR Meter | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Shadow Hills Class A Mastering Comp | [43] Eye Meter | role - | at0 '' at1 '' | instantiate '' @0.000
+WORD-END               EMO-D5 (s) | [1] Gate Thresh | role threshold | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               EMO-D5 (s) | [7] Gate Floor | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               C1 comp-gate (m) | [6] Gate open | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               C1 comp-gate (m) | [7] Gate close | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+          MISSING-END  Millennia TCL-2 | [21]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Millennia TCL-2 | [22]  | role - | at0 '' at1 '' | instantiate '' @0.000
+WORD-END               CLA-3A (m) | [4] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MSpectralDynamics | [80] RMS length (Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.101 OUTSIDE the parsed range
+WORD-END               MSpectralDynamics | [81] Look-ahead (Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MSpectralDynamics | [86] Bottom (Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MSpectralDynamics | [89] Ratio (Processor 1) | role ratio | at0 '1 : 1.50' at1 'Infinity' | instantiate '1.25 : 1' @0.409
+WORD-END               MSpectralDynamics | [91] Range (Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MSpectralDynamics | [94] Ratio (Processor 2) | role ratio | at0 '1 : 1.50' at1 'Infinity' | instantiate '1.50 : 1' @0.471
+WORD-END               MSpectralDynamics | [96] Range (Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               Lindell 7X-500 | [6] SC High Pass Filter | role - | at0 'OFF' at1 '300Hz' | instantiate 'OFF' @0.000
+WORD-END               SSLComp (s) | [2] Attack | role attack | at0 '.1ms' at1 '30ms' | instantiate '1ms' @0.400 OUTSIDE the parsed range
+WORD-END               SSLComp (s) | [11] SC Filter | role - | at0 'Off' at1 '500' | instantiate 'Off' @0.000
+WORD-END               Tube-Tech CL 1B | [0] Gain | role - | at0 'Off' at1 '31.0' | instantiate '0.0' @0.330 OUTSIDE the parsed range
+WORD-END               Tube-Tech CL 1B | [2] Threshold | role threshold | at0 'Off' at1 '-41.0' | instantiate 'Off' @0.000
+WORD-END               SSL Native Bus Compressor 2 | [0] Ratio | role ratio | at0 '1.5:1' at1 'X' | instantiate '2:1' @0.167
+WORD-END               SSL Native Bus Compressor 2 | [4] Release | role release | at0 '0.1' at1 'AUTO' | instantiate 'AUTO' @1.000
+WORD-END               SSL Native Bus Compressor 2 | [9] Sidechain HPF | role - | at0 'OFF' at1 '185.0' | instantiate 'OFF' @0.000
+WORD-END               SSL Native Bus Compressor 2 | [10] Oversampling | role - | at0 'OFF' at1 '4x' | instantiate 'OFF' @0.000
+WORD-END               bx_townhouse Buss Compressor | [7] Release | role release | at0 '0.1 s' at1 'auto' | instantiate 'auto' @1.000
+WORD-END               bx_townhouse Buss Compressor | [11] SC Filter | role - | at0 'Off' at1 '666 Hz' | instantiate 'Off' @0.000
+WORD-END               bx_townhouse Buss Compressor | [12] Virtual Gain | role - | at0 '-oo dB' at1 '-70 dB' | instantiate '-100 dB' @0.400 OUTSIDE the parsed range
+WORD-END               API-2500 (m) | [2] Ratio | role ratio | at0 '1.5:1' at1 'Inf' | instantiate '4:1' @0.500
+WORD-END               API-2500 (m) | [3] Release | role release | at0 '0.05' at1 'Var' | instantiate 'Var' @1.000
+WORD-END               CLA-76 (s) | [0] Input | role threshold | at0 '-Inf' at1 '0.0' | instantiate '-30.0' @0.375 OUTSIDE the parsed range
+WORD-END               CLA-76 (s) | [1] Output | role output | at0 '-Inf' at1 '0.0' | instantiate '-18.0' @0.625
+WORD-END               CLA-76 (s) | [4] Ratio | role ratio | at0 '20' at1 'All' | instantiate '4' @0.750 OUTSIDE the parsed range
+WORD-END               CLA-76 (s) | [5] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               VBC Rack | [8] Red HPF | role - | at0 'Off' at1 '150Hz' | instantiate 'Off' @0.000
+WORD-END               VBC Rack | [15] Grey HPF | role - | at0 'Off' at1 '150Hz' | instantiate 'Off' @0.000
+WORD-END               VBC Rack | [29] MU HPF Right | role - | at0 'Off' at1 '200Hz' | instantiate 'Off' @0.000
+WORD-END               VBC Rack | [30] MU HPF Left | role - | at0 'Off' at1 '200Hz' | instantiate 'Off' @0.000
+WORD-END               Solid Bus Comp | [5] Release | role release | at0 '0.1 s' at1 'Auto' | instantiate '0.1 s' @0.000
+WORD-END               Solid Bus Comp | [6] Output | role output | at0 '-Inf dB' at1 '0.0 dB' | instantiate '0.0 dB' @1.000
+WORD-END               Solid Bus Comp | [7] Dry | role - | at0 '-Inf dB' at1 '0.0 dB' | instantiate '-Inf dB' @0.000
+WORD-END               MModernCompressor | [38] RMS length (Dynamics) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MModernCompressor | [42] Ratio (Compressor) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.229
+WORD-END               MModernCompressor | [44] Range (Compressor) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               SSL Blitzer | [11] Sidechain HPF | role - | at0 'OFF' at1 '2000' | instantiate 'OFF' @0.000
+WORD-END               MixWave DW Fearn VT-7 | [17] Input Level | role input | at0 '-inf dB' at1 '12.04 dB' | instantiate '0.00 dB' @0.500
+WORD-END               MixWave DW Fearn VT-7 | [18] Output Level | role output | at0 '-inf dB' at1 '12.04 dB' | instantiate '0.00 dB' @0.500
+WORD-END               RVox (s) | [1] Gate | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               MSpectralDynamicsMini | [80] RMS length (Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.101 OUTSIDE the parsed range
+WORD-END               MSpectralDynamicsMini | [81] Look-ahead (Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MSpectralDynamicsMini | [86] Bottom (Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MSpectralDynamicsMini | [89] Ratio (Processor 1) | role ratio | at0 '1 : 1.50' at1 'Infinity' | instantiate '1.25 : 1' @0.409
+WORD-END               MSpectralDynamicsMini | [91] Range (Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MSpectralDynamicsMini | [94] Ratio (Processor 2) | role ratio | at0 '1 : 1.50' at1 'Infinity' | instantiate '1.50 : 1' @0.471
+WORD-END               MSpectralDynamicsMini | [96] Range (Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               dbx-160 (s) | [4] Compression L/M | role - | at0 '1.00' at1 'inf' | instantiate '4.00' @0.500
+WORD-END               dbx-160 (s) | [5] Compression R/S | role - | at0 '1.00' at1 'inf' | instantiate '4.00' @0.500
+WORD-END               dbx-160 (s) | [12] Noise | role - | at0 'Off' at1 '100.0' | instantiate 'Off' @0.000
+WORD-END               Pro-C 3 | [15] Wet Gain | role mix | at0 '-INF dB' at1 '+36.00 dB' | instantiate '0.00 dB' @0.500
+WORD-END               Pro-C 3 | [17] Dry Gain | role - | at0 '-INF dB' at1 '+36.00 dB' | instantiate '-INF dB' @0.000
+WORD-END               Pro-C 3 | [89] Input Level | role input | at0 '-INF dB' at1 '+36.00 dB' | instantiate '0.00 dB' @0.500
+WORD-END               Pro-C 3 | [91] Output Level | role output | at0 '-INF dB' at1 '+36.00 dB' | instantiate '0.00 dB' @0.500
+WORD-END               kHs Compressor | [4] Ratio | role ratio | at0 '1.0:1' at1 'Inf:1' | instantiate '2.0:1' @0.204
+WORD-END               Purple Audio MC 77 | [2] Monomaker Freq | role - | at0 'Off' at1 '2.0 kHz' | instantiate 'Off' @0.000
+WORD-END               Purple Audio MC 77 | [4] SC HP Freq  | role - | at0 'Off' at1 '666 Hz' | instantiate 'Off' @0.000
+WORD-END               Purple Audio MC 77 | [15] Input L | role threshold | at0 '-inf dB' at1 '0.0 dB' | instantiate '-30.0 dB' @0.375 OUTSIDE the parsed range
+WORD-END               Purple Audio MC 77 | [16] Output L | role output | at0 '-inf dB' at1 '0.0 dB' | instantiate '-27.2 dB' @0.434 OUTSIDE the parsed range
+WORD-END               Purple Audio MC 77 | [17] Attack L | role attack | at0 'Off' at1 '+7.5' | instantiate '+3.2' @0.402 OUTSIDE the parsed range
+WORD-END               Purple Audio MC 77 | [24] Input R | role threshold | at0 '-inf dB' at1 '0.0 dB' | instantiate '-30.0 dB' @0.375 OUTSIDE the parsed range
+WORD-END               Purple Audio MC 77 | [25] Output R | role output | at0 '-inf dB' at1 '0.0 dB' | instantiate '-27.2 dB' @0.434 OUTSIDE the parsed range
+WORD-END               Purple Audio MC 77 | [26] Attack R | role attack | at0 'Off' at1 '+7.5' | instantiate '+3.2' @0.402 OUTSIDE the parsed range
+WORD-END               Kramer PIE (s) | [2] Ratio | role ratio | at0 '1:1' at1 'Limit' | instantiate '3:1' @0.500
+WORD-END               Kramer PIE (s) | [3] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               kHs Dynamics | [0] In Gain | role input | at0 '−24.0 dB' at1 '24.0 dB' | instantiate '0.0 dB' @0.500
+WORD-END               kHs Dynamics | [1] Out Gain | role output | at0 '−24.0 dB' at1 '24.0 dB' | instantiate '0.0 dB' @0.500
+WORD-END               VComp (s) | [3] Analog | role - | at0 'OFF' at1 '100%' | instantiate 'OFF' @0.000
+WORD-END               VComp (s) | [7] Release Limiter | role release | at0 '100ms' at1 'AUTO' | instantiate 'AUTO' @1.000
+WORD-END               VComp (s) | [10] Release Compressor | role release | at0 '400ms' at1 'AUTO' | instantiate 'AUTO' @1.000
+WORD-END               Lindell 354E | [4] Low Gain | role - | at0 'auto' at1 '20.0dB' | instantiate '2.0dB' @0.143 OUTSIDE the parsed range
+WORD-END               Lindell 354E | [8] Low Recovery | role release | at0 '100mS' at1 'Auto' | instantiate 'Auto' @1.000
+WORD-END               Lindell 354E | [13] Mid Gain | role - | at0 'auto' at1 '20.0dB' | instantiate '2.0dB' @0.143 OUTSIDE the parsed range
+WORD-END               Lindell 354E | [17] Mid Recovery | role release | at0 '100mS' at1 'Auto' | instantiate 'Auto' @1.000
+WORD-END               Lindell 354E | [22] High Gain | role - | at0 'auto' at1 '20.0dB' | instantiate '2.0dB' @0.143 OUTSIDE the parsed range
+WORD-END               Lindell 354E | [26] High Recovery | role release | at0 '100mS' at1 'Auto' | instantiate 'Auto' @1.000
+WORD-END               Lindell 354E | [28] HPF | role - | at0 'OFF' at1 '500Hz' | instantiate 'OFF' @0.000
+WORD-END               LinMB (m) | [1] Adaptivity Level | role - | at0 'Off' at1 '12.00' | instantiate 'Off' @0.000
+WORD-END               DPR-402 (s) | [6] Threshold L/M | role threshold | at0 '-50.0 dB' at1 'Out' | instantiate 'Out' @1.000
+WORD-END               DPR-402 (s) | [7] Threshold R/S | role threshold | at0 '-50.0 dB' at1 'Out' | instantiate 'Out' @1.000
+WORD-END               DPR-402 (s) | [18] Peak Lim L/M | role - | at0 '-16.0 dB' at1 'Out' | instantiate 'Out' @1.000
+WORD-END               DPR-402 (s) | [19] Peak Lim R/S | role - | at0 '-16.0 dB' at1 'Out' | instantiate 'Out' @1.000
+WORD-END               DPR-402 (s) | [22] Noise | role - | at0 'Off' at1 '100.0' | instantiate 'Off' @0.000
+WORD-END               Empirical Labs Mike-E Comp | [0] Preamp Gain | role - | at0 'CLEAN' at1 '18 dB' | instantiate 'CLEAN' @0.000
+WORD-END               VBC FG-MU | [12] HPF Right | role - | at0 'Off' at1 '200Hz' | instantiate 'Off' @0.000
+WORD-END               VBC FG-MU | [13] HPF Left | role - | at0 'Off' at1 '200Hz' | instantiate 'Off' @0.000
+          MISSING-END  bx_opto Pedal | [5]  | role - | at0 '' at1 '' | instantiate '' @1.000
+WORD-END               Lindell 254E | [8] Compress Recovery | role release | at0 '100mS' at1 'Auto' | instantiate 'Auto' @1.000
+WORD-END               Lindell 254E | [10] Limit Recovery | role release | at0 '100mS' at1 'Auto' | instantiate 'Auto' @1.000
+WORD-END               CLA-2A (s) | [4] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               CLA-3A (s) | [4] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDrumLeveler | [53] BP1 Q (Prefiltering) | role - | at0 'Off' at1 '10.0000' | instantiate 'Off' @0.000
+WORD-END               MDrumLeveler | [55] BP2 Q (Prefiltering) | role - | at0 'Off' at1 '10.0000' | instantiate 'Off' @0.000
+WORD-END               MDrumLeveler | [57] Velocity 1 (Velocities) | role - | at0 'Off' at1 '0.00 dB' | instantiate '-20.00 dB' @0.750
+WORD-END               MDrumLeveler | [58] Velocity 2 (Velocities) | role - | at0 'Off' at1 '0.00 dB' | instantiate 'Off' @0.000
+WORD-END               MDrumLeveler | [59] Velocity 3 (Velocities) | role - | at0 'Off' at1 '0.00 dB' | instantiate 'Off' @0.000
+WORD-END               MDrumLeveler | [60] Velocity 4 (Velocities) | role - | at0 'Off' at1 '0.00 dB' | instantiate 'Off' @0.000
+WORD-END               Unfiltered Audio Zip | [3] Out Gain | role output | at0 '-inf dB' at1 '18.0 dB' | instantiate '0 dB' @0.500
+WORD-END               Unfiltered Audio Zip | [17] Threshold | role threshold | at0 '-inf dB' at1 '0.0 dB' | instantiate '0.0 dB' @1.000
+WORD-END               Low Control | [4] Threshold | role threshold | at0 '-∞' at1 '0.0' | instantiate '-20.0' @0.688
+WORD-END               Low Control | [5] Output Gain | role output | at0 '-∞' at1 '12.0' | instantiate '0.0' @0.842
+WORD-END               C1 comp-gate (s) | [6] Gate open | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               C1 comp-gate (s) | [7] Gate close | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               EMO-D5 (m) | [1] Gate Thresh | role threshold | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               EMO-D5 (m) | [7] Gate Floor | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+WORD-END               MDynamicsMB | [17] Ratio (Band 1) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMB | [25] Ratio (Band 2) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMB | [33] Ratio (Band 3) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMB | [41] Ratio (Band 4) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '2.00 : 1' @0.100
+WORD-END               MDynamicsMB | [48] RMS length (Detector) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [49] Look-ahead (Detector) | role - | at0 'Off' at1 '100 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [71] Level crossover value | role - | at0 'silence' at1 '0.00 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [106] RMS length (Band 1 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [107] Look-ahead (Band 1 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [112] Bottom (Band 1 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [115] Ratio (Band 1 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMB | [117] Range (Band 1 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [120] Ratio (Band 1 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [122] Range (Band 1 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [135] RMS length (Band 2 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [136] Look-ahead (Band 2 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [141] Bottom (Band 2 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [144] Ratio (Band 2 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMB | [146] Range (Band 2 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [149] Ratio (Band 2 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [151] Range (Band 2 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [164] RMS length (Band 3 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [165] Look-ahead (Band 3 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [170] Bottom (Band 3 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [173] Ratio (Band 3 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMB | [175] Range (Band 3 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [178] Ratio (Band 3 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [180] Range (Band 3 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [193] RMS length (Band 4 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [194] Look-ahead (Band 4 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [199] Bottom (Band 4 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [202] Ratio (Band 4 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '2.00 : 1' @0.378
+WORD-END               MDynamicsMB | [204] Range (Band 4 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [207] Ratio (Band 4 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [209] Range (Band 4 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [222] RMS length (Band 5 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [223] Look-ahead (Band 5 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [228] Bottom (Band 5 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [231] Ratio (Band 5 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [233] Range (Band 5 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [236] Ratio (Band 5 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [238] Range (Band 5 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [251] RMS length (Band 6 - Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamicsMB | [252] Look-ahead (Band 6 - Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamicsMB | [257] Bottom (Band 6 - Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamicsMB | [260] Ratio (Band 6 - Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [262] Range (Band 6 - Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamicsMB | [265] Ratio (Band 6 - Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamicsMB | [267] Range (Band 6 - Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               SPL IRON | [2] Monomaker Freq | role - | at0 'Off' at1 '2.0 kHz' | instantiate 'Off' @0.000
+WORD-END               SPL IRON | [10] SC HP Freq  | role - | at0 'Off' at1 '666 Hz' | instantiate 'Off' @0.000
+          MISSING-END  SPL IRON | [40]  | role - | at0 '' at1 '' | instantiate '' @0.645
+          MISSING-END  SPL IRON | [41]  | role - | at0 '' at1 '' | instantiate '' @0.645
+          MISSING-END  SPL IRON | [42]  | role - | at0 '' at1 '' | instantiate '' @0.645
+          MISSING-END  SPL IRON | [43]  | role - | at0 '' at1 '' | instantiate '' @0.645
+WORD-END               Lindell MBC | [0] SC HPF | role - | at0 'Off' at1 '400.0 Hz' | instantiate 'Off' @0.000
+WORD-END               Lindell MBC | [16] Low Ratio | role ratio | at0 '1.5:1' at1 'Inf' | instantiate '4:1' @0.500
+WORD-END               Lindell MBC | [20] High Link | role - | at0 'Off' at1 '100 %' | instantiate 'Off' @0.000
+WORD-END               Lindell MBC | [22] Mid Ratio | role ratio | at0 '1.5:1' at1 'Inf' | instantiate '4:1' @0.500
+WORD-END               Lindell MBC | [25] Mid Link | role - | at0 'Off' at1 '100 %' | instantiate 'Off' @0.000
+WORD-END               Lindell MBC | [33] High Ratio | role ratio | at0 '1.5:1' at1 'Inf' | instantiate '4:1' @0.500
+WORD-END               Lindell MBC | [41] Low Link | role - | at0 'Off' at1 '100 %' | instantiate 'Off' @0.000
+WORD-END               CLA-76 (m) | [0] Input | role threshold | at0 '-Inf' at1 '0.0' | instantiate '-30.0' @0.375 OUTSIDE the parsed range
+WORD-END               CLA-76 (m) | [1] Output | role output | at0 '-Inf' at1 '0.0' | instantiate '-18.0' @0.625
+WORD-END               CLA-76 (m) | [4] Ratio | role ratio | at0 '20' at1 'All' | instantiate '4' @0.750 OUTSIDE the parsed range
+WORD-END               CLA-76 (m) | [5] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               API-2500 (s) | [2] Ratio | role ratio | at0 '1.5:1' at1 'Inf' | instantiate '4:1' @0.500
+WORD-END               API-2500 (s) | [3] Release | role release | at0 '0.05' at1 'Var' | instantiate 'Var' @1.000
+WORD-END               API-2500 (s) | [12] L/R Link | role - | at0 'IND' at1 '100%' | instantiate '100%' @1.000
+WORD-END               MDynamics | [9] Ratio (Compressor) | role ratio | at0 '1.00 : 1' at1 'Infinity' | instantiate '4.00 : 1' @0.259
+WORD-END               MDynamics | [18] RMS (Compressor) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamics | [76] RMS length (Dynamic detection) | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               MDynamics | [77] Look-ahead (Dynamic detection) | role - | at0 'Off' at1 '1000 ms' | instantiate 'Off' @0.000
+WORD-END               MDynamics | [79] Minimal (Side-chain) | role - | at0 'Off' at1 '20.0 kHz' | instantiate 'Off' @0.000
+WORD-END               MDynamics | [80] Maximal (Side-chain) | role - | at0 '20.00 Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamics | [88] Bottom (Gate) | role - | at0 'silence' at1 '-80.0 dB' | instantiate 'silence' @0.000
+WORD-END               MDynamics | [91] Ratio (Processor 1) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '4.00 : 1' @0.488
+WORD-END               MDynamics | [93] Range (Processor 1) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               MDynamics | [96] Ratio (Processor 2) | role ratio | at0 '1 : 3.00' at1 'Infinity' | instantiate '1.00 : 1' @0.309
+WORD-END               MDynamics | [98] Range (Processor 2) | role - | at0 '+1.00 dB' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               OTT | [8] Gain L | role - | at0 '-inf' at1 '6.0' | instantiate '0.0' @0.500
+WORD-END               OTT | [9] Gain M | role - | at0 '-inf' at1 '6.0' | instantiate '0.0' @0.500
+WORD-END               OTT | [10] Gain H | role - | at0 '-inf' at1 '6.0' | instantiate '0.0' @0.500
+WORD-END               MCompressor | [4] RMS length | role - | at0 'Peak' at1 '100 ms' | instantiate '1.0 ms' @0.100 OUTSIDE the parsed range
+WORD-END               NEOLD U17 | [0] Attack Time | role attack | at0 '0.5 ms' at1 'Auto' | instantiate '10.0 ms' @0.500
+WORD-END               NEOLD U17 | [14] Release Time | role release | at0 '50.0 ms' at1 'Auto' | instantiate '500.0 ms' @0.500
+          MISSING-END  Pro Audio DSP DSM V3 | [34]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [35]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [36]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [37]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [38]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [39]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [40]  | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Pro Audio DSP DSM V3 | [41]  | role - | at0 '' at1 '' | instantiate '' @0.000
+WORD-END               SSLComp (m) | [2] Attack | role attack | at0 '.1ms' at1 '30ms' | instantiate '1ms' @0.400 OUTSIDE the parsed range
+WORD-END               SSLComp (m) | [11] SC Filter | role - | at0 'Off' at1 '500' | instantiate 'Off' @0.000
+WORD-END               Pro-MB | [134] Input Level | role input | at0 '-INF dB' at1 '+36.00 dB' | instantiate '0.00 dB' @0.500
+WORD-END               Pro-MB | [136] Output Level | role output | at0 '-INF dB' at1 '+36.00 dB' | instantiate '0.00 dB' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [0] Bypass | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [1] MasterInput Gain | role input | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [2] MasterOutput Gain | role output | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [3] MasterInput Pan | role input | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [4] MasterOutput Pan | role output | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [5] MasterOutput Phase Invert | role output | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [6] Style | role - | at0 '' at1 '' | instantiate '' @0.094
+          MISSING-END  TBTECH Cenozoix Compressor | [7] Oversampling On | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [8] Oversampling Realtime Ratio | role ratio | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [9] Enable Side Chain Monitoring | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [10] MonitoringDelta | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [11] Enable Ext. Side Chain | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [12] Side Chain Mode | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [13] Side Chain Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [14] Side Chain Stereo Linking | role - | at0 '' at1 '' | instantiate '' @0.700
+          MISSING-END  TBTECH Cenozoix Compressor | [15] Peak/RMS | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [16] FFFB | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [17] Odd/Even | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [18] Input Gain | role input | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [19] Threshold | role threshold | at0 '' at1 '' | instantiate '' @0.608
+          MISSING-END  TBTECH Cenozoix Compressor | [20] Ratio | role ratio | at0 '' at1 '' | instantiate '' @0.610
+          MISSING-END  TBTECH Cenozoix Compressor | [21] Knee | role - | at0 '' at1 '' | instantiate '' @0.314
+          MISSING-END  TBTECH Cenozoix Compressor | [22] Range | role - | at0 '' at1 '' | instantiate '' @1.000
+          MISSING-END  TBTECH Cenozoix Compressor | [23] Att Time | role attack | at0 '' at1 '' | instantiate '' @0.385
+          MISSING-END  TBTECH Cenozoix Compressor | [24] Rel Time | role release | at0 '' at1 '' | instantiate '' @0.490
+          MISSING-END  TBTECH Cenozoix Compressor | [25] Auto Rel | role release | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [26] Hold | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [27] Lookahead On | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [28] Lookahead Time | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [29] Clamp | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [30] De-Click | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [31] Punch/Pump | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [32] Tight | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [33] Sensitive | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [34] Output Gain | role output | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [35] Dry Mix | role mix | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [36] Auto Makeup | role makeup | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [37] SC EQ Bypass | role - | at0 '' at1 '' | instantiate '' @1.000
+          MISSING-END  TBTECH Cenozoix Compressor | [38] SC EQ Band1 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [39] SC EQ Band1 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [40] SC EQ Band1 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [41] SC EQ Band1 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [42] SC EQ Band1 Freq. | role - | at0 '' at1 '' | instantiate '' @0.235
+          MISSING-END  TBTECH Cenozoix Compressor | [43] SC EQ Band1 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [44] SC EQ Band1 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [45] SC EQ Band2 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [46] SC EQ Band2 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [47] SC EQ Band2 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [48] SC EQ Band2 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [49] SC EQ Band2 Freq. | role - | at0 '' at1 '' | instantiate '' @0.302
+          MISSING-END  TBTECH Cenozoix Compressor | [50] SC EQ Band2 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [51] SC EQ Band2 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [52] SC EQ Band3 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [53] SC EQ Band3 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [54] SC EQ Band3 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [55] SC EQ Band3 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [56] SC EQ Band3 Freq. | role - | at0 '' at1 '' | instantiate '' @0.369
+          MISSING-END  TBTECH Cenozoix Compressor | [57] SC EQ Band3 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [58] SC EQ Band3 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [59] SC EQ Band4 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [60] SC EQ Band4 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [61] SC EQ Band4 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [62] SC EQ Band4 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [63] SC EQ Band4 Freq. | role - | at0 '' at1 '' | instantiate '' @0.436
+          MISSING-END  TBTECH Cenozoix Compressor | [64] SC EQ Band4 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [65] SC EQ Band4 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [66] SC EQ Band5 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [67] SC EQ Band5 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [68] SC EQ Band5 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [69] SC EQ Band5 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [70] SC EQ Band5 Freq. | role - | at0 '' at1 '' | instantiate '' @0.503
+          MISSING-END  TBTECH Cenozoix Compressor | [71] SC EQ Band5 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [72] SC EQ Band5 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [73] SC EQ Band6 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [74] SC EQ Band6 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [75] SC EQ Band6 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [76] SC EQ Band6 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [77] SC EQ Band6 Freq. | role - | at0 '' at1 '' | instantiate '' @0.570
+          MISSING-END  TBTECH Cenozoix Compressor | [78] SC EQ Band6 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [79] SC EQ Band6 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [80] SC EQ Band7 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [81] SC EQ Band7 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [82] SC EQ Band7 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [83] SC EQ Band7 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [84] SC EQ Band7 Freq. | role - | at0 '' at1 '' | instantiate '' @0.637
+          MISSING-END  TBTECH Cenozoix Compressor | [85] SC EQ Band7 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [86] SC EQ Band7 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [87] SC EQ Band8 Used | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [88] SC EQ Band8 Enabled | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [89] SC EQ Band8 Type | role - | at0 '' at1 '' | instantiate '' @0.042
+          MISSING-END  TBTECH Cenozoix Compressor | [90] SC EQ Band8 Slope | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [91] SC EQ Band8 Freq. | role - | at0 '' at1 '' | instantiate '' @0.704
+          MISSING-END  TBTECH Cenozoix Compressor | [92] SC EQ Band8 Gain | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [93] SC EQ Band8 Q | role - | at0 '' at1 '' | instantiate '' @0.500
+          MISSING-END  TBTECH Cenozoix Compressor | [95] Harmonic Style | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [96] DriveOn | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  TBTECH Cenozoix Compressor | [97] Drive Input Gain | role input | at0 '' at1 '' | instantiate '' @0.333
+          MISSING-END  TBTECH Cenozoix Compressor | [98] Post | role - | at0 '' at1 '' | instantiate '' @0.000
+WORD-END               VBC FG-Grey | [6] HPF | role - | at0 'Off' at1 '150Hz' | instantiate 'Off' @0.000
+WORD-END               dbx-160 (m) | [2] Compression | role - | at0 '1.00' at1 'inf' | instantiate '4.00' @0.500
+WORD-END               dbx-160 (m) | [6] Noise | role - | at0 'Off' at1 '100.0' | instantiate 'Off' @0.000
+WORD-END               Kramer PIE (m) | [2] Ratio | role ratio | at0 '1:1' at1 'Limit' | instantiate '3:1' @0.500
+WORD-END               Kramer PIE (m) | [3] Analog | role - | at0 '50Hz' at1 'Off' | instantiate 'Off' @1.000
+WORD-END               Maag MAGNUM-K | [12] LMF Frequency 1 | role - | at0 'SUB' at1 '1/1.4 kHz' | instantiate 'SUB' @0.000
+WORD-END               Maag MAGNUM-K | [34] LMF Frequency 2 | role - | at0 'SUB' at1 '1/1.4 kHz' | instantiate 'SUB' @0.000
+WORD-END               Maag MAGNUM-K | [59] Switchable High Pass Frequency | role - | at0 'OFF' at1 '220 Hz' | instantiate 'OFF' @0.000
+          MISSING-END  Maag MAGNUM-K | [61] Input Led 1 | role input | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [62] Peak In 1 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [63] Comp Led 1 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [64] KComp Led 1 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [65] Maeag1 Led 1 | role - | at0 '' at1 '' | instantiate '' @1.000
+          MISSING-END  Maag MAGNUM-K | [66] Maeag2 Led 1 | role - | at0 '' at1 '' | instantiate '' @1.000
+          MISSING-END  Maag MAGNUM-K | [67] Peak Out 1 | role output | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [68] Limit 1 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [69] Input Led 2 | role input | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [70] Peak In 2 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [71] Comp Led 2 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [72] KComp Led 2 | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [73] Maeag1 Led 2 | role - | at0 '' at1 '' | instantiate '' @1.000
+          MISSING-END  Maag MAGNUM-K | [74] Maeag2 Led 2 | role - | at0 '' at1 '' | instantiate '' @1.000
+          MISSING-END  Maag MAGNUM-K | [75] Peak Out 2 | role output | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Maag MAGNUM-K | [76] Limit 2 | role - | at0 '' at1 '' | instantiate '' @0.000
+WORD-END               Acme Opticom XLA-3 | [10] Noise Level | role - | at0 '-oo dB' at1 '-60.0 dB' | instantiate '-90.0 dB' @0.500
+          MISSING-END  Acme Opticom XLA-3 | [12] VU Meter | role - | at0 '' at1 '' | instantiate '' @0.000
+          MISSING-END  Acme Opticom XLA-3 | [13] GR Meter | role - | at0 '' at1 '' | instantiate '' @0.714
+WORD-END               NEOLD V76U73 | [4] Low Cut | role - | at0 'Flat' at1 '300+80 Hz' | instantiate 'Flat' @0.000
+WORD-END               Solid Dynamics | [2] Ratio | role ratio | at0 '4.0' at1 'Inf' | instantiate '4.0' @0.774
+WORD-END               Solid Dynamics | [6] Output | role output | at0 '-Inf dB' at1 '0.0 dB' | instantiate '0.0 dB' @0.805
+WORD-END               Solid Dynamics | [7] Dry | role - | at0 '-Inf dB' at1 '-90.0 dB' | instantiate '-Inf dB' @0.000
+WORD-END               RVox (m) | [1] Gate | role - | at0 '-Inf' at1 '0.0' | instantiate '-Inf' @0.000
+RANGE GAPS: 132 records; (a) word end: 317 controls across 70 products, 117 in a role; (b) missing end sample: 136 controls across 9 products, 20 in a role

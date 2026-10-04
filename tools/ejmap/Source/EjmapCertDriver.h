@@ -760,7 +760,7 @@ inline juce::var composeFixtureImpl (const Subject& s, const std::map<int, ListR
         auto lr = list.find (t.index);
         c->setProperty ("numSteps", lr != list.end() ? lr->second.numSteps : 0);
         c->setProperty ("discrete", lr != list.end() && lr->second.discrete);
-        const auto dr = fixturerange::derive (a0, a5, a1);
+        const auto dr = fixturerange::derive (a0, a5, a1, 0.01, t.defText, t.defNorm);   // the instantiate point folds in (ruled 4 Oct)
         c->setProperty ("range", dr.range);
         c->setProperty ("direction", dr.direction);
         auto* d = new juce::DynamicObject();
@@ -838,7 +838,8 @@ inline int runRederive (const juce::File& dir)
                 const auto da = c.getProperty ("displayAt", juce::var());
                 const auto a0 = da.getProperty ("0.000", "").toString(), a5 = da.getProperty ("0.500", "").toString(),
                            a1 = da.getProperty ("1.000", "").toString();
-                const auto d = fixturerange::derive (a0, a5, a1);
+                const auto di = c.getProperty ("defaultOnInstantiate", juce::var());
+                const auto d = fixturerange::derive (a0, a5, a1, 0.01, di.getProperty ("display", "").toString(), (double) di.getProperty ("normalised", -1.0));
                 juce::StringArray rd; diffVar (d.range, c.getProperty ("range", juce::var()), "range", rd);
                 if (! rd.isEmpty()) { ++rangeBad; bad.add (s.product + " / " + c.getProperty ("name", "").toString() + ": " + rd.joinIntoString ("; ")); }
                 if (d.direction != c.getProperty ("direction", "").toString())

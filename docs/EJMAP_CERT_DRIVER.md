@@ -1897,3 +1897,30 @@ T10 re-stated (flat 12 at 2 dB still bites). Mutants red: the old line past 3 dB
 (7X-500 6.7 … 15.7 at 4 … 12; SBC 12.2 … 31.3; bx_opto 8.1 … 19.3; mpressor 7.7 … 20.1). CL 1B dry run: every level at
 L_ref −14.45, allowances 15.4 … 28.0 against 12.4 … 25.0 below — its 12 dB pick, which the v1.9 line (30) only just
 allowed, now has 3 dB of margin by construction. 41.7 s for four.
+
+## 36. Range gaps (4 Oct): the census, the fold, range_partial
+
+**The census (`--cert-range-gaps <dir>`, read-only; `cert-traces/2026-10-04-sean-zip/range-gaps-*.txt`).** Two classes per
+control — (a) an END prints a word (`range.endsNotNumeric`), (b) an END SAMPLE is missing (`displayAt` lacks 0.000 or
+1.000, or the text is empty) — with the control's role from `roles::classify`:
+
+| population | records | (a) word end | (b) missing end sample |
+|---|---|---|---|
+| our cert store | 103 | 267 controls, 58 products, **105 in a role** | 135 controls, 8 products, 20 in a role |
+| Sean's 3 Oct zip | 132 | 317 controls, 70 products, **117 in a role** | 136 controls, 9 products, 20 in a role |
+| B (server map data) | 74 | 42 controls, 26 products | 76 controls, 37 in dial-written roles |
+
+B's figures are far below ours on both classes and the populations differ (B: 74 products with server map data; ours 103 /
+132 with every sampled control). Class (b) in our data is dominated by TBTECH Cenozoix (98 controls whose text-at returned
+nothing) and meters; the 20 in a role are the ones that matter. **A name-level diff against B's list needs B's list** — our
+two lists are committed so it can be made the moment it is shared; without it "on one list but not the other" cannot be
+answered. Our role-bearing word-end controls include the whole Melda ratio family ("Infinity"), every "Auto"/"auto"/"Dual"
+release, CLA-76 / MC 77 Input "-Inf" (instantiate OUTSIDE the parsed range), SSLComp Attack ".1ms" (a parser miss: no bare
+leading dot), DPR-402 Threshold "Out", CL 1B Threshold "Off".
+
+**The fold (built).** `fixturerange::derive` takes the instantiate text and norm: every parsed sample folds into min/max,
+`at_instantiate {norm, value}` is recorded, and `range_partial` names the gap — "an end prints a word", "an end sample is
+missing", "the instantiate point lies outside the sampled ends" — so no consumer resolves display to norm across it by
+interpolation. Without an instantiate text the rule is exactly what it was (R7d: the 1,783-control reproduction stands).
+Pins R7 (CL 1B Gain: min 0, max 31, at_instantiate {0.33, 0.0}, both gaps named), R7b, R7c, R7d; mutants red (not folded;
+never flagged). The re-sample (21 norms in the tone-check session) is the next section.

@@ -3751,6 +3751,20 @@ void testFixtureRangeRule()
            && ! (bool) d.range.getProperty ("linear", true) && d.direction == "descending",
            "range: LA-2 Meter '+10dB / GR / +4dB' -> both ends parse: no endsNotNumeric, linear false");
 
+    // 7. THE INSTANTIATE POINT FOLDS IN, AND range_partial NAMES THE GAP (ruled 4 Oct): CL 1B Gain "Off / 8.5 / 31.0", instantiate "0.0" at 0.33
+    d = derive ("Off", "8.5", "31.0", 0.01, "0.0", 0.33);
+    check (num (d.range, "min") == 0.0 && num (d.range, "max") == 31.0 && has (d.range, "at_instantiate") && num (d.range.getProperty ("at_instantiate", {}), "value") == 0.0
+             && std::abs (num (d.range.getProperty ("at_instantiate", {}), "norm") - 0.33) < 1e-9 && has (d.range, "endsNotNumeric")
+             && d.range.getProperty ("range_partial", "").toString() == "the instantiate point lies outside the sampled ends; an end prints a word",
+           "range R7: CL 1B Gain's range includes the instantiate value 0.0 (min 0, max 31), records at_instantiate {0.33, 0.0}, and range_partial names both gaps (" + d.range.getProperty ("range_partial", "").toString() + ")");
+    d = derive ("-24.0", "-12.0", "0.0", 0.01, "-18.0", 0.25);
+    check (num (d.range, "min") == -24.0 && num (d.range, "max") == 0.0 && ! has (d.range, "range_partial") && has (d.range, "at_instantiate"),
+           "range R7b: an instantiate point inside the sampled ends changes nothing but is recorded; no range_partial");
+    d = derive ("", "-12.0", "0.0", 0.01, "-6.0", 0.75);
+    check (d.range.getProperty ("range_partial", "").toString() == "an end sample is missing; an end prints a word" && num (d.range, "min") == -12.0,
+           "range R7c: an empty end sample is 'an end sample is missing' (and, unparsed, also a word end); the range borrows the middle as before");
+    check (! has (derive ("Off", "8.5", "31.0").range, "at_instantiate") && num (derive ("Off", "8.5", "31.0").range, "min") == 8.5,
+           "range R7d: without an instantiate text the rule is exactly what it was (the 1,783-control reproduction stands)");
     // 5. the linearity tolerance, bracketed by the data (0.476% true, 2.17% false)
     check ((bool) derive ("0.0", "5.2", "10.5").range.getProperty ("linear", false),
            "range: Distressor 0 / 5.2 / 10.5 (0.476% off the midpoint) is linear");
@@ -5984,8 +5998,9 @@ void testProfileSweepPlan()
         check (pp.ok && pp.thr == 1 && pp.candidates.empty() && pp.wordValuedDropped == juce::StringArray { "Auto Threshold", "Lock Auto Threshold" },
                "roles Z3: Pro-C 3's 'Auto Threshold' and 'Lock Auto Threshold' (2 steps, 0 / 0 / 1) are digit-valued switches, dropped; Threshold is the single candidate (" + pp.why + ")");
         const auto twoLevels = juce::JSON::parse (R"json({"index": 9, "name": "Threshold Hi/Lo", "numSteps": 2, "discrete": true, "displayAt": {"0.000": "-20 dB", "0.500": "-20 dB", "1.000": "0 dB"}})json");
-        check (digitSwitch (proc.getProperty ("controls", {})[1]) && ! digitSwitch (twoLevels) && ! wordValued (twoLevels) && ! digitSwitch (proc.getProperty ("controls", {})[0]),
-               "roles Z3b: a two-step control printing two LEVELS (-20 dB / 0 dB) is not a digit switch and stays a candidate; a continuous control printing digits is not one either");
+        const auto contDigits = juce::JSON::parse (R"json({"index": 9, "name": "Threshold Mix", "numSteps": 2147483647, "discrete": false, "displayAt": {"0.000": "0", "0.500": "0", "1.000": "1"}})json");
+        check (digitSwitch (proc.getProperty ("controls", {})[1]) && ! digitSwitch (twoLevels) && ! wordValued (twoLevels) && ! digitSwitch (proc.getProperty ("controls", {})[0]) && ! digitSwitch (contDigits),
+               "roles Z3b: a two-step control printing two LEVELS (-20 dB / 0 dB) is not a digit switch and stays a candidate; a CONTINUOUS control that happens to print 0 / 0 / 1 is not one either (two steps is part of the rule)");
     }
     {
         // GRID REFINEMENT (2 Oct): CL 1B's 2 dB points, positions 0-5 (null, null, null, -13.91, -23.21, -27.71): the
