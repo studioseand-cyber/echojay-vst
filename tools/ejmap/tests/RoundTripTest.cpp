@@ -6365,6 +6365,14 @@ void testLoopOutcomes()
                      && r1.getProperty ("ruleDecided", {}).getProperty ("by", "") == "KD" && r1.getProperty ("ruleDecided", {}).getProperty ("ruleText", "").toString().contains ("picked by KD on 2026-10-04") && r1.getProperty ("ruleDecided", {}).getProperty ("trims", {}).size() == 2
                      && outcomeForRecord (r1).exportPending,
                    "loop L19m: a review pick naming a certified candidate writes pickedCandidate + ruleDecided {review_pick, by, date}, the others as trims, and the record goes on as export pending (" + w1 + ")");
+            // L19m2 (ruled 4 Oct): a pick on a stereo unit goes through the SAME single view as a pair rule - the twin candidate is in neutral at instantiate, and the
+            // ruleText says the tone check is the pair check (server write order, both channels within 0.5 dB); the tone check itself applies it to every pick
+            {
+                juce::String why; const auto view = ejmap::profile::candidateAsSingle (r1, "Optical Threshold 1", why);
+                check (view.isObject() && view.getProperty ("thresholdSweep", {}).isObject() && ! view.hasProperty ("thresholdCandidates") && (int) view.getProperty ("pickedCandidate", {}).getProperty ("index", -1) == 2
+                         && r1.getProperty ("ruleDecided", {}).getProperty ("ruleText", "").toString().contains ("both output channels within 0.5 dB of g, as for a pair rule"),
+                       "loop L19m2: the review pick's single view is the pair rules' view (its sweep as thresholdSweep, the others in neutral), and the record says the pair tone check applies");
+            }
             auto r2 = juce::JSON::parse (juce::JSON::toString (recJ)); check (applyReviewPick (r2, juce::var()).isEmpty() && ! r2.hasProperty ("pickedCandidate") && outcomeForRecord (r2).state == "needs_review", "loop L19n: without an entry nothing is ever picked");
             auto r3 = juce::JSON::parse (juce::JSON::toString (recJ)); const auto w3 = applyReviewPick (r3, juce::JSON::parse (R"json([{"product": "Shadow Hills Mastering Compressor", "candidate": "Discrete Threshold 1", "by": "KD", "date": "2026-10-04"}])json"));
             check (w3.contains ("but its sweep is flat: nothing picked") && ! r3.hasProperty ("pickedCandidate"), "loop L19o: an entry naming an uncertified candidate picks nothing and says why (" + w3 + ")");

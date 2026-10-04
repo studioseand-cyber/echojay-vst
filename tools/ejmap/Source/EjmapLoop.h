@@ -399,7 +399,8 @@ inline juce::String applyReviewPick (juce::var& record, const juce::var& picks) 
         auto* pk = new juce::DynamicObject(); pk->setProperty ("index", cands[i].getProperty ("index", -1)); pk->setProperty ("name", want);
         pk->setProperty ("note", "review pick by " + by + " on " + date + " (cert/review_picks.json)");
         auto* rd = new juce::DynamicObject(); rd->setProperty ("rule", "review_pick"); rd->setProperty ("by", by); rd->setProperty ("date", date);
-        rd->setProperty ("ruleText", "picked by " + by + " on " + date + " from the candidates' 2 dB curves and verdicts (review_picks.json)" + (pick.getProperty ("note", "").toString().isNotEmpty() ? ": " + pick.getProperty ("note", "").toString() : juce::String()));
+        rd->setProperty ("ruleText", "picked by " + by + " on " + date + " from the candidates' 2 dB curves and verdicts (review_picks.json)" + (pick.getProperty ("note", "").toString().isNotEmpty() ? ": " + pick.getProperty ("note", "").toString() : juce::String())
+                                     + "; the other candidates stay at their instantiate values (neutral); the tone check writes in the server's order and requires both output channels within 0.5 dB of g, as for a pair rule");
         auto* pv = new juce::DynamicObject(); pv->setProperty ("index", cands[i].getProperty ("index", -1)); pv->setProperty ("name", want); rd->setProperty ("pick", juce::var (pv));
         juce::Array<juce::var> others; for (int k = 0; k < cands.size(); ++k) if (k != i) others.add (cands[k].getProperty ("name", "")); rd->setProperty ("trims", others);
         record.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk)); record.getDynamicObject()->setProperty ("ruleDecided", juce::var (rd));

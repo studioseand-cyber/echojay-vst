@@ -103,6 +103,11 @@ Exactly as before: `cd ~/Library/ejmap && zip -rq ~/Desktop/ejmap-tonecheck-$(ho
 — `cert/` only, never `config.json`. The profiles, their `.tonecheck.json`, the re-derived records and
 `outcomes.json` are all inside.
 
+**Review picks (4 Oct).** Put Kathy's `review_picks.json` into `~/Library/ejmap/cert/` before running. A picked candidate
+on a stereo unit (VBC Rack's MU Threshold Left, MAGNUM-K's Threshold 1) gets the same tone check as a measured pair: the
+server's write order (engage, neutral including the other candidates, ratio, amount last) and both output channels within
+0.5 dB of g.
+
 **Corrected control data (4 Oct).** For every loaded product whose sampled range left a gap (an end that prints a word,
 a missing end sample, or an instantiate value outside the sampled ends), the follow-up reads the control at 21 norms and
 writes `cert/controls/<identity>.controls.json` — the full taper and the corrected range. It is in the zip you send back;
