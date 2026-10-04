@@ -1952,3 +1952,40 @@ inputs −56/−54/−44 — "intermittent dropouts" (isolated off-tone readings
 input's tone at …". Pins A6 (H-Comp's own numbers: no flag, floor noted, judged from −66), A7 (MDynamics c8: bursts named),
 A8/A8b/A9; mutants red (judged everywhere; nothing named). H-Comp (m)/(s) are among the re-runs the projected outcome
 (§40) lists: their refusal was recorded, so the batch skips them until `--retry-refused` or a new version.
+
+## 38. The measured candidate rules (4 Oct; EjmapCandidateRules.h): linked pair, leader/follower, master over trims, Main over Aux
+
+Rule 1 decides at plan time; these decide a multi-candidate record from what was MEASURED, after the sweeps, in both the
+batch (`decideByMeasurement` beside Rule 1 in `composeCandidatesAndReport`) and the tone-check-only re-derive from traces.
+The record then carries `pickedCandidate` + `ruleDecided {rule, pick, twin|trims, ruleText}` exactly like Rule 1, so the
+export, the tone check and the row use the same single view; `notes` names the rule, the pick, the twin/trims (at
+instantiate, in neutral) and the measurements.
+
+- **linked_pair (item 1):** two candidates whose names differ only by a literal channel token — `""/" R"`, `L/R`,
+  `Left/Right`, `1/2`, `A/B`, `L/M`–`R/S`, `M/S`, as suffix OR prefix (UnFairchild's "L Threshold / R Threshold" is a prefix
+  pair: Kathy, veto if "suffix" was meant literally) — both certify; their 2 dB curves agree within 0.5 dB at every common
+  position; and in the FIRST candidate's own sweep both output channels (the probe's per-hold `ch` levels) agree within
+  0.5 dB at every reading above silence. The first is the amount; the twin and every link/mode control stay at instantiate.
+- **leader_follower (item 10):** the same pair, the first certifies with its channels together, the second does not certify.
+- **master_over_trims (item 11):** one candidate's name is every other's minus a channel or band suffix (L/R/Left/Right/A/B/
+  L/M/R/S/M/S/Low/Mid/High/Lo/Hi or digits) and it certifies. A name match alone never decides.
+- **main_over_aux (item 12):** the literal words "Stereo/Main" against "Aux", Main certifies.
+
+**Sean's zip, re-derived from the traces:** all **10 channel pairs pass** linked_pair — AMEK, Abbey Road RS124 (s),
+DPR-402 (s), Millennia TCL-2, VT-7, SPL IRON (channels 0.27 dB apart, inside 0.5), UnFairchild (prefix tokens, 0.05),
+VBC FG-MU (0.02), Vertigo VSC-2, elysia alpha master — every curve pair identical to the digit, every first candidate's
+channels within 0.27 dB. **PuigChild 670 (s)** → leader_follower (Left certified, channels 0.00 over 1330 readings, Right
+flat). **Ozone 12 Vintage** → main_over_aux. **Kiive XTComp** (INPUT over Input Left/Right) and **DSM V3** (Threshold over
+1/2/3) → master_over_trims. **Shadow Hills** (both) → no rule: four candidates (Optical/Discrete × 1/2) — and note the
+premise "channels independent" is NOT what its traces show: in each of its four candidate sweeps both output channels agree
+to 0.00 dB over 840 readings; it stays in review because two STAGES are not a channel pair, not because its channels part.
+Lindell 354E / MBC (3 candidates, no master shape) stay.
+
+**The tone check for any decided pick** writes in the server's order (engage, neutral including the twin, ratio, then the
+amount as the sweep position — already the order `toneWrites` builds, pinned T1) and now requires BOTH output channels within
+0.5 dB of g (per-channel GR = GR + (level − channel) from the test hold's `ch` levels; recorded as `gr_per_channel_db`),
+which catches a twin write mirroring back onto the amount. Live on the four rehearsal units: every level's two channels
+read identical to 0.01 dB (e.g. SBC g = 2 → 1.99 / 1.99), 40 of 40 PASS.
+
+Pins P1–P6, M1–M3, X1/X1b; mutants red (pair by name alone, curves not compared, master need not certify, a certified second
+counted as leader, Low/High as a channel pair).

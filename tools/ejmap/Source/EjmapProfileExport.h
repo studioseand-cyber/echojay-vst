@@ -659,7 +659,16 @@ inline Export exportCompProfile (const juce::var& f)
     {
         // RULE-DECIDED (ruled 2 Oct): the rule, the pick, its engage write, every other candidate at its instantiate value,
         // and whether another stage is active at the defaults (named by the candidates left at a level).
-        notes << "amount control decided by Rule 1 (the compressor stage word): pick " << rd.getProperty ("pick", {}).getProperty ("name", "").toString();
+        const auto ruleName = rd.getProperty ("rule", "").toString();
+        if (ruleName.startsWith ("R1") || ruleName.isEmpty()) notes << "amount control decided by Rule 1 (the compressor stage word): pick " << rd.getProperty ("pick", {}).getProperty ("name", "").toString();
+        else
+        {
+            // THE MEASURED RULES (4 Oct): the rule and the twin / trims named, with the measurements that decided it
+            juce::StringArray others; for (const auto& o : *rd.getProperty (rd.hasProperty ("twin") ? "twin" : "trims", juce::Array<juce::var>()).getArray()) others.add (o.toString());
+            notes << "amount control decided by the measured rule '" << ruleName << "': pick " << rd.getProperty ("pick", {}).getProperty ("name", "").toString()
+                  << (others.isEmpty() ? juce::String() : (rd.hasProperty ("twin") ? "; twin " : "; trims ") + others.joinIntoString (", ") + " at instantiate (in neutral)")
+                  << "; " << rd.getProperty ("ruleText", "").toString();
+        }
         if (const auto* ew = rd.getProperty ("engage", {}).getArray(); ew != nullptr && ! ew->isEmpty()) { juce::StringArray e; for (const auto& w : *ew) e.add (w.getProperty ("control", "").toString() + " -> " + w.getProperty ("set", "").toString()); notes << " with engage " << e.joinIntoString (", "); }
         if (const auto* ot = rd.getProperty ("othersAtInstantiate", {}).getArray(); ot != nullptr && ! ot->isEmpty()) { juce::StringArray e; for (const auto& x : *ot) e.add (x.getProperty ("name", "").toString() + "='" + x.getProperty ("set", "").toString() + "'"); notes << "; other threshold candidates and every other control at their instantiate values: " << e.joinIntoString (", "); }
         // THE SOURCE IS STATED (ruled 2 Oct, evening): per stage, its own engage switch at instantiate, or "no engage

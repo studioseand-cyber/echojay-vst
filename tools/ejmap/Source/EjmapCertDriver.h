@@ -43,6 +43,7 @@
 #include "EchoJayAuRegistry.h"
 #include "EjmapFixtureUnit.h"
 #include "EjmapFixtureRange.h"
+#include "EjmapCandidateRules.h"
 #include "EjmapFixtureReadout.h"
 #include "EjmapCertOutcome.h"
 #include "EjmapSweep.h"
@@ -1609,6 +1610,54 @@ inline void resolveLicenceAtProductLevel (std::vector<std::pair<sweep::Plan, Der
 
 // SEVERAL CANDIDATES (ruled 30 Sep): one fixture carrying every candidate's sweep, labelled, and NO thresholdSweep - a
 // human reads the curves and picks. The fixture says so in `thresholdReview`.
+// BOTH OUTPUT CHANNELS, FROM A CANDIDATE'S OWN SWEEP CAPTURES (ruled 4 Oct): the probe prints every hold's per-channel level
+// ("ch a,b"); the worst |a - b| over every reading above silence is the channel agreement the pair rules need. Reads the
+// traces named in processes.json whose tag starts with the candidate's prefix (c<idx>.pos..), repeats included.
+inline std::optional<std::pair<double, int>> channelAgreementFromTraces (const juce::File& processesJson, const juce::File& rawDir, const juce::String& prefix)
+{
+    const auto procs = juce::JSON::parse (processesJson.loadFileAsString());
+    const auto* a = procs.getArray(); if (a == nullptr) return std::nullopt;
+    double worst = 0.0; int n = 0;
+    for (const auto& p : *a)
+    {
+        const auto tag = p.getProperty ("tag", "").toString();
+        if (! tag.startsWith (prefix + "pos") && ! tag.startsWith ("r2." + prefix + "pos")) continue;
+        for (const auto& line : juce::StringArray::fromLines (rawDir.getChildFile (p.getProperty ("file", "").toString()).loadFileAsString()))
+        {
+            if (! line.startsWith ("hold\t")) continue;
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            const int k = f.indexOf ("ch"); if (k < 0 || k + 1 >= f.size()) continue;
+            const auto chs = juce::StringArray::fromTokens (f[k + 1], ",", ""); if (chs.size() < 2) continue;
+            const double c0 = chs[0].getDoubleValue(), c1 = chs[1].getDoubleValue();
+            if (c0 < sweep::kSilentDb || c1 < sweep::kSilentDb) continue;
+            worst = juce::jmax (worst, std::abs (c0 - c1)); ++n;
+        }
+    }
+    if (n == 0) return std::nullopt;
+    return std::make_pair (worst, n);
+}
+
+// THE MEASURED CANDIDATE RULES (items 1, 10, 11, 12; EjmapCandidateRules.h), tried when Rule 1 did not decide
+inline juce::var decideByMeasurement (const std::vector<std::pair<sweep::Plan, Derivation>>& cands, const juce::File& processesJson, const juce::File& rawDir)
+{
+    std::vector<candidaterules::CandidateFacts> facts;
+    for (const auto& [q, one] : cands)
+    {
+        candidaterules::CandidateFacts f; f.index = q.thr; f.name = q.thrName; f.certified = one.written && one.d.result == "certified";
+        for (size_t i = 0; i < one.d.inAtGr.size() && i < one.d.norms.size(); ++i) { const auto it = one.d.inAtGr[i].at.find (2); if (it != one.d.inAtGr[i].at.end() && (it->second.isDouble() || it->second.isInt())) f.curve2[std::round ((double) one.d.norms[i] * 1e4) / 1e4] = (double) it->second; }
+        if (processesJson.existsAsFile()) if (const auto ch = channelAgreementFromTraces (processesJson, rawDir, "c" + juce::String (q.thr) + ".")) { f.channelWorstDb = ch->first; f.channelReadings = ch->second; }
+        facts.push_back (f);
+    }
+    const auto d = candidaterules::decide (facts);
+    if (! d.decided) { if (d.whyNot.isNotEmpty()) std::cout << "  no measured rule: " << d.whyNot << std::endl; return {}; }
+    auto* rd = new juce::DynamicObject();
+    rd->setProperty ("rule", d.rule); rd->setProperty ("ruleText", d.note);
+    auto* pk = new juce::DynamicObject(); pk->setProperty ("index", d.pick); pk->setProperty ("name", d.pickName); rd->setProperty ("pick", juce::var (pk));
+    juce::Array<juce::var> others; for (const auto& o : d.others) others.add (o); rd->setProperty (d.rule == "master_over_trims" ? "trims" : "twin", others);
+    std::cout << "  " << d.rule << ": " << d.note << std::endl;
+    return juce::var (rd);
+}
+
 inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan& plan, const std::vector<std::pair<sweep::Plan, Derivation>>& cands,
                                         const juce::File& fixtureOut, const juce::File& reportOut, const juce::var& ruleDecided = {})
 {
@@ -1617,7 +1666,8 @@ inline void composeCandidatesAndReport (const juce::var& base, const sweep::Plan
     {
         f.getDynamicObject()->setProperty ("ruleDecided", ruleDecided);
         auto* pk = new juce::DynamicObject(); pk->setProperty ("index", ruleDecided.getProperty ("pick", {}).getProperty ("index", -1)); pk->setProperty ("name", ruleDecided.getProperty ("pick", {}).getProperty ("name", ""));
-        pk->setProperty ("note", "decided by Rule 1 (ruleDecided): the comp-worded candidate certified alone");
+        const auto rule = ruleDecided.getProperty ("rule", "").toString();
+        pk->setProperty ("note", rule.startsWith ("R1") ? juce::String ("decided by Rule 1 (ruleDecided): the comp-worded candidate certified alone") : "decided by the measured rule '" + rule + "' (ruleDecided): " + ruleDecided.getProperty ("ruleText", "").toString());
         f.getDynamicObject()->setProperty ("pickedCandidate", juce::var (pk));
     }
     juce::Array<juce::var> arr;
@@ -2191,6 +2241,7 @@ inline int runCertSweep (const SweepOptions& opt)
                                  + "; per stage, from each stage's engage switch at instantiate, never from a stage reading flat");
         ruleDecided = juce::var (rd);
     }
+    if (! ruleDecided.isObject()) ruleDecided = decideByMeasurement (cands, opt.out.getChildFile (stem + ".sweep.processes.json"), opt.out.getChildFile ("raw"));
     composeCandidatesAndReport (base, plan, cands, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), ruleDecided);
     return 0;
 }
@@ -2320,7 +2371,8 @@ inline int runSweepRederive (const juce::File& fixtureIn, const juce::File& proc
         cands.push_back ({ q, one });
     }
     resolveLicenceAtProductLevel (cands, pv);
-    composeCandidatesAndReport (base, plan, cands, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"));
+    composeCandidatesAndReport (base, plan, cands, fixtureOut, fixtureOut.getSiblingFile (fixtureOut.getFileNameWithoutExtension() + ".report.txt"),
+                                fx.getProperty ("ruleDecided", {}).isObject() ? fx.getProperty ("ruleDecided", {}) : decideByMeasurement (cands, processesJson, rawDir));
     return 0;
 }
 
@@ -2807,7 +2859,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
 
     // ONE LEVEL (v1.7 section 8, L per level ruled 3 Oct): the test L for this g by profile::toneLevelFor (or the caller's
     // override), the pick there, the writes, one fresh process at L, the GR against the pick's expected g within 0.5 dB.
-    struct LevelResult { double g = 0, Lrms = 0, Lpeak = 0, Lref = 0, gapDb = 0; bool ran = false, pass = false, quietOk = false, window = false, noValidL = false; std::optional<double> gr; profile::Pick pick; juce::String why, rule; };
+    struct LevelResult { double g = 0, Lrms = 0, Lpeak = 0, Lref = 0, gapDb = 0; bool ran = false, pass = false, quietOk = false, window = false, noValidL = false; std::optional<double> gr; std::vector<double> chGrDb; profile::Pick pick; juce::String why, rule; };
     auto checkAt = [&] (double gg, const juce::String& tag) -> LevelResult
     {
         LevelResult lr; lr.g = gg;
@@ -2841,7 +2893,21 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         const auto key = sweep::levelKey (Lpeak);
         lr.gr = d.reduction.count (key) && ! d.reduction.at (key).empty() ? d.reduction.at (key)[0] : std::nullopt;
         lr.quietOk = ! d.quietCheckDb.empty() && d.quietCheckDb[0] && std::abs (*d.quietCheckDb[0]) <= sweep::kQuietTolDb;
-        lr.pass = lr.gr && lr.quietOk && std::abs (*lr.gr - lr.pick.expectedGrDb) <= 0.5;
+        // BOTH OUTPUT CHANNELS within 0.5 dB of g (ruled 4 Oct, with the pair rules): the probe's per-channel levels at the test hold
+        // give each channel's GR as GR + (level - channel); a twin write that mirrors back onto the amount shows here as one channel off
+        lr.chGrDb.clear();
+        for (const auto& line : juce::StringArray::fromLines (r.out))
+        {
+            if (! line.startsWith ("hold\t")) continue;
+            const auto f = juce::StringArray::fromTokens (line, "\t", "");
+            if (f.size() < 3 || std::abs (f[2].getDoubleValue() - Lpeak) > 0.01) continue;
+            const int kl = f.indexOf ("level_db"), kc = f.indexOf ("ch"); if (kl < 0 || kc < 0 || kc + 1 >= f.size() || ! lr.gr) continue;
+            const double level = f[kl + 1].getDoubleValue();
+            for (const auto& c : juce::StringArray::fromTokens (f[kc + 1], ",", "")) lr.chGrDb.push_back (*lr.gr + (level - c.getDoubleValue()));
+        }
+        bool channelsOk = true; for (double g2 : lr.chGrDb) if (std::abs (g2 - lr.pick.expectedGrDb) > 0.5) channelsOk = false;
+        lr.pass = lr.gr && lr.quietOk && std::abs (*lr.gr - lr.pick.expectedGrDb) <= 0.5 && channelsOk;
+        if (! channelsOk) say ("TONE: " + product + " - the output channels disagree: per-channel GR " + [&] { juce::StringArray a; for (double g2 : lr.chGrDb) a.add (juce::String (g2, 2)); return a.joinIntoString (" / "); }() + " dB against " + juce::String (lr.pick.expectedGrDb, 1) + " (a twin write mirroring onto the amount, or independent channels)");
         say ("TONE: " + product + " - GR " + (lr.gr ? juce::String (*lr.gr, 2) : juce::String ("unreadable")) + " dB at L (target " + juce::String (lr.pick.expectedGrDb, 1) + ", quiet check "
              + (lr.quietOk ? "ok" : "FAILED") + ") -> " + (lr.pass ? "PASS" : "FAIL") + " (within 0.5 dB)");
         return lr;
@@ -2887,7 +2953,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     }
     auto* o = new juce::DynamicObject();
     o->setProperty ("product", product); o->setProperty ("map_fp", profile.getProperty ("plugin", {}).getProperty ("map_fp", ""));
-    o->setProperty ("L_rms_dbfs", main.Lrms); o->setProperty ("L_peak_dbfs", main.Lpeak); o->setProperty ("g_db", g); o->setProperty ("L_rule", main.rule); o->setProperty ("L_ref_dbfs", main.Lref); o->setProperty ("L_gap_db", std::round (main.gapDb * 100.0) / 100.0);
+    o->setProperty ("L_rms_dbfs", main.Lrms); o->setProperty ("L_peak_dbfs", main.Lpeak); o->setProperty ("g_db", g); o->setProperty ("L_rule", main.rule); { juce::Array<juce::var> ch; for (double x : main.chGrDb) ch.add (std::round (x * 100.0) / 100.0); o->setProperty ("gr_per_channel_db", ch); } o->setProperty ("L_ref_dbfs", main.Lref); o->setProperty ("L_gap_db", std::round (main.gapDb * 100.0) / 100.0);
     o->setProperty ("pick", main.pick.ok ? pickVar (main.pick) : juce::var());
     o->setProperty ("writes", writes);
     o->setProperty ("writes_source", "exported profile: engage[], neutral[], ratio.curve[0], then the section 6 pick");
@@ -2905,7 +2971,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
         const auto lr = checkAt ((double) t, ".g" + juce::String (t));
         if (lr.window) return kToneWindowExit;
         auto* dl = new juce::DynamicObject(); dl->setProperty ("g_db", (double) t); dl->setProperty ("ran", lr.ran); dl->setProperty ("gr_measured_db", lr.gr ? juce::var (std::round (*lr.gr * 100.0) / 100.0) : juce::var());
-        dl->setProperty ("L_rms_dbfs", lr.ran || lr.pick.ok ? juce::var (lr.Lrms) : juce::var()); dl->setProperty ("L_rule", lr.rule); dl->setProperty ("L_ref_dbfs", lr.Lref); dl->setProperty ("L_gap_db", lr.ran || lr.pick.ok ? juce::var (std::round (lr.gapDb * 100.0) / 100.0) : juce::var());
+        dl->setProperty ("L_rms_dbfs", lr.ran || lr.pick.ok ? juce::var (lr.Lrms) : juce::var()); dl->setProperty ("L_rule", lr.rule); { juce::Array<juce::var> ch; for (double x : lr.chGrDb) ch.add (std::round (x * 100.0) / 100.0); dl->setProperty ("gr_per_channel_db", ch); } dl->setProperty ("L_ref_dbfs", lr.Lref); dl->setProperty ("L_gap_db", lr.ran || lr.pick.ok ? juce::var (std::round (lr.gapDb * 100.0) / 100.0) : juce::var());
         dl->setProperty ("quiet_check_ok", lr.quietOk); dl->setProperty ("pass_within_0_5_db", lr.pass); dl->setProperty ("pick", lr.pick.ok ? pickVar (lr.pick) : juce::var()); if (! lr.ran) dl->setProperty ("why_not_run", lr.why);
         // WHY A LEVEL IS NULLED (ruled 3 Oct): a failed check at the recorded L, or no valid L on the curve
         dl->setProperty ("null_reason", lr.pass ? juce::var() : lr.ran ? juce::var ("failed_check_at_L") : lr.noValidL ? juce::var ("no_valid_L") : juce::var ("could_not_run"));

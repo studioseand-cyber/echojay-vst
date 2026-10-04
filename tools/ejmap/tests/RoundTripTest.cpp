@@ -33,6 +33,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>   // ScopedJuceInitialiser_GUI
 #include "EjmapLoop.h"
+#include "EjmapCandidateRules.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapCategoriesMerge.h"
 #include "EjmapSchema.h"
@@ -4484,6 +4485,50 @@ void testSweepQuietReference()
 //==============================================================================
 /** NOT LICENSED, NARROWED (ruled 29 Sep): silence, non-finite output, or output that is not the input's tone, at the
     default settings. Default gain is information. The 3 dB rule withheld six working Waves plugins on 29 Sep. */
+/** THE MEASURED CANDIDATE RULES (ruled 4 Oct, from Sean's 3 Oct run; EjmapCandidateRules.h). Facts shaped on the traces. */
+void testCandidateRules()
+{
+    using namespace ejmap::candidaterules;
+    auto cand = [] (int idx, const juce::String& name, bool cert, std::map<double, double> curve, std::optional<double> ch, int n) { CandidateFacts f; f.index = idx; f.name = name; f.certified = cert; f.curve2 = curve; f.channelWorstDb = ch; f.channelReadings = n; return f; };
+    std::map<double, double> cv; for (int i = 0; i < 17; ++i) cv[i / 16.0] = -40.0 + 2.0 * i;
+    auto shifted = cv; for (auto& [n, v] : shifted) v += 0.6;
+    // P1: Vertigo VSC-2's shape - Threshold A / B, both certified, curves equal, channels 0.00 -> linked pair, A picked, B the twin
+    const auto vsc = decide ({ cand (4, "Threshold A", true, cv, 0.0, 665), cand (11, "Threshold B", true, cv, 0.0, 665) });
+    check (vsc.decided && vsc.rule == "linked_pair" && vsc.pick == 4 && vsc.others == juce::StringArray { "Threshold B" } && vsc.note.contains ("measured, not by label") && vsc.note.contains ("0.00 dB over 17 common positions"),
+           "pair P1 (Vertigo VSC-2): a channel-suffixed pair, both certified, curves equal, channels together -> linked_pair, the first is the amount, the twin named (" + vsc.note + ")");
+    // P2: the same names but the first's channels differ in its own sweep -> no rule (channels independent)
+    const auto indep = decide ({ cand (4, "Threshold A", true, cv, 3.2, 665), cand (11, "Threshold B", true, cv, 0.0, 665) });
+    check (! indep.decided && indep.whyNot.contains ("output channels differ by up to 3.20 dB") && indep.whyNot.contains ("channels are independent"), "pair P2: a pair whose first candidate's own sweep shows the channels apart is NOT a linked pair, and the row says why (" + indep.whyNot + ")");
+    // P3: curves differ by 0.6 dB -> no rule; P3b: no per-channel readings -> no rule (never assumed)
+    const auto diff = decide ({ cand (4, "Threshold A", true, cv, 0.0, 665), cand (11, "Threshold B", true, shifted, 0.0, 665) });
+    check (! diff.decided && diff.whyNot.contains ("differ by up to 0.60 dB"), "pair P3: curves 0.6 dB apart are not a linked pair (" + diff.whyNot + ")");
+    check (! decide ({ cand (4, "Threshold A", true, cv, std::nullopt, 0), cand (11, "Threshold B", true, cv, 0.0, 665) }).decided, "pair P3b: without per-channel readings in the first's own sweep nothing is decided - a rule never guesses");
+    // P4: PuigChild 670 (s) - Left certified with channels together, Right flat -> leader_follower
+    const auto puig = decide ({ cand (4, "Left Threshold", true, cv, 0.0, 1330), cand (8, "Right Threshold", false, {}, 0.0, 1330) });
+    check (puig.decided && puig.rule == "leader_follower" && puig.pick == 4 && puig.others == juce::StringArray { "Right Threshold" } && puig.note.contains ("did not certify (it follows the leader)"),
+           "pair P4 (PuigChild 670 (s)): the first certifies with its channels together, the second does not -> leader_follower, the first is the amount");
+    const auto rev = decide ({ cand (4, "Left Threshold", false, cv, 0.0, 10), cand (8, "Right Threshold", true, cv, 0.0, 10) });
+    check (! rev.decided && rev.whyNot.contains ("the first candidate did not certify"), "pair P4b: the FIRST must be the one that certifies; a certified second alone decides nothing, and the row says why (" + rev.whyNot + ")");
+    // P5: the channel tokens, literal: ""/" R" (RS124), L/M vs R/S (DPR-402), prefix L/R (UnFairchild), Left/Right (VT-7); not Low/High (kHs), not Optical 1 / Discrete 1
+    check (channelPairBase ("Input Control", "Input Control R") == "Input Control" && channelPairBase ("Threshold L/M", "Threshold R/S") == "Threshold" && channelPairBase ("L Threshold", "R Threshold") == "Threshold"
+             && channelPairBase ("Left Threshold", "Right Threshold") == "Threshold" && channelPairBase ("Threshold 1", "Threshold 2") == "Threshold" && channelPairBase ("Low Threshold", "High Threshold").isEmpty() && channelPairBase ("Optical Threshold 1", "Discrete Threshold 1").isEmpty(),
+           "pair P5: the channel tokens are literal (''/' R', L/M-R/S, L/R as prefix or suffix, Left/Right, 1/2); Low/High and Optical/Discrete are not channel pairs");
+    // P6: Shadow Hills - four candidates (two stages x two channels): no pair rule, says so
+    const auto sh = decide ({ cand (2, "Optical Threshold 1", true, cv, 0.0, 840), cand (5, "Discrete Threshold 1", true, cv, 0.0, 840), cand (14, "Optical Threshold 2", true, cv, 0.0, 840), cand (17, "Discrete Threshold 2", true, cv, 0.0, 840) });
+    check (! sh.decided && sh.whyNot.contains ("4 candidates, 4 certified"), "pair P6 (Shadow Hills): four candidates are not a pair and no master; stays for review");
+    // M1: Kiive XTComp - INPUT over Input Left / Input Right; M2: DSM V3 - Threshold over Threshold 1/2/3; M3: a name match alone never decides
+    const auto xt = decide ({ cand (3, "INPUT", true, cv, 0.0, 100), cand (7, "Input Left", true, cv, 0.0, 100), cand (8, "Input Right", true, cv, 0.0, 100) });
+    check (xt.decided && xt.rule == "master_over_trims" && xt.pick == 3 && xt.others == juce::StringArray { "Input Left", "Input Right" }, "master M1 (Kiive XTComp): INPUT is Input Left / Input Right minus the channel suffix and certifies -> the amount; the trims stay");
+    const auto dsm = decide ({ cand (1, "Threshold", true, cv, 0.0, 100), cand (3, "Threshold 1", false, {}, 0.0, 100), cand (7, "Threshold 2", false, {}, 0.0, 100), cand (11, "Threshold 3", true, cv, 0.0, 100) });
+    check (dsm.decided && dsm.rule == "master_over_trims" && dsm.pick == 1 && dsm.others.size() == 3, "master M2 (DSM V3): Threshold over Threshold 1 / 2 / 3");
+    const auto nm = decide ({ cand (3, "INPUT", false, {}, 0.0, 100), cand (7, "Input Left", true, cv, 0.0, 100), cand (8, "Input Right", true, cv, 0.0, 100) });
+    check (! nm.decided && nm.whyNot.contains ("a name match alone never decides"), "master M3: the master must certify - a name match alone never decides (" + nm.whyNot + ")");
+    // X1: Ozone 12 Vintage Compressor - Stereo/Main over Aux, literal words; Main must certify
+    const auto oz = decide ({ cand (8, "VCOMP: Stereo/Main Threshold", true, cv, 0.0, 1008), cand (21, "VCOMP: Aux Threshold", false, {}, 0.0, 1008) });
+    check (oz.decided && oz.rule == "main_over_aux" && oz.pick == 8, "aux X1 (Ozone 12 Vintage): Stereo/Main certified over Aux -> Main is the amount");
+    check (! decide ({ cand (8, "VCOMP: Stereo/Main Threshold", false, {}, 0.0, 10), cand (21, "VCOMP: Aux Threshold", true, cv, 0.0, 10) }).decided, "aux X1b: Main must certify");
+}
+
 void testLicenceFromAudio()
 {
     using namespace ejmap::sweep;
@@ -6438,6 +6483,7 @@ int main (int, char**)
     testMeasurableRule();
     testSweepRatioAndPicks();
     testSweepQuietReference();
+    testCandidateRules();
     testLicenceFromAudio();
     testExternalHardware();
     testSleepTimeouts();
