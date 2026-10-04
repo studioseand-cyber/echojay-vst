@@ -4501,6 +4501,37 @@ void testLicenceFromAudio()
     check (derive (noise, sweeptest::kLevels, -1).unlicensedSuspect, "licence A4: output that is 20% the input's tone is flagged");
     auto old = m; for (auto& [k, v] : old.refToneFrac) v = -1.0;
     check (! derive (old, sweeptest::kLevels, -1).unlicensedSuspect, "licence A5: a trace without tone_frac claims nothing");
+    // JUDGED ONLY WHERE THE LADDER ACCEPTS, WHAT WAS SEEN NAMED (A6-A9, ruled 4 Oct, from Sean's 3 Oct traces)
+    {
+        // A6: H-Comp (s) 15.0.72, cert-traces/2026-10-04-sean-zip: the reference run's own numbers - a modelled floor at about -82 dBFS,
+        // tone_frac 0.12 / 0.37 / 0.70 at -90 / -84 / -78, clean from -72 up; the -90/-84 and -84/-78 rungs fail their 6 dB pair (1.3, 3.2 dB), -78/-72 passes (4.9? no: 77.45-72.56 = 4.9 fails), -66/-60 passes (5.9); so the judgement starts at -66
+        auto hc = sweeptest::fromGains ({ { 0.0, 0.0, 0.0 }, { 0.0, -1.0, -2.0 } });
+        const double in[] = { -90, -84, -78, -72, -66, -60, -58, -56, -54, -52, -50, -48, -46, -44, -42, -40, -38, -36, -34, -32, -30, -28, -26, -24, -22, -20, -18, -16, -14, -12, -10, -8, -6, -4, -2, 0 };
+        const double out[] = { -81.959, -80.6809, -77.4546, -72.5555, -66.8945, -60.9804, -58.9927, -56.9974, -55.0017, -53.0067, -51.0054, -49.0077, -47.0084, -45.0064, -43.0087, -41.0068, -39.0055, -37.0067, -35.0032, -33.0022, -31.0015, -28.9966, -26.9952, -24.9911, -22.9843, -20.9804, -18.9711, -16.9607, -14.9508, -12.9335, -10.916, -8.8947, -6.8651, -4.8345, -2.7953, -0.748 };
+        const double tf[]  = { 0.1245, 0.3684, 0.6992, 0.9004, 0.9739, 0.9936, 0.9955, 0.9975, 0.9983, 0.9987, 0.9996, 0.9995, 0.9996, 1.0, 0.9996, 1.0, 1.0, 0.9997, 1.0, 1.0, 0.9997, 1.0, 0.9999, 0.9999, 1.0, 0.9997, 1.0, 1.0, 0.9997, 1.0, 1.0, 0.9997, 1.0, 0.9998, 0.9999, 1.0 };
+        hc.refDb.clear(); hc.refToneFrac.clear(); hc.refNonFinite.clear();
+        for (size_t k = 0; k < 36; ++k) { hc.refDb[levelKey (in[k])] = out[k]; hc.refToneFrac[levelKey (in[k])] = tf[k]; hc.refNonFinite[levelKey (in[k])] = 0; hc.inRmsDb[levelKey (in[k])] = in[k] - 3.0103; }
+        const auto dh = derive (hc, sweeptest::kLevels, -1);
+        check (! dh.unlicensedSuspect && dh.referenceSeen.isEmpty() && dh.referenceJudgedFromDb && std::abs (*dh.referenceJudgedFromDb - (-66.0)) < 1e-9
+                 && dh.referenceNote.contains ("noise floor above the test level at -90, -84 dB") && dh.referenceNote.contains ("not judged"),
+               "licence A6 (H-Comp's traces): a modelled noise floor at -82 dBFS is NOT a licence flag - the off-tone readings at -90/-84 lie below the first ladder rung that passes (-66) and are noted as 'noise floor above the test level', nothing judged there (" + dh.referenceNote + ")");
+        // A7: MDynamics 14.16.0, candidate [8] Threshold (Compressor): clean tone everywhere except fixed-level bursts at -44.8 dBFS on inputs -56, -54, -44 (tone_frac 0) and 0.56 at -46 - every rung passes, so judged throughout; bursts named
+        auto md = hc; md.refDb.clear(); md.refToneFrac.clear(); md.refNonFinite.clear(); md.inRmsDb.clear();
+        const double mout[] = { -93.0113, -87.0089, -81.0111, -75.0106, -69.0091, -63.0116, -61.0098, -44.7892, -44.806, -55.0092, -53.0105, -51.0112, -48.0116, -44.7653, -45.0104, -43.0092 };
+        const double mtf[]  = { 0.9998, 1.0, 0.9998, 0.9999, 1.0, 0.9997, 1.0, 0.0, 0.0, 1.0, 1.0, 0.9998, 0.5609, 0.0, 1.0, 1.0 };
+        for (size_t k = 0; k < 16; ++k) { md.refDb[levelKey (in[k])] = mout[k]; md.refToneFrac[levelKey (in[k])] = mtf[k]; md.refNonFinite[levelKey (in[k])] = 0; md.inRmsDb[levelKey (in[k])] = in[k] - 3.0103; }
+        const auto dm = derive (md, sweeptest::kLevels, -1);
+        check (dm.unlicensedSuspect && dm.referenceSeen.startsWith ("fixed-level non-tone bursts at -44.8 dBFS (inputs -56, -54, -44 dB)") && dm.referenceJudgedFromDb && std::abs (*dm.referenceJudgedFromDb - (-90.0)) < 1e-9,
+               "licence A7 (MDynamics' traces): off-tone readings whose output sits at one level (-44.8 dBFS) whatever the input are 'fixed-level non-tone bursts', named with the inputs; every rung passed so the whole run was judged (" + dm.referenceSeen + ")");
+        // A8: the same off-tone readings but at scattered output levels, few among many clean ones, are 'intermittent dropouts'; many are 'not the input's tone'
+        auto dr = md; dr.refDb[levelKey (-54.0)] = -70.0; dr.refDb[levelKey (-44.0)] = -60.0;
+        check (derive (dr, sweeptest::kLevels, -1).referenceSeen.startsWith ("intermittent dropouts"), "licence A8: isolated off-tone readings at scattered output levels are named 'intermittent dropouts'");
+        auto silent2 = md; for (auto& [k, v] : silent2.refDb) v = -130.0;
+        check (derive (silent2, sweeptest::kLevels, -1).referenceSeen == "silent at every judged level", "licence A8b: silence is named 'silent at every judged level'");
+        // A9: when NO rung passes (a dead unit) every level is judged - silence still flags
+        auto dead = hc; for (auto& [k, v] : dead.refDb) v = -130.0;
+        check (derive (dead, sweeptest::kLevels, -1).unlicensedSuspect && ! derive (dead, sweeptest::kLevels, -1).referenceJudgedFromDb, "licence A9: with no ladder rung passing, every level is judged, and a silent unit is still flagged");
+    }
 
     // WHICH MECHANISM LANDED EACH WRITE, recorded per position (ruled 29 Sep).
     const auto one = parseSweep ("sweep\tproto\t1\npos\t0\tnorm\t0.0\tconfirm_ms\t612.0\tslices\t250\tinstack_match\t0\tgetValue\t0\tlanded_by\trender\trender_blocks\t9\ttext_ms\t1\treads\t2\ttext\t-20 dB\n");

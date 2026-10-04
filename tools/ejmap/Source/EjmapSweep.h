@@ -706,6 +706,8 @@ struct Derived
     juce::String roleFlag;                          // "not_a_threshold" when the guard refuses
     bool unlicensedSuspect = false;
     juce::String referenceNote;
+    juce::String referenceSeen;                        // what the licence judgement saw, named (ruled 4 Oct); empty = nothing suspicious
+    std::optional<double> referenceJudgedFromDb;        // the quietest ladder rung that passed on the reference: levels below it are the unit's own floor
     std::map<juce::String, double> defaultGain;     // out - in at the default settings: INFORMATION ONLY, never judged
 };
 
@@ -861,20 +863,55 @@ inline Derived derive (const Measured& m, const std::vector<double>& levelsIn, i
     // NOT LICENSED, NARROWED (ruled 29 Sep): licence state is not inferable from audio. At the default settings only
     // silence at every level, non-finite output, or output that is not the input's tone flags it; the window watch is
     // the other signal. Default gain is recorded as information and never judged (CLA-2A's +8.5 dB is a working plugin).
+    // JUDGED ONLY WHERE THE LADDER ACCEPTS (ruled 4 Oct, H-Comp from Sean's run): a unit with a modelled noise floor (H-Comp
+    // sits at -82 dBFS) swamps the -90..-78 tones and reads "not the input's tone" there while every level from -60 up is
+    // clean - that is a noise floor, not a licence. The default reference is judged only at levels at or above the quietest
+    // ladder rung whose 6 dB pair passes on the reference itself (the same 0.1 dB bar as the positions); below that the
+    // readings are the unit's own floor and are noted, never judged. If no rung passes anywhere, every level is judged.
+    // WHAT WAS SEEN IS NAMED: "silent", "fixed-level non-tone bursts at <dB>" (off-tone readings whose output sits at one
+    // level whatever the input - MDynamics at -44.8 dBFS), "intermittent dropouts" (isolated off-tone readings between
+    // clean ones), "noise floor above the test level" (off-tone only below the accepted floor), else "not the input's tone".
     {
-        bool allSilent = ! m.refDb.empty(), nonFinite = false, notTone = false;
+        double judgeFrom = -1e9; bool anyRung = false;
+        for (const auto& [lo, hi] : kQuietLadder)
+        {
+            const auto a = m.refDb.find (levelKey (lo)), b = m.refDb.find (levelKey (hi));
+            if (a == m.refDb.end() || b == m.refDb.end()) continue;
+            if (std::abs ((b->second - a->second) - 6.0) <= 0.1) { if (! anyRung || lo < judgeFrom) judgeFrom = lo; anyRung = true; }
+        }
+        if (! anyRung) judgeFrom = -1e9;
+        d.referenceJudgedFromDb = anyRung ? std::optional<double> (judgeFrom) : std::nullopt;
+        bool allSilent = ! m.refDb.empty(), nonFinite = false; int judged = 0;
+        std::vector<std::pair<double, double>> offTone;      // (input level, output level) at judged levels
+        std::vector<double> floorLevels;
         for (const auto& [k, lvl] : m.refDb)
         {
             if (m.inRmsDb.count (k)) d.defaultGain[k] = lvl - m.inRmsDb.at (k);
+            const double L = k.getDoubleValue();
+            const double tf = m.refToneFrac.count (k) ? m.refToneFrac.at (k) : -1.0;
+            const bool off = lvl >= kSilentDb && tf >= 0.0 && tf < kToneFracMin;
+            if (L < judgeFrom - 1e-9) { if (off) floorLevels.push_back (L); continue; }   // below the unit's own floor: noted, not judged
+            ++judged;
             if (lvl >= kSilentDb) allSilent = false;
             if (m.refNonFinite.count (k) && m.refNonFinite.at (k) > 0) nonFinite = true;
-            const double tf = m.refToneFrac.count (k) ? m.refToneFrac.at (k) : -1.0;
-            if (lvl >= kSilentDb && tf >= 0.0 && tf < kToneFracMin)
-            { notTone = true; d.referenceNote << "output at " << k << " is " << juce::String (tf * 100.0, 1) << "% the input's tone; "; }
+            if (off) offTone.push_back ({ L, lvl });
         }
-        if (allSilent) d.referenceNote << "the output is silent at every level; ";
-        if (nonFinite) d.referenceNote << "the output is non-finite; ";
-        d.unlicensedSuspect = allSilent || nonFinite || notTone;
+        if (judged == 0) allSilent = false;
+        auto dbList = [] (std::vector<double> v) { std::sort (v.begin(), v.end()); juce::StringArray a; for (double x : v) a.add (juce::String (x, 0)); return a.joinIntoString (", "); };
+        if (! floorLevels.empty()) d.referenceNote << "noise floor above the test level at " << dbList (floorLevels) << " dB (below the first ladder rung that passes, " << juce::String (judgeFrom, 0) << "; not judged); ";
+        juce::String seen;
+        if (allSilent) seen = "silent at every judged level";
+        else if (nonFinite) seen = "non-finite output";
+        else if (! offTone.empty())
+        {
+            double omin = 1e9, omax = -1e9; std::vector<double> ins; for (const auto& [L, o] : offTone) { omin = juce::jmin (omin, o); omax = juce::jmax (omax, o); ins.push_back (L); }
+            if (offTone.size() >= 2 && omax - omin <= 1.0) seen = "fixed-level non-tone bursts at " + juce::String ((omin + omax) / 2.0, 1) + " dBFS (inputs " + dbList (ins) + " dB)";
+            else if ((int) offTone.size() < judged / 2) seen = "intermittent dropouts (not the input's tone at " + dbList (ins) + " dB, clean between)";
+            else seen = "not the input's tone at " + dbList (ins) + " dB";
+        }
+        if (seen.isNotEmpty()) d.referenceNote << seen << "; ";
+        d.referenceSeen = seen;
+        d.unlicensedSuspect = allSilent || nonFinite || ! offTone.empty();
     }
 
     // Positions in NORM order, whatever order they were walked in; gain = out - in per reading.

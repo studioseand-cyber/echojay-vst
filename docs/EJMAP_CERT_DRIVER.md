@@ -1937,3 +1937,18 @@ corrected range and keeps the words as named positions with their norms; the res
 as its top!); Lindell 7X-500 SC High Pass Filter 100..300 confirmed, OFF over the bottom half named. The session took
 101 s for the four (was 42): about 15 s per re-sampled control on these units. CL 1B's own Gain re-sample waits for a Mac
 with the iLok.
+
+## 37. The false licence flag (4 Oct, H-Comp from Sean's run): judged only where the ladder accepts; what was seen is named
+
+H-Comp (m)/(s) were refused "not licensed suspected … output at -84.00 is 36.8% the input's tone; -90.00 12.4%": the unit's
+modelled noise floor (about −82 dBFS) swamps the −90..−78 tones; from −72 up tone_frac is 0.90 → 1.00. The default
+reference is now judged only at levels at or above the quietest ladder rung whose 6 dB pair passes on the reference itself
+(0.1 dB, the positions' own bar) — H-Comp's −90/−84 (1.3 dB), −84/−78 (3.2) and −78/−72 (4.9) rungs fail, −66/−60 (5.9)
+passes, so the judgement starts at −66 and the floor readings are noted as "noise floor above the test level at −90, −84 dB
+… not judged". With no rung passing anywhere, every level is judged (a dead unit still flags). **What was seen is named**
+(`referenceSeen`, in the reason): "silent at every judged level", "non-finite output", "fixed-level non-tone bursts at
+<dBFS> (inputs …)" — off-tone readings whose output sits at one level whatever the input: MDynamics at −44.8 dBFS on
+inputs −56/−54/−44 — "intermittent dropouts" (isolated off-tone readings at scattered levels, clean between), else "not the
+input's tone at …". Pins A6 (H-Comp's own numbers: no flag, floor noted, judged from −66), A7 (MDynamics c8: bursts named),
+A8/A8b/A9; mutants red (judged everywhere; nothing named). H-Comp (m)/(s) are among the re-runs the projected outcome
+(§40) lists: their refusal was recorded, so the batch skips them until `--retry-refused` or a new version.
