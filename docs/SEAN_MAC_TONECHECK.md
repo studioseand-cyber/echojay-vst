@@ -6,14 +6,25 @@ the traces the batch kept in `~/Library/ejmap/cert` already hold every level at 
 mode re-derives each exported record from its traces, re-exports the profile with the deep points, and
 loads each certified plugin only for the tone checks. It is resumable and uses the same window watch.
 
-**The follow-up build is commit `17f28da4`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
-step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8–v2.1 and the raw hold test:
+**The follow-up build is commit `97b0bfb1`** (branch `feat/ejmap-cert`; packaged by `docs/PACKAGING_EJMAP_APP.md`
+step 1 with that commit checked out — NOT `36397676`, which is the batch build and stays as it is). It carries v1.8–v2.1, the raw hold test, and the 4 Oct rules from your run (the measured pair rules, the licence row, the
+out-of-scope states, the review pick, the range re-sample, the repeat repair):
 targets 1..12 with the clamp to 30 and the saturation note, the reverse read, the depth-aware clamp, the vocal-anchored tone level, every deep null accounted for in `notes` (a list),
 out-of-order deep points nulled before export, the shallow-break refusal, the known-licence skip and the §11 guard.
 Rehearsed here as a packaged app (3 Oct, evening): pre-flight finds the probe beside the executable; CL 1B's dry run
 reads −14.45 at every level 2, 4..12; the four rehearsal units re-check 40 of 40 levels PASS with no `--probe`.
 
-## What Sean runs (after the follow-up `ejmap.app` is built from `17f28da4` and packaged the same way)
+## What this follow-up does to your 3 Oct run (projected from your zip, 4 Oct)
+
+Re-derived from your traces, nothing re-swept: your 43 exports get the deep points and the new tone checks; 15 products that
+were "N threshold candidates" are decided by measurement (10 linked pairs, PuigChild 670 (s) leader/follower, Ozone 12
+Vintage Main over Aux, Kiive XTComp and DSM V3 master over trims — each needs one detector load, which this mode does) and
+API-2500 (m)/(s) get their lost repeat back; 15 are filed `multiband: profiling not built yet`, 8 `needs_licence`
+(7 Melda + Pro-C 3: silent on every candidate), 2 `surround`; 25 stay in review, 11 of them waiting for a pick in
+`cert/review_picks.json` (the sheet is `cert/review_sheet.txt`). H-Comp (m)/(s) and three others were refused for a false
+licence flag: run `"$BIN" --cert-sweep-all --profile --retry-refused` once after this mode to re-sweep them.
+
+## What Sean runs (after the follow-up `ejmap.app` is built from `97b0bfb1` and packaged the same way)
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap

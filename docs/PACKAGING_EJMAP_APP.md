@@ -14,8 +14,8 @@ probe's signature.
 REPO=~/src/echojay-vst            # wherever the checkout is
 # TWO BUILDS, TWO COMMITS - never mix them:
 #   the BATCH build (Sean's run, 2 Oct):   36397676   - what the runbook's batch ran on; keep this app as it is
-#   the FOLLOW-UP build (tone checks, 3 Oct evening): 17f28da4 - docs/SEAN_MAC_TONECHECK.md; v1.8-v1.10 rules, no sweeps, re-derives from the batch's traces
-git -C "$REPO" fetch && git -C "$REPO" checkout 17f28da4     # branch feat/ejmap-cert; the commit after it is this documentation
+#   the FOLLOW-UP build (tone checks, 3 Oct evening): 97b0bfb1 - docs/SEAN_MAC_TONECHECK.md; v1.8-v1.10 rules, no sweeps, re-derives from the batch's traces
+git -C "$REPO" fetch && git -C "$REPO" checkout 97b0bfb1     # branch feat/ejmap-cert; the commit after it is this documentation
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
