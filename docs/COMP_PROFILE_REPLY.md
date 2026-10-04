@@ -447,3 +447,36 @@ with the same preconditions. One test in Logic settles whether it is the probe h
 3. Read the plugin's own GR meter and the channel's output level: **does it compress** (GR 20 dB or more, output well below
    −6)? If yes, the plugin works in Logic and the probe host is missing something these four need (we will look at bus /
    bypass / render-notify state next); if no, the AU itself does not process at these defaults and the profile refusal stands.
+
+## 4 Oct (evening): UnFairchild — a 6-detent amount control that §3's "at least 9" can never accept
+
+**What we measured (your 3 Oct run, both L Threshold and R Threshold, 16 evenly spaced writes over 0–10):** the 1 dB point
+is reached at exactly five positions — 0.2, 0.4, 0.6, 0.8, 1.0 (display 2, 4, 6, 8, 10: −9.2 / −14.6 / −19.7 / −24.8 /
+−29.6 dBFS peak) — and `not_reached` at every write in between and at 0. That is the shape of a control with **6 detents
+(0, 2, 4, 6, 8, 10), declared continuous**, whose off-detent writes do not land on a detent: 0 is the "no compression"
+detent, the other five each give a measurement. The two channels agree within 0.5 dB at every position (a linked pair by
+measurement). The follow-up build re-sweeps it once for a refinement round (it cannot know from your record that the control
+is stepped) and then reads its write landing at 41 norms; if that read says 6 landing values, the profile is exported
+`stepped: true` by evidence and no further round is ever asked for.
+
+**The conflict.** §3 (`amount.curve`: "one point per measured position, at least 9") and §4 ("sweep the amount control over
+at least 9 positions") were written for continuous controls. §3's own `amount.stepped` line already says the opposite
+for detents: "the curve then lists every detent, and the server only ever picks a listed point". A 6-detent control can
+list every detent and still never reach 9, so today it is refused for a reason it cannot act on — and a detent that gives
+no compression (UnFairchild's 0) cannot carry a numeric `in_at_gr_dbfs` at all.
+
+**Proposal (v2.2, two lines in §3 and one in §4):**
+
+- For `stepped: true`, **"every detent" replaces "at least 9"**: the curve lists every detent at which the 1 dB point is
+  reached inside the measured levels, in detent order; a detent where it is not reached is not a curve point and is named
+  in `notes` ("detent 0 (display 0.0): no compression inside the measured levels"). The minimum for the server to pick
+  from is **3 listed detents** (nearest-detent needs no interpolation; below 3 there is nothing to choose between).
+- §4: "at least 9 positions, or every detent of a stepped control".
+- Unchanged: the server picks only a listed point (§6.4 step 3), the tone check expects the picked detent's own GR at L
+  (v1.8 reverse read), `point_error_db` and the 0.5 dB trust gate apply as they are.
+
+**What we do until you rule:** UnFairchild stays `needs_review` with the row saying "only 5 curve point(s) reach 1 dB inside
+the measured levels (his rule: at least 9)". If you accept, the export for `stepped: true` drops the 9-point gate for
+"every reachable detent, at least 3", pinned with UnFairchild's five points as the fixture and a 2-detent control as the
+refusal case. Nothing changes for a continuous control.
+
