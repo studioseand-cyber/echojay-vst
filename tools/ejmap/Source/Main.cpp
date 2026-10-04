@@ -754,6 +754,7 @@ namespace
                     else if (k == "--timeout-s"     && j + 1 < argc) o.timeoutMs = juce::jmax (1, v.getIntValue()) * 1000;
                     else if (k == "--slice"         && j + 1 < argc) { for (const auto& l : juce::StringArray::fromLines (cwdFile (v).loadFileAsString())) if (l.trim().isNotEmpty()) o.slice.add (l.trim()); }
                     else if (k == "--retry-licence")                 o.retryLicence = true;
+                    else if (k == "--derive-only")                   o.deriveOnly = true;
                 }
                 ejmap::cert::resolveCertPaths (o, juce::File::getSpecialLocation (juce::File::currentExecutableFile));
                 return ejmap::cert::runToneCheckAll (o);

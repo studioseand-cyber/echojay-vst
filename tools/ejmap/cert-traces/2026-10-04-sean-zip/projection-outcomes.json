@@ -1,0 +1,1676 @@
+[
+{
+"identity": "AudioUnit|58550063|15.0.70",
+"product": "Abbey Road RS124 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_58550063_15.0.70.json",
+"profile": "/proj/cert/profiles/Abbey_Road_RS124_(m)_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5855007d|15.0.70",
+"product": "Abbey Road RS124 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_5855007d_15.0.70.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|62485258|1.10.1",
+"product": "Acme Opticom XLA-3",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_62485258_1.10.1.json",
+"profile": "/proj/cert/profiles/Acme_Opticom_XLA-3_1.10.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|624a5973|1.1.1",
+"product": "AMEK Mastering Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_624a5973_1.1.1.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|4f271a4b|1.3.9",
+"product": "APB C-18 Compressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs McDSP APB hardware present",
+"at": "20261003T200258",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|4f20151b|1.3.9",
+"product": "APB C673-A Compressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs McDSP APB hardware present",
+"at": "20261003T200258",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|4175114b|1.3.9",
+"product": "APB MC-3 MultiComp",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs McDSP APB hardware present",
+"at": "20261003T200258",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|5e6f4f5d|1.3.9",
+"product": "APB Royal Mu",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs McDSP APB hardware present",
+"at": "20261003T200258",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|4b567263|15.0.70",
+"product": "API-2500 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4b567263_15.0.70.json",
+"profile": "/proj/cert/profiles/API-2500_(m)_15.0.70.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|4b56727d|15.0.70",
+"product": "API-2500 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4b56727d_15.0.70.json",
+"profile": "/proj/cert/profiles/API-2500_(s)_15.0.70.json",
+"at": "20261004T151726"
+},
+{
+"identity": "AudioUnit|614f7369|10.5.0",
+"product": "Auto-Tune Access",
+"category": "pitch",
+"state": "recorded",
+"reason": "1 pitch candidate(s) recorded",
+"record": "/proj/cert/fixtures/AudioUnit_614f7369_10.5.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|7672410a|9.5.0",
+"product": "Auto-Tune Artist",
+"category": "pitch",
+"state": "recorded",
+"reason": "1 pitch candidate(s) recorded",
+"record": "/proj/cert/fixtures/AudioUnit_7672410a_9.5.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|76765336|9.5.0",
+"product": "Auto-Tune EFX",
+"category": "pitch",
+"state": "recorded",
+"reason": "1 pitch candidate(s) recorded",
+"record": "/proj/cert/fixtures/AudioUnit_76765336_9.5.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|767e7472|10.5.0",
+"product": "Auto-Tune EFX+",
+"category": "pitch",
+"state": "recorded",
+"reason": "1 pitch candidate(s) recorded",
+"record": "/proj/cert/fixtures/AudioUnit_767e7472_10.5.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|76720177|10.5.0",
+"product": "Auto-Tune Pro",
+"category": "pitch",
+"state": "recorded",
+"reason": "1 pitch candidate(s) recorded",
+"record": "/proj/cert/fixtures/AudioUnit_76720177_10.5.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|7663717a|1.5.0",
+"product": "Auto-Tune Vocal Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_7663717a_1.5.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6f603a72|1.0.0",
+"product": "Bettermaker Bus Compressor DSP",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_6f603a72_1.0.0.json",
+"profile": "/proj/cert/profiles/Bettermaker_Bus_Compressor_DSP_1.0.0.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|77727f61|1.1.0",
+"product": "bx_crispytuner",
+"category": "pitch",
+"state": "recorded",
+"reason": "1 pitch candidate(s) recorded",
+"record": "/proj/cert/fixtures/AudioUnit_77727f61_1.1.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|417f7e74|1.10.1",
+"product": "bx_opto",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_417f7e74_1.10.1.json",
+"profile": "/proj/cert/profiles/bx_opto_1.10.1.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|417f7e70|1.10.1",
+"product": "bx_opto Pedal",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_417f7e70_1.10.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|417f6e76|1.8.1",
+"product": "bx_townhouse Buss Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_417f6e76_1.8.1.json",
+"profile": "/proj/cert/profiles/bx_townhouse_Buss_Compressor_1.8.1.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|494b6163|15.0.70",
+"product": "C1 comp (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+"record": "/proj/cert/fixtures/AudioUnit_494b6163_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|494b617d|15.0.70",
+"product": "C1 comp (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+"record": "/proj/cert/fixtures/AudioUnit_494b617d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|49497c63|15.0.70",
+"product": "C1 comp-gate (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_49497c63_15.0.70.json",
+"profile": "/proj/cert/profiles/C1_comp-gate_(m)_15.0.70.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|49497c7d|15.0.70",
+"product": "C1 comp-gate (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_49497c7d_15.0.70.json",
+"profile": "/proj/cert/profiles/C1_comp-gate_(s)_15.0.70.json",
+"at": "20261004T151726"
+},
+{
+"identity": "AudioUnit|49377263|15.0.70",
+"product": "C1 comp-sc (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_49377263_15.0.70.json",
+"profile": "/proj/cert/profiles/C1_comp-sc_(m)_15.0.70.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|4937727d|15.0.70",
+"product": "C1 comp-sc (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4937727d_15.0.70.json",
+"profile": "/proj/cert/profiles/C1_comp-sc_(s)_15.0.70.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|4e436063|15.0.70",
+"product": "C4 (m)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4; 4 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_4e436063_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4e43607d|15.0.70",
+"product": "C4 (s)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4; 4 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_4e43607d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|49306063|15.0.70",
+"product": "C6 (m)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_49306063_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4930607d|15.0.70",
+"product": "C6 (s)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_4930607d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|49306263|15.0.70",
+"product": "C6-SideChain (m)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_49306263_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4930627d|15.0.70",
+"product": "C6-SideChain (s)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_4930627d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|46470363|15.0.70",
+"product": "CLA-2A (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_46470363_15.0.70.json",
+"profile": "/proj/cert/profiles/CLA-2A_(m)_15.0.70.json",
+"at": "20261004T151721"
+},
+{
+"identity": "AudioUnit|4647037d|15.0.70",
+"product": "CLA-2A (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4647037d_15.0.70.json",
+"profile": "/proj/cert/profiles/CLA-2A_(s)_15.0.70.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|46470263|15.0.70",
+"product": "CLA-3A (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_46470263_15.0.70.json",
+"profile": "/proj/cert/profiles/CLA-3A_(m)_15.0.70.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|4647027d|15.0.70",
+"product": "CLA-3A (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4647027d_15.0.70.json",
+"profile": "/proj/cert/profiles/CLA-3A_(s)_15.0.70.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|3d307263|15.0.70",
+"product": "CLA-76 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_3d307263_15.0.70.json",
+"profile": "/proj/cert/profiles/CLA-76_(m)_15.0.70.json",
+"at": "20261004T151726"
+},
+{
+"identity": "AudioUnit|3d30727d|15.0.70",
+"product": "CLA-76 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_3d30727d_15.0.70.json",
+"profile": "/proj/cert/profiles/CLA-76_(s)_15.0.70.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|5c480463|15.0.70",
+"product": "dbx-160 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: passthrough: output equals input plus a constant 0.31 dB within 0.01 dB at every reading",
+"record": "/proj/cert/fixtures/AudioUnit_5c480463_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5c48047d|15.0.70",
+"product": "dbx-160 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_5c48047d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|48426363|15.0.70",
+"product": "DPR-402 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_48426363_15.0.70.json",
+"profile": "/proj/cert/profiles/DPR-402_(m)_15.0.70.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|4842637d|15.0.70",
+"product": "DPR-402 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_4842637d_15.0.70.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|26a5d6d|2.5.62",
+"product": "Drawmer 1973",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Low, Mid, High; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_26a5d6d_2.5.62.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|697c7f2c|3.12.3",
+"product": "DynOne3",
+"category": "compressor",
+"state": "needs_review",
+"reason": "15 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_697c7f2c_3.12.3.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|45756f39|1.17.1",
+"product": "elysia alpha master",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_45756f39_1.17.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|45756f3a|1.17.1",
+"product": "elysia alpha mix",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_45756f3a_1.17.1.json",
+"profile": "/proj/cert/profiles/elysia_alpha_mix_1.17.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|49696d78|1.15.1",
+"product": "elysia mpressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_49696d78_1.15.1.json",
+"profile": "/proj/cert/profiles/elysia_mpressor_1.15.1.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|49426863|15.0.70",
+"product": "EMO-D5 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_49426863_15.0.70.json",
+"profile": "/proj/cert/profiles/EMO-D5_(m)_15.0.70.json",
+"at": "20261004T151726"
+},
+{
+"identity": "AudioUnit|4942687d|15.0.70",
+"product": "EMO-D5 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4942687d_15.0.70.json",
+"profile": "/proj/cert/profiles/EMO-D5_(s)_15.0.70.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|54675c76|2.5.62",
+"product": "Empirical Labs Mike-E Comp",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_54675c76_2.5.62.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|494a7063|15.0.72",
+"product": "H-Comp (m)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -84.00 is 36.7% the input's tone; output at -90.00 is 12.6% the input's tone; ",
+"record": "/proj/cert/fixtures/AudioUnit_494a7063_15.0.72.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|494a707d|15.0.72",
+"product": "H-Comp (s)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -84.00 is 36.8% the input's tone; output at -90.00 is 12.4% the input's tone; ",
+"record": "/proj/cert/fixtures/AudioUnit_494a707d_15.0.72.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|2a6d4d7b|2.1.0",
+"product": "kHs Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_2a6d4d7b_2.1.0.json",
+"profile": "/proj/cert/profiles/kHs_Compressor_2.1.0.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|2a6d417f|2.1.0",
+"product": "kHs Dynamics",
+"category": "compressor",
+"state": "needs_review",
+"reason": "2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_2a6d417f_2.1.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|617d776d|1.0.0",
+"product": "Kiive XTComp",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_617d776d_1.0.0.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|5a5f7463|15.0.70",
+"product": "Kramer PIE (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_5a5f7463_15.0.70.json",
+"profile": "/proj/cert/profiles/Kramer_PIE_(m)_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5a5f747d|15.0.70",
+"product": "Kramer PIE (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_5a5f747d_15.0.70.json",
+"profile": "/proj/cert/profiles/Kramer_PIE_(s)_15.0.70.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|6f457233|1.2.2",
+"product": "Lindell 254E",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_6f457233_1.2.2.json",
+"profile": "/proj/cert/profiles/Lindell_254E_1.2.2.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|6f457234|1.0.4",
+"product": "Lindell 354E",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Low, Mid, High; 3 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_6f457234_1.0.4.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6f457232|1.2.2",
+"product": "Lindell 7X-500",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_6f457232_1.2.2.json",
+"profile": "/proj/cert/profiles/Lindell_7X-500_1.2.2.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|6f6a7363|1.0.3",
+"product": "Lindell MBC",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Low, Mid, High; 3 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_6f6a7363_1.0.3.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6f747363|1.0.3",
+"product": "Lindell SBC",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_6f747363_1.0.3.json",
+"profile": "/proj/cert/profiles/Lindell_SBC_1.0.3.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|46450463|15.0.70",
+"product": "LinMB (m)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5; 5 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_46450463_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4645047d|15.0.70",
+"product": "LinMB (s)",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5; 5 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_4645047d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6f7a414b|1.1.6",
+"product": "Low Control",
+"category": "compressor",
+"state": "refused",
+"reason": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -10.00 is 48.4% the input's tone; output at -20.00 is 40.9% the input's tone; output at -46.00 is 19.6% the input's tone; ",
+"record": "/proj/cert/fixtures/AudioUnit_6f7a414b_1.1.6.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6e665755|1.6.1",
+"product": "Maag MAGNUM-K",
+"category": "compressor",
+"state": "needs_review",
+"reason": "6 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_6e665755_1.6.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|43507d63|15.0.70",
+"product": "MaxxVolume (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_43507d63_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|43507d7d|15.0.70",
+"product": "MaxxVolume (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_43507d7d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61516433|14.16.0",
+"product": "MCompressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_61516433_14.16.0.json",
+"profile": "/proj/cert/profiles/MCompressor_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6154734e|14.16.0",
+"product": "MDrumLeveler",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 2 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_6154734e_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61516426|14.16.0",
+"product": "MDynamics",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 4 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_61516426_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6151642a|14.16.0",
+"product": "MDynamicsMB",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 22 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_6151642a_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61516462|14.16.0",
+"product": "MDynamicsMBLarge",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 22 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_61516462_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6e6e5232|1.11.1",
+"product": "Millennia TCL-2",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_6e6e5232_1.11.1.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|7c7d7378|1.0.1",
+"product": "Mixland Vac Attack",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_7c7d7378_1.0.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|685a6739|1.0.1",
+"product": "MixWave DW Fearn VT-7",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_685a6739_1.0.1.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|615d6e41|14.16.0",
+"product": "MModernCompressor",
+"category": "compressor",
+"state": "refused",
+"reason": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -24.00 is 0.0% the input's tone; output at -60.00 is 0.0% the input's tone; output at -66.00 is 0.0% the input's tone; output at -72.00 is 1.7% the input's tone; output at 0.00 is 44.9% the input's tone; ",
+"record": "/proj/cert/fixtures/AudioUnit_615d6e41_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|7f56566b|1.1.8",
+"product": "MO-TT",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Low, Mid, High; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_7f56566b_1.1.8.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6151253b|14.16.0",
+"product": "MSpectralDynamics",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 3 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_6151253b_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61512573|14.16.0",
+"product": "MSpectralDynamicsMini",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 3 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_61512573_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61447441|14.16.0",
+"product": "MTurboComp",
+"category": "compressor",
+"state": "refused",
+"reason": "stage reference: not licensed suspected (silent, non-finite or not the input's tone at default): output at -10.00 is 47.9% the input's tone; output at -2.00 is 0.0% the input's tone; output at -20.00 is 40.9% the input's tone; output at -22.00 is 0.0% the input's tone; output at -42.00 is 0.0% the input's tone; output at 0.00 is 0.0% the input's tone; ",
+"record": "/proj/cert/fixtures/AudioUnit_61447441_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6144426f|14.16.0",
+"product": "MTurboCompMB",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 7 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_6144426f_14.16.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|47500363|15.0.70",
+"product": "MV2 (m)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_47500363_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4750037d|15.0.70",
+"product": "MV2 (s)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_4750037d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61453823|1.2.0",
+"product": "NEOLD U17",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: passthrough: output equals input plus a constant -0.01 dB within 0.01 dB at every reading",
+"record": "/proj/cert/fixtures/AudioUnit_61453823_1.2.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61755c26|1.1.0",
+"product": "NEOLD U2A",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+"record": "/proj/cert/fixtures/AudioUnit_61755c26_1.1.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61755f23|1.3.0",
+"product": "NEOLD V76U73",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_61755f23_1.3.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|454d7263|15.0.70",
+"product": "OneKnob Pressure (m)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class input_as_threshold); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_454d7263_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|454d727d|15.0.70",
+"product": "OneKnob Pressure (s)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class input_as_threshold); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_454d727d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|59560063|15.0.70",
+"product": "OneKnob Pumper (m)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_59560063_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5956007d|15.0.70",
+"product": "OneKnob Pumper (s)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_5956007d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6155777e|1.3.7",
+"product": "OTT",
+"category": "compressor",
+"state": "needs_review",
+"reason": "3 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_6155777e_1.3.7.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|526d5652|12.0.0",
+"product": "Ozone 12 Dynamics",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4; 16 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_526d5652_12.0.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|526d484b|12.0.0",
+"product": "Ozone 12 Vintage Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_526d484b_12.0.0.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|6143572d|3.6.1",
+"product": "Pro Audio DSP DSM V3",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_6143572d_3.6.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61573c50|3.0.0",
+"product": "Pro-C 3",
+"category": "compressor",
+"state": "needs_licence",
+"reason": "licence suspected: every candidate's output was silent or not the tone at its reference (recorded as licence_suspect; the reason text is not on this record); 3 candidate(s), none produced the tone; --retry-licence re-checks it",
+"record": "/proj/cert/fixtures/AudioUnit_61573c50_3.0.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|61444242|1.3.1",
+"product": "Pro-MB",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Band 1, Band 2, Band 3, Band 4, Band 5, Band 6; 6 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_61444242_1.3.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4c457963|15.0.70",
+"product": "PuigChild 660 (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_4c457963_15.0.70.json",
+"profile": "/proj/cert/profiles/PuigChild_660_(m)_15.0.70.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|4c45797d|15.0.70",
+"product": "PuigChild 670 (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_4c45797d_15.0.70.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|73462d29|1.5.1",
+"product": "Purple Audio MC 77",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result nonmonotonic: reduction falls by more than 0.5 dB walking from the softer end (position 25 at -16.00)",
+"record": "/proj/cert/fixtures/AudioUnit_73462d29_1.5.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5f547263|15.0.70",
+"product": "RCompressor (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: passthrough: output equals input within 0.01 dB at every reading",
+"record": "/proj/cert/fixtures/AudioUnit_5f547263_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5f54727d|15.0.70",
+"product": "RCompressor (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: passthrough: output equals input within 0.01 dB at every reading",
+"record": "/proj/cert/fixtures/AudioUnit_5f54727d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|58476963|15.0.70",
+"product": "Renaissance Axx (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_58476963_15.0.70.json",
+"profile": "/proj/cert/profiles/Renaissance_Axx_(m)_15.0.70.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|5847697d|15.0.70",
+"product": "Renaissance Axx (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_5847697d_15.0.70.json",
+"profile": "/proj/cert/profiles/Renaissance_Axx_(s)_15.0.70.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|7e7f7c62|1.0.1",
+"product": "Rubber Band Compressor V2",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_7e7f7c62_1.0.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|475e6763|15.0.70",
+"product": "RVox (m)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_475e6763_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|475e677d|15.0.70",
+"product": "RVox (s)",
+"category": "compressor",
+"state": "refused",
+"reason": "stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep",
+"record": "/proj/cert/fixtures/AudioUnit_475e677d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|704f4855|1.4.1",
+"product": "Shadow Hills Class A Mastering Comp",
+"category": "compressor",
+"state": "needs_review",
+"reason": "4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_704f4855_1.4.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|704f5c43|1.5.1",
+"product": "Shadow Hills Mastering Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_704f5c43_1.5.1.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|2520b63|1.4.5",
+"product": "Solid Bus Comp",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_2520b63_1.4.5.json",
+"profile": "/proj/cert/profiles/Solid_Bus_Comp_1.4.5.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|2520b62|1.4.5",
+"product": "Solid Dynamics",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_2520b62_1.4.5.json",
+"profile": "/proj/cert/profiles/Solid_Dynamics_1.4.5.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4b457f6f|15.0.70",
+"product": "Spherix Compressor (10->10)",
+"category": "compressor",
+"state": "surround",
+"reason": "surround: not profiled (10 channels; the profile is a stereo contract)",
+"record": "/proj/cert/fixtures/AudioUnit_4b457f6f_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4b457f6d|15.0.70",
+"product": "Spherix Compressor (12->12)",
+"category": "compressor",
+"state": "surround",
+"reason": "surround: not profiled (12 channels; the profile is a stereo contract)",
+"record": "/proj/cert/fixtures/AudioUnit_4b457f6d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|6175631b|1.6.1",
+"product": "SPL IRON",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_6175631b_1.6.1.json",
+"at": "20261004T151726"
+},
+{
+"identity": "AudioUnit|706a7e6c|1.0.5",
+"product": "SSL Blitzer",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_706a7e6c_1.0.5.json",
+"profile": "/proj/cert/profiles/SSL_Blitzer_1.0.5.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|7a606966|1.1.3",
+"product": "SSL Fusion HF Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+"record": "/proj/cert/fixtures/AudioUnit_7a606966_1.1.3.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|75154755|1.0.12",
+"product": "SSL G3 MultiBusComp",
+"category": "compressor",
+"state": "multiband",
+"reason": "multiband: profiling not built yet (Low, Mid, High; 3 threshold candidates)",
+"record": "/proj/cert/fixtures/AudioUnit_75154755_1.0.12.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|70404b5f|1.1.9",
+"product": "SSL LMC+",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_70404b5f_1.1.9.json",
+"profile": "/proj/cert/profiles/SSL_LMC+_1.1.9.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|7c646904|1.3.4",
+"product": "SSL Native Bus Compressor 2",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_7c646904_1.3.4.json",
+"profile": "/proj/cert/profiles/SSL_Native_Bus_Compressor_2_1.3.4.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|61687275|6.6.7",
+"product": "SSL Native X-Comp v6",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_61687275_6.6.7.json",
+"profile": "/proj/cert/profiles/SSL_Native_X-Comp_v6_6.6.7.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|61687260|6.6.13",
+"product": "SSL Native X-ValveComp v6",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_61687260_6.6.13.json",
+"profile": "/proj/cert/profiles/SSL_Native_X-ValveComp_v6_6.6.13.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|594a7263|15.0.70",
+"product": "SSLComp (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: passthrough: output equals input within 0.01 dB at every reading",
+"record": "/proj/cert/fixtures/AudioUnit_594a7263_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|594a727d|15.0.70",
+"product": "SSLComp (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: passthrough: output equals input within 0.01 dB at every reading",
+"record": "/proj/cert/fixtures/AudioUnit_594a727d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|5762472|1.1.0",
+"product": "TBTECH Cenozoix Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_5762472_1.1.0.json",
+"profile": "/proj/cert/profiles/TBTECH_Cenozoix_Compressor_1.1.0.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|517f614e|2.5.62",
+"product": "Tube-Tech CL 1B",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_517f614e_2.5.62.json",
+"profile": "/proj/cert/profiles/Tube-Tech_CL_1B_2.5.62.json",
+"at": "20261004T151723"
+},
+{
+"identity": "AudioUnit|7526137e|3.0.0",
+"product": "U73b Compressor",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_7526137e_3.0.0.json",
+"profile": "/proj/cert/profiles/U73b_Compressor_3.0.0.json",
+"at": "20261004T151726"
+},
+{
+"identity": "AudioUnit|75186669|11.8.0",
+"product": "UAD 4K Buss Compressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|77144d57|11.8.0",
+"product": "UAD Antares Auto-Tune Realtime",
+"category": "pitch",
+"state": "held",
+"reason": "hardware: map: none; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "none"
+},
+{
+"identity": "AudioUnit|15626669|11.8.0",
+"product": "UAD API 2500",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|26424649|11.8.0",
+"product": "UAD Auto-Tune Realtime Access",
+"category": "pitch",
+"state": "held",
+"reason": "hardware: map: none; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "none"
+},
+{
+"identity": "AudioUnit|22424d57|11.8.0",
+"product": "UAD Auto-Tune Realtime Advanced",
+"category": "pitch",
+"state": "held",
+"reason": "hardware: map: none; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "none"
+},
+{
+"identity": "AudioUnit|38424d57|11.8.0",
+"product": "UAD Auto-Tune Realtime X",
+"category": "pitch",
+"state": "held",
+"reason": "hardware: map: none; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "none"
+},
+{
+"identity": "AudioUnit|73176669|11.8.0",
+"product": "UAD dbx 160",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|73144649|11.8.0",
+"product": "UAD elysia alpha master",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|71144649|11.8.0",
+"product": "UAD elysia alpha mix",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|75144649|11.8.0",
+"product": "UAD elysia mpressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|74636669|11.8.0",
+"product": "UAD Empirical Labs Distressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|18616669|11.8.0",
+"product": "UAD Fairchild 660",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|16616669|11.8.0",
+"product": "UAD Fairchild 670",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|78136669|11.8.0",
+"product": "UAD Fairchild 670 Legacy",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|71626669|11.8.0",
+"product": "UAD Manley Variable Mu",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|13636669|11.8.0",
+"product": "UAD Neve 2254 E",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|15636669|11.8.0",
+"product": "UAD Neve 2254 E Dual",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|79156669|11.8.0",
+"product": "UAD Neve 33609 C",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|2156669|11.8.0",
+"product": "UAD Neve 33609SE",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|6166669|11.8.0",
+"product": "UAD Precision Buss Compressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|2146669|11.8.0",
+"product": "UAD Precision Multiband",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|73434649|11.8.0",
+"product": "UAD Shadow Hills Class A Mastering Comp",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|24104649|11.8.0",
+"product": "UAD Shadow Hills Mastering Compressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|19626669|11.8.0",
+"product": "UAD SSL G Bus Compressor",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|c196669|11.8.0",
+"product": "UAD SSL G Bus Compressor Legacy",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|24114649|11.8.0",
+"product": "UAD Summit Audio TLA-100A",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|75616669|11.8.0",
+"product": "UAD Teletronix LA-2",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|77616669|11.8.0",
+"product": "UAD Teletronix LA-2A Gray",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|76106669|11.8.0",
+"product": "UAD Teletronix LA-2A Legacy",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|79616669|11.8.0",
+"product": "UAD Teletronix LA-2A Silver",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|75166669|11.8.0",
+"product": "UAD Teletronix LA-3A",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|34114649|11.8.0",
+"product": "UAD Tube-Tech CL 1B",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|24424649|11.8.0",
+"product": "UAD Tube-Tech CL 1B mk II",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|6196669|11.8.0",
+"product": "UAD UA 1176 Rev A",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|14196669|11.8.0",
+"product": "UAD UA 1176AE",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|74106669|11.8.0",
+"product": "UAD UA 1176LN Legacy",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|e196669|11.8.0",
+"product": "UAD UA 1176LN Rev E",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|75136669|11.8.0",
+"product": "UAD UA 1176SE Legacy",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|b636669|11.8.0",
+"product": "UAD UA 175-B",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|d636669|11.8.0",
+"product": "UAD UA 176",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|79144649|11.8.0",
+"product": "UAD Vertigo VSC-2",
+"category": "compressor",
+"state": "held",
+"reason": "hardware: map: server map state 3; needs UAD hardware (UAD-2) present",
+"at": "20261004T050602",
+"map": "server map state 3"
+},
+{
+"identity": "AudioUnit|6175727f|1.0.4",
+"product": "UnFairchild",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export refused: only 5 curve point(s) reach 1 dB inside the measured levels (his rule: at least 9)",
+"record": "/proj/cert/fixtures/AudioUnit_6175727f_1.0.4.json",
+"at": "20261004T151724"
+},
+{
+"identity": "AudioUnit|417a7643|1.4.2",
+"product": "Unfiltered Audio Zip",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_417a7643_1.4.2.json",
+"profile": "/proj/cert/profiles/Unfiltered_Audio_Zip_1.4.2.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|645b6178|1.3.5",
+"product": "VBC FG-Grey",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_645b6178_1.3.5.json",
+"profile": "/proj/cert/profiles/VBC_FG-Grey_1.3.5.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|645b6172|1.3.5",
+"product": "VBC FG-MU",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_645b6172_1.3.5.json",
+"at": "20261004T151725"
+},
+{
+"identity": "AudioUnit|645b616d|1.3.5",
+"product": "VBC FG-Red",
+"category": "compressor",
+"state": "needs_review",
+"reason": "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up",
+"record": "/proj/cert/fixtures/AudioUnit_645b616d_1.3.5.json",
+"profile": "/proj/cert/profiles/VBC_FG-Red_1.3.5.json",
+"at": "20261004T151722"
+},
+{
+"identity": "AudioUnit|645b6174|1.3.5",
+"product": "VBC Rack",
+"category": "compressor",
+"state": "needs_review",
+"reason": "4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks",
+"record": "/proj/cert/fixtures/AudioUnit_645b6174_1.3.5.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|44507263|15.0.70",
+"product": "VComp (m)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+"record": "/proj/cert/fixtures/AudioUnit_44507263_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|4450727d|15.0.70",
+"product": "VComp (s)",
+"category": "compressor",
+"state": "needs_review",
+"reason": "sweep result flat: no two positions differ by more than 1 dB at any test level",
+"record": "/proj/cert/fixtures/AudioUnit_4450727d_15.0.70.json",
+"at": "20261004T151727"
+},
+{
+"identity": "AudioUnit|75545232|1.15.1",
+"product": "Vertigo VSC-2",
+"category": "compressor",
+"state": "needs_review",
+"reason": "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)",
+"record": "/proj/cert/fixtures/AudioUnit_75545232_1.15.1.json",
+"at": "20261004T151722"
+},
+{
+"identity": "product|waveshell1-vst3 15.0",
+"product": "WaveShell1-VST3 15.0",
+"category": "unknown",
+"state": "quarantined_at_scan",
+"reason": "hang_in_findAllTypesForFile at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category unknown",
+"at": "20261004T054115",
+"scan_bundle": "/Library/Audio/Plug-Ins/VST3/WaveShell1-VST3 15.0.vst3"
+},
+{
+"identity": "product|tdr slickeq m",
+"product": "TDR SlickEQ M",
+"category": "eq",
+"state": "quarantined_at_scan",
+"reason": "hang_in_findAllTypesForFile at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+"at": "20261004T054115",
+"scan_bundle": "/Library/Audio/Plug-Ins/VST3/TDR SlickEQ M.vst3"
+},
+{
+"identity": "product|bloom",
+"product": "bloom",
+"category": "eq",
+"state": "needs_licence",
+"reason": "activation window at scan (PACEEdenExperience [pid 40680]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category eq",
+"at": "20261004T054115",
+"scan_bundle": "/Library/Audio/Plug-Ins/VST3/bloom.vst3"
+},
+{
+"identity": "product|weiss deess",
+"product": "Weiss Deess",
+"category": "de-esser",
+"state": "needs_licence",
+"reason": "activation window at scan (PACEEdenExperience [pid 41390]); load killed at once, not retried at stage scan (a VST3 bundle; certification hosts the AudioUnit, which is unaffected if it scanned); category de-esser",
+"at": "20261004T054115",
+"scan_bundle": "/Library/Audio/Plug-Ins/VST3/Weiss Deess.vst3"
+}
+]

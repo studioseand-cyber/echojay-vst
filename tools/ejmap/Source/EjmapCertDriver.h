@@ -1385,6 +1385,7 @@ struct SweepOptions
     bool profile = false;                            // the profile sweep (31 levels, 2.5 s, quiet reference everywhere)
     juce::StringArray slice;                         // the dress rehearsal only: product names the batch is limited to (empty = all)
     bool retryLicence = false;                       // --retry-licence: re-check the needs-licence set (the licence is back)
+    bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::String mapState;                           // INFORMATION for the record (ruled 2 Oct): set by the batch from the subject; the tuner path has no Subject of its own
 };
 
@@ -2182,7 +2183,10 @@ inline int runCertSweep (const SweepOptions& opt)
     if (plan.candidates.empty())
     {
         juce::String whyNot;
-        const auto rpt = repeatFor (plan, plan.quietReference && ! plan.referenceFallbackNote.isEmpty() && repeatRuns.count ("q.") ? "q." : "");
+        // THE REPEAT IS KEYED ON THE LAST FULL SWEEP'S PREFIX (found 4 Oct on API-2500 (m)/(s) in Sean's run): an engage-search sweep
+        // ran under "e<idx>." and its hold-doubled repeat was stored under that prefix, but this lookup asked for "" (or "q.") and
+        // found nothing - the record said "no repeat" while 37 r2.e6.* captures sat in the traces. lastSweepPrefix is the key.
+        const auto rpt = repeatFor (plan, repeatRuns.count (lastSweepPrefix) ? lastSweepPrefix : (plan.quietReference && ! plan.referenceFallbackNote.isEmpty() && repeatRuns.count ("q.") ? juce::String ("q.") : juce::String()));
         if (composeAndReport (base, plan, m, pv, fixturesDir.getChildFile (outName), opt.out.getChildFile (stem + ".report.txt"), info, &whyNot, rpt ? &*rpt : nullptr))
             return 0;
         return refuse (1, "reference", whyNot);
@@ -2438,19 +2442,29 @@ inline juce::var finishRecord (const SweepOptions& opt, const juce::File& record
         // RULE 1: a candidates record with a pick is read through its single view; the detector and the tone check take the pick by name
         const juce::String pick = record.getProperty ("thresholdSweep", {}).isObject() ? juce::String() : record.getProperty ("pickedCandidate", {}).getProperty ("name", "").toString();
         auto single = [&] (const juce::var& r) { if (pick.isEmpty()) return r; juce::String why; auto v = profile::candidateAsSingle (r, pick, why); return v.isVoid() ? r : v; };
-        if (! single (record).getProperty ("thresholdSweep", {}).getProperty ("detector", {}).isObject())
+        if (! opt.deriveOnly && ! single (record).getProperty ("thresholdSweep", {}).getProperty ("detector", {}).isObject())
         {
             runDetector (opt, recordFile, pick);                                              // writes detector into the record (the pick's sweep), or says why not
             record = juce::JSON::parse (recordFile.loadFileAsString());
         }
         const auto e = profile::exportCompProfile (single (record));
         bool toneRan = false; juce::String toneWhy;
+        if (opt.deriveOnly && ! e.ok && e.refused.contains ("detector_f not measured"))
+        {
+            loop::Outcome w; w.state = "needs_review"; w.reason = "would export in the follow-up: the pick needs its detector measured (one load) and the tone check (derive-only ran neither)";
+            return loop::makeRow (identity, product, category, w, recordFile.getFullPathName(), {}, {}, nowStamp());
+        }
         if (e.ok)
         {
             profileFile.replaceWithText (juce::JSON::toString (e.profile) + "\n", false, false, "\n");
             profilePath = profileFile.getFullPathName();
             const auto toneFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
             toneFile.deleteFile();                                                             // a result file is this call's or nobody's
+            if (opt.deriveOnly)
+            {
+                loop::Outcome w; w.state = "needs_review"; w.reason = "export written (derive-only: the tone check was not run, nothing loaded); would be tone-checked by the follow-up";
+                return loop::makeRow (identity, product, category, w, recordFile.getFullPathName(), profilePath, {}, nowStamp());
+            }
             const int trc = runToneCheck (opt, profileFile, recordFile, kToneLevelByRule, 2.0, pick);
             // THE TONE CHECK RAN when it wrote its result; exit 1 is a FAILED check (a result on the profile), not a check
             // that could not run (exits 2-4 write nothing). Lindell 254E, 11:17: a failed check was read as "could not run".
@@ -2519,7 +2533,7 @@ inline void printReviewSheet (const juce::File& fixturesDir, std::ostream& out)
     {
         if (f.getFileName().endsWith (".defaults.json")) continue;
         const auto r = juce::JSON::parse (f.loadFileAsString()); const auto cands = r.getProperty ("thresholdCandidates", {});
-        if (! cands.isArray() || loop::outcomeForRecord (r).state != "needs_review") continue;
+        if (! cands.isArray() || loop::outcomeForRecord (r).state != "needs_review" || loop::outcomeForRecord (r).exportPending || r.getProperty ("pickedCandidate", {}).isObject()) continue;
         ++products;
         out << "\nREVIEW " << r.getProperty ("product", "").toString() << " (" << r.getProperty ("version", "").toString() << ")  - " << loop::outcomeForRecord (r).reason << "\n";
         for (int i = 0; i < cands.size(); ++i)
@@ -2544,8 +2558,7 @@ inline int runToneCheckAll (SweepOptions opt)
     const auto outcomesFile = opt.out.getChildFile ("outcomes.json");
     auto outcomes = juce::JSON::parse (outcomesFile.loadFileAsString()); if (! outcomes.isArray()) outcomes = juce::Array<juce::var>();
     auto writeOutcomes = [&] { outcomesFile.replaceWithText (juce::JSON::toString (outcomes) + "\n", false, false, "\n"); };
-    const auto id = checkProbe (opt.probe, {}, {});
-    if (! id.ok) { std::cout << "TONECHECK-ALL: ABORTED BEFORE ANY PLUGIN - " << id.why << std::endl; return 3; }
+    if (! opt.deriveOnly) { const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { std::cout << "TONECHECK-ALL: ABORTED BEFORE ANY PLUGIN - " << id.why << std::endl; return 3; } }
     const auto scanStops = quarantinedBundles (opt.ledger);
     const auto reviewPicks = juce::JSON::parse (opt.out.getChildFile ("review_picks.json").loadFileAsString());
     std::cout << "TONECHECK-ALL: " << opt.out.getFullPathName() << "  iLok " << iLokPresence() << (reviewPicks.isArray() ? "  review picks " + juce::String (reviewPicks.size()) : juce::String ("  no review_picks.json")) << std::endl;
@@ -2563,13 +2576,17 @@ inline int runToneCheckAll (SweepOptions opt)
             auto withPick = rec0; const auto what = loop::applyReviewPick (withPick, reviewPicks);
             if (what.isNotEmpty()) { std::cout << "  " << product << ": " << what << std::endl; if (what.startsWith ("review pick applied")) { recordFile.replaceWithText (juce::JSON::toString (withPick) + "\n", false, false, "\n"); rec0 = withPick; } }
         }
-        if (! loop::outcomeForRecord (rec0).exportPending && ! rec0.getProperty ("ruleDecided", {}).isObject()) continue;   // not a certified profile: nothing to tone-check
+        // A CANDIDATES RECORD WITHOUT A PICK is re-derived too (4 Oct): the measured rules decide inside the re-derive, from the traces
+        bool undecidedCandidates = false;
+        if (const auto* cs = rec0.getProperty ("thresholdCandidates", {}).getArray(); cs != nullptr && ! rec0.getProperty ("pickedCandidate", {}).isObject())
+            for (const auto& c : *cs) if (c.getProperty ("thresholdSweep", {}).getProperty ("result", "").toString() == "certified") undecidedCandidates = true;
+        if (! loop::outcomeForRecord (rec0).exportPending && ! rec0.getProperty ("ruleDecided", {}).isObject() && ! undecidedCandidates) continue;   // not a certified profile: nothing to tone-check
         const auto stem0 = juce::File::createLegalFileName (product).replaceCharacter (' ', '_') + "_" + rec0.getProperty ("version", "").toString();
         const auto profileFile = opt.out.getChildFile ("profiles").getChildFile (stem0 + ".json");
         const auto tcFile = profileFile.getSiblingFile (profileFile.getFileNameWithoutExtension() + ".tonecheck.json");
         const auto tc = juce::JSON::parse (tcFile.loadFileAsString());
-        if (tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs")) { ++skipped; continue; }   // RESUME (a needs_licence product has no result file, so --retry-licence reaches exactly that set)
-        if (! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
+        if (! opt.deriveOnly && tc.getProperty ("spec", "").toString() == "v1.7" && tc.hasProperty ("deep_levels") && tc.hasProperty ("L_ref_dbfs")) { ++skipped; continue; }   // RESUME (a needs_licence product has no result file, so --retry-licence reaches exactly that set)
+        if (! opt.deriveOnly && ! opt.retryLicence) if (const auto stop = loop::carriedLicenceStop (scanStops, product); stop) { std::cout << "  " << product << ": needs licence at the scan, not loaded" << std::endl; ++licence; continue; }
         std::cout << "\n=== tone checks: " << product << std::endl;
         // 1. RE-DERIVE from the traces (the deep points), carrying over what the traces do not hold
         const auto old = rec0;
@@ -2587,13 +2604,34 @@ inline int runToneCheckAll (SweepOptions opt)
             else std::cout << "  re-derivation did not complete; the existing record is used" << std::endl;
         }
         else { ++noTraces; std::cout << "  no traces for this record (" << processesJson.getFileName() << "): the existing points are used, no deep points can be derived" << std::endl; }
+        if (undecidedCandidates)
+        {
+            const auto now = juce::JSON::parse (recordFile.loadFileAsString());
+            if (! now.getProperty ("pickedCandidate", {}).isObject()) { std::cout << "  -> " << loop::outcomeForRecord (now).state << ": " << loop::outcomeForRecord (now).reason << std::endl; continue; }   // no rule decided: its row is re-filed below
+        }
         // 2. RE-EXPORT and 3. the tone checks, through the batch's own finish step (detector kept, pick by Rule 1 where decided)
         const auto newRow = finishRecord (opt, recordFile, rec0.getProperty ("category", "compressor").toString());
         outcomes = loop::mergeRow (outcomes, newRow); writeOutcomes();
         const auto st = newRow.getProperty ("state", "").toString();
         std::cout << "  -> " << st << ": " << newRow.getProperty ("reason", "").toString() << std::endl;
-        if (st == "exported") ++done; else if (st == "needs_licence") ++licence; else ++failed;
+        if (st == "exported" || newRow.getProperty ("reason", "").toString().startsWith ("export written (derive-only")) ++done; else if (st == "needs_licence") ++licence; else ++failed;
     }
+    // EVERY OTHER RECORD gets its row re-filed under the current rules too (licence, multiband, surround, candidate rules need a pick):
+    // the projection for a zipped-back folder is the whole outcomes.json, not just the exports
+    for (const auto& recordFile : fixturesDir.findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (recordFile.getFileName().endsWith (".defaults.json")) continue;
+        const auto r = juce::JSON::parse (recordFile.loadFileAsString()); const auto product = r.getProperty ("product", "").toString();
+        if (! r.hasProperty ("product") || (! opt.slice.isEmpty() && ! opt.slice.contains (product))) continue;
+        const auto o = loop::outcomeForRecord (r);
+        if (o.exportPending || r.getProperty ("ruleDecided", {}).isObject()) continue;   // handled above
+        const auto identity = r.getProperty ("identity", "").toString();
+        bool had = false; if (const auto* a = outcomes.getArray()) for (const auto& x : *a) if (x.getProperty ("identity", "").toString() == identity || x.getProperty ("product", "").toString() == product) { had = true; break; }
+        outcomes = loop::mergeRow (outcomes, loop::makeRow (identity, product, r.getProperty ("category", "compressor").toString(), o, recordFile.getFullPathName(), {}, {}, nowStamp()));
+        (void) had;
+    }
+    writeOutcomes();
+    { const auto c = loop::count (outcomes); std::cout << "OUTCOMES (" << outcomesFile.getFullPathName() << "): " << c.rows << " rows - exported " << c.exported << ", recorded " << c.recorded << ", refused " << c.refused << ", held " << c.held << ", needs_review " << c.needsReview << ", quarantined_at_scan " << c.quarantined << ", needs_licence " << c.needsLicence << ", multiband " << c.multiband << ", surround " << c.surround << std::endl; }
     std::cout << "\nTONECHECK-ALL: " << done << " re-checked, " << skipped << " already at v1.7 (skipped), " << licence << " needs_licence, " << failed << " not exported now, " << noTraces << " without traces" << std::endl;
     { std::ofstream sheet (opt.out.getChildFile ("review_sheet.txt").getFullPathName().toStdString()); printReviewSheet (fixturesDir, sheet); }
     std::cout << "review sheet: " << opt.out.getChildFile ("review_sheet.txt").getFullPathName() << std::endl;
@@ -2890,7 +2928,7 @@ inline int runToneCheck (const SweepOptions& opt, const juce::File& profileFile,
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("TONE: the record has no plan: " + plan.why); return 4; }
     if (record.getProperty ("pickedCandidate", {}).isObject())
-    { for (const auto& c : plan.candidates) if (c.index == (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) plan = plan.forCandidate (c); plan.candidates.clear(); }
+    { const int want = (int) record.getProperty ("pickedCandidate", {}).getProperty ("index", -1); std::optional<sweep::Plan::Candidate> pc; for (const auto& c : plan.candidates) if (c.index == want) pc = c; if (pc) plan = plan.forCandidate (*pc); plan.candidates.clear(); }   // copy first: the assignment destroys the vector being walked
     if (plan.thr < 0) { say ("TONE: the record has several threshold candidates; pass --candidate NAME"); return 4; }
     // the whole reference ladder below L, quiet to loud, so the picked position gets the same reference rule as the sweep
     juce::String toneLevels; { std::vector<double> q; for (const auto& [lo, hi] : sweep::kQuietLadder) { q.push_back (lo); q.push_back (hi); } std::sort (q.begin(), q.end()); for (double L : q) toneLevels << juce::String ((int) L) << ","; }
@@ -3086,7 +3124,7 @@ inline int runDetector (const SweepOptions& opt, const juce::File& recordFile, c
     { say ("DETECTOR: " + product + " - " + known); return kToneLicenceKnownExit; }
     auto plan = sweep::planFromFixture (record);
     if (! plan.ok) { say ("DETECTOR: no plan: " + plan.why); return 4; }
-    if (candIndex >= 0) { for (const auto& c : plan.candidates) if (c.index == candIndex) plan = plan.forCandidate (c); plan.candidates.clear(); }
+    if (candIndex >= 0) { std::optional<sweep::Plan::Candidate> pc; for (const auto& c : plan.candidates) if (c.index == candIndex) pc = c; if (pc) plan = plan.forCandidate (*pc); plan.candidates.clear(); }   // copy first (see the exporter)
     if (plan.thr < 0) { say ("DETECTOR: several threshold candidates; pass --candidate NAME"); return 4; }
     plan.makeProfile();
     // the position: numeric 2 dB point nearest -18 dBFS RMS (= -14.99 peak)

@@ -2038,3 +2038,53 @@ pick accepted). **The review sheet** — `--cert-review-sheet <cert dir>`, and w
 `cert/review_sheet.txt` after the rules have run — lists every remaining needs_review record's candidates with their
 verdicts and 2 dB curves (norm:dBFS RMS), so picks are made from data. Sean's zip before the rules: 28 products
 (`cert-traces/2026-10-04-sean-zip/review-sheet-before-rules.txt`).
+
+## 42. Sean's zip, read-only answers (item 5): API-2500's missing repeat; the 12 flat rows
+
+**API-2500 (m)/(s): the repeat WAS taken and the batch lost it.** The traces hold 37 `r2.e6.pos*` captures: the engage
+search found control 6, the full sweep ran under the prefix `e6.`, the hold-doubled repeat was stored under `e6.` — and the
+single-candidate composition asked `repeatRuns` for `""` (or `"q."`), found nothing and wrote `repeats 1, no repeat`, so the
+export refused on `point_error_db`. Fixed: the repeat is keyed on `lastSweepPrefix`. The re-derive always paired it
+(`resolveTraceRun`), so both API-2500 records re-derive to repeats 2, point_error 0.03 / deep 0.01 over 54 / 115 points and
+export in the projection. Any engage-search product in Sean's batch had the same loss; the follow-up's re-derive repairs
+every one from the traces (no re-run).
+
+**The 12 flat rows.** Not licence anywhere: every one of them outputs clean tone (the Waves ones share WaveShell licences
+with CLA-76 / C1 comp-sc / H-Comp, which measured). Two classes:
+- *Pass-through at every reading* — SSLComp (m)/(s) (IN = In; Thresh swept −15…+15; 0.00 GR), RCompressor (m)/(s)
+  (Threshold −60…0, ratio raised to 4.34; 0.00), dbx-160 (m) (+0.31 constant), NEOLD U17 (Input 0…14.4; −0.01). Every
+  threshold write landed (`pump` / `instack`). A working compressor cannot read 0.00 GR with its threshold at −60 and 0 dBFS
+  in: the AU is not processing. Not engage (no engage control; U17's Power = On) — **a host-side lead**: four classic
+  Waves AUs pass audio untouched in the probe on BOTH Macs (our store says the same for RCompressor, SSLComp, VComp, C1
+  comp) while their siblings measure; needs a hand test in Logic before any rule.
+- *Something, but the same at every position* — **C1 comp (m)/(s)**: compared with C1 comp-sc / comp-gate from the same
+  family and the same run: identical preconditions (Ratio 4.13:1, Makeup 0), identical Threshold texts and landing, yet
+  comp-sc/gate read up to 31 dB GR and comp reads −0.0 at every level. No engage control (the search tried [0] Low/Peak
+  Ref, a detector mode). Same on our Mac. Lead, same shape as above. **VComp (m)/(s)**: Input swept, engage [4] tried,
+  0.0 GR — same group. **NEOLD U2A**: Peak Reduction 0…26.7, 0.01 GR — known since 2 Oct, neutral set applied; a
+  precondition we have not found. **SSL Fusion HF Compressor**: Threshold 10…4.7 with 0.13–0.75 dB GR — an HF-only
+  compressor: the 997 Hz tone sits below its band, so flat is band evidence (neutral/signal), not a defect.
+
+## 43. The projection for Sean's zip (item 16) — `--derive-only`, nothing loaded
+
+`--cert-tonecheck-all --derive-only` re-derives every exported and every undecided-candidate record from the traces, applies
+the measured rules and the review picks, re-exports, and re-files every other row under the current rules; it loads nothing
+(no probe, no detector, no tone check). 7.5 s for the whole zip. Found and fixed on the way: **a crash** on the first
+linked-pair export — `plan = plan.forCandidate (c)` with `c` referencing the vector the assignment destroyed (three sites;
+Rule 1's single-candidate records never tripped it).
+
+| Sean's run (3 Oct) | → under 1–15 | count | names |
+|---|---|---|---|
+| exported 43 | would export (tone check in the follow-up) | 43 | as before |
+| needs_review 65 | **would export** — pair/master pick: detector + tone check in the follow-up | 13 | AMEK, RS124 (s), DPR-402 (s), TCL-2, VT-7, SPL IRON, VBC FG-MU, VSC-2, alpha master (linked pairs); PuigChild 670 (s) (leader); Ozone 12 Vintage (Main); XTComp, DSM V3 (master) |
+| | would export — repeat repaired from the traces | 2 | API-2500 (m)/(s) |
+| | multiband: profiling not built yet | 15 | §40 |
+| | needs_licence "licence suspected" | 8 | 7 Melda + Pro-C 3 |
+| | surround: not profiled | 2 | Spherix 10->10, 12->12 |
+| | **still in review** | 25 | 11 with candidates and no rule (MaxxVolume ×2, Auto-Tune Vocal Comp, DynOne3, Shadow Hills ×2, VBC Rack, dbx-160 (s), kHs Dynamics, OTT, MAGNUM-K) — the review sheet; 12 flat (§42); Purple Audio MC 77 (nonmonotonic sweep); UnFairchild (linked pair decided, export refused: 5 curve points) |
+| refused 18 | re-run needed | 18 | H-Comp (m)/(s), Low Control, MModernCompressor, MTurboComp (the licence false flag, §37: `--retry-refused` after the follow-up build); 13 "0 controls hold the threshold role" (Mike-E, MV2, Vac Attack, V76U73, OneKnob ×4, RVox ×2, Rubber Band, bx_opto Pedal) — roles, not a re-run |
+| held 45, recorded 6, quarantined 2, needs_licence 2 | unchanged | 55 | |
+
+So the follow-up on Sean's Mac: 58 exports to tone-check (13 of them needing one detector load each), review 65 → 25, and
+the five refused-for-licence re-run with `--retry-refused`. `cert-traces/2026-10-04-sean-zip/projection-*`,
+`review-sheet-after-rules.txt` (the 11).

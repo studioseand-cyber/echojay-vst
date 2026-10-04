@@ -273,7 +273,12 @@ inline Export exportCompProfile (const juce::var& f)
     auto plan = sweep::planFromFixture (f);
     if (f.getProperty ("pickedCandidate", {}).isObject())                                   // the pick decides the amount control
     {
-        for (const auto& c : plan.candidates) if (c.index == (int) f.getProperty ("pickedCandidate", {}).getProperty ("index", -1)) plan = plan.forCandidate (c);
+        // COPY THE CANDIDATE BEFORE REPLACING THE PLAN (crash found 4 Oct on Abbey Road RS124 (s), the first linked-pair export):
+        // `c` referenced plan.candidates, and `plan = plan.forCandidate (c)` destroyed that vector mid-iteration - a dangling
+        // reference that Rule 1's single-candidate records never tripped
+        const int want = (int) f.getProperty ("pickedCandidate", {}).getProperty ("index", -1);
+        std::optional<sweep::Plan::Candidate> picked; for (const auto& c : plan.candidates) if (c.index == want) picked = c;
+        if (picked) plan = plan.forCandidate (*picked);
         plan.candidates.clear();
     }
     const auto lr = sweepVar.getProperty ("linearReference", {});
