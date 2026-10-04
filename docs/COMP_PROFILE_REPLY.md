@@ -435,3 +435,15 @@ Past 3 dB the clamp is the picked position's own 1→g spacing plus 3 dB, interp
 for 3 dB and under; the refusal names the allowance. The old line is gone. The estimated-spacing branch is not built on
 our side: the tone check never picks an estimated point. Re-run: no L moved, no verdict changed on the five; CL 1B's 12 dB
 pick now carries its 3 dB margin by construction (25.0 below against 28.0).
+
+## 4 Oct: a three-line Logic test for Sean — is it our host, or the plugin?
+
+Four classic Waves AUs (C1 comp, SSLComp, RCompressor, VComp) pass audio untouched in our probe on both Macs — zero gain
+reduction at every threshold position with a 0 dBFS tone — while their siblings (C1 comp-sc, CLA-76, H-Comp) measure fine
+with the same preconditions. One test in Logic settles whether it is the probe host or the plugin:
+
+1. New audio track with a steady 997 Hz tone at −6 dBFS (Test Oscillator, or a bounced sine); insert **C1 comp (s)** (the AU).
+2. Threshold fully down (−100), Ratio about 4:1, Makeup 0, everything else at its defaults; play.
+3. Read the plugin's own GR meter and the channel's output level: **does it compress** (GR 20 dB or more, output well below
+   −6)? If yes, the plugin works in Logic and the probe host is missing something these four need (we will look at bus /
+   bypass / render-notify state next); if no, the AU itself does not process at these defaults and the profile refusal stands.

@@ -2132,3 +2132,15 @@ re-exported stepped, **g = 2 and all nine deep levels PASS** (2.14 vs 2.1 … 11
 not land. Pins R9–R9e, X12c/X12d; mutants red (on-grid writes as evidence; a loose grid fit; the export ignoring the
 evidence). Traces `cert-traces/2026-10-04-sean-zip/254e-stepped-by-evidence/`. Cost: one probe process per product (~15 s)
 when the profile is not already stepped.
+
+## 46. Sweeps with fewer than nine 1 dB positions (4 Oct, read-only, Sean's zip)
+
+| product / candidate | 1 dB positions | why | from the traces? | needs |
+|---|---|---|---|---|
+| UnFairchild L / R Threshold | 5 of 16 | every second position reads `not_reached`: numeric at 0.2 / 0.4 / 0.6 / 0.8 / 1.0, `not_reached` between — the shape of a **6-detent control declared continuous** (writes between detents land where nothing compresses); refinement never fired because it needs two adjacent numeric 2 dB points and none are adjacent | no — refinement is new processes | a re-run: the follow-up's 41-norm landing read (§45) will show the detents first; **but a 6-detent control can never give nine 1 dB positions — spec §3's "at least 9" refuses it by construction** (for Sean: a stepped amount with N < 9 detents needs its own minimum) |
+| Pro Audio DSP DSM V3 Threshold 1 (the master) | 8 of 19 | refined to 19 positions, but 11 are `not_reached` (the upper range never compresses the tone); the eight reachable values are 1.5–4.0 dB apart — one more refinement in the 4.0 dB gap gives the ninth | no | a re-run with one more refinement round (or the gap bar at 2.5 dB) |
+| DSM V3 Threshold 2 / 3 | 2 / 1 | trims (master-over-trims picks Threshold 1): 14–15 `not_reached` | — | nothing: not the amount |
+| Maag MAGNUM-K Limiter Threshold 1 / 2 | 3 of 4 | a 4-step limiter stage; the compressor's Threshold is the pickable candidate | — | nothing: not the amount |
+
+Nothing here can be recovered from the traces: refinement means new sweep processes. UnFairchild and DSM V3 are re-runs;
+UnFairchild additionally needs a ruling on the minimum for coarse stepped controls.
