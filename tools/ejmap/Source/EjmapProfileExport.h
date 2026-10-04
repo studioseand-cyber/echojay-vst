@@ -161,7 +161,7 @@ inline juce::String topologyOf (const juce::var& f, const juce::var& sweep, cons
     if (f.hasProperty ("thresholdCandidates")) return "other";                 // several candidates: bands, stages, spectral, always-on
     // a picked candidate: the human chose the amount control, and the server treats the product as that one threshold
     const auto flags = sweep.getProperty ("roleFlag", "").toString();
-    if (flags.contains ("input_as_threshold") || plan.thrFlags.contains ("input_as_threshold") || plan.thrFlags.contains ("peak_reduction")) return "input_drive";
+    if (flags.contains ("input_as_threshold") || flags.contains ("amount_as_threshold") || plan.thrFlags.contains ("input_as_threshold") || plan.thrFlags.contains ("peak_reduction") || plan.thrFlags.contains ("amount_as_threshold")) return "input_drive";
     return "threshold";
 }
 

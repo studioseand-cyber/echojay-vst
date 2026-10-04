@@ -648,6 +648,15 @@ namespace
                 juce::String cand; for (int j = 1; j + 1 < argc; ++j) if (argAt (argc, argv, j) == "--candidate") cand = argAt (argc, argv, j + 1);
                 return ejmap::cert::runExportProfiles (cwdFile (argAt (argc, argv, i + 1)), cwdFile (argAt (argc, argv, i + 2)), a == "--export-profiles", cand);
             }
+            // --cert-plan <record.json>: what the plan would sweep (read-only): the amount control, its flags, candidates, or the refusal
+            if (a == "--cert-plan" && i + 1 < argc)
+            {
+                const auto r = juce::JSON::parse (cwdFile (argAt (argc, argv, i + 1)).loadFileAsString());
+                const auto pl = ejmap::sweep::planFromFixture (r);
+                std::cout << r.getProperty ("product", "").toString() << ": " << (pl.ok ? (pl.thr >= 0 ? "amount [" + juce::String (pl.thr) + "] " + pl.thrName + " flags " + pl.thrFlags.joinIntoString (",") + " unit '" + pl.thrUnit + "'" : juce::String ((int) pl.candidates.size()) + " candidates: " + [&] { juce::StringArray a; for (const auto& c : pl.candidates) a.add ("[" + juce::String (c.index) + "] " + c.name); return a.joinIntoString (", "); }()) : "REFUSED: " + pl.why)
+                          << (pl.pickNote.isNotEmpty() ? " | " + pl.pickNote : juce::String()) << std::endl;
+                return 0;
+            }
             // --cert-review-sheet <cert dir>: every needs_review record's candidates with their verdicts and 2 dB curves (read-only)
             if (a == "--cert-review-sheet" && i + 1 < argc) { ejmap::cert::printReviewSheet (cwdFile (argAt (argc, argv, i + 1)).getChildFile ("fixtures"), std::cout); return 0; }
             // --cert-states <dir of records>: what state outcomeForRecord gives every record now (read-only; the projected outcome for a zipped-back folder)

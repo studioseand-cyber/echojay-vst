@@ -387,6 +387,37 @@ inline Plan planFromFixture (const juce::var& fixture)
         if (r.role == "threshold") thr.push_back (&r);
         if (r.role == "ratio") ratio.push_back (&r);
     }
+    // INPUT-DRIVE AND ONE-KNOB COMPRESSORS (ruled 4 Oct, the 13 "no threshold role" refusals in Sean's run): when no control
+    // holds the threshold role, the single control holding the amount or input role is the amount control - it is swept like
+    // a threshold and exported as topology input_drive with level_coupling (the gain below threshold per position, from the
+    // same quiet reference). The lexicon lives HERE at plan time (EjmapRoles.h's classification is pinned to the server's
+    // matcher and is not touched): the roles' amount terms (density / reduction / amount / compress / compression / drive /
+    // tension), plus "Pressure" (a OneKnob), plus an exact "Gain" in dB on a product with no input role at all (NEOLD
+    // V76U73's tube input gain), plus "High Level" in dB with a non-positive range (MV2's downward stage). Two such controls
+    // ending in a channel token (Vac Attack's Left / Right Reduction) become candidates for the pair rule. A rhythmic
+    // "Pump" (OneKnob Pumper: Rate 1/4) is not a level-dependent compressor and is refused by name, said.
+    std::vector<roles::ControlRole> amountRoles;
+    if (thr.empty())
+    {
+        bool pumper = false;
+        if (const auto* cs = fixture.getProperty ("controls", {}).getArray())
+            for (const auto& c : *cs)
+            {
+                const auto name = c.getProperty ("name", "").toString(), unit = c.getProperty ("unit", "").toString();
+                const auto rg = c.getProperty ("range", {});
+                if (nametokens::controlAnswersTerm (name, "pump")) { pumper = true; continue; }
+                if (wordValued (c) || isSteppedControl (c) || ! rg.hasProperty ("min")) continue;
+                const bool amountWord = roles::answersAny (name, roles::amountTerms()) || name.trim().equalsIgnoreCase ("pressure");
+                const bool tubeGain   = name.trim().equalsIgnoreCase ("gain") && unit.equalsIgnoreCase ("dB") && cl.cls == "none";
+                const bool highLevel  = name.trim().equalsIgnoreCase ("high level") && unit.equalsIgnoreCase ("dB") && (double) rg.getProperty ("max", 1.0) <= 0.0;
+                if (! amountWord && ! tubeGain && ! highLevel) continue;
+                roles::ControlRole r; r.index = (int) c.getProperty ("index", -1); r.name = name; r.role = "threshold"; r.flags.add ("amount_as_threshold");
+                amountRoles.push_back (r);
+            }
+        if (pumper && amountRoles.empty()) { p.why = "not swept: a rhythmic ducker (Pump / Rate), not a level-dependent compressor - not profiled"; return p; }
+        for (auto& r : amountRoles) thr.push_back (&r);
+        if (! amountRoles.empty()) p.pickNote = "amount_as_threshold: no control holds the threshold role; the amount control is swept like one (input_drive, level_coupling)";
+    }
     // SEVERAL INPUT-AS-THRESHOLD CANDIDATES (ruled 29 Sep), decided from RECORDED DATA, never from the name:
     //   - exactly one CONTINUOUS candidate and the rest STEPPED: the continuous one (a pad is stepped, a gain is
     //     continuous - Acme Opticom XLA-3's Input Gain over its two-state Input Pad);
@@ -445,7 +476,7 @@ inline Plan planFromFixture (const juce::var& fixture)
         p.thr = pick->index;
         p.thrName = pick->name;
         p.thrFlags = pick->flags;
-        p.quietReference = p.thrFlags.contains ("input_as_threshold");
+        p.quietReference = p.thrFlags.contains ("input_as_threshold") || p.thrFlags.contains ("amount_as_threshold");
         const auto tc = findControl (fixture, p.thr);
         p.thrUnit = tc.getProperty ("unit", {}).toString();
         p.norms = positionsFor (tc);
@@ -1774,6 +1805,7 @@ inline juce::var composeThresholdSweep (const Derived& d, const DisplayCheck& dc
     if (d.flatSpanDb) s->setProperty ("flatSpan_db", std::round (*d.flatSpanDb * 100.0) / 100.0);
     if (d.reason.isNotEmpty()) s->setProperty ("reason", d.reason);
     if (d.roleFlag.isNotEmpty()) s->setProperty ("roleFlag", d.roleFlag);
+    else if (p.thrFlags.contains ("input_as_threshold") || p.thrFlags.contains ("amount_as_threshold")) s->setProperty ("roleFlag", p.thrFlags.joinIntoString (","));   // the record says what its amount control is (4 Oct), so the export never re-derives it
     // THE DISPLAY, AS NUMBERS, beside the map's result and never folded into it. displayLinear is unset on purpose.
     s->setProperty ("displayOffsetDb", dc.offsetDb ? juce::var (std::round (*dc.offsetDb * 100.0) / 100.0) : juce::var());
     if (dc.positions > 0)

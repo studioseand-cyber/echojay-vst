@@ -2088,3 +2088,31 @@ Rule 1's single-candidate records never tripped it).
 So the follow-up on Sean's Mac: 58 exports to tone-check (13 of them needing one detector load each), review 65 → 25, and
 the five refused-for-licence re-run with `--retry-refused`. `cert-traces/2026-10-04-sean-zip/projection-*`,
 `review-sheet-after-rules.txt` (the 11).
+
+## 44. Input-drive and one-knob compressors (4 Oct): the amount control is swept like a threshold
+
+**Read-only first — the 13 "no threshold role" refusals in Sean's zip** (none has a sweep in the traces: only the defaults
+list-params / text-at captures, so every one needs a re-run):
+
+| product | the amount control | range / default | note |
+|---|---|---|---|
+| RVox (m)/(s) | [0] Compression | −36..0 dB, default 0.0 | the OneKnob-style amount; Gate at −Inf, Gain 0 stay |
+| OneKnob Pressure (m)/(s) | [1] Pressure | 0..10, default 0.0 | Input (Unity/Boost/Pad) is a 3-step word control, not swept |
+| OneKnob Pumper (m)/(s) | — | Pump 0..10, Rate 1/4 | **refused by name**: a rhythmic ducker, not a level-dependent compressor |
+| Empirical Labs Mike-E Comp | [3] Drive | 0..10, default 5.0 | Ratio Bypass / 4:1 / NUKE is at 4:1; Preamp Gain (CLEAN / 8 / 18 dB) is not the amount |
+| NEOLD V76U73 | [3] Gain | 43..76 dB, default 58 | the tube input gain; **Mode instantiates at Bypass** — the engage search must find Mode → Compress or the sweep reads flat |
+| Rubber Band Compressor V2 | [5] Tension | 1..3, default 2.0 | by the lexicon ("tension" is an amount term); Snap / Bias / Crunch are not — to verify on the first sweep |
+| Mixland Vac Attack | [6] Left Reduction + [13] Right Reduction | 0..10, default 0.0 | two amount controls ending in a channel token → candidates, the pair rule decides after the sweeps; **Power instantiates Off** |
+| bx_opto Pedal | [2] Density | 0..100, default 0 | Speed stays; Power On |
+| MV2 (m)/(s) | [1] High Level | −48..0 dB, default 0.0 | the downward (compression) stage; Low Level (upward, 0..48) stays at 0 |
+
+**Built.** In `planFromFixture`, when no control holds the threshold role, the lexicon at plan time (EjmapRoles.h's pinned
+classification untouched) finds the amount control — the roles' amount terms, plus "Pressure", plus an exact "Gain" in dB on
+a product with no input role, plus "High Level" in dB with a non-positive range; stepped and word-valued controls excluded;
+"Pump" refuses by name. One → the amount, flagged `amount_as_threshold`, swept with the quiet reference; two ending in a
+channel token → candidates. The sweep records the flag (`roleFlag`) and the export reads it: `topology: input_drive` with
+`level_coupling` (the gain below threshold per position, from the same quiet reference), exactly as input_as_threshold.
+Pins A1 (RVox), A2 (Mike-E), A3 (Pumper refused), A4 (Vac Attack pair), X12b (export); mutants red. `--cert-plan <record>`
+is the dry command. **What the zip would export without re-measuring: nothing from these 13** — they were refused before
+any sweep, so all 11 that now plan need a re-run (`--retry-refused` after the follow-up build; the two Pumpers stay refused,
+with the new reason).

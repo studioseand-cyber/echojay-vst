@@ -5688,6 +5688,9 @@ void testProfileExport()
     const auto drive = exportCompProfile (record (16, true, false, "input_as_threshold", "certified"));
     check (drive.ok && drive.profile.getProperty ("topology", "") == "input_drive" && drive.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
            "export X12: input-as-threshold is input_drive with level_coupling from the per-position quiet gain");
+    const auto amt = exportCompProfile (record (16, true, false, "amount_as_threshold", "certified"));
+    check (amt.ok && amt.profile.getProperty ("topology", "") == "input_drive" && amt.profile.getProperty ("level_coupling", {}).getProperty ("gain_db_per_point", {}).size() == 16,
+           "export X12b (ruled 4 Oct): an amount_as_threshold sweep (RVox's Compression, a OneKnob) exports as input_drive with level_coupling, exactly like input_as_threshold");
     {
         // HIS SECTION 6 PICK on the exported profile: in_at_gr at g, nearest L, interpolated between positions for a continuous
         // control, the nearest detent for a stepped one, never a position whose 1 dB point is more than 8 dB below L.
@@ -6064,6 +6067,34 @@ void testProfileSweepPlan()
         check (line.contains ("Gate: off at instantiate (Gate On = Off)") && line.contains ("Leveller: ON at instantiate (Leveller On = On)")
                  && line.contains ("Processor: no engage control, not verified; Processor 1 - Threshold left at '-20.0 dB'") && ! line.contains ("Comp"),
                "rule1 K8: each stage's claim comes from its own switch at instantiate (off / ON, named), a stage with no switch is 'no engage control, not verified', the pick is not listed (" + line + ")");
+    }
+    {
+        // INPUT-DRIVE AND ONE-KNOB COMPRESSORS (ruled 4 Oct, A1-A5): no threshold role -> the single amount/input control is the amount, flagged amount_as_threshold
+        const auto rvox = juce::JSON::parse (R"json({"product": "RVox (s)", "controls": [
+            {"index": 0, "name": "Compression", "unit": "dB", "numSteps": 2147483647, "range": {"min": -36.0, "max": 0.0}, "displayAt": {"0.000": "-36.0", "0.500": "-18.0", "1.000": "0.0"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0"}},
+            {"index": 1, "name": "Gate", "unit": "dB", "numSteps": 2147483647, "range": {"min": -40.0, "max": 0.0}, "displayAt": {"0.000": "-Inf", "0.500": "-40.0", "1.000": "0.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "-Inf"}},
+            {"index": 2, "name": "Gain", "unit": "dB", "numSteps": 2147483647, "range": {"min": -36.0, "max": 0.0}, "displayAt": {"0.000": "-36.0", "0.500": "-18.0", "1.000": "0.0"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "0.0"}}]})json");
+        const auto rp = planFromFixture (rvox);
+        check (rp.ok && rp.thr == 0 && rp.thrName == "Compression" && rp.thrFlags.contains ("amount_as_threshold") && rp.quietReference && rp.candidates.empty() && rp.pickNote.contains ("amount_as_threshold"),
+               "amount A1 (RVox): no threshold role; 'Compression' (an amount word, -36..0 dB) is the amount control, flagged amount_as_threshold; 'Gain' on an amount_only product is not (" + rp.why + ")");
+        const auto mike = juce::JSON::parse (R"json({"product": "Empirical Labs Mike-E Comp", "controls": [
+            {"index": 0, "name": "Preamp Gain", "unit": "dB", "numSteps": 2147483647, "range": {"min": 8.0, "max": 18.0, "endsNotNumeric": ["0.000"]}, "displayAt": {"0.000": "CLEAN", "0.500": "8 dB", "1.000": "18 dB"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "CLEAN"}},
+            {"index": 3, "name": "Drive", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.00", "0.500": "5.00", "1.000": "10.00"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "5.00"}},
+            {"index": 5, "name": "Ratio", "numSteps": 2147483647, "displayAt": {"0.000": "Bypass", "0.500": "4:1", "1.000": "NUKE"}, "defaultOnInstantiate": {"normalised": 0.5, "display": "4:1"}},
+            {"index": 8, "name": "Mix", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.00", "0.500": "5.00", "1.000": "10.00"}, "defaultOnInstantiate": {"normalised": 1.0, "display": "10.00"}},
+            {"index": 9, "name": "Out", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.00", "0.500": "5.00", "1.000": "10.00"}, "defaultOnInstantiate": {"normalised": 0.65, "display": "6.50"}}]})json");
+        const auto mp2 = planFromFixture (mike);
+        check (mp2.ok && mp2.thr == 3 && mp2.thrName == "Drive" && mp2.thrFlags.contains ("amount_as_threshold"), "amount A2 (Mike-E): 'Drive' is the amount; Preamp Gain (not exactly 'Gain'), Mix and Out are not (" + mp2.why + ")");
+        const auto pump = juce::JSON::parse (R"json({"product": "OneKnob Pumper (s)", "controls": [
+            {"index": 0, "name": "Pump", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.7, "display": "7.0"}},
+            {"index": 2, "name": "Rate", "numSteps": 10, "displayAt": {"0.000": "1/1", "0.500": "3/16", "1.000": "1/32"}, "defaultOnInstantiate": {"normalised": 0.3, "display": "1/4"}}]})json");
+        check (! planFromFixture (pump).ok && planFromFixture (pump).why.contains ("rhythmic ducker"), "amount A3 (OneKnob Pumper): a Pump / Rate unit is not a level-dependent compressor - refused by name, said");
+        const auto vac = juce::JSON::parse (R"json({"product": "Mixland Vac Attack", "controls": [
+            {"index": 6, "name": "Left Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
+            {"index": 13, "name": "Right Reduction", "numSteps": 2147483647, "range": {"min": 0.0, "max": 10.0}, "displayAt": {"0.000": "0.0", "0.500": "5.0", "1.000": "10.0"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "0.0"}},
+            {"index": 10, "name": "Power", "numSteps": 2147483647, "displayAt": {"0.000": "Off", "0.500": "Off", "1.000": "On"}, "defaultOnInstantiate": {"normalised": 0.0, "display": "Off"}}]})json");
+        const auto vp = planFromFixture (vac);
+        check (vp.ok && vp.thr < 0 && vp.candidates.size() == 2 && vp.candidates[0].name == "Left Reduction", "amount A4 (Vac Attack): two amount controls ending in a channel token become candidates for the pair rule after the sweeps");
     }
     {
         // ZIP IS A ROLES CASE (ruled 2 Oct): a threshold-named control whose values are words is a mode switch, never a candidate.
