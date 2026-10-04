@@ -36,6 +36,7 @@
 #pragma once
 
 #include "probe_write.h"
+#include <array>
 #include <map>
 
 namespace ejprobe
@@ -113,6 +114,9 @@ struct SweepRenderer
         double inPeakDb = -999.0, inRmsDb = -999.0;
         double toneFrac = 0.0;               // share of the measured output power at the test tone (Goertzel), 0..1
         long long nonFinite = 0;
+        // OUTPUT PEAKS over the measured span (5 Oct, limiter ceilings): the sample peak, and a true-peak estimate from 4x cubic
+        // (Catmull-Rom) interpolation between consecutive samples - an approximation of ITU-R BS.1770's oversampled peak, said as such
+        double outPeakDb = -999.0, outTruePeakDb = -999.0;
     };
 
     // One block of SILENCE through the plugin: the write escalation confirms while rendering silence, which builds
@@ -133,6 +137,8 @@ struct SweepRenderer
         const long long winN = juce::jmax (1LL, (long long) std::llround (winS * sr));
         std::vector<double> chanSs ((size_t) juce::jmax (1, mainOut), 0.0);
         double winSs = 0.0, inSs = 0.0, inPeak = 0.0; long long inWin = 0, measured = 0;
+        double outPeak = 0.0, outTruePeak = 0.0;
+        std::vector<std::array<double, 4>> last ((size_t) juce::jmax (1, mainOut), std::array<double, 4> { 0.0, 0.0, 0.0, 0.0 });   // the last four samples per channel for the interpolation
         // Goertzel at the tone over the measured span, per main output channel: is the output still the INPUT's tone?
         const double gcoef = 2.0 * std::cos (step), gcoef2 = step2 > 0.0 ? 2.0 * std::cos (step2) : 0.0;
         std::vector<double> gs1 ((size_t) juce::jmax (1, mainOut), 0.0), gs2 ((size_t) juce::jmax (1, mainOut), 0.0);
@@ -163,6 +169,16 @@ struct SweepRenderer
                     if (t >= from)
                     {
                         chanSs[(size_t) ch] += (double) d * d;
+                        outPeak = juce::jmax (outPeak, (double) std::abs (d));
+                        {
+                            auto& q = last[(size_t) ch]; q[0] = q[1]; q[1] = q[2]; q[2] = q[3]; q[3] = (double) d;
+                            for (int k = 1; k < 4; ++k)   // three points between q[1] and q[2] (Catmull-Rom), i.e. 4x
+                            {
+                                const double u = k / 4.0, a0 = q[1], a1 = 0.5 * (q[2] - q[0]), a2 = q[0] - 2.5 * q[1] + 2.0 * q[2] - 0.5 * q[3], a3 = 0.5 * (q[3] - q[0]) + 1.5 * (q[1] - q[2]);
+                                outTruePeak = juce::jmax (outTruePeak, std::abs (((a3 * u + a2) * u + a1) * u + a0));
+                            }
+                            outTruePeak = juce::jmax (outTruePeak, (double) std::abs (d));
+                        }
                         const double s0 = (double) d + gcoef * gs1[(size_t) ch] - gs2[(size_t) ch];
                         gs2[(size_t) ch] = gs1[(size_t) ch];
                         gs1[(size_t) ch] = s0;
@@ -201,6 +217,7 @@ struct SweepRenderer
             h.toneFrac = total2 > 0.0 ? juce::jlimit (0.0, 1.0, tone / total2) : 0.0;
         }
         h.inPeakDb = toDb (inPeak);
+        h.outPeakDb = toDb (outPeak); h.outTruePeakDb = toDb (outTruePeak);
         h.inRmsDb = toDb (total > 0 ? std::sqrt (inSs / total) : 0.0);
         return h;
     }
@@ -331,9 +348,9 @@ inline void runSweep (juce::AudioPluginInstance& p, const SweepSpec& s, const Re
             }
             const size_t m = h.windowsDb.size();
             const double finalMove = m >= 2 ? h.windowsDb[m - 1] - h.windowsDb[m - 2] : 0.0;
-            std::printf ("%s\t%d\t%.2f\tlevel_db\t%.4f\tin_rms_db\t%.4f\ttone_frac\t%.4f\tch\t%s\tdoubled\t%d\tlast_move_db\t%.4f\tfinal_move_db\t%.4f\twin\t%s\tnonfinite\t%lld\n",
+            std::printf ("%s\t%d\t%.2f\tlevel_db\t%.4f\tin_rms_db\t%.4f\ttone_frac\t%.4f\tch\t%s\tdoubled\t%d\tlast_move_db\t%.4f\tfinal_move_db\t%.4f\twin\t%s\tnonfinite\t%lld\tout_peak_db\t%.4f\tout_true_peak_db\t%.4f\n",
                          tag, k, L, h.levelDb, h.inRmsDb, h.toneFrac, joinDb (h.chanDb).toRawUTF8(), doubled, lastMove, finalMove,
-                         joinDb (h.windowsDb).toRawUTF8(), h.nonFinite);
+                         joinDb (h.windowsDb).toRawUTF8(), h.nonFinite, h.outPeakDb, h.outTruePeakDb);
         }
     };
 

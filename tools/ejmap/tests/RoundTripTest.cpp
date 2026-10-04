@@ -73,6 +73,7 @@
 #include "EjmapTunerProfile.h"
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
+#include "EjmapLimiter.h"
 #include <functional>
 #include "EjmapCertDriver.h"
 
@@ -6993,6 +6994,31 @@ void testTiming()
     }
 }
 
+/** LIMITER CEILINGS (EjmapLimiter.h, roadmap 2.4 PROTOTYPE, 5 Oct B3): the hold line's peaks, the ceiling positions from labels, the verdict with the 5 Oct cases. */
+void testLimiter()
+{
+    using namespace ejmap::limiter;
+    const auto pk = parsePeaks ("hold\t0\t-1.00\tlevel_db\t-4.51\tin_rms_db\t-4.01\ttone_frac\t1.0\tch\t-4.51\tdoubled\t0\tlast_move_db\t0\tfinal_move_db\t0\twin\t-4.5\tnonfinite\t0\tout_peak_db\t-1.5000\tout_true_peak_db\t-0.9200\n");
+    check (pk.ok && std::abs (pk.peakDb + 1.5) < 1e-9 && std::abs (pk.truePeakDb + 0.92) < 1e-9, "limiter L1: the hold line's sample and true peaks parse");
+    check (! parsePeaks ("hold\t0\t-1.00\tlevel_db\t-4.51\tin_rms_db\t-4.01\n").ok, "limiter L2: a hold line without peaks (an older probe) is no reading");
+    std::vector<std::pair<float, juce::String>> grid; for (int k = 0; k <= 32; ++k) grid.push_back ({ k / 32.0f, juce::String (-12.0 + 12.0 * k / 32.0, 2) + " dB" });
+    const auto pos = ceilingPositions (grid);
+    check (pos.size() == 5 && std::abs (pos[0].labelDb + 0.0) < 0.2 && std::abs (pos[4].labelDb + 6.0) < 0.2, "limiter L3: five ceiling positions, the labels nearest -0.1/-0.3/-1/-3/-6 (" + juce::String ((int) pos.size()) + ")");
+    check (labelDb ("-1.05 dB") && *labelDb ("-1.05 dB") == -1.05 && labelDb ("-0.3 dBTP") && ! labelDb ("Off"), "limiter L4: ceiling labels parse with their units");
+    auto res = [] (double label, double peak, double tpeak) { CeilingResult r; r.pos.labelDb = label; r.reading.ok = true; r.reading.peakDb = peak; r.reading.truePeakDb = tpeak; r.sampleErrDb = peak - label; r.trueErrDb = tpeak - label; return r; };
+    // MLimiterX: sample exact, true peak +0.58 at every ceiling
+    const auto mx = judge ({ res (0.0, 0.0, 0.58), res (-0.75, -0.75, -0.17), res (-1.5, -1.5, -0.92), res (-3.0, -3.0, -2.42), res (-6.0, -6.0, -5.42) });
+    check (mx.holdsSample && ! mx.holdsTrue && std::abs (mx.worstTrueDb - 0.58) < 1e-9 && mx.positions == 5, "limiter L5: MLimiterX holds the sample peak and overshoots true peak by 0.58 dB");
+    // L2: both hold
+    const auto l2 = judge ({ res (0.0, -0.01, -0.01), res (-0.9, -0.9, -0.9), res (-5.6, -5.6, -5.6) });
+    check (l2.holdsSample && l2.holdsTrue, "limiter L6: L2 holds both");
+    // bx_limiter True Peak: the -0.12 and -0.26 ceilings were never reached by the -1 dBFS output: not driven, excluded, said
+    const auto bx = judge ({ res (-0.12, -1.02, -1.02), res (-0.26, -1.02, -1.02), res (-1.05, -1.07, -1.07), res (-2.93, -2.94, -2.94), res (-5.74, -5.75, -5.75) });
+    check (bx.positions == 3 && bx.notDriven == 2 && bx.holdsSample && bx.holdsTrue && bx.note.contains ("2 position(s) not driven"), "limiter L7: ceilings the drive never reached are not counted as holding (bx TP at -0.12 / -0.26)");
+    check (! judge ({ res (-0.1, -3.0, -3.0) }).holdsSample && judge ({ res (-0.1, -3.0, -3.0) }).note.contains ("no ceiling position was driven"), "limiter L8: nothing driven -> no verdict, said");
+    check (! judge ({ res (-1.0, -0.85, -0.85) }).holdsSample && judge ({ res (-1.0, -0.9, -0.9) }).holdsSample, "limiter L9: the bar is 0.1 dB above the label (0.15 over fails, 0.10 holds)");
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -7068,6 +7094,7 @@ int main (int, char**)
     testSteppedExport();
     testGainCal();
     testTiming();
+    testLimiter();
     testLoopOutcomes();
     testCategoriesMerge();
 

@@ -53,6 +53,7 @@
 #include "EjmapSidechainCheck.h"
 #include "EjmapGainCal.h"
 #include "EjmapTiming.h"
+#include "EjmapLimiter.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -2821,6 +2822,108 @@ inline int runTiming (const SweepOptions& opt)
     outDir.getChildFile (stem + ".timing.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("TIMING: -> " + outDir.getChildFile (stem + ".timing.json").getFullPathName());
     return measured > 0 ? 0 : 4;
+}
+
+// LIMITER CEILING ACCURACY (roadmap 2.4; PROTOTYPE, 5 Oct overnight B3; derivation in EjmapLimiter.h). The ceiling control by
+// name (ceiling / out ceiling / output ceiling / margin), the amount control from the plan (threshold or input-as-threshold), the
+// oversampling switch by name (oversampl / os / true peak), every other control as instantiated; the hard end by measurement.
+inline int runLimiter (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("LIMITER: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("LIMITER: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("LIMITER: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("limiter"); outDir.createDirectory();
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false);
+    const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra)
+    {
+        juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, opt.timeoutMs);
+        raw.getChildFile (stem + ".limiter." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n");
+        return r;
+    };
+    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("LIMITER: --list-params " + lp.describe()); return 1; }
+    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("LIMITER: --text-at " + ta.describe()); return 1; }
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    const auto plan = sweep::planFromFixture (base);
+    int ceilingIdx = -1, osIdx = -1; juce::String ceilingName, osName;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const int idx = (int) c.getProperty ("index", -1); const auto name = c.getProperty ("name", "").toString();
+            if (ceilingIdx < 0 && (nametokens::controlAnswersTerm (name, "ceiling") || nametokens::controlAnswersTerm (name, "margin")) && ! sweep::wordValued (c)) { ceilingIdx = idx; ceilingName = name; }
+            if (osIdx < 0 && (int) c.getProperty ("numSteps", 0) == 2 && (name.containsIgnoreCase ("oversampl") || nametokens::controlAnswersTerm (name, "os") || name.containsIgnoreCase ("true peak"))) { osIdx = idx; osName = name; }
+        }
+    int amount = plan.ok ? plan.thr : -1; juce::String amountName = plan.thrName;
+    if (amount < 0 && plan.ok && ! plan.candidates.empty()) { amount = plan.candidates.front().index; amountName = plan.candidates.front().name; }
+    if (ceilingIdx < 0)
+    {
+        juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString());
+        say ("LIMITER: " + opt.product + ": no ceiling control by name (ceiling / margin): nothing to judge; controls: " + names.joinIntoString (", ")); return 4;
+    }
+    if (amount < 0) { say ("LIMITER: " + opt.product + ": no amount control planned (" + plan.why + ")"); return 4; }
+    say ("LIMITER: " + opt.product + " " + desc.version + ": ceiling [" + juce::String (ceilingIdx) + "] " + ceilingName + ", amount [" + juce::String (amount) + "] " + amountName + (osIdx >= 0 ? ", oversampling [" + juce::String (osIdx) + "] " + osName : juce::String (", no oversampling switch")));
+    // the ceiling's labels at 33 norms -> the positions nearest the targets
+    juce::StringArray gs; for (int k = 0; k <= 32; ++k) gs.add (juce::String ((float) k / 32.0f, 6));
+    const auto tg = run ("ceiling.textgrid", { "--text-at-norms", juce::String (ceilingIdx), gs.joinIntoString (",") });
+    std::vector<std::pair<float, juce::String>> grid;
+    for (const auto& row : pitch::parseTextGrid (tg.cleanExit() ? tg.out : juce::String())) grid.push_back ({ (float) row.getValue, row.text });
+    const auto positions = limiter::ceilingPositions (grid);
+    if (positions.empty()) { say ("LIMITER: the ceiling's labels do not read as dB (" + (grid.empty() ? juce::String ("no grid") : grid.front().second + " .. " + grid.back().second) + ")"); return 4; }
+    juce::StringArray sets; for (auto [i, v] : plan.sets) sets.add (juce::String (i) + ":" + juce::String (v, 6));
+    auto measure = [&] (const juce::String& tag, float amountNorm, float ceilingNorm, std::optional<float> osNorm)
+    {
+        juce::StringArray all = sets; all.add (juce::String (ceilingIdx) + ":" + juce::String (ceilingNorm, 6)); if (osNorm) all.add (juce::String (osIdx) + ":" + juce::String (*osNorm, 6));
+        const auto r = run (tag, { "--sweep", "thr=" + juce::String (amount), "norms=" + juce::String (amountNorm, 6), "levels=" + juce::String ((int) limiter::kDriveDbfs), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0", "set=" + all.joinIntoString (",") });
+        return std::make_pair (limiter::parsePeaks (r.cleanExit() ? r.out : juce::String()), r);
+    };
+    // the hard end, by measurement: at the -1 dBFS target (or the first position), which amount end leaves the lower true peak
+    const auto& probePos = positions.size() > 2 ? positions[2] : positions.front();
+    const auto e0 = measure ("hard.n0", 0.0f, probePos.norm, {}), e1 = measure ("hard.n1", 1.0f, probePos.norm, {});
+    if (e0.second.kind == ChildResult::Kind::uiShown || e1.second.kind == ChildResult::Kind::uiShown) { say ("LIMITER: a window appeared; stopping"); return 5; }
+    if (! e0.first.ok && ! e1.first.ok) { say ("LIMITER: neither amount end gave a reading (" + e0.second.describe() + " / " + e1.second.describe() + ")"); return 4; }
+    // the hard end is where the output is PINNED at the ceiling (its true peak nearest the label), not where it is merely quieter:
+    // bx_limiter True Peak's Input Trim at 0.0 is -12 dB of input, output -13 (no limiting); at 1.0 the output sits at the ceiling
+    auto dist = [&] (const limiter::PeakReading& r) { return r.ok ? std::abs (r.truePeakDb - probePos.labelDb) : 1e9; };
+    const float hard = dist (e0.first) <= dist (e1.first) ? 0.0f : 1.0f;
+    say ("  hard end: norm " + juce::String (hard, 1) + " (true peak " + juce::String (e0.first.truePeakDb, 2) + " at 0.0 vs " + juce::String (e1.first.truePeakDb, 2) + " at 1.0; the end pinned at the ceiling " + probePos.display + ")");
+    std::vector<limiter::CeilingResult> results;
+    std::vector<std::optional<float>> osStates; if (osIdx >= 0) { osStates.push_back (0.0f); osStates.push_back (1.0f); } else osStates.push_back (std::nullopt);
+    for (const auto os : osStates)
+        for (const auto& cp : positions)
+        {
+            const auto [pk, r] = measure ("c" + juce::String (cp.labelDb, 1).replace ("-", "m").replace (".", "p") + (os ? (*os > 0.5f ? ".os1" : ".os0") : juce::String()), hard, cp.norm, os);
+            limiter::CeilingResult cr; cr.pos = cp; cr.hasOs = os.has_value(); cr.oversampling = os && *os > 0.5f; cr.reading = pk;
+            if (pk.ok) { cr.sampleErrDb = pk.peakDb - cp.labelDb; cr.trueErrDb = pk.truePeakDb - cp.labelDb; }
+            results.push_back (cr);
+            say ("  ceiling " + cp.display + " (" + juce::String (cp.labelDb, 1) + ")" + (os ? (*os > 0.5f ? " OS on " : " OS off") : juce::String()) + ": " + (pk.ok ? "sample peak " + juce::String (pk.peakDb, 2) + " (" + juce::String (cr.sampleErrDb, 2) + "), true peak " + juce::String (pk.truePeakDb, 2) + " (" + juce::String (cr.trueErrDb, 2) + ")" : "no reading (" + r.describe() + ")"));
+        }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_limiter_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.4, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("ceiling_control", ceilingName); o->setProperty ("amount_control", amountName); o->setProperty ("amount_hard_norm", hard); o->setProperty ("oversampling_control", osIdx >= 0 ? juce::var (osName) : juce::var());
+    o->setProperty ("drive_dbfs_peak", limiter::kDriveDbfs); o->setProperty ("method", "997 Hz sine at -1 dBFS peak, amount at its hard end, ceiling at the labels nearest -0.1/-0.3/-1/-3/-6; output sample peak and 4x cubic true-peak estimate over 0.75 s");
+    juce::Array<juce::var> rows;
+    for (const auto& r : results) { auto* ro = new juce::DynamicObject(); ro->setProperty ("ceiling_display", r.pos.display); ro->setProperty ("ceiling_db", r.pos.labelDb); ro->setProperty ("norm", r.pos.norm); if (r.hasOs) ro->setProperty ("oversampling", r.oversampling);
+        if (r.reading.ok) { ro->setProperty ("out_sample_peak_db", std::round (r.reading.peakDb * 100.0) / 100.0); ro->setProperty ("out_true_peak_db", std::round (r.reading.truePeakDb * 100.0) / 100.0); ro->setProperty ("sample_overshoot_db", std::round (r.sampleErrDb * 100.0) / 100.0); ro->setProperty ("true_overshoot_db", std::round (r.trueErrDb * 100.0) / 100.0); ro->setProperty ("driven", limiter::driven (r)); } else ro->setProperty ("no_reading", true); rows.add (juce::var (ro)); }
+    o->setProperty ("ceiling", rows);
+    for (const auto os : osStates)
+    {
+        std::vector<limiter::CeilingResult> sub; for (const auto& r : results) if (! os || r.oversampling == (*os > 0.5f)) sub.push_back (r);
+        const auto v = limiter::judge (sub);
+        auto* vo = new juce::DynamicObject(); vo->setProperty ("holds_ceiling_sample", v.holdsSample); vo->setProperty ("holds_ceiling_true", v.holdsTrue); vo->setProperty ("worst_sample_overshoot_db", std::round (v.worstSampleDb * 100.0) / 100.0); vo->setProperty ("worst_true_overshoot_db", std::round (v.worstTrueDb * 100.0) / 100.0); vo->setProperty ("note", v.note);
+        o->setProperty (os ? (*os > 0.5f ? "verdict_oversampling_on" : "verdict_oversampling_off") : "verdict", juce::var (vo));
+        say ("  verdict" + juce::String (os ? (*os > 0.5f ? " (OS on)" : " (OS off)") : "") + ": sample " + (v.holdsSample ? "holds" : "OVER") + ", true peak " + (v.holdsTrue ? "holds" : "OVER") + " - " + v.note);
+    }
+    o->setProperty ("measuredAt", nowStamp());
+    outDir.getChildFile (stem + ".limiter.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("LIMITER: -> " + outDir.getChildFile (stem + ".limiter.json").getFullPathName());
+    return 0;
 }
 
 // THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio
