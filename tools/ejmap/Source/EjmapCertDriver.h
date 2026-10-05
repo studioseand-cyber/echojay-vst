@@ -3042,6 +3042,74 @@ inline int runEq (const SweepOptions& opt)
     return measured > 0 ? 0 : 4;
 }
 
+// SATURATION: LEVEL CHANGE AND HARMONIC SHARE AGAINST DRIVE (roadmap 2.5; PROTOTYPE, 5 Oct overnight B5). Reuses the sweep
+// process as it is: the drive-role control (drive / saturation / sat / color / colour / harmonics / warmth / mix excluded) is the
+// swept control at 11 norms, a 997 Hz sine at -20 then -12 dBFS; the hold line's out - in is the level change and its tone_frac
+// (the output's power share at the tone) gives the harmonic share: thd_db = 10 log10 ((1 - tone_frac) / tone_frac). Nothing new
+// is rendered. Writes cert/saturation/<identity>.saturation.json. Nothing exported, nothing published.
+inline int runSaturation (const SweepOptions& opt)
+{
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("SAT: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("SAT: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("SAT: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("saturation"); outDir.createDirectory();
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, opt.timeoutMs); raw.getChildFile (stem + ".saturation." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("SAT: --list-params " + lp.describe()); return 1; }
+    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("SAT: --text-at " + ta.describe()); return 1; }
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    struct Target { int index; juce::String name; };
+    std::vector<Target> targets;
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const int idx = (int) c.getProperty ("index", -1); const auto name = c.getProperty ("name", "").toString();
+            if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (name)) continue;
+            bool drive = false; for (const char* t : { "drive", "saturation", "sat", "saturate", "color", "colour", "harmonics", "warmth", "heat", "crush", "amount" }) if (nametokens::controlAnswersTerm (name, t)) drive = true;
+            if (drive && ! nametokens::controlAnswersTerm (name, "mix")) targets.push_back ({ idx, name });
+        }
+    say ("SAT: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " drive-type control(s)");
+    if (targets.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", ")); return 4; }
+    juce::StringArray norms; for (int k = 0; k < 11; ++k) norms.add (juce::String (k / 10.0f, 6));
+    juce::Array<juce::var> controls; int measured = 0;
+    for (const auto& t : targets)
+    {
+        auto* co = new juce::DynamicObject(); co->setProperty ("index", t.index); co->setProperty ("control", t.name);
+        juce::Array<juce::var> curve; double maxThd = -99.0, maxGain = -99.0, minGain = 99.0;
+        for (double L : { -20.0, -12.0 })
+        {
+            const auto r = run ("c" + juce::String (t.index) + ".L" + juce::String ((int) -L), { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=" + juce::String ((int) L), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+            if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
+            const auto m = sweep::parseSweep (r.cleanExit() ? r.out : juce::String());
+            for (const auto& p : m.positions)
+                for (const auto& [lk, h] : p.holds)
+                {
+                    if (! h.present || h.levelDb < -200.0) continue;
+                    const double gain = h.levelDb - h.inRmsDb; const double tf = juce::jlimit (1e-6, 1.0, h.toneFrac); const double thd = 10.0 * std::log10 ((1.0 - tf) / tf);
+                    auto* o = new juce::DynamicObject(); o->setProperty ("norm", p.norm); o->setProperty ("display", p.text); o->setProperty ("level_dbfs", L); o->setProperty ("gain_db", std::round (gain * 100.0) / 100.0); o->setProperty ("tone_frac", std::round (tf * 10000.0) / 10000.0); o->setProperty ("harmonics_db", std::round (thd * 10.0) / 10.0);
+                    curve.add (juce::var (o)); ++measured; maxThd = juce::jmax (maxThd, thd); maxGain = juce::jmax (maxGain, gain); minGain = juce::jmin (minGain, gain);
+                    if (std::abs (L + 12.0) < 0.1) say ("  [" + juce::String (t.index) + "] " + t.name + " = " + p.text + " @ -12: gain " + juce::String (gain, 2) + " dB, harmonics " + juce::String (thd, 1) + " dB below the tone (tone share " + juce::String (tf, 4) + ")");
+                }
+        }
+        co->setProperty ("curve", curve); co->setProperty ("gain_span_db", std::round ((maxGain - minGain) * 100.0) / 100.0); co->setProperty ("max_harmonics_db", std::round (maxThd * 10.0) / 10.0);
+        controls.add (juce::var (co));
+    }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_saturation_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.5, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    o->setProperty ("method", "997 Hz sine at -20 and -12 dBFS, the drive control at 11 norms; gain = out - in; harmonics_db = 10 log10 ((1 - tone_frac) / tone_frac), the output's non-tone power against its power at the tone (a THD+N proxy, said as such)");
+    o->setProperty ("controls", controls); o->setProperty ("measuredAt", nowStamp());
+    outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("SAT: -> " + outDir.getChildFile (stem + ".saturation.json").getFullPathName());
+    return measured > 0 ? 0 : 4;
+}
+
 // THE INERT CHECK ON AN EXISTING RECORD (the follow-up, 4 Oct): a single-sweep record filed flat BECAUSE it passes audio
 // through at its defaults, with no inert check yet, gets the check's processes now; inert -> the record's result and reason
 // change, nothing else. Returns what happened, empty when the record is not that shape.
