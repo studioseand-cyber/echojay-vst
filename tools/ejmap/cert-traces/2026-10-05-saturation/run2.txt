@@ -1,0 +1,254 @@
+=== J37 (s)
+SAT: J37 (s) 12.0.0: 1 drive-type control(s)
+  [16] Saturation: -20 dBFS: max THD -14.5 dB, gain span 6.31 dB, 1 % onset '18.7' (norm 0.90); -12 dBFS: max THD -10.6 dB, gain span 2.11 dB, 1 % onset '9.4' (norm 0.60); -6 dBFS: max THD -9.8 dB, gain span 6.83 dB, 1 % onset '4.0' (norm 0.20)
+      @-12 0.0        gain    0.47 dB  THD -63.7 dB (0.065 %)  h2 -93.4 h3 -63.7 h4 -102.1 h5 -86.7  even/odd -29.2 dB
+      @-12 2.0        gain    0.65 dB  THD -57.9 dB (0.128 %)  h2 -96.3 h3 -57.9 h4 -104.8 h5 -80.7  even/odd -37.9 dB
+      @-12 4.0        gain    0.81 dB  THD -52.0 dB (0.251 %)  h2 -108.7 h3 -52.0 h4 -116.0 h5 -74.9  even/odd -55.9 dB
+      @-12 6.0        gain    0.94 dB  THD -46.2 dB (0.491 %)  h2 -100.6 h3 -46.2 h4 -109.6 h5 -69.4  even/odd -53.9 dB
+      @-12 7.0        gain    1.08 dB  THD -43.3 dB (0.684 %)  h2 -94.5 h3 -43.3 h4 -103.6 h5 -66.9  even/odd -50.7 dB
+      @-12 8.0        gain    1.20 dB  THD -40.5 dB (0.949 %)  h2 -93.4 h3 -40.5 h4 -102.1 h5 -64.6  even/odd -52.4 dB
+      @-12 9.4        gain    1.34 dB  THD -36.5 dB (1.488 %)  h2 -96.1 h3 -36.6 h4 -104.8 h5 -61.7  even/odd -59.0 dB
+      @-12 10.9       gain    1.52 dB  THD -32.5 dB (2.365 %)  h2 -108.3 h3 -32.5 h4 -118.2 h5 -59.6  even/odd -75.3 dB
+      @-12 12.3       gain    1.66 dB  THD -29.0 dB (3.554 %)  h2 -99.8 h3 -29.0 h4 -109.8 h5 -59.4  even/odd -70.4 dB
+      @-12 18.7       gain    1.61 dB  THD -17.0 dB (14.118 %)  h2 -92.7 h3 -17.0 h4 -103.7 h5 -37.1  even/odd -75.4 dB
+      @-12 30.0       gain   -0.45 dB  THD -10.6 dB (29.508 %)  h2 -89.9 h3 -11.0 h4 -94.7 h5 -21.3  even/odd -78.0 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_5e35067d_12.0.0.saturation.json
+=== Kramer Tape (s)
+SAT: Kramer Tape (s) 12.0.0: 0 drive-type control(s)
+  controls: Record Level, Speed, Monitor, Bias, Flux, Wow and Flutter, Noise, Delay Time, Delay Level, Delay Type, Low Pass, Playback Level, VU Calibration, Meter, Link I/O
+=== Saphira (s)
+SAT: Saphira (s) 12.0.0: 12 drive-type control(s)
+  [2] Warmth Send: -20 dBFS: max THD -34.0 dB, gain span 0.52 dB, 1 % onset '-30.0' (norm 0.00); -12 dBFS: max THD -32.7 dB, gain span 0.37 dB, 1 % onset '-30.0' (norm 0.00); -6 dBFS: max THD -33.7 dB, gain span 0.27 dB, 1 % onset '-30.0' (norm 0.00)
+      @-12 -30.0      gain    0.01 dB  THD -34.4 dB (1.911 %)  h2 -34.5 h3 -103.2 h4 -49.8 h5 -114.4  even/odd 68.5 dB
+      @-12 -24.0      gain    0.02 dB  THD -34.4 dB (1.906 %)  h2 -34.5 h3 -100.3 h4 -49.9 h5 -116.1  even/odd 65.8 dB
+      @-12 -18.0      gain    0.06 dB  THD -34.4 dB (1.896 %)  h2 -34.6 h3 -86.3 h4 -49.9 h5 -104.7  even/odd 51.8 dB
+      @-12 -12.0      gain    0.13 dB  THD -34.5 dB (1.882 %)  h2 -34.6 h3 -69.1 h4 -50.0 h5 -107.4  even/odd 34.6 dB
+      @-12 -6.0       gain    0.25 dB  THD -34.6 dB (1.869 %)  h2 -34.7 h3 -54.5 h4 -50.1 h5 -81.2  even/odd 19.8 dB
+      @-12 0.0        gain    0.37 dB  THD -34.2 dB (1.949 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 6.0        gain    0.27 dB  THD -34.1 dB (1.976 %)  h2 -34.8 h3 -43.7 h4 -50.1 h5 -52.3  even/odd 8.5 dB
+      @-12 12.0       gain    0.22 dB  THD -34.1 dB (1.981 %)  h2 -34.7 h3 -43.8 h4 -50.0 h5 -54.9  even/odd 8.9 dB
+      @-12 18.0       gain    0.13 dB  THD -33.4 dB (2.145 %)  h2 -34.6 h3 -39.8 h4 -50.0 h5 -85.8  even/odd 5.2 dB
+      @-12 24.0       gain    0.07 dB  THD -32.8 dB (2.278 %)  h2 -34.6 h3 -38.0 h4 -49.9 h5 -73.5  even/odd 3.5 dB
+      @-12 30.0       gain    0.03 dB  THD -32.7 dB (2.331 %)  h2 -34.5 h3 -37.4 h4 -49.9 h5 -62.2  even/odd 3.0 dB
+  [3] Warmth Return: -20 dBFS: max THD -31.0 dB, gain span 8.25 dB, 1 % onset '0.0' (norm 0.00); -12 dBFS: max THD -21.7 dB, gain span 6.59 dB, 1 % onset '0.0' (norm 0.00); -6 dBFS: max THD -20.3 dB, gain span 5.34 dB, 1 % onset '0.0' (norm 0.00)
+      @-12 0.0        gain   -0.02 dB  THD -34.4 dB (1.915 %)  h2 -34.5 h3 -104.3 h4 -49.8 h5 -114.4  even/odd 69.6 dB
+      @-12 10.0       gain   -0.02 dB  THD -34.4 dB (1.915 %)  h2 -34.5 h3 -103.5 h4 -49.8 h5 -120.1  even/odd 69.1 dB
+      @-12 20.0       gain   -0.02 dB  THD -34.4 dB (1.913 %)  h2 -34.5 h3 -87.2 h4 -49.8 h5 -101.4  even/odd 52.7 dB
+      @-12 30.0       gain    0.01 dB  THD -34.4 dB (1.910 %)  h2 -34.5 h3 -69.3 h4 -49.8 h5 -86.2  even/odd 34.8 dB
+      @-12 40.0       gain    0.06 dB  THD -34.4 dB (1.903 %)  h2 -34.6 h3 -57.3 h4 -49.9 h5 -74.1  even/odd 22.8 dB
+      @-12 50.0       gain    0.29 dB  THD -34.3 dB (1.922 %)  h2 -34.8 h3 -45.6 h4 -50.1 h5 -62.3  even/odd 10.8 dB
+      @-12 60.0       gain    0.43 dB  THD -34.1 dB (1.974 %)  h2 -34.9 h3 -42.3 h4 -50.3 h5 -59.0  even/odd 7.4 dB
+      @-12 70.0       gain    0.65 dB  THD -33.6 dB (2.100 %)  h2 -35.1 h3 -39.1 h4 -50.5 h5 -55.8  even/odd 4.0 dB
+      @-12 80.0       gain    0.95 dB  THD -32.6 dB (2.349 %)  h2 -35.5 h3 -36.0 h4 -50.8 h5 -52.6  even/odd 0.5 dB
+      @-12 90.0       gain    2.16 dB  THD -28.6 dB (3.707 %)  h2 -36.7 h3 -29.5 h4 -52.0 h5 -46.1  even/odd -7.2 dB
+      @-12 100.0      gain    6.57 dB  THD -21.7 dB (8.183 %)  h2 -41.1 h3 -21.9 h4 -56.4 h5 -38.6  even/odd -19.2 dB
+  [28] Warmth Band1 Gain: -20 dBFS: max THD -36.3 dB, gain span 0.01 dB, 1 % onset '-18.0' (norm 0.00); -12 dBFS: max THD -34.2 dB, gain span 0.01 dB, 1 % onset '-18.0' (norm 0.00); -6 dBFS: max THD -35.9 dB, gain span 0.01 dB, 1 % onset '-18.0' (norm 0.00)
+      @-12 -18.0      gain    0.38 dB  THD -34.2 dB (1.951 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -14.4      gain    0.37 dB  THD -34.2 dB (1.950 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -10.8      gain    0.37 dB  THD -34.2 dB (1.948 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -7.2       gain    0.38 dB  THD -34.2 dB (1.950 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -3.6       gain    0.38 dB  THD -34.2 dB (1.951 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 0.0        gain    0.37 dB  THD -34.2 dB (1.949 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 3.6        gain    0.37 dB  THD -34.2 dB (1.949 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 7.2        gain    0.38 dB  THD -34.2 dB (1.951 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 10.8       gain    0.38 dB  THD -34.2 dB (1.950 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 14.4       gain    0.38 dB  THD -34.2 dB (1.948 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 18.0       gain    0.37 dB  THD -34.2 dB (1.950 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+  [29] Warmth Band1 Freq: -20 dBFS: max THD -35.5 dB, gain span 0.81 dB, 1 % onset '16' (norm 0.00); -12 dBFS: max THD -33.6 dB, gain span 0.58 dB, 1 % onset '16' (norm 0.00); -6 dBFS: max THD -35.5 dB, gain span 0.44 dB, 1 % onset '16' (norm 0.00)
+      @-12 16         gain    0.37 dB  THD -34.2 dB (1.952 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 33         gain    0.37 dB  THD -34.2 dB (1.951 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 68         gain    0.37 dB  THD -34.2 dB (1.948 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 139        gain    0.37 dB  THD -34.2 dB (1.951 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 285        gain    0.33 dB  THD -34.1 dB (1.962 %)  h2 -34.8 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 585        gain    0.11 dB  THD -33.9 dB (2.008 %)  h2 -34.6 h3 -43.3 h4 -49.9 h5 -59.9  even/odd 8.7 dB
+      @-12 1200       gain   -0.21 dB  THD -33.6 dB (2.079 %)  h2 -34.3 h3 -43.1 h4 -49.6 h5 -59.6  even/odd 8.8 dB
+      @-12 2466       gain   -0.09 dB  THD -33.9 dB (2.019 %)  h2 -34.4 h3 -44.7 h4 -49.7 h5 -60.0  even/odd 10.3 dB
+      @-12 5064       gain   -0.03 dB  THD -34.3 dB (1.934 %)  h2 -34.5 h3 -52.7 h4 -49.8 h5 -62.9  even/odd 17.9 dB
+      @-12 10399      gain   -0.02 dB  THD -34.4 dB (1.915 %)  h2 -34.5 h3 -63.2 h4 -49.8 h5 -73.7  even/odd 28.5 dB
+      @-12 21357      gain   -0.02 dB  THD -34.4 dB (1.914 %)  h2 -34.5 h3 -81.5 h4 -49.8 h5 -93.6  even/odd 46.9 dB
+  [32] Warmth Band2 Gain: -20 dBFS: max THD -36.3 dB, gain span 0.25 dB, 1 % onset '-18.0' (norm 0.00); -12 dBFS: max THD -34.2 dB, gain span 0.17 dB, 1 % onset '-18.0' (norm 0.00); -6 dBFS: max THD -35.7 dB, gain span 0.13 dB, 1 % onset '-18.0' (norm 0.00)
+      @-12 -18.0      gain    0.36 dB  THD -34.2 dB (1.954 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -14.4      gain    0.36 dB  THD -34.2 dB (1.953 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -10.8      gain    0.36 dB  THD -34.2 dB (1.951 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -7.2       gain    0.37 dB  THD -34.2 dB (1.952 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 -3.6       gain    0.37 dB  THD -34.2 dB (1.952 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 0.0        gain    0.37 dB  THD -34.2 dB (1.949 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.7 dB
+      @-12 3.6        gain    0.38 dB  THD -34.2 dB (1.947 %)  h2 -34.9 h3 -43.5 h4 -50.2 h5 -60.2  even/odd 8.6 dB
+      @-12 7.2        gain    0.40 dB  THD -34.2 dB (1.948 %)  h2 -34.9 h3 -43.4 h4 -50.2 h5 -60.2  even/odd 8.6 dB
+      @-12 10.8       gain    0.43 dB  THD -34.2 dB (1.946 %)  h2 -34.9 h3 -43.3 h4 -50.3 h5 -60.2  even/odd 8.4 dB
+      @-12 14.4       gain    0.47 dB  THD -34.2 dB (1.945 %)  h2 -35.0 h3 -43.0 h4 -50.3 h5 -60.1  even/odd 8.1 dB
+=== Aphex Vintage Exciter (s)
+SAT: Aphex Vintage Exciter (s) 12.0.0: 0 drive-type control(s)
+  controls: Mains, Output, Input, Noise, AX Mix, Mode, Meter
+=== NLS Buss (s)
+SAT: NLS Buss (s) 12.0.0: 9 drive-type control(s)
+  [2] VCA 1 Drive: -20 dBFS: max THD -47.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -43.7 dB, gain span 0.00 dB, 1 % onset never; -6 dBFS: max THD -41.9 dB, gain span 0.00 dB, 1 % onset never
+      @-12 -12.0      gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -84.9  even/odd 30.6 dB
+      @-12 -9.6       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -7.2       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -4.8       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -2.4       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 0.0        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 2.4        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 4.8        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 7.2        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 9.6        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 12.0       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+  [7] VCA 2 Drive: -20 dBFS: max THD -47.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -43.7 dB, gain span 0.00 dB, 1 % onset never; -6 dBFS: max THD -41.9 dB, gain span 0.00 dB, 1 % onset never
+      @-12 -12.0      gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -84.9  even/odd 30.6 dB
+      @-12 -9.6       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -7.2       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -4.8       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -2.4       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 0.0        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 2.4        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 4.8        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 7.2        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 9.6        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 12.0       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+  [12] VCA 3 Drive: -20 dBFS: max THD -47.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -43.7 dB, gain span 0.00 dB, 1 % onset never; -6 dBFS: max THD -41.9 dB, gain span 0.00 dB, 1 % onset never
+      @-12 -12.0      gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -84.9  even/odd 30.6 dB
+      @-12 -9.6       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -7.2       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -4.8       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -2.4       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 0.0        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 2.4        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 4.8        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 7.2        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 9.6        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 12.0       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+  [17] VCA 4 Drive: -20 dBFS: max THD -47.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -43.7 dB, gain span 0.00 dB, 1 % onset never; -6 dBFS: max THD -41.9 dB, gain span 0.00 dB, 1 % onset never
+      @-12 -12.0      gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -84.9  even/odd 30.6 dB
+      @-12 -9.6       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -7.2       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -4.8       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -2.4       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 0.0        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 2.4        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 4.8        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 7.2        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 9.6        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 12.0       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+  [22] VCA 5 Drive: -20 dBFS: max THD -47.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -43.7 dB, gain span 0.00 dB, 1 % onset never; -6 dBFS: max THD -41.9 dB, gain span 0.00 dB, 1 % onset never
+      @-12 -12.0      gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -84.9  even/odd 30.6 dB
+      @-12 -9.6       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -7.2       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -4.8       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 -2.4       gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 0.0        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 2.4        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 4.8        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 7.2        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+      @-12 9.6        gain    0.20 dB  THD -43.7 dB (0.651 %)  h2 -43.8 h3 -74.8 h4 -63.4 h5 -85.0  even/odd 30.7 dB
+=== Kiive Tape Face
+SAT: Kiive Tape Face 1.1.0: 0 drive-type control(s)
+  controls: INPUT, Link, Type, Stereo_Width, Low_Boost, OUTPUT, MIX, NOISE, BIAS, Meter, IPS
+=== Looptrotter SA2RATE2
+SAT: Looptrotter SA2RATE2 1.1.1: 2 drive-type control(s)
+  [19] Drive 1: -20 dBFS: max THD -19.3 dB, gain span 9.43 dB, 1 % onset '30 %' (norm 0.30); -12 dBFS: max THD -15.1 dB, gain span 4.94 dB, 1 % onset '10 %' (norm 0.10); -6 dBFS: max THD -16.4 dB, gain span 2.13 dB, 1 % onset '0 %' (norm 0.00)
+      @-12 0 %        gain   -0.23 dB  THD -43.4 dB (0.680 %)  h2 -43.4 h3 -62.0 h4 -82.1 h5 -96.6  even/odd 18.6 dB
+      @-12 10 %       gain    0.54 dB  THD -39.2 dB (1.101 %)  h2 -39.3 h3 -54.5 h4 -76.5 h5 -82.0  even/odd 15.2 dB
+      @-12 20 %       gain    1.51 dB  THD -35.2 dB (1.746 %)  h2 -35.5 h3 -46.1 h4 -62.8 h5 -70.5  even/odd 10.6 dB
+      @-12 30 %       gain    2.51 dB  THD -31.7 dB (2.590 %)  h2 -33.3 h3 -37.2 h4 -50.1 h5 -57.0  even/odd 3.9 dB
+      @-12 40 %       gain    3.33 dB  THD -27.6 dB (4.187 %)  h2 -34.3 h3 -28.8 h4 -41.6 h5 -50.8  even/odd -4.7 dB
+      @-12 50 %       gain    3.85 dB  THD -22.8 dB (7.223 %)  h2 -35.2 h3 -23.2 h4 -41.4 h5 -55.0  even/odd -11.1 dB
+      @-12 60 %       gain    4.14 dB  THD -19.5 dB (10.546 %)  h2 -33.8 h3 -19.8 h4 -43.7 h5 -35.8  even/odd -13.7 dB
+      @-12 70 %       gain    4.33 dB  THD -17.6 dB (13.246 %)  h2 -32.8 h3 -18.0 h4 -43.2 h5 -29.1  even/odd -14.7 dB
+      @-12 80 %       gain    4.47 dB  THD -16.3 dB (15.239 %)  h2 -31.8 h3 -17.0 h4 -42.7 h5 -25.7  even/odd -15.0 dB
+      @-12 90 %       gain    4.61 dB  THD -15.6 dB (16.589 %)  h2 -30.7 h3 -16.5 h4 -42.2 h5 -23.8  even/odd -14.6 dB
+      @-12 100 %      gain    4.71 dB  THD -15.1 dB (17.666 %)  h2 -30.3 h3 -16.1 h4 -40.0 h5 -22.7  even/odd -14.6 dB
+  [31] Drive 2: -20 dBFS: max THD -19.3 dB, gain span 9.43 dB, 1 % onset '30 %' (norm 0.30); -12 dBFS: max THD -15.1 dB, gain span 4.94 dB, 1 % onset '10 %' (norm 0.10); -6 dBFS: max THD -16.4 dB, gain span 2.13 dB, 1 % onset '0 %' (norm 0.00)
+      @-12 0 %        gain   -0.23 dB  THD -43.4 dB (0.680 %)  h2 -43.4 h3 -62.0 h4 -82.1 h5 -96.6  even/odd 18.6 dB
+      @-12 10 %       gain    0.54 dB  THD -39.2 dB (1.101 %)  h2 -39.3 h3 -54.5 h4 -76.5 h5 -82.0  even/odd 15.2 dB
+      @-12 20 %       gain    1.51 dB  THD -35.2 dB (1.746 %)  h2 -35.5 h3 -46.1 h4 -62.8 h5 -70.5  even/odd 10.6 dB
+      @-12 30 %       gain    2.51 dB  THD -31.7 dB (2.590 %)  h2 -33.3 h3 -37.2 h4 -50.1 h5 -57.0  even/odd 3.9 dB
+      @-12 40 %       gain    3.33 dB  THD -27.6 dB (4.187 %)  h2 -34.3 h3 -28.8 h4 -41.6 h5 -50.8  even/odd -4.7 dB
+      @-12 50 %       gain    3.85 dB  THD -22.8 dB (7.223 %)  h2 -35.2 h3 -23.2 h4 -41.4 h5 -55.0  even/odd -11.1 dB
+      @-12 60 %       gain    4.14 dB  THD -19.5 dB (10.546 %)  h2 -33.8 h3 -19.8 h4 -43.7 h5 -35.8  even/odd -13.7 dB
+      @-12 70 %       gain    4.33 dB  THD -17.6 dB (13.246 %)  h2 -32.8 h3 -18.0 h4 -43.2 h5 -29.1  even/odd -14.7 dB
+      @-12 80 %       gain    4.47 dB  THD -16.3 dB (15.239 %)  h2 -31.8 h3 -17.0 h4 -42.7 h5 -25.7  even/odd -15.0 dB
+      @-12 90 %       gain    4.61 dB  THD -15.6 dB (16.589 %)  h2 -30.7 h3 -16.5 h4 -42.2 h5 -23.8  even/odd -14.6 dB
+      @-12 100 %      gain    4.71 dB  THD -15.1 dB (17.666 %)  h2 -30.3 h3 -16.1 h4 -40.0 h5 -22.7  even/odd -14.6 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_6f53492c_1.1.1.saturation.json
+=== elysia karacter master
+SAT: elysia karacter master 1.9.1: 4 drive-type control(s)
+  [4] Drive 1: -20 dBFS: max THD -9.4 dB, gain span 8.14 dB, 1 % onset '4.4' (norm 0.40); -12 dBFS: max THD -9.3 dB, gain span 15.26 dB, 1 % onset '2.2' (norm 0.20); -6 dBFS: max THD -9.2 dB, gain span 20.17 dB, 1 % onset '0.0' (norm 0.00)
+      @-12 0.0        gain    1.07 dB  THD -41.1 dB (0.883 %)  h2 -48.6 h3 -41.9 h4 -85.5 h5 -82.9  even/odd -6.7 dB
+      @-12 1.1        gain    1.01 dB  THD -40.6 dB (0.935 %)  h2 -48.3 h3 -41.4 h4 -84.7 h5 -81.8  even/odd -6.9 dB
+      @-12 2.2        gain    0.75 dB  THD -38.5 dB (1.189 %)  h2 -47.3 h3 -39.1 h4 -81.4 h5 -77.3  even/odd -8.1 dB
+      @-12 3.3        gain   -0.91 dB  THD -28.6 dB (3.728 %)  h2 -42.7 h3 -28.8 h4 -66.3 h5 -56.4  even/odd -13.9 dB
+      @-12 4.4        gain   -7.86 dB  THD -12.5 dB (23.770 %)  h2 -44.3 h3 -12.9 h4 -48.9 h5 -23.2  even/odd -30.5 dB
+      @-12 5.5        gain  -12.64 dB  THD -9.6 dB (33.160 %)  h2 -50.1 h3 -10.7 h4 -54.0 h5 -16.1  even/odd -39.1 dB
+      @-12 6.6        gain  -12.94 dB  THD -9.3 dB (34.092 %)  h2 -52.3 h3 -10.6 h4 -57.5 h5 -15.5  even/odd -41.8 dB
+      @-12 7.7        gain  -13.32 dB  THD -9.4 dB (34.017 %)  h2 -53.4 h3 -10.6 h4 -60.0 h5 -15.4  even/odd -43.2 dB
+      @-12 8.8        gain  -13.64 dB  THD -9.4 dB (33.960 %)  h2 -54.0 h3 -10.6 h4 -60.9 h5 -15.5  even/odd -43.8 dB
+      @-12 9.9        gain  -14.00 dB  THD -9.4 dB (33.805 %)  h2 -54.4 h3 -10.6 h4 -61.4 h5 -15.5  even/odd -44.2 dB
+      @-12 11.0       gain  -14.20 dB  THD -9.4 dB (33.892 %)  h2 -54.7 h3 -10.6 h4 -61.2 h5 -15.6  even/odd -44.5 dB
+  [5] Color 1: -20 dBFS: max THD -53.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -40.9 dB, gain span 0.01 dB, 1 % onset never; -6 dBFS: max THD -30.0 dB, gain span 0.03 dB, 1 % onset '-1.00' (norm 0.00)
+      @-12 -1.00      gain    1.07 dB  THD -41.3 dB (0.862 %)  h2 -48.7 h3 -42.2 h4 -85.8 h5 -83.3  even/odd -6.6 dB
+      @-12 -0.80      gain    1.07 dB  THD -41.3 dB (0.864 %)  h2 -48.7 h3 -42.1 h4 -85.8 h5 -83.2  even/odd -6.6 dB
+      @-12 -0.60      gain    1.07 dB  THD -41.2 dB (0.868 %)  h2 -48.7 h3 -42.1 h4 -85.7 h5 -83.2  even/odd -6.6 dB
+      @-12 -0.40      gain    1.07 dB  THD -41.2 dB (0.872 %)  h2 -48.7 h3 -42.0 h4 -85.7 h5 -83.1  even/odd -6.6 dB
+      @-12 -0.20      gain    1.07 dB  THD -41.2 dB (0.876 %)  h2 -48.6 h3 -42.0 h4 -85.6 h5 -83.0  even/odd -6.6 dB
+      @-12 0.00       gain    1.07 dB  THD -41.1 dB (0.884 %)  h2 -48.6 h3 -41.9 h4 -85.5 h5 -82.9  even/odd -6.7 dB
+      @-12 +0.20      gain    1.07 dB  THD -41.0 dB (0.887 %)  h2 -48.6 h3 -41.9 h4 -85.5 h5 -82.8  even/odd -6.7 dB
+      @-12 +0.40      gain    1.07 dB  THD -41.0 dB (0.891 %)  h2 -48.5 h3 -41.8 h4 -85.4 h5 -82.8  even/odd -6.7 dB
+      @-12 +0.60      gain    1.07 dB  THD -41.0 dB (0.894 %)  h2 -48.5 h3 -41.8 h4 -85.4 h5 -82.7  even/odd -6.7 dB
+      @-12 +0.80      gain    1.07 dB  THD -40.9 dB (0.899 %)  h2 -48.5 h3 -41.8 h4 -85.3 h5 -82.6  even/odd -6.7 dB
+      @-12 +1.00      gain    1.07 dB  THD -40.9 dB (0.901 %)  h2 -48.5 h3 -41.7 h4 -85.3 h5 -82.6  even/odd -6.7 dB
+  [11] Drive 2: -20 dBFS: max THD -9.4 dB, gain span 8.14 dB, 1 % onset '4.4' (norm 0.40); -12 dBFS: max THD -9.3 dB, gain span 15.26 dB, 1 % onset '2.2' (norm 0.20); -6 dBFS: max THD -9.2 dB, gain span 20.17 dB, 1 % onset '0.0' (norm 0.00)
+      @-12 0.0        gain    1.07 dB  THD -41.1 dB (0.883 %)  h2 -48.6 h3 -41.9 h4 -85.5 h5 -82.9  even/odd -6.7 dB
+      @-12 1.1        gain    1.01 dB  THD -40.6 dB (0.935 %)  h2 -48.3 h3 -41.4 h4 -84.7 h5 -81.8  even/odd -6.9 dB
+      @-12 2.2        gain    0.75 dB  THD -38.5 dB (1.189 %)  h2 -47.3 h3 -39.1 h4 -81.4 h5 -77.3  even/odd -8.1 dB
+      @-12 3.3        gain   -0.91 dB  THD -28.6 dB (3.728 %)  h2 -42.7 h3 -28.8 h4 -66.3 h5 -56.4  even/odd -13.9 dB
+      @-12 4.4        gain   -7.86 dB  THD -12.5 dB (23.770 %)  h2 -44.3 h3 -12.9 h4 -48.9 h5 -23.2  even/odd -30.5 dB
+      @-12 5.5        gain  -12.64 dB  THD -9.6 dB (33.160 %)  h2 -50.1 h3 -10.7 h4 -54.0 h5 -16.1  even/odd -39.1 dB
+      @-12 6.6        gain  -12.94 dB  THD -9.3 dB (34.092 %)  h2 -52.3 h3 -10.6 h4 -57.5 h5 -15.5  even/odd -41.8 dB
+      @-12 7.7        gain  -13.32 dB  THD -9.4 dB (34.017 %)  h2 -53.4 h3 -10.6 h4 -60.0 h5 -15.4  even/odd -43.2 dB
+      @-12 8.8        gain  -13.64 dB  THD -9.4 dB (33.960 %)  h2 -54.0 h3 -10.6 h4 -60.9 h5 -15.5  even/odd -43.8 dB
+      @-12 9.9        gain  -14.00 dB  THD -9.4 dB (33.805 %)  h2 -54.4 h3 -10.6 h4 -61.4 h5 -15.5  even/odd -44.2 dB
+      @-12 11.0       gain  -14.20 dB  THD -9.4 dB (33.892 %)  h2 -54.7 h3 -10.6 h4 -61.2 h5 -15.6  even/odd -44.5 dB
+  [12] Color 2: -20 dBFS: max THD -53.8 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -40.9 dB, gain span 0.01 dB, 1 % onset never; -6 dBFS: max THD -30.0 dB, gain span 0.03 dB, 1 % onset '-1.00' (norm 0.00)
+      @-12 -1.00      gain    1.07 dB  THD -41.3 dB (0.862 %)  h2 -48.7 h3 -42.2 h4 -85.8 h5 -83.3  even/odd -6.6 dB
+      @-12 -0.80      gain    1.07 dB  THD -41.3 dB (0.864 %)  h2 -48.7 h3 -42.1 h4 -85.8 h5 -83.2  even/odd -6.6 dB
+      @-12 -0.60      gain    1.07 dB  THD -41.2 dB (0.868 %)  h2 -48.7 h3 -42.1 h4 -85.7 h5 -83.2  even/odd -6.6 dB
+      @-12 -0.40      gain    1.07 dB  THD -41.2 dB (0.872 %)  h2 -48.7 h3 -42.0 h4 -85.7 h5 -83.1  even/odd -6.6 dB
+      @-12 -0.20      gain    1.07 dB  THD -41.2 dB (0.876 %)  h2 -48.6 h3 -42.0 h4 -85.6 h5 -83.0  even/odd -6.6 dB
+      @-12 0.00       gain    1.07 dB  THD -41.1 dB (0.884 %)  h2 -48.6 h3 -41.9 h4 -85.5 h5 -82.9  even/odd -6.7 dB
+      @-12 +0.20      gain    1.07 dB  THD -41.0 dB (0.887 %)  h2 -48.6 h3 -41.9 h4 -85.5 h5 -82.8  even/odd -6.7 dB
+      @-12 +0.40      gain    1.07 dB  THD -41.0 dB (0.891 %)  h2 -48.5 h3 -41.8 h4 -85.4 h5 -82.8  even/odd -6.7 dB
+      @-12 +0.60      gain    1.07 dB  THD -41.0 dB (0.894 %)  h2 -48.5 h3 -41.8 h4 -85.4 h5 -82.7  even/odd -6.7 dB
+      @-12 +0.80      gain    1.07 dB  THD -40.9 dB (0.899 %)  h2 -48.5 h3 -41.8 h4 -85.3 h5 -82.6  even/odd -6.7 dB
+      @-12 +1.00      gain    1.07 dB  THD -40.9 dB (0.901 %)  h2 -48.5 h3 -41.7 h4 -85.3 h5 -82.6  even/odd -6.7 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_4f6b7727_1.9.1.saturation.json
+=== NEOLD BIG AL
+SAT: NEOLD BIG AL 1.3.0: 1 drive-type control(s)
+  [3] Drive: -20 dBFS: max THD -17.3 dB, gain span 2.62 dB, 1 % onset '50.4' (norm 0.90); -12 dBFS: max THD -10.6 dB, gain span 8.21 dB, 1 % onset '50.4' (norm 0.90); -6 dBFS: max THD -8.8 dB, gain span 13.55 dB, 1 % onset '22.4' (norm 0.40)
+      @-12 0.0        gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  even/odd 24.3 dB
+      @-12 5.6        gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  even/odd 24.3 dB
+      @-12 11.2       gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  even/odd 24.3 dB
+      @-12 16.8       gain    0.09 dB  THD -52.7 dB (0.232 %)  h2 -52.7 h3 -77.0 h4 -143.5 h5 -149.6  even/odd 24.3 dB
+      @-12 22.4       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  even/odd 15.9 dB
+      @-12 28.0       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  even/odd 15.9 dB
+      @-12 33.6       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  even/odd 15.9 dB
+      @-12 39.2       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  even/odd 15.9 dB
+      @-12 44.8       gain    0.07 dB  THD -44.1 dB (0.624 %)  h2 -44.2 h3 -60.1 h4 -95.1 h5 -122.0  even/odd 15.9 dB
+      @-12 50.4       gain   -8.12 dB  THD -10.6 dB (29.627 %)  h2 -26.4 h3 -11.4 h4 -27.9 h5 -19.6  even/odd -13.3 dB
+      @-12 56.0       gain   -8.12 dB  THD -10.6 dB (29.624 %)  h2 -26.4 h3 -11.4 h4 -27.9 h5 -19.6  even/odd -13.3 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_61754b75_1.3.0.saturation.json
+=== Spectre
+SAT: Spectre 1.5.6: 0 drive-type control(s)
+  controls: Input Compensation, Mode, Input, HighShelf Color, HighShelf Frequency, HighShelf Gain, HighShelf Processing, HighShelf Q, HighShelf Switch, Output, Peak 01 Color, Peak 01 Frequency, Peak 01 Gain, Peak 01 Processing, Peak 01 Q, Peak 01 Switch, Peak 02 Color, Peak 02 Frequency, Peak 02 Gain, Peak 02 Processing, Peak 02 Q, Peak 02 Switch, Peak 03 Color, Peak 03 Frequency, Peak 03 Gain, Peak 03 Processing, Peak 03 Q, Peak 03 Switch, Processing, LowShelf Color, LowShelf Frequency, LowShelf Gain, LowShelf Processing, LowShelf Q, LowShelf Switch, De-Emphasis, Quality, Dry Wet
+=== ADPTR Hype
+SAT: ADPTR Hype 1.0.1: 0 drive-type control(s)
+  controls: HYPE Mix, Mid Dry Width, Solo Hi, Solo Lo, Hi Split, Hi Wet Width, Mid Wet Width, Mid Harmonic Mix, Mid Harmonic Intensity, Hi Harmonic Mix, Lo Make Up Gain, Lo Harmonic Intensity, Wet Gain, Hi Active, Bypass, Mid Active, Hi Harmonic Intensity, Mid Make Up Gain, Tone, Compressor Target, Lo Harmonic Mix, Hi Compressor A, Hi Compressor B, Hi Make Up Gain, Output Gain, Input Gain, Hi Dry Width, Solo Mid, Mid Compressor Mix, Lo Compressor A, Lo Compressor B, Hi Compressor Mix, Lo Active, Lo Split, Lo Wet Width, Mid Compressor A, Mid Compressor B, Lo Dry Width, Lo Compressor Mix
+=== bx_yellowdrive
+SAT: bx_yellowdrive 1.11.1: 1 drive-type control(s)
+  [1] Drive: silent: the output holds no tone at any of 33 landed position(s) (below -150 dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_417f6864_1.11.1.saturation.json
+=== freqtube
+SAT: freqtube 1.5.7: 2 drive-type control(s)
+  [1] Drive: silent: the output holds no tone at any of 9 landed position(s) (below -150 dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile
+  [20] Drive_r: silent: the output holds no tone at any of 9 landed position(s) (below -150 dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_73707669_1.5.7.saturation.json

@@ -1,0 +1,418 @@
+{
+  "schema": "ej_saturation_prototype/1",
+  "status": "PROTOTYPE - roadmap 2.5, not exported, not published",
+  "product": "freqtube",
+  "version": "1.5.7",
+  "identity": "AudioUnit|73707669|1.5.7",
+  "method": "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere",
+  "controls": [
+    {
+      "index": 1,
+      "control": "Drive",
+      "inert": false,
+      "silent": true,
+      "note": "silent: the output holds no tone at any of 9 landed position(s) (below -150 dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile",
+      "levels": [
+        {
+          "level_dbfs": -20.0,
+          "max_thd_db": null,
+          "gain_span_db": 0.0,
+          "onset_1pct": null,
+          "onset_0_1pct": null,
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "-24",
+              "valid": false
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "-20",
+              "valid": false
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "-17",
+              "valid": false
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "-13",
+              "valid": false
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "-10",
+              "valid": false
+            },
+            {
+              "norm": 0.5,
+              "display": "-6",
+              "valid": false
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "-2",
+              "valid": false
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "1",
+              "valid": false
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "5",
+              "valid": false
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "8",
+              "valid": false
+            },
+            {
+              "norm": 1.0,
+              "display": "12",
+              "valid": false
+            }
+          ]
+        },
+        {
+          "level_dbfs": -12.0,
+          "max_thd_db": null,
+          "gain_span_db": 0.0,
+          "onset_1pct": null,
+          "onset_0_1pct": null,
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "-24",
+              "valid": false
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "-20",
+              "valid": false
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "-17",
+              "valid": false
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "-13",
+              "valid": false
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "-10",
+              "valid": false
+            },
+            {
+              "norm": 0.5,
+              "display": "-6",
+              "valid": false
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "-2",
+              "valid": false
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "1",
+              "valid": false
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "5",
+              "valid": false
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "8",
+              "valid": false
+            },
+            {
+              "norm": 1.0,
+              "display": "12",
+              "valid": false
+            }
+          ]
+        },
+        {
+          "level_dbfs": -6.0,
+          "max_thd_db": null,
+          "gain_span_db": 0.0,
+          "onset_1pct": null,
+          "onset_0_1pct": null,
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "-24",
+              "valid": false
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "-20",
+              "valid": false
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "-17",
+              "valid": false
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "-13",
+              "valid": false
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "-10",
+              "valid": false
+            },
+            {
+              "norm": 0.5,
+              "display": "-6",
+              "valid": false
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "-2",
+              "valid": false
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "1",
+              "valid": false
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "5",
+              "valid": false
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "8",
+              "valid": false
+            },
+            {
+              "norm": 1.0,
+              "display": "12",
+              "valid": false
+            }
+          ]
+        }
+      ],
+      "thd_at_top_by_level_db": {
+      }
+    },
+    {
+      "index": 20,
+      "control": "Drive_r",
+      "inert": false,
+      "silent": true,
+      "note": "silent: the output holds no tone at any of 9 landed position(s) (below -150 dB) while the input carried it - no output at all (a licence shape distinct from inert); nothing to profile",
+      "levels": [
+        {
+          "level_dbfs": -20.0,
+          "max_thd_db": null,
+          "gain_span_db": 0.0,
+          "onset_1pct": null,
+          "onset_0_1pct": null,
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "-24",
+              "valid": false
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "-20",
+              "valid": false
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "-17",
+              "valid": false
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "-13",
+              "valid": false
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "-10",
+              "valid": false
+            },
+            {
+              "norm": 0.5,
+              "display": "-6",
+              "valid": false
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "-2",
+              "valid": false
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "1",
+              "valid": false
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "5",
+              "valid": false
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "8",
+              "valid": false
+            },
+            {
+              "norm": 1.0,
+              "display": "12",
+              "valid": false
+            }
+          ]
+        },
+        {
+          "level_dbfs": -12.0,
+          "max_thd_db": null,
+          "gain_span_db": 0.0,
+          "onset_1pct": null,
+          "onset_0_1pct": null,
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "-24",
+              "valid": false
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "-20",
+              "valid": false
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "-17",
+              "valid": false
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "-13",
+              "valid": false
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "-10",
+              "valid": false
+            },
+            {
+              "norm": 0.5,
+              "display": "-6",
+              "valid": false
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "-2",
+              "valid": false
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "1",
+              "valid": false
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "5",
+              "valid": false
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "8",
+              "valid": false
+            },
+            {
+              "norm": 1.0,
+              "display": "12",
+              "valid": false
+            }
+          ]
+        },
+        {
+          "level_dbfs": -6.0,
+          "max_thd_db": null,
+          "gain_span_db": 0.0,
+          "onset_1pct": null,
+          "onset_0_1pct": null,
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "-24",
+              "valid": false
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "-20",
+              "valid": false
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "-17",
+              "valid": false
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "-13",
+              "valid": false
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "-10",
+              "valid": false
+            },
+            {
+              "norm": 0.5,
+              "display": "-6",
+              "valid": false
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "-2",
+              "valid": false
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "1",
+              "valid": false
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "5",
+              "valid": false
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "8",
+              "valid": false
+            },
+            {
+              "norm": 1.0,
+              "display": "12",
+              "valid": false
+            }
+          ]
+        }
+      ],
+      "thd_at_top_by_level_db": {
+      }
+    }
+  ],
+  "inert_or_silent_controls": 2,
+  "measuredAt": "20261005T125322"
+}

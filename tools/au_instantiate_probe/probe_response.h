@@ -1,7 +1,12 @@
 // probe_response.h - EchoJayProbe's MULTITONE RESPONSE MODE (roadmap 2.2, EQ). PROTOTYPE, 5 Oct 2026 (Phase B4).
 //
 //   EchoJayProbe "<name>" "<identifier>" <uidHex> --response ctl=<index> norms=<csv> [set=<idx>:<norm>,...] [tones=<n>] [lo=20] [hi=20000]
-//                [db=-12] [hold=1.0] [discard=0.5]
+//                [db=-12] [hold=1.0] [discard=0.5] [harmonics=<n>]
+//
+// HARMONICS (roadmap 2.5, saturation; 5 Oct R3): with tones=1 the stimulus is ONE sine at `lo` Hz (snapped to an exact bin)
+// and harmonics=N adds exact Goertzel bins at 2f..Nf of the output (and the input, which should hold nothing there), printed
+// as `rharm` lines - the distortion products a saturator adds, read against the fundamental's own bin. Harmonics above the
+// Nyquist limit are not printed. Refused with more than one tone (the products of a multitone are not harmonics of one).
 //
 // IT MEASURES; IT DOES NOT DERIVE (decision D2). A multitone - `tones` sines log-spaced from `lo` to `hi` Hz, equal amplitude,
 // random fixed phases, the sum normalised to `db` dBFS peak - rendered through the plugin at each position of the control
@@ -15,6 +20,7 @@
 //   config   main_in <n> main_out <n> latency <samples>
 //   param / set / rpos  as the sweep's param / set / pos lines
 //   rtone    <k> hz <f> in_db <d> out_db <d>        one per tone per position (power mean over the main outputs)
+//   rharm    <k> order <n> hz <f> in_db <d> out_db <d>   one per harmonic order 2..N per position (harmonics=N, tones=1 only)
 //   rdone    <k> tones <n> nonfinite <n>
 #pragma once
 
@@ -28,6 +34,7 @@ struct ResponseSpec
     int ctl = -1; std::vector<float> norms; std::vector<std::pair<int, float>> sets;
     int tones = 61; double loHz = 20.0, hiHz = 20000.0, dbfs = -12.0, holdS = 1.0, discardS = 0.5;
     bool current = false;    // norms=current: ONE position at the control's instantiate value, with no write at all (the baseline)
+    int harmonics = 0;       // harmonics=N: bins at 2f..Nf of the single tone (tones=1), printed as rharm lines
 };
 
 inline bool parseResponseArgs (int argc, char** argv, int first, ResponseSpec& s, juce::String& why)
@@ -45,10 +52,13 @@ inline bool parseResponseArgs (int argc, char** argv, int first, ResponseSpec& s
         else if (k == "db")      s.dbfs = v.getDoubleValue();
         else if (k == "hold")    s.holdS = v.getDoubleValue();
         else if (k == "discard") s.discardS = v.getDoubleValue();
+        else if (k == "harmonics") s.harmonics = v.getIntValue();
         else { why = "unknown response argument '" + a + "'"; return false; }
     }
     if (s.ctl < 0 || (s.norms.empty() && ! s.current)) { why = "ctl= and norms= are required"; return false; }
-    if (s.tones < 4 || s.tones > 400 || s.loHz < 5.0 || s.hiHz <= s.loHz || s.holdS <= s.discardS) { why = "tones, lo, hi, hold or discard out of range"; return false; }
+    if (s.tones == 1) { if (s.loHz < 5.0 || s.holdS <= s.discardS) { why = "lo, hold or discard out of range"; return false; } s.hiHz = s.loHz; }
+    else if (s.tones < 4 || s.tones > 400 || s.loHz < 5.0 || s.hiHz <= s.loHz || s.holdS <= s.discardS) { why = "tones, lo, hi, hold or discard out of range"; return false; }
+    if (s.harmonics < 0 || s.harmonics > 20 || (s.harmonics > 0 && s.tones != 1)) { why = "harmonics= needs tones=1 and 2..20"; return false; }
     return true;
 }
 
@@ -78,7 +88,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
     juce::Random rng (20261005);
     for (int k = 0; k < s.tones; ++k)
     {
-        const double f = s.loHz * std::pow (s.hiHz / s.loHz, (double) k / (double) (s.tones - 1));
+        const double f = s.tones == 1 ? s.loHz : s.loHz * std::pow (s.hiHz / s.loHz, (double) k / (double) (s.tones - 1));
         const double cycles = juce::jmax (1.0, std::round (f * (double) span / sr));
         hz[(size_t) k] = cycles * sr / (double) span;                      // exact bins over the measured span
         phase0[(size_t) k] = rng.nextDouble() * juce::MathConstants<double>::twoPi;
@@ -97,9 +107,12 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
         juce::String text; int reads = 0; stableText (ctl, text, reads);
         std::printf ("rpos\t%d\tnorm\t%.6f\tconfirm_ms\t%.1f\tlanded_by\t%s\ttext\t%s\n", (int) k, norm, l.ms, l.by, clean (text).toRawUTF8());
         if (l.ms < 0) { std::printf ("rdone\t%d\ttones\t0\tunlanded\n", (int) k); std::fflush (stdout); continue; }
-        // Goertzel accumulators per tone, input and output, over [from, total)
-        std::vector<double> gi1 ((size_t) s.tones, 0.0), gi2 ((size_t) s.tones, 0.0), go1 ((size_t) s.tones, 0.0), go2 ((size_t) s.tones, 0.0), coef ((size_t) s.tones);
-        for (int q = 0; q < s.tones; ++q) coef[(size_t) q] = 2.0 * std::cos (juce::MathConstants<double>::twoPi * hz[(size_t) q] / sr);
+        // Goertzel accumulators per ANALYSIS bin (the stimulus tones, then the harmonics 2f..Nf below Nyquist), input and output
+        std::vector<double> bins (hz.begin(), hz.end()); std::vector<int> order ((size_t) s.tones, 1);
+        for (int n = 2; n <= s.harmonics; ++n) if (n * hz[0] < sr / 2.0) { bins.push_back (n * hz[0]); order.push_back (n); }   // exact: a multiple of an exact bin is an exact bin
+        const int nb = (int) bins.size();
+        std::vector<double> gi1 ((size_t) nb, 0.0), gi2 ((size_t) nb, 0.0), go1 ((size_t) nb, 0.0), go2 ((size_t) nb, 0.0), coef ((size_t) nb);
+        for (int q = 0; q < nb; ++q) coef[(size_t) q] = 2.0 * std::cos (juce::MathConstants<double>::twoPi * bins[(size_t) q] / sr);
         long long nonFinite = 0;
         for (long long done = 0; done < total; done += rs.block)
         {
@@ -120,17 +133,18 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
                 double out = 0.0; for (int ch = 0; ch < r.mainOut; ++ch) { const float d = r.io.getSample (ch, i); if (! std::isfinite (d)) { ++nonFinite; continue; } out += d; }
                 out /= juce::jmax (1, r.mainOut);
                 const double in = gen[(size_t) i];
-                for (int q = 0; q < s.tones; ++q)
+                for (int q = 0; q < nb; ++q)
                 {
                     const double si = in + coef[(size_t) q] * gi1[(size_t) q] - gi2[(size_t) q]; gi2[(size_t) q] = gi1[(size_t) q]; gi1[(size_t) q] = si;
                     const double so = out + coef[(size_t) q] * go1[(size_t) q] - go2[(size_t) q]; go2[(size_t) q] = go1[(size_t) q]; go1[(size_t) q] = so;
                 }
             }
         }
-        for (int q = 0; q < s.tones; ++q)
+        for (int q = 0; q < nb; ++q)
         {
             auto mag = [&] (double a, double b) { const double m2 = a * a + b * b - coef[(size_t) q] * a * b; return 20.0 * std::log10 (std::sqrt (juce::jmax (0.0, m2)) * 2.0 / (double) span + 1e-30); };
-            std::printf ("rtone\t%d\thz\t%.3f\tin_db\t%.3f\tout_db\t%.3f\n", (int) k, hz[(size_t) q], mag (gi1[(size_t) q], gi2[(size_t) q]), mag (go1[(size_t) q], go2[(size_t) q]));
+            if (order[(size_t) q] == 1) std::printf ("rtone\t%d\thz\t%.3f\tin_db\t%.3f\tout_db\t%.3f\n", (int) k, bins[(size_t) q], mag (gi1[(size_t) q], gi2[(size_t) q]), mag (go1[(size_t) q], go2[(size_t) q]));
+            else std::printf ("rharm\t%d\torder\t%d\thz\t%.3f\tin_db\t%.3f\tout_db\t%.3f\n", (int) k, order[(size_t) q], bins[(size_t) q], mag (gi1[(size_t) q], gi2[(size_t) q]), mag (go1[(size_t) q], go2[(size_t) q]));
         }
         std::printf ("rdone\t%d\ttones\t%d\tnonfinite\t%lld\n", (int) k, s.tones, nonFinite);
         std::fflush (stdout);

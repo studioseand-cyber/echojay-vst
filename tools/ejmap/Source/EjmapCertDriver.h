@@ -56,6 +56,7 @@
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
 #include "EjmapCertReview.h"
+#include "EjmapSaturation.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -3098,35 +3099,37 @@ inline int runSaturation (const SweepOptions& opt)
         }
     say ("SAT: " + opt.product + " " + desc.version + ": " + juce::String ((int) targets.size()) + " drive-type control(s)");
     if (targets.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  controls: " + names.joinIntoString (", ")); return 4; }
+    // THE MEASUREMENT (R3, 5 Oct): one sine at 997 Hz (an exact bin), the drive at 11 norms, harmonics 2..5 read by exact
+    // Goertzel bins (probe --response tones=1 harmonics=5), one process per level; EjmapSaturation.h derives the rest
     juce::StringArray norms; for (int k = 0; k < 11; ++k) norms.add (juce::String (k / 10.0f, 6));
-    juce::Array<juce::var> controls; int measured = 0;
+    juce::Array<juce::var> controls; int measured = 0, inertN = 0, noEffectN = 0;
     for (const auto& t : targets)
     {
-        auto* co = new juce::DynamicObject(); co->setProperty ("index", t.index); co->setProperty ("control", t.name);
-        juce::Array<juce::var> curve; double maxThd = -99.0, maxGain = -99.0, minGain = 99.0;
-        for (double L : { -20.0, -12.0 })
+        std::vector<saturation::LevelResult> levels;
+        for (double L : { -20.0, -12.0, -6.0 })
         {
-            const auto r = run ("c" + juce::String (t.index) + ".L" + juce::String ((int) -L), { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=" + juce::String ((int) L), "hz=997", "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+            const auto r = run ("c" + juce::String (t.index) + ".L" + juce::String ((int) -L), { "--response", "ctl=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "tones=1", "lo=997", "harmonics=5", "db=" + juce::String (L, 0), "hold=1.0", "discard=0.5" });
             if (r.kind == ChildResult::Kind::uiShown) { say ("SAT: a window appeared; stopping"); return 5; }
-            const auto m = sweep::parseSweep (r.cleanExit() ? r.out : juce::String());
-            for (const auto& p : m.positions)
-                for (const auto& [lk, h] : p.holds)
-                {
-                    if (! h.present || h.levelDb < -200.0) continue;
-                    const double gain = h.levelDb - h.inRmsDb; const double tf = juce::jlimit (1e-6, 1.0, h.toneFrac); const double thd = 10.0 * std::log10 ((1.0 - tf) / tf);
-                    auto* o = new juce::DynamicObject(); o->setProperty ("norm", p.norm); o->setProperty ("display", p.text); o->setProperty ("level_dbfs", L); o->setProperty ("gain_db", std::round (gain * 100.0) / 100.0); o->setProperty ("tone_frac", std::round (tf * 10000.0) / 10000.0); o->setProperty ("harmonics_db", std::round (thd * 10.0) / 10.0);
-                    curve.add (juce::var (o)); ++measured; maxThd = juce::jmax (maxThd, thd); maxGain = juce::jmax (maxGain, gain); minGain = juce::jmin (minGain, gain);
-                    if (std::abs (L + 12.0) < 0.1) say ("  [" + juce::String (t.index) + "] " + t.name + " = " + p.text + " @ -12: gain " + juce::String (gain, 2) + " dB, harmonics " + juce::String (thd, 1) + " dB below the tone (tone share " + juce::String (tf, 4) + ")");
-                }
+            if (! r.cleanExit()) { say ("SAT: [" + juce::String (t.index) + "] " + t.name + " at " + juce::String (L, 0) + " dBFS: the probe " + r.describe()); continue; }
+            const auto resp = saturation::parseHarmonics (r.out);
+            if (! resp.ok) { say ("SAT: [" + juce::String (t.index) + "] " + t.name + " at " + juce::String (L, 0) + " dBFS: " + (resp.refused.isNotEmpty() ? "refused " + resp.refused : juce::String ("no response header"))); continue; }
+            levels.push_back (saturation::deriveLevel (resp, L));
+            for (const auto& rd : levels.back().readings) if (rd.valid) ++measured;
         }
-        co->setProperty ("curve", curve); co->setProperty ("gain_span_db", std::round ((maxGain - minGain) * 100.0) / 100.0); co->setProperty ("max_harmonics_db", std::round (maxThd * 10.0) / 10.0);
-        controls.add (juce::var (co));
+        const auto c = saturation::judge (t.index, t.name, levels);
+        if (c.inert || c.silent) ++inertN; if (c.noEffect) ++noEffectN;
+        say ("  [" + juce::String (t.index) + "] " + t.name + ": " + c.note);
+        for (const auto& L : c.levels) for (const auto& rd : L.readings) if (rd.valid && std::abs (L.levelDbfs + 12.0) < 0.1)
+            say ("      @-12 " + rd.text.paddedRight (' ', 10) + " gain " + juce::String (rd.gainDb, 2).paddedLeft (' ', 7) + " dB  THD " + (rd.thdDb > -200.0 ? juce::String (rd.thdDb, 1) + " dB (" + juce::String (rd.thdPct, 3) + " %)" : juce::String ("none"))
+                 + "  h2 " + (rd.harmonicDb.count (2) ? juce::String (rd.harmonicDb.at (2), 1) : "-") + " h3 " + (rd.harmonicDb.count (3) ? juce::String (rd.harmonicDb.at (3), 1) : "-") + " h4 " + (rd.harmonicDb.count (4) ? juce::String (rd.harmonicDb.at (4), 1) : "-") + " h5 " + (rd.harmonicDb.count (5) ? juce::String (rd.harmonicDb.at (5), 1) : "-")
+                 + (rd.character.isNotEmpty() ? "  " + rd.character + (rd.evenOddKnown ? " (even/odd " + juce::String (rd.evenOddDb, 1) + " dB)" : juce::String()) : juce::String()));
+        controls.add (saturation::toVar (c));
     }
     auto* o = new juce::DynamicObject();
-    o->setProperty ("schema", "ej_saturation_prototype/0"); o->setProperty ("status", "PROTOTYPE - roadmap 2.5, not exported, not published");
+    o->setProperty ("schema", "ej_saturation_prototype/1"); o->setProperty ("status", "PROTOTYPE - roadmap 2.5, not exported, not published");
     o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
-    o->setProperty ("method", "997 Hz sine at -20 and -12 dBFS, the drive control at 11 norms; gain = out - in; harmonics_db = 10 log10 ((1 - tone_frac) / tone_frac), the output's non-tone power against its power at the tone (a THD+N proxy, said as such)");
-    o->setProperty ("controls", controls); o->setProperty ("measuredAt", nowStamp());
+    o->setProperty ("method", "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere");
+    o->setProperty ("controls", controls); o->setProperty ("inert_or_silent_controls", inertN); o->setProperty ("no_effect_controls", noEffectN); o->setProperty ("measuredAt", nowStamp());
     outDir.getChildFile (stem + ".saturation.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("SAT: -> " + outDir.getChildFile (stem + ".saturation.json").getFullPathName());
     return measured > 0 ? 0 : 4;

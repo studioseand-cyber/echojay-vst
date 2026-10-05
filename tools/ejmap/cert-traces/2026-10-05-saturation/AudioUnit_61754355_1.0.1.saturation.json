@@ -1,0 +1,490 @@
+{
+  "schema": "ej_saturation_prototype/1",
+  "status": "PROTOTYPE - roadmap 2.5, not exported, not published",
+  "product": "CamelCrusher",
+  "version": "1.0.1",
+  "identity": "AudioUnit|61754355|1.0.1",
+  "method": "one 997 Hz sine (an exact bin) at -20, -12 and -6 dBFS peak, the drive control at 11 norms; per position the fundamental's gain (out - in) and the 2nd-5th harmonics by exact Goertzel bins (probe --response tones=1 harmonics=5): thd_db = 10 log10 (sum of harmonic power / fundamental power), thd_pct its square root x 100, even_odd_db = (h2 + h4) / (h3 + h5) in dB; onset = the first position by norm whose THD reaches 1 % / 0.1 %; inert = fundamental within 0.05 dB and no harmonic above -90 dB everywhere",
+  "controls": [
+    {
+      "index": 7,
+      "control": "CompressAmount",
+      "inert": false,
+      "note": "-20 dBFS: max THD -12.9 dB, gain span 9.24 dB, 1 % onset '0.5' (norm 0.50); -12 dBFS: max THD -14.5 dB, gain span 4.59 dB, 1 % onset '0.3' (norm 0.30); -6 dBFS: max THD -11.6 dB, gain span 2.29 dB, 1 % onset '0' (norm 0.00)",
+      "levels": [
+        {
+          "level_dbfs": -20.0,
+          "max_thd_db": -12.9,
+          "gain_span_db": 9.24,
+          "onset_1pct": {
+            "norm": 0.5,
+            "display": "0.5"
+          },
+          "onset_0_1pct": {
+            "norm": 0.5,
+            "display": "0.5"
+          },
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "0",
+              "valid": true,
+              "gain_db": 1.55,
+              "thd_db": null,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "0.1",
+              "valid": true,
+              "gain_db": 2.46,
+              "thd_db": null,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "0.2",
+              "valid": true,
+              "gain_db": 3.47,
+              "thd_db": null,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "0.3",
+              "valid": true,
+              "gain_db": 4.61,
+              "thd_db": null,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "0.4",
+              "valid": true,
+              "gain_db": 5.93,
+              "thd_db": -69.299999999999997,
+              "thd_pct": 0.034,
+              "harmonics_db": {
+                "h3": -70.200000000000003,
+                "h5": -77.0
+              },
+              "even_odd_db": -230.699999999999989
+            },
+            {
+              "norm": 0.5,
+              "display": "0.5",
+              "valid": true,
+              "gain_db": 7.03,
+              "thd_db": -33.600000000000001,
+              "thd_pct": 2.099,
+              "harmonics_db": {
+                "h3": -33.799999999999997,
+                "h5": -45.700000000000003
+              },
+              "even_odd_db": -266.399999999999977
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "0.6",
+              "valid": true,
+              "gain_db": 8.0,
+              "thd_db": -25.800000000000001,
+              "thd_pct": 5.11,
+              "harmonics_db": {
+                "h3": -26.0,
+                "h5": -39.600000000000001
+              },
+              "even_odd_db": -274.199999999999989
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "0.7",
+              "valid": true,
+              "gain_db": 8.84,
+              "thd_db": -21.300000000000001,
+              "thd_pct": 8.593,
+              "harmonics_db": {
+                "h3": -21.5,
+                "h5": -34.799999999999997
+              },
+              "even_odd_db": -278.699999999999989
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "0.8",
+              "valid": true,
+              "gain_db": 9.58,
+              "thd_db": -18.0,
+              "thd_pct": 12.613,
+              "harmonics_db": {
+                "h3": -18.399999999999999,
+                "h5": -28.800000000000001
+              },
+              "even_odd_db": -282.0
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "0.9",
+              "valid": true,
+              "gain_db": 10.23,
+              "thd_db": -15.199999999999999,
+              "thd_pct": 17.390999999999998,
+              "harmonics_db": {
+                "h3": -15.9,
+                "h5": -23.199999999999999
+              },
+              "even_odd_db": -284.800000000000011
+            },
+            {
+              "norm": 1.0,
+              "display": "1",
+              "valid": true,
+              "gain_db": 10.789999999999999,
+              "thd_db": -12.9,
+              "thd_pct": 22.742000000000001,
+              "harmonics_db": {
+                "h3": -14.1,
+                "h5": -19.0
+              },
+              "even_odd_db": -287.100000000000023
+            }
+          ]
+        },
+        {
+          "level_dbfs": -12.0,
+          "max_thd_db": -14.5,
+          "gain_span_db": 4.59,
+          "onset_1pct": {
+            "norm": 0.300000011920929,
+            "display": "0.3"
+          },
+          "onset_0_1pct": {
+            "norm": 0.300000011920929,
+            "display": "0.3"
+          },
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "0",
+              "valid": true,
+              "gain_db": 1.55,
+              "thd_db": -186.599999999999994,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+                "h3": -186.599999999999994
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "0.1",
+              "valid": true,
+              "gain_db": 2.46,
+              "thd_db": -179.900000000000006,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+                "h3": -183.300000000000011,
+                "h5": -182.599999999999994
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "0.2",
+              "valid": true,
+              "gain_db": 3.47,
+              "thd_db": -177.800000000000011,
+              "thd_pct": 0.0,
+              "harmonics_db": {
+                "h3": -179.699999999999989,
+                "h5": -182.300000000000011
+              },
+              "even_odd_db": null
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "0.3",
+              "valid": true,
+              "gain_db": 4.44,
+              "thd_db": -38.5,
+              "thd_pct": 1.182,
+              "harmonics_db": {
+                "h3": -39.200000000000003,
+                "h5": -47.299999999999997
+              },
+              "even_odd_db": -261.5
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "0.4",
+              "valid": true,
+              "gain_db": 4.83,
+              "thd_db": -27.5,
+              "thd_pct": 4.227,
+              "harmonics_db": {
+                "h3": -27.600000000000001,
+                "h5": -43.5
+              },
+              "even_odd_db": -272.5
+            },
+            {
+              "norm": 0.5,
+              "display": "0.5",
+              "valid": true,
+              "gain_db": 5.11,
+              "thd_db": -23.600000000000001,
+              "thd_pct": 6.586,
+              "harmonics_db": {
+                "h3": -23.699999999999999,
+                "h5": -42.100000000000001
+              },
+              "even_odd_db": -276.399999999999977
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "0.6",
+              "valid": true,
+              "gain_db": 5.36,
+              "thd_db": -21.0,
+              "thd_pct": 8.958,
+              "harmonics_db": {
+                "h3": -21.100000000000001,
+                "h5": -35.600000000000001
+              },
+              "even_odd_db": -279.0
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "0.7",
+              "valid": true,
+              "gain_db": 5.58,
+              "thd_db": -18.899999999999999,
+              "thd_pct": 11.385999999999999,
+              "harmonics_db": {
+                "h3": -19.199999999999999,
+                "h5": -30.399999999999999
+              },
+              "even_odd_db": -281.100000000000023
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "0.8",
+              "valid": true,
+              "gain_db": 5.79,
+              "thd_db": -17.199999999999999,
+              "thd_pct": 13.869999999999999,
+              "harmonics_db": {
+                "h3": -17.699999999999999,
+                "h5": -26.699999999999999
+              },
+              "even_odd_db": -282.800000000000011
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "0.9",
+              "valid": true,
+              "gain_db": 5.97,
+              "thd_db": -15.699999999999999,
+              "thd_pct": 16.408999999999999,
+              "harmonics_db": {
+                "h3": -16.399999999999999,
+                "h5": -23.899999999999999
+              },
+              "even_odd_db": -284.300000000000011
+            },
+            {
+              "norm": 1.0,
+              "display": "1",
+              "valid": true,
+              "gain_db": 6.14,
+              "thd_db": -14.5,
+              "thd_pct": 18.899000000000001,
+              "harmonics_db": {
+                "h3": -15.4,
+                "h5": -21.600000000000001
+              },
+              "even_odd_db": -285.5
+            }
+          ]
+        },
+        {
+          "level_dbfs": -6.0,
+          "max_thd_db": -11.6,
+          "gain_span_db": 2.29,
+          "onset_1pct": {
+            "norm": 0.0,
+            "display": "0"
+          },
+          "onset_0_1pct": {
+            "norm": 0.0,
+            "display": "0"
+          },
+          "curve": [
+            {
+              "norm": 0.0,
+              "display": "0",
+              "valid": true,
+              "gain_db": -0.75,
+              "thd_db": -18.800000000000001,
+              "thd_pct": 11.51,
+              "harmonics_db": {
+                "h3": -18.899999999999999,
+                "h5": -35.899999999999999
+              },
+              "even_odd_db": -281.199999999999989
+            },
+            {
+              "norm": 0.100000001490116,
+              "display": "0.1",
+              "valid": true,
+              "gain_db": 0.16,
+              "thd_db": -18.800000000000001,
+              "thd_pct": 11.512,
+              "harmonics_db": {
+                "h3": -18.899999999999999,
+                "h5": -35.899999999999999
+              },
+              "even_odd_db": -281.199999999999989
+            },
+            {
+              "norm": 0.200000002980232,
+              "display": "0.2",
+              "valid": true,
+              "gain_db": 0.84,
+              "thd_db": -17.5,
+              "thd_pct": 13.387,
+              "harmonics_db": {
+                "h3": -17.5,
+                "h5": -37.700000000000003
+              },
+              "even_odd_db": -282.5
+            },
+            {
+              "norm": 0.300000011920929,
+              "display": "0.3",
+              "valid": true,
+              "gain_db": 1.04,
+              "thd_db": -15.699999999999999,
+              "thd_pct": 16.358000000000001,
+              "harmonics_db": {
+                "h3": -15.800000000000001,
+                "h5": -32.0
+              },
+              "even_odd_db": -284.300000000000011
+            },
+            {
+              "norm": 0.400000005960464,
+              "display": "0.4",
+              "valid": true,
+              "gain_db": 1.16,
+              "thd_db": -14.800000000000001,
+              "thd_pct": 18.113,
+              "harmonics_db": {
+                "h3": -15.0,
+                "h5": -29.199999999999999
+              },
+              "even_odd_db": -285.199999999999989
+            },
+            {
+              "norm": 0.5,
+              "display": "0.5",
+              "valid": true,
+              "gain_db": 1.24,
+              "thd_db": -14.199999999999999,
+              "thd_pct": 19.489000000000001,
+              "harmonics_db": {
+                "h3": -14.4,
+                "h5": -27.100000000000001
+              },
+              "even_odd_db": -285.800000000000011
+            },
+            {
+              "norm": 0.600000023841858,
+              "display": "0.6",
+              "valid": true,
+              "gain_db": 1.31,
+              "thd_db": -13.699999999999999,
+              "thd_pct": 20.768999999999998,
+              "harmonics_db": {
+                "h3": -14.0,
+                "h5": -25.300000000000001
+              },
+              "even_odd_db": -286.300000000000011
+            },
+            {
+              "norm": 0.699999988079071,
+              "display": "0.7",
+              "valid": true,
+              "gain_db": 1.37,
+              "thd_db": -13.1,
+              "thd_pct": 22.161999999999999,
+              "harmonics_db": {
+                "h3": -13.5,
+                "h5": -23.600000000000001
+              },
+              "even_odd_db": -286.899999999999977
+            },
+            {
+              "norm": 0.800000011920929,
+              "display": "0.8",
+              "valid": true,
+              "gain_db": 1.44,
+              "thd_db": -12.5,
+              "thd_pct": 23.623999999999999,
+              "harmonics_db": {
+                "h3": -13.1,
+                "h5": -22.0
+              },
+              "even_odd_db": -287.5
+            },
+            {
+              "norm": 0.899999976158142,
+              "display": "0.9",
+              "valid": true,
+              "gain_db": 1.49,
+              "thd_db": -12.1,
+              "thd_pct": 24.943999999999999,
+              "harmonics_db": {
+                "h3": -12.699999999999999,
+                "h5": -20.800000000000001
+              },
+              "even_odd_db": -287.899999999999977
+            },
+            {
+              "norm": 1.0,
+              "display": "1",
+              "valid": true,
+              "gain_db": 1.54,
+              "thd_db": -11.6,
+              "thd_pct": 26.152999999999999,
+              "harmonics_db": {
+                "h3": -12.4,
+                "h5": -19.899999999999999
+              },
+              "even_odd_db": -288.399999999999977
+            }
+          ]
+        }
+      ],
+      "thd_at_top_by_level_db": {
+        "-20": -12.9,
+        "-12": -14.5,
+        "-6": -11.6
+      }
+    }
+  ],
+  "inert_controls": 0,
+  "measuredAt": "20261005T122923"
+}

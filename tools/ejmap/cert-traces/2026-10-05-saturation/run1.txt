@@ -1,0 +1,32 @@
+=== Abbey Road Saturator
+SAT: 'Abbey Road Saturator' resolves to 0 installed component(s)
+=== J37
+SAT: 'J37' resolves to 0 installed component(s)
+=== Kramer Tape
+SAT: 'Kramer Tape' resolves to 0 installed component(s)
+=== CamelCrusher
+SAT: CamelCrusher 1.0.1: 1 drive-type control(s)
+  [7] CompressAmount: -20 dBFS: max THD -12.9 dB, gain span 9.24 dB, 1 % onset '0.5' (norm 0.50); -12 dBFS: max THD -14.5 dB, gain span 4.59 dB, 1 % onset '0.3' (norm 0.30); -6 dBFS: max THD -11.6 dB, gain span 2.29 dB, 1 % onset '0' (norm 0.00)
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_61754355_1.0.1.saturation.json
+=== MSaturator
+SAT: MSaturator 14.16.0: 6 drive-type control(s)
+  [4] Even harmonics: -20 dBFS: max THD -25.8 dB, gain span 0.00 dB, 1 % onset '100.0%' (norm 0.20); -12 dBFS: max THD -18.6 dB, gain span 0.00 dB, 1 % onset '50.0%' (norm 0.10); -6 dBFS: max THD -16.0 dB, gain span 0.00 dB, 1 % onset '0.00%' (norm 0.00)
+  [8] Harmonics - Gain: -20 dBFS: max THD -45.6 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -37.5 dB, gain span 0.00 dB, 1 % onset '-24.00 dB' (norm 0.00); -6 dBFS: max THD -30.2 dB, gain span 0.00 dB, 1 % onset '-24.00 dB' (norm 0.00)
+  [9] Harmonics - 2nd: -20 dBFS: max THD -45.6 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -37.5 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00); -6 dBFS: max THD -30.2 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00)
+  [10] Harmonics - 3rd: -20 dBFS: max THD -45.6 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -37.5 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00); -6 dBFS: max THD -30.2 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00)
+  [11] Harmonics - 4th: -20 dBFS: max THD -45.6 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -37.5 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00); -6 dBFS: max THD -30.2 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00)
+  [12] Harmonics - 5th: -20 dBFS: max THD -45.6 dB, gain span 0.00 dB, 1 % onset never; -12 dBFS: max THD -37.5 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00); -6 dBFS: max THD -30.2 dB, gain span 0.00 dB, 1 % onset '-100.0%' (norm 0.00)
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_61516436_14.16.0.saturation.json
+=== bx_yellowdrive
+SAT: bx_yellowdrive 1.11.1: 1 drive-type control(s)
+  [1] Drive: no position read (the probe landed nothing or printed no fundamental)
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_417f6864_1.11.1.saturation.json
+=== freqtube
+SAT: freqtube 1.5.7: 2 drive-type control(s)
+  [1] Drive: no position read (the probe landed nothing or printed no fundamental)
+  [20] Drive_r: no position read (the probe landed nothing or printed no fundamental)
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/sat/saturation/AudioUnit_73707669_1.5.7.saturation.json
+=== Saturn 2
+SAT: --text-at timed out after 120.0 s (killed by the driver)
+=== Saphira
+SAT: 'Saphira' resolves to 0 installed component(s)

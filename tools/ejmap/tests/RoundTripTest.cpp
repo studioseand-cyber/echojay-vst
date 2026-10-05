@@ -78,6 +78,7 @@
 #include <functional>
 #include "EjmapCertDriver.h"
 #include "EjmapCertReview.h"
+#include "EjmapSaturation.h"
 
 namespace
 {
@@ -7080,6 +7081,70 @@ void testEq()
     for (const auto& b : bands) if (b.key == "Hi") check (b.gains == std::vector<int> { 1 } && b.qs == std::vector<int> { 4 }, "eq E9: Pultec 'attenuation' is a gain, 'bandwidth' a Q");
 }
 
+/** SATURATION HARMONICS (EjmapSaturation.h, roadmap 2.5 PROTOTYPE, 5 Oct R3): the rharm trace, THD / even-odd / onset / inert. */
+void testSaturation()
+{
+    using namespace ejmap::saturation;
+    // a trace: three positions; h2..h5 relative to a -12 dB fundamental
+    auto pos = [] (int k, double norm, const char* text, double fundOut, double h2, double h3, double h4, double h5)
+    {
+        juce::String s;
+        s << "rpos\t" << k << "\tnorm\t" << juce::String (norm, 6) << "\tconfirm_ms\t40.0\tlanded_by\twall\ttext\t" << text << "\n";
+        s << "rtone\t" << k << "\thz\t997.000\tin_db\t-12.000\tout_db\t" << juce::String (fundOut, 3) << "\n";
+        for (auto [o, d] : std::vector<std::pair<int, double>> { { 2, h2 }, { 3, h3 }, { 4, h4 }, { 5, h5 } })
+            s << "rharm\t" << k << "\torder\t" << o << "\thz\t" << juce::String (997.0 * o, 3) << "\tin_db\t-150.000\tout_db\t" << juce::String (fundOut + d, 3) << "\n";
+        s << "rdone\t" << k << "\ttones\t1\tnonfinite\t0\n";
+        return s;
+    };
+    const juce::String trace = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t3\ttones\t1\tlo\t997.00\thi\t997.00\tdb\t-12.00\thold_s\t1.000\tdiscard_s\t0.500\n"
+                               "config\tmain_in\t2\tmain_out\t2\tlatency\t0\n"
+                             + pos (0, 0.0, "0", -12.0, -110.0, -112.0, -115.0, -118.0)      // clean
+                             + pos (1, 0.5, "5", -11.0, -50.0, -70.0, -80.0, -90.0)          // warm: 2nd dominant, ~0.3 %
+                             + pos (2, 1.0, "10", -8.0, -30.0, -26.0, -40.0, -36.0);         // driven: odd dominant, > 1 %
+    const auto resp = parseHarmonics (trace);
+    check (resp.ok && resp.ctl == 4 && resp.ctlName == "Drive" && resp.positions.size() == 3 && resp.positions[1].harmonics.size() == 4 && resp.positions[1].harmonics[0].order == 2 && std::abs (resp.positions[1].harmonics[0].outDb + 61.0) < 1e-9,
+           "sat S1: the trace parses: the fundamental per position and four harmonic orders");
+    const auto L = deriveLevel (resp, -12.0);
+    check (L.readings.size() == 3 && L.readings[0].valid && std::abs (L.readings[0].gainDb - 0.0) < 1e-9 && std::abs (L.readings[2].gainDb - 4.0) < 1e-9 && std::abs (L.gainSpanDb - 4.0) < 1e-9, "sat S2: gain = fundamental out - in per position; the span over the positions");
+    {
+        const auto& w = L.readings[1];
+        const double expectThd = 10.0 * std::log10 (std::pow (10.0, -5.0) + std::pow (10.0, -7.0) + std::pow (10.0, -8.0) + std::pow (10.0, -9.0));
+        check (std::abs (w.thdDb - expectThd) < 1e-6 && std::abs (w.thdPct - 100.0 * std::sqrt (std::pow (10.0, expectThd / 10.0))) < 1e-6, "sat S3: THD is the harmonic power sum against the fundamental, in dB and % (" + juce::String (w.thdDb, 2) + " dB, " + juce::String (w.thdPct, 3) + " %)");
+        check (w.harmonicDb.at (2) == -50.0 && w.harmonicDb.at (5) == -90.0, "sat S4: each harmonic is read relative to the fundamental's own output bin");
+        check (w.evenOddKnown && w.evenOddDb > 15.0 && w.character == "mixed" && L.readings[2].evenOddDb < -3.0, "sat S5: even/odd balance: the warm position is even-dominant (+), the driven one odd-dominant (-) (" + juce::String (w.evenOddDb, 1) + " / " + juce::String (L.readings[2].evenOddDb, 1) + ")");
+        check (! L.readings[0].evenOddKnown && L.readings[0].character.isEmpty(), "sat S5b: at the floor on both sides the balance is unknown and the character empty");
+    }
+    check (L.onset01pctNorm && std::abs (*L.onset01pctNorm - 0.5f) < 1e-6 && L.onset1pctNorm && std::abs (*L.onset1pctNorm - 1.0f) < 1e-6 && L.onset1pctText == "10", "sat S6: onset: 0.1 % at the warm position, 1 % at the driven one, with the display");
+    check (std::abs (L.maxThdDb - L.readings[2].thdDb) < 1e-9, "sat S7: max THD over the positions");
+    // one-sided: odd harmonics only (CamelCrusher's shape) is "odd", never a -280 dB ratio
+    const juce::String oddOnly = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t1\ttones\t1\n" + pos (0, 1.0, "10", -8.0, -300.0, -26.0, -300.0, -36.0);
+    { const auto o = readingFor (parseHarmonics (oddOnly).positions[0], -12.0); check (o.character == "odd" && ! o.evenOddKnown, "sat S5c: harmonics on one side only give a character word, not a ratio"); }
+    const auto c = judge (4, "Drive", { L });
+    check (! c.inert && c.note.contains ("-12 dBFS: max THD") && c.note.contains ("1 % onset '10'") && c.thdAtTopByLevel.count (-12.0), "sat S8: a control that distorts is judged with its onset and its THD at the top position per level (" + c.note + ")");
+    // inert: three positions, nothing moves
+    const juce::String flat = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t3\ttones\t1\n" + pos (0, 0.0, "0", -12.0, -120.0, -120.0, -120.0, -120.0) + pos (1, 0.5, "5", -12.01, -120.0, -120.0, -120.0, -120.0) + pos (2, 1.0, "10", -12.0, -120.0, -120.0, -120.0, -120.0);
+    const auto ci = judge (4, "Drive", { deriveLevel (parseHarmonics (flat), -20.0), deriveLevel (parseHarmonics (flat), -12.0) });
+    check (ci.inert && ci.note.startsWith ("inert:"), "sat S9: fundamental within 0.05 dB and no harmonic above -90 dB at every position and level = inert, said as the licence shape");
+    const juce::String gainOnly = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t2\ttones\t1\n" + pos (0, 0.0, "0", -12.0, -120.0, -120.0, -120.0, -120.0) + pos (1, 1.0, "10", -9.0, -120.0, -120.0, -120.0, -120.0);
+    check (! judge (4, "Drive", { deriveLevel (parseHarmonics (gainOnly), -12.0) }).inert, "sat S10: a control that only changes level is not inert (it did something)");
+    const juce::String harmOnly = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t2\ttones\t1\n" + pos (0, 0.0, "0", -12.0, -120.0, -120.0, -120.0, -120.0) + pos (1, 1.0, "10", -12.0, -35.0, -40.0, -120.0, -120.0);
+    check (! judge (4, "Drive", { deriveLevel (parseHarmonics (harmOnly), -12.0) }).inert, "sat S10b: a control that adds harmonics at unity gain (MSaturator's shape) is not inert");
+    // no effect: the product distorts (THD -37 at every position) but this control moves neither level nor THD (MSaturator's Harmonics - Gain)
+    const juce::String noEff = "response\tproto\t1\tctl\t8\tname\tHarmonics - Gain\tpositions\t3\ttones\t1\n" + pos (0, 0.0, "-24", -12.0, -40.0, -50.0, -60.0, -70.0) + pos (1, 0.5, "0", -12.0, -40.0, -50.1, -60.0, -70.0) + pos (2, 1.0, "+24", -12.02, -40.0, -50.0, -60.1, -70.0);
+    { const auto n = judge (8, "Harmonics - Gain", { deriveLevel (parseHarmonics (noEff), -12.0) }); check (n.noEffect && ! n.inert && n.note.startsWith ("no effect:"), "sat S15: a control that changes neither level nor THD on a product that distorts is 'no effect', not inert and not a drive law"); }
+    // silent: landed, the input carries the tone, the output holds nothing (bx_yellowdrive on this Mac: -600 dB)
+    const juce::String silent = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t2\ttones\t1\n" + pos (0, 0.0, "0", -600.0, 0.0, 0.0, 0.0, 0.0) + pos (1, 1.0, "10", -600.0, 0.0, 0.0, 0.0, 0.0);
+    const auto cs = judge (4, "Drive", { deriveLevel (parseHarmonics (silent), -12.0) });
+    check (cs.silent && ! cs.inert && cs.note.startsWith ("silent:") && ! deriveLevel (parseHarmonics (silent), -12.0).readings[0].valid, "sat S14: no output at any landed position is silent, a shape of its own, never a reading");
+    // an unlanded position is not a reading; a refused trace is not ok
+    const juce::String unl = "response\tproto\t1\tctl\t4\tname\tDrive\tpositions\t1\ttones\t1\nrpos\t0\tnorm\t0.500000\tconfirm_ms\t-1.0\tlanded_by\tnone\ttext\t5\nrdone\t0\ttones\t0\tunlanded\n";
+    check (! deriveLevel (parseHarmonics (unl), -12.0).readings[0].valid && judge (4, "Drive", { deriveLevel (parseHarmonics (unl), -12.0) }).note.startsWith ("no position read"), "sat S11: an unlanded position is invalid; nothing read is said");
+    check (! parseHarmonics ("refused harmonics= needs tones=1 and 2..20\n").ok && parseHarmonics ("refused harmonics= needs tones=1 and 2..20\n").refused.startsWith ("harmonics="), "sat S12: a refusal line is carried");
+    const auto v = toVar (c);
+    check (v.getProperty ("control", "").toString() == "Drive" && v.getProperty ("levels", {}).size() == 1 && v.getProperty ("levels", {})[0].getProperty ("curve", {}).size() == 3 && (double) v.getProperty ("levels", {})[0].getProperty ("curve", {})[2].getProperty ("harmonics_db", {}).getProperty ("h3", 0.0) == -26.0 && v.getProperty ("levels", {})[0].getProperty ("onset_1pct", {}).getProperty ("display", "").toString() == "10",
+           "sat S13: the JSON carries the curve per level with the harmonics and the onset");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7271,6 +7336,7 @@ int main (int, char**)
     testLimiter();
     testEq();
     testCertReview();
+    testSaturation();
     testLoopOutcomes();
     testCategoriesMerge();
 
