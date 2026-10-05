@@ -1,0 +1,84 @@
+ZIP REVIEW: /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_sc  against  /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/df7309b6-cabf-4dc3-abd7-0db4d0956dc6/scratchpad/rehearsal/cert_tc35
+
+1. HYGIENE
+----------
+1185 entries; cert/ only: yes
+config.json: none (good)
+traces: 10 process list(s), 1113 raw capture(s), 11 record(s); 1 record(s) WITHOUT a process list: AudioUnit_6f457233_1.2.2
+tonecheck.log: absent (the runbook tees it into cert/)
+probes in the tone checks: 6f0dc8bb x1, 8e616b2c x3, e3db6a2a x2
+hygiene: NOT OK (see above)
+
+2. OUTCOMES (baseline -> follow-up)
+-----------------------------------
+  exported               4 ->    6  (+2)
+  recorded               1 ->    1
+  refused                0 ->    1  (+1)
+  held                   1 ->    1
+  needs_review           3 ->    2  (-1)
+  needs_licence         78 ->   78
+  rows                  87 ->   89
+state changes by product: 1
+  NEOLD V76U73: needs_review -> refused | stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+rows only in the follow-up: C1 comp (s), RCompressor (s)
+same state, reason changed: 1
+  EMO-D5 (s) (needs_review): 5 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+
+3. PROJECTED RE-SWEEPS (the follow-up's own decision pass, derive-only, over the baseline)
+------------------------------------------------------------------------------------------
+1 projected, 0 happened, 1 not run
+  NOT RUN bx_crispytuner | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+re-measured but not projected: 3 - C1 comp (s) (no baseline record), Lindell 254E (no baseline record), RCompressor (s) (no baseline record)
+
+4. SIDECHAIN READINGS
+---------------------
+3 record(s) in the set: no effect 3
+  no effect elysia mpressor | norm 1.000 at -6 dBFS: -29.64 -> -29.64 dB (Input #2)
+  no effect EMO-D5 (s) | norm 0.000 at -6 dBFS: -36.81 -> -36.81 dB (Side-Chain Input Bus)
+  no effect Lindell SBC | norm 1.000 at -6 dBFS: -20.84 -> -20.84 dB (Sidechain)
+
+5. REVIEW PICKS
+---------------
+no review_picks.json in the follow-up folder
+
+6. TONE CHECKS (g: P pass, F fail with the GR read, N nulled, - not run)
+------------------------------------------------------------------------
+6 product(s) with a tone check, 6 pass at every level checked
+  level  2: PASS 6
+  level  4: PASS 6
+  level  5: PASS 6
+  level  6: PASS 6
+  level  7: PASS 4
+  level  8: PASS 4
+  level  9: PASS 4
+  level 10: PASS 4
+  level 11: PASS 4
+  level 12: PASS 4
+  bx_opto: 2:P 4:P 5:P 6:P
+  C1 comp (s): 2:P 4:P 5:P 6:P 7:P 8:P 9:P 10:P 11:P 12:P
+  elysia mpressor: 2:P 4:P 5:P 6:P 7:P 8:P 9:P 10:P 11:P 12:P
+  Lindell 7X-500: 2:P 4:P 5:P 6:P
+  Lindell SBC: 2:P 4:P 5:P 6:P 7:P 8:P 9:P 10:P 11:P 12:P
+  RCompressor (s): 2:P 4:P 5:P 6:P 7:P 8:P 9:P 10:P 11:P 12:P
+
+7. DEEP POINTS (levels 4..12 present across the positions; deep_point_error_db)
+-------------------------------------------------------------------------------
+6 exported profile(s)
+  bx_opto: 65 of 243 over 27 positions; dpe 0.10
+  C1 comp (s): 190 of 288 over 32 positions; dpe 0.01
+  elysia mpressor: 141 of 180 over 20 positions; dpe 0.01
+  Lindell 7X-500: 61 of 198 over 22 positions; dpe 0.00
+  Lindell SBC: 70 of 144 over 16 positions; dpe 0.01
+  RCompressor (s): 223 of 270 over 30 positions; dpe 0.01
+
+8. INERT AND LICENCE
+--------------------
+inert: 0, checked and not inert: 0
+needs_licence rows: 78 - 1 subject(s) (compressor / pitch, or with a record), 77 bundle(s) of other categories stopped at the scan
+  Tube-Tech CL 1B | carried forward from the scan: activation window at scan (PACEEdenExperience [pid 27670]); load killed at once, not retried at 2026-10-02T14:45:44.961+01:00 (Tube-Tech CL 1B.vst3); not loaded again; --retry-licence re-checks it
+  other categories: amp_sim 1, channel_strip 4, de-esser 3, delay 4, eq 5, gate 2, limiter 3, reverb 4, saturation 10, transient_shaper 1, unknown 40
+
+9. CRASHES, WINDOWS, TIMEOUTS
+-----------------------------
+0 (over 139 run.jsonl line(s) the follow-up added)
+

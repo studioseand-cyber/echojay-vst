@@ -658,6 +658,18 @@ namespace
                           << (pl.pickNote.isNotEmpty() ? " | " + pl.pickNote : juce::String()) << std::endl;
                 return 0;
             }
+            // --cert-review-zip <zip|folder> [--against <zip|folder>] [--keep]: ONE plain report on a zipped-back follow-up folder against a
+            // baseline (default: Sean's 4 Oct zip in ~/Downloads, when it is there) - hygiene, outcome changes by product, the
+            // projected re-sweeps and how each ended, sidechain readings, review picks, tone checks per level, deep points,
+            // inert / licence rows, crashes. Unzips to the temp folder; loads nothing; writes nothing outside that folder.
+            if (a == "--cert-review-zip" && i + 1 < argc)
+            {
+                juce::File against = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Downloads/ejmap-cert-MacBook-Pro-4-20261004.zip");
+                bool explicitBaseline = false, keep = false;
+                for (int j = 1; j < argc; ++j) { if (argAt (argc, argv, j) == "--against" && j + 1 < argc) { against = cwdFile (argAt (argc, argv, j + 1)); explicitBaseline = true; } if (argAt (argc, argv, j) == "--keep") keep = true; }
+                if (! explicitBaseline && ! against.existsAsFile()) { std::cout << "ZIP REVIEW: no --against given and the 4 Oct baseline is not at " << against.getFullPathName() << ": counts only, nothing projected" << std::endl; against = juce::File(); }
+                return ejmap::cert::runReviewZip (cwdFile (argAt (argc, argv, i + 1)), against, juce::File::getSpecialLocation (juce::File::tempDirectory), keep);
+            }
             // --cert-review-sheet <cert dir>: every needs_review record's candidates with their verdicts and 2 dB curves (read-only)
             if (a == "--cert-review-sheet" && i + 1 < argc) { ejmap::cert::printReviewSheet (cwdFile (argAt (argc, argv, i + 1)).getChildFile ("fixtures"), std::cout); return 0; }
             // --cert-states <dir of records>: what state outcomeForRecord gives every record now (read-only; the projected outcome for a zipped-back folder)

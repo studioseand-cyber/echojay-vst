@@ -1,0 +1,210 @@
+ZIP REVIEW: /Users/SeanD/Downloads/ejmap-cert-MacBook-Pro-4-20261004.zip  against  /Users/SeanD/Downloads/ejmap-cert-MacBook-Pro-4-20261004.zip
+
+1. HYGIENE
+----------
+19060 entries; cert/ only: yes
+config.json: none (good)
+traces: 132 process list(s), 18477 raw capture(s), 132 record(s), every record has its process list
+tonecheck.log: absent (the runbook tees it into cert/)
+probes in the tone checks: f5b66530 x43
+hygiene: OK
+
+2. OUTCOMES (baseline -> follow-up)
+-----------------------------------
+  exported              43 ->   43
+  recorded               6 ->    6
+  refused               18 ->   18
+  held                  45 ->   45
+  needs_review          65 ->   65
+  needs_licence          2 ->    2
+  quarantined_at_scan    2 ->    2
+  rows                 181 ->  181
+state changes by product: 0
+same state, reason changed: 0
+
+3. PROJECTED RE-SWEEPS (the follow-up's own decision pass, derive-only, over the baseline)
+------------------------------------------------------------------------------------------
+20 projected, 0 happened, 20 not run
+  NOT RUN Auto-Tune Access | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+  NOT RUN Auto-Tune Artist | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+  NOT RUN Auto-Tune EFX | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+  NOT RUN Auto-Tune EFX+ | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+  NOT RUN Auto-Tune Pro | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+  NOT RUN bx_crispytuner | the tuner procedure changed (plan v1 -> v2: detents by evidence, speed half period 1/2/4 s) | ended recorded: 1 pitch candidate(s) recorded
+  NOT RUN bx_opto Pedal | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans [2] Density | ended refused: stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+  NOT RUN Empirical Labs Mike-E Comp | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans [3] Drive | ended refused: stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+  NOT RUN MaxxVolume (m) | the candidate set changed: swept [0,4,8,9], this build plans [0,4] | ended needs_review: 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  NOT RUN MaxxVolume (s) | the candidate set changed: swept [0,4,8,9], this build plans [0,4] | ended needs_review: 4 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+  NOT RUN Mixland Vac Attack | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans 2 candidates | ended refused: stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+  NOT RUN MV2 (m) | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class none)); this build plans [1] High Level | ended refused: stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+  NOT RUN MV2 (s) | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class none)); this build plans [1] High Level | ended refused: stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+  NOT RUN NEOLD V76U73 | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class none)); this build plans [3] Gain | ended refused: stage plan: not swept: 0 controls hold the threshold role (class none); deferred to review after the sweep
+  NOT RUN OneKnob Pressure (m) | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class input_as_threshold)); this build plans [1] Pressure | ended refused: stage plan: not swept: 0 controls hold the threshold role (class input_as_threshold); deferred to review after the sweep
+  NOT RUN OneKnob Pressure (s) | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class input_as_threshold)); this build plans [1] Pressure | ended refused: stage plan: not swept: 0 controls hold the threshold role (class input_as_threshold); deferred to review after the sweep
+  NOT RUN Rubber Band Compressor V2 | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans [5] Tension | ended refused: stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+  NOT RUN RVox (m) | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans [0] Compression | ended refused: stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+  NOT RUN RVox (s) | refused at plan under the batch build (not swept: 0 controls hold the threshold role (class amount_only)); this build plans [0] Compression | ended refused: stage plan: not swept: 0 controls hold the threshold role (class amount_only); deferred to review after the sweep
+  NOT RUN UnFairchild (after the re-derive) | only 5 positions reach 1 dB and a 2 dB gap of 5.3 dB remains after 0 refinement round(s): a round on that gap adds positions | ended needs_review: 2 threshold candidates (a channel strip or multiband): no rule decides it, nobody picks
+re-measured but not projected: 0
+
+4. SIDECHAIN READINGS
+---------------------
+48 record(s) in the set: not read 48
+  not read  AMEK Mastering Compressor | no sidechainPolicyCheck on the record
+  not read  API-2500 (m) | no sidechainPolicyCheck on the record
+  not read  API-2500 (s) | no sidechainPolicyCheck on the record
+  not read  Auto-Tune Vocal Compressor | no sidechainPolicyCheck on the record
+  not read  Bettermaker Bus Compressor DSP | no sidechainPolicyCheck on the record
+  not read  bx_townhouse Buss Compressor | no sidechainPolicyCheck on the record
+  not read  C1 comp (m) | no sidechainPolicyCheck on the record
+  not read  C1 comp (s) | no sidechainPolicyCheck on the record
+  not read  C6-SideChain (m) | no sidechainPolicyCheck on the record
+  not read  C6-SideChain (s) | no sidechainPolicyCheck on the record
+  not read  dbx-160 (m) | no sidechainPolicyCheck on the record
+  not read  dbx-160 (s) | no sidechainPolicyCheck on the record
+  not read  DPR-402 (m) | no sidechainPolicyCheck on the record
+  not read  DPR-402 (s) | no sidechainPolicyCheck on the record
+  not read  Drawmer 1973 | no sidechainPolicyCheck on the record
+  not read  elysia mpressor | no sidechainPolicyCheck on the record
+  not read  EMO-D5 (m) | no sidechainPolicyCheck on the record
+  not read  EMO-D5 (s) | no sidechainPolicyCheck on the record
+  not read  kHs Compressor | no sidechainPolicyCheck on the record
+  not read  Lindell 254E | no sidechainPolicyCheck on the record
+  not read  Lindell MBC | no sidechainPolicyCheck on the record
+  not read  Lindell SBC | no sidechainPolicyCheck on the record
+  not read  Maag MAGNUM-K | no sidechainPolicyCheck on the record
+  not read  MCompressor | no sidechainPolicyCheck on the record
+  not read  MO-TT | no sidechainPolicyCheck on the record
+  not read  NEOLD U17 | no sidechainPolicyCheck on the record
+  not read  Pro Audio DSP DSM V3 | no sidechainPolicyCheck on the record
+  not read  Pro-MB | no sidechainPolicyCheck on the record
+  not read  Purple Audio MC 77 | no sidechainPolicyCheck on the record
+  not read  RCompressor (m) | no sidechainPolicyCheck on the record
+  not read  RCompressor (s) | no sidechainPolicyCheck on the record
+  not read  Shadow Hills Class A Mastering Comp | no sidechainPolicyCheck on the record
+  not read  Shadow Hills Mastering Compressor | no sidechainPolicyCheck on the record
+  not read  Solid Bus Comp | no sidechainPolicyCheck on the record
+  not read  Solid Dynamics | no sidechainPolicyCheck on the record
+  not read  SPL IRON | no sidechainPolicyCheck on the record
+  not read  SSL G3 MultiBusComp | no sidechainPolicyCheck on the record
+  not read  SSL LMC+ | no sidechainPolicyCheck on the record
+  not read  SSL Native Bus Compressor 2 | no sidechainPolicyCheck on the record
+  not read  SSLComp (m) | no sidechainPolicyCheck on the record
+  not read  SSLComp (s) | no sidechainPolicyCheck on the record
+  not read  TBTECH Cenozoix Compressor | no sidechainPolicyCheck on the record
+  not read  Tube-Tech CL 1B | no sidechainPolicyCheck on the record
+  not read  U73b Compressor | no sidechainPolicyCheck on the record
+  not read  UnFairchild | no sidechainPolicyCheck on the record
+  not read  Unfiltered Audio Zip | no sidechainPolicyCheck on the record
+  not read  VComp (m) | no sidechainPolicyCheck on the record
+  not read  VComp (s) | no sidechainPolicyCheck on the record
+
+5. REVIEW PICKS
+---------------
+no review_picks.json in the follow-up folder
+
+6. TONE CHECKS (g: P pass, F fail with the GR read, N nulled, - not run)
+------------------------------------------------------------------------
+43 product(s) with a tone check, 41 pass at every level checked
+  level  2: FAIL 2, PASS 41
+  Abbey Road RS124 (m): 2:P
+  Acme Opticom XLA-3: 2:P
+  Bettermaker Bus Compressor DSP: 2:P
+  bx_opto: 2:P
+  bx_townhouse Buss Compressor: 2:P
+  C1 comp-gate (m): 2:P
+  C1 comp-gate (s): 2:P
+  C1 comp-sc (m): 2:P
+  C1 comp-sc (s): 2:P
+  CLA-2A (m): 2:P
+  CLA-2A (s): 2:P
+  CLA-3A (m): 2:P
+  CLA-3A (s): 2:P
+  CLA-76 (m): 2:P
+  CLA-76 (s): 2:P
+  DPR-402 (m): 2:P
+  elysia alpha mix: 2:P
+  elysia mpressor: 2:P
+  EMO-D5 (m): 2:P
+  EMO-D5 (s): 2:P
+  kHs Compressor: 2:P
+  Kramer PIE (m): 2:P
+  Kramer PIE (s): 2:P
+  Lindell 254E: 2:F(0.00)
+  Lindell 7X-500: 2:P
+  Lindell SBC: 2:P
+  MCompressor: 2:P
+  PuigChild 660 (m): 2:P
+  Renaissance Axx (m): 2:P
+  Renaissance Axx (s): 2:P
+  Solid Bus Comp: 2:P
+  Solid Dynamics: 2:P
+  SSL Blitzer: 2:P
+  SSL LMC+: 2:P
+  SSL Native Bus Compressor 2: 2:P
+  SSL Native X-Comp v6: 2:P
+  SSL Native X-ValveComp v6: 2:P
+  TBTECH Cenozoix Compressor: 2:P
+  Tube-Tech CL 1B: 2:P
+  U73b Compressor: 2:P
+  Unfiltered Audio Zip: 2:P
+  VBC FG-Grey: 2:F(1.02)
+  VBC FG-Red: 2:P
+
+7. DEEP POINTS (levels 4..12 present across the positions; deep_point_error_db)
+-------------------------------------------------------------------------------
+43 exported profile(s)
+  Abbey Road RS124 (m): 0 of 252 over 28 positions; dpe none
+  Acme Opticom XLA-3: 0 of 216 over 24 positions; dpe none
+  Bettermaker Bus Compressor DSP: 0 of 144 over 16 positions; dpe none
+  bx_opto: 0 of 243 over 27 positions; dpe none
+  bx_townhouse Buss Compressor: 0 of 144 over 16 positions; dpe none
+  C1 comp-gate (m): 0 of 288 over 32 positions; dpe none
+  C1 comp-gate (s): 0 of 288 over 32 positions; dpe none
+  C1 comp-sc (m): 0 of 288 over 32 positions; dpe none
+  C1 comp-sc (s): 0 of 288 over 32 positions; dpe none
+  CLA-2A (m): 0 of 234 over 26 positions; dpe none
+  CLA-2A (s): 0 of 234 over 26 positions; dpe none
+  CLA-3A (m): 0 of 198 over 22 positions; dpe none
+  CLA-3A (s): 0 of 198 over 22 positions; dpe none
+  CLA-76 (m): 0 of 216 over 24 positions; dpe none
+  CLA-76 (s): 0 of 216 over 24 positions; dpe none
+  DPR-402 (m): 0 of 234 over 26 positions; dpe none
+  elysia alpha mix: 0 of 144 over 16 positions; dpe none
+  elysia mpressor: 0 of 180 over 20 positions; dpe none
+  EMO-D5 (m): 0 of 270 over 30 positions; dpe none
+  EMO-D5 (s): 0 of 270 over 30 positions; dpe none
+  kHs Compressor: 0 of 216 over 24 positions; dpe none
+  Kramer PIE (m): 0 of 189 over 21 positions; dpe none
+  Kramer PIE (s): 0 of 189 over 21 positions; dpe none
+  Lindell 254E: 0 of 144 over 16 positions; dpe none
+  Lindell 7X-500: 0 of 198 over 22 positions; dpe none
+  Lindell SBC: 0 of 144 over 16 positions; dpe none
+  MCompressor: 0 of 225 over 25 positions; dpe none
+  PuigChild 660 (m): 0 of 171 over 19 positions; dpe none
+  Renaissance Axx (m): 0 of 270 over 30 positions; dpe none
+  Renaissance Axx (s): 0 of 270 over 30 positions; dpe none
+  Solid Bus Comp: 0 of 153 over 17 positions; dpe none
+  Solid Dynamics: 0 of 144 over 16 positions; dpe none
+  SSL Blitzer: 0 of 261 over 29 positions; dpe none
+  SSL LMC+: 0 of 144 over 16 positions; dpe none
+  SSL Native Bus Compressor 2: 0 of 162 over 18 positions; dpe none
+  SSL Native X-Comp v6: 0 of 243 over 27 positions; dpe none
+  SSL Native X-ValveComp v6: 0 of 144 over 16 positions; dpe none
+  TBTECH Cenozoix Compressor: 0 of 270 over 30 positions; dpe none
+  Tube-Tech CL 1B: 0 of 252 over 28 positions; dpe none
+  U73b Compressor: 0 of 144 over 16 positions; dpe none
+  Unfiltered Audio Zip: 0 of 225 over 25 positions; dpe none
+  VBC FG-Grey: 0 of 279 over 31 positions; dpe none
+  VBC FG-Red: 0 of 270 over 30 positions; dpe none
+
+8. INERT AND LICENCE
+--------------------
+inert: 0, checked and not inert: 0
+needs_licence rows: 2 - 0 subject(s) (compressor / pitch, or with a record), 2 bundle(s) of other categories stopped at the scan
+  other categories: de-esser 1, eq 1
+
+9. CRASHES, WINDOWS, TIMEOUTS
+-----------------------------
+0 (over 0 run.jsonl line(s) the follow-up added)
+

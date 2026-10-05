@@ -55,6 +55,7 @@
 #include "EjmapTiming.h"
 #include "EjmapLimiter.h"
 #include "EjmapEq.h"
+#include "EjmapCertReview.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -1382,6 +1383,14 @@ inline juce::File defaultEjmapLedger() { return juce::File::getSpecialLocation (
 // The fixture is written to <out>/fixtures only - never into the server tree, never over a
 // pushed fixture - with LF line ends. processes.json records every process, so the fixture
 // can be re-derived from the raw files alone (RoundTripTest does exactly that).
+// THE FOLLOW-UP'S PROJECTION (5 Oct, R1): what a derive-only run of runToneCheckAll decided it WOULD do - re-sweeps with
+// their reasons, the sidechain-reading set, the inert checks. Filled through SweepOptions::projection when a caller
+// (the zip review) asks; the decision code is the follow-up's own, not a second copy of it.
+struct FollowUpProjection
+{
+    struct Item { juce::String product, why; bool afterRederive = false; };
+    std::vector<Item> resweeps, sidechain; juce::StringArray inert;
+};
 struct SweepOptions
 {
     juce::File fixtures, probe, out, ledger = defaultEjmapLedger();
@@ -1395,6 +1404,7 @@ struct SweepOptions
     bool deriveOnly = false;                         // --derive-only (tone-check mode): re-derive, apply the rules and export, load NOTHING - the projection for a zipped-back folder
     juce::StringArray resweepProducts;               // the follow-up's own re-sweep set (planDiffers): forced back onto the worklist
     juce::String mapState;                           // INFORMATION for the record (ruled 2 Oct): set by the batch from the subject; the tuner path has no Subject of its own
+    FollowUpProjection* projection = nullptr;        // the zip review's capture of a derive-only decision pass (never set by a batch)
 };
 
 // WHERE CERTIFICATION LANDS BY DEFAULT (ruled 30 Sep). The runbook hands a machine's work over as `zip -rq
@@ -3282,14 +3292,14 @@ inline int runToneCheckAll (SweepOptions opt)
                 }
             }
             const auto d = loop::planDiffers (r, sweep::planFromFixture (r));
-            if (d.resweep) { resweep.add (product); resweepWhys.add (product + ": " + d.why); continue; }
+            if (d.resweep) { resweep.add (product); resweepWhys.add (product + ": " + d.why); if (opt.projection) opt.projection->resweeps.push_back ({ product, d.why, false }); continue; }
             // THE SIDECHAIN POLICY (4 Oct): one reading under the new policy against the record's own, for every record swept
             // under the old policy that declares a second input bus; the re-sweep is by that evidence, never by assumption
             const auto sc = sidechainPolicyCheck (opt, latestRecordFor (fixturesDir, product), opt.deriveOnly);
-            if (sc.inSet) { ++scChecked; std::cout << "  " << product << ": " << sc.why << std::endl; }
+            if (sc.inSet) { ++scChecked; std::cout << "  " << product << ": " << sc.why << std::endl; if (opt.projection) opt.projection->sidechain.push_back ({ product, sc.why, false }); }
             if (sc.resweep) { resweep.add (product); resweepWhys.add (product + ": " + sc.why); continue; }
             // THE INERT CHECK (4 Oct): a flat record that passes audio through at its defaults is asked whether anything moves its output
-            if (const auto w = inertCheckOnRecord (opt, latestRecordFor (fixturesDir, product), opt.deriveOnly); w.isNotEmpty()) std::cout << "  " << product << ": " << w << std::endl;
+            if (const auto w = inertCheckOnRecord (opt, latestRecordFor (fixturesDir, product), opt.deriveOnly); w.isNotEmpty()) { std::cout << "  " << product << ": " << w << std::endl; if (opt.projection && w.startsWith ("would run")) opt.projection->inert.add (product); }
         }
     }
     std::cout << "SIDECHAIN POLICY CHECK: " << scChecked << " product(s) swept under " << sidechaincheck::kPolicyOld << " with a second input bus" << (opt.deriveOnly ? " (derive-only: nothing read)" : "") << std::endl;
@@ -3347,7 +3357,7 @@ inline int runToneCheckAll (SweepOptions opt)
         {
             const auto now = juce::JSON::parse (recordFile.loadFileAsString());
             if (const auto d = loop::planDiffers (now, sweep::planFromFixture (now)); d.resweep)
-            { resweep.add (product); resweepWhys.add (product + ": " + d.why); std::cout << "  -> re-sweep (after the re-derive): " << d.why << std::endl; continue; }
+            { resweep.add (product); resweepWhys.add (product + ": " + d.why); if (opt.projection) opt.projection->resweeps.push_back ({ product, d.why, true }); std::cout << "  -> re-sweep (after the re-derive): " << d.why << std::endl; continue; }
         }
         // 2. RE-EXPORT and 3. the tone checks, through the batch's own finish step (detector kept, pick by Rule 1 where decided)
         const auto newRow = finishRecord (opt, recordFile, rec0.getProperty ("category", "compressor").toString());
@@ -4238,6 +4248,147 @@ inline int runWatchSelfTest (const juce::File& helper)
                  && grand.kind == ChildResult::Kind::uiShown && grand.ms < 5000.0 && quiet.cleanExit();
     std::cout << (ok ? "WATCH SELFTEST: GREEN" : "WATCH SELFTEST: RED") << std::endl;
     return ok ? 0 : 1;
+}
+
+
+//==============================================================================
+// THE ZIP REVIEW (5 Oct, R1): --cert-review-zip <zip|folder> [--against <zip|folder>]. Unzips both to a scratch folder
+// under the temp directory, reads the follow-up as data, runs the follow-up's own decision pass derive-only over a COPY of
+// the baseline for the projection, and prints one report (EjmapCertReview.h). Loads nothing, sends nothing, never
+// touches ~/Library/ejmap.
+inline juce::File reviewCertRoot (const juce::File& unpacked)
+{
+    if (unpacked.getChildFile ("cert").getChildFile ("outcomes.json").existsAsFile()) return unpacked.getChildFile ("cert");
+    if (unpacked.getChildFile ("outcomes.json").existsAsFile()) return unpacked;
+    // a zip whose cert/ sits one folder down (zipped from a parent): the first outcomes.json found
+    for (const auto& f : unpacked.findChildFiles (juce::File::findFiles, true, "outcomes.json")) return f.getParentDirectory();
+    return {};
+}
+// A zip is uncompressed; a folder is copied (as cert/ whatever it was called) so the projection's writes never reach the
+// caller's folder. entries lists what the ZIP held (hygiene reads the zip's own names, never the unpacked tree).
+inline bool unpackForReview (const juce::File& src, const juce::File& dst, juce::StringArray& entries, juce::String& why)
+{
+    dst.createDirectory();
+    if (src.isDirectory())
+    {
+        const auto cert = src.getChildFile ("outcomes.json").existsAsFile() ? src : src.getChildFile ("cert");
+        if (! cert.getChildFile ("outcomes.json").existsAsFile()) { why = "no outcomes.json in " + src.getFullPathName() + " or its cert/"; return false; }
+        if (! cert.copyDirectoryTo (dst.getChildFile ("cert"))) { why = "could not copy " + cert.getFullPathName(); return false; }
+        for (const auto& f : cert.findChildFiles (juce::File::findFiles, true)) entries.add ("cert/" + f.getRelativePathFrom (cert));
+        return true;
+    }
+    if (! src.existsAsFile()) { why = "not found: " + src.getFullPathName(); return false; }
+    juce::ZipFile zip (src);
+    if (zip.getNumEntries() == 0) { why = "not a zip, or empty: " + src.getFullPathName(); return false; }
+    for (int i = 0; i < zip.getNumEntries(); ++i) entries.add (zip.getEntry (i)->filename);
+    const auto r = zip.uncompressTo (dst, true);
+    if (r.failed()) { why = "unzip failed: " + r.getErrorMessage(); return false; }
+    return true;
+}
+inline std::map<juce::String, juce::var> reviewRecords (const juce::File& cert, std::map<juce::String, juce::var>* byStem = nullptr)
+{
+    std::map<juce::String, juce::var> out;
+    for (const auto& f : cert.getChildFile ("fixtures").findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (f.getFileName().endsWith (".defaults.json")) continue;
+        const auto r = juce::JSON::parse (f.loadFileAsString()); if (! r.isObject() || ! r.hasProperty ("product")) continue;
+        const auto product = r.getProperty ("product", "").toString();
+        if (byStem) (*byStem)[f.getFileNameWithoutExtension()] = r;
+        const auto it = out.find (product);
+        if (it == out.end() || review::recordStamp (r) > review::recordStamp (it->second)) out[product] = r;   // the latest record speaks for a product
+    }
+    return out;
+}
+inline int runReviewZip (const juce::File& subject, const juce::File& against, const juce::File& scratchRoot, bool keepScratch = false)
+{
+    using namespace review;
+    ReportInput in;
+    const auto scratch = scratchRoot.getChildFile ("ejmap-review-" + nowStamp());
+    in.subjectName = subject.getFullPathName(); in.scratchDir = scratch.getFullPathName();
+    juce::StringArray entries; juce::String why;
+    if (! unpackForReview (subject, scratch.getChildFile ("subject"), entries, why)) { std::cout << "ZIP REVIEW: cannot read the subject - " << why << std::endl; return 2; }
+    const auto cert = reviewCertRoot (scratch.getChildFile ("subject"));
+    if (cert == juce::File()) { std::cout << "ZIP REVIEW: no outcomes.json anywhere in " << subject.getFullPathName() << std::endl; return 2; }
+    in.hygiene = hygieneOf (entries); in.hygieneKnown = true;
+    const auto outcomes = juce::JSON::parse (cert.getChildFile ("outcomes.json").loadFileAsString());
+    std::map<juce::String, juce::var> byStem; const auto records = reviewRecords (cert, &byStem);
+    auto rowFor = [&] (const juce::String& product) -> juce::var { if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (r.getProperty ("product", "").toString() == product) return r; return {}; };
+    auto recordFor = [&] (const std::map<juce::String, juce::var>& m, const juce::String& product) -> juce::var { const auto it = m.find (product); return it == m.end() ? juce::var() : it->second; };
+    // the log, the probes
+    if (const auto log = cert.getChildFile ("tonecheck.log"); log.existsAsFile())
+    { in.logPresent = true; for (const auto& l : juce::StringArray::fromLines (log.loadFileAsString())) if (l.trim().isNotEmpty()) in.logLastLine = l.trim().substring (0, 160); }
+    // THE BASELINE: its outcomes and records first (the projection pass rewrites the copy), then the projection
+    juce::var baseOutcomes; std::map<juce::String, juce::var> baseRecords; FollowUpProjection proj; int baseRunLines = 0;
+    if (against != juce::File())
+    {
+        juce::StringArray bEntries; juce::String bWhy;
+        if (! unpackForReview (against, scratch.getChildFile ("baseline"), bEntries, bWhy)) { std::cout << "ZIP REVIEW: cannot read the baseline - " << bWhy << std::endl; return 2; }
+        const auto bcert = reviewCertRoot (scratch.getChildFile ("baseline"));
+        if (bcert == juce::File()) { std::cout << "ZIP REVIEW: no outcomes.json anywhere in " << against.getFullPathName() << std::endl; return 2; }
+        in.baselineName = against.getFullPathName(); in.baselineKnown = true;
+        baseOutcomes = juce::JSON::parse (bcert.getChildFile ("outcomes.json").loadFileAsString());
+        baseRecords = reviewRecords (bcert);
+        for (const auto& l : juce::StringArray::fromLines (bcert.getChildFile ("run.jsonl").loadFileAsString())) if (l.trim().isNotEmpty()) ++baseRunLines;
+        in.states = diffOutcomes (baseOutcomes, outcomes);
+        // the projection: the follow-up's decision pass, derive-only, over the baseline COPY; its output is kept in the scratch folder
+        SweepOptions o; o.out = bcert; o.deriveOnly = true; o.projection = &proj; o.ledger = scratch.getChildFile ("empty-ledger"); o.ledger.createDirectory();
+        std::ostringstream cap; auto* old = std::cout.rdbuf (cap.rdbuf());
+        const int rc = runToneCheckAll (o);
+        std::cout.rdbuf (old);
+        scratch.getChildFile ("projection.log").replaceWithText (cap.str(), false, false, "\n");
+        in.projectionKnown = rc == 0;
+        if (rc != 0) in.note = "the projection pass over the baseline returned " + juce::String (rc) + " (see projection.log in the scratch folder)";
+        juce::StringArray projected;
+        for (const auto& it : proj.resweeps) { projected.add (it.product); in.resweeps.push_back (resweepStatus (it.product, it.why, it.afterRederive, recordFor (baseRecords, it.product), recordFor (records, it.product), rowFor (it.product))); }
+        in.unprojected = unprojectedResweeps (baseRecords, records, projected);
+        for (const auto& it : proj.sidechain) in.sidechain.push_back (sidechainStatus (it.product, recordFor (records, it.product), rowFor (it.product)));
+    }
+    else
+    {
+        if (const auto* a = outcomes.getArray()) for (const auto& r : *a) ++in.states.after[r.getProperty ("state", "").toString()];
+        // no baseline: the sidechain set is every follow-up record that carries a reading
+        for (const auto& [product, r] : records) if (r.getProperty ("sidechainPolicyCheck", {}).isObject()) in.sidechain.push_back (sidechainStatus (product, r, rowFor (product)));
+    }
+    // review picks
+    if (const auto pf = cert.getChildFile ("review_picks.json"); pf.existsAsFile())
+    {
+        in.picksFilePresent = true;
+        const auto picks = juce::JSON::parse (pf.loadFileAsString());
+        if (const auto* a = picks.getArray()) for (const auto& p : *a) { ++in.pickEntries; in.picks.push_back (pickStatus (p, recordFor (records, p.getProperty ("product", "").toString()), rowFor (p.getProperty ("product", "").toString()))); }
+    }
+    // tone checks and deep points, from the profiles folder by file (never a path from a row)
+    for (const auto& f : cert.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.tonecheck.json"))
+    {
+        const auto tc = juce::JSON::parse (f.loadFileAsString());
+        in.tones.push_back (toneSummary (tc.getProperty ("product", f.getFileNameWithoutExtension()).toString(), tc));
+        const auto probe = tc.getProperty ("probe", "").toString(); if (probe.isNotEmpty()) ++in.probesSeen[probe.substring (0, 8)];
+    }
+    for (const auto& f : cert.getChildFile ("profiles").findChildFiles (juce::File::findFiles, false, "*.json"))
+    {
+        if (f.getFileName().endsWith (".tonecheck.json")) continue;
+        const auto p = juce::JSON::parse (f.loadFileAsString());
+        in.deep.push_back (deepPointsOf (p.getProperty ("plugin", {}).getProperty ("name", f.getFileNameWithoutExtension()).toString(), p));
+    }
+    auto byProduct = [] (auto& v) { std::sort (v.begin(), v.end(), [] (const auto& a, const auto& b) { return a.product.compareIgnoreCase (b.product) < 0; }); };
+    byProduct (in.tones); byProduct (in.deep);
+    // inert, licence, crashes
+    in.inert = inertLines (records);
+    if (const auto* a = outcomes.getArray()) for (const auto& r : *a) if (r.getProperty ("state", "").toString() == "needs_licence")
+    {
+        const auto product = r.getProperty ("product", "").toString(), category = r.getProperty ("category", "").toString();
+        if (records.count (product) || category == "compressor" || category == "pitch") in.licence.push_back ({ product, r.getProperty ("reason", "").toString() });
+        else ++in.licenceOther[category.isEmpty() ? juce::String ("unknown") : category];
+    }
+    const auto runText = cert.getChildFile ("run.jsonl").loadFileAsString();
+    int runLines = 0; for (const auto& l : juce::StringArray::fromLines (runText)) if (l.trim().isNotEmpty()) ++runLines;
+    in.runLinesAdded = juce::jmax (0, runLines - baseRunLines);
+    in.crashes = crashesIn (runText, baseRunLines, outcomes, byStem);
+    std::sort (in.resweeps.begin(), in.resweeps.end(), [] (const ResweepLine& a, const ResweepLine& b) { return a.product.compareIgnoreCase (b.product) < 0; });
+    std::sort (in.sidechain.begin(), in.sidechain.end(), [] (const SidechainLine& a, const SidechainLine& b) { return a.word == b.word ? a.product.compareIgnoreCase (b.product) < 0 : a.word < b.word; });
+    if (! keepScratch) in.scratchDir = {};   // deleted below: two unzipped folders are ~800 MB; --keep leaves them and says where
+    std::cout << render (in);
+    if (! keepScratch) scratch.deleteRecursively();
+    return 0;
 }
 
 } // namespace ejmap::cert

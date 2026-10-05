@@ -77,6 +77,7 @@
 #include "EjmapEq.h"
 #include <functional>
 #include "EjmapCertDriver.h"
+#include "EjmapCertReview.h"
 
 namespace
 {
@@ -7059,6 +7060,119 @@ void testEq()
     for (const auto& b : bands) if (b.key == "Hi") check (b.gains == std::vector<int> { 1 } && b.qs == std::vector<int> { 4 }, "eq E9: Pultec 'attenuation' is a gain, 'bandwidth' a Q");
 }
 
+/** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
+void testCertReview()
+{
+    using namespace ejmap::review;
+    auto J = [] (const char* t) { return juce::JSON::parse (juce::String (t)); };
+    // stamps: the newest measurement the record carries, whichever shape
+    check (recordStamp (J (R"({"thresholdSweep":{"measuredAt":"20261003T194109.596+0100"}})")) == "20261003T194109.596+0100", "review R1: a single sweep's measuredAt is the stamp");
+    check (recordStamp (J (R"({"thresholdCandidates":[{"thresholdSweep":{"measuredAt":"20261004T020000.000+0100"}},{"thresholdSweep":{"measuredAt":"20261004T030000.000+0100"}}]})")) == "20261004T030000.000+0100", "review R2: the newest candidate sweep is the stamp");
+    check (recordStamp (J (R"({"thresholdRefusal":{"recordedAt":"20261002T154303.841+0100"}})")) == "20261002T154303.841+0100" && recordStamp (J (R"({"pitchCandidates":[{"measuredAt":"20261003T200700.000+0100"}]})")) == "20261003T200700.000+0100" && recordStamp (J (R"({"controls":[]})")).isEmpty(),
+           "review R3: a refusal's recordedAt and a tuner candidate's measuredAt count; a record with nothing measured has no stamp");
+    // hygiene from the zip's own names
+    {
+        const auto h = hygieneOf ({ "cert/", "cert/outcomes.json", "cert/fixtures/AudioUnit_1_1.0.json", "cert/fixtures/AudioUnit_1_1.0.defaults.json", "cert/AudioUnit_1_1.0.sweep.processes.json", "cert/raw/AudioUnit_1_1.0.sweep.pos00.1.txt" });
+        check (h.ok() && h.certOnly() && h.records == 1 && h.processLists == 1 && h.rawFiles == 1 && h.recordsWithoutTraces.isEmpty(), "review H1: cert/ only, no config.json, one record with its process list and a raw capture -> OK");
+        const auto bad = hygieneOf ({ "config.json", "cert/outcomes.json", "cert/fixtures/AudioUnit_2_1.0.json", "cert/raw/x.txt" });
+        check (! bad.ok() && ! bad.certOnly() && bad.outsideCert == juce::StringArray { "config.json" } && bad.configJson == juce::StringArray { "config.json" } && bad.recordsWithoutTraces == juce::StringArray { "AudioUnit_2_1.0" } && bad.processLists == 0,
+               "review H2: config.json outside cert/ is named twice (outside, and as config.json); a record without a process list is named; no process lists -> NOT OK");
+        check (hygieneOf ({ "cert/fixtures/AudioUnit_3_2.0.json", "cert/AudioUnit_3_2.0.tuner.processes.json", "cert/raw/a.txt" }).recordsWithoutTraces.isEmpty(), "review H3: a tuner's process list counts as the record's traces");
+    }
+    // outcomes: counts, changes by product, added, gone, reason-only
+    {
+        const auto before = J (R"([{"identity":"A","product":"Alpha","state":"needs_review","reason":"r0"},{"identity":"B","product":"Beta","state":"exported","reason":"same"},{"identity":"C","product":"Gamma","state":"held","reason":"h"},{"identity":"D","product":"Delta","state":"refused","reason":"x"}])");
+        const auto after  = J (R"([{"identity":"A","product":"Alpha","state":"exported","reason":"profile exported"},{"identity":"B","product":"Beta","state":"exported","reason":"same"},{"identity":"D","product":"Delta","state":"refused","reason":"y"},{"identity":"E","product":"Eps","state":"recorded","reason":"n"}])");
+        const auto d = diffOutcomes (before, after);
+        check (d.before.at ("needs_review") == 1 && d.after.at ("exported") == 2 && d.after.count ("needs_review") == 0, "review O1: counts per state on both sides");
+        check (d.changes.size() == 1 && d.changes[0].product == "Alpha" && d.changes[0].before == "needs_review" && d.changes[0].after == "exported" && d.changes[0].reason == "profile exported", "review O2: one state change, by product, with the new reason");
+        check (d.added == juce::StringArray { "Eps" } && d.gone == juce::StringArray { "Gamma" }, "review O3: a row only in the follow-up and a row only in the baseline are both named");
+        check (d.reasonOnly.size() == 1 && d.reasonOnly[0].product == "Delta", "review O4: same state with a changed reason is said separately, not counted as a change");
+    }
+    // a projected re-sweep: happened by stamp, ended by row
+    {
+        const auto base = J (R"({"product":"P","thresholdRefusal":{"stage":"plan","recordedAt":"20261003T200000.000+0100"}})");
+        const auto ran  = J (R"({"product":"P","thresholdSweep":{"measuredAt":"20261005T010000.000+0100","result":"certified"}})");
+        const auto row  = J (R"({"identity":"P","product":"P","state":"exported","reason":"profile exported with its tone check"})");
+        const auto l = resweepStatus ("P", "refused at plan; this build plans [1] Drive", false, base, ran, row);
+        check (l.happened && l.ended == "exported: profile exported with its tone check", "review S1: a newer stamp than the baseline's = the re-sweep ran; the row says how it ended");
+        const auto not1 = resweepStatus ("P", "w", false, base, base, J (R"({"state":"refused","reason":"stage plan: x"})"));
+        check (! not1.happened && not1.ended == "refused: stage plan: x", "review S2: the same stamp = not run; the row's state stands");
+        check (! resweepStatus ("P", "w", false, base, {}, {}).happened && resweepStatus ("P", "w", false, base, {}, {}).ended == "no record in the follow-up folder", "review S3: no follow-up record is said, not guessed");
+        std::map<juce::String, juce::var> b { { "P", base }, { "Q", base } }, f { { "P", ran }, { "Q", base }, { "R", ran } };
+        check (unprojectedResweeps (b, f, { "P" }) == juce::StringArray { "R (no baseline record)" }, "review S4: a record re-measured outside the projected list is named (Q unchanged, P projected, R new)");
+        check (unprojectedResweeps (b, f, {}) == juce::StringArray { "P", "R (no baseline record)" }, "review S5: with nothing projected, P's newer stamp surfaces");
+    }
+    // sidechain readings
+    {
+        check (sidechainStatus ("X", J (R"({"sidechainPolicyCheck":{"verdict":"keep","norm":1.0,"level_dbfs":-6.0,"before_db":-20.8351,"after_db":-20.8367,"extraInputBuses":"Sidechain"}})")).word == "no effect", "review C1: keep -> no effect");
+        const auto rs = sidechainStatus ("X", J (R"({"thresholdSweep":{"measuredAt":"20261005T012000.000+0100"},"sidechainPolicyCheck":{"verdict":"resweep","readAt":"20261005T011400.000+0100","norm":1.0,"level_dbfs":-6.0,"before_db":-9.01,"after_db":-9.54,"extraInputBuses":"Side-Chain Input Bus"}})"), J (R"({"state":"exported","reason":"profile exported with its tone check"})"));
+        check (rs.word == "re-swept" && rs.detail.contains ("-9.01 -> -9.54") && rs.detail.contains ("re-sweep ran, ended exported"), "review C2: resweep -> re-swept, the numbers, and the re-sweep's end from the record's newer stamp and the row (" + rs.detail + ")");
+        const auto rn = sidechainStatus ("X", J (R"({"thresholdSweep":{"measuredAt":"20261003T000000.000+0100"},"sidechainPolicyCheck":{"verdict":"resweep","readAt":"20261005T011400.000+0100","before_db":-9.01,"after_db":-9.54}})"));
+        check (rn.detail.contains ("re-sweep NOT run"), "review C3: a resweep verdict with no measurement after the reading says the re-sweep did not run");
+        check (sidechainStatus ("X", J (R"({"sidechainPolicyCheck":{"verdict":"window","why":"a window appeared"}})")).word == "window" && sidechainStatus ("X", J (R"({"product":"X"})")).word == "not read" && sidechainStatus ("X", {}).detail == "no record in the follow-up folder", "review C4: window, not read, and no record");
+    }
+    // review picks
+    {
+        const auto pick = J (R"({"product":"VBC Rack","candidate":"MU Threshold Left","by":"KL","date":"2026-10-05"})");
+        const auto applied = J (R"({"product":"VBC Rack","thresholdCandidates":[{"index":3,"name":"MU Threshold Left","thresholdSweep":{"result":"certified"}}],"pickedCandidate":{"index":3,"name":"MU Threshold Left"},"ruleDecided":{"rule":"review_pick","by":"KL"}})");
+        check (pickStatus (pick, applied, J (R"({"state":"exported","reason":"ok"})")).result == "applied -> exported: ok", "review P1: a record decided by the review pick of that candidate is applied");
+        const auto other = J (R"({"product":"VBC Rack","thresholdCandidates":[{"index":3,"name":"MU Threshold Left","thresholdSweep":{"result":"certified"}}],"pickedCandidate":{"index":4,"name":"MU Threshold Right"},"ruleDecided":{"rule":"linked_pair"}})");
+        check (pickStatus (pick, other, {}).result.startsWith ("NOT applied: the record was decided by linked_pair ('MU Threshold Right')"), "review P2: a record decided by a measured rule names that rule and its pick");
+        const auto unpicked = J (R"({"product":"VBC Rack","thresholdCandidates":[{"index":3,"name":"MU Threshold Left","thresholdSweep":{"result":"flat"}}]})");
+        check (pickStatus (pick, unpicked, {}).result.contains ("but its sweep is flat: nothing picked"), "review P3: an entry that names an uncertified candidate gets the follow-up's own refusal text");
+        check (pickStatus (pick, {}, {}).result == "no record in the follow-up folder", "review P4: no record is said");
+    }
+    // tone checks
+    {
+        const auto tc = J (R"({"product":"T","g_db":2.0,"gr_measured_db":1.99,"pass_within_0_5_db":true,"deep_levels":[{"g_db":4.0,"ran":true,"gr_measured_db":4.0,"pass_within_0_5_db":true,"null_reason":null},{"g_db":5.0,"ran":true,"gr_measured_db":5.9,"pass_within_0_5_db":false,"null_reason":"failed_check_at_L"},{"g_db":6.0,"ran":false,"null_reason":"no_valid_L_clamp_geometry"}]})");
+        const auto s = toneSummary ("T", tc);
+        check (s.present && s.levels.size() == 4 && s.levels[0].result == "PASS" && s.levels[1].result == "PASS" && s.levels[2].result == "nulled" && s.levels[2].note == "failed_check_at_L" && s.levels[3].result == "not run",
+               "review T1: g 2 from the top level, deep levels PASS / nulled (with its reason) / not run");
+        check (toneLine (s) == "2:P 4:P 5:N 6:-  [5: failed_check_at_L; 6: no_valid_L_clamp_geometry]", "review T2: the one-line form (" + toneLine (s) + ")");
+        const auto fail = toneSummary ("F", J (R"({"g_db":2.0,"gr_measured_db":1.02,"pass_within_0_5_db":false})"));
+        check (toneLine (fail) == "2:F(1.02)", "review T3: a failed g 2 shows the GR read");
+        const auto t = toneTotals ({ s, fail, toneSummary ("none", {}) });
+        check (t.products == 2 && t.allPass == 0 && t.byLevel.at (2).at ("PASS") == 1 && t.byLevel.at (2).at ("FAIL") == 1 && t.byLevel.at (5).at ("nulled") == 1 && t.byLevel.at (6).at ("not run") == 1, "review T4: totals per level across products; a product without a tone check is not counted");
+    }
+    // deep points
+    {
+        const auto p = J (R"({"amount":{"curve":[{"in_at_gr_dbfs":{"1":-10,"2":-8,"3":-6,"4":-4,"5":null,"6":null,"7":null,"8":null,"9":null,"10":null,"11":null,"12":null}},{"in_at_gr_dbfs":{"1":-20,"2":-18,"3":-16,"4":-14,"5":-12,"6":-10,"7":null,"8":null,"9":null,"10":null,"11":null,"12":null}}]},"quality":{"deep_point_error_db":0.01}})");
+        const auto d = deepPointsOf ("D", p);
+        check (d.present && d.positions == 2 && d.deepSlots == 18 && d.deepPresent == 4 && std::abs ((double) d.dpe - 0.01) < 1e-9, "review D1: deep points are the numbers at levels 4..12 over the positions (4 of 18), with deep_point_error_db");
+        check (! deepPointsOf ("D", J (R"({"schema":"x"})")).present, "review D2: a profile without an amount curve is not counted");
+    }
+    // inert
+    {
+        std::map<juce::String, juce::var> recs { { "V", J (R"({"thresholdSweep":{"result":"inert","reason":"processing never runs","inertCheck":{"inert":true}}})") }, { "W", J (R"({"thresholdSweep":{"result":"flat","inertCheck":{"inert":false,"reason":"Makeup moved the output 3.1 dB"}}})") }, { "Z", J (R"({"thresholdSweep":{"result":"flat"}})") } };
+        const auto il = inertLines (recs);
+        check (il.size() == 2 && il[0].product == "V" && il[0].word == "inert" && il[1].product == "W" && il[1].word == "checked, not inert" && il[1].reason.contains ("Makeup"), "review I1: inert and checked-not-inert, nothing for an unchecked flat");
+    }
+    // crashes
+    {
+        const juce::String run = "{\"tag\":\"pos00\",\"file\":\"AudioUnit_9_1.0.sweep.pos00.1.txt\",\"outcome\":\"exit 0\",\"clean\":true}\n"
+                                 "{\"tag\":\"pos01\",\"file\":\"AudioUnit_9_1.0.sweep.pos01.1.txt\",\"outcome\":\"killed by signal 11\",\"clean\":false}\n"
+                                 "{\"tag\":\"text-at\",\"file\":\"AudioUnit_9_1.0.defaults.text-at.1.txt\",\"outcome\":\"exit 3\",\"clean\":true}\n"
+                                 "{\"tag\":\"pos02\",\"file\":\"AudioUnit_9_1.0.sweep.pos02.1.txt\",\"outcome\":\"SHOWED A WINDOW (PACEEdenExperience) after 2.1 s; killed by the driver\",\"clean\":false}\n";
+        std::map<juce::String, juce::var> byStem { { "AudioUnit_9_1.0", J (R"({"product":"Nine","sidechainPolicyCheck":{"verdict":"crashed","why":"sidechain policy: the probe killed by signal 11 under the new policy"}})") } };
+        const auto c = crashesIn (run, 0, J (R"([{"product":"Ten","reason":"the probe crashed (signal 11) on position 3"},{"product":"Nine","reason":"profile exported"}])"), byStem);
+        check (c.size() == 4 && c[0].where == "Nine / pos01" && c[0].what == "killed by signal 11" && c[1].where == "Nine / pos02" && c[2].where == "Ten (row)" && c[3].where == "Nine (sidechain reading)", "review X1: a signal, a window, a row that says crashed, and a crashed sidechain reading; exit 0 and the answer code 3 are not crashes (" + juce::String ((int) c.size()) + ")");
+        check (crashesIn (run, 2, {}, byStem).size() == 2 && crashesIn (run, 2, {}, byStem)[0].where == "Nine / pos02" && crashesIn (run, 2, {}, byStem)[1].where == "Nine (sidechain reading)", "review X2: the baseline's own run.jsonl lines are skipped (the follow-up's additions only); the record's own crashed reading still counts");
+    }
+    // the report names its sections and counts even when empty
+    {
+        ReportInput in; in.subjectName = "s.zip"; in.hygieneKnown = false;
+        const auto r = render (in);
+        check (r.contains ("1. HYGIENE") && r.contains ("2. OUTCOMES") && r.contains ("3. PROJECTED RE-SWEEPS") && r.contains ("no baseline: nothing projected") && r.contains ("4. SIDECHAIN READINGS\n") && r.contains ("0 record(s) in the set") && r.contains ("no review_picks.json") && r.contains ("0 product(s) with a tone check") && r.contains ("0 exported profile(s)") && r.contains ("inert: 0") && r.contains ("9. CRASHES") && r.contains ("\n0 (over 0 run.jsonl"),
+               "review W1: every section prints with its count, zero said as zero");
+        in.baselineKnown = true; in.states.before["exported"] = 43; in.states.after["exported"] = 45; in.states.changes.push_back ({ "Alpha", "needs_review", "exported", "ok" });
+        in.resweeps.push_back ({ "P", "why", true, false, "exported: ok" }); in.resweeps.push_back ({ "Q", "why2", false, true, "refused: r" }); in.projectionKnown = true;
+        const auto r2 = render (in);
+        check (r2.contains ("exported              43 ->   45  (+2)") && r2.contains ("state changes by product: 1") && r2.contains ("  Alpha: needs_review -> exported | ok") && r2.contains ("2 projected, 1 happened, 1 not run") && r2.contains ("RAN     P | why | ended exported: ok") && r2.contains ("NOT RUN Q (after the re-derive) | why2 | ended refused: r"),
+               "review W2: counts with their delta, the change line, the re-sweep lines with RAN / NOT RUN and how each ended");
+    }
+}
+
 int main (int, char**)
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
@@ -7136,6 +7250,7 @@ int main (int, char**)
     testTiming();
     testLimiter();
     testEq();
+    testCertReview();
     testLoopOutcomes();
     testCategoriesMerge();
 

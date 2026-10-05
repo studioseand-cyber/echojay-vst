@@ -2328,3 +2328,41 @@ For `stepped: true` — declared, or by the landing evidence — the four condit
 Fixture: Lindell 254E's own record with its 16-detent landing read (`cert-traces/2026-10-04-stepped/`); a 6-detent
 UnFairchild-shaped record built from it. `COMP_PROFILE_REPLY.md` carries the note "agreed by Sean 4 Oct, for the spec".
 
+
+## 51. The zip review (5 Oct, overnight run 2, R1): one report on a zipped-back follow-up folder
+
+```
+"$BIN" --cert-review-zip ~/Desktop/ejmap-tonecheck-<host>-<date>.zip                      # against Sean's 4 Oct zip in ~/Downloads
+"$BIN" --cert-review-zip <zip-or-folder> --against <zip-or-folder> [--keep]
+```
+
+Unzips both to a scratch folder under the temp directory (deleted afterwards unless `--keep`), loads nothing, writes
+nothing outside it, and prints nine sections:
+
+1. **Hygiene** from the zip's own entry names: `cert/` only, no `config.json` anywhere, every record's process list
+   present, raw captures counted; whether `tonecheck.log` came back; the probe cdhashes the tone checks ran under.
+2. **Outcomes**: counts per state baseline → follow-up with the delta, every state change by product with the new
+   reason, rows only on one side, and same-state rows whose reason changed (said, not counted).
+3. **Projected re-sweeps**: the follow-up's OWN decision pass (`runToneCheckAll`, derive-only) is run over a copy of
+   the baseline, capturing its decisions through `SweepOptions::projection` — so the projection is the code that
+   decides, not a second copy of it. Each projected product is `RAN` or `NOT RUN` by the records' own measurement
+   stamps (`recordStamp`: the sweep's, a candidate's, a refusal's, a tuner candidate's — the newest), and "ended" is its
+   row. Records re-measured that the projection did not name are listed (the landing read's stepped re-sweeps, a
+   `--retry-refused` pass).
+4. **Sidechain readings**: the projected set, each `no effect` / `re-swept` (with whether the re-sweep ran and how it
+   ended) / `window` / `crashed` / `not run` / `not read`, with the two readings.
+5. **Review picks**: every entry in the folder's `review_picks.json`, applied or not, and the follow-up's own refusal
+   text when not (`applyReviewPick` on a copy).
+6. **Tone checks**: per product one line (`2:P 4:P 5:N 6:-`, a failed level with the GR read, a nulled level with its
+   `null_reason`), totals per level across products.
+7. **Deep points**: per exported profile the numbers present at levels 4..12 over its positions, and `deep_point_error_db`.
+8. **Inert and licence**: inert records and records checked-but-not-inert with the reason; `needs_licence` rows split
+   into subjects (compressor / pitch, or with a record) listed by name and the scan's other-category stops counted.
+9. **Crashes**: every `run.jsonl` line the follow-up added that did not exit cleanly (a signal, a timeout, a window, a
+   sleep), rows whose reason says crashed / window / timed out, sidechain readings that crashed.
+
+Rehearsed on Sean's 4 Oct zip against itself (20 projected, 0 ran, 48 readings not read, 43 tone checks, 0 crashes —
+`cert-traces/2026-10-05-zip-review/`) and on the 4 Oct rehearsal pair `cert_tc35 → cert_sc` (C1 comp (s) and
+RCompressor (s) new and exported, 3 readings `no effect`, deep points 61..223 per profile). Pure logic in
+`EjmapCertReview.h` (pins R/H/O/S/C/P/T/D/I/X/W, six mutants red). Nothing here changes the follow-up's path: the
+projection pointer is null in every batch.
