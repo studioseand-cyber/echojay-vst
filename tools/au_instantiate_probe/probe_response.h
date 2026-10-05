@@ -35,6 +35,7 @@ struct ResponseSpec
     int tones = 61; double loHz = 20.0, hiHz = 20000.0, dbfs = -12.0, holdS = 1.0, discardS = 0.5;
     bool current = false;    // norms=current: ONE position at the control's instantiate value, with no write at all (the baseline)
     int harmonics = 0;       // harmonics=N: bins at 2f..Nf of the single tone (tones=1), printed as rharm lines
+    juce::String shape;      // shape=vocal (5 Oct R7): the tones weighted to a vocal-like spectrum (pink, -12 dB/oct below 100 Hz, -6 dB/oct above 1 kHz); default flat
 };
 
 inline bool parseResponseArgs (int argc, char** argv, int first, ResponseSpec& s, juce::String& why)
@@ -53,12 +54,14 @@ inline bool parseResponseArgs (int argc, char** argv, int first, ResponseSpec& s
         else if (k == "hold")    s.holdS = v.getDoubleValue();
         else if (k == "discard") s.discardS = v.getDoubleValue();
         else if (k == "harmonics") s.harmonics = v.getIntValue();
+        else if (k == "shape")   s.shape = v;
         else { why = "unknown response argument '" + a + "'"; return false; }
     }
     if (s.ctl < 0 || (s.norms.empty() && ! s.current)) { why = "ctl= and norms= are required"; return false; }
     if (s.tones == 1) { if (s.loHz < 5.0 || s.holdS <= s.discardS) { why = "lo, hold or discard out of range"; return false; } s.hiHz = s.loHz; }
     else if (s.tones < 4 || s.tones > 400 || s.loHz < 5.0 || s.hiHz <= s.loHz || s.holdS <= s.discardS) { why = "tones, lo, hi, hold or discard out of range"; return false; }
     if (s.harmonics < 0 || s.harmonics > 20 || (s.harmonics > 0 && s.tones != 1)) { why = "harmonics= needs tones=1 and 2..20"; return false; }
+    if (s.shape.isNotEmpty() && s.shape != "vocal") { why = "shape= is vocal or absent"; return false; }
     return true;
 }
 
@@ -66,8 +69,8 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
 {
     auto ps = p.getParameters();
     if (! juce::isPositiveAndBelow (s.ctl, ps.size()) || ps[s.ctl] == nullptr) { std::printf ("refused no parameter at index %d\n", s.ctl); return; }
-    std::printf ("response\tproto\t1\tctl\t%d\tname\t%s\tpositions\t%d\ttones\t%d\tlo\t%.2f\thi\t%.2f\tdb\t%.2f\thold_s\t%.3f\tdiscard_s\t%.3f\n",
-                 s.ctl, clean (ps[s.ctl]->getName (128)).toRawUTF8(), (int) s.norms.size(), s.tones, s.loHz, s.hiHz, s.dbfs, s.holdS, s.discardS);
+    std::printf ("response\tproto\t1\tctl\t%d\tname\t%s\tpositions\t%d\ttones\t%d\tlo\t%.2f\thi\t%.2f\tdb\t%.2f\thold_s\t%.3f\tdiscard_s\t%.3f\tshape\t%s\n",
+                 s.ctl, clean (ps[s.ctl]->getName (128)).toRawUTF8(), (int) s.norms.size(), s.tones, s.loHz, s.hiHz, s.dbfs, s.holdS, s.discardS, s.shape.isEmpty() ? "flat" : s.shape.toRawUTF8());
     configureAndPrepare (p, rs);
     SweepRenderer r (p, rs.sampleRate, rs.block, 997.0);
     std::printf ("config\tmain_in\t%d\tmain_out\t%d\tlatency\t%d\n", r.mainIn, r.mainOut, p.getLatencySamples());
@@ -93,9 +96,20 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
         hz[(size_t) k] = cycles * sr / (double) span;                      // exact bins over the measured span
         phase0[(size_t) k] = rng.nextDouble() * juce::MathConstants<double>::twoPi;
     }
-    // the amplitude: the sum of `tones` equal sines normalised so the generated peak sits at `db` dBFS (measured on a dry pass)
+    // THE TONE WEIGHTS: flat, or shape=vocal - pink (-3 dB/oct) between 100 Hz and 1 kHz, a further -6 dB/oct above 1 kHz
+    // (-9 total), -12 dB/oct below 100 Hz, relative to 1 kHz: a speech-like long-term spectrum, said as such in the record
+    std::vector<double> weight ((size_t) s.tones, 1.0);
+    if (s.shape == "vocal")
+        for (int k = 0; k < s.tones; ++k)
+        {
+            const double f = hz[(size_t) k]; double db = -10.0 * std::log10 (f / 1000.0);   // pink: -3 dB/oct in amplitude terms is -10 log10 (f) in power
+            if (f > 1000.0) db -= 20.0 * std::log10 (f / 1000.0);                          // -6 dB/oct more above 1 kHz
+            if (f < 100.0) db -= 40.0 * std::log10 (100.0 / f);                             // -12 dB/oct below 100 Hz (on top of the pink's rise)
+            weight[(size_t) k] = std::pow (10.0, db / 20.0);
+        }
+    // the amplitude: the weighted sum of `tones` sines normalised so the generated peak sits at `db` dBFS (measured on a dry pass)
     double peak = 0.0;
-    for (long long t = 0; t < total; t += 7) { double v = 0.0; for (int k = 0; k < s.tones; ++k) v += std::sin (phase0[(size_t) k] + juce::MathConstants<double>::twoPi * hz[(size_t) k] * (double) t / sr); peak = juce::jmax (peak, std::abs (v)); }
+    for (long long t = 0; t < total; t += 7) { double v = 0.0; for (int k = 0; k < s.tones; ++k) v += weight[(size_t) k] * std::sin (phase0[(size_t) k] + juce::MathConstants<double>::twoPi * hz[(size_t) k] * (double) t / sr); peak = juce::jmax (peak, std::abs (v)); }
     const double amp = std::pow (10.0, s.dbfs / 20.0) / juce::jmax (1e-9, peak);
     auto& ctl = *ps[s.ctl];
     std::vector<float> norms = s.norms; if (s.current) norms = { ctl.getValue() };
@@ -122,7 +136,7 @@ inline void runResponse (juce::AudioPluginInstance& p, const ResponseSpec& s, co
             for (int i = 0; i < n; ++i)
             {
                 const double t = (double) (done + i) / sr; double v = 0.0;
-                for (int q = 0; q < s.tones; ++q) v += std::sin (phase0[(size_t) q] + juce::MathConstants<double>::twoPi * hz[(size_t) q] * t);
+                for (int q = 0; q < s.tones; ++q) v += weight[(size_t) q] * std::sin (phase0[(size_t) q] + juce::MathConstants<double>::twoPi * hz[(size_t) q] * t);
                 gen[(size_t) i] = (float) (amp * v);
                 for (int ch = 0; ch < r.mainIn; ++ch) r.io.setSample (ch, i, gen[(size_t) i]);
             }

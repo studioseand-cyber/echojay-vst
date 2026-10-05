@@ -1,0 +1,93 @@
+{
+  "schema": "ej_multiband_prototype/0",
+  "status": "PROTOTYPE - the multiband proposal with real numbers, not exported, not published",
+  "product": "OTT",
+  "version": "1.3.7",
+  "identity": "AudioUnit|6155777e|1.3.7",
+  "bands": [],
+  "crossover_controls": "",
+  "band_ladders": [],
+  "amount": {
+    "topology": "multiband_global",
+    "control": "Depth",
+    "index": 0,
+    "points": [
+      {
+        "norm": 0.0,
+        "display": "0",
+        "gr_db_by_level": {
+          "-30": 11.869999999999999,
+          "-24": 10.6,
+          "-18": 5.91,
+          "-12": 0.06,
+          "-6": -5.57
+        }
+      },
+      {
+        "norm": 0.2,
+        "display": "20",
+        "gr_db_by_level": {
+          "-30": 8.85,
+          "-24": 7.76,
+          "-18": 3.69,
+          "-12": -0.99,
+          "-6": -5.43
+        }
+      },
+      {
+        "norm": 0.4,
+        "display": "40",
+        "gr_db_by_level": {
+          "-30": 6.25,
+          "-24": 5.35,
+          "-18": 2.11,
+          "-12": -1.39,
+          "-6": -4.64
+        }
+      },
+      {
+        "norm": 0.6,
+        "display": "60",
+        "gr_db_by_level": {
+          "-30": 3.97,
+          "-24": 3.28,
+          "-18": 1.04,
+          "-12": -1.28,
+          "-6": -3.37
+        }
+      },
+      {
+        "norm": 0.8,
+        "display": "80",
+        "gr_db_by_level": {
+          "-30": 1.93,
+          "-24": 1.51,
+          "-18": 0.36,
+          "-12": -0.78,
+          "-6": -1.76
+        }
+      },
+      {
+        "norm": 1.0,
+        "display": "100",
+        "gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      }
+    ]
+  },
+  "open_gain_db_by_level": {
+    "-30": 11.859999999999999,
+    "-24": 10.59,
+    "-18": 5.91,
+    "-12": 0.06,
+    "-6": -5.57
+  },
+  "processes": 37,
+  "measuredAt": "20261005T134828",
+  "method": "bands from the crossover controls' instantiate displays (20 .. x1 .. xn .. 20000 Hz, geometric centres); per band: probe --sweep at the centre, that band's threshold at 6 norms, levels -30..-6, GR = open-end gain minus the position's gain; whole unit: probe --response shape=vocal (121 tones, pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at five levels, gain = total output power over total input power, GR against the instantiate state; amount = the global control at 6 norms where one exists, else a common dB offset (0 .. -24) written to every band threshold from each control's own dB ends (linear in dB, said)"
+}

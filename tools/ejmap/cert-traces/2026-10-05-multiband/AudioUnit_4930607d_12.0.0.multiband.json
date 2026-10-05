@@ -1,0 +1,1259 @@
+{
+  "schema": "ej_multiband_prototype/0",
+  "status": "PROTOTYPE - the multiband proposal with real numbers, not exported, not published",
+  "product": "C6 (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|4930607d|12.0.0",
+  "bands": [
+    {
+      "band": 1,
+      "lo_hz": 20.0,
+      "hi_hz": 92.0,
+      "centre_hz": 43.0
+    },
+    {
+      "band": 2,
+      "lo_hz": 92.0,
+      "hi_hz": 1000.0,
+      "centre_hz": 303.0
+    },
+    {
+      "band": 3,
+      "lo_hz": 1000.0,
+      "hi_hz": 4000.0,
+      "centre_hz": 2000.0
+    },
+    {
+      "band": 4,
+      "lo_hz": 4000.0,
+      "hi_hz": 5003.0,
+      "centre_hz": 4473.0
+    },
+    {
+      "band": 5,
+      "lo_hz": 5003.0,
+      "hi_hz": 11071.0,
+      "centre_hz": 7442.0
+    },
+    {
+      "band": 6,
+      "lo_hz": 11071.0,
+      "hi_hz": 20000.0,
+      "centre_hz": 14880.0
+    }
+  ],
+  "crossover_controls": "Low Crossover, Mid Crossover, High Crossover, Crossover Q, Band 1 Frequency, Band 6 Frequency",
+  "band_ladders": [
+    {
+      "band": 1,
+      "control": "Band 1 Threshold",
+      "index": 10,
+      "tone_hz": 43.0,
+      "max_gr_db": 0.05,
+      "note": "open end at norm 0.400, max GR 0.05 dB",
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.03
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.01
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -18.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -24.0,
+          "gr_db": -0.01
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.02
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.01
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.01
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.05
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.03
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.03
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.05
+        }
+      ]
+    },
+    {
+      "band": 2,
+      "control": "Band 2 Threshold",
+      "index": 19,
+      "tone_hz": 303.0,
+      "max_gr_db": 0.09,
+      "note": "open end at norm 1.000, max GR 0.09 dB",
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.09
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.08
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.08
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.07
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.09
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.08
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.06
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.05
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.03
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.09
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.04
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.02
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.01
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.06
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.01
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -12.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -18.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "band": 3,
+      "control": "Band 3 Threshold",
+      "index": 26,
+      "tone_hz": 2000.0,
+      "max_gr_db": 6.35,
+      "note": "open end at norm 1.000, max GR 6.35 dB",
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -12.0,
+          "gr_db": 6.09
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -18.0,
+          "gr_db": 6.29
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -24.0,
+          "gr_db": 6.35
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -30.0,
+          "gr_db": 6.35
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -6.0,
+          "gr_db": 5.59
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -12.0,
+          "gr_db": 6.07
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -18.0,
+          "gr_db": 6.24
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -24.0,
+          "gr_db": 6.26
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -30.0,
+          "gr_db": 6.18
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -6.0,
+          "gr_db": 5.58
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -12.0,
+          "gr_db": 5.93
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -18.0,
+          "gr_db": 5.98
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -24.0,
+          "gr_db": 5.75
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -30.0,
+          "gr_db": 5.22
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -6.0,
+          "gr_db": 5.51
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -12.0,
+          "gr_db": 5.15
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -18.0,
+          "gr_db": 4.57
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -24.0,
+          "gr_db": 3.47
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -30.0,
+          "gr_db": 2.16
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -6.0,
+          "gr_db": 5.1
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -12.0,
+          "gr_db": 2.31
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -18.0,
+          "gr_db": 1.29
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.56
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.2
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -6.0,
+          "gr_db": 3.12
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "band": 4,
+      "control": "Band 4 Threshold",
+      "index": 33,
+      "tone_hz": 4473.0,
+      "max_gr_db": 3.47,
+      "note": "open end at norm 1.000, max GR 3.47 dB",
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -12.0,
+          "gr_db": 3.42
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -18.0,
+          "gr_db": 3.46
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -24.0,
+          "gr_db": 3.47
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -30.0,
+          "gr_db": 3.47
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -6.0,
+          "gr_db": 3.28
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -12.0,
+          "gr_db": 3.4
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -18.0,
+          "gr_db": 3.43
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -24.0,
+          "gr_db": 3.41
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -30.0,
+          "gr_db": 3.35
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -6.0,
+          "gr_db": 3.27
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -12.0,
+          "gr_db": 3.31
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -18.0,
+          "gr_db": 3.24
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -24.0,
+          "gr_db": 3.05
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -30.0,
+          "gr_db": 2.66
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -6.0,
+          "gr_db": 3.22
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -12.0,
+          "gr_db": 2.74
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -18.0,
+          "gr_db": 2.26
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -24.0,
+          "gr_db": 1.57
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.86
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -6.0,
+          "gr_db": 2.92
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -12.0,
+          "gr_db": 1.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.48
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.18
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.06
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -6.0,
+          "gr_db": 1.58
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "band": 5,
+      "control": "Band 5 Threshold",
+      "index": 40,
+      "tone_hz": 7442.0,
+      "max_gr_db": 1.05,
+      "note": "open end at norm 1.000, max GR 1.05 dB",
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -12.0,
+          "gr_db": 1.02
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -18.0,
+          "gr_db": 1.0
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.99
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.98
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -6.0,
+          "gr_db": 1.05
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -12.0,
+          "gr_db": 1.01
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.98
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.95
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.89
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -6.0,
+          "gr_db": 1.04
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.93
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.84
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.7
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.5
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -6.0,
+          "gr_db": 1.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.58
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.35
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.17
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.07
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.78
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.09
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.03
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.01
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.22
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    },
+    {
+      "band": 6,
+      "control": "Band 6 Threshold",
+      "index": 47,
+      "tone_hz": 14880.0,
+      "max_gr_db": 0.0,
+      "note": "open end at norm 0.400, max GR 0.00 dB",
+      "cells": [
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -12.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -18.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.0,
+          "display": "-80.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -12.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.200000002980232,
+          "display": "-64.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -18.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -30.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.400000005960464,
+          "display": "-48.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -18.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.600000023841858,
+          "display": "-32.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -12.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -18.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 0.800000011920929,
+          "display": "-16.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -12.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -18.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -24.0,
+          "gr_db": 0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -30.0,
+          "gr_db": -0.0
+        },
+        {
+          "norm": 1.0,
+          "display": "0.0",
+          "level_dbfs": -6.0,
+          "gr_db": 0.0
+        }
+      ]
+    }
+  ],
+  "amount": {
+    "topology": "multiband_offset",
+    "controls": "Band 1 Threshold, Band 2 Threshold, Band 3 Threshold, Band 4 Threshold, Band 5 Threshold, Band 6 Threshold",
+    "points": [
+      {
+        "offset_db": 0.0,
+        "displays": "0.0 / 0.0 / 0.0 / 0.0 / 0.0 / 0.0",
+        "gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.0,
+          "-18": 0.0,
+          "-12": 0.0,
+          "-6": 0.0
+        }
+      },
+      {
+        "offset_db": -6.0,
+        "displays": "-6.0 / -6.0 / -6.0 / -6.0 / -6.0 / -6.0",
+        "gr_db_by_level": {
+          "-30": 0.0,
+          "-24": 0.01,
+          "-18": 0.05,
+          "-12": 0.14,
+          "-6": 0.36
+        }
+      },
+      {
+        "offset_db": -12.0,
+        "displays": "-12.0 / -12.0 / -12.0 / -12.0 / -12.0 / -12.0",
+        "gr_db_by_level": {
+          "-30": 0.02,
+          "-24": 0.06,
+          "-18": 0.19,
+          "-12": 0.51,
+          "-6": 1.08
+        }
+      },
+      {
+        "offset_db": -18.0,
+        "displays": "-18.0 / -18.0 / -18.0 / -18.0 / -18.0 / -18.0",
+        "gr_db_by_level": {
+          "-30": 0.07,
+          "-24": 0.2,
+          "-18": 0.55,
+          "-12": 1.23,
+          "-6": 2.17
+        }
+      },
+      {
+        "offset_db": -24.0,
+        "displays": "-24.0 / -24.0 / -24.0 / -24.0 / -24.0 / -24.0",
+        "gr_db_by_level": {
+          "-30": 0.21,
+          "-24": 0.57,
+          "-18": 1.28,
+          "-12": 2.31,
+          "-6": 3.41
+        }
+      }
+    ]
+  },
+  "open_gain_db_by_level": {
+    "-30": 0.09,
+    "-24": 0.09,
+    "-18": 0.08,
+    "-12": 0.03,
+    "-6": -0.12
+  },
+  "processes": 38,
+  "measuredAt": "20261005T134518",
+  "method": "bands from the crossover controls' instantiate displays (20 .. x1 .. xn .. 20000 Hz, geometric centres); per band: probe --sweep at the centre, that band's threshold at 6 norms, levels -30..-6, GR = open-end gain minus the position's gain; whole unit: probe --response shape=vocal (121 tones, pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at five levels, gain = total output power over total input power, GR against the instantiate state; amount = the global control at 6 norms where one exists, else a common dB offset (0 .. -24) written to every band threshold from each control's own dB ends (linear in dB, said)"
+}

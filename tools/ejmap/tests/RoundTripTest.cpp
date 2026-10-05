@@ -82,6 +82,7 @@
 #include "EjmapReverbDelay.h"
 #include "EjmapDynamics.h"
 #include "EjmapDeesser.h"
+#include "EjmapMultiband.h"
 
 namespace
 {
@@ -7319,6 +7320,28 @@ void testDeesser()
     check (labelHz ("6.50 kHz") && std::abs (*labelHz ("6.50 kHz") - 6500.0) < 1e-6 && labelHz ("7200 Hz") && *labelHz ("7200 Hz") == 7200.0 && labelHz ("5.2k") && *labelHz ("5.2k") == 5200.0 && ! labelHz ("Wide"), "ds H1: frequency labels");
 }
 
+/** MULTIBAND (EjmapMultiband.h, the proposal's prototype, 5 Oct R7): bands from crossovers, the dB offset to a norm, the whole-unit gain. */
+void testMultiband()
+{
+    using namespace ejmap::multiband;
+    juce::StringArray skipped;
+    const auto b = bandsFromCrossovers ({ "4000", "92", "11071" }, skipped);   // C4's defaults, in any order
+    check (b.size() == 4 && skipped.isEmpty() && std::abs (b[0].centreHz - std::sqrt (20.0 * 92.0)) < 0.01 && std::abs (b[1].centreHz - std::sqrt (92.0 * 4000.0)) < 0.01 && b[3].loHz == 11071.0 && b[3].hiHz == 20000.0,
+           "mb B1: three crossovers give four bands 20..92..4000..11071..20000 with geometric centres (" + juce::String (b[1].centreHz, 0) + ")");
+    const auto b2 = bandsFromCrossovers ({ "Off", "200 Hz", "5.0 kHz" }, skipped);
+    check (b2.size() == 3 && skipped == juce::StringArray { "Off" } && std::abs (b2[1].loHz - 200.0) < 1e-9 && std::abs (b2[1].hiHz - 5000.0) < 1e-9, "mb B2: 'Off' is skipped and named; Hz / kHz labels parse");
+    check (bandsFromCrossovers ({}, skipped).size() == 1, "mb B3: no crossovers = one band over the whole range (nothing assumed)");
+    const auto r = dbRangeOf ("-60.0 dB", "0.0 dB");
+    check (r.ok && normForDb (r, -30.0) == 0.5f && normForDb (r, -27.0) == 0.55f && normForDb (r, -70.0) == 0.0f && normForDb (r, 5.0) == 1.0f, "mb O1: a dB offset maps to a norm by the control's own ends, clamped");
+    check (! dbRangeOf ("Off", "0.0 dB").ok && ! dbRangeOf ("-20", "-20").ok, "mb O2: a word end or equal ends give no range (no offset can be written)");
+    ejmap::eq::Position p; for (double f : { 100.0, 1000.0, 10000.0 }) { ejmap::eq::Tone t; t.hz = f; t.inDb = -20.0; t.outDb = -26.0; p.tones.push_back (t); }
+    const auto g = totalGainDb (p);
+    check (g && std::abs (*g + 6.0) < 1e-9, "mb W1: the whole-unit gain is total output power over total input power across the tones (-6 dB)");
+    ejmap::eq::Tone loud; loud.hz = 500.0; loud.inDb = -10.0; loud.outDb = -10.0; p.tones.push_back (loud);
+    check (totalGainDb (p) && *totalGainDb (p) > -3.0, "mb W2: a loud untouched tone dominates the power sum (the figure follows where the energy is)");
+    check (! totalGainDb (ejmap::eq::Position()), "mb W3: no tones, no figure");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7514,6 +7537,7 @@ int main (int, char**)
     testReverbDelay();
     testDynamics();
     testDeesser();
+    testMultiband();
     testLoopOutcomes();
     testCategoriesMerge();
 

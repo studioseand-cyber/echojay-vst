@@ -60,6 +60,7 @@
 #include "EjmapReverbDelay.h"
 #include "EjmapDynamics.h"
 #include "EjmapDeesser.h"
+#include "EjmapMultiband.h"
 #include "EjmapWindowWatch.h"
 #include "EjmapWatchdog.h"
 #include <sstream>
@@ -3619,6 +3620,133 @@ inline int runDeesser (const SweepOptions& opt)
     o->setProperty ("method", "ladder: probe --sweep with a 6.5 kHz sine (and 997 Hz as the control), the threshold at 6 norms, levels -30..-6 dBFS, GR = gain at the open end minus gain at the position; centre and mode: probe --response (121-tone multitone at -12 dBFS) at the hardest threshold against the open end, the deepest deviation's frequency (parabolic) is the centre; split_band = within 1 dB at 997 Hz while the band is cut 3 dB or more, wideband = 997 Hz cut within 1.5 dB of the band, else partial");
     outDir.getChildFile (stem + ".deesser.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
     say ("DS: -> " + outDir.getChildFile (stem + ".deesser.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
+    return measured > 0 ? 0 : 4;
+}
+
+// MULTIBAND PROTOTYPE (docs/MULTIBAND_PROFILE_PROPOSAL.md, 5 Oct R7, no spec change): --cert-multiband <product>. One tone per
+// band at each band's centre (from the default crossovers), the band's threshold swept against it; the whole-unit figure on
+// the vocal-shaped multitone at five levels; the amount = the global control where one exists, else every band threshold
+// moved by one common dB offset (-24 .. 0 in 6 dB steps). Nothing exported.
+inline int runMultiband (const SweepOptions& opt)
+{
+    using namespace multiband;
+    auto say = [] (const juce::String& s) { std::cout << s << std::endl; };
+    const auto id = checkProbe (opt.probe, {}, {}); if (! id.ok) { say ("MB: ABORTED BEFORE ANY PLUGIN - " + id.why); return 3; }
+    std::vector<InstalledRecord> hits; for (const auto& r : installedAudioUnits()) if (r.desc.name == opt.product) hits.push_back (r);
+    if (hits.size() != 1) { say ("MB: '" + opt.product + "' resolves to " + juce::String ((int) hits.size()) + " installed component(s)"); return 2; }
+    const auto& desc = hits[0].desc;
+    if (const auto known = loop::knownLicenceStop (quarantinedBundles (opt.ledger), juce::JSON::parse (opt.out.getChildFile ("outcomes.json").loadFileAsString()), opt.product, opt.retryLicence); known.isNotEmpty())
+    { say ("MB: " + opt.product + " - " + known); return kToneLicenceKnownExit; }
+    const auto uidHex = hits[0].uidKey.fromLastOccurrenceOf ("|", false, false); const auto stem = "AudioUnit_" + uidHex + "_" + desc.version;
+    auto raw = opt.out.getChildFile ("raw"); raw.createDirectory(); auto outDir = opt.out.getChildFile ("multiband"); outDir.createDirectory();
+    int processN = 0;
+    auto run = [&] (const juce::String& tag, const juce::StringArray& extra) { juce::StringArray args { opt.probe.getFullPathName(), desc.name, desc.fileOrIdentifier, juce::String::toHexString (desc.uniqueId) }; args.addArray (extra);
+        const auto r = runChild (args, opt.timeoutMs); ++processN; raw.getChildFile (stem + ".multiband." + tag + ".1.txt").replaceWithText (r.out, false, false, "\n"); return r; };
+    const auto lp = run ("list-params", { "--list-params" }); if (! lp.cleanExit()) { say ("MB: --list-params " + lp.describe()); return 1; }
+    const auto ta = run ("text-at", { "--text-at", "all" }); if (! ta.cleanExit()) { say ("MB: --text-at " + ta.describe()); return 1; }
+    Subject s; s.product = opt.product; s.desc = desc; s.uid = uidHex; s.version = desc.version;
+    const auto base = composeFixture (s, parseListParams (lp.out), parseTextAt (ta.out), lp.code, ta.code, "signed EchoJayProbe, team " + id.team + ", cdhash " + id.cdhash, juce::Time::getCurrentTime().formatted ("%Y-%m-%d"));
+    // THE CONTROLS: band thresholds (threshold / thresh with a band word or number; never a sidechain "S" one), crossovers
+    // (crossover / cross / xover / freq with low / high / a number), a global amount (amount / compression / depth; mix is not)
+    struct Thr { int index; juce::String name, display0, display1, instantiate; double instNorm; };
+    std::vector<Thr> thresholds; std::vector<juce::String> crossoverDisplays; juce::StringArray crossoverNames; int globalIdx = -1; juce::String globalName;
+    auto answers = [] (const juce::String& name, std::initializer_list<const char*> terms) { for (const char* t : terms) if (nametokens::controlAnswersTerm (name, t)) return true; return false; };
+    if (const auto* cs = base.getProperty ("controls", {}).getArray())
+        for (const auto& c : *cs)
+        {
+            const int idx = (int) c.getProperty ("index", -1); const auto n = c.getProperty ("name", "").toString();
+            if (sweep::wordValued (c) || (int) c.getProperty ("numSteps", 0) == 2 || sweep::neverTouchName (n)) continue;
+            const auto at = c.getProperty ("displayAt", {}); const auto inst = c.getProperty ("defaultOnInstantiate", {});
+            auto d0 = at.getProperty ("0.000", "").toString(), d1 = at.getProperty ("1.000", "").toString();
+            if (answers (n, { "threshold", "thresh", "thr" }) && ! answers (n, { "s", "sc", "sidechain", "key" }))
+                thresholds.push_back ({ idx, n, d0, d1, inst.getProperty ("display", "").toString(), (double) inst.getProperty ("normalised", 0.0) });
+            else if (answers (n, { "crossover", "xover", "cross", "x-over" }) || (answers (n, { "freq", "frequency", "hz" }) && answers (n, { "low", "high", "mid", "band", "lo", "hi", "1", "2", "3", "4", "5" })))
+            { crossoverDisplays.push_back (inst.getProperty ("display", "").toString()); crossoverNames.add (n); }
+            else if (globalIdx < 0 && (answers (n, { "amount", "depth" }) || (answers (n, { "compression" }) && answers (n, { "globals", "global" })))) { globalIdx = idx; globalName = n; }
+        }
+    juce::StringArray skipped; const auto bands = crossoverDisplays.empty() ? std::vector<Band>() : bandsFromCrossovers (crossoverDisplays, skipped);
+    say ("MB: " + opt.product + " " + desc.version + ": " + juce::String ((int) thresholds.size()) + " band threshold(s) [" + [&] { juce::StringArray a; for (const auto& t : thresholds) a.add (t.name + " @ '" + t.instantiate + "'"); return a.joinIntoString (", "); }() + "]; crossovers [" + crossoverNames.joinIntoString (", ") + "] -> " + juce::String ((int) bands.size()) + " band(s)" + (skipped.isEmpty() ? juce::String() : " (skipped: " + skipped.joinIntoString (", ") + ")") + "; global amount " + (globalIdx >= 0 ? "[" + juce::String (globalIdx) + "] " + globalName : juce::String ("none")));
+    if (thresholds.empty()) { juce::StringArray names; if (const auto* cs = base.getProperty ("controls", {}).getArray()) for (const auto& c : *cs) names.add (c.getProperty ("name", "").toString()); say ("  no band thresholds by name; controls: " + names.joinIntoString (", ")); return 4; }
+    auto* o = new juce::DynamicObject();
+    o->setProperty ("schema", "ej_multiband_prototype/0"); o->setProperty ("status", "PROTOTYPE - the multiband proposal with real numbers, not exported, not published");
+    o->setProperty ("product", opt.product); o->setProperty ("version", desc.version); o->setProperty ("identity", "AudioUnit|" + uidHex + "|" + desc.version);
+    { juce::Array<juce::var> bv; for (const auto& b : bands) { auto* x = new juce::DynamicObject(); x->setProperty ("band", b.index); x->setProperty ("lo_hz", std::round (b.loHz)); x->setProperty ("hi_hz", std::round (b.hiHz)); x->setProperty ("centre_hz", std::round (b.centreHz)); bv.add (juce::var (x)); } o->setProperty ("bands", bv); o->setProperty ("crossover_controls", crossoverNames.joinIntoString (", ")); }
+    auto setOf = [] (int idx, double norm) { return juce::String (idx) + ":" + juce::String (norm, 6); };
+    juce::StringArray norms; for (int k = 0; k <= 5; ++k) norms.add (juce::String (k / 5.0f, 6));
+    int measured = 0;
+    // 1. PER-BAND LADDERS: band i's threshold against the tone at band i's centre (bands and thresholds paired in order; said when counts differ)
+    {
+        juce::Array<juce::var> lv;
+        if (bands.size() != thresholds.size()) say ("  bands (" + juce::String ((int) bands.size()) + ") and thresholds (" + juce::String ((int) thresholds.size()) + ") differ in count: paired in order as far as they go");
+        for (size_t i = 0; i < thresholds.size() && i < bands.size(); ++i)
+        {
+            const auto& t = thresholds[i]; const auto& b = bands[i];
+            const auto r = run ("band" + juce::String ((int) i + 1), { "--sweep", "thr=" + juce::String (t.index), "norms=" + norms.joinIntoString (","), "levels=-30,-24,-18,-12,-6", "hz=" + juce::String (b.centreHz, 0), "hold=1.50", "discard=0.75", "win=0.25", "ref=0", "moving_db=0.1", "reset=0" });
+            if (r.kind == ChildResult::Kind::uiShown) { say ("MB: a window appeared; stopping"); return 5; }
+            const auto L = deesser::ladderOf (sweep::parseSweep (r.cleanExit() ? r.out : juce::String()), b.centreHz);
+            if (! L.ok) { say ("  band " + juce::String (b.index) + " (" + juce::String (b.centreHz, 0) + " Hz) " + t.name + ": " + L.why + " (" + r.describe() + ")"); continue; }
+            ++measured;
+            say ("  band " + juce::String (b.index) + " (" + juce::String (b.loHz, 0) + "-" + juce::String (b.hiHz, 0) + " Hz, tone " + juce::String (b.centreHz, 0) + ") " + t.name + ": " + L.why);
+            juce::StringArray texts; for (const auto& c : L.cells) texts.addIfNotAlreadyThere (c.text);
+            for (const auto& tx : texts) { juce::String line = "      '" + tx + "':"; for (const auto& c : L.cells) if (c.text == tx && c.ok) line << "  " << juce::String (c.levelDbfs, 0) << " dBFS GR " << juce::String (c.grDb, 2); say (line); }
+            auto* lo = new juce::DynamicObject(); lo->setProperty ("band", b.index); lo->setProperty ("control", t.name); lo->setProperty ("index", t.index); lo->setProperty ("tone_hz", std::round (b.centreHz)); lo->setProperty ("max_gr_db", std::round (L.maxGrDb * 100.0) / 100.0); lo->setProperty ("note", L.why);
+            juce::Array<juce::var> cells; for (const auto& c : L.cells) { auto* co = new juce::DynamicObject(); co->setProperty ("norm", c.norm); co->setProperty ("display", c.text); co->setProperty ("level_dbfs", c.levelDbfs); co->setProperty ("gr_db", std::round (c.grDb * 100.0) / 100.0); cells.add (juce::var (co)); } lo->setProperty ("cells", cells); lv.add (juce::var (lo));
+        }
+        o->setProperty ("band_ladders", lv);
+    }
+    // 2. THE WHOLE UNIT on the vocal-shaped multitone: open (as instantiated) then the amount positions, five levels each
+    auto response = [&] (const juce::String& tag, double levelDb, const juce::StringArray& sets) {
+        juce::StringArray a { "--response", "ctl=" + juce::String (thresholds[0].index), "norms=current", "tones=121", "lo=20", "hi=20000", "shape=vocal", "db=" + juce::String (levelDb, 0), "hold=1.5", "discard=0.75" }; if (! sets.isEmpty()) a.add ("set=" + sets.joinIntoString (","));
+        const auto r = run (tag, a); const auto p = eq::parseResponse (r.cleanExit() ? r.out : juce::String()); return p.ok && ! p.positions.empty() ? totalGainDb (p.positions[0]) : std::nullopt; };
+    const std::vector<double> levels { -30.0, -24.0, -18.0, -12.0, -6.0 };
+    std::map<double, double> openGain;
+    for (double L : levels) if (const auto g = response ("open.L" + juce::String ((int) -L), L, {})) openGain[L] = *g;
+    if (openGain.empty()) say ("  whole unit: the vocal-shaped response did not run at the instantiate state");
+    else
+    {
+        juce::String line = "  whole unit, as instantiated (open): gain"; for (const auto& [L, g] : openGain) line << "  " << juce::String (L, 0) << " dBFS " << juce::String (g, 2); say (line);
+        juce::Array<juce::var> pts;
+        if (globalIdx >= 0)
+        {
+            // (a) the global control walked at six norms
+            for (int k = 0; k <= 5; ++k)
+            {
+                const double norm = k / 5.0; OffsetPoint pt; pt.offsetDb = norm;
+                for (double L : levels) if (const auto g = response ("global" + juce::String (k) + ".L" + juce::String ((int) -L), L, { setOf (globalIdx, norm) })) if (openGain.count (L)) pt.grByLevel[L] = openGain[L] - *g;
+                juce::String text; { const auto r = raw.getChildFile (stem + ".multiband.global" + juce::String (k) + ".L12.1.txt").loadFileAsString(); for (const auto& l : juce::StringArray::fromLines (r)) { const auto f = juce::StringArray::fromTokens (l, "\t", ""); if (f.size() > 2 && f[0] == "set" && f[1].getIntValue() == globalIdx) for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") text = f[i + 1]; } }
+                pt.displays = text; if (! pt.grByLevel.empty()) ++measured;
+                juce::String l2 = "  " + globalName + " = '" + text + "' (norm " + juce::String (norm, 2) + "): whole-unit GR"; for (const auto& [L, g] : pt.grByLevel) l2 << "  " << juce::String (L, 0) << " dBFS " << juce::String (g, 2); say (l2);
+                auto* po = new juce::DynamicObject(); po->setProperty ("norm", norm); po->setProperty ("display", text); auto* gr = new juce::DynamicObject(); for (const auto& [L, g] : pt.grByLevel) gr->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); po->setProperty ("gr_db_by_level", juce::var (gr)); pts.add (juce::var (po));
+            }
+            auto* m = new juce::DynamicObject(); m->setProperty ("topology", "multiband_global"); m->setProperty ("control", globalName); m->setProperty ("index", globalIdx); m->setProperty ("points", pts); o->setProperty ("amount", juce::var (m));
+        }
+        else
+        {
+            // (b) a common dB offset on every band threshold, from each control's own dB range (both ends numeric) and instantiate value
+            std::vector<DbRange> ranges; bool allOk = true;
+            for (const auto& t : thresholds) { ranges.push_back (dbRangeOf (t.display0, t.display1)); if (! ranges.back().ok) { allOk = false; say ("  " + t.name + ": its ends '" + t.display0 + "' / '" + t.display1 + "' are not both numbers: no dB offset can be written to it"); } }
+            if (allOk)
+            {
+                for (double off : { 0.0, -6.0, -12.0, -18.0, -24.0 })
+                {
+                    juce::StringArray sets; juce::StringArray displays;
+                    for (size_t i = 0; i < thresholds.size(); ++i) { const auto inst = dbRangeOf (thresholds[i].instantiate, thresholds[i].display1); const double instDb = inst.ok ? inst.at0 : ranges[i].at0 + thresholds[i].instNorm * (ranges[i].at1 - ranges[i].at0); sets.add (setOf (thresholds[i].index, normForDb (ranges[i], instDb + off))); }
+                    OffsetPoint pt; pt.offsetDb = off;
+                    for (double L : levels) if (const auto g = response ("off" + juce::String ((int) -off) + ".L" + juce::String ((int) -L), L, sets)) if (openGain.count (L)) pt.grByLevel[L] = openGain[L] - *g;
+                    { const auto r = raw.getChildFile (stem + ".multiband.off" + juce::String ((int) -off) + ".L12.1.txt").loadFileAsString(); for (const auto& l : juce::StringArray::fromLines (r)) { const auto f = juce::StringArray::fromTokens (l, "\t", ""); if (f.size() > 2 && f[0] == "set") for (int i = 2; i + 1 < f.size(); ++i) if (f[i] == "text") displays.add (f[i + 1]); } }
+                    pt.displays = displays.joinIntoString (" / "); if (! pt.grByLevel.empty()) ++measured;
+                    juce::String l2 = "  offset " + juce::String (off, 0) + " dB on every band (" + pt.displays + "): whole-unit GR"; for (const auto& [L, g] : pt.grByLevel) l2 << "  " << juce::String (L, 0) << " dBFS " << juce::String (g, 2); say (l2);
+                    auto* po = new juce::DynamicObject(); po->setProperty ("offset_db", off); po->setProperty ("displays", pt.displays); auto* gr = new juce::DynamicObject(); for (const auto& [L, g] : pt.grByLevel) gr->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); po->setProperty ("gr_db_by_level", juce::var (gr)); pts.add (juce::var (po));
+                }
+                auto* m = new juce::DynamicObject(); m->setProperty ("topology", "multiband_offset"); juce::StringArray names; for (const auto& t : thresholds) names.add (t.name); m->setProperty ("controls", names.joinIntoString (", ")); m->setProperty ("points", pts); o->setProperty ("amount", juce::var (m));
+            }
+        }
+        auto* og = new juce::DynamicObject(); for (const auto& [L, g] : openGain) og->setProperty (juce::String (L, 0), std::round (g * 100.0) / 100.0); o->setProperty ("open_gain_db_by_level", juce::var (og));
+    }
+    o->setProperty ("processes", processN); o->setProperty ("measuredAt", nowStamp());
+    o->setProperty ("method", "bands from the crossover controls' instantiate displays (20 .. x1 .. xn .. 20000 Hz, geometric centres); per band: probe --sweep at the centre, that band's threshold at 6 norms, levels -30..-6, GR = open-end gain minus the position's gain; whole unit: probe --response shape=vocal (121 tones, pink below 1 kHz, -12 dB/oct below 100 Hz, -6 dB/oct more above 1 kHz) at five levels, gain = total output power over total input power, GR against the instantiate state; amount = the global control at 6 norms where one exists, else a common dB offset (0 .. -24) written to every band threshold from each control's own dB ends (linear in dB, said)");
+    outDir.getChildFile (stem + ".multiband.json").replaceWithText (juce::JSON::toString (juce::var (o)) + "\n", false, false, "\n");
+    say ("MB: -> " + outDir.getChildFile (stem + ".multiband.json").getFullPathName() + " (" + juce::String (processN) + " processes)");
     return measured > 0 ? 0 : 4;
 }
 
