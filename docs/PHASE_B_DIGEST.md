@@ -139,3 +139,24 @@ and whether the server will write a common offset to N controls — plus a signe
 - Three Plugin Alliance licence shapes on this Mac: inert (passes untouched), silent (passes nothing), pass-through at every
   position (V76U73) — one of each wants a look in Logic.
 - Every mode is a prototype: a record on disk, a proposal doc, no change to the compressor path Sean's follow-up runs.
+
+## Appendix — controls the measurement found without a name (per category, one line each; Kathy's ruling 3, 5 Oct)
+
+From the 5 Oct rehearsal batch (two products per category, the current rule) — `tools/ejmap/cert-traces/2026-10-05-phaseb/logs/`.
+"Unnamed" means: the control's name nominated it for nothing, its measured two ends show the role's signature. None is written
+to a profile; each is here for a ruling.
+
+- **Gain / output:** none (mpressor 5, SBC 8 probed; nothing showed a gain's signature).
+- **Compressor timing:** not probed (a burst pair per control costs ~12 s; the names nominate).
+- **Limiters:** bx_limiter True Peak **Gain** — the output peak moves 5.95 dB and holds against a 6 dB drive change (a ceiling by behaviour).
+- **EQs:** bx_digital V3 **Input Gain** and **Output Gain** (every tone +12.04 dB: a level that the grid guard did not catch here — open), **High-pass 1 Frequency** / **Low-pass 1 Frequency** (−61 dB at a tone: a filter corner read as a band's gain), **High-pass 1 Slope** (2.9 dB), **Bass Shift 1 Gain** (20.4), **Presence Shift 1 Gain** (16.4), **Dynamic EQ 1 Range** (24.1); AMEK EQ 200 **LP Freq 1 / 2**, **HP Freq 1 / 2** (−105..−121 dB: corners, not bands). Frequency and Q signatures are not probed for unnamed controls (they need a boosted band).
+- **De-essers:** Lindell 902 **Mix** (GR 6.0 dB between its ends), **In Gain** (20.0), **Out Gain** (20.0) — a gain in front of the detector reads as a threshold; the threshold signature alone cannot tell them apart.
+- **Saturation:** J37 **Input Level** (THD −87 → −10 dB: a drive by measurement), **Output Level** (THD −10 → −88: the output's level, read as THD at its silent end — the guard says drive), **WOW Rate / WOW Depth / Flutter Depth** — "modulation, unnamed" (energy beside the fundamental rises 12 dB over the harmonics'); NEOLD BIG AL none.
+- **Reverbs:** Abbey Road Plates **Damper** (RT60 0.77 → 3.36 s, ×4.4: a decay); ValhallaVintageVerb **Size** (×1.7), **BassMult** (×1.8), **BassXover** (×2.6), **HighFreq** (×2.3, and the wet/dry ratio 18.5 dB), **EarlyDiffusion** (×1.5, onset 41 → 25 ms), **LateDiffusion** (×2.1), **ColorMode** (×1.7), **HighCut** (wet/dry 20 dB), **Attack** (onset 25 → 70 ms, wet/dry −14 dB).
+- **Delays:** bx_delay2500 **Time R** (onset 14.5 → 2475 ms), **Feedback R** (1 → 32 repeats), **Feedback Low Pass / Feedback Hi Pass** — "tone (feedback path), unnamed" (the onset holds, the first repeat moves 16 / 10 dB), **Transient Shaping Threshold** (the fall per repeat −31 → −4.5 dB); H-Delay **Depth** (onset 375 → 456 ms: modulation delay read as time), **HiPass / LoPass / Output** — "tone (feedback path)" (the onset holds, the first repeat moves 30 / 41 / 36 dB).
+- **Transient shapers:** none (Smack Attack 2, Transient Master 14 probed).
+- **Gates:** Unfiltered Audio G8 **Dry/Wet** (the closed level moves 80 dB with the open level put: a range by behaviour); C1 gate none.
+- **Multiband:** not probed (the pairing response per nominee is the measurement step).
+
+Two reading limits are visible in the list and stay said rather than hidden: a filter corner swept across a tone reads as that
+tone's "gain" (the EQ corners above), and a level in front of a detector reads as its threshold (the 902's gains).
