@@ -53,7 +53,7 @@ product(s)`), re-derives and tone-checks everything else, then sweeps those thro
 them (detector, export, tone check). OneKnob Pumper (m)/(s) and the five licence-flag refusals are not on it: the
 `--retry-refused` line above covers those.
 
-## What Sean runs (after the follow-up `ejmap.app` is built from `17ebf114` and packaged the same way)
+## Step 1 — what Sean runs (the follow-up; `ejmap.app` built from `17ebf114`, or from the PHASE B build `b0258a7b` which runs it identically — step 2 needs the latter)
 
 ```
 BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
@@ -92,6 +92,58 @@ L_ref itself and passes (Lindell SBC's 6 dB included, under the v1.9 clamp).
   unknown version) is `needs_review` with the §11 reason and is never loaded.
 - **No sweeps, nothing sent.** A record without traces (none expected from the batch) is tone-checked on
   its existing points and says so.
+
+## Step 2 — the Phase B data (5 Oct; the PHASE B build, commit b0258a7b)
+
+Step 1 (the follow-up above) is unchanged and runs first, once. Step 2 runs after it, over several nights: it measures
+every installed EQ, limiter, de-esser, saturator and amp sim, reverb, delay, transient shaper, gate and multiband, plus a
+gain calibration and a timing read of every certified compressor, in that order — one product at a time, in its own
+process, into `~/Library/ejmap/cert/phaseb/`. Nothing is exported or sent; the folder goes back in the morning zip.
+
+**Start (and resume — the same command every night):**
+
+```
+BIN=/Applications/ejmap.app/Contents/MacOS/ejmap
+caffeinate -i "$BIN" --phaseb-all 2>&1 | tee -a ~/Library/ejmap/cert/phaseb.log
+```
+
+It prints what it found per category and a line per product as each finishes:
+`[eq 12/175 | all 120/703] bx_digital V3: ok 93 s | elapsed 3:10:00 | ETA 9:40:00`. A product already done is never run
+again, so the same command picks up where it stopped. `caffeinate -i` keeps the Mac awake with the lid open; a closed lid
+still sleeps it (a product measured across a sleep is marked `slept` and not trusted).
+
+**Stop:** press Ctrl-C in that window. Any time is fine — a product that was mid-measurement leaves nothing behind and is
+measured again from its start on the next run.
+
+**Check (from any window, without loading anything):**
+
+```
+"$BIN" --phaseb-status
+```
+
+prints done / total per category, time spent, the ETA, and what is next.
+
+**Each morning, the zip** (stop the batch first, Ctrl-C) — whole `cert/` the first morning, then only what is new (so the zips stay small):
+
+```
+cd ~/Library/ejmap
+# first morning:
+zip -rq ~/Desktop/ejmap-phaseb-$(hostname -s)-$(date +%Y%m%d).zip cert && touch cert/phaseb/.zipped
+# every later morning:
+find cert -type f -newer cert/phaseb/.zipped | zip -q ~/Desktop/ejmap-phaseb-$(hostname -s)-$(date +%Y%m%d).zip -@ && touch cert/phaseb/.zipped
+# the check, every time (must print 0 - config.json is never in the zip):
+unzip -l ~/Desktop/ejmap-phaseb-$(hostname -s)-$(date +%Y%m%d).zip | grep -c config.json
+```
+
+**How long, how big (measured here on 5 Oct, two products per category, projected over your census).** Per product:
+gain-cal ~35 s, timing ~10 s, limiter ~45 s, EQ ~75 s, de-esser ~40 s, saturation ~70 s (6 s to 135 s), reverb ~100 s (12 s
+to 200 s), delay ~110 s, transient shaper ~75 s, gate ~65 s, multiband ~190 s. Over your counts (43 certified compressors,
+46 limiters, 175 EQs, 22 de-essers, 193 saturators + amp sims, 100 reverbs, 38 delays, 18 transient shapers, 8 gates, ~17
+multibands): about **14 hours in all** — roughly two nights; the spread is wide (5 to 19 hours) because a product's time is
+its control count. A product that hangs is cut off at its category's limit (10 to 30 minutes) and recorded `timed out` with
+what it had; the batch moves on. Licence-bound products are skipped without a load. Size: the traces are gzipped; about
+**125 MB after night 1** (through the saturators) and **about 550 MB at the end** — most of it reverbs and delays (3 MB a
+product). The later-morning zip holds only that night's share.
 
 ## Tube-Tech CL 1B
 

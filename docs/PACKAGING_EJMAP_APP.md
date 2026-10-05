@@ -17,7 +17,10 @@ REPO=~/src/echojay-vst            # wherever the checkout is
 #   the FOLLOW-UP build (tone checks + its own re-sweeps, 5 Oct early): 17ebf114 - docs/SEAN_MAC_TONECHECK.md; v1.8-v2.1 rules,
 #   the 4 Oct rules from Sean's zip (rounds 1-3), the sidechain left unconnected + the evidence-based re-sweep, inert, tuner plan v2,
 #   Sean's stepped rule; re-derives from the batch's traces, re-sweeps only the rows whose plan (or policy reading) changed
-git -C "$REPO" fetch && git -C "$REPO" checkout 17ebf114     # branch feat/ejmap-cert; the commit after it is this documentation
+#   the PHASE B build (the follow-up + --phaseb-all / --phaseb-status, 5 Oct evening): b0258a7b - docs/SEAN_MAC_TONECHECK.md step 2;
+#   its certification results equal 17ebf114's (step 6 evidence in tools/ejmap/cert-traces/2026-10-05-phaseb/) except inert = needs_licence
+#   and a sidechain re-sweep no longer repeated nightly. 17ebf114 STAYS THE FALLBACK: if anything about b0258a7b is in doubt, build 17ebf114.
+git -C "$REPO" fetch && git -C "$REPO" checkout b0258a7b     # branch feat/ejmap-cert; the commit after it is this documentation (17ebf114: the fallback)
 cd "$REPO"
 cmake -S . -B build-ejmap -DCMAKE_BUILD_TYPE=RelWithDebInfo -DEJ_BUILD_AAX=OFF
 cmake --build build-ejmap --target ejmap EchoJayProbe -j 4
@@ -60,6 +63,12 @@ ledger, the iLok, the power. Exit 0 = the probe verifies. From here the mapper r
 nothing on this page is needed again until the code changes.
 
 ## What was tested where
+
+**5 Oct 18:06, the PHASE B build (b0258a7b):** both targets rebuilt from the clean checkout (`EjmapBuildInfo.h` stamps
+`b0258a7b`, no `-dirty`; `strings` finds it in the binary), packaged with `package_app.sh` into `~/Desktop/ejmap-dist-phaseb`,
+both signatures Developer ID / team 8BT5F9B887 with timestamps; `--cert-preflight` from inside the bundle finds the probe
+beside the executable (cdhash 36e1198a…), exit 0; from the packaged app, `--phaseb-all` on one product wrote its row with
+that probe's cdhash and gzip traces `gunzip -t` opens, and `--phaseb-status` read it back.
 
 Tested on the operator's Mac, 2 Oct 11:25: `package_app.sh` on the RelWithDebInfo app + the Release
 probe, both signed with the same Developer ID; `--cert-preflight` from inside the packaged bundle found

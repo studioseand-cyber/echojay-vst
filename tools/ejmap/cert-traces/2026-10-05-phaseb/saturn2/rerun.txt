@@ -1,0 +1,250 @@
+SAT: text pass: 58 of 951 controls sampled in 15.2 s (timeout 120 s, scaled to the count)
+SAT: Saturn 2 2.0.8: 18 drive-type control(s)
+  [7] Band 1 Feedback Amount: -20 dBFS: max THD -53.1 dB, gain span 9.45 dB, 1 % onset never; -12 dBFS: max THD -37.6 dB, gain span 8.62 dB, 1 % onset '100.000 %' (norm 1.00); -6 dBFS: max THD -28.8 dB, gain span 7.03 dB, 1 % onset '0.000 %' (norm 0.00)
+      @-12 0.000 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.1 h3 -40.7 h4 -150.5 h5 -85.2  odd
+      @-12 0.200 %    gain    0.70 dB  THD -40.7 dB (0.921 %)  h2 -149.9 h3 -40.7 h4 -149.0 h5 -85.4  odd
+      @-12 3.400 %    gain    0.42 dB  THD -41.5 dB (0.844 %)  h2 -169.3 h3 -41.5 h4 -159.1 h5 -87.4  odd
+      @-12 7.200 %    gain    0.10 dB  THD -42.3 dB (0.764 %)  h2 -152.8 h3 -42.3 h4 -148.4 h5 -89.7  odd
+      @-12 11.600 %   gain   -0.25 dB  THD -43.3 dB (0.684 %)  h2 -150.5 h3 -43.3 h4 -145.8 h5 -92.5  odd
+      @-12 16.000 %   gain   -0.60 dB  THD -44.2 dB (0.614 %)  h2 -147.6 h3 -44.2 h4 -150.1 h5 -95.2  odd
+      @-12 26.000 %   gain   -1.34 dB  THD -46.2 dB (0.488 %)  h2 -145.9 h3 -46.2 h4 -155.7 h5 -101.6  odd
+      @-12 36.000 %   gain   -2.03 dB  THD -48.1 dB (0.395 %)  h2 -143.1 h3 -48.1 h4 -148.0 h5 -108.6  odd
+      @-12 63.500 %   gain   -3.70 dB  THD -52.4 dB (0.239 %)  h2 -147.1 h3 -52.4 h4 -148.7 h5 -122.3  odd
+      @-12 91.000 %   gain   -5.78 dB  THD -51.7 dB (0.260 %)  h2 -73.0 h3 -51.7 h4 -81.3 h5 -80.5  mixed (even/odd -20.7 dB)
+      @-12 100.000 %  gain   -7.90 dB  THD -37.6 dB (1.325 %)  h2 -52.4 h3 -37.8 h4 -56.3 h5 -57.4  mixed (even/odd -13.2 dB)
+  [11] Band 1 Drive: -20 dBFS: max THD -11.6 dB, gain span 2.81 dB, 1 % onset '60.0%' (norm 0.60); -12 dBFS: max THD -8.8 dB, gain span 4.85 dB, 1 % onset '30.0%' (norm 0.30); -6 dBFS: max THD -8.4 dB, gain span 10.34 dB, 1 % onset '0.00%' (norm 0.00)
+      @-12 0.00%      gain    0.81 dB  THD -47.0 dB (0.448 %)  h2 -154.6 h3 -47.0 h4 -160.2 h5 -97.1  odd
+      @-12 10.0%      gain    0.78 dB  THD -44.4 dB (0.606 %)  h2 -147.4 h3 -44.4 h4 -163.9 h5 -91.1  odd
+      @-12 20.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.3 h3 -40.7 h4 -151.6 h5 -85.2  odd
+      @-12 30.0%      gain    0.60 dB  THD -36.0 dB (1.585 %)  h2 -153.6 h3 -36.0 h4 -157.1 h5 -79.4  odd
+      @-12 40.0%      gain    0.34 dB  THD -30.5 dB (2.982 %)  h2 -144.1 h3 -30.5 h4 -144.8 h5 -73.7  odd
+      @-12 50.0%      gain   -0.21 dB  THD -24.2 dB (6.155 %)  h2 -148.1 h3 -24.2 h4 -169.4 h5 -68.3  odd
+      @-12 60.0%      gain   -1.48 dB  THD -17.0 dB (14.179 %)  h2 -149.3 h3 -17.0 h4 -147.4 h5 -49.1  odd
+      @-12 70.0%      gain   -3.18 dB  THD -12.6 dB (23.537 %)  h2 -144.4 h3 -12.8 h4 -141.9 h5 -25.1  odd
+      @-12 80.0%      gain   -4.05 dB  THD -10.4 dB (30.120 %)  h2 -144.3 h3 -11.1 h4 -144.1 h5 -18.8  odd
+      @-12 90.0%      gain   -3.95 dB  THD -9.3 dB (34.131 %)  h2 -142.9 h3 -10.3 h4 -143.5 h5 -16.3  odd
+      @-12 100%       gain   -3.91 dB  THD -8.8 dB (36.344 %)  h2 -156.7 h3 -9.9 h4 -151.9 h5 -15.1  odd
+  [12] Band 1 Drive Pan: -20 dBFS: max THD -56.4 dB, gain span 0.01 dB, 1 % onset never; -12 dBFS: max THD -40.7 dB, gain span 0.04 dB, 1 % onset never; -6 dBFS: max THD -28.8 dB, gain span 0.23 dB, 1 % onset '-1.000' (norm 0.00)
+      @-12 -1.000     gain    0.76 dB  THD -43.3 dB (0.685 %)  h2 -158.6 h3 -43.3 h4 -143.9 h5 -89.3  odd
+      @-12 -0.800     gain    0.76 dB  THD -43.0 dB (0.711 %)  h2 -143.6 h3 -43.0 h4 -148.2 h5 -88.8  odd
+      @-12 -0.600     gain    0.75 dB  THD -42.6 dB (0.745 %)  h2 -141.9 h3 -42.6 h4 -143.9 h5 -88.1  odd
+      @-12 -0.400     gain    0.74 dB  THD -42.1 dB (0.789 %)  h2 -144.5 h3 -42.1 h4 -149.1 h5 -87.3  odd
+      @-12 -0.200     gain    0.73 dB  THD -41.4 dB (0.848 %)  h2 -148.0 h3 -41.4 h4 -162.2 h5 -86.3  odd
+      @-12 0.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.9 h3 -40.7 h4 -146.1 h5 -85.2  odd
+      @-12 0.200      gain    0.73 dB  THD -41.4 dB (0.848 %)  h2 -155.4 h3 -41.4 h4 -152.4 h5 -86.3  odd
+      @-12 0.400      gain    0.74 dB  THD -42.1 dB (0.789 %)  h2 -151.0 h3 -42.1 h4 -150.4 h5 -87.3  odd
+      @-12 0.600      gain    0.75 dB  THD -42.6 dB (0.745 %)  h2 -143.7 h3 -42.6 h4 -148.5 h5 -88.1  odd
+      @-12 0.800      gain    0.76 dB  THD -43.0 dB (0.711 %)  h2 -151.6 h3 -43.0 h4 -151.2 h5 -88.8  odd
+      @-12 1.000      gain    0.76 dB  THD -43.3 dB (0.685 %)  h2 -149.8 h3 -43.3 h4 -152.5 h5 -89.3  odd
+  [24] Band 2 Feedback Amount: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.000 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.6 h3 -40.7 h4 -159.1 h5 -85.2  odd
+      @-12 0.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.8 h3 -40.7 h4 -142.7 h5 -85.2  odd
+      @-12 3.400 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -169.7 h3 -40.7 h4 -150.1 h5 -85.2  odd
+      @-12 7.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.4 h3 -40.7 h4 -146.7 h5 -85.2  odd
+      @-12 11.600 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.8 h3 -40.7 h4 -143.1 h5 -85.2  odd
+      @-12 16.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.8 h3 -40.7 h4 -138.6 h5 -85.2  odd
+      @-12 26.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -157.6 h3 -40.7 h4 -146.5 h5 -85.2  odd
+      @-12 36.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.6 h3 -40.7 h4 -151.7 h5 -85.2  odd
+      @-12 63.500 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.4 h3 -40.7 h4 -144.1 h5 -85.2  odd
+      @-12 91.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.7 h3 -40.7 h4 -153.2 h5 -85.2  odd
+      @-12 100.000 %  gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -156.4 h3 -40.7 h4 -151.4 h5 -85.2  odd
+  [28] Band 2 Drive: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.00%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.5 h3 -40.7 h4 -147.0 h5 -85.2  odd
+      @-12 10.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -159.3 h3 -40.7 h4 -144.6 h5 -85.2  odd
+      @-12 20.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.0 h3 -40.7 h4 -145.1 h5 -85.2  odd
+      @-12 30.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -165.3 h3 -40.7 h4 -149.4 h5 -85.2  odd
+      @-12 40.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.8 h3 -40.7 h4 -143.4 h5 -85.2  odd
+      @-12 50.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.2 h3 -40.7 h4 -148.8 h5 -85.2  odd
+      @-12 60.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -141.6 h3 -40.7 h4 -151.4 h5 -85.2  odd
+      @-12 70.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -140.3 h3 -40.7 h4 -148.7 h5 -85.2  odd
+      @-12 80.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -155.2 h3 -40.7 h4 -150.3 h5 -85.2  odd
+      @-12 90.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.8 h3 -40.7 h4 -147.6 h5 -85.2  odd
+      @-12 100%       gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.6 h3 -40.7 h4 -153.0 h5 -85.2  odd
+  [29] Band 2 Drive Pan: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 -1.000     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.8 h3 -40.7 h4 -157.1 h5 -85.2  odd
+      @-12 -0.800     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.7 h3 -40.7 h4 -155.1 h5 -85.2  odd
+      @-12 -0.600     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.9 h3 -40.7 h4 -145.1 h5 -85.2  odd
+      @-12 -0.400     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -156.0 h3 -40.7 h4 -147.2 h5 -85.2  odd
+      @-12 -0.200     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.5 h3 -40.7 h4 -155.3 h5 -85.2  odd
+      @-12 0.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.4 h3 -40.7 h4 -147.1 h5 -85.2  odd
+      @-12 0.200      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -162.8 h3 -40.7 h4 -152.0 h5 -85.2  odd
+      @-12 0.400      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.5 h3 -40.7 h4 -144.8 h5 -85.2  odd
+      @-12 0.600      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.9 h3 -40.7 h4 -153.3 h5 -85.2  odd
+      @-12 0.800      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.7 h3 -40.7 h4 -145.2 h5 -85.2  odd
+      @-12 1.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.2 h3 -40.7 h4 -152.9 h5 -85.2  odd
+  [41] Band 3 Feedback Amount: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.000 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -161.7 h3 -40.7 h4 -147.0 h5 -85.2  odd
+      @-12 0.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.5 h3 -40.7 h4 -147.6 h5 -85.2  odd
+      @-12 3.400 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.6 h3 -40.7 h4 -156.7 h5 -85.2  odd
+      @-12 7.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.6 h3 -40.7 h4 -149.0 h5 -85.2  odd
+      @-12 11.600 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.0 h3 -40.7 h4 -145.3 h5 -85.2  odd
+      @-12 16.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.7 h3 -40.7 h4 -145.6 h5 -85.2  odd
+      @-12 26.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -143.5 h3 -40.7 h4 -150.3 h5 -85.2  odd
+      @-12 36.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.3 h3 -40.7 h4 -155.4 h5 -85.2  odd
+      @-12 63.500 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.5 h3 -40.7 h4 -151.1 h5 -85.2  odd
+      @-12 91.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.0 h3 -40.7 h4 -164.0 h5 -85.2  odd
+      @-12 100.000 %  gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.9 h3 -40.7 h4 -142.9 h5 -85.2  odd
+  [45] Band 3 Drive: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.00%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.3 h3 -40.7 h4 -166.1 h5 -85.2  odd
+      @-12 10.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -154.1 h3 -40.7 h4 -153.4 h5 -85.2  odd
+      @-12 20.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -156.0 h3 -40.7 h4 -150.6 h5 -85.2  odd
+      @-12 30.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.9 h3 -40.7 h4 -145.9 h5 -85.2  odd
+      @-12 40.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.1 h3 -40.7 h4 -156.9 h5 -85.2  odd
+      @-12 50.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -143.2 h3 -40.7 h4 -168.1 h5 -85.2  odd
+      @-12 60.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.0 h3 -40.7 h4 -155.0 h5 -85.2  odd
+      @-12 70.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.7 h3 -40.7 h4 -143.6 h5 -85.2  odd
+      @-12 80.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.9 h3 -40.7 h4 -161.9 h5 -85.2  odd
+      @-12 90.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.6 h3 -40.7 h4 -162.2 h5 -85.2  odd
+      @-12 100%       gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -160.8 h3 -40.7 h4 -150.4 h5 -85.2  odd
+  [46] Band 3 Drive Pan: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 -1.000     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.2 h3 -40.7 h4 -151.5 h5 -85.2  odd
+      @-12 -0.800     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.6 h3 -40.7 h4 -144.4 h5 -85.2  odd
+      @-12 -0.600     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -143.6 h3 -40.7 h4 -146.9 h5 -85.2  odd
+      @-12 -0.400     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.3 h3 -40.7 h4 -145.2 h5 -85.2  odd
+      @-12 -0.200     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.5 h3 -40.7 h4 -148.8 h5 -85.2  odd
+      @-12 0.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -154.7 h3 -40.7 h4 -156.4 h5 -85.2  odd
+      @-12 0.200      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.9 h3 -40.7 h4 -154.2 h5 -85.2  odd
+      @-12 0.400      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.8 h3 -40.7 h4 -149.7 h5 -85.2  odd
+      @-12 0.600      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.6 h3 -40.7 h4 -153.9 h5 -85.2  odd
+      @-12 0.800      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.2 h3 -40.7 h4 -150.8 h5 -85.2  odd
+      @-12 1.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.1 h3 -40.7 h4 -148.4 h5 -85.2  odd
+  [58] Band 4 Feedback Amount: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.000 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -159.3 h3 -40.7 h4 -152.4 h5 -85.2  odd
+      @-12 0.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.2 h3 -40.7 h4 -146.1 h5 -85.2  odd
+      @-12 3.400 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -158.0 h3 -40.7 h4 -152.3 h5 -85.2  odd
+      @-12 7.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.5 h3 -40.7 h4 -148.8 h5 -85.2  odd
+      @-12 11.600 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -158.9 h3 -40.7 h4 -144.7 h5 -85.2  odd
+      @-12 16.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.7 h3 -40.7 h4 -150.9 h5 -85.2  odd
+      @-12 26.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.1 h3 -40.7 h4 -156.3 h5 -85.2  odd
+      @-12 36.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.3 h3 -40.7 h4 -151.1 h5 -85.2  odd
+      @-12 63.500 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.0 h3 -40.7 h4 -147.9 h5 -85.2  odd
+      @-12 91.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.8 h3 -40.7 h4 -148.9 h5 -85.2  odd
+      @-12 100.000 %  gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.7 h3 -40.7 h4 -156.7 h5 -85.2  odd
+  [62] Band 4 Drive: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.00%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.8 h3 -40.7 h4 -148.8 h5 -85.2  odd
+      @-12 10.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.9 h3 -40.7 h4 -146.3 h5 -85.2  odd
+      @-12 20.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.0 h3 -40.7 h4 -143.1 h5 -85.2  odd
+      @-12 30.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.7 h3 -40.7 h4 -141.2 h5 -85.2  odd
+      @-12 40.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.7 h3 -40.7 h4 -144.9 h5 -85.2  odd
+      @-12 50.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.4 h3 -40.7 h4 -153.5 h5 -85.2  odd
+      @-12 60.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.5 h3 -40.7 h4 -148.0 h5 -85.2  odd
+      @-12 70.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.6 h3 -40.7 h4 -147.0 h5 -85.2  odd
+      @-12 80.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.5 h3 -40.7 h4 -155.6 h5 -85.2  odd
+      @-12 90.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -154.3 h3 -40.7 h4 -149.4 h5 -85.2  odd
+      @-12 100%       gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.5 h3 -40.7 h4 -162.3 h5 -85.2  odd
+  [63] Band 4 Drive Pan: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 -1.000     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.6 h3 -40.7 h4 -148.0 h5 -85.2  odd
+      @-12 -0.800     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.6 h3 -40.7 h4 -144.4 h5 -85.2  odd
+      @-12 -0.600     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.3 h3 -40.7 h4 -149.1 h5 -85.2  odd
+      @-12 -0.400     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.4 h3 -40.7 h4 -145.4 h5 -85.2  odd
+      @-12 -0.200     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.9 h3 -40.7 h4 -148.1 h5 -85.2  odd
+      @-12 0.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.1 h3 -40.7 h4 -146.7 h5 -85.2  odd
+      @-12 0.200      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.3 h3 -40.7 h4 -147.1 h5 -85.2  odd
+      @-12 0.400      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.1 h3 -40.7 h4 -147.3 h5 -85.2  odd
+      @-12 0.600      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.8 h3 -40.7 h4 -147.7 h5 -85.2  odd
+      @-12 0.800      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -154.1 h3 -40.7 h4 -152.3 h5 -85.2  odd
+      @-12 1.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.1 h3 -40.7 h4 -148.0 h5 -85.2  odd
+  [75] Band 5 Feedback Amount: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.000 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.3 h3 -40.7 h4 -144.5 h5 -85.2  odd
+      @-12 0.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.3 h3 -40.7 h4 -145.6 h5 -85.2  odd
+      @-12 3.400 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.8 h3 -40.7 h4 -147.3 h5 -85.2  odd
+      @-12 7.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -170.8 h3 -40.7 h4 -152.0 h5 -85.2  odd
+      @-12 11.600 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.9 h3 -40.7 h4 -143.1 h5 -85.2  odd
+      @-12 16.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.1 h3 -40.7 h4 -146.5 h5 -85.2  odd
+      @-12 26.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.2 h3 -40.7 h4 -149.4 h5 -85.2  odd
+      @-12 36.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.2 h3 -40.7 h4 -164.2 h5 -85.2  odd
+      @-12 63.500 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.5 h3 -40.7 h4 -147.4 h5 -85.2  odd
+      @-12 91.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -155.9 h3 -40.7 h4 -159.5 h5 -85.2  odd
+      @-12 100.000 %  gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.9 h3 -40.7 h4 -145.1 h5 -85.2  odd
+  [79] Band 5 Drive: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.00%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -157.6 h3 -40.7 h4 -153.7 h5 -85.2  odd
+      @-12 10.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -159.5 h3 -40.7 h4 -145.6 h5 -85.2  odd
+      @-12 20.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.8 h3 -40.7 h4 -147.1 h5 -85.2  odd
+      @-12 30.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.1 h3 -40.7 h4 -147.2 h5 -85.2  odd
+      @-12 40.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -155.6 h3 -40.7 h4 -155.2 h5 -85.2  odd
+      @-12 50.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.1 h3 -40.7 h4 -152.8 h5 -85.2  odd
+      @-12 60.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -174.9 h3 -40.7 h4 -148.9 h5 -85.2  odd
+      @-12 70.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.5 h3 -40.7 h4 -153.1 h5 -85.2  odd
+      @-12 80.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.7 h3 -40.7 h4 -146.4 h5 -85.2  odd
+      @-12 90.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.1 h3 -40.7 h4 -145.0 h5 -85.2  odd
+      @-12 100%       gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -165.5 h3 -40.7 h4 -146.3 h5 -85.2  odd
+  [80] Band 5 Drive Pan: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 -1.000     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.5 h3 -40.7 h4 -152.9 h5 -85.2  odd
+      @-12 -0.800     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.7 h3 -40.7 h4 -149.8 h5 -85.2  odd
+      @-12 -0.600     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.7 h3 -40.7 h4 -140.8 h5 -85.2  odd
+      @-12 -0.400     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.7 h3 -40.7 h4 -152.6 h5 -85.2  odd
+      @-12 -0.200     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.0 h3 -40.7 h4 -146.9 h5 -85.2  odd
+      @-12 0.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -155.8 h3 -40.7 h4 -149.6 h5 -85.2  odd
+      @-12 0.200      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.6 h3 -40.7 h4 -145.7 h5 -85.2  odd
+      @-12 0.400      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -155.1 h3 -40.7 h4 -147.8 h5 -85.2  odd
+      @-12 0.600      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -141.9 h3 -40.7 h4 -144.8 h5 -85.2  odd
+      @-12 0.800      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.9 h3 -40.7 h4 -149.9 h5 -85.2  odd
+      @-12 1.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -154.0 h3 -40.7 h4 -172.0 h5 -85.2  odd
+  [92] Band 6 Feedback Amount: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.000 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.8 h3 -40.7 h4 -150.2 h5 -85.2  odd
+      @-12 0.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.4 h3 -40.7 h4 -145.6 h5 -85.2  odd
+      @-12 3.400 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.5 h3 -40.7 h4 -152.0 h5 -85.2  odd
+      @-12 7.200 %    gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.0 h3 -40.7 h4 -142.8 h5 -85.2  odd
+      @-12 11.600 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.5 h3 -40.7 h4 -145.8 h5 -85.2  odd
+      @-12 16.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -144.0 h3 -40.7 h4 -148.1 h5 -85.2  odd
+      @-12 26.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.5 h3 -40.7 h4 -158.7 h5 -85.2  odd
+      @-12 36.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.1 h3 -40.7 h4 -151.6 h5 -85.2  odd
+      @-12 63.500 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.3 h3 -40.7 h4 -143.6 h5 -85.2  odd
+      @-12 91.000 %   gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.5 h3 -40.7 h4 -146.2 h5 -85.2  odd
+      @-12 100.000 %  gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.4 h3 -40.7 h4 -152.6 h5 -85.2  odd
+  [96] Band 6 Drive: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 0.00%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.6 h3 -40.7 h4 -142.6 h5 -85.2  odd
+      @-12 10.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.7 h3 -40.7 h4 -149.4 h5 -85.2  odd
+      @-12 20.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -140.9 h3 -40.7 h4 -153.0 h5 -85.2  odd
+      @-12 30.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -159.1 h3 -40.7 h4 -142.0 h5 -85.2  odd
+      @-12 40.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -168.9 h3 -40.7 h4 -151.3 h5 -85.2  odd
+      @-12 50.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -150.3 h3 -40.7 h4 -143.5 h5 -85.2  odd
+      @-12 60.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -163.4 h3 -40.7 h4 -154.2 h5 -85.3  odd
+      @-12 70.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -145.4 h3 -40.7 h4 -146.3 h5 -85.2  odd
+      @-12 80.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.7 h3 -40.7 h4 -149.0 h5 -85.2  odd
+      @-12 90.0%      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -153.8 h3 -40.7 h4 -151.4 h5 -85.2  odd
+      @-12 100%       gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -152.1 h3 -40.7 h4 -146.5 h5 -85.2  odd
+  [97] Band 6 Drive Pan: no effect: neither the level (span < 0.1 dB) nor the THD (span < 0.5 dB) changed across the positions at any level, though the product distorts from its other settings
+      @-12 -1.000     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.5 h3 -40.7 h4 -152.9 h5 -85.2  odd
+      @-12 -0.800     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -158.7 h3 -40.7 h4 -145.1 h5 -85.2  odd
+      @-12 -0.600     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -147.3 h3 -40.7 h4 -143.3 h5 -85.2  odd
+      @-12 -0.400     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -157.5 h3 -40.7 h4 -154.0 h5 -85.2  odd
+      @-12 -0.200     gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -146.4 h3 -40.7 h4 -145.6 h5 -85.2  odd
+      @-12 0.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -149.7 h3 -40.7 h4 -148.0 h5 -85.2  odd
+      @-12 0.200      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -160.3 h3 -40.7 h4 -155.1 h5 -85.2  odd
+      @-12 0.400      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -151.0 h3 -40.7 h4 -144.9 h5 -85.2  odd
+      @-12 0.600      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -148.4 h3 -40.7 h4 -148.6 h5 -85.2  odd
+      @-12 0.800      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -142.8 h3 -40.7 h4 -149.2 h5 -85.2  odd
+      @-12 1.000      gain    0.72 dB  THD -40.7 dB (0.926 %)  h2 -155.4 h3 -40.7 h4 -147.1 h5 -85.2  odd
+  ROLES BY MEASUREMENT: 26 verdict(s), 32 unnamed control(s) probed without the signature
+    role drive DROPPED    [7] Band 1 Feedback Amount - energy beside the fundamental rises -200.0 -> 16.5 dB (relative) over the harmonics' -37.6: modulation, not drive
+    role drive CONFIRMED  [11] Band 1 Drive - THD moves -47.0 -> -8.8 dB
+    role drive DROPPED    [12] Band 1 Drive Pan - THD moves -43.3 -> -43.3 dB (needs 3.0)
+    role drive DROPPED    [24] Band 2 Feedback Amount - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [28] Band 2 Drive - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [29] Band 2 Drive Pan - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [41] Band 3 Feedback Amount - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [45] Band 3 Drive - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [46] Band 3 Drive Pan - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [58] Band 4 Feedback Amount - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [62] Band 4 Drive - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [63] Band 4 Drive Pan - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [75] Band 5 Feedback Amount - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [79] Band 5 Drive - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [80] Band 5 Drive Pan - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [92] Band 6 Feedback Amount - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [96] Band 6 Drive - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    role drive DROPPED    [97] Band 6 Drive Pan - THD moves -40.7 -> -40.7 dB (needs 3.0)
+    measured role drive, UNNAMED  [0] Input Gain - THD moves -99.2 -> -8.3 dB
+    measured role drive, UNNAMED  [2] Output Gain - THD moves -43.7 -> -8.3 dB
+    measured role drive, UNNAMED  [5] Mix - THD moves -200.0 -> -40.7 dB
+    measured role drive, UNNAMED  [9] Band 1 Dynamics - THD moves -43.7 -> -37.7 dB
+    measured role modulation, UNNAMED  [10] Band 1 Style - energy beside the fundamental rises -41.6 -> -0.8 dB (relative) over the harmonics' -45.3: modulation, not drive
+    measured role drive, UNNAMED  [14] Band 1 Mid - THD moves -32.9 -> -11.9 dB
+    measured role drive, UNNAMED  [15] Band 1 Treble - THD moves -53.0 -> -32.2 dB
+    measured role drive, UNNAMED  [17] Band 1 Mix - THD moves -52.5 -> -40.7 dB
+SAT: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/saturn3/saturation/AudioUnit_61473d41_2.0.8.saturation.json
+
+real	0m46.284s
+user	0m11.060s
+sys	0m3.761s
