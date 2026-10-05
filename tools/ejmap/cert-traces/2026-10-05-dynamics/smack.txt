@@ -1,0 +1,13 @@
+DYN: Smack Attack (s) 12.0.0 (transient): attack [0] Attack; sustain [4] Sustain
+  neutral (as instantiated): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  Attack = '-100' (norm 0.00): transient -24.00 dB, sustain -0.14 dB against neutral
+  Attack = '-50' (norm 0.25): transient -12.00 dB, sustain -0.14 dB against neutral
+  Attack = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack = '50' (norm 0.75): transient 12.00 dB, sustain 0.31 dB against neutral
+  Attack = '100' (norm 1.00): transient 24.00 dB, sustain 0.31 dB against neutral
+  Sustain = '-100' (norm 0.00): transient 0.00 dB, sustain -6.95 dB against neutral
+  Sustain = '-50' (norm 0.25): transient 0.00 dB, sustain -5.78 dB against neutral
+  Sustain = '0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain = '50' (norm 0.75): transient 0.00 dB, sustain 4.32 dB against neutral
+  Sustain = '100' (norm 1.00): transient 0.00 dB, sustain 7.69 dB against neutral
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_5e556a63_12.0.0.dynamics.json (13 processes)

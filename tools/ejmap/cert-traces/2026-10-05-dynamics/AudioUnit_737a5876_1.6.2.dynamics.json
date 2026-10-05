@@ -1,0 +1,178 @@
+{
+  "schema": "ej_dynamics_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.8, not exported, not published",
+  "product": "Unfiltered Audio G8",
+  "version": "1.6.2",
+  "identity": "AudioUnit|737a5876|1.6.2",
+  "kind": "gate",
+  "threshold": {
+    "index": 13,
+    "control": "Threshold",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "-inf dB",
+        "label": null,
+        "gating": false,
+        "range_db": 0.01,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      },
+      {
+        "norm": 0.25,
+        "display": "-60.0 dB",
+        "label": -60.0,
+        "gating": true,
+        "range_db": 80.200000000000003,
+        "open_at_rms_dbfs": -63.009999999999998,
+        "open_at_peak_dbfs": -60.0,
+        "close_at_rms_dbfs": -69.510000000000005,
+        "hysteresis_db": 6.51
+      },
+      {
+        "norm": 0.5,
+        "display": "-40.0 dB",
+        "label": -40.0,
+        "gating": true,
+        "range_db": 80.200000000000003,
+        "open_at_rms_dbfs": -43.009999999999998,
+        "open_at_peak_dbfs": -40.0,
+        "close_at_rms_dbfs": -49.539999999999999,
+        "hysteresis_db": 6.53
+      },
+      {
+        "norm": 0.75,
+        "display": "-20.0 dB",
+        "label": -20.0,
+        "gating": true,
+        "range_db": 80.200000000000003,
+        "open_at_rms_dbfs": -23.0,
+        "open_at_peak_dbfs": -19.989999999999998,
+        "close_at_rms_dbfs": -29.52,
+        "hysteresis_db": 6.53
+      },
+      {
+        "norm": 1.0,
+        "display": "0 dB",
+        "label": 0.0,
+        "gating": false,
+        "range_db": -57.600000000000001,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      }
+    ]
+  },
+  "range": {
+    "index": 40,
+    "control": "Reduction",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0 dB",
+        "label": 0.0,
+        "closed_db": -0.01
+      },
+      {
+        "norm": 0.5,
+        "display": "-13.7 dB",
+        "label": -13.699999999999999,
+        "closed_db": -13.720000000000001
+      },
+      {
+        "norm": 1.0,
+        "display": "-inf dB",
+        "label": null,
+        "closed_db": -80.200000000000003
+      }
+    ]
+  },
+  "attack": {
+    "index": 41,
+    "control": "Attack",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "1.00 ms",
+        "label_ms": 1.0,
+        "attack_ms": 1.2,
+        "hold_ms": 129.599999999999994,
+        "release_ms": 85.799999999999997
+      },
+      {
+        "norm": 0.5,
+        "display": "126 ms",
+        "label_ms": 126.0,
+        "attack_ms": 71.700000000000003,
+        "hold_ms": 129.599999999999994,
+        "release_ms": 85.799999999999997
+      },
+      {
+        "norm": 1.0,
+        "display": "500 ms",
+        "label_ms": 500.0,
+        "attack_ms": 284.199999999999989,
+        "hold_ms": 129.599999999999994,
+        "release_ms": 85.799999999999997
+      }
+    ]
+  },
+  "hold": {
+    "index": 0,
+    "control": "Hold",
+    "positions": [
+      {
+        "norm": 0.5,
+        "display": "125 ms",
+        "label_ms": 125.0,
+        "attack_ms": 3.6,
+        "hold_ms": 129.599999999999994,
+        "release_ms": 85.799999999999997
+      },
+      {
+        "norm": 1.0,
+        "display": "500 ms",
+        "label_ms": 500.0,
+        "attack_ms": 3.6,
+        "hold_ms": 504.5,
+        "release_ms": 86.0
+      }
+    ]
+  },
+  "release": {
+    "index": 17,
+    "control": "Release",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "1.00 ms",
+        "label_ms": 1.0,
+        "attack_ms": 3.6,
+        "hold_ms": 124.599999999999994,
+        "release_ms": 1.2
+      },
+      {
+        "norm": 0.5,
+        "display": "501 ms",
+        "label_ms": 501.0,
+        "attack_ms": 3.6,
+        "hold_ms": 137.5,
+        "release_ms": 237.800000000000011
+      },
+      {
+        "norm": 1.0,
+        "display": "2.000 s",
+        "label_ms": 2000.0,
+        "attack_ms": 3.4,
+        "hold_ms": 174.800000000000011,
+        "release_ms": 525.100000000000023
+      }
+    ]
+  },
+  "processes": 19,
+  "measuredAt": "20261005T133900",
+  "method": "probe --ramp: a 997 Hz sine rising -70 -> -6 dBFS over 3 s and back; closed / open gain = medians at the quiet / loud tenth, range = their difference (gating when >= 3 dB), open / close level = the input RMS where the gain crosses midway up / down, hysteresis = open - close; probe --burst for attack (90 % open after the step up), hold (to 1 dB of fall after the step down) and release (from there to 90 % closed), interpolated between 1 ms windows"
+}

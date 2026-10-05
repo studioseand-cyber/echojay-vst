@@ -1,0 +1,96 @@
+{
+  "schema": "ej_dynamics_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.8, not exported, not published",
+  "product": "PSE (m)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|5c5e6163|12.0.0",
+  "kind": "gate",
+  "threshold": {
+    "index": 5,
+    "control": "Threshold",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "-60",
+        "label": -60.0,
+        "gating": false,
+        "range_db": 0.0,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      },
+      {
+        "norm": 0.25,
+        "display": "-45",
+        "label": -45.0,
+        "gating": false,
+        "range_db": 0.0,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      },
+      {
+        "norm": 0.5,
+        "display": "-30",
+        "label": -30.0,
+        "gating": false,
+        "range_db": 0.0,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      },
+      {
+        "norm": 0.75,
+        "display": "-15",
+        "label": -15.0,
+        "gating": false,
+        "range_db": 0.0,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      },
+      {
+        "norm": 1.0,
+        "display": "0",
+        "label": 0.0,
+        "gating": false,
+        "range_db": 0.0,
+        "open_at_rms_dbfs": null,
+        "open_at_peak_dbfs": null,
+        "close_at_rms_dbfs": null,
+        "hysteresis_db": null
+      }
+    ]
+  },
+  "range": {
+    "index": 7,
+    "control": "Range",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "-60",
+        "label": -60.0,
+        "closed_db": -33.369999999999997
+      },
+      {
+        "norm": 0.5,
+        "display": "-30",
+        "label": -30.0,
+        "closed_db": -30.0
+      },
+      {
+        "norm": 1.0,
+        "display": "0",
+        "label": 0.0,
+        "closed_db": -0.0
+      }
+    ]
+  },
+  "processes": 10,
+  "measuredAt": "20261005T133843",
+  "method": "probe --ramp: a 997 Hz sine rising -70 -> -6 dBFS over 3 s and back; closed / open gain = medians at the quiet / loud tenth, range = their difference (gating when >= 3 dB), open / close level = the input RMS where the gain crosses midway up / down, hysteresis = open - close; probe --burst for attack (90 % open after the step up), hold (to 1 dB of fall after the step down) and release (from there to 90 % closed), interpolated between 1 ms windows"
+}

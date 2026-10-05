@@ -80,6 +80,7 @@
 #include "EjmapCertReview.h"
 #include "EjmapSaturation.h"
 #include "EjmapReverbDelay.h"
+#include "EjmapDynamics.h"
 
 namespace
 {
@@ -7211,6 +7212,78 @@ void testReverbDelay()
     check (std::abs (expectedSyncMs (1.0, 120.0) - 500.0) < 1e-9 && std::abs (expectedSyncMs (1.0, 90.0) - 666.667) < 0.01 && std::abs (expectedSyncMs (0.5, 140.0) - 214.286) < 0.01, "rd L3: a quarter at 120 = 500 ms, at 90 = 666.7 ms; an eighth at 140 = 214.3 ms");
 }
 
+/** TRANSIENT SHAPERS AND GATES (EjmapDynamics.h, roadmap 2.8 PROTOTYPE, 5 Oct R5): synthetic hits, a ramp through a gate, a burst through a gate. */
+void testDynamics()
+{
+    using namespace ejmap::dynamics;
+    // HITS: 4 hits every 600 ms, input peak -6 dB decaying 150 ms; the unit boosts the transient by +4 dB (first 10 ms) and cuts the sustain by -3 dB
+    auto hitsTrace = [] (double trBoost, double suGain, int hits = 4)
+    {
+        juce::String s; s << "hits\tproto\t1\tdb\t-6.00\thz\t997.000\tdecay_ms\t150.00\tperiod_ms\t600.00\thits\t" << hits << "\twin_ms\t1.00\n";
+        for (double t = 0.5; t < 600.0 * hits; t += 1.0)
+        {
+            const int k = (int) (t / 600.0); const double rel = t - k * 600.0;
+            const double env = -6.0 + 20.0 * std::log10 (std::exp (-rel / 150.0));   // the peak envelope in dB
+            const double inPk = env, inRms = env - 3.01;
+            const double g = rel < 10.0 ? trBoost : suGain;
+            s << "hwin\tt_ms\t" << juce::String (t, 3) << "\thit\t" << k << "\tin_db\t" << juce::String (inRms, 3) << "\tout_db\t" << juce::String (inRms + g, 3) << "\tin_peak_db\t" << juce::String (inPk, 3) << "\tout_peak_db\t" << juce::String (inPk + g, 3) << "\n";
+        }
+        s << "hdone\twindows\t" << 600 * hits << "\tnonfinite\t0\n"; return s;
+    };
+    const auto neutral = hitFigures (parseHits (hitsTrace (0.0, 0.0)));
+    const auto boosted = hitFigures (parseHits (hitsTrace (4.0, -3.0)));
+    check (neutral.ok && std::abs (neutral.transientDb) < 1e-6 && std::abs (neutral.sustainDb) < 1e-6 && neutral.hitsUsed == 3, "dyn H1: a transparent unit reads 0 / 0; the first hit is left out (3 of 4 used)");
+    check (boosted.ok && std::abs (boosted.transientDb - 4.0) < 1e-6 && std::abs (boosted.sustainDb + 3.0) < 1e-6, "dyn H2: transient from the first 10 ms peaks, sustain from the 80-250 ms body (" + juce::String (boosted.transientDb, 2) + " / " + juce::String (boosted.sustainDb, 2) + ")");
+    const auto pt = transientPoint (1.0f, "+6.0 dB", boosted, neutral);
+    check (pt.ok && std::abs (pt.dTransientDb - 4.0) < 1e-6 && std::abs (pt.dSustainDb + 3.0) < 1e-6 && pt.labelDb && *pt.labelDb == 6.0, "dyn H3: a position's effect is its figures minus the neutral run's; a dB label is read");
+    check (! transientPoint (1.0f, "50 %", boosted, neutral).labelDb, "dyn H4: a % label is not a dB expectation");
+    check (! hitFigures (parseHits ("refused no main input or output bus\n")).ok, "dyn H5: a refusal is carried");
+    // RAMP through a gate: threshold at -30 dBFS RMS opening, closes at -36 (6 dB hysteresis), range -40 dB closed; up 3 s / down 3 s from -60 to -6
+    auto rampTrace = [] (double openAt, double closeAt, double rangeDb)
+    {
+        juce::String s; s << "ramp\tproto\t1\tfrom\t-60.00\tto\t-6.00\tup_s\t3.000\tdown_s\t3.000\thz\t997.000\twin_ms\t5.00\n";
+        bool open = false;
+        for (double t = 2.5; t < 6000.0; t += 5.0)
+        {
+            const bool up = t < 3000.0; const double in = up ? -60.0 + 54.0 * t / 3000.0 : -6.0 - 54.0 * (t - 3000.0) / 3000.0;
+            if (up && in >= openAt) open = true; if (! up && in <= closeAt) open = false;
+            s << "rwin\tt_ms\t" << juce::String (t, 3) << "\tseg\t" << (up ? "up" : "down") << "\tin_db\t" << juce::String (in - 3.01, 3) << "\tout_db\t" << juce::String (in - 3.01 + (open ? 0.0 : rangeDb), 3) << "\n";
+        }
+        s << "rdone\twindows\t1200\tnonfinite\t0\n"; return s;
+    };
+    const auto g = gateLevels (parseRamp (rampTrace (-30.0, -36.0, -40.0)));
+    check (g.ok && g.gating && std::abs (g.rangeDb - 40.0) < 0.01 && g.openAtInDb && std::abs (*g.openAtInDb - (-30.0 - 3.01)) < 0.3 && g.closeAtInDb && std::abs (*g.closeAtInDb - (-36.0 - 3.01)) < 0.3 && g.hysteresisDb && std::abs (*g.hysteresisDb - 6.0) < 0.5,
+           "dyn G1: range 40 dB, opens at -33 dBFS RMS (-30 peak), closes at -39, hysteresis 6 dB (" + g.why + ")");
+    const auto ng = gateLevels (parseRamp (rampTrace (-30.0, -36.0, -1.0)));
+    check (ng.ok && ! ng.gating && ng.why.contains ("not gating"), "dyn G2: a unit that attenuates 1 dB when closed is not gating, said");
+    // BURST through a gate: closed -40 dB; opens over 5 ms (90 % at 4.5 ms), holds 100 ms, releases over 200 ms (90 % at 180 ms)
+    {
+        juce::String s; s << "burst\tproto\t1\tquiet\t-50.00\tloud\t-10.00\tpre_s\t1.000\thold_s\t1.000\tpost_s\t2.000\thz\t997.000\twin_ms\t1.00\nconfig\tmain_in\t2\tmain_out\t2\tlatency\t0\n";
+        for (double t = 0.5; t < 4000.0; t += 1.0)
+        {
+            const char* seg = t < 1000.0 ? "pre" : t < 2000.0 ? "loud" : "post"; const double in = t < 1000.0 || t >= 2000.0 ? -53.01 : -13.01;
+            double gain;
+            if (t < 1000.0) gain = -40.0;
+            else if (t < 2000.0) gain = -40.0 + 40.0 * juce::jmin (1.0, (t - 1000.0) / 5.0);
+            else if (t < 2100.0) gain = 0.0;
+            else gain = -40.0 * juce::jmin (1.0, (t - 2100.0) / 200.0);
+            s << "bwin\tt_ms\t" << juce::String (t, 2) << "\tseg\t" << seg << "\tin_db\t" << juce::String (in, 3) << "\tout_db\t" << juce::String (in + gain, 3) << "\n";
+        }
+        const auto gt = gateTiming (ejmap::timing::parseBurst (s));
+        // attack to within 1 dB of open = 39/40 of the 5 ms rise = 4.875; hold ends at the first 1 dB of fall (5 ms into the 200 ms release) = 105;
+        // release = from there to 20 dB below open (100 ms into the release) = 95: the definitions, said
+        check (gt.ok && gt.attackMs && std::abs (*gt.attackMs - 4.875) < 0.5 && gt.holdMs && std::abs (*gt.holdMs - 105.0) < 0.5 && gt.releaseMs && std::abs (*gt.releaseMs - 95.0) < 0.5,
+               "dyn G3: attack 4.9 ms (within 1 dB of open), hold 105 ms (to the first 1 dB of fall), release 95 ms (from there 20 dB down), interpolated (" + gt.why + ")");
+        // a closed gate is silent (-600 dB windows): read as -150 relative, never skipped - the ramp still finds its crossings
+        auto silentRamp = [] { juce::String s; s << "ramp\tproto\t1\tfrom\t-60.00\tto\t-6.00\tup_s\t3.000\tdown_s\t3.000\thz\t997.000\twin_ms\t5.00\n"; bool open = false;
+            for (double t = 2.5; t < 6000.0; t += 5.0) { const bool up = t < 3000.0; const double in = up ? -60.0 + 54.0 * t / 3000.0 : -6.0 - 54.0 * (t - 3000.0) / 3000.0; if (up && in >= -30.0) open = true; if (! up && in <= -36.0) open = false;
+                s << "rwin\tt_ms\t" << juce::String (t, 3) << "\tseg\t" << (up ? "up" : "down") << "\tin_db\t" << juce::String (in - 3.01, 3) << "\tout_db\t" << (open ? juce::String (in - 3.01, 3) : juce::String ("-600.000")) << "\n"; } return s; };
+        const auto sg = gateLevels (parseRamp (silentRamp()));
+        check (sg.ok && sg.gating && sg.rangeDb > 80.0 && sg.openAtInDb && std::abs (*sg.openAtInDb + 33.01) < 0.3 && sg.closeAtInDb && std::abs (*sg.closeAtInDb + 39.01) < 0.3, "dyn G4: a gate that closes to digital silence reads a floor range (-150 dBFS against the quiet input) and still gives its open and close levels (" + sg.why + ")");
+    }
+    check (labelMs ("12.5 ms") && *labelMs ("12.5 ms") == 12.5 && labelMs ("1.20 s") && std::abs (*labelMs ("1.20 s") - 1200.0) < 1e-9 && labelNumber ("-30.0 dB") && *labelNumber ("-30.0 dB") == -30.0 && ! labelNumber ("Off"), "dyn L1: labels");
+}
+
 /** THE ZIP REVIEW (EjmapCertReview.h, 5 Oct R1): hand-built records, outcomes and entry lists; every section's reading pinned. */
 void testCertReview()
 {
@@ -7404,6 +7477,7 @@ int main (int, char**)
     testCertReview();
     testSaturation();
     testReverbDelay();
+    testDynamics();
     testLoopOutcomes();
     testCategoriesMerge();
 

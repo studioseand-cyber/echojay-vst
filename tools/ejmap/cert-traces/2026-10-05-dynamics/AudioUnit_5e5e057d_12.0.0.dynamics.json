@@ -1,0 +1,68 @@
+{
+  "schema": "ej_dynamics_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.8, not exported, not published",
+  "product": "TransX Multi (s)",
+  "version": "12.0.0",
+  "identity": "AudioUnit|5e5e057d|12.0.0",
+  "kind": "transient",
+  "neutral": {
+    "transient_db": 4.32,
+    "sustain_db": 0.03
+  },
+  "sustain": {
+    "index": 5,
+    "control": "Release",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "0.50",
+        "transient_db": 4.27,
+        "sustain_db": 0.03,
+        "d_transient_db": -0.05,
+        "d_sustain_db": -0.0,
+        "label_db": null
+      },
+      {
+        "norm": 0.25,
+        "display": "2.81",
+        "transient_db": 4.28,
+        "sustain_db": 0.03,
+        "d_transient_db": -0.05,
+        "d_sustain_db": -0.0,
+        "label_db": null
+      },
+      {
+        "norm": 0.5,
+        "display": "15.81",
+        "transient_db": 4.36,
+        "sustain_db": 0.03,
+        "d_transient_db": 0.04,
+        "d_sustain_db": 0.0,
+        "label_db": null
+      },
+      {
+        "norm": 0.75,
+        "display": "88.91",
+        "transient_db": 4.72,
+        "sustain_db": 0.04,
+        "d_transient_db": 0.4,
+        "d_sustain_db": 0.0,
+        "label_db": null
+      },
+      {
+        "norm": 1.0,
+        "display": "500.00",
+        "transient_db": 5.13,
+        "sustain_db": 0.09,
+        "d_transient_db": 0.81,
+        "d_sustain_db": 0.06,
+        "label_db": null
+      }
+    ],
+    "labelled": 0,
+    "within_1db": 0
+  },
+  "processes": 8,
+  "measuredAt": "20261005T132218",
+  "method": "probe --hits: a 997 Hz drum-like burst (one-sample attack, 150 ms exponential decay, -6 dBFS peak) four times at 600 ms; transient = output peak over input peak in the first 10 ms, sustain = output RMS over input RMS at 80-250 ms, medians over hits 2-4; each position against the neutral (instantiate) run; a dB label compared within 1 dB"
+}

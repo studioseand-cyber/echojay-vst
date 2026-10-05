@@ -1,0 +1,128 @@
+=== TransX Wide (m)
+DYN: TransX Wide (m) 12.0.0 (transient): attack -; sustain [4] Release
+  neutral (as instantiated): transient 5.14 dB, sustain 0.00 dB against the input, over 3 hits
+  Release = '0.50' (norm 0.00): transient -0.00 dB, sustain -0.00 dB against neutral
+  Release = '2.81' (norm 0.25): transient -0.00 dB, sustain -0.00 dB against neutral
+  Release = '15.81' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Release = '88.91' (norm 0.75): transient 0.00 dB, sustain 0.00 dB against neutral
+  Release = '500.00' (norm 1.00): transient 0.00 dB, sustain 0.14 dB against neutral
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_5e5e6663_12.0.0.dynamics.json (8 processes)
+=== TransX Multi (s)
+DYN: TransX Multi (s) 12.0.0 (transient): attack -; sustain [5] Release
+  neutral (as instantiated): transient 4.32 dB, sustain 0.03 dB against the input, over 3 hits
+  Release = '0.50' (norm 0.00): transient -0.05 dB, sustain -0.00 dB against neutral
+  Release = '2.81' (norm 0.25): transient -0.05 dB, sustain -0.00 dB against neutral
+  Release = '15.81' (norm 0.50): transient 0.04 dB, sustain 0.00 dB against neutral
+  Release = '88.91' (norm 0.75): transient 0.40 dB, sustain 0.00 dB against neutral
+  Release = '500.00' (norm 1.00): transient 0.81 dB, sustain 0.06 dB against neutral
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_5e5e057d_12.0.0.dynamics.json (8 processes)
+=== elysia nvelope
+DYN: elysia nvelope 1.10.1 (transient): attack [3] Attack/Gain H; sustain [5] Sustain/Gain L
+  neutral (as instantiated): transient 0.06 dB, sustain 0.01 dB against the input, over 3 hits
+  Attack/Gain H = '-15.0 dB' (norm 0.00): transient -7.20 dB, sustain -0.44 dB against neutral | label -15.0 dB -> OFF by 7.80
+  Attack/Gain H = '-5.7 dB' (norm 0.25): transient -6.28 dB, sustain -0.28 dB against neutral | label -5.7 dB -> within 1 dB
+  Attack/Gain H = '0.0 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Attack/Gain H = '5.7 dB' (norm 0.75): transient 8.29 dB, sustain 0.24 dB against neutral | label 5.7 dB -> OFF by 2.59
+  Attack/Gain H = '15.0 dB' (norm 1.00): transient 13.91 dB, sustain 0.40 dB against neutral | label 15.0 dB -> OFF by -1.09
+  Sustain/Gain L = '-15.0 dB' (norm 0.00): transient -0.11 dB, sustain -0.37 dB against neutral | label -15.0 dB -> OFF by 14.63
+  Sustain/Gain L = '-5.7 dB' (norm 0.25): transient -0.10 dB, sustain -0.26 dB against neutral | label -5.7 dB -> OFF by 5.44
+  Sustain/Gain L = '0.0 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Sustain/Gain L = '5.7 dB' (norm 0.75): transient 0.20 dB, sustain 0.43 dB against neutral | label 5.7 dB -> OFF by -5.27
+  Sustain/Gain L = '15.0 dB' (norm 1.00): transient 1.27 dB, sustain 0.96 dB against neutral | label 15.0 dB -> OFF by -14.04
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_4a6f737b_1.10.1.dynamics.json (13 processes)
+=== MTransient
+DYN: MTransient 14.16.0 (transient): attack [8] Transient -> Attack; sustain [66] Basic - Sustain
+  neutral (as instantiated): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  Transient -> Attack = '-24.00 dB' (norm 0.00): transient -6.92 dB, sustain 0.00 dB against neutral | label -24.0 dB -> OFF by 17.08
+  Transient -> Attack = '-12.00 dB' (norm 0.25): transient -5.75 dB, sustain 0.00 dB against neutral | label -12.0 dB -> OFF by 6.25
+  Transient -> Attack = '0.00 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Transient -> Attack = '+12.00 dB' (norm 0.75): transient 11.97 dB, sustain 0.00 dB against neutral | label 12.0 dB -> within 1 dB
+  Transient -> Attack = '+24.00 dB' (norm 1.00): transient 23.97 dB, sustain 0.00 dB against neutral | label 24.0 dB -> within 1 dB
+  Basic - Sustain = '-24.00 dB' (norm 0.00): transient 0.00 dB, sustain -2.91 dB against neutral | label -24.0 dB -> OFF by 21.09
+  Basic - Sustain = '-12.00 dB' (norm 0.25): transient 0.00 dB, sustain -1.46 dB against neutral | label -12.0 dB -> OFF by 10.54
+  Basic - Sustain = '0.00 dB' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral | label 0.0 dB -> within 1 dB
+  Basic - Sustain = '+12.00 dB' (norm 0.75): transient 0.00 dB, sustain 1.46 dB against neutral | label 12.0 dB -> OFF by -10.54
+  Basic - Sustain = '+24.00 dB' (norm 1.00): transient 0.00 dB, sustain 2.91 dB against neutral | label 24.0 dB -> OFF by -21.09
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_61447363_14.16.0.dynamics.json (13 processes)
+=== Transient Master
+DYN: Transient Master 1.4.5 (transient): attack [0] Attack; sustain [1] Sustain
+  neutral (as instantiated): transient 0.03 dB, sustain -0.00 dB against the input, over 3 hits
+  Attack = '-100.0 %' (norm 0.00): transient -12.88 dB, sustain -0.37 dB against neutral
+  Attack = '-50.0 %' (norm 0.25): transient -6.72 dB, sustain -0.19 dB against neutral
+  Attack = '0.0 %' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack = '50.0 %' (norm 0.75): transient 5.98 dB, sustain 0.19 dB against neutral
+  Attack = '100.0 %' (norm 1.00): transient 5.98 dB, sustain 0.39 dB against neutral
+  Sustain = '-100.0 %' (norm 0.00): transient 3.15 dB, sustain -5.44 dB against neutral
+  Sustain = '-50.0 %' (norm 0.25): transient 1.41 dB, sustain -2.81 dB against neutral
+  Sustain = '0.0 %' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain = '50.0 %' (norm 0.75): transient -0.22 dB, sustain 3.01 dB against neutral
+  Sustain = '100.0 %' (norm 1.00): transient -0.37 dB, sustain 6.23 dB against neutral
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_2520b60_1.4.5.dynamics.json (13 processes)
+=== spiff
+DYN: spiff 1.3.2 (transient): attack -; sustain -
+  no attack / sustain control by name; controls: mix, trim, cut depth, decay, delta, lo cut on, band1 on, band2 on, band3 on, hi cut on, boost depth, oversample, resolution, sensitivity, sharpness, bypass, lo cut freq, lo cut slope, band1 freq, band1 mode, band1 sens, band2 freq, band2 mode, band2 sens, band3 freq, band3 mode, band3 sens, hi cut freq, hi cut slope, window length, phase mode, band1 q, band2 q, band3 q, stereo link, stereo mode, stereo balance, gain mode, decay lf/hf
+=== Quantum
+DYN: Quantum 1.0.1 (transient): attack [1] Attack - Vibrato - Mix; sustain [7] Sustain - Phaser - Feedback
+  neutral (as instantiated): transient 0.00 dB, sustain 0.00 dB against the input, over 3 hits
+  Attack - Vibrato - Mix = '0.0' (norm 0.00): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack - Vibrato - Mix = '25.0' (norm 0.25): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack - Vibrato - Mix = '50.0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack - Vibrato - Mix = '75.0' (norm 0.75): transient 0.00 dB, sustain 0.00 dB against neutral
+  Attack - Vibrato - Mix = '100.0' (norm 1.00): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain - Phaser - Feedback = '0.0' (norm 0.00): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain - Phaser - Feedback = '25.0' (norm 0.25): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain - Phaser - Feedback = '50.0' (norm 0.50): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain - Phaser - Feedback = '75.0' (norm 0.75): transient 0.00 dB, sustain 0.00 dB against neutral
+  Sustain - Phaser - Feedback = '100.0' (norm 1.00): transient 0.00 dB, sustain 0.00 dB against neutral
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_6768746c_1.0.1.dynamics.json (13 processes)
+=== C1 gate (s)
+DYN: C1 gate (s) 12.0.0 (gate): threshold [5] Gate Open; range [4] Floor; attack [2] Attack; hold [1] Hold; release [3] Release
+  Gate Open = '-Inf' (norm 0.00): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Gate Open = '-75.0' (norm 0.25): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Gate Open = '-50.0' (norm 0.50): range 373.4 dB, never opened, never closed on the way down
+  Gate Open = '-25.0' (norm 0.75): range 373.4 dB, never opened, never closed on the way down
+  Gate Open = '0.0': too few windows at the quiet or the loud end
+  Floor = '-10.0 N' (threshold at norm 0.5): closed -373.4 dB
+  Floor = '-5.7' (threshold at norm 0.5): closed -5.7 dB
+  Floor = '12.0' (threshold at norm 0.5): closed 12.0 dB
+  Attack = '0.01': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Attack = '3.16': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Attack = '1000.00' (norm 1.00): range 305.9 dB in the burst, opened in 23.6 ms, held 76.2 ms, closed in 947.3 ms | this control's figure 23.6 ms vs label 1000.0 ms (ratio 0.02)
+  Hold = '0.01': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Hold = '7.07': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Hold = '5000.00': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Release = '1': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Release = '100': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+  Release = '10000': the burst did not open the gate by 3 dB (range 0.00): threshold above the loud level, or no gating
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_4d47657d_12.0.0.dynamics.json (19 processes)
+=== PSE (m)
+DYN: PSE (m) 12.0.0 (gate): threshold [5] Threshold; range [7] Range; attack -; hold -; release -
+  Threshold = '-60' (norm 0.00): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Threshold = '-45' (norm 0.25): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Threshold = '-30' (norm 0.50): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Threshold = '-15' (norm 0.75): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Threshold = '0' (norm 1.00): the quiet end is attenuated only 0.00 dB more than the loud end: not gating at this setting
+  Range = '-60' (threshold at norm 0.5): closed -33.4 dB
+  Range = '-30' (threshold at norm 0.5): closed -30.0 dB
+  Range = '0' (threshold at norm 0.5): closed -0.0 dB
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_5c5e6163_12.0.0.dynamics.json (10 processes)
+=== Unfiltered Audio G8
+DYN: Unfiltered Audio G8 1.6.2 (gate): threshold [13] Threshold; range [40] Reduction; attack [41] Attack; hold [0] Hold; release [17] Release
+  Threshold = '-inf dB' (norm 0.00): the quiet end is attenuated only 0.01 dB more than the loud end: not gating at this setting
+  Threshold = '-60.0 dB' (norm 0.25): range 227.3 dB, opens at -63.1 dBFS RMS, never closed on the way down (-60.1 dBFS peak) | label -60.0 -> -0.1 dB above it (peak)
+  Threshold = '-40.0 dB' (norm 0.50): range 227.3 dB, never opened, never closed on the way down
+  Threshold = '-20.0 dB' (norm 0.75): range 227.3 dB, never opened, never closed on the way down
+  Threshold = '0 dB': too few windows at the quiet or the loud end
+  Reduction = '0 dB' (threshold at norm 0.5): closed -0.0 dB vs label 0.0 -> -0.0 dB off
+  Reduction = '-13.7 dB' (threshold at norm 0.5): closed -13.7 dB vs label -13.7 -> -0.0 dB off
+  Reduction = '-inf dB' (threshold at norm 0.5): closed -227.3 dB
+  Attack = '1.00 ms' (norm 0.00): range 138.2 dB in the burst, opened in 0.5 ms, held 129.6 ms, closed in 557.9 ms | this control's figure 0.5 ms vs label 1.0 ms (ratio 0.50)
+  Attack = '126 ms' (norm 0.50): range 138.2 dB in the burst, opened in 6.7 ms, held 129.6 ms, closed in 557.9 ms | this control's figure 6.7 ms vs label 126.0 ms (ratio 0.05)
+  Attack = '500 ms' (norm 1.00): range 138.2 dB in the burst, opened in 26.2 ms, held 129.6 ms, closed in 557.9 ms | this control's figure 26.2 ms vs label 500.0 ms (ratio 0.05)
+  Hold = '0 ms': no trace
+  Hold = '125 ms' (norm 0.50): range 138.2 dB in the burst, opened in 0.5 ms, held 129.6 ms, closed in 557.9 ms | this control's figure 129.6 ms vs label 125.0 ms (ratio 1.04)
+  Hold = '500 ms' (norm 1.00): range 55.3 dB in the burst, opened in 1.3 ms, held 504.5 ms, closed in 220.5 ms | this control's figure 504.5 ms vs label 500.0 ms (ratio 1.01)
+  Release = '1.00 ms': too few pre or loud windows
+  Release = '501 ms' (norm 0.50): range 49.9 dB in the burst, opened in 1.3 ms, held 137.5 ms, closed in 549.9 ms | this control's figure 549.9 ms vs label 501.0 ms (ratio 1.10)
+  Release = '2.000 s' (norm 1.00): range 12.5 dB in the burst, opened in 2.7 ms, held 174.8 ms, closed in 512.6 ms | this control's figure 512.6 ms vs label 2000.0 ms (ratio 0.26)
+DYN: -> /private/tmp/claude-503/-Users-SeanD-Documents-ECHOJAY-FILES-WORKTREES-vst-reasoning/149c1a01-1e06-4e77-b9a6-f9b418361de3/scratchpad/dyn/dynamics/AudioUnit_737a5876_1.6.2.dynamics.json (19 processes)

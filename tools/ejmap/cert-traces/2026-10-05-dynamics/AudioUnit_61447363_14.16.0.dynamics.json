@@ -1,0 +1,121 @@
+{
+  "schema": "ej_dynamics_prototype/0",
+  "status": "PROTOTYPE - roadmap 2.8, not exported, not published",
+  "product": "MTransient",
+  "version": "14.16.0",
+  "identity": "AudioUnit|61447363|14.16.0",
+  "kind": "transient",
+  "neutral": {
+    "transient_db": 0.0,
+    "sustain_db": 0.0
+  },
+  "attack": {
+    "index": 8,
+    "control": "Transient -> Attack",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "-24.00 dB",
+        "transient_db": -6.92,
+        "sustain_db": 0.0,
+        "d_transient_db": -6.92,
+        "d_sustain_db": 0.0,
+        "label_db": -24.0
+      },
+      {
+        "norm": 0.25,
+        "display": "-12.00 dB",
+        "transient_db": -5.75,
+        "sustain_db": 0.0,
+        "d_transient_db": -5.75,
+        "d_sustain_db": 0.0,
+        "label_db": -12.0
+      },
+      {
+        "norm": 0.5,
+        "display": "0.00 dB",
+        "transient_db": 0.0,
+        "sustain_db": 0.0,
+        "d_transient_db": 0.0,
+        "d_sustain_db": 0.0,
+        "label_db": 0.0
+      },
+      {
+        "norm": 0.75,
+        "display": "+12.00 dB",
+        "transient_db": 11.970000000000001,
+        "sustain_db": 0.0,
+        "d_transient_db": 11.970000000000001,
+        "d_sustain_db": 0.0,
+        "label_db": 12.0
+      },
+      {
+        "norm": 1.0,
+        "display": "+24.00 dB",
+        "transient_db": 23.969999999999999,
+        "sustain_db": 0.0,
+        "d_transient_db": 23.969999999999999,
+        "d_sustain_db": 0.0,
+        "label_db": 24.0
+      }
+    ],
+    "labelled": 5,
+    "within_1db": 3
+  },
+  "sustain": {
+    "index": 66,
+    "control": "Basic - Sustain",
+    "positions": [
+      {
+        "norm": 0.0,
+        "display": "-24.00 dB",
+        "transient_db": 0.0,
+        "sustain_db": -2.91,
+        "d_transient_db": 0.0,
+        "d_sustain_db": -2.91,
+        "label_db": -24.0
+      },
+      {
+        "norm": 0.25,
+        "display": "-12.00 dB",
+        "transient_db": 0.0,
+        "sustain_db": -1.46,
+        "d_transient_db": 0.0,
+        "d_sustain_db": -1.46,
+        "label_db": -12.0
+      },
+      {
+        "norm": 0.5,
+        "display": "0.00 dB",
+        "transient_db": 0.0,
+        "sustain_db": 0.0,
+        "d_transient_db": 0.0,
+        "d_sustain_db": 0.0,
+        "label_db": 0.0
+      },
+      {
+        "norm": 0.75,
+        "display": "+12.00 dB",
+        "transient_db": 0.0,
+        "sustain_db": 1.46,
+        "d_transient_db": 0.0,
+        "d_sustain_db": 1.46,
+        "label_db": 12.0
+      },
+      {
+        "norm": 1.0,
+        "display": "+24.00 dB",
+        "transient_db": 0.0,
+        "sustain_db": 2.91,
+        "d_transient_db": 0.0,
+        "d_sustain_db": 2.91,
+        "label_db": 24.0
+      }
+    ],
+    "labelled": 5,
+    "within_1db": 1
+  },
+  "processes": 13,
+  "measuredAt": "20261005T132246",
+  "method": "probe --hits: a 997 Hz drum-like burst (one-sample attack, 150 ms exponential decay, -6 dBFS peak) four times at 600 ms; transient = output peak over input peak in the first 10 ms, sustain = output RMS over input RMS at 80-250 ms, medians over hits 2-4; each position against the neutral (instantiate) run; a dB label compared within 1 dB"
+}
